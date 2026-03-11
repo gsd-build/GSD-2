@@ -40,36 +40,48 @@ export function getWorktreeOriginalCwd(): string | null {
 }
 
 /**
- * Nudge pi's FooterDataProvider to re-read the git branch.
- *
- * The footer caches the branch and watches a single .git dir for changes.
- * After process.chdir() into a worktree (or back), the watcher is stale.
- * We touch the HEAD file in the git dir that the watcher is monitoring —
- * this triggers the fs.watch callback, which clears cachedBranch and fires
- * a render. The next getGitBranch() call uses the new process.cwd().
+ * Resolve the git HEAD file path for a given directory.
+ * Handles both normal repos (.git is a directory) and worktrees (.git is a file).
  */
-function nudgeGitBranchCache(previousCwd: string): void {
-  try {
-    const gitPath = join(previousCwd, ".git");
-    if (!existsSync(gitPath)) return;
+function resolveGitHeadPath(dir: string): string | null {
+  const gitPath = join(dir, ".git");
+  if (!existsSync(gitPath)) return null;
 
-    let headPath: string;
+  try {
     const content = readFileSync(gitPath, "utf8").trim();
     if (content.startsWith("gitdir: ")) {
       // Worktree — .git is a file pointing to the real gitdir
-      const gitDir = resolve(previousCwd, content.slice(8));
-      headPath = join(gitDir, "HEAD");
-    } else {
-      // Normal repo — .git is a directory
-      headPath = join(previousCwd, ".git", "HEAD");
+      const gitDir = resolve(dir, content.slice(8));
+      const headPath = join(gitDir, "HEAD");
+      return existsSync(headPath) ? headPath : null;
     }
-
-    if (existsSync(headPath)) {
-      const now = new Date();
-      utimesSync(headPath, now, now);
-    }
+    // Normal repo — .git is a directory
+    const headPath = join(dir, ".git", "HEAD");
+    return existsSync(headPath) ? headPath : null;
   } catch {
-    // Best-effort — branch display may be stale
+    return null;
+  }
+}
+
+/**
+ * Nudge pi's FooterDataProvider to re-read the git branch.
+ *
+ * The footer caches the branch and watches a single .git dir for changes.
+ * After process.chdir() into a worktree (or back), the watcher is stale —
+ * it's still watching the old git dir. We touch HEAD in both the old and
+ * new git dirs to ensure the watcher fires regardless of which one it's
+ * monitoring. This clears cachedBranch; the next getGitBranch() call uses
+ * the new process.cwd() and picks up the correct branch.
+ */
+function nudgeGitBranchCache(previousCwd: string): void {
+  const now = new Date();
+  for (const dir of [previousCwd, process.cwd()]) {
+    try {
+      const headPath = resolveGitHeadPath(dir);
+      if (headPath) utimesSync(headPath, now, now);
+    } catch {
+      // Best-effort — branch display may be stale
+    }
   }
 }
 
