@@ -17,9 +17,10 @@ await runWizardIfNeeded(authStorage)
 const modelRegistry = new ModelRegistry(authStorage)
 const settingsManager = SettingsManager.create(agentDir)
 
-// Always ensure defaults: anthropic/claude-sonnet-4-6, thinking off.
-// Validates on every startup — catches stale settings from prior installs
+// Validate configured model on startup — catches stale settings from prior installs
 // (e.g. grok-2 which no longer exists) and fresh installs with no settings.
+// Only resets the default when the configured model no longer exists in the registry;
+// never overwrites a valid user choice.
 const configuredProvider = settingsManager.getDefaultProvider()
 const configuredModel = settingsManager.getDefaultModel()
 const allModels = modelRegistry.getAll()
@@ -27,10 +28,10 @@ const configuredExists = configuredProvider && configuredModel &&
   allModels.some((m) => m.provider === configuredProvider && m.id === configuredModel)
 
 if (!configuredModel || !configuredExists) {
-  // Preferred default: anthropic/claude-sonnet-4-6
+  // Fallback: pick the best available Anthropic model
   const preferred =
-    allModels.find((m) => m.provider === 'anthropic' && m.id === 'claude-sonnet-4-6') ||
-    allModels.find((m) => m.provider === 'anthropic' && m.id.includes('sonnet')) ||
+    allModels.find((m) => m.provider === 'anthropic' && m.id === 'claude-opus-4-6') ||
+    allModels.find((m) => m.provider === 'anthropic' && m.id.includes('opus')) ||
     allModels.find((m) => m.provider === 'anthropic')
   if (preferred) {
     settingsManager.setDefaultModelAndProvider(preferred.provider, preferred.id)
