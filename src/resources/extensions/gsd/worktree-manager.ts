@@ -28,6 +28,13 @@ export interface WorktreeInfo {
   exists: boolean;
 }
 
+/** Per-file line change stats from git diff --numstat. */
+export interface FileLineStat {
+  file: string;
+  added: number;
+  removed: number;
+}
+
 export interface WorktreeDiffSummary {
   /** Files only in the worktree .gsd/ (new artifacts) */
   added: string[];
@@ -109,6 +116,18 @@ export function createWorktree(basePath: string, name: string): WorktreeInfo {
   const mainBranch = getMainBranch(basePath);
 
   if (branchExists) {
+    // Check if the branch is actively used by an existing worktree.
+    // `git branch -f` will fail if the branch is checked out somewhere.
+    const worktreeUsing = runGit(basePath, ["worktree", "list", "--porcelain"], { allowFailure: true });
+    const branchInUse = worktreeUsing.includes(`branch refs/heads/${branch}`);
+
+    if (branchInUse) {
+      throw new Error(
+        `Branch "${branch}" is already in use by another worktree. ` +
+        `Remove the existing worktree first with /worktree remove ${name}.`,
+      );
+    }
+
     // Reset the stale branch to current main, then attach worktree to it
     runGit(basePath, ["branch", "-f", branch, mainBranch]);
     runGit(basePath, ["worktree", "add", wtPath, branch]);
@@ -212,19 +231,17 @@ export function removeWorktree(
   }
 }
 
-/**
- * Diff the .gsd/ directory between the worktree branch and main branch.
- * Returns a summary of added, modified, and removed GSD artifacts.
- */
-export function diffWorktreeGSD(basePath: string, name: string): WorktreeDiffSummary {
-  const branch = worktreeBranchName(name);
-  const mainBranch = getMainBranch(basePath);
+/** Paths to skip in all worktree diffs (internal/runtime artifacts). */
+const SKIP_PATHS = [".gsd/worktrees/", ".gsd/runtime/", ".gsd/activity/"];
+const SKIP_EXACT = [".gsd/STATE.md", ".gsd/auto.lock", ".gsd/metrics.json"];
 
-  // Use git diff to compare .gsd/ between branches
-  const diffOutput = runGit(basePath, [
-    "diff", "--name-status", `${mainBranch}...${branch}`, "--", ".gsd/",
-  ], { allowFailure: true });
+function shouldSkipPath(filePath: string): boolean {
+  if (SKIP_PATHS.some(p => filePath.startsWith(p))) return true;
+  if (SKIP_EXACT.includes(filePath)) return true;
+  return false;
+}
 
+function parseDiffNameStatus(diffOutput: string): WorktreeDiffSummary {
   const added: string[] = [];
   const modified: string[] = [];
   const removed: string[] = [];
@@ -235,11 +252,7 @@ export function diffWorktreeGSD(basePath: string, name: string): WorktreeDiffSum
     const [status, ...pathParts] = line.split("\t");
     const filePath = pathParts.join("\t");
 
-    // Skip worktree-internal paths (e.g. .gsd/worktrees/, .gsd/runtime/)
-    if (filePath.startsWith(".gsd/worktrees/") || filePath.startsWith(".gsd/runtime/")) continue;
-    // Skip gitignored runtime files
-    if (filePath === ".gsd/STATE.md" || filePath === ".gsd/auto.lock" || filePath === ".gsd/metrics.json") continue;
-    if (filePath.startsWith(".gsd/activity/")) continue;
+    if (shouldSkipPath(filePath)) continue;
 
     switch (status) {
       case "A": added.push(filePath); break;
@@ -257,6 +270,68 @@ export function diffWorktreeGSD(basePath: string, name: string): WorktreeDiffSum
 }
 
 /**
+ * Diff the .gsd/ directory between the worktree branch and main branch.
+ * Returns a summary of added, modified, and removed GSD artifacts.
+ */
+export function diffWorktreeGSD(basePath: string, name: string): WorktreeDiffSummary {
+  const branch = worktreeBranchName(name);
+  const mainBranch = getMainBranch(basePath);
+
+  const diffOutput = runGit(basePath, [
+    "diff", "--name-status", `${mainBranch}...${branch}`, "--", ".gsd/",
+  ], { allowFailure: true });
+
+  return parseDiffNameStatus(diffOutput);
+}
+
+/**
+ * Diff ALL files between the worktree branch and main branch.
+ * Returns a summary of added, modified, and removed files across the entire repo.
+ */
+/**
+ * Diff ALL files between the worktree branch and main branch.
+ * Uses direct diff (no merge-base) to show what will actually change
+ * on main when the merge is applied. If both branches have identical
+ * content, this correctly returns an empty diff.
+ */
+export function diffWorktreeAll(basePath: string, name: string): WorktreeDiffSummary {
+  const branch = worktreeBranchName(name);
+  const mainBranch = getMainBranch(basePath);
+
+  const diffOutput = runGit(basePath, [
+    "diff", "--name-status", mainBranch, branch,
+  ], { allowFailure: true });
+
+  return parseDiffNameStatus(diffOutput);
+}
+
+/**
+ * Get per-file line addition/deletion stats for what will change on main.
+ * Uses direct diff (not merge-base) so the preview matches the actual merge outcome.
+ */
+export function diffWorktreeNumstat(basePath: string, name: string): FileLineStat[] {
+  const branch = worktreeBranchName(name);
+  const mainBranch = getMainBranch(basePath);
+
+  const raw = runGit(basePath, [
+    "diff", "--numstat", mainBranch, branch,
+  ], { allowFailure: true });
+
+  if (!raw.trim()) return [];
+
+  const stats: FileLineStat[] = [];
+  for (const line of raw.split("\n").filter(Boolean)) {
+    const [a, r, ...pathParts] = line.split("\t");
+    const file = pathParts.join("\t");
+    if (shouldSkipPath(file)) continue;
+    const added = a === "-" ? 0 : parseInt(a ?? "0", 10);
+    const removed = r === "-" ? 0 : parseInt(r ?? "0", 10);
+    stats.push({ file, added, removed });
+  }
+  return stats;
+}
+
+/**
  * Get the full diff content for .gsd/ between the worktree branch and main.
  * Returns the raw unified diff for LLM consumption.
  */
@@ -266,6 +341,21 @@ export function getWorktreeGSDDiff(basePath: string, name: string): string {
 
   return runGit(basePath, [
     "diff", `${mainBranch}...${branch}`, "--", ".gsd/",
+  ], { allowFailure: true });
+}
+
+/**
+ * Get the full diff content for non-.gsd/ files between the worktree branch and main.
+ * Returns the raw unified diff for LLM consumption.
+ */
+export function getWorktreeCodeDiff(basePath: string, name: string): string {
+  const branch = worktreeBranchName(name);
+  const mainBranch = getMainBranch(basePath);
+
+  // Get full diff, then exclude .gsd/ paths
+  // We use pathspec magic to exclude .gsd/
+  return runGit(basePath, [
+    "diff", `${mainBranch}...${branch}`, "--", ".", ":(exclude).gsd/",
   ], { allowFailure: true });
 }
 
