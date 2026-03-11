@@ -124,137 +124,150 @@ function getMainBranch(basePath: string): string {
   }).trim();
 }
 
+// ─── Shared completions and handler (used by both /worktree and /wt) ────────
+
+function worktreeCompletions(prefix: string) {
+  const parts = prefix.trim().split(/\s+/);
+  const subcommands = ["list", "merge", "remove", "switch", "return"];
+
+  if (parts.length <= 1) {
+    const partial = parts[0] ?? "";
+    const cmdCompletions = subcommands
+      .filter(cmd => cmd.startsWith(partial))
+      .map(cmd => ({ value: cmd, label: cmd }));
+    try {
+      const mainBase = getWorktreeOriginalCwd() ?? process.cwd();
+      const existing = listWorktrees(mainBase);
+      const nameCompletions = existing
+        .filter(wt => wt.name.startsWith(partial))
+        .map(wt => ({ value: wt.name, label: wt.name }));
+      return [...cmdCompletions, ...nameCompletions];
+    } catch {
+      return cmdCompletions;
+    }
+  }
+
+  if ((parts[0] === "merge" || parts[0] === "remove" || parts[0] === "switch") && parts.length <= 2) {
+    const namePrefix = parts[1] ?? "";
+    try {
+      const existing = listWorktrees(process.cwd());
+      return existing
+        .filter(wt => wt.name.startsWith(namePrefix))
+        .map(wt => ({ value: `${parts[0]} ${wt.name}`, label: wt.name }));
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+}
+
+async function worktreeHandler(
+  args: string,
+  ctx: ExtensionCommandContext,
+  pi: ExtensionAPI,
+  alias: string,
+): Promise<void> {
+  const trimmed = (typeof args === "string" ? args : "").trim();
+  const basePath = process.cwd();
+
+  if (trimmed === "") {
+    ctx.ui.notify(
+      [
+        "Usage:",
+        `  /${alias} <name>        — create and switch into a new worktree`,
+        `  /${alias} switch <name> — switch into an existing worktree`,
+        `  /${alias} return        — switch back to the main project tree`,
+        `  /${alias} list          — list all worktrees`,
+        `  /${alias} merge <branch> [target] — merge worktree into target branch`,
+        `  /${alias} remove <name> — remove a worktree and its branch`,
+      ].join("\n"),
+      "info",
+    );
+    return;
+  }
+
+  if (trimmed === "list") {
+    await handleList(basePath, ctx);
+    return;
+  }
+
+  if (trimmed === "return") {
+    await handleReturn(ctx);
+    return;
+  }
+
+  if (trimmed.startsWith("switch ")) {
+    const name = trimmed.replace(/^switch\s+/, "").trim();
+    if (!name) {
+      ctx.ui.notify(`Usage: /${alias} switch <name>`, "warning");
+      return;
+    }
+    await handleSwitch(basePath, name, ctx);
+    return;
+  }
+
+  if (trimmed.startsWith("merge ")) {
+    const mergeArgs = trimmed.replace(/^merge\s+/, "").trim().split(/\s+/);
+    const name = mergeArgs[0] ?? "";
+    const targetBranch = mergeArgs[1];
+    if (!name) {
+      ctx.ui.notify(`Usage: /${alias} merge <branch> [target]`, "warning");
+      return;
+    }
+    const mainBase = originalCwd ?? basePath;
+    await handleMerge(mainBase, name, ctx, pi, targetBranch);
+    return;
+  }
+
+  if (trimmed.startsWith("remove ")) {
+    const name = trimmed.replace(/^remove\s+/, "").trim();
+    if (!name) {
+      ctx.ui.notify(`Usage: /${alias} remove <name>`, "warning");
+      return;
+    }
+    const mainBase = originalCwd ?? basePath;
+    await handleRemove(mainBase, name, ctx);
+    return;
+  }
+
+  const RESERVED = ["list", "return", "switch", "merge", "remove"];
+  if (RESERVED.includes(trimmed)) {
+    ctx.ui.notify(`Usage: /${alias} ${trimmed}${trimmed === "list" || trimmed === "return" ? "" : " <name>"}`, "warning");
+    return;
+  }
+
+  const mainBase = originalCwd ?? basePath;
+  const nameOnly = trimmed.split(/\s+/)[0]!;
+  if (trimmed !== nameOnly) {
+    ctx.ui.notify(`Unknown command. Did you mean /${alias} switch ${nameOnly}?`, "warning");
+    return;
+  }
+
+  const existing = listWorktrees(mainBase);
+  if (existing.some(wt => wt.name === nameOnly)) {
+    await handleSwitch(basePath, nameOnly, ctx);
+  } else {
+    await handleCreate(basePath, nameOnly, ctx);
+  }
+}
+
 export function registerWorktreeCommand(pi: ExtensionAPI): void {
   pi.registerCommand("worktree", {
     description: "Git worktrees: /worktree <name> | list | merge <branch> [target] | remove <name>",
-
-    getArgumentCompletions: (prefix: string) => {
-      const parts = prefix.trim().split(/\s+/);
-      const subcommands = ["list", "merge", "remove", "switch", "return"];
-
-      if (parts.length <= 1) {
-        const partial = parts[0] ?? "";
-        // Suggest subcommands and existing worktree names for quick create
-        const cmdCompletions = subcommands
-          .filter(cmd => cmd.startsWith(partial))
-          .map(cmd => ({ value: cmd, label: cmd }));
-
-        // Also suggest existing worktree names for quick switch
-        try {
-          const mainBase = getWorktreeOriginalCwd() ?? process.cwd();
-          const existing = listWorktrees(mainBase);
-          const nameCompletions = existing
-            .filter(wt => wt.name.startsWith(partial))
-            .map(wt => ({ value: wt.name, label: wt.name }));
-          return [...cmdCompletions, ...nameCompletions];
-        } catch {
-          return cmdCompletions;
-        }
-      }
-
-      // Second arg: complete worktree names for merge/remove/switch
-      if ((parts[0] === "merge" || parts[0] === "remove" || parts[0] === "switch") && parts.length <= 2) {
-        const namePrefix = parts[1] ?? "";
-        try {
-          const existing = listWorktrees(process.cwd());
-          return existing
-            .filter(wt => wt.name.startsWith(namePrefix))
-            .map(wt => ({ value: `${parts[0]} ${wt.name}`, label: wt.name }));
-        } catch {
-          return [];
-        }
-      }
-
-      return [];
-    },
+    getArgumentCompletions: worktreeCompletions,
 
     async handler(args: string, ctx: ExtensionCommandContext) {
-      const trimmed = (typeof args === "string" ? args : "").trim();
-      const basePath = process.cwd();
+      await worktreeHandler(args, ctx, pi, "worktree");
+    },
+  });
 
-      if (trimmed === "") {
-        ctx.ui.notify(
-          [
-            "Usage:",
-            "  /worktree <name>        — create and switch into a new worktree",
-            "  /worktree switch <name>  — switch into an existing worktree",
-            "  /worktree return         — switch back to the main project tree",
-            "  /worktree list           — list all worktrees",
-            "  /worktree merge <branch> [target] — merge worktree into target branch (default: main)",
-            "  /worktree remove <name>  — remove a worktree and its branch",
-          ].join("\n"),
-          "info",
-        );
-        return;
-      }
-
-      if (trimmed === "list") {
-        await handleList(basePath, ctx);
-        return;
-      }
-
-      if (trimmed === "return") {
-        await handleReturn(ctx);
-        return;
-      }
-
-      if (trimmed.startsWith("switch ")) {
-        const name = trimmed.replace(/^switch\s+/, "").trim();
-        if (!name) {
-          ctx.ui.notify("Usage: /worktree switch <name>", "warning");
-          return;
-        }
-        await handleSwitch(basePath, name, ctx);
-        return;
-      }
-
-      if (trimmed.startsWith("merge ")) {
-        const mergeArgs = trimmed.replace(/^merge\s+/, "").trim().split(/\s+/);
-        const name = mergeArgs[0] ?? "";
-        const targetBranch = mergeArgs[1]; // undefined → auto-detect main
-        if (!name) {
-          ctx.ui.notify("Usage: /worktree merge <branch> [target]", "warning");
-          return;
-        }
-        // Merge must run from the main tree, not the worktree
-        const mainBase = originalCwd ?? basePath;
-        await handleMerge(mainBase, name, ctx, pi, targetBranch);
-        return;
-      }
-
-      if (trimmed.startsWith("remove ")) {
-        const name = trimmed.replace(/^remove\s+/, "").trim();
-        if (!name) {
-          ctx.ui.notify("Usage: /worktree remove <name>", "warning");
-          return;
-        }
-        // Remove must run from the main tree
-        const mainBase = originalCwd ?? basePath;
-        await handleRemove(mainBase, name, ctx);
-        return;
-      }
-
-      // Reserved subcommand used without arguments
-      const RESERVED = ["list", "return", "switch", "merge", "remove"];
-      if (RESERVED.includes(trimmed)) {
-        ctx.ui.notify(`Usage: /worktree ${trimmed}${trimmed === "list" || trimmed === "return" ? "" : " <name>"}`, "warning");
-        return;
-      }
-
-      // Bare name: switch if it exists, create if it doesn't
-      const mainBase = originalCwd ?? basePath;
-      const nameOnly = trimmed.split(/\s+/)[0]!;
-      if (trimmed !== nameOnly) {
-        ctx.ui.notify(`Unknown command. Did you mean /worktree switch ${nameOnly} or /worktree ${trimmed.split(/\s+/)[0]} ...?`, "warning");
-        return;
-      }
-
-      const existing = listWorktrees(mainBase);
-      if (existing.some(wt => wt.name === nameOnly)) {
-        await handleSwitch(basePath, nameOnly, ctx);
-      } else {
-        await handleCreate(basePath, nameOnly, ctx);
-      }
+  // /wt alias — same handler, same completions
+  pi.registerCommand("wt", {
+    description: "Alias for /worktree — Git worktrees: /wt <name> | list | merge | remove",
+    getArgumentCompletions: worktreeCompletions,
+    async handler(args: string, ctx: ExtensionCommandContext) {
+      await worktreeHandler(args, ctx, pi, "wt");
     },
   });
 }
@@ -371,6 +384,15 @@ async function handleReturn(ctx: ExtensionCommandContext): Promise<void> {
   );
 }
 
+// ANSI helpers for list formatting
+const BOLD = "\x1b[1m";
+const DIM = "\x1b[2m";
+const RESET = "\x1b[0m";
+const CYAN = "\x1b[36m";
+const GREEN = "\x1b[32m";
+const YELLOW = "\x1b[33m";
+const WHITE = "\x1b[37m";
+
 async function handleList(
   basePath: string,
   ctx: ExtensionCommandContext,
@@ -385,22 +407,22 @@ async function handleList(
     }
 
     const cwd = process.cwd();
-    const lines = ["GSD Worktrees:", ""];
+    const lines = [`${BOLD}${WHITE}GSD Worktrees${RESET}`, ""];
     for (const wt of worktrees) {
-      // Resolve both to handle symlinks (e.g. /tmp → /private/tmp)
       const isCurrent = cwd === wt.path
         || (existsSync(cwd) && existsSync(wt.path)
           && realpathSync(cwd) === realpathSync(wt.path));
-      const status = isCurrent ? "← active" : wt.exists ? "" : "missing";
-      const suffix = status ? `  (${status})` : "";
-      lines.push(`  ${wt.name}${suffix}`);
-      lines.push(`    Path:   ${wt.path}`);
-      lines.push(`    Branch: ${wt.branch}`);
+
+      const nameColor = isCurrent ? GREEN : CYAN;
+      const badge = isCurrent ? `  ${GREEN}● active${RESET}` : !wt.exists ? `  ${YELLOW}✗ missing${RESET}` : "";
+      lines.push(`  ${BOLD}${nameColor}${wt.name}${RESET}${badge}`);
+      lines.push(`  ${DIM}  branch${RESET}  ${wt.branch}`);
+      lines.push(`  ${DIM}  path${RESET}    ${DIM}${wt.path}${RESET}`);
       lines.push("");
     }
 
     if (originalCwd) {
-      lines.push(`Main tree: ${originalCwd}`);
+      lines.push(`${DIM}Main tree: ${originalCwd}${RESET}`);
     }
 
     ctx.ui.notify(lines.join("\n"), "info");
