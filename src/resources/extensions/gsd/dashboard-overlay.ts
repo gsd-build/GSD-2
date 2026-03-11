@@ -17,6 +17,7 @@ import {
   aggregateByModel, formatCost, formatTokenCount, formatCostProjection,
 } from "./metrics.js";
 import { loadEffectiveGSDPreferences } from "./preferences.js";
+import { getActiveWorktreeName } from "./worktree-command.js";
 
 function formatDuration(ms: number): string {
   const s = Math.floor(ms / 1000);
@@ -273,8 +274,12 @@ export class GSDDashboardOverlay {
       : this.dashData.paused
         ? th.fg("warning", "⏸ PAUSED")
         : th.fg("dim", "idle");
+    const worktreeName = getActiveWorktreeName();
+    const worktreeTag = worktreeName
+      ? `  ${th.fg("warning", `⎇ ${worktreeName}`)}`
+      : "";
     const elapsed = th.fg("dim", formatDuration(this.dashData.elapsed));
-    lines.push(row(joinColumns(`${title}  ${status}`, elapsed, contentWidth)));
+    lines.push(row(joinColumns(`${title}  ${status}${worktreeTag}`, elapsed, contentWidth)));
     lines.push(blank());
 
     if (this.dashData.currentUnit) {

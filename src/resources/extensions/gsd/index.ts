@@ -22,8 +22,10 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
+import { createBashTool } from "@mariozechner/pi-coding-agent";
 
 import { registerGSDCommand } from "./commands.js";
+import { registerWorktreeCommand, getWorktreeOriginalCwd, getActiveWorktreeName } from "./worktree-command.js";
 import { saveFile, formatContinue, loadFile, parseContinue, parseSummary } from "./files.js";
 import { loadPrompt } from "./prompt-loader.js";
 import { deriveState } from "./state.js";
@@ -59,6 +61,16 @@ const GSD_LOGO_LINES = [
 
 export default function (pi: ExtensionAPI) {
   registerGSDCommand(pi);
+  registerWorktreeCommand(pi);
+
+  // ── Dynamic-cwd bash tool ──────────────────────────────────────────────
+  // The built-in bash tool captures cwd at startup. This replacement uses
+  // a spawnHook to read process.cwd() dynamically so that process.chdir()
+  // (used by /worktree switch) propagates to shell commands.
+  const dynamicBash = createBashTool(process.cwd(), {
+    spawnHook: (ctx) => ({ ...ctx, cwd: process.cwd() }),
+  });
+  pi.registerTool(dynamicBash as any);
 
   // ── session_start: render branded GSD header ───────────────────────────
   pi.on("session_start", async (_event, ctx) => {
@@ -131,8 +143,29 @@ export default function (pi: ExtensionAPI) {
 
     const injection = await buildGuidedExecuteContextInjection(event.prompt, process.cwd());
 
+    // Worktree context — tell the LLM it's in a worktree
+    let worktreeBlock = "";
+    const worktreeName = getActiveWorktreeName();
+    const worktreeMainCwd = getWorktreeOriginalCwd();
+    if (worktreeName && worktreeMainCwd) {
+      worktreeBlock = [
+        "",
+        "",
+        "[WORKTREE CONTEXT]",
+        `You are working inside a GSD worktree.`,
+        `- Worktree name: ${worktreeName}`,
+        `- Worktree path: ${process.cwd()}`,
+        `- Main project: ${worktreeMainCwd}`,
+        `- Branch: worktree/${worktreeName}`,
+        `- Current working directory: ${process.cwd()}`,
+        "",
+        "All file operations, bash commands, and GSD state resolve against the worktree path above.",
+        "Use /worktree merge to merge changes back. Use /worktree return to switch back to the main tree.",
+      ].join("\n");
+    }
+
     return {
-      systemPrompt: `${event.systemPrompt}\n\n[SYSTEM CONTEXT — GSD]\n\n${systemContent}${preferenceBlock}${newSkillsBlock}`,
+      systemPrompt: `${event.systemPrompt}\n\n[SYSTEM CONTEXT — GSD]\n\n${systemContent}${preferenceBlock}${newSkillsBlock}${worktreeBlock}`,
       ...(injection
         ? {
           message: {
