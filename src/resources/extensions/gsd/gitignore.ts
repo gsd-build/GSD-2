@@ -17,6 +17,7 @@ const BASELINE_PATTERNS = [
   // ── GSD runtime (not source artifacts) ──
   ".gsd/activity/",
   ".gsd/runtime/",
+  ".gsd/worktrees/",
   ".gsd/auto.lock",
   ".gsd/metrics.json",
   ".gsd/STATE.md",
