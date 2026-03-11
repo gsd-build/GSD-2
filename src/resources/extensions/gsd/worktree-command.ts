@@ -19,14 +19,14 @@ import {
   listWorktrees,
   removeWorktree,
   diffWorktreeGSD,
+  getMainBranch,
   getWorktreeGSDDiff,
   getWorktreeLog,
   worktreeBranchName,
   worktreePath,
 } from "./worktree-manager.js";
 import { existsSync, realpathSync, readFileSync, utimesSync } from "node:fs";
-import { execSync } from "node:child_process";
-import { join, resolve, dirname } from "node:path";
+import { join, resolve } from "node:path";
 
 /**
  * Tracks the original project root so we can switch back.
@@ -94,34 +94,6 @@ export function getActiveWorktreeName(): string | null {
   const rel = cwd.slice(wtDir.length + 1);
   const name = rel.split("/")[0] ?? rel.split("\\")[0];
   return name || null;
-}
-
-function getMainBranch(basePath: string): string {
-  try {
-    const symbolic = execSync("git symbolic-ref refs/remotes/origin/HEAD", {
-      cwd: basePath, stdio: ["ignore", "pipe", "pipe"], encoding: "utf-8",
-    }).trim();
-    const match = symbolic.match(/refs\/remotes\/origin\/(.+)$/);
-    if (match) return match[1]!;
-  } catch { /* ignore */ }
-
-  try {
-    execSync("git show-ref --verify refs/heads/main", {
-      cwd: basePath, stdio: ["ignore", "pipe", "pipe"],
-    });
-    return "main";
-  } catch { /* ignore */ }
-
-  try {
-    execSync("git show-ref --verify refs/heads/master", {
-      cwd: basePath, stdio: ["ignore", "pipe", "pipe"],
-    });
-    return "master";
-  } catch { /* ignore */ }
-
-  return execSync("git branch --show-current", {
-    cwd: basePath, stdio: ["ignore", "pipe", "pipe"], encoding: "utf-8",
-  }).trim();
 }
 
 // ─── Shared completions and handler (used by both /worktree and /wt) ────────
@@ -538,10 +510,12 @@ async function handleRemove(
 ): Promise<void> {
   try {
     const mainBase = originalCwd ?? basePath;
+    const prevCwd = process.cwd();
     removeWorktree(mainBase, name, { deleteBranch: true });
 
-    // If we were in that worktree, we've been chdir'd out — clear tracking
-    if (originalCwd && process.cwd() === originalCwd) {
+    // If we were in that worktree, removeWorktree chdir'd us out — clear tracking
+    if (originalCwd && process.cwd() !== prevCwd) {
+      nudgeGitBranchCache(prevCwd);
       originalCwd = null;
     }
 

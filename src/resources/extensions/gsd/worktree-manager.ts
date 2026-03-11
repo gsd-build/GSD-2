@@ -15,7 +15,7 @@
  *   4. remove()  — git worktree remove + branch cleanup
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { join, relative, resolve } from "node:path";
 
@@ -53,7 +53,7 @@ function runGit(cwd: string, args: string[], opts: { allowFailure?: boolean } = 
   }
 }
 
-function getMainBranch(basePath: string): string {
+export function getMainBranch(basePath: string): string {
   const symbolic = runGit(basePath, ["symbolic-ref", "refs/remotes/origin/HEAD"], { allowFailure: true });
   if (symbolic) {
     const match = symbolic.match(/refs\/remotes\/origin\/(.+)$/);
