@@ -508,7 +508,7 @@ export async function showSmartEntry(
       ));
     } else {
       const choice = await showNextAction(ctx as any, {
-        title: "GSD — Get Stuff Done",
+        title: "GSD — Get Shit Done",
         summary: ["No active milestone."],
         actions: [
           {
