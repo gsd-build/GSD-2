@@ -15,7 +15,8 @@ export type UnitRuntimePhase =
   | "timeout"
   | "recovered"
   | "finalized"
-  | "paused";
+  | "paused"
+  | "skipped";
 
 export interface ExecuteTaskRecoveryStatus {
   planPath: string;

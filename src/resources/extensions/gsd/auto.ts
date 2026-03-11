@@ -27,6 +27,7 @@ import {
   resolveMilestonePath, resolveDir, resolveTasksDir, resolveTaskFiles, resolveTaskFile,
   relMilestoneFile, relSliceFile, relTaskFile, relSlicePath, relMilestonePath,
   milestonesDir, resolveGsdRootFile, relGsdRootFile,
+  buildMilestoneFileName, buildSliceFileName, buildTaskFileName,
 } from "./paths.js";
 import { saveActivityLog } from "./activity-log.js";
 import { synthesizeCrashRecovery, getDeepDiagnostic } from "./session-forensics.js";
@@ -54,7 +55,7 @@ import {
   getProjectTotals, formatCost, formatTokenCount,
 } from "./metrics.js";
 import { join } from "node:path";
-import { readdirSync, readFileSync, existsSync, mkdirSync } from "node:fs";
+import { readdirSync, readFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import {
   autoCommitCurrentBranch,
@@ -1912,6 +1913,7 @@ async function recoverTimedOutUnit(
     }
 
     if (recoveryAttempts < maxRecoveryAttempts) {
+      const isEscalation = recoveryAttempts > 0;
       writeUnitRuntimeRecord(basePath, unitType, unitId, currentUnit.startedAt, {
         phase: "recovered",
         recovery: status,
@@ -1921,11 +1923,19 @@ async function recoverTimedOutUnit(
         progressCount: (runtime?.progressCount ?? 0) + 1,
         lastProgressKind: reason === "idle" ? "idle-recovery-retry" : "hard-recovery-retry",
       });
-      pi.sendMessage(
-        {
-          customType: "gsd-auto-timeout-recovery",
-          display: verbose,
-          content: [
+
+      const steeringLines = isEscalation
+        ? [
+            `**FINAL ${reason === "idle" ? "IDLE" : "HARD TIMEOUT"} RECOVERY — last chance before this task is skipped.**`,
+            `You are still executing ${unitType} ${unitId}.`,
+            `Recovery attempt ${recoveryAttempts + 1} of ${maxRecoveryAttempts}.`,
+            `Current durability status: ${formatExecuteTaskRecoveryStatus(status)}.`,
+            "You MUST finish the durable output NOW, even if incomplete.",
+            "Write the task summary with whatever you have accomplished so far.",
+            "Mark the task [x] in the plan. Commit your work.",
+            "A partial summary is infinitely better than no summary.",
+          ]
+        : [
             `**${reason === "idle" ? "IDLE" : "HARD TIMEOUT"} RECOVERY — do not stop.**`,
             `You are still executing ${unitType} ${unitId}.`,
             `Recovery attempt ${recoveryAttempts + 1} of ${maxRecoveryAttempts}.`,
@@ -1933,7 +1943,13 @@ async function recoverTimedOutUnit(
             "Do not keep exploring.",
             "Immediately finish the required durable output for this unit.",
             "If full completion is impossible, write the partial artifact/state needed for recovery and make the blocker explicit.",
-          ].join("\n"),
+          ];
+
+      pi.sendMessage(
+        {
+          customType: "gsd-auto-timeout-recovery",
+          display: verbose,
+          content: steeringLines.join("\n"),
         },
         { triggerTurn: true, deliverAs: "steer" },
       );
@@ -1944,7 +1960,29 @@ async function recoverTimedOutUnit(
       return "recovered";
     }
 
+    // Retries exhausted — write missing durable artifacts and advance.
     const diagnostic = formatExecuteTaskRecoveryStatus(status);
+    const [mid, sid, tid] = unitId.split("/");
+    const skipped = mid && sid && tid
+      ? skipExecuteTask(basePath, mid, sid, tid, status, reason, maxRecoveryAttempts)
+      : false;
+
+    if (skipped) {
+      writeUnitRuntimeRecord(basePath, unitType, unitId, currentUnit.startedAt, {
+        phase: "skipped",
+        recovery: status,
+        recoveryAttempts: recoveryAttempts + 1,
+        lastRecoveryReason: reason,
+      });
+      ctx.ui.notify(
+        `${unitType} ${unitId} skipped after ${maxRecoveryAttempts} recovery attempts (${diagnostic}). Blocker artifacts written. Advancing pipeline.`,
+        "warning",
+      );
+      await dispatchNextUnit(ctx, pi);
+      return "recovered";
+    }
+
+    // Fallback: couldn't write skip artifacts — pause as before.
     writeUnitRuntimeRecord(basePath, unitType, unitId, currentUnit.startedAt, {
       phase: "paused",
       recovery: status,
@@ -1959,7 +1997,26 @@ async function recoverTimedOutUnit(
   }
 
   const expected = diagnoseExpectedArtifact(unitType, unitId, basePath) ?? "required durable artifact";
+
+  // Check if the artifact already exists on disk — agent may have written it
+  // without signaling completion.
+  const artifactPath = resolveExpectedArtifactPath(unitType, unitId, basePath);
+  if (artifactPath && existsSync(artifactPath)) {
+    writeUnitRuntimeRecord(basePath, unitType, unitId, currentUnit.startedAt, {
+      phase: "finalized",
+      recoveryAttempts: recoveryAttempts + 1,
+      lastRecoveryReason: reason,
+    });
+    ctx.ui.notify(
+      `${reason === "idle" ? "Idle" : "Timeout"} recovery: ${unitType} ${unitId} artifact already exists on disk. Advancing.`,
+      "info",
+    );
+    await dispatchNextUnit(ctx, pi);
+    return "recovered";
+  }
+
   if (recoveryAttempts < maxRecoveryAttempts) {
+    const isEscalation = recoveryAttempts > 0;
     writeUnitRuntimeRecord(basePath, unitType, unitId, currentUnit.startedAt, {
       phase: "recovered",
       recoveryAttempts: recoveryAttempts + 1,
@@ -1968,11 +2025,19 @@ async function recoverTimedOutUnit(
       progressCount: (runtime?.progressCount ?? 0) + 1,
       lastProgressKind: reason === "idle" ? "idle-recovery-retry" : "hard-recovery-retry",
     });
-    pi.sendMessage(
-      {
-        customType: "gsd-auto-timeout-recovery",
-        display: verbose,
-        content: [
+
+    const steeringLines = isEscalation
+      ? [
+          `**FINAL ${reason === "idle" ? "IDLE" : "HARD TIMEOUT"} RECOVERY — last chance before skip.**`,
+          `You are still executing ${unitType} ${unitId}.`,
+          `Recovery attempt ${recoveryAttempts + 1} of ${maxRecoveryAttempts} — next failure skips this unit.`,
+          `Expected durable output: ${expected}.`,
+          "You MUST write the artifact file NOW, even if incomplete.",
+          "Write whatever you have — partial research, preliminary findings, best-effort analysis.",
+          "A partial artifact is infinitely better than no artifact.",
+          "If you are truly blocked, write the file with a BLOCKER section explaining why.",
+        ]
+      : [
           `**${reason === "idle" ? "IDLE" : "HARD TIMEOUT"} RECOVERY — stay in auto-mode.**`,
           `You are still executing ${unitType} ${unitId}.`,
           `Recovery attempt ${recoveryAttempts + 1} of ${maxRecoveryAttempts}.`,
@@ -1980,7 +2045,13 @@ async function recoverTimedOutUnit(
           "Stop broad exploration.",
           "Write the required artifact now.",
           "If blocked, write the partial artifact and explicitly record the blocker instead of going silent.",
-        ].join("\n"),
+        ];
+
+    pi.sendMessage(
+      {
+        customType: "gsd-auto-timeout-recovery",
+        display: verbose,
+        content: steeringLines.join("\n"),
       },
       { triggerTurn: true, deliverAs: "steer" },
     );
@@ -1991,12 +2062,144 @@ async function recoverTimedOutUnit(
     return "recovered";
   }
 
+  // Retries exhausted — write a blocker placeholder and advance the pipeline
+  // instead of silently stalling.
+  const placeholder = writeBlockerPlaceholder(
+    unitType, unitId, basePath,
+    `${reason} recovery exhausted ${maxRecoveryAttempts} attempts without producing the artifact.`,
+  );
+
+  if (placeholder) {
+    writeUnitRuntimeRecord(basePath, unitType, unitId, currentUnit.startedAt, {
+      phase: "skipped",
+      recoveryAttempts: recoveryAttempts + 1,
+      lastRecoveryReason: reason,
+    });
+    ctx.ui.notify(
+      `${unitType} ${unitId} skipped after ${maxRecoveryAttempts} recovery attempts. Blocker placeholder written to ${placeholder}. Advancing pipeline.`,
+      "warning",
+    );
+    await dispatchNextUnit(ctx, pi);
+    return "recovered";
+  }
+
+  // Fallback: couldn't resolve artifact path — pause as before.
   writeUnitRuntimeRecord(basePath, unitType, unitId, currentUnit.startedAt, {
     phase: "paused",
     recoveryAttempts: recoveryAttempts + 1,
     lastRecoveryReason: reason,
   });
   return "paused";
+}
+
+/**
+ * Write skip artifacts for a stuck execute-task: a blocker task summary and
+ * the [x] checkbox in the slice plan. Returns true if artifacts were written.
+ */
+export function skipExecuteTask(
+  base: string, mid: string, sid: string, tid: string,
+  status: { summaryExists: boolean; taskChecked: boolean },
+  reason: string, maxAttempts: number,
+): boolean {
+  // Write a blocker task summary if missing.
+  if (!status.summaryExists) {
+    const tasksDir = resolveTasksDir(base, mid, sid);
+    const sDir = resolveSlicePath(base, mid, sid);
+    const targetDir = tasksDir ?? (sDir ? join(sDir, "tasks") : null);
+    if (!targetDir) return false;
+    if (!existsSync(targetDir)) mkdirSync(targetDir, { recursive: true });
+    const summaryPath = join(targetDir, buildTaskFileName(tid, "SUMMARY"));
+    const content = [
+      `# BLOCKER — task skipped by auto-mode recovery`,
+      ``,
+      `Task \`${tid}\` in slice \`${sid}\` (milestone \`${mid}\`) failed to complete after ${reason} recovery exhausted ${maxAttempts} attempts.`,
+      ``,
+      `This placeholder was written by auto-mode so the pipeline can advance.`,
+      `Review this task manually and replace this file with a real summary.`,
+    ].join("\n");
+    writeFileSync(summaryPath, content, "utf-8");
+  }
+
+  // Mark [x] in the slice plan if not already checked.
+  if (!status.taskChecked) {
+    const planAbs = resolveSliceFile(base, mid, sid, "PLAN");
+    if (planAbs && existsSync(planAbs)) {
+      const planContent = readFileSync(planAbs, "utf-8");
+      const escapedTid = tid.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const re = new RegExp(`^(- \\[) \\] (\\*\\*${escapedTid}:)`, "m");
+      if (re.test(planContent)) {
+        writeFileSync(planAbs, planContent.replace(re, "$1x] $2"), "utf-8");
+      }
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Resolve the expected artifact for a non-execute-task unit to an absolute path.
+ * Returns null for unit types that don't produce a single file (execute-task,
+ * complete-slice, replan-slice).
+ */
+export function resolveExpectedArtifactPath(unitType: string, unitId: string, base: string): string | null {
+  const parts = unitId.split("/");
+  const mid = parts[0]!;
+  const sid = parts[1];
+  switch (unitType) {
+    case "research-milestone": {
+      const dir = resolveMilestonePath(base, mid);
+      return dir ? join(dir, buildMilestoneFileName(mid, "RESEARCH")) : null;
+    }
+    case "plan-milestone": {
+      const dir = resolveMilestonePath(base, mid);
+      return dir ? join(dir, buildMilestoneFileName(mid, "ROADMAP")) : null;
+    }
+    case "research-slice": {
+      const dir = resolveSlicePath(base, mid, sid!);
+      return dir ? join(dir, buildSliceFileName(sid!, "RESEARCH")) : null;
+    }
+    case "plan-slice": {
+      const dir = resolveSlicePath(base, mid, sid!);
+      return dir ? join(dir, buildSliceFileName(sid!, "PLAN")) : null;
+    }
+    case "reassess-roadmap": {
+      const dir = resolveSlicePath(base, mid, sid!);
+      return dir ? join(dir, buildSliceFileName(sid!, "ASSESSMENT")) : null;
+    }
+    case "run-uat": {
+      const dir = resolveSlicePath(base, mid, sid!);
+      return dir ? join(dir, buildSliceFileName(sid!, "UAT-RESULT")) : null;
+    }
+    case "complete-milestone": {
+      const dir = resolveMilestonePath(base, mid);
+      return dir ? join(dir, buildMilestoneFileName(mid, "SUMMARY")) : null;
+    }
+    default:
+      return null;
+  }
+}
+
+/**
+ * Write a placeholder artifact so the pipeline can advance past a stuck unit.
+ * Returns the relative path written, or null if the path couldn't be resolved.
+ */
+export function writeBlockerPlaceholder(unitType: string, unitId: string, base: string, reason: string): string | null {
+  const absPath = resolveExpectedArtifactPath(unitType, unitId, base);
+  if (!absPath) return null;
+  const dir = absPath.substring(0, absPath.lastIndexOf("/"));
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  const content = [
+    `# BLOCKER — auto-mode recovery failed`,
+    ``,
+    `Unit \`${unitType}\` for \`${unitId}\` failed to produce this artifact after idle recovery exhausted all retries.`,
+    ``,
+    `**Reason**: ${reason}`,
+    ``,
+    `This placeholder was written by auto-mode so the pipeline can advance.`,
+    `Review and replace this file before relying on downstream artifacts.`,
+  ].join("\n");
+  writeFileSync(absPath, content, "utf-8");
+  return diagnoseExpectedArtifact(unitType, unitId, base);
 }
 
 function diagnoseExpectedArtifact(unitType: string, unitId: string, base: string): string | null {
