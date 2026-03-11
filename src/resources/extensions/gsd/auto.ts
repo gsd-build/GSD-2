@@ -60,6 +60,8 @@ import { execSync } from "node:child_process";
 import {
   autoCommitCurrentBranch,
   ensureSliceBranch,
+  getCurrentBranch,
+  getSliceBranchName,
   switchToMain,
   mergeSliceToMain,
 } from "./worktree.ts";
@@ -787,39 +789,53 @@ async function dispatchNextUnit(
     return;
   }
 
-  // ── Post-completion merge: merge the slice branch after complete-slice finishes ──
-  // The complete-slice unit writes the summary, UAT, marks roadmap [x], and commits.
-  // Now we switch to main and squash-merge the slice branch.
-  if (currentUnit?.type === "complete-slice") {
-    try {
-      const [completedMid, completedSid] = currentUnit.id.split("/");
-      // Look up actual slice title from roadmap (on current branch, before switching)
-      const roadmapFile = resolveMilestoneFile(basePath, completedMid!, "ROADMAP");
+  // ── General merge guard: merge completed slice branches before advancing ──
+  // If we're on a gsd/MID/SID branch and that slice is done (roadmap [x]),
+  // merge to main before dispatching the next unit. This handles:
+  //   - Normal complete-slice → merge → reassess flow
+  //   - LLM writes summary during task execution, skipping complete-slice
+  //   - Doctor post-hook marks everything done, skipping complete-slice
+  //   - complete-milestone runs on a slice branch (last slice bypass)
+  {
+    const currentBranch = getCurrentBranch(basePath);
+    const branchMatch = currentBranch.match(/^gsd\/(M\d+)\/(S\d+)$/);
+    if (branchMatch) {
+      const branchMid = branchMatch[1]!;
+      const branchSid = branchMatch[2]!;
+      // Check if this slice is marked done in the roadmap
+      const roadmapFile = resolveMilestoneFile(basePath, branchMid, "ROADMAP");
       const roadmapContent = roadmapFile ? await loadFile(roadmapFile) : null;
-      let sliceTitleForMerge = completedSid!;
       if (roadmapContent) {
         const roadmap = parseRoadmap(roadmapContent);
-        const sliceEntry = roadmap.slices.find(s => s.id === completedSid);
-        if (sliceEntry) sliceTitleForMerge = sliceEntry.title;
+        const sliceEntry = roadmap.slices.find(s => s.id === branchSid);
+        if (sliceEntry?.done) {
+          try {
+            const sliceTitleForMerge = sliceEntry.title || branchSid;
+            switchToMain(basePath);
+            const mergeResult = mergeSliceToMain(
+              basePath, branchMid, branchSid, sliceTitleForMerge,
+            );
+            ctx.ui.notify(
+              `Merged ${mergeResult.branch} → main.`,
+              "info",
+            );
+            // Re-derive state from main so downstream logic sees merged state
+            state = await deriveState(basePath);
+            mid = state.activeMilestone?.id;
+            midTitle = state.activeMilestone?.title;
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            ctx.ui.notify(
+              `Slice merge failed: ${message}`,
+              "error",
+            );
+            // Re-derive state so dispatch can figure out what to do
+            state = await deriveState(basePath);
+            mid = state.activeMilestone?.id;
+            midTitle = state.activeMilestone?.title;
+          }
+        }
       }
-      switchToMain(basePath);
-      const mergeResult = mergeSliceToMain(
-        basePath, completedMid!, completedSid!, sliceTitleForMerge,
-      );
-      ctx.ui.notify(
-        `Merged ${mergeResult.branch} → main.`,
-        "info",
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      ctx.ui.notify(
-        `Slice merge failed: ${message}`,
-        "error",
-      );
-      // Re-derive state so dispatch can figure out what to do
-      state = await deriveState(basePath);
-      mid = state.activeMilestone?.id;
-      midTitle = state.activeMilestone?.title;
     }
   }
 

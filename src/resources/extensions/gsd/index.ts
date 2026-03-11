@@ -102,7 +102,7 @@ export default function (pi: ExtensionAPI) {
   };
   pi.registerTool(dynamicBash as any);
 
-  // ── session_start: render branded GSD header ───────────────────────────
+  // ── session_start: render branded GSD header + remote channel status ──
   pi.on("session_start", async (_event, ctx) => {
     const theme = ctx.ui.theme;
     const version = process.env.GSD_VERSION || "0.0.0";
@@ -112,6 +112,22 @@ export default function (pi: ExtensionAPI) {
 
     const headerContent = `${logoText}\n${titleLine}`;
     ctx.ui.setHeader((_ui, _theme) => new Text(headerContent, 1, 0));
+
+    // Notify remote questions status if configured
+    try {
+      const [{ getRemoteConfigStatus }, { getLatestPromptSummary }] = await Promise.all([
+        import("../remote-questions/config.js"),
+        import("../remote-questions/status.js"),
+      ]);
+      const status = getRemoteConfigStatus();
+      const latest = getLatestPromptSummary();
+      if (!status.includes("not configured")) {
+        const suffix = latest ? `\nLast remote prompt: ${latest.id} (${latest.status})` : "";
+        ctx.ui.notify(`${status}${suffix}`, status.includes("disabled") ? "warning" : "info");
+      }
+    } catch {
+      // Remote questions module not available — ignore
+    }
   });
 
   // ── Ctrl+Alt+G shortcut — GSD dashboard overlay ────────────────────────

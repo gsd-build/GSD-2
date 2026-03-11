@@ -31,6 +31,13 @@ export interface AutoSupervisorConfig {
   hard_timeout_minutes?: number;
 }
 
+export interface RemoteQuestionsConfig {
+  channel: "slack" | "discord";
+  channel_id: string | number;
+  timeout_minutes?: number;        // clamped to 1-30
+  poll_interval_seconds?: number;  // clamped to 2-30
+}
+
 export interface GSDPreferences {
   version?: number;
   always_use_skills?: string[];
@@ -43,6 +50,7 @@ export interface GSDPreferences {
   auto_supervisor?: AutoSupervisorConfig;
   uat_dispatch?: boolean;
   budget_ceiling?: number;
+  remote_questions?: RemoteQuestionsConfig;
 }
 
 export interface LoadedGSDPreferences {
@@ -430,7 +438,12 @@ function parseFrontmatterBlock(frontmatter: string): GSDPreferences {
 function parseScalar(value: string): string | number | boolean {
   if (value === "true") return true;
   if (value === "false") return false;
-  if (/^-?\d+$/.test(value)) return Number(value);
+  if (/^-?\d+$/.test(value)) {
+    const n = Number(value);
+    // Keep large integers (e.g. Discord channel IDs) as strings to avoid precision loss
+    if (Number.isSafeInteger(n)) return n;
+    return value;
+  }
   return value.replace(/^['\"]|['\"]$/g, "");
 }
 
@@ -495,6 +508,9 @@ function mergePreferences(base: GSDPreferences, override: GSDPreferences): GSDPr
     auto_supervisor: { ...(base.auto_supervisor ?? {}), ...(override.auto_supervisor ?? {}) },
     uat_dispatch: override.uat_dispatch ?? base.uat_dispatch,
     budget_ceiling: override.budget_ceiling ?? base.budget_ceiling,
+    remote_questions: override.remote_questions
+      ? { ...(base.remote_questions ?? {}), ...override.remote_questions }
+      : base.remote_questions,
   };
 }
 

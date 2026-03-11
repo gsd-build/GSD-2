@@ -21,11 +21,26 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface AskUserQuestionsDetails {
+interface LocalResultDetails {
+	remote?: false;
 	questions: Question[];
 	response: RoundResult | null;
 	cancelled: boolean;
 }
+
+interface RemoteResultDetails {
+	remote: true;
+	channel: string;
+	timed_out: boolean;
+	promptId?: string;
+	threadUrl?: string;
+	status?: string;
+	questions?: Question[];
+	response?: import("./remote-questions/types.js").RemoteAnswer;
+	error?: boolean;
+}
+
+type AskUserQuestionsDetails = LocalResultDetails | RemoteResultDetails;
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
@@ -104,7 +119,7 @@ export default function AskUserQuestions(pi: ExtensionAPI) {
 		],
 		parameters: AskUserQuestionsParams,
 
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			// Validation
 			if (params.questions.length === 0 || params.questions.length > 3) {
 				return errorResult("Error: questions must contain 1-3 items", params.questions);
@@ -120,6 +135,9 @@ export default function AskUserQuestions(pi: ExtensionAPI) {
 			}
 
 			if (!ctx.hasUI) {
+				const { tryRemoteQuestions } = await import("./remote-questions/manager.js");
+				const remoteResult = await tryRemoteQuestions(params.questions, signal);
+				if (remoteResult) return remoteResult;
 				return errorResult("Error: UI not available (non-interactive mode)", params.questions);
 			}
 
@@ -131,13 +149,13 @@ export default function AskUserQuestions(pi: ExtensionAPI) {
 			if (!hasAnswers) {
 				return {
 					content: [{ type: "text", text: "ask_user_questions was cancelled before receiving a response" }],
-					details: { questions: params.questions, response: null, cancelled: true } as AskUserQuestionsDetails,
+					details: { questions: params.questions, response: null, cancelled: true } satisfies LocalResultDetails,
 				};
 			}
 
 			return {
 				content: [{ type: "text", text: formatForLLM(result) }],
-				details: { questions: params.questions, response: result, cancelled: false } as AskUserQuestionsDetails,
+				details: { questions: params.questions, response: result, cancelled: false } satisfies LocalResultDetails,
 			};
 		},
 
@@ -171,13 +189,44 @@ export default function AskUserQuestions(pi: ExtensionAPI) {
 				return new Text(text?.type === "text" ? text.text : "", 0, 0);
 			}
 
+			// Remote channel result (discriminated on details.remote === true)
+			if (details.remote) {
+				if (details.timed_out) {
+					return new Text(
+						`${theme.fg("warning", `${details.channel} — timed out`)}${details.threadUrl ? theme.fg("dim", ` ${details.threadUrl}`) : ""}`,
+						0,
+						0,
+					);
+				}
+
+				const questions = (details.questions ?? []) as Question[];
+				const lines: string[] = [];
+				lines.push(theme.fg("dim", details.channel));
+				if (details.response) {
+					for (const q of questions) {
+						const answer = details.response.answers[q.id];
+						if (!answer) {
+							lines.push(`${theme.fg("accent", q.header)}: ${theme.fg("dim", "(no answer)")}`);
+							continue;
+						}
+						const answerText = answer.answers.length > 0 ? answer.answers.join(", ") : "(custom)";
+						let line = `${theme.fg("success", "✓ ")}${theme.fg("accent", q.header)}: ${answerText}`;
+						if (answer.user_note) {
+							line += ` ${theme.fg("muted", `[note: ${answer.user_note}]`)}`;
+						}
+						lines.push(line);
+					}
+				}
+				return new Text(lines.join("\n"), 0, 0);
+			}
+
 			if (details.cancelled || !details.response) {
 				return new Text(theme.fg("warning", "Cancelled"), 0, 0);
 			}
 
 			const lines: string[] = [];
 			for (const q of details.questions) {
-				const answer = details.response.answers[q.id];
+				const answer = (details.response as RoundResult).answers[q.id];
 				if (!answer) {
 					lines.push(`${theme.fg("accent", q.header)}: ${theme.fg("dim", "(no answer)")}`);
 					continue;
