@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Native Desktop
 status: in_progress
-last_updated: "2026-03-12T18:16:21.009Z"
+last_updated: "2026-03-12T18:26:18.630Z"
 last_activity: "2026-03-12 — Plan 11.1-02 complete: wired guard, reconcile interval pause, MAX_SESSIONS consolidated, validateConfigState added"
 progress:
   total_phases: 10
   completed_phases: 1
   total_plans: 10
-  completed_plans: 5
+  completed_plans: 6
 ---
 
 ---
@@ -85,6 +85,10 @@ Progress: [██████████] 100% (v2.0 phase 11.1)
 - [Phase 11.1]: validateConfigState uses manual typeof field-by-field checks rather than Zod — no new dependencies, consistent with project conventions
 - [Phase 12-01]: Static source-text strategy for SettingsView tests: read SettingsView.tsx as string, assert GSD 2 field labels — avoids React hook rendering complexity in Bun test environment
 - [Phase 12-01]: migration-banner and state-deriver GSD 2 tests are GREEN not RED because state-deriver.ts was already migrated to GSD 2 schema in the working tree before plan execution
+- [Phase 12]: PlanningState aliased to GSD2State (not removed) so all 20+ import sites continue to compile in Phase 12
+- [Phase 12]: v1 types (ProjectState, PhaseState, ConfigState) kept as deprecated stubs to prevent UI component breakage; to be removed in Phases 13-14
+- [Phase 12]: pipeline.ts skip_permissions hardcoded to true, worktree_enabled to false — config.json is gone in GSD2; TODO Phase 13
+- [Phase 12]: parseGSD2State splits on newline-triple-dash to find all YAML blocks and uses the LAST one with valid GSD2 fields
 
 ### Blockers/Concerns
 
