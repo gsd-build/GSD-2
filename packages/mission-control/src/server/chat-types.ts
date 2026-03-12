@@ -136,3 +136,37 @@ export interface ModeEvent {
 // WebSocket broadcast event types (not ModeEvents — sent via publishChat):
 // { type: "preview_open", port: number }   — fired when dev server port detected
 // { type: "preview_close" }               — fired when preview is dismissed
+
+// -- GSD 2 / Pi SDK stream event types --
+
+export type GSD2EventType =
+  | "plain_text"
+  | "tool_use"
+  | "tool_result"
+  | "phase_transition"
+  | "cost_update"
+  | "stuck_detection"
+  | "timeout"
+  | "auto_mode_announcement";
+
+export type PhaseTransitionPhase = "Research" | "Planning" | "Executing" | "Complete";
+
+export interface PiSdkCostData {
+  total_cost_usd: number;
+  input_tokens: number;
+  output_tokens: number;
+}
+
+export interface PiSdkPhaseTransition {
+  phase: PhaseTransitionPhase;
+}
+
+export type GSD2StreamEvent =
+  | { kind: "plain_text"; text: string }
+  | { kind: "tool_use"; name: string; input: unknown }
+  | { kind: "tool_result"; tool_use_id: string; content: unknown }
+  | { kind: "phase_transition"; phase: PhaseTransitionPhase }
+  | { kind: "cost_update"; total_cost_usd: number; input_tokens: number; output_tokens: number }
+  | { kind: "stuck_detection"; message: string }
+  | { kind: "timeout"; message: string; elapsed_seconds: number }
+  | { kind: "auto_mode_announcement"; mode: "start" | "stop"; slice?: string };
