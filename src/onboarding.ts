@@ -10,9 +10,12 @@
  * All steps are skippable. All errors are recoverable. Never crashes boot.
  */
 
-import { exec } from 'node:child_process'
+import { exec, execSync } from 'node:child_process'
+import { existsSync, writeFileSync, mkdirSync } from 'node:fs'
+import { join } from 'node:path'
 import type { AuthStorage } from '@mariozechner/pi-coding-agent'
 import { renderLogo } from './logo.js'
+import { agentDir } from './app-paths.js'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -104,6 +107,89 @@ const OTHER_PROVIDERS = [
   { value: 'mistral', label: 'Mistral' },
 ]
 
+// ─── Custom Provider Presets ──────────────────────────────────────────────────
+
+export interface CustomProviderPreset {
+  baseUrl: string
+  api: string
+  apiKey: string
+  exampleModel: string
+  needsApiKey: boolean
+  label: string
+}
+
+export const CUSTOM_PROVIDER_PRESETS: Record<string, CustomProviderPreset> = {
+  ollama: {
+    baseUrl: 'http://localhost:11434/v1',
+    api: 'openai-completions',
+    apiKey: 'ollama',
+    exampleModel: 'llama3.1:8b',
+    needsApiKey: false,
+    label: 'Ollama',
+  },
+  'lm-studio': {
+    baseUrl: 'http://localhost:1234/v1',
+    api: 'openai-completions',
+    apiKey: 'lm-studio',
+    exampleModel: 'loaded-model',
+    needsApiKey: false,
+    label: 'LM Studio',
+  },
+  vllm: {
+    baseUrl: 'http://localhost:8000/v1',
+    api: 'openai-completions',
+    apiKey: 'VLLM_API_KEY',
+    exampleModel: 'meta-llama/Llama-3.1-8B',
+    needsApiKey: true,
+    label: 'vLLM',
+  },
+  generic: {
+    baseUrl: 'https://api.example.com/v1',
+    api: 'openai-completions',
+    apiKey: 'YOUR_API_KEY',
+    exampleModel: 'model-name',
+    needsApiKey: true,
+    label: 'Generic OpenAI-compatible',
+  },
+}
+
+/**
+ * Generate a models.json template for a custom provider preset.
+ *
+ * Returns the stringified JSON (pretty-printed), the provider key name
+ * (used as the provider ID in auth.json), and whether the preset needs
+ * a user-supplied API key.
+ *
+ * Pure function — no file I/O, no prompts.
+ */
+export function generateModelsTemplate(preset: string): {
+  json: string
+  providerName: string
+  needsApiKey: boolean
+} {
+  const config = CUSTOM_PROVIDER_PRESETS[preset]
+  if (!config) {
+    throw new Error(`Unknown custom provider preset: ${preset}`)
+  }
+
+  const template = {
+    providers: {
+      [preset]: {
+        baseUrl: config.baseUrl,
+        api: config.api,
+        apiKey: config.apiKey,
+        models: [{ id: config.exampleModel }],
+      },
+    },
+  }
+
+  return {
+    json: JSON.stringify(template, null, 2),
+    providerName: preset,
+    needsApiKey: config.needsApiKey,
+  }
+}
+
 // ─── Dynamic imports ──────────────────────────────────────────────────────────
 
 /**
@@ -153,18 +239,26 @@ function isCancelError(p: ClackModule, err: unknown): boolean {
  *
  * Returns true when:
  * - No LLM provider has credentials in authStorage
+ * - No models.json file exists (custom provider not configured)
  * - We're on a TTY (interactive terminal)
  *
  * Returns false (skip wizard) when:
  * - Any LLM provider is already authed (returning user)
+ * - A models.json file exists at agentDir (custom provider configured)
  * - Not a TTY (piped input, subagent, CI)
+ *
+ * @param authStorage - credential store to check for LLM provider auth
+ * @param agentDirOverride - optional override for the agent directory (used in tests)
  */
-export function shouldRunOnboarding(authStorage: AuthStorage): boolean {
+export function shouldRunOnboarding(authStorage: AuthStorage, agentDirOverride?: string): boolean {
   if (!process.stdin.isTTY) return false
   // Check if any LLM provider has credentials
   const authedProviders = authStorage.list()
   const hasLlmAuth = authedProviders.some(id => LLM_PROVIDER_IDS.includes(id))
-  return !hasLlmAuth
+  // Check if a custom provider has been configured via models.json
+  const dir = agentDirOverride ?? agentDir
+  const hasModelsJson = existsSync(join(dir, 'models.json'))
+  return !hasLlmAuth && !hasModelsJson
 }
 
 /**
@@ -263,6 +357,7 @@ async function runLlmStep(p: ClackModule, pc: PicoModule, authStorage: AuthStora
       { value: 'google-gemini-cli-oauth', label: 'Google Gemini CLI (OAuth login)' },
       { value: 'google-antigravity-oauth', label: 'Antigravity — Gemini 3, Claude, GPT-OSS (OAuth login)' },
       { value: 'other-api-key', label: 'Other provider (API key)' },
+      { value: 'custom-provider', label: 'Custom/Local provider (Ollama, LM Studio, etc.)', hint: 'bring your own models.json' },
       { value: 'skip', label: 'Skip for now', hint: 'use /login inside GSD later' },
     ],
   })
@@ -295,6 +390,9 @@ async function runLlmStep(p: ClackModule, pc: PicoModule, authStorage: AuthStora
   }
   if (choice === 'other-api-key') {
     return await runOtherProviderFlow(p, pc, authStorage)
+  }
+  if (choice === 'custom-provider') {
+    return await runCustomProviderFlow(p, pc, authStorage)
   }
 
   return false
@@ -418,6 +516,104 @@ async function runOtherProviderFlow(
   if (p.isCancel(provider)) return false
   const label = OTHER_PROVIDERS.find(op => op.value === provider)?.label ?? String(provider)
   return runApiKeyFlow(p, pc, authStorage, provider as string, label)
+}
+
+// ─── Custom Provider Flow ─────────────────────────────────────────────────────
+
+async function runCustomProviderFlow(
+  p: ClackModule,
+  pc: PicoModule,
+  authStorage: AuthStorage,
+): Promise<boolean> {
+  // Preset selection
+  const presetOptions = Object.entries(CUSTOM_PROVIDER_PRESETS).map(([key, config]) => ({
+    value: key,
+    label: config.label,
+    hint: config.needsApiKey ? 'requires API key' : 'no API key needed',
+  }))
+
+  const preset = await p.select({
+    message: 'Select your local/custom provider',
+    options: presetOptions,
+  })
+
+  if (p.isCancel(preset)) return false
+
+  const modelsJsonPath = join(agentDir, 'models.json')
+
+  // Overwrite guard — don't clobber existing models.json
+  if (existsSync(modelsJsonPath)) {
+    const openExisting = await p.confirm({
+      message: 'models.json already exists — open it in your editor?',
+      initialValue: true,
+    })
+
+    if (p.isCancel(openExisting)) return false
+
+    if (openExisting) {
+      openInEditor(modelsJsonPath, p, pc)
+    }
+    return false
+  }
+
+  // Generate and write template
+  const { json, providerName, needsApiKey } = generateModelsTemplate(preset as string)
+
+  try {
+    mkdirSync(agentDir, { recursive: true })
+    writeFileSync(modelsJsonPath, json, 'utf-8')
+  } catch (err) {
+    p.log.warn(`Failed to write models.json: ${err instanceof Error ? err.message : String(err)}`)
+    return false
+  }
+
+  // API key collection (or skip for local providers)
+  if (needsApiKey) {
+    const key = await p.password({
+      message: `Paste your ${CUSTOM_PROVIDER_PRESETS[preset as string].label} API key:`,
+      mask: '●',
+    })
+
+    if (!p.isCancel(key) && key) {
+      const trimmed = (key as string).trim()
+      if (trimmed) {
+        authStorage.set(providerName, { type: 'api_key', key: trimmed })
+        p.log.success(`API key saved for ${pc.green(providerName)}`)
+      }
+    }
+  } else {
+    p.log.info(`No API key needed — ${CUSTOM_PROVIDER_PRESETS[preset as string].label} runs locally`)
+  }
+
+  // Open in editor
+  openInEditor(modelsJsonPath, p, pc)
+
+  // Success message
+  p.log.success(
+    `${pc.green(providerName)} provider configured\n` +
+    `  Template: ${pc.cyan(modelsJsonPath)}\n` +
+    `  ${pc.yellow('Restart GSD to use your custom models')}`
+  )
+
+  return true
+}
+
+/** Attempt to open a file in $VISUAL, $EDITOR, or vi. Falls back to showing the path. */
+function openInEditor(filePath: string, p: ClackModule, pc: PicoModule): void {
+  const editor = process.env.VISUAL || process.env.EDITOR
+  if (editor) {
+    try {
+      execSync(`${editor} "${filePath}"`, { stdio: 'inherit' })
+    } catch {
+      p.note(pc.cyan(filePath), 'Edit your models.json at')
+    }
+  } else {
+    try {
+      execSync(`vi "${filePath}"`, { stdio: 'inherit' })
+    } catch {
+      p.note(pc.cyan(filePath), 'Edit your models.json at')
+    }
+  }
 }
 
 // ─── Tool API Keys Step ───────────────────────────────────────────────────────
