@@ -69,7 +69,20 @@ async function runMcporter(
 	signal?: AbortSignal,
 	timeoutMs = 30000,
 ): Promise<string> {
-	// Use shell exec so PATH resolution works in all contexts
+	// Cross-platform: use execFile on Windows to avoid quote handling issues
+	// On Windows, cmd.exe doesn't strip single quotes like Unix shells do
+	if (process.platform === "win32") {
+		// Use execFile directly - Windows doesn't need shell for PATH resolution here
+		const { stdout } = await execFileAsync("mcporter", args, {
+			timeout: timeoutMs,
+			maxBuffer: 1024 * 1024,
+			signal,
+			env: { ...process.env },
+			shell: true, // Enable shell for PATH resolution on Windows
+		});
+		return stdout;
+	}
+	// Use shell exec so PATH resolution works on Unix
 	const escaped = args.map((a) => `'${a.replace(/'/g, "'\\''")}'`).join(" ");
 	const { stdout } = await execAsync(`mcporter ${escaped}`, {
 		timeout: timeoutMs,
