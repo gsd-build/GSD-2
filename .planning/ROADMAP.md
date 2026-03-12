@@ -33,7 +33,7 @@
 **Milestone Goal:** Wrap Mission Control in a Tauri 2 native app, migrate all GSD v1 conventions to GSD 2 (`.gsd/`, `gsd` CLI, Pi SDK streaming), add OAuth + keychain, a Builder mode for non-technical users, and ship signed installers for macOS and Windows.
 
 - [x] **Phase 11.1: Pre-v2.0 Stabilization (INSERTED)** — Address CONCERNS.md: config bridge, security hardening, fragile areas, tech debt, and missing critical features before v2.0 begins (completed 2026-03-12)
-- [ ] **Phase 12: GSD 2 Compatibility Pass** — Migrate file watcher, state schema, child process, and command syntax to GSD 2 conventions
+- [x] **Phase 12: GSD 2 Compatibility Pass** — Migrate file watcher, state schema, child process, and command syntax to GSD 2 conventions (completed 2026-03-12)
 - [ ] **Phase 13: Session Streaming Hardening** — Pi SDK event parser, resilient stream, process lifecycle, reconnect, cost/token display, auto mode indicators
 - [ ] **Phase 14: Slice Integration** — Milestones view renders slices with four states (Planned/In Progress/Needs Review/Complete) and state-appropriate actions
 - [ ] **Phase 15: Tauri Shell** — Tauri 2 native shell, Bun process management, dependency check, window state, IPC commands, build pipeline
@@ -93,9 +93,17 @@ Plans:
   1. A running `gsd` session streams tool use, text, thinking, phase transitions, cost updates, and auto mode announcements as distinct event types in the chat panel
   2. Injecting a malformed NDJSON chunk does not crash the stream — the chunk is skipped and subsequent events continue rendering normally
   3. Closing and reopening the browser tab within 30 seconds reconnects via exponential backoff and shows state fully reconstructed from `.gsd/` files
-  4. Chat header shows a running cost badge; slice cards show per-slice totals; milestone header shows total; budget warnings appear at 80% (amber) and 95% (red)
+  4. Chat header shows a running cost badge; budget warnings appear at 80% (amber) and 95% (red)
   5. While in auto mode an EXECUTING badge is pinned in the chat header; pressing Escape sends an interrupt signal to the `gsd` process
-**Plans**: TBD
+**Plans**: 6 plans
+
+Plans:
+- [ ] 13-01-PLAN.md — Wave 1 (TDD): GSD2StreamEvent discriminated union + classifyPiSdkEvent (STREAM-01, STREAM-02)
+- [ ] 13-02-PLAN.md — Wave 1: Process lifecycle — interrupt(), crash events, killAll() (STREAM-03)
+- [ ] 13-03-PLAN.md — Wave 2: Reconnect refresh + crash recovery banner (STREAM-04, STREAM-05)
+- [ ] 13-04-PLAN.md — Wave 2: Cost badge + budget warnings in ChatView (STREAM-06)
+- [ ] 13-05-PLAN.md — Wave 2: EXECUTING badge, phase transition cards, Escape interrupt, event wiring (STREAM-07)
+- [ ] 13-06-PLAN.md — Wave 3: AppShell wiring + killAll shutdown + human verification (STREAM-03, STREAM-04, STREAM-05, STREAM-06, STREAM-07)
 
 ### Phase 14: Slice Integration
 **Goal**: The Milestones view renders slices as first-class citizens with four distinct states — Planned, In Progress, Needs Review, Complete — each with context-appropriate actions that drive the GSD 2 workflow
@@ -204,8 +212,8 @@ Plans:
 | 10. Keyboard Shortcuts + Accessibility | v1.0 | 3/3 | Complete | 2026-03-12 |
 | 11. Documentation Integrity (GAP) | 4/4 | Complete   | 2026-03-12 | 2026-03-12 |
 | 11.1 Pre-v2.0 Stabilization (INSERTED) | 3/4 | Complete    | 2026-03-12 | — |
-| 12. GSD 2 Compatibility Pass | 6/7 | In Progress|  | — |
-| 13. Session Streaming Hardening | v2.0 | 0/TBD | Not started | — |
+| 12. GSD 2 Compatibility Pass | 6/7 | Complete    | 2026-03-12 | — |
+| 13. Session Streaming Hardening | v2.0 | 0/6 | Not started | — |
 | 14. Slice Integration | v2.0 | 0/TBD | Not started | — |
 | 15. Tauri Shell | v2.0 | 0/TBD | Not started | — |
 | 16. OAuth + Keychain | v2.0 | 0/TBD | Not started | — |
