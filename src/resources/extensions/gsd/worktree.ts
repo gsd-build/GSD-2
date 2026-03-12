@@ -142,7 +142,10 @@ function branchExists(basePath: string, branch: string): boolean {
 
 /**
  * Ensure the slice branch exists and is checked out.
- * Creates the branch from main if it doesn't exist.
+ * Creates the branch from the current branch if it's not a slice branch,
+ * otherwise from main. This preserves planning artifacts (CONTEXT, ROADMAP,
+ * etc.) that were committed on the working branch — which may differ from
+ * the repo's default branch (e.g. `developer` vs `main`).
  * When inside a worktree, the branch is namespaced to avoid conflicts.
  * Returns true if the branch was newly created.
  */
@@ -157,7 +160,14 @@ export function ensureSliceBranch(basePath: string, milestoneId: string, sliceId
   let created = false;
 
   if (!branchExists(basePath, branch)) {
-    runGit(basePath, ["branch", branch, mainBranch]);
+    // Branch from the current branch when it's a normal working branch
+    // (not itself a slice branch). This ensures the new slice branch
+    // inherits planning artifacts that may only exist on the working
+    // branch and haven't been merged to main yet.
+    // If we're already on a slice branch (e.g. creating S02 while S01
+    // wasn't merged yet), fall back to main to avoid chaining slice branches.
+    const base = SLICE_BRANCH_RE.test(current) ? mainBranch : current;
+    runGit(basePath, ["branch", branch, base]);
     created = true;
   }
 

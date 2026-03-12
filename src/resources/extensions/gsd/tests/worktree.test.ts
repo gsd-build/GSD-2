@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execSync } from "node:child_process";
@@ -173,6 +173,84 @@ async function main(): Promise<void> {
   assertEq(detectWorktreeName("/projects/myapp"), null, "no worktree in plain path");
   assertEq(detectWorktreeName("/projects/myapp/.gsd/worktrees/feature-auth"), "feature-auth", "detects worktree name");
   assertEq(detectWorktreeName("/projects/myapp/.gsd/worktrees/my-wt/subdir"), "my-wt", "detects worktree with subdir");
+
+  // ── Regression: slice branch from non-main working branch ───────────
+  // Reproduces the bug where planning artifacts committed to a working
+  // branch (e.g. "developer") are lost when the slice branch is created
+  // from "main" which doesn't have them.
+  console.log("\n=== ensureSliceBranch from non-main working branch ===");
+  const base2 = mkdtempSync(join(tmpdir(), "gsd-branch-base-test-"));
+  run("git init -b main", base2);
+  run("git config user.name 'Pi Test'", base2);
+  run("git config user.email 'pi@example.com'", base2);
+  writeFileSync(join(base2, "README.md"), "hello\n", "utf-8");
+  run("git add .", base2);
+  run("git commit -m 'chore: init'", base2);
+
+  // Create a "developer" branch with planning artifacts (like the real scenario)
+  run("git checkout -b developer", base2);
+  mkdirSync(join(base2, ".gsd", "milestones", "M001", "slices", "S01", "tasks"), { recursive: true });
+  writeFileSync(join(base2, ".gsd", "milestones", "M001", "M001-CONTEXT.md"), "# M001 Context\nGoal: fix eslint\n", "utf-8");
+  writeFileSync(join(base2, ".gsd", "milestones", "M001", "M001-ROADMAP.md"), [
+    "# M001: ESLint Cleanup", "", "## Slices",
+    "- [ ] **S01: Config Fix** `risk:low` `depends:[]`", "  > Fix config",
+  ].join("\n") + "\n", "utf-8");
+  run("git add .", base2);
+  run("git commit -m 'docs(M001): context and roadmap'", base2);
+
+  // Verify main does NOT have the artifacts
+  const mainRoadmap = run("git show main:.gsd/milestones/M001/M001-ROADMAP.md 2>&1 || echo MISSING", base2);
+  assert(mainRoadmap.includes("MISSING") || mainRoadmap.includes("does not exist"), "main branch lacks roadmap");
+
+  // Now create slice branch from developer — should inherit artifacts
+  assertEq(getCurrentBranch(base2), "developer", "on developer branch before ensure");
+  const created3 = ensureSliceBranch(base2, "M001", "S01");
+  assert(created3, "slice branch created from developer");
+  assertEq(getCurrentBranch(base2), "gsd/M001/S01", "switched to slice branch");
+
+  // The critical assertion: planning artifacts must exist on the slice branch
+  assert(existsSync(join(base2, ".gsd", "milestones", "M001", "M001-ROADMAP.md")), "roadmap exists on slice branch");
+  assert(existsSync(join(base2, ".gsd", "milestones", "M001", "M001-CONTEXT.md")), "context exists on slice branch");
+
+  // Verify deriveState sees the correct phase (not pre-planning)
+  const state2 = await deriveState(base2);
+  assertEq(state2.phase, "planning", "deriveState sees planning phase on slice branch");
+  assert(state2.activeSlice !== null, "active slice found");
+  assertEq(state2.activeSlice!.id, "S01", "active slice is S01");
+
+  rmSync(base2, { recursive: true, force: true });
+
+  // ── Slice branch from another slice branch falls back to main ───────
+  console.log("\n=== ensureSliceBranch from slice branch falls back to main ===");
+  const base3 = mkdtempSync(join(tmpdir(), "gsd-branch-chain-test-"));
+  run("git init -b main", base3);
+  run("git config user.name 'Pi Test'", base3);
+  run("git config user.email 'pi@example.com'", base3);
+  mkdirSync(join(base3, ".gsd", "milestones", "M001", "slices", "S01", "tasks"), { recursive: true });
+  mkdirSync(join(base3, ".gsd", "milestones", "M001", "slices", "S02", "tasks"), { recursive: true });
+  writeFileSync(join(base3, "README.md"), "hello\n", "utf-8");
+  writeFileSync(join(base3, ".gsd", "milestones", "M001", "M001-ROADMAP.md"), [
+    "# M001: Demo", "", "## Slices",
+    "- [ ] **S01: First** `risk:low` `depends:[]`", "  > first",
+    "- [ ] **S02: Second** `risk:low` `depends:[]`", "  > second",
+  ].join("\n") + "\n", "utf-8");
+  run("git add .", base3);
+  run("git commit -m 'chore: init'", base3);
+
+  ensureSliceBranch(base3, "M001", "S01");
+  assertEq(getCurrentBranch(base3), "gsd/M001/S01", "on S01 slice branch");
+
+  // Creating S02 while on S01 should NOT chain from S01 — should use main
+  const created4 = ensureSliceBranch(base3, "M001", "S02");
+  assert(created4, "S02 branch created");
+  assertEq(getCurrentBranch(base3), "gsd/M001/S02", "switched to S02");
+
+  // S02 should be based on main, not on gsd/M001/S01
+  const s02Base = run("git merge-base main gsd/M001/S02", base3);
+  const mainHead = run("git rev-parse main", base3);
+  assertEq(s02Base, mainHead, "S02 is based on main, not on S01 slice branch");
+
+  rmSync(base3, { recursive: true, force: true });
 
   rmSync(base, { recursive: true, force: true });
   console.log(`\nResults: ${passed} passed, ${failed} failed`);
