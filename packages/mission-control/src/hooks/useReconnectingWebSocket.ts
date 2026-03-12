@@ -27,6 +27,14 @@ export function calculateBackoffDelay(
 }
 
 /**
+ * Determine if an onopen event represents a reconnect (vs the first connection).
+ * Returns true when attemptBeforeConnect > 0, meaning at least one previous attempt was made.
+ */
+export function isReconnect(attemptBeforeConnect: number): boolean {
+  return attemptBeforeConnect > 0;
+}
+
+/**
  * Determine if a message should be processed based on sequence number.
  * Only process messages with sequence strictly greater than lastProcessed.
  */
@@ -69,6 +77,8 @@ export type ConnectionStatus = "connecting" | "connected" | "disconnected";
 
 export interface ReconnectingWebSocketOptions {
   onMessage?: (data: unknown) => void;
+  /** Called when the WebSocket reconnects after a previous disconnect (not on first connect). */
+  onReconnect?: () => void;
 }
 
 export interface ReconnectingWebSocketResult {
@@ -90,17 +100,23 @@ export function useReconnectingWebSocket(
   const attemptRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onMessageRef = useRef(options?.onMessage);
+  const onReconnectRef = useRef(options?.onReconnect);
 
-  // Keep onMessage ref current without re-triggering effect
+  // Keep callback refs current without re-triggering effect
   onMessageRef.current = options?.onMessage;
+  onReconnectRef.current = options?.onReconnect;
 
   const connect = useCallback(() => {
     setStatus("connecting");
     const ws = new WebSocket(url);
 
     ws.onopen = () => {
+      const wasReconnect = isReconnect(attemptRef.current);
       setStatus("connected");
       attemptRef.current = 0;
+      if (wasReconnect && onReconnectRef.current) {
+        onReconnectRef.current();
+      }
     };
 
     ws.onclose = () => {

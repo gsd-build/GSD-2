@@ -3,14 +3,28 @@
  * - Exponential backoff delay calculation
  * - Sequence-based message filtering
  * - State update application (full replace / diff merge)
+ * - Reconnect detection (isReconnect)
  */
 import { describe, test, expect } from "bun:test";
 import {
   calculateBackoffDelay,
   shouldProcessMessage,
   applyStateUpdate,
+  isReconnect,
 } from "../src/hooks/useReconnectingWebSocket";
 import type { PlanningState, StateDiff } from "../src/server/types";
+
+// -- Reconnect detection --
+
+describe("onReconnect callback", () => {
+  test("isReconnect(0) returns false — first connection, not a reconnect", () => {
+    expect(isReconnect(0)).toBe(false);
+  });
+
+  test("isReconnect(1) returns true — reconnect after first failure", () => {
+    expect(isReconnect(1)).toBe(true);
+  });
+});
 
 // -- Backoff delay calculation --
 
