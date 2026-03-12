@@ -10,6 +10,7 @@ import { writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { ClaudeProcessManager } from "./claude-process";
 import { createSessionWorktree, removeSessionWorktree, renameSessionWorktree } from "./worktree-api";
+import { MAX_SESSIONS } from "./types";
 import type { SessionMetadata } from "./chat-types";
 import type { ServerWebSocket } from "bun";
 
@@ -55,8 +56,6 @@ interface PersistedMetadata {
   sessions: PersistedSession[];
   tabOrder: string[];
 }
-
-const MAX_SESSIONS = 4;
 
 export class SessionManager {
   private sessions = new Map<string, SessionState>();

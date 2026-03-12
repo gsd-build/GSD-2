@@ -196,6 +196,49 @@ describe("buildFullState", () => {
     expect(state.config).toBeDefined();
   });
 
+  test("SC-5: malformed config.json returns DEFAULT_CONFIG_STATE rather than passing corrupt data", async () => {
+    tempDir = makeTempPlanningDir();
+    // Write a config.json with completely wrong field types
+    writeFileSync(
+      join(tempDir, "config.json"),
+      JSON.stringify({
+        model_profile: 42,          // should be string
+        commit_docs: "yes",         // should be boolean
+        workflow: "broken",         // should be object
+        parallelization: null,      // should be boolean
+      })
+    );
+
+    const state = await buildFullState(tempDir);
+
+    // validateConfigState should fall back to DEFAULT_CONFIG_STATE values for bad fields
+    expect(state.config.model_profile).toBe("balanced");
+    expect(state.config.commit_docs).toBe(false);
+    expect(state.config.workflow.research).toBe(true);
+    expect(state.config.parallelization).toBe(false);
+  });
+
+  test("SC-5: partially valid config.json merges valid fields with defaults for invalid ones", async () => {
+    tempDir = makeTempPlanningDir();
+    // Write a config.json with some valid and some invalid fields
+    writeFileSync(
+      join(tempDir, "config.json"),
+      JSON.stringify({
+        model_profile: "fast",      // valid
+        commit_docs: true,          // valid
+        mode: 99,                   // invalid (should be string)
+        search_gitignored: "yes",   // invalid (should be boolean)
+      })
+    );
+
+    const state = await buildFullState(tempDir);
+
+    expect(state.config.model_profile).toBe("fast");       // valid field preserved
+    expect(state.config.commit_docs).toBe(true);           // valid field preserved
+    expect(state.config.mode).toBe("balanced");            // invalid falls back to default
+    expect(state.config.search_gitignored).toBe(false);    // invalid falls back to default
+  });
+
   test("produces identical output when called twice with same files (SERV-09)", async () => {
     const dir = setupFullPlanningDir();
 

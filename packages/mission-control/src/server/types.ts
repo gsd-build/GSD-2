@@ -149,6 +149,11 @@ export interface PlanningState {
   requirements: RequirementState[];
 }
 
+// -- Shared Constants --
+
+/** Maximum number of concurrent chat sessions per project. Single source of truth. */
+export const MAX_SESSIONS = 4;
+
 // -- Watcher Options --
 
 export interface WatcherOptions {

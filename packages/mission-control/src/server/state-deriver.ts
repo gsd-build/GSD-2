@@ -64,6 +64,77 @@ const DEFAULT_CONFIG_STATE: ConfigState = {
   worktree_enabled: false,
 };
 
+/**
+ * Validates a raw parsed JSON value against the ConfigState shape.
+ * Returns a fully-typed ConfigState with DEFAULT_CONFIG_STATE fallbacks for
+ * missing or wrong-typed fields. Never throws — corrupt config.json is safe.
+ */
+function validateConfigState(raw: unknown): ConfigState {
+  if (!raw || typeof raw !== "object") return { ...DEFAULT_CONFIG_STATE };
+  const r = raw as Record<string, unknown>;
+
+  // Validate the nested workflow object
+  const rawWorkflow = r.workflow && typeof r.workflow === "object"
+    ? r.workflow as Record<string, unknown>
+    : {};
+
+  return {
+    model_profile: typeof r.model_profile === "string"
+      ? r.model_profile
+      : DEFAULT_CONFIG_STATE.model_profile,
+    commit_docs: typeof r.commit_docs === "boolean"
+      ? r.commit_docs
+      : DEFAULT_CONFIG_STATE.commit_docs,
+    search_gitignored: typeof r.search_gitignored === "boolean"
+      ? r.search_gitignored
+      : DEFAULT_CONFIG_STATE.search_gitignored,
+    branching_strategy: typeof r.branching_strategy === "string"
+      ? r.branching_strategy
+      : DEFAULT_CONFIG_STATE.branching_strategy,
+    phase_branch_template: typeof r.phase_branch_template === "string"
+      ? r.phase_branch_template
+      : DEFAULT_CONFIG_STATE.phase_branch_template,
+    milestone_branch_template: typeof r.milestone_branch_template === "string"
+      ? r.milestone_branch_template
+      : DEFAULT_CONFIG_STATE.milestone_branch_template,
+    workflow: {
+      research: typeof rawWorkflow.research === "boolean"
+        ? rawWorkflow.research
+        : DEFAULT_CONFIG_STATE.workflow.research,
+      plan_check: typeof rawWorkflow.plan_check === "boolean"
+        ? rawWorkflow.plan_check
+        : DEFAULT_CONFIG_STATE.workflow.plan_check,
+      verifier: typeof rawWorkflow.verifier === "boolean"
+        ? rawWorkflow.verifier
+        : DEFAULT_CONFIG_STATE.workflow.verifier,
+      nyquist_validation: typeof rawWorkflow.nyquist_validation === "boolean"
+        ? rawWorkflow.nyquist_validation
+        : DEFAULT_CONFIG_STATE.workflow.nyquist_validation,
+      _auto_chain_active: typeof rawWorkflow._auto_chain_active === "boolean"
+        ? rawWorkflow._auto_chain_active
+        : DEFAULT_CONFIG_STATE.workflow._auto_chain_active,
+    },
+    parallelization: typeof r.parallelization === "boolean"
+      ? r.parallelization
+      : DEFAULT_CONFIG_STATE.parallelization,
+    brave_search: typeof r.brave_search === "boolean"
+      ? r.brave_search
+      : DEFAULT_CONFIG_STATE.brave_search,
+    mode: typeof r.mode === "string"
+      ? r.mode
+      : DEFAULT_CONFIG_STATE.mode,
+    granularity: typeof r.granularity === "string"
+      ? r.granularity
+      : DEFAULT_CONFIG_STATE.granularity,
+    skip_permissions: typeof r.skip_permissions === "boolean"
+      ? r.skip_permissions
+      : DEFAULT_CONFIG_STATE.skip_permissions,
+    worktree_enabled: typeof r.worktree_enabled === "boolean"
+      ? r.worktree_enabled
+      : DEFAULT_CONFIG_STATE.worktree_enabled,
+  };
+}
+
 // -- File reading helpers --
 
 async function readFileText(path: string): Promise<string | null> {
@@ -362,9 +433,9 @@ export async function buildFullState(planningDir: string): Promise<PlanningState
     ? parseRoadmap(roadmapRaw)
     : { phases: [] };
 
-  // Parse config.json
+  // Parse config.json — validated field-by-field to guard against corrupt data
   const config: ConfigState = configRaw
-    ? (configRaw as ConfigState)
+    ? validateConfigState(configRaw)
     : { ...DEFAULT_CONFIG_STATE };
 
   // Parse REQUIREMENTS.md

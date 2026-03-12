@@ -7,6 +7,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { MAX_SESSIONS } from "@/server/types";
 import type { SessionTab } from "@/hooks/useSessionManager";
 
 interface SessionTabsProps {
@@ -17,8 +18,6 @@ interface SessionTabsProps {
   onCreate: () => void;
   onRename: (id: string, name: string) => void;
 }
-
-const MAX_SESSIONS = 4;
 
 export function SessionTabs({
   sessions,
