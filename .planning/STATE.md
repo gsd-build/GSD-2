@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Native Desktop
 status: in_progress
-stopped_at: "Completed 11.1-03-PLAN.md"
-last_updated: "2026-03-12T17:19:28Z"
-last_activity: "2026-03-12 — Plan 11.1-03 complete: ErrorBoundary added, brand assets deployed, pixel-art SVGs replaced, nul/ removed"
+stopped_at: "Completed 11.1-02-PLAN.md"
+last_updated: "2026-03-12T17:38:00Z"
+last_activity: "2026-03-12 — Plan 11.1-02 complete: wired guard, reconcile interval pause, MAX_SESSIONS consolidated, validateConfigState added"
 progress:
   total_phases: 9
   completed_phases: 0
   total_plans: 4
-  completed_plans: 3
-  percent: 75
+  completed_plans: 4
+  percent: 100
 ---
 
 ## Project Reference
@@ -24,11 +24,11 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 ## Current Position
 
 Phase: 11.1 of 20 (Pre-v2.0 Stabilization)
-Plan: 04 of 4 (plans 00, 01, 02, and 03 complete, plan 04 is next)
+Plan: 4 of 4 (all plans 00, 01, 02, 03 complete — phase 11.1 done)
 Status: In progress
-Last activity: 2026-03-12 — Plan 11.1-03 complete: ErrorBoundary added, brand assets deployed, pixel-art SVGs replaced, nul/ removed
+Last activity: 2026-03-12 — Plan 11.1-02 complete: wired guard, reconcile interval pause, MAX_SESSIONS consolidated, validateConfigState added
 
-Progress: [████████░░] 75% (v2.0 phase 11.1)
+Progress: [██████████] 100% (v2.0 phase 11.1)
 
 ## Milestone Archive
 
@@ -67,6 +67,8 @@ Progress: [████████░░] 75% (v2.0 phase 11.1)
 - **11.1-01:** server-cors.test.ts RED stub updated alongside real server.ts fix — inline mirror pattern requires test update when implementation changes
 - **11.1-03:** React 19 renderToString no longer triggers error boundary lifecycle — error-boundary test updated to direct class instance testing (getDerivedStateFromError + render())
 - **11.1-03:** logo-anim-* CSS classes removed from animations.css; LogoAnimation, LoadingLogo, GsdLogo now use img tags pointing to official brand assets in public/assets/
+- [Phase 11.1]: wired flag lives on SessionState rather than a Set in pipeline.ts — co-located with session object, avoids closure coupling
+- [Phase 11.1]: validateConfigState uses manual typeof field-by-field checks rather than Zod — no new dependencies, consistent with project conventions
 
 ### Blockers/Concerns
 
