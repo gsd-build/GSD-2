@@ -6,6 +6,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.3.11] - 2026-03-12
+
+### Added
+- Branded clack-based onboarding wizard on first launch — LLM provider selection (OAuth + API key), optional tool API keys, and setup summary (#118)
+- `gsd config` subcommand to re-run the setup wizard anytime
+- Shared `src/logo.ts` module as single source of truth for ASCII banner
+
+### Fixed
+- Parallel subagent results no longer truncated at 200 characters
+
+### Changed
+- `wizard.ts` trimmed to env hydration only — onboarding logic moved to `onboarding.ts`
+- First-launch banner removed from `loader.ts` (onboarding wizard handles branding)
+
 ## [2.3.10] - 2026-03-12
 
 ### Added
@@ -183,7 +197,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - License updated to MIT
 
-[Unreleased]: https://github.com/gsd-build/gsd-2/compare/v2.3.10...HEAD
+[Unreleased]: https://github.com/gsd-build/gsd-2/compare/v2.3.11...HEAD
+[2.3.11]: https://github.com/gsd-build/gsd-2/compare/v2.3.10...v2.3.11
 [2.3.10]: https://github.com/gsd-build/gsd-2/compare/v2.3.9...v2.3.10
 [2.3.9]: https://github.com/gsd-build/gsd-2/compare/v2.3.8...v2.3.9
 [2.3.8]: https://github.com/gsd-build/gsd-2/compare/v2.3.7...v2.3.8
