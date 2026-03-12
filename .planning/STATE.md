@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Native Desktop
 status: in_progress
-stopped_at: "Completed 11.1-00-PLAN.md"
-last_updated: "2026-03-12T17:11:00Z"
-last_activity: "2026-03-12 — Plan 11.1-00 complete: Wave 0 test stubs for SC-1, SC-3, SC-4, SC-6"
+stopped_at: "Completed 11.1-01-PLAN.md"
+last_updated: "2026-03-12T17:08:00Z"
+last_activity: "2026-03-12 — Plan 11.1-01 complete: config bridge wired, WS bound to 127.0.0.1, CORS restricted to localhost:4000"
 progress:
   total_phases: 9
   completed_phases: 0
   total_plans: 4
-  completed_plans: 1
-  percent: 25
+  completed_plans: 2
+  percent: 50
 ---
 
 ## Project Reference
@@ -24,11 +24,11 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 ## Current Position
 
 Phase: 11.1 of 20 (Pre-v2.0 Stabilization)
-Plan: 01 of 4 (plan 00 complete, plan 01 is next)
+Plan: 02 of 4 (plans 00 and 01 complete, plan 02 is next)
 Status: In progress
-Last activity: 2026-03-12 — Plan 11.1-00 complete: Wave 0 test stubs for SC-1, SC-3, SC-4, SC-6
+Last activity: 2026-03-12 — Plan 11.1-01 complete: config bridge wired, WS bound to 127.0.0.1, CORS restricted to localhost:4000
 
-Progress: [███░░░░░░░] 25% (v2.0 phase 11.1)
+Progress: [█████░░░░░] 50% (v2.0 phase 11.1)
 
 ## Milestone Archive
 
@@ -62,6 +62,9 @@ Progress: [███░░░░░░░] 25% (v2.0 phase 11.1)
 - **11.1-00:** Tested CORS behavior inline rather than importing server.ts (which has Bun.serve side effects at module load)
 - **11.1-00:** Used renderToString from react-dom/server for ErrorBoundary tests — RTL not installed in project
 - **11.1-00:** wire-guard test simulates double-wiring with standalone helper, avoiding real Claude process spawning
+- **11.1-01:** PipelineOptions.processFactory injection enables config-derived skipPermissions to reach test doubles and real ClaudeProcessManager
+- **11.1-01:** switchProject updates SessionManager processFactory via indexed property access rather than rebuilding — preserves session state during project switch
+- **11.1-01:** server-cors.test.ts RED stub updated alongside real server.ts fix — inline mirror pattern requires test update when implementation changes
 
 ### Blockers/Concerns
 
