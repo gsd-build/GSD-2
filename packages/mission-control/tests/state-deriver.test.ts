@@ -296,3 +296,146 @@ describe("parseRequirements", () => {
     expect(result).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// GSD 2 fixture cases (COMPAT-01, COMPAT-02, COMPAT-03)
+//
+// RED state: These tests fail until Wave 1 implementation updates buildFullState
+// to support the GSD 2 .gsd/ schema. Currently buildFullState reads v1 .planning/
+// structure and returns PlanningState — not GSD2State. The fixture helper and
+// describe block must be importable and runnable even in RED state.
+// ---------------------------------------------------------------------------
+
+const GSD2_STATE_MD = `---
+gsd_state_version: "1.0"
+active_milestone: M001
+active_slice: S01
+active_task: T01
+status: in_progress
+---
+`;
+
+const GSD2_ROADMAP_MD = `# M001 — Native Desktop
+
+## Slices
+
+- [x] **S01: Monorepo Bootstrap** - Workspace structure and Bun server
+- [ ] **S02: File Watcher** - File watching and state derivation
+`;
+
+const GSD2_PLAN_MD = `---
+slice: S01
+task: T01
+type: execute
+---
+
+# S01 — Monorepo Bootstrap
+`;
+
+const GSD2_SUMMARY_MD = `---
+slice: S01
+task: T01
+status: complete
+---
+
+# T01 Summary
+`;
+
+const GSD2_PREFERENCES_MD = `---
+budget_ceiling: 50
+skill_discovery: auto
+research_model: claude-sonnet-4-6
+planning_model: claude-sonnet-4-6
+execution_model: claude-sonnet-4-6
+completion_model: claude-haiku-4-5-20251001
+---
+`;
+
+/**
+ * Creates a GSD 2 fixture directory under tmpDir/.gsd/ with all required files.
+ * Returns the path to the .gsd/ directory.
+ */
+function createGsd2Fixture(baseDir: string): string {
+  const gsdDir = join(baseDir, ".gsd");
+  mkdirSync(gsdDir, { recursive: true });
+
+  writeFileSync(join(gsdDir, "STATE.md"), GSD2_STATE_MD);
+  writeFileSync(join(gsdDir, "M001-ROADMAP.md"), GSD2_ROADMAP_MD);
+  writeFileSync(join(gsdDir, "S01-PLAN.md"), GSD2_PLAN_MD);
+  writeFileSync(join(gsdDir, "T01-SUMMARY.md"), GSD2_SUMMARY_MD);
+  writeFileSync(join(gsdDir, "preferences.md"), GSD2_PREFERENCES_MD);
+
+  return gsdDir;
+}
+
+describe("GSD 2 fixtures (COMPAT-01, COMPAT-02, COMPAT-03)", () => {
+  test("buildFullState() accepts a .gsd/ directory path (COMPAT-01 regression guard)", async () => {
+    tempDir = makeTempPlanningDir();
+    const gsdDir = createGsd2Fixture(tempDir);
+
+    // Must not throw when given a .gsd/ path (not .planning/)
+    // Currently: buildFullState reads STATE.md from the given dir — may return empty state
+    // but must not crash.
+    const result = await buildFullState(gsdDir);
+    expect(result).toBeDefined();
+  });
+
+  test("GSD2State.projectState.active_milestone is 'M001' from STATE.md frontmatter (COMPAT-02)", async () => {
+    tempDir = makeTempPlanningDir();
+    const gsdDir = createGsd2Fixture(tempDir);
+
+    const result = await buildFullState(gsdDir) as any;
+
+    // Fails: v1 buildFullState returns projectState.milestone (not active_milestone)
+    // and reads 'milestone' key from STATE.md, not 'active_milestone'
+    expect(result.projectState?.active_milestone ?? result.state?.active_milestone).toBe("M001");
+  });
+
+  test("GSD2State.roadmap is derived from M001-ROADMAP.md (COMPAT-02 dynamic IDs)", async () => {
+    tempDir = makeTempPlanningDir();
+    const gsdDir = createGsd2Fixture(tempDir);
+
+    const result = await buildFullState(gsdDir) as any;
+
+    // Fails: v1 reads ROADMAP.md not M001-ROADMAP.md (dynamic milestone ID resolution)
+    // GSD2State.roadmap must have slices from M001-ROADMAP.md
+    const roadmap = result.roadmap;
+    expect(roadmap).toBeDefined();
+    // In GSD 2 schema, roadmap.slices (not roadmap.phases) holds the slice list
+    expect(roadmap?.slices ?? roadmap?.phases).toBeDefined();
+  });
+
+  test("GSD2State.activePlan is derived from S01-PLAN.md (COMPAT-03 dynamic slice ID)", async () => {
+    tempDir = makeTempPlanningDir();
+    const gsdDir = createGsd2Fixture(tempDir);
+
+    const result = await buildFullState(gsdDir) as any;
+
+    // Fails: v1 reads phases/*/NN-NN-PLAN.md not S01-PLAN.md
+    // GSD 2 state deriver must read active_slice from STATE.md, then load {slice}-PLAN.md
+    expect(result.activePlan).toBeDefined();
+  });
+
+  test("GSD2State.needsMigration is false for a clean .gsd/ fixture (no .planning/) (COMPAT-01)", async () => {
+    tempDir = makeTempPlanningDir();
+    const gsdDir = createGsd2Fixture(tempDir);
+    // No .planning/ directory alongside .gsd/
+
+    const result = await buildFullState(gsdDir) as any;
+
+    // Fails: needsMigration field does not exist on current PlanningState
+    expect(result.needsMigration).toBe(false);
+  });
+
+  test("preferences.md budget_ceiling is available in GSD2State (COMPAT-02)", async () => {
+    tempDir = makeTempPlanningDir();
+    const gsdDir = createGsd2Fixture(tempDir);
+
+    const result = await buildFullState(gsdDir) as any;
+
+    // Fails: v1 state deriver reads config.json not preferences.md
+    // GSD2State must expose preferences from ~/.gsd/preferences.md or .gsd/preferences.md
+    const prefs = result.preferences ?? result.config;
+    expect(prefs?.budget_ceiling ?? prefs?.budgetCeiling).toBeDefined();
+  });
+});
