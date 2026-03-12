@@ -2,7 +2,7 @@
 
 > This document teaches you how to operate the GSD planning methodology manually using files on disk.
 >
-> **When to read this:** At the start of any session working on GSD-managed work, or when told `read @GSD-WORKFLOW.md`.
+> **When to read this:** At the start of any session working on GSD-managed work, or when loaded by `/gsd`.
 >
 > **After reading this, always read `.gsd/state.md` to find out what's next.**
 > If the milestone has a `context.md`, read that too — it contains project-specific decisions, reference paths, and implementation guidance that this generic methodology doc does not.
@@ -656,6 +656,6 @@ This methodology doc is generic. Project-specific guidance belongs in the milest
 
 If you sense context pressure (many files read, long execution, lots of tool output):
 
-1. **If mid-task:** Write `continue.md` with exact resume state. Tell the user: "Context is getting full. I've saved progress to continue.md. Start a new session and say `read @GSD-WORKFLOW.md - what's next?`"
+1. **If mid-task:** Write `continue.md` with exact resume state. Tell the user: "Context is getting full. I've saved progress to continue.md. Start a new session and run `/gsd` to pick up where you left off, or `/gsd auto` to resume in auto-execution mode."
 2. **If between tasks:** Just update `state.md` with the next action. No continue file needed — the next session will read state.md and pick up the next task cleanly.
 3. **Don't fight it.** The whole system is designed for this. A fresh session with the right files loaded is better than a stale session with degraded reasoning.
