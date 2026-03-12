@@ -38,6 +38,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { registerSearchTool } from "./tool-search";
 import { registerFetchPageTool } from "./tool-fetch-page";
 import { registerLLMContextTool } from "./tool-llm-context";
+import { registerSearchProviderCommand } from "./command-search-provider.ts";
 
 export default function (pi: ExtensionAPI) {
   // Register all tools
@@ -45,20 +46,25 @@ export default function (pi: ExtensionAPI) {
   registerFetchPageTool(pi);
   registerLLMContextTool(pi);
 
+  // Register slash commands
+  registerSearchProviderCommand(pi);
+
   // Startup diagnostics
   pi.on("session_start", async (_event, ctx) => {
     const hasBrave = !!process.env.BRAVE_API_KEY;
+    const hasTavily = !!process.env.TAVILY_API_KEY;
     const hasJina = !!process.env.JINA_API_KEY;
     const hasAnswers = !!process.env.BRAVE_ANSWERS_KEY;
 
-    if (!hasBrave) {
+    if (!hasBrave && !hasTavily) {
       ctx.ui.notify(
-        "Web search: Set BRAVE_API_KEY for web search + LLM context capability",
+        "Web search: Set BRAVE_API_KEY or TAVILY_API_KEY for web search capability",
         "warning"
       );
     }
 
-    const parts: string[] = ["Web search v3 loaded"];
+    const parts: string[] = ["Web search v3"];
+    if (hasTavily) parts.push("Tavily ✓");
     if (hasBrave) parts.push("Search ✓");
     if (hasAnswers) parts.push("Answers ✓");
     if (hasJina) parts.push("Jina ✓");

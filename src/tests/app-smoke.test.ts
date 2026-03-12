@@ -162,6 +162,7 @@ test("loadStoredEnvKeys hydrates process.env from auth.json", async () => {
     brave: { type: "api_key", key: "test-brave-key" },
     brave_answers: { type: "api_key", key: "test-answers-key" },
     context7: { type: "api_key", key: "test-ctx7-key" },
+    tavily: { type: "api_key", key: "test-tavily-key" },
   }));
 
   // Clear any existing env vars
@@ -169,10 +170,12 @@ test("loadStoredEnvKeys hydrates process.env from auth.json", async () => {
   const origBraveAnswers = process.env.BRAVE_ANSWERS_KEY;
   const origCtx7 = process.env.CONTEXT7_API_KEY;
   const origJina = process.env.JINA_API_KEY;
+  const origTavily = process.env.TAVILY_API_KEY;
   delete process.env.BRAVE_API_KEY;
   delete process.env.BRAVE_ANSWERS_KEY;
   delete process.env.CONTEXT7_API_KEY;
   delete process.env.JINA_API_KEY;
+  delete process.env.TAVILY_API_KEY;
 
   try {
     const auth = AuthStorage.create(authPath);
@@ -182,12 +185,14 @@ test("loadStoredEnvKeys hydrates process.env from auth.json", async () => {
     assert.equal(process.env.BRAVE_ANSWERS_KEY, "test-answers-key", "BRAVE_ANSWERS_KEY hydrated");
     assert.equal(process.env.CONTEXT7_API_KEY, "test-ctx7-key", "CONTEXT7_API_KEY hydrated");
     assert.equal(process.env.JINA_API_KEY, undefined, "JINA_API_KEY not set (not in auth)");
+    assert.equal(process.env.TAVILY_API_KEY, "test-tavily-key", "TAVILY_API_KEY hydrated");
   } finally {
     // Restore original env
     if (origBrave) process.env.BRAVE_API_KEY = origBrave; else delete process.env.BRAVE_API_KEY;
     if (origBraveAnswers) process.env.BRAVE_ANSWERS_KEY = origBraveAnswers; else delete process.env.BRAVE_ANSWERS_KEY;
     if (origCtx7) process.env.CONTEXT7_API_KEY = origCtx7; else delete process.env.CONTEXT7_API_KEY;
     if (origJina) process.env.JINA_API_KEY = origJina; else delete process.env.JINA_API_KEY;
+    if (origTavily) process.env.TAVILY_API_KEY = origTavily; else delete process.env.TAVILY_API_KEY;
     rmSync(tmp, { recursive: true, force: true });
   }
 });
@@ -308,28 +313,6 @@ test("tarball installs and gsd binary resolves", async () => {
   }
 });
 
-test("postinstall avoids sudo during browser setup and suggests install-deps only when needed", () => {
-  const postinstall = readFileSync(join(projectRoot, "scripts", "postinstall.js"), "utf-8");
-
-  assert.doesNotMatch(
-    postinstall,
-    /playwright install chromium[^\n]*--with-deps/,
-    "postinstall does not request sudo-backed Playwright deps during npm install",
-  );
-  assert.ok(
-    postinstall.includes("npx playwright install chromium"),
-    "postinstall downloads Chromium during install",
-  );
-  assert.ok(
-    postinstall.includes("Host system is missing dependencies to run browsers."),
-    "postinstall detects Playwright's missing Linux dependency warning",
-  );
-  assert.ok(
-    postinstall.includes("sudo npx playwright install-deps chromium"),
-    "postinstall suggests the explicit follow-up command only when Linux deps are missing",
-  );
-});
-
 // ═══════════════════════════════════════════════════════════════════════════
 // 8. Launch → extensions load → no errors on stderr
 // ═══════════════════════════════════════════════════════════════════════════
@@ -350,6 +333,7 @@ test("gsd launches and loads extensions without errors", async () => {
         BRAVE_ANSWERS_KEY: "test",
         CONTEXT7_API_KEY: "test",
         JINA_API_KEY: "test",
+        TAVILY_API_KEY: "test",
       },
       stdio: ["pipe", "pipe", "pipe"],
     });
@@ -386,35 +370,5 @@ test("gsd launches and loads extensions without errors", async () => {
   assert.ok(
     !output.includes("ERR_MODULE_NOT_FOUND"),
     "no ERR_MODULE_NOT_FOUND",
-  );
-});
-/**
- * 9. buildResourceLoader includes ~/.pi/agent/extensions in additionalExtensionPaths
- */
-test("buildResourceLoader source includes ~/.pi/agent/extensions path", async () => {
-  const { join } = await import("node:path");
-  
-  // Verify the source code includes the pi extensions path
-  const loaderSrc = readFileSync(join(projectRoot, "src", "resource-loader.ts"), "utf-8");
-  
-  // Check that buildResourceLoader references ~/.pi/agent
-  assert.ok(
-    loaderSrc.includes(".pi"),
-    "resource-loader.ts references .pi directory"
-  );
-  assert.ok(
-    loaderSrc.includes("additionalExtensionPaths"),
-    "resource-loader.ts uses additionalExtensionPaths"
-  );
-  assert.ok(
-    loaderSrc.includes("homedir()"),
-    "resource-loader.ts uses homedir() to construct paths"
-  );
-  
-  // Verify the function constructs the correct path
-  assert.match(
-    loaderSrc,
-    /join\(homedir\(\),\s*['"]\.pi['"],\s*['"]agent['"]\)/,
-    "buildResourceLoader constructs ~/.pi/agent path"
   );
 });

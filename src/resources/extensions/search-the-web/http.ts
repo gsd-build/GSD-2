@@ -34,7 +34,7 @@ export function classifyError(err: unknown): { kind: SearchErrorKind; message: s
   if (err instanceof HttpError) {
     const code = err.statusCode;
     if (code === 401 || code === 403) {
-      return { kind: "auth_error", message: `HTTP ${code}: Invalid or missing API key. Use secure_env_collect to set BRAVE_API_KEY.` };
+      return { kind: "auth_error", message: `HTTP ${code}: Invalid or missing API key. Check your API key with secure_env_collect.` };
     }
     if (code === 429) {
       let retryAfterMs: number | undefined;
