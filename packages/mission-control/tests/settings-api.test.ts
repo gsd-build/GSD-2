@@ -25,7 +25,7 @@ afterAll(async () => {
 beforeEach(async () => {
   // Clean config files between tests
   try { await rm(join(GLOBAL_DIR, "defaults.json")); } catch {}
-  try { await rm(join(PROJECT_DIR, "config.json")); } catch {}
+  try { await rm(join(PROJECT_DIR, "preferences.md")); } catch {}
 });
 
 describe("getSettings", () => {
@@ -44,19 +44,20 @@ describe("getSettings", () => {
     expect(result.global).toEqual({ theme: "dark", lang: "en" });
   });
 
-  it("reads project settings from config.json", async () => {
+  it("reads project settings from preferences.md", async () => {
     _setGlobalDir(GLOBAL_DIR);
-    await writeFile(join(PROJECT_DIR, "config.json"), JSON.stringify({ model: "opus" }));
+    // Write preferences.md with YAML frontmatter
+    await writeFile(join(PROJECT_DIR, "preferences.md"), "---\nresearch_model: opus\n---\n");
     const result = await getSettings(PROJECT_DIR);
-    expect(result.project).toEqual({ model: "opus" });
+    expect(result.project).toEqual({ research_model: "opus" });
   });
 
   it("merges with project overriding global", async () => {
     _setGlobalDir(GLOBAL_DIR);
     await writeFile(join(GLOBAL_DIR, "defaults.json"), JSON.stringify({ theme: "dark", lang: "en" }));
-    await writeFile(join(PROJECT_DIR, "config.json"), JSON.stringify({ theme: "light", model: "opus" }));
+    await writeFile(join(PROJECT_DIR, "preferences.md"), "---\ntheme: light\nresearch_model: opus\n---\n");
     const result = await getSettings(PROJECT_DIR);
-    expect(result.merged).toEqual({ theme: "light", lang: "en", model: "opus" });
+    expect(result.merged).toEqual({ theme: "light", lang: "en", research_model: "opus" });
   });
 });
 
@@ -69,11 +70,14 @@ describe("saveSettings", () => {
     expect(content).toEqual({ theme: "dark" });
   });
 
-  it("saves to project tier", async () => {
+  it("saves to project tier (preferences.md)", async () => {
     _setGlobalDir(GLOBAL_DIR);
-    await saveSettings("project", { model: "sonnet" }, PROJECT_DIR);
-    const content = JSON.parse(await readFile(join(PROJECT_DIR, "config.json"), "utf-8"));
-    expect(content).toEqual({ model: "sonnet" });
+    await saveSettings("project", { research_model: "sonnet" }, PROJECT_DIR);
+    const raw = await readFile(join(PROJECT_DIR, "preferences.md"), "utf-8");
+    // gray-matter.stringify produces YAML frontmatter; parse it back to verify
+    const { default: matter } = await import("gray-matter");
+    const { data } = matter(raw);
+    expect(data).toEqual({ research_model: "sonnet" });
   });
 
   it("merges with existing data (partial update)", async () => {
@@ -89,7 +93,7 @@ describe("handleSettingsRequest", () => {
   it("GET /api/settings returns merged settings", async () => {
     _setGlobalDir(GLOBAL_DIR);
     await writeFile(join(GLOBAL_DIR, "defaults.json"), JSON.stringify({ theme: "dark" }));
-    await writeFile(join(PROJECT_DIR, "config.json"), JSON.stringify({ model: "opus" }));
+    await writeFile(join(PROJECT_DIR, "preferences.md"), "---\nresearch_model: opus\n---\n");
 
     const req = new Request("http://localhost/api/settings", { method: "GET" });
     const url = new URL(req.url);
@@ -98,7 +102,7 @@ describe("handleSettingsRequest", () => {
     expect(res).not.toBeNull();
     expect(res!.status).toBe(200);
     const body = await res!.json();
-    expect(body.merged).toEqual({ theme: "dark", model: "opus" });
+    expect(body.merged).toEqual({ theme: "dark", research_model: "opus" });
   });
 
   it("PUT /api/settings saves to correct tier", async () => {

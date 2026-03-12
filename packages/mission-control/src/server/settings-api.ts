@@ -1,16 +1,20 @@
 /**
  * Settings API — two-tier config (global + project) with merge.
- * Also discovers real Claude Code configuration:
+ * Also discovers real GSD 2 configuration:
  *   - Skills from ~/.claude/skills/
  *   - Commands from ~/.claude/commands/
  *   - Agents from ~/.claude/agents/
  *   - Plugins from ~/.claude/plugins/installed_plugins.json
  *   - Settings from ~/.claude/settings.json
+ *
+ * Project preferences are stored in {planningDir}/preferences.md as YAML frontmatter.
+ * Parse with gray-matter; write back as YAML frontmatter block.
  */
 
 import { readFile, writeFile, mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import matter from "gray-matter";
 
 /** Override for testing — points to the .gsd directory (not homedir) */
 let globalDirOverride: string | null = null;
@@ -33,7 +37,7 @@ function globalPath(): string {
 }
 
 function projectPath(planningDir: string): string {
-  return join(planningDir, "config.json");
+  return join(planningDir, "preferences.md");
 }
 
 async function readJsonSafe(filePath: string): Promise<Record<string, unknown>> {
@@ -43,6 +47,37 @@ async function readJsonSafe(filePath: string): Promise<Record<string, unknown>> 
   } catch {
     return {};
   }
+}
+
+/**
+ * Read a preferences.md file and return the parsed YAML frontmatter data.
+ * Returns empty object if file does not exist or has no frontmatter.
+ */
+async function readPreferencesMd(filePath: string): Promise<Record<string, unknown>> {
+  try {
+    const content = await readFile(filePath, "utf-8");
+    const { data } = matter(content);
+    return data as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Write GSD2Preferences data to a preferences.md file as YAML frontmatter.
+ * Merges with existing frontmatter data (partial update).
+ */
+async function writePreferencesMd(filePath: string, updates: Record<string, unknown>): Promise<void> {
+  let existing: Record<string, unknown> = {};
+  try {
+    const content = await readFile(filePath, "utf-8");
+    existing = matter(content).data as Record<string, unknown>;
+  } catch {
+    // File doesn't exist yet — start fresh
+  }
+  const merged = { ...existing, ...updates };
+  const output = matter.stringify("", merged);
+  await writeFile(filePath, output);
 }
 
 async function listDirNames(dirPath: string): Promise<string[]> {
@@ -149,7 +184,7 @@ export async function getSettings(
 }> {
   const [global, project, claude] = await Promise.all([
     readJsonSafe(globalPath()),
-    readJsonSafe(projectPath(planningDir)),
+    readPreferencesMd(projectPath(planningDir)),
     discoverClaudeConfig(),
   ]);
   return {
@@ -175,11 +210,15 @@ export async function saveSettings(
   const dir = tier === "global" ? getGlobalDir() : planningDir!;
   await mkdir(dir, { recursive: true });
 
-  // Read existing and merge
-  const existing = await readJsonSafe(filePath);
-  const merged = { ...existing, ...settings };
-
-  await writeFile(filePath, JSON.stringify(merged, null, 2));
+  if (tier === "global") {
+    // Global tier: JSON file (defaults.json)
+    const existing = await readJsonSafe(filePath);
+    const merged = { ...existing, ...settings };
+    await writeFile(filePath, JSON.stringify(merged, null, 2));
+  } else {
+    // Project tier: preferences.md — YAML frontmatter
+    await writePreferencesMd(filePath, settings);
+  }
 }
 
 /**
