@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Native Desktop
 status: in_progress
-last_updated: "2026-03-12T18:43:14.499Z"
+last_updated: "2026-03-12T18:43:58.563Z"
 last_activity: "2026-03-12 — Plan 11.1-02 complete: wired guard, reconcile interval pause, MAX_SESSIONS consolidated, validateConfigState added"
 progress:
   total_phases: 10
   completed_phases: 1
   total_plans: 10
-  completed_plans: 8
+  completed_plans: 9
 ---
 
 ---
@@ -37,12 +37,12 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 
 ## Current Position
 
-Phase: 11.1 of 20 (Pre-v2.0 Stabilization)
-Plan: 4 of 4 (all plans 00, 01, 02, 03 complete — phase 11.1 done)
+Phase: 12 of 20 (GSD 2 Compatibility Pass)
+Plan: 5 of 6 (plans 00-05 complete — one plan remaining: 12-06)
 Status: In progress
-Last activity: 2026-03-12 — Plan 11.1-02 complete: wired guard, reconcile interval pause, MAX_SESSIONS consolidated, validateConfigState added
+Last activity: 2026-03-12 — Plan 12-05 complete: SettingsView GSD 2 fields, settings-api.ts preferences.md
 
-Progress: [██████████] 100% (v2.0 phase 11.1)
+Progress: [█████████░] 90% (v2.0 phase 12)
 
 ## Milestone Archive
 
@@ -93,6 +93,8 @@ Progress: [██████████] 100% (v2.0 phase 11.1)
 - [Phase 12-03]: planningDir variable name preserved throughout — only the string value changed from .planning to .gsd
 - [Phase 12-04]: GSD_COMMANDS rewritten to exactly 9 GSD 2 entries; all 22 v1 /gsd:* entries removed
 - [Phase 12-04]: MigrationBanner uses inline style for amber border (#F59E0B) and surface background (#131C2B); ChatView tracks dismissal via useState
+- [Phase 12]: SettingsView: replaced Claude Code Options section with AI Model Settings (four per-phase selects + budget_ceiling + skill_discovery)
+- [Phase 12]: settings-api.ts project tier changed from config.json to preferences.md YAML frontmatter via gray-matter
 
 ### Blockers/Concerns
 
