@@ -48,6 +48,8 @@ GSD v2 solves all of these because it's not a prompt framework anymore — it's 
 
 ### Migrating from v1
 
+> **Note:** A `ROADMAP.md` file is **required** for migration. If your project doesn't have one, you'll need to create it before running the migration command.
+
 If you have projects with `.planning` directories from the original Get Shit Done, you can migrate them to GSD-2's `.gsd` format:
 
 ```bash
