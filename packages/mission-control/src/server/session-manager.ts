@@ -23,6 +23,8 @@ export interface IProcessManager {
   start(): Promise<void>;
   sendMessage(prompt: string): Promise<void>;
   kill(): Promise<void>;
+  /** Send SIGINT to the active process. No-op if no process is active. */
+  interrupt(): void;
 }
 
 export interface SessionState {
@@ -145,6 +147,15 @@ export class SessionManager {
   /** Returns all sessions ordered by createdAt. */
   listSessions(): SessionState[] {
     return Array.from(this.sessions.values()).sort((a, b) => a.createdAt - b.createdAt);
+  }
+
+  /**
+   * Kill all registered session processes — orphan prevention hook.
+   * Called by the server on app shutdown. No-op if no sessions exist.
+   */
+  async killAll(): Promise<void> {
+    const sessions = this.listSessions();
+    await Promise.all(sessions.map((s) => s.processManager.kill()));
   }
 
   /** Close a session: stop routing, kill process, remove from registry. No-op for unknown IDs. */

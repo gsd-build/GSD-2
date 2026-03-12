@@ -50,7 +50,7 @@ export class ClaudeProcessManager {
   }
 
   get isActive(): boolean {
-    return true; // Always ready to spawn
+    return this.activeProcess !== null;
   }
 
   get isProcessing(): boolean {
@@ -172,6 +172,16 @@ export class ClaudeProcessManager {
           } as StreamEvent);
         }
         this._isProcessing = false;
+      } else if (code !== 0 && chunkCount > 0) {
+        // Process produced output but crashed — emit process_crashed event
+        this._isProcessing = false;
+        for (const handler of this.eventHandlers) {
+          handler({
+            type: "process_crashed",
+            exitCode: code,
+            stderr: stderrText.trim(),
+          } as unknown as StreamEvent);
+        }
       } else if (this._isProcessing) {
         // Safety: ensure isProcessing is cleared even if no result event
         this._isProcessing = false;
@@ -192,6 +202,15 @@ export class ClaudeProcessManager {
         } as StreamEvent);
       }
     });
+  }
+
+  /**
+   * Interrupt the active process by sending SIGINT.
+   * No-op if no process is currently active.
+   */
+  interrupt(): void {
+    if (!this.activeProcess) return;
+    this.activeProcess.kill("SIGINT");
   }
 
   /**
