@@ -9,13 +9,13 @@ Requirements for the Native Desktop milestone. Each maps to roadmap phases 12–
 
 ### GSD 2 Compatibility (COMPAT)
 
-- [ ] **COMPAT-01**: File watcher targets `.gsd/` directory, not `.planning/`
-- [ ] **COMPAT-02**: State deriver reads GSD 2 file schema — `STATE.md`, `M001-ROADMAP.md`, `S01-PLAN.md`, `T01-SUMMARY.md`, `DECISIONS.md`, `preferences.md`, `PROJECT.md`, `M001-CONTEXT.md`
-- [ ] **COMPAT-03**: Milestone/slice/task file indices derived dynamically from STATE.md (never hardcoded `M001`, `S01`, `T01`)
-- [ ] **COMPAT-04**: Command autocomplete shows GSD 2 syntax (`/gsd`, `/gsd auto`, `/gsd stop`, `/gsd discuss`, `/gsd status`, `/gsd queue`, `/gsd prefs`, `/gsd migrate`, `/gsd doctor`); all v1 `/gsd:` entries removed
-- [ ] **COMPAT-05**: Child process spawns `gsd` binary, not `claude` or `claude-code`
-- [ ] **COMPAT-06**: Migration banner shown when `.planning/` exists but no `.gsd/` — "Run migration" sends `/gsd migrate` to active session
-- [ ] **COMPAT-07**: Settings panel updated — per-phase model selection (research/planning/execution/completion), budget ceiling field, skill_discovery toggle; v1 settings removed
+- [x] **COMPAT-01**: File watcher targets `.gsd/` directory, not `.planning/`
+- [x] **COMPAT-02**: State deriver reads GSD 2 file schema — `STATE.md`, `M001-ROADMAP.md`, `S01-PLAN.md`, `T01-SUMMARY.md`, `DECISIONS.md`, `preferences.md`, `PROJECT.md`, `M001-CONTEXT.md`
+- [x] **COMPAT-03**: Milestone/slice/task file indices derived dynamically from STATE.md (never hardcoded `M001`, `S01`, `T01`)
+- [x] **COMPAT-04**: Command autocomplete shows GSD 2 syntax (`/gsd`, `/gsd auto`, `/gsd stop`, `/gsd discuss`, `/gsd status`, `/gsd queue`, `/gsd prefs`, `/gsd migrate`, `/gsd doctor`); all v1 `/gsd:` entries removed
+- [x] **COMPAT-05**: Child process spawns `gsd` binary, not `claude` or `claude-code`
+- [x] **COMPAT-06**: Migration banner shown when `.planning/` exists but no `.gsd/` — "Run migration" sends `/gsd migrate` to active session
+- [x] **COMPAT-07**: Settings panel updated — per-phase model selection (research/planning/execution/completion), budget ceiling field, skill_discovery toggle; v1 settings removed
 
 ### Session Streaming (STREAM)
 
@@ -124,13 +124,13 @@ Deferred to future release.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| COMPAT-01 | Phase 12 | Pending |
-| COMPAT-02 | Phase 12 | Pending |
-| COMPAT-03 | Phase 12 | Pending |
-| COMPAT-04 | Phase 12 | Pending |
-| COMPAT-05 | Phase 12 | Pending |
-| COMPAT-06 | Phase 12 | Pending |
-| COMPAT-07 | Phase 12 | Pending |
+| COMPAT-01 | Phase 12 | Complete |
+| COMPAT-02 | Phase 12 | Complete |
+| COMPAT-03 | Phase 12 | Complete |
+| COMPAT-04 | Phase 12 | Complete |
+| COMPAT-05 | Phase 12 | Complete |
+| COMPAT-06 | Phase 12 | Complete |
+| COMPAT-07 | Phase 12 | Complete |
 | STREAM-01 | Phase 13 | Pending |
 | STREAM-02 | Phase 13 | Pending |
 | STREAM-03 | Phase 13 | Pending |

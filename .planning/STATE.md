@@ -3,6 +3,20 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Native Desktop
 status: in_progress
+last_updated: "2026-03-12T18:16:21.009Z"
+last_activity: "2026-03-12 — Plan 11.1-02 complete: wired guard, reconcile interval pause, MAX_SESSIONS consolidated, validateConfigState added"
+progress:
+  total_phases: 10
+  completed_phases: 1
+  total_plans: 10
+  completed_plans: 5
+---
+
+---
+gsd_state_version: 1.0
+milestone: v2.0
+milestone_name: Native Desktop
+status: in_progress
 stopped_at: "Completed 11.1-02-PLAN.md"
 last_updated: "2026-03-12T17:38:00Z"
 last_activity: "2026-03-12 — Plan 11.1-02 complete: wired guard, reconcile interval pause, MAX_SESSIONS consolidated, validateConfigState added"
@@ -69,6 +83,8 @@ Progress: [██████████] 100% (v2.0 phase 11.1)
 - **11.1-03:** logo-anim-* CSS classes removed from animations.css; LogoAnimation, LoadingLogo, GsdLogo now use img tags pointing to official brand assets in public/assets/
 - [Phase 11.1]: wired flag lives on SessionState rather than a Set in pipeline.ts — co-located with session object, avoids closure coupling
 - [Phase 11.1]: validateConfigState uses manual typeof field-by-field checks rather than Zod — no new dependencies, consistent with project conventions
+- [Phase 12-01]: Static source-text strategy for SettingsView tests: read SettingsView.tsx as string, assert GSD 2 field labels — avoids React hook rendering complexity in Bun test environment
+- [Phase 12-01]: migration-banner and state-deriver GSD 2 tests are GREEN not RED because state-deriver.ts was already migrated to GSD 2 schema in the working tree before plan execution
 
 ### Blockers/Concerns
 
