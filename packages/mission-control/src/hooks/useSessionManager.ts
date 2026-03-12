@@ -11,7 +11,9 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { useReconnectingWebSocket } from "./useReconnectingWebSocket";
 import { processStreamEvent } from "./useChat";
 import { setCustomCommands } from "../lib/slash-commands";
-import type { ChatMessage, ChatResponse, StreamEvent, PermissionPromptEvent, SessionMetadata } from "../server/chat-types";
+import { classifyPiSdkEvent } from "../server/ndjson-parser";
+import { useCostTracker } from "./useCostTracker";
+import type { ChatMessage, ChatResponse, StreamEvent, PermissionPromptEvent, SessionMetadata, GSD2StreamEvent } from "../server/chat-types";
 import type { SlashCommand } from "../lib/slash-commands";
 
 // -- Types --
@@ -43,6 +45,12 @@ export interface UseSessionManagerResult {
   sendMessage: (text: string) => void;
   permissionPrompt: PermissionPromptEvent | null;
   respondToPermission: (action: "approve" | "always_allow" | "deny") => void;
+  /** True when /gsd auto is running (auto_mode_announcement mode=start received) */
+  isAutoMode: boolean;
+  /** True when the gsd process crashed unexpectedly */
+  isCrashed: boolean;
+  /** Send SIGINT to the active session's process */
+  interrupt: () => void;
 }
 
 // -- Pure functions (exported for testing) --
@@ -237,6 +245,59 @@ export function deriveSessionName(message: string): string {
   return name || "Chat";
 }
 
+// -- GSD2 event application --
+
+export interface ApplyGSD2EventState {
+  isAutoMode: boolean;
+  isCrashed: boolean;
+}
+
+export interface ApplyGSD2EventResult extends ApplyGSD2EventState {
+  messageInsert?: ChatMessage;
+}
+
+/**
+ * Pure helper: apply a classified GSD2StreamEvent to the auto/crash state machine.
+ * Returns updated state and an optional message to insert into the message list.
+ * Called by useSessionManager for each classified Pi SDK event.
+ */
+export function applyGSD2Event(
+  event: GSD2StreamEvent,
+  state: ApplyGSD2EventState,
+): ApplyGSD2EventResult {
+  switch (event.kind) {
+    case "auto_mode_announcement":
+      return { ...state, isAutoMode: event.mode === "start" };
+    case "phase_transition":
+      return {
+        ...state,
+        messageInsert: {
+          id: `phase-${Date.now()}`,
+          role: "phase_transition",
+          content: event.phase,
+          timestamp: Date.now(),
+          streaming: false,
+          phaseTransition: { phase: event.phase },
+        },
+      };
+    case "tool_use":
+      return {
+        ...state,
+        messageInsert: {
+          id: `tool-${Date.now()}`,
+          role: "tool_use",
+          content: event.name,
+          timestamp: Date.now(),
+          streaming: true,
+          toolName: event.name,
+          toolInput: event.input,
+        },
+      };
+    default:
+      return { ...state };
+  }
+}
+
 /** Build a chat WebSocket payload with the active sessionId. */
 export function buildChatPayload(
   state: SessionManagerState,
@@ -250,6 +311,8 @@ export function buildChatPayload(
 export interface UseSessionManagerOptions {
   /** Callback fired for each stream event, used to feed useActivity. */
   onActivityEvent?: (event: StreamEvent) => void;
+  /** Optional budget ceiling (USD) from preferences.md — passed to useCostTracker */
+  budgetCeiling?: number | null;
 }
 
 /**
@@ -265,6 +328,15 @@ export function useSessionManager(
   const [messagesBySession, setMessagesBySession] = useState<Map<string, ChatMessage[]>>(new Map());
   const [processingBySession, setProcessingBySession] = useState<Map<string, boolean>>(new Map());
   const [permissionPrompt, setPermissionPrompt] = useState<PermissionPromptEvent | null>(null);
+  const [isAutoMode, setIsAutoMode] = useState(false);
+  const [isCrashed, setIsCrashed] = useState(false);
+  const { addCostEvent } = useCostTracker(options.budgetCeiling ?? null);
+
+  // Keep isAutoMode in a ref for use inside the message handler (avoid stale closure)
+  const isAutoModeRef = useRef(isAutoMode);
+  useEffect(() => { isAutoModeRef.current = isAutoMode; }, [isAutoMode]);
+  const isCrashedRef = useRef(isCrashed);
+  useEffect(() => { isCrashedRef.current = isCrashed; }, [isCrashed]);
 
   const onActivityEventRef = useRef(options.onActivityEvent);
   onActivityEventRef.current = options.onActivityEvent;
@@ -354,6 +426,40 @@ export function useSessionManager(
 
       // Feed activity events
       onActivityEventRef.current?.(evt);
+
+      // Handle process_crashed raw event (cast from 13-02)
+      if ((evt as { type: string }).type === "process_crashed") {
+        setIsCrashed(true);
+        setIsAutoMode(false);
+        return;
+      }
+
+      // Classify Pi SDK events for auto mode, cost, phase, tool state
+      const rawEvent = msg.event as Record<string, unknown>;
+      const classified = classifyPiSdkEvent(rawEvent);
+      if (classified) {
+        if (classified.kind === "cost_update") {
+          addCostEvent(classified.total_cost_usd);
+        } else {
+          const result = applyGSD2Event(classified, {
+            isAutoMode: isAutoModeRef.current,
+            isCrashed: isCrashedRef.current,
+          });
+          if (result.isAutoMode !== isAutoModeRef.current) {
+            setIsAutoMode(result.isAutoMode);
+          }
+          if (result.messageInsert) {
+            setMessagesBySession((prev) => {
+              const newMap = new Map(prev);
+              const msgs = [...(newMap.get(sessionId) ?? [])];
+              msgs.push(result.messageInsert!);
+              newMap.set(sessionId, msgs);
+              return newMap;
+            });
+          }
+        }
+        return;
+      }
 
       // Skip noise events
       if (evt.type === "system" && !evt.result) return;
@@ -516,6 +622,13 @@ export function useSessionManager(
     setPermissionPrompt(null);
   }, [send, permissionPrompt]);
 
+  // Interrupt: send SIGINT signal to active session's process via WebSocket
+  const interrupt = useCallback(() => {
+    const sessionId = stateRef.current.activeSessionId;
+    if (!sessionId) return;
+    send(JSON.stringify({ type: "session_interrupt", sessionId }));
+  }, [send]);
+
   return {
     sessions,
     activeSessionId,
@@ -528,5 +641,8 @@ export function useSessionManager(
     sendMessage,
     permissionPrompt,
     respondToPermission,
+    isAutoMode,
+    isCrashed,
+    interrupt,
   };
 }

@@ -43,12 +43,16 @@ export interface PermissionResponse {
 
 export interface ChatMessage {
   id: string;
-  role: "user" | "assistant" | "system";
+  role: "user" | "assistant" | "system" | "phase_transition" | "tool_use";
   content: string;
   timestamp: number;
   streaming: boolean;
   toolName?: string;
   toolDone?: boolean;
+  /** For phase_transition messages: the phase name */
+  phaseTransition?: { phase: string };
+  /** For tool_use messages: the raw tool input */
+  toolInput?: unknown;
 }
 
 // -- Session Metadata (lightweight client-facing representation) --
