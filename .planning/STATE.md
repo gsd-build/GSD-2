@@ -3,10 +3,25 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Native Desktop
 status: in_progress
+last_updated: "2026-03-13T08:32:51.608Z"
+last_activity: "2026-03-13 — Plan 14-01 complete: parseRoadmap/parsePlan/parseUat replace raw stubs; GSD2State gains slices[], uatFile, gitBranchCommits, lastCommitMessage; SLICE-01 through SLICE-07 satisfied; 607 tests pass"
+progress:
+  total_phases: 10
+  completed_phases: 2
+  total_plans: 23
+  completed_plans: 19
+  percent: 83
+---
+
+---
+gsd_state_version: 1.0
+milestone: v2.0
+milestone_name: Native Desktop
+status: in_progress
 last_updated: "2026-03-13T08:18:34.455Z"
 last_activity: "2026-03-13 — Plan 13-07 complete: session_interrupt added to SessionAction union, routed in ws-server.ts, handled in pipeline.ts; STREAM-03 and STREAM-07 fully satisfied; 580 tests pass"
 progress:
-  total_phases: 10
+  [████████░░] 83%
   completed_phases: 2
   total_plans: 23
   completed_plans: 18
@@ -141,11 +156,11 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 ## Current Position
 
 Phase: 14 of 20 (Slice Integration) — IN PROGRESS
-Plan: 1 of 5 complete (plan 01 done — parseRoadmap/parsePlan/parseUat, GSD2State slices/uatFile/gitBranchCommits)
-Status: Phase 14 in progress — ready for plans 14-02, 14-03, 14-04 (wave 2)
-Last activity: 2026-03-13 — Plan 14-01 complete: parseRoadmap/parsePlan/parseUat replace raw stubs; GSD2State gains slices[], uatFile, gitBranchCommits, lastCommitMessage; SLICE-01 through SLICE-07 satisfied; 607 tests pass
+Plan: 2 of 5 complete (plan 02 done — SliceAccordion, MilestoneHeader GSD2State, MilestoneView, TabLayout 2-tab)
+Status: Phase 14 in progress — ready for plans 14-03, 14-04 (wave 2)
+Last activity: 2026-03-13 — Plan 14-02 complete: SliceAccordion container; MilestoneHeader with totalCost/budget bar; Slice tab removed from TabLayout; MilestoneView uses gsd2State; 617 tests pass
 
-Progress: [████████░░] 78% (18/23 plans complete)
+Progress: [████████░░] 83% (19/23 plans complete)
 
 ## Milestone Archive
 
@@ -215,6 +230,9 @@ Progress: [████████░░] 78% (18/23 plans complete)
 - [Phase 14-slice-integration]: parseRoadmap uses regex-based section parsing (## S01 headings) not a structured format — matches actual GSD2 roadmap markdown layout
 - [Phase 14-slice-integration]: GSD2TaskSummary now has taskId/sliceId/summary(200 chars) fields — not raw string; backward-compat tests updated
 - [Phase 14-slice-integration]: readGitBranchData checks branch existence before querying count/message — defaults to 0/''
+- [Phase 14]: MilestoneView prop renamed planningState → gsd2State; SingleColumnView updated to pass gsd2State= in same commit
+- [Phase 14]: MilestoneHeader totalCost derived from slices[].costEstimate sum; budget bar only renders when budgetCeiling is non-null and >0
+- [Phase 14]: TabLayout Slice tab removed; Start next slice button disabled when no WebSocket handler wired yet — graceful degradation
 
 ### Blockers/Concerns
 
