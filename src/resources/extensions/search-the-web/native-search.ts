@@ -11,6 +11,15 @@ export const BRAVE_TOOL_NAMES = ["search-the-web", "search_and_read"];
 /** Thinking block types that require signature validation by the API */
 const THINKING_TYPES = new Set(["thinking", "redacted_thinking"]);
 
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function isCloudCodeAssistRequest(payload: Record<string, unknown>): boolean {
+  const request = payload.request;
+  return isObjectRecord(request) && Array.isArray(request.contents);
+}
+
 /** Minimal interface matching the subset of ExtensionAPI we use */
 export interface NativeSearchPI {
   on(event: string, handler: (...args: any[]) => any): void;
@@ -102,6 +111,10 @@ export function registerNativeSearchHooks(pi: NativeSearchPI): { getIsAnthropic:
     // Detect Anthropic by model name prefix (works even before model_select fires)
     const model = payload.model as string | undefined;
     if (!model || !model.startsWith("claude")) return;
+
+    // Native Anthropic search injection only applies to direct Anthropic payloads.
+    // Antigravity / Cloud Code Assist uses a different request envelope and tool schema.
+    if (isCloudCodeAssistRequest(payload)) return;
 
     // Keep provider tracking in sync
     isAnthropicProvider = true;

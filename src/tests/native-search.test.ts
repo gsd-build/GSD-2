@@ -147,6 +147,34 @@ test("before_provider_request creates tools array if missing", async () => {
   assert.equal((tools as any[])[0].type, "web_search_20250305");
 });
 
+test("before_provider_request does not inject top-level tools into Cloud Code Assist Claude payloads", async () => {
+  const pi = createMockPI();
+  registerNativeSearchHooks(pi);
+
+  const payload: Record<string, unknown> = {
+    model: "claude-sonnet-4-6-20250514",
+    request: {
+      contents: [],
+      tools: [
+        {
+          functionDeclarations: [{ name: "bash" }],
+        },
+      ],
+    },
+  };
+
+  const result = await pi.fire("before_provider_request", {
+    type: "before_provider_request",
+    payload,
+  });
+
+  assert.equal(result, undefined, "Should not modify Cloud Code Assist payloads");
+  assert.equal("tools" in payload, false, "Should not create top-level tools");
+  const requestTools = (payload.request as any).tools as any[];
+  assert.equal(requestTools.length, 1, "Should leave nested request.tools unchanged");
+  assert.equal(requestTools[0].functionDeclarations[0].name, "bash");
+});
+
 test("before_provider_request skips when payload is falsy", async () => {
   const pi = createMockPI();
   registerNativeSearchHooks(pi);
