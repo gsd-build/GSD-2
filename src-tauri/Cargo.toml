@@ -1,0 +1,25 @@
+[package]
+name = "gsd-mission-control"
+version = "0.1.0"
+description = "GSD Mission Control — native desktop shell"
+authors = []
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "app_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-window-state = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-shell = "2"
+tauri-plugin-opener = "2"
+keyring = { version = "3", features = ["default-credential"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
