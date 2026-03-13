@@ -28,6 +28,7 @@ import { SettingsManager } from "./core/settings-manager.js";
 import { printTimings, time } from "./core/timings.js";
 import { allTools } from "./core/tools/index.js";
 import { runMigrations, showDeprecationWarnings } from "./migrations.js";
+import pythonExtension from "./resources/extensions/python/index.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.js";
 
@@ -609,6 +610,7 @@ export async function main(args: string[]) {
 		cwd,
 		agentDir,
 		settingsManager,
+		extensionFactories: [pythonExtension],
 		additionalExtensionPaths: firstPass.extensions,
 		additionalSkillPaths: firstPass.skills,
 		additionalPromptTemplatePaths: firstPass.promptTemplates,
