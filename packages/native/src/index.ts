@@ -5,7 +5,15 @@
  * - grep: ripgrep-backed regex search (content + filesystem)
  * - ps: cross-platform process tree management
  * - glob: gitignore-respecting filesystem discovery with scan caching
+ * - highlight: syntect-based syntax highlighting
  */
+
+export {
+  highlightCode,
+  supportsLanguage,
+  getSupportedLanguages,
+} from "./highlight/index.js";
+export type { HighlightColors } from "./highlight/index.js";
 
 export { searchContent, grep } from "./grep/index.js";
 export type {

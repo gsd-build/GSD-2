@@ -52,4 +52,7 @@ export const native = loadNative() as {
     onMatch?: ((match: unknown) => void) | undefined | null,
   ) => Promise<unknown>;
   invalidateFsScanCache: (path?: string) => void;
+  highlightCode: (code: string, lang: string | null, colors: unknown) => unknown;
+  supportsLanguage: (lang: string) => unknown;
+  getSupportedLanguages: () => unknown;
 };

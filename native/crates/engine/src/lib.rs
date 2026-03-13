@@ -12,5 +12,6 @@ mod fs_cache;
 mod glob;
 mod glob_util;
 mod grep;
+mod highlight;
 mod ps;
 mod task;
