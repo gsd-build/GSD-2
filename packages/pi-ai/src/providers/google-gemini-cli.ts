@@ -24,6 +24,7 @@ import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import {
 	convertMessages,
+	convertClaudeCompatibleTools,
 	convertTools,
 	isThinkingPart,
 	mapStopReasonString,
@@ -906,10 +907,13 @@ export function buildRequest(
 	}
 
 	if (context.tools && context.tools.length > 0) {
-		// Claude models on Cloud Code Assist need the legacy `parameters` field;
-		// the API translates it into Anthropic's `input_schema`.
-		const useParameters = model.id.startsWith("claude-");
-		request.tools = convertTools(context.tools, useParameters);
+		// Antigravity Claude models still require the legacy `parameters` field,
+		// but only a limited OpenAPI-compatible schema subset is accepted there.
+		const useClaudeCompatibleParameters =
+			model.provider === "google-antigravity" && model.id.startsWith("claude-");
+		request.tools = useClaudeCompatibleParameters
+			? convertClaudeCompatibleTools(context.tools)
+			: convertTools(context.tools);
 		if (options.toolChoice) {
 			request.toolConfig = {
 				functionCallingConfig: {

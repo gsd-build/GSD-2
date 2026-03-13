@@ -1,5 +1,5 @@
 // ESM resolve hook: .js → .ts rewriting for test environments.
-// Only rewrites relative imports from our own source files — not from node_modules.
+// Rewrites imports from our source trees, but not from node_modules or built dist output.
 //
 // Handles two patterns:
 // 1. .js → .ts  (pi bundler convention: source files use .js specifiers)
@@ -8,11 +8,14 @@
 export function resolve(specifier, context, nextResolve) {
   const parentURL = context.parentURL || '';
   const isFromNodeModules = parentURL.includes('/node_modules/');
-  const isFromPackages = parentURL.includes('/packages/');
+  const isFromBuiltDist = parentURL.includes('/dist/');
 
-  if (!isFromNodeModules && !isFromPackages && !specifier.startsWith('node:')) {
+  if (!isFromNodeModules && !isFromBuiltDist && !specifier.startsWith('node:')) {
     // Rewrite .js → .ts
     if (specifier.endsWith('.js')) {
+      if (specifier.includes('/dist/')) {
+        return nextResolve(specifier, context);
+      }
       const tsSpecifier = specifier.replace(/\.js$/, '.ts');
       try {
         return nextResolve(tsSpecifier, context);

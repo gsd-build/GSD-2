@@ -250,6 +250,103 @@ export function convertTools(
 	];
 }
 
+type JsonSchemaObject = Record<string, unknown>;
+
+function isJsonSchemaObject(value: unknown): value is JsonSchemaObject {
+	return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function inferLiteralEnumType(values: unknown[]): "string" | "number" | "boolean" | undefined {
+	if (values.every((value) => typeof value === "string")) return "string";
+	if (values.every((value) => typeof value === "number")) return "number";
+	if (values.every((value) => typeof value === "boolean")) return "boolean";
+	return undefined;
+}
+
+function collectLiteralAnyOfValues(value: unknown): unknown[] | undefined {
+	if (!Array.isArray(value) || value.length === 0) return undefined;
+
+	const values = value.map((item) => {
+		if (!isJsonSchemaObject(item)) return undefined;
+		if ("const" in item) {
+			return item.const;
+		}
+		if (Array.isArray(item.enum) && item.enum.length === 1) {
+			return item.enum[0];
+		}
+		return undefined;
+	});
+
+	return values.every((item) => item !== undefined) ? values : undefined;
+}
+
+function sanitizeClaudeToolSchema(schema: unknown): unknown {
+	if (Array.isArray(schema)) {
+		return schema.map((item) => sanitizeClaudeToolSchema(item));
+	}
+	if (!isJsonSchemaObject(schema)) return schema;
+
+	const literalAnyOfValues = collectLiteralAnyOfValues(schema.anyOf);
+	const sanitized: JsonSchemaObject = {};
+
+	for (const [key, value] of Object.entries(schema)) {
+		if (key === "const") {
+			sanitized.enum = [value];
+			continue;
+		}
+		if (key === "anyOf") {
+			if (literalAnyOfValues) {
+				sanitized.enum = literalAnyOfValues;
+				const inferredType = inferLiteralEnumType(literalAnyOfValues);
+				if (inferredType && sanitized.type === undefined) {
+					sanitized.type = inferredType;
+				}
+			} else {
+				sanitized.anyOf = sanitizeClaudeToolSchema(value);
+			}
+			continue;
+		}
+		if (key === "patternProperties" && isJsonSchemaObject(value)) {
+			const firstSchema = Object.values(value)[0];
+			sanitized.additionalProperties = firstSchema === undefined ? true : sanitizeClaudeToolSchema(firstSchema);
+			continue;
+		}
+		if (key === "properties" && isJsonSchemaObject(value)) {
+			sanitized.properties = Object.fromEntries(
+				Object.entries(value).map(([propName, propSchema]) => [propName, sanitizeClaudeToolSchema(propSchema)]),
+			);
+			continue;
+		}
+		if (key === "items") {
+			sanitized.items = sanitizeClaudeToolSchema(value);
+			continue;
+		}
+		if (key === "additionalProperties") {
+			sanitized.additionalProperties =
+				typeof value === "boolean" ? value : sanitizeClaudeToolSchema(value);
+			continue;
+		}
+		sanitized[key] = sanitizeClaudeToolSchema(value);
+	}
+
+	return sanitized;
+}
+
+export function convertClaudeCompatibleTools(
+	tools: Tool[],
+): { functionDeclarations: Record<string, unknown>[] }[] | undefined {
+	if (tools.length === 0) return undefined;
+	return [
+		{
+			functionDeclarations: tools.map((tool) => ({
+				name: tool.name,
+				description: tool.description,
+				parameters: sanitizeClaudeToolSchema(tool.parameters),
+			})),
+		},
+	];
+}
+
 /**
  * Map tool choice string to Gemini FunctionCallingConfigMode.
  */
