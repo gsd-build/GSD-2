@@ -35,7 +35,7 @@
 - [x] **Phase 11.1: Pre-v2.0 Stabilization (INSERTED)** — Address CONCERNS.md: config bridge, security hardening, fragile areas, tech debt, and missing critical features before v2.0 begins (completed 2026-03-12)
 - [x] **Phase 12: GSD 2 Compatibility Pass** — Migrate file watcher, state schema, child process, and command syntax to GSD 2 conventions (completed 2026-03-12)
 - [x] **Phase 13: Session Streaming Hardening** — Pi SDK event parser, resilient stream, process lifecycle, reconnect, cost/token display, auto mode indicators (gap closure in progress) (completed 2026-03-13)
-- [ ] **Phase 14: Slice Integration** — Milestones view renders slices with four states (Planned/In Progress/Needs Review/Complete) and state-appropriate actions
+- [x] **Phase 14: Slice Integration** — Milestones view renders slices with four states (Planned/In Progress/Needs Review/Complete) and state-appropriate actions (completed 2026-03-13)
 - [ ] **Phase 15: Tauri Shell** — Tauri 2 native shell, Bun process management, dependency check, window state, IPC commands, build pipeline
 - [ ] **Phase 16: OAuth + Keychain** — First-launch provider picker, OAuth for Claude Max + GitHub Copilot, API key flow, keychain storage, token refresh
 - [ ] **Phase 17: Permission Model** — Trust dialog replaces skip-permissions toggle, hard boundary enforcement, advanced permission toggles
@@ -222,7 +222,7 @@ Plans:
 | 11.1 Pre-v2.0 Stabilization (INSERTED) | 3/4 | Complete    | 2026-03-12 | — |
 | 12. GSD 2 Compatibility Pass | 6/7 | Complete    | 2026-03-12 | — |
 | 13. Session Streaming Hardening | 7/7 | Complete    | 2026-03-13 | — |
-| 14. Slice Integration | 4/5 | In Progress|  | — |
+| 14. Slice Integration | 5/5 | Complete   | 2026-03-13 | — |
 | 15. Tauri Shell | v2.0 | 0/TBD | Not started | — |
 | 16. OAuth + Keychain | v2.0 | 0/TBD | Not started | — |
 | 17. Permission Model | v2.0 | 0/TBD | Not started | — |

@@ -3,6 +3,23 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Native Desktop
 status: in_progress
+last_updated: "2026-03-13T08:55:55Z"
+last_activity: "2026-03-13 — Plan 14-05 task 1 complete: slice-integration.test.ts with 6 tests for buildFullState full .gsd/ fixture; 680 tests pass; checkpoint awaiting human verify"
+stopped_at: "Checkpoint: 14-05 Task 2 — human verify four slice states in browser"
+progress:
+  [██████████] 96%
+  total_phases: 10
+  completed_phases: 3
+  total_plans: 23
+  completed_plans: 22
+  percent: 96
+---
+
+---
+gsd_state_version: 1.0
+milestone: v2.0
+milestone_name: Native Desktop
+status: in_progress
 last_updated: "2026-03-13T08:51:22.300Z"
 last_activity: "2026-03-13 — Plan 14-02 complete: SliceAccordion container; MilestoneHeader with totalCost/budget bar; Slice tab removed from TabLayout; MilestoneView uses gsd2State; 617 tests pass"
 progress:
@@ -268,6 +285,8 @@ Progress: [█████████░] 91% (21/23 plans complete)
 - [Phase 14]: SliceNeedsReview calls fetch('/api/uat-results') inline on checkbox change — both paths persist so REST call is not lost if parent handler changes
 - [Phase 14]: MilestoneAction type (send_message | interrupt) introduced as translation layer between SliceAction and WebSocket protocol — decouples UI from wire format
 - [Phase 14]: SliceAccordion delegates to SliceRow and accepts gsd2State to thread runtime props (uatItems, commitCount, lastCommitMessage) without prop-drilling through accordion
+- [Phase 14-slice-integration]: slice-integration.test.ts uses bracket notation [STATUS] in ROADMAP fixture to match parseRoadmap regex
+- [Phase 14-slice-integration]: Dependency resolution verified by checking dep.complete on S01→S02 (complete) and S03→S04 (planned/incomplete) pairs
 
 ### Blockers/Concerns
 
