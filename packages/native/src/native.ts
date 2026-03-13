@@ -129,4 +129,7 @@ export const native = loadNative() as {
   extractAllSections: (content: string, level?: number) => string;
   batchParseGsdFiles: (directory: string) => unknown;
   parseRoadmapFile: (content: string) => unknown;
+  countTokens: (text: string) => number;
+  countTokensBatch: (texts: string[]) => number[];
+  estimateMessageTokens: (message: { role: string; content: unknown; [key: string]: unknown }) => number;
 };

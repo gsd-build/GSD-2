@@ -8,6 +8,7 @@
 import type { AgentMessage } from "@gsd/pi-agent-core";
 import type { AssistantMessage, Model, Usage } from "@gsd/pi-ai";
 import { completeSimple } from "@gsd/pi-ai";
+import { estimateMessageTokens } from "@gsd/native";
 import {
 	convertToLlm,
 	createBranchSummaryMessage,
@@ -219,67 +220,13 @@ export function shouldCompact(contextTokens: number, contextWindow: number, sett
 // ============================================================================
 
 /**
- * Estimate token count for a message using chars/4 heuristic.
- * This is conservative (overestimates tokens).
+ * Estimate token count for a message using native BPE tokenization (cl100k_base).
+ *
+ * Delegates to the Rust tiktoken-rs encoder via @gsd/native for accurate
+ * token counts. The encoder is lazily initialized on first call.
  */
 export function estimateTokens(message: AgentMessage): number {
-	let chars = 0;
-
-	switch (message.role) {
-		case "user": {
-			const content = (message as { content: string | Array<{ type: string; text?: string }> }).content;
-			if (typeof content === "string") {
-				chars = content.length;
-			} else if (Array.isArray(content)) {
-				for (const block of content) {
-					if (block.type === "text" && block.text) {
-						chars += block.text.length;
-					}
-				}
-			}
-			return Math.ceil(chars / 4);
-		}
-		case "assistant": {
-			const assistant = message as AssistantMessage;
-			for (const block of assistant.content) {
-				if (block.type === "text") {
-					chars += block.text.length;
-				} else if (block.type === "thinking") {
-					chars += block.thinking.length;
-				} else if (block.type === "toolCall") {
-					chars += block.name.length + JSON.stringify(block.arguments).length;
-				}
-			}
-			return Math.ceil(chars / 4);
-		}
-		case "custom":
-		case "toolResult": {
-			if (typeof message.content === "string") {
-				chars = message.content.length;
-			} else {
-				for (const block of message.content) {
-					if (block.type === "text" && block.text) {
-						chars += block.text.length;
-					}
-					if (block.type === "image") {
-						chars += 4800; // Estimate images as 4000 chars, or 1200 tokens
-					}
-				}
-			}
-			return Math.ceil(chars / 4);
-		}
-		case "bashExecution": {
-			chars = message.command.length + message.output.length;
-			return Math.ceil(chars / 4);
-		}
-		case "branchSummary":
-		case "compactionSummary": {
-			chars = message.summary.length;
-			return Math.ceil(chars / 4);
-		}
-	}
-
-	return 0;
+	return estimateMessageTokens(message as { role: string; content: unknown; [key: string]: unknown });
 }
 
 /**
