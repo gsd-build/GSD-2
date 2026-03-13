@@ -1,0 +1,27 @@
+{
+  "name": "@gsd/native",
+  "version": "0.1.0",
+  "description": "Native Rust bindings for GSD — high-performance grep via N-API",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "build:native": "node ../../native/scripts/build.js",
+    "build:native:dev": "node ../../native/scripts/build.js --dev",
+    "test": "node --test src/__tests__/grep.test.mjs"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./grep": {
+      "types": "./src/grep/index.ts",
+      "import": "./src/grep/index.ts"
+    }
+  },
+  "files": [
+    "src"
+  ],
+  "license": "MIT"
+}
