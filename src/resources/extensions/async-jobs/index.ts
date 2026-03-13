@@ -14,7 +14,7 @@
  *   /jobs — show running and recent background jobs
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@gsd/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@gsd/pi-coding-agent";
 import { AsyncJobManager, type Job } from "./job-manager.js";
 import { createAsyncBashTool } from "./async-bash-tool.js";
 import { createAwaitTool } from "./await-tool.js";
@@ -37,8 +37,8 @@ export default function AsyncJobs(pi: ExtensionAPI) {
 
 	// ── Session lifecycle ──────────────────────────────────────────────────
 
-	pi.on("session_start", async (event) => {
-		latestCwd = event.cwd;
+	pi.on("session_start", async (_event, ctx) => {
+		latestCwd = ctx.cwd;
 
 		manager = new AsyncJobManager({
 			onJobComplete: (job) => {
@@ -87,7 +87,7 @@ export default function AsyncJobs(pi: ExtensionAPI) {
 
 	pi.registerCommand("jobs", {
 		description: "Show running and recent background jobs",
-		handler: async (ctx: ExtensionContext) => {
+		handler: async (_args: string, _ctx: ExtensionCommandContext) => {
 			if (!manager) {
 				pi.sendMessage({
 					customType: "async_jobs_list",

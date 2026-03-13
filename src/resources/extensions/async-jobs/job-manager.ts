@@ -88,7 +88,19 @@ export class AsyncJobManager {
 		const id = `bg_${randomUUID().slice(0, 8)}`;
 		const abortController = new AbortController();
 
-		const promise = runFn(abortController.signal)
+		// Declare job first so the promise callbacks can close over it safely.
+		const job: Job = {
+			id,
+			type,
+			status: "running",
+			startTime: Date.now(),
+			label,
+			abortController,
+			// promise assigned below
+			promise: undefined as unknown as Promise<void>,
+		};
+
+		job.promise = runFn(abortController.signal)
 			.then((resultText) => {
 				job.status = "completed";
 				job.resultText = resultText;
@@ -106,16 +118,6 @@ export class AsyncJobManager {
 				this.scheduleEviction(id);
 				this.deliverResult(job);
 			});
-
-		const job: Job = {
-			id,
-			type,
-			status: "running",
-			startTime: Date.now(),
-			label,
-			abortController,
-			promise,
-		};
 
 		this.jobs.set(id, job);
 		return id;
