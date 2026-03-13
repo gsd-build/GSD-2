@@ -3695,6 +3695,21 @@ export class InteractiveMode {
 							this.session.modelRegistry.authStorage.logout(providerId);
 							this.session.modelRegistry.refresh();
 							await this.updateAvailableProviderCount();
+
+							// Auto-switch model if current model belongs to the logged-out provider
+							const currentModel = this.session.model;
+							if (currentModel?.provider === providerId) {
+								try {
+									const available = this.session.modelRegistry.getAvailable();
+									const fallback = available.find((m) => m.provider !== providerId);
+									if (fallback) {
+										await this.session.setModel(fallback);
+									}
+								} catch {
+									// Model switch failed — user can manually switch via /model
+								}
+							}
+
 							this.showStatus(`Logged out of ${providerName}`);
 						} catch (error: unknown) {
 							this.showError(`Logout failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -3789,6 +3804,26 @@ export class InteractiveMode {
 			restoreEditor();
 			this.session.modelRegistry.refresh();
 			await this.updateAvailableProviderCount();
+
+			// Auto-switch model if current model has no valid API key
+			try {
+				const currentModel = this.session.model;
+				if (currentModel) {
+					const currentKey = await this.session.modelRegistry.getApiKey(currentModel);
+					if (!currentKey) {
+						const available = this.session.modelRegistry.getAvailable();
+						const newProviderModel = available.find((m) => m.provider === providerId);
+						if (newProviderModel) {
+							await this.session.setModel(newProviderModel);
+						} else if (available.length > 0) {
+							await this.session.setModel(available[0]);
+						}
+					}
+				}
+			} catch (error: unknown) {
+				// Model switch failed — user can manually switch via /model
+			}
+
 			this.showStatus(`Logged in to ${providerName}. Credentials saved to ${getAuthPath()}`);
 		} catch (error: unknown) {
 			restoreEditor();
