@@ -1317,6 +1317,26 @@ async function dispatchNextUnit(
   }
   unitDispatchCount.set(dispatchKey, prevCount + 1);
   if (prevCount > 0) {
+    // Self-repair: if summary exists but checkbox not marked, fix it and re-derive
+    if (unitType === "execute-task") {
+      const status = await inspectExecuteTaskDurability(basePath, unitId);
+      if (status?.summaryExists && !status.taskChecked) {
+        const [mid, sid, tid] = unitId.split("/");
+        if (mid && sid && tid) {
+          const repaired = skipExecuteTask(basePath, mid, sid, tid, status, "self-repair", 0);
+          if (repaired) {
+            ctx.ui.notify(
+              `Self-repaired ${unitId}: summary existed but checkbox was unmarked. Marked [x] and advancing.`,
+              "warning",
+            );
+            unitDispatchCount.delete(dispatchKey);
+            await new Promise(r => setImmediate(r));
+            await dispatchNextUnit(ctx, pi);
+            return;
+          }
+        }
+      }
+    }
     ctx.ui.notify(
       `${unitType} ${unitId} didn't produce expected artifact. Retrying (${prevCount + 1}/${MAX_UNIT_DISPATCHES}).`,
       "warning",
@@ -2776,6 +2796,23 @@ function verifyExpectedArtifact(unitType: string, unitId: string, base: string):
   const absPath = resolveExpectedArtifactPath(unitType, unitId, base);
   if (!absPath) return true;
   if (!existsSync(absPath)) return false;
+
+  // execute-task must also have its checkbox marked [x] in the slice plan
+  if (unitType === "execute-task") {
+    const parts = unitId.split("/");
+    const mid = parts[0];
+    const sid = parts[1];
+    const tid = parts[2];
+    if (mid && sid && tid) {
+      const planAbs = resolveSliceFile(base, mid, sid, "PLAN");
+      if (planAbs && existsSync(planAbs)) {
+        const planContent = readFileSync(planAbs, "utf-8");
+        const escapedTid = tid.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const re = new RegExp(`^- \\[[xX]\\] \\*\\*${escapedTid}:`, "m");
+        if (!re.test(planContent)) return false;
+      }
+    }
+  }
 
   // complete-slice must also produce a UAT file
   if (unitType === "complete-slice") {
