@@ -35,25 +35,73 @@ export interface GSD2Preferences {
 }
 
 // -- GSD 2 Roadmap State (from .gsd/M{NNN}-ROADMAP.md) --
-// Stub — parsers added in Phase 14
+
+export type SliceStatus = "planned" | "in_progress" | "needs_review" | "complete";
+
+export interface GSD2SliceInfo {
+  id: string;           // "S01", "S02"
+  name: string;
+  status: SliceStatus;
+  taskCount: number;
+  costEstimate: number | null; // parsed from "~$0.40" → 0.40
+  branch: string;       // "gsd/M001/S01"
+  dependencies: Array<{ id: string; name: string; complete: boolean }>;
+}
 
 export interface GSD2RoadmapState {
-  raw: string; // raw markdown content — parsers added in Phase 14
+  milestoneId: string;  // "M001"
+  milestoneName: string;
+  slices: GSD2SliceInfo[];
 }
 
 // -- GSD 2 Slice Plan (from .gsd/S{NN}-PLAN.md) --
-// Stub — parsers added in Phase 14
+
+export interface GSD2TaskEntry {
+  id: string;    // "T01"
+  name: string;
+  status: "pending" | "complete";
+}
 
 export interface GSD2SlicePlan {
-  raw: string;
+  sliceId: string;
+  costEstimate: number | null;
+  tasks: GSD2TaskEntry[];
+  mustHaves: string[];  // plain text lines from must_haves block
 }
 
 // -- GSD 2 Task Summary (from .gsd/T{NN}-SUMMARY.md) --
-// Stub — parsers added in Phase 14
 
 export interface GSD2TaskSummary {
-  raw: string;
+  taskId: string;
+  sliceId: string;
+  summary: string;  // first 200 chars of body
 }
+
+// -- GSD 2 UAT File (from .gsd/S{NN}-UAT.md) --
+
+export interface GSD2UatItem {
+  id: string;   // "UAT-01"
+  text: string;
+  checked: boolean;
+}
+
+export interface GSD2UatFile {
+  sliceId: string;
+  items: GSD2UatItem[];
+}
+
+// -- Slice action union type --
+
+export type SliceAction =
+  | { type: 'start_slice'; sliceId: string }
+  | { type: 'pause' }
+  | { type: 'steer'; message: string }
+  | { type: 'view_plan'; sliceId: string }
+  | { type: 'view_task'; sliceId: string }
+  | { type: 'run_uat'; sliceId: string }
+  | { type: 'merge'; sliceId: string }
+  | { type: 'view_diff'; sliceId: string }
+  | { type: 'view_uat_results'; sliceId: string };
 
 // -- Top-level GSD 2 State --
 
@@ -76,6 +124,14 @@ export interface GSD2State {
   milestoneContext: string | null;
   /** True when .planning/ exists but .gsd/ does not — migration needed */
   needsMigration: boolean;
+  /** All slices from M{NNN}-ROADMAP.md */
+  slices: GSD2SliceInfo[];
+  /** Parsed S{NN}-UAT.md for active slice (null if missing) */
+  uatFile: GSD2UatFile | null;
+  /** Commit count on active slice branch (0 when branch not found) */
+  gitBranchCommits: number;
+  /** Last commit message on active slice branch (empty string when not found) */
+  lastCommitMessage: string;
 }
 
 /**

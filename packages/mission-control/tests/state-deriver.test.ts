@@ -170,8 +170,9 @@ describe("buildFullState — GSD 2 fixtures", () => {
     const state = await buildFullState(gsdDir);
 
     expect(state.roadmap).not.toBeNull();
-    expect(state.roadmap!.raw).toContain("M001");
-    expect(state.roadmap!.raw).toContain("Slices");
+    // Phase 14: roadmap is now a parsed GSD2RoadmapState with milestoneId/milestoneName/slices
+    expect(state.roadmap!.milestoneId).toBe("M001");
+    expect(Array.isArray(state.roadmap!.slices)).toBe(true);
   });
 
   test("derives activePlan from dynamic S{NN}-PLAN.md path", async () => {
@@ -180,7 +181,9 @@ describe("buildFullState — GSD 2 fixtures", () => {
     const state = await buildFullState(gsdDir);
 
     expect(state.activePlan).not.toBeNull();
-    expect(state.activePlan!.raw).toContain("S01");
+    // Phase 14: activePlan is now a parsed GSD2SlicePlan with sliceId/tasks/mustHaves
+    expect(state.activePlan!.sliceId).toBe("S01");
+    expect(Array.isArray(state.activePlan!.tasks)).toBe(true);
   });
 
   test("derives activeTask from dynamic T{NN}-SUMMARY.md path", async () => {
@@ -189,7 +192,10 @@ describe("buildFullState — GSD 2 fixtures", () => {
     const state = await buildFullState(gsdDir);
 
     expect(state.activeTask).not.toBeNull();
-    expect(state.activeTask!.raw).toContain("T01");
+    // Phase 14: activeTask is now a parsed GSD2TaskSummary with taskId/sliceId/summary
+    expect(state.activeTask!.taskId).toBe("T01");
+    expect(state.activeTask!.sliceId).toBe("S01");
+    expect(typeof state.activeTask!.summary).toBe("string");
   });
 
   test("parses preferences.md with gray-matter (NOT JSON.parse)", async () => {
@@ -294,11 +300,15 @@ last_updated: "2026-03-12T10:00:00Z"
 
     expect(state.projectState.active_milestone).toBe("M002");
     expect(state.roadmap).not.toBeNull();
-    expect(state.roadmap!.raw).toContain("M002 Roadmap");
+    // Phase 14: roadmap is parsed — verify milestoneId resolved from heading
+    expect(state.roadmap!.milestoneId).toBe("M002");
     expect(state.activePlan).not.toBeNull();
-    expect(state.activePlan!.raw).toContain("S03 Plan");
+    // Phase 14: activePlan is parsed — sliceId derived from STATE.md active_slice
+    expect(state.activePlan!.sliceId).toBe("S03");
     expect(state.activeTask).not.toBeNull();
-    expect(state.activeTask!.raw).toContain("T02 Summary");
+    // Phase 14: activeTask is parsed — taskId and sliceId from STATE.md pointers
+    expect(state.activeTask!.taskId).toBe("T02");
+    expect(state.activeTask!.sliceId).toBe("S03");
     // decisions.md not written — null
     expect(state.decisions).toBeNull();
   });

@@ -71,7 +71,7 @@ name: File watcher wiring
 `;
 
 describe("GSD2State — activePlan and activeTask (replaces v1 PlanState/PhaseState)", () => {
-  test("activePlan contains raw slice plan markdown", async () => {
+  test("activePlan contains parsed slice plan data", async () => {
     tempDir = makeTempDir();
     const gsdDir = join(tempDir, ".gsd");
     mkdirSync(gsdDir, { recursive: true });
@@ -81,9 +81,10 @@ describe("GSD2State — activePlan and activeTask (replaces v1 PlanState/PhaseSt
     const state = await buildFullState(gsdDir);
 
     expect(state.activePlan).not.toBeNull();
-    expect(state.activePlan!.raw).toContain("S01 Plan Content");
-    // raw content includes task elements — Phase 14 will parse these into structured data
-    expect(state.activePlan!.raw).toContain("<task");
+    // Phase 14: activePlan is now parsed GSD2SlicePlan — no .raw field
+    expect(state.activePlan!.sliceId).toBe("S01");
+    expect(Array.isArray(state.activePlan!.tasks)).toBe(true);
+    expect(Array.isArray(state.activePlan!.mustHaves)).toBe(true);
   });
 
   test("activePlan is null when S{NN}-PLAN.md is missing", async () => {

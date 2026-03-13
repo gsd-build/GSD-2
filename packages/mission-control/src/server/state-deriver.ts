@@ -23,6 +23,11 @@ import type {
   GSD2RoadmapState,
   GSD2SlicePlan,
   GSD2TaskSummary,
+  GSD2SliceInfo,
+  GSD2UatFile,
+  GSD2UatItem,
+  GSD2TaskEntry,
+  SliceStatus,
 } from "./types";
 
 // -- Default values --
@@ -199,6 +204,232 @@ function parsePreferences(raw: string): GSD2Preferences {
   }
 }
 
+// -- Slice data parsers --
+
+/**
+ * Parses M{NNN}-ROADMAP.md raw content into a GSD2RoadmapState.
+ *
+ * Slice sections are identified by `## S{NN}` headings.
+ * Status is determined from badge text: PLANNED, IN PROGRESS, NEEDS REVIEW, COMPLETE.
+ * Returns safe empty defaults on missing or malformed input — never throws.
+ */
+export function parseRoadmap(raw: string): GSD2RoadmapState {
+  const empty: GSD2RoadmapState = { milestoneId: "M001", milestoneName: "", slices: [] };
+
+  if (!raw || !raw.trim()) return empty;
+
+  // Extract milestone ID and name from first `# M001 —` heading or frontmatter
+  let milestoneId = "M001";
+  let milestoneName = "";
+
+  // Try frontmatter first
+  try {
+    const fm = matter(raw);
+    if (typeof fm.data.milestone_id === "string") milestoneId = fm.data.milestone_id;
+    if (typeof fm.data.milestone_name === "string") milestoneName = fm.data.milestone_name;
+  } catch {
+    // ignore
+  }
+
+  // Fall back to `# M001 — Name` heading or `# M001 Name`
+  const milestoneHeading = raw.match(/^#\s+(M\d+)(?:\s+[—–-]\s+(.+)|(?:\s+(.+)))?$/m);
+  if (milestoneHeading) {
+    if (!milestoneId || milestoneId === "M001") milestoneId = milestoneHeading[1];
+    if (!milestoneName) {
+      milestoneName = (milestoneHeading[2] || milestoneHeading[3] || "").trim();
+    }
+  }
+
+  // Parse slice sections — match `## S01 — Name [STATUS]` or `## S01 — Name [STATUS]`
+  const slices: GSD2SliceInfo[] = [];
+  const sliceSectionRegex = /^##\s+(S\d+)\s+[—–-]\s+([^\[]+)\s*(?:\[([^\]]+)\])?/gm;
+  let sliceMatch: RegExpExecArray | null;
+
+  while ((sliceMatch = sliceSectionRegex.exec(raw)) !== null) {
+    const id = sliceMatch[1];
+    const name = sliceMatch[2].trim();
+    const badgeRaw = (sliceMatch[3] ?? "").toUpperCase();
+
+    let status: SliceStatus = "planned";
+    if (badgeRaw === "COMPLETE") status = "complete";
+    else if (badgeRaw === "IN PROGRESS") status = "in_progress";
+    else if (badgeRaw === "NEEDS REVIEW") status = "needs_review";
+    else if (badgeRaw === "PLANNED") status = "planned";
+
+    // Find the body of this slice section (until next ## heading or EOF)
+    const sectionStart = sliceMatch.index;
+    const nextSectionMatch = raw.slice(sectionStart + 1).search(/^##\s+/m);
+    const sectionEnd = nextSectionMatch >= 0 ? sectionStart + 1 + nextSectionMatch : raw.length;
+    const sectionBody = raw.slice(sectionStart, sectionEnd);
+
+    // Extract task count from "N tasks" pattern
+    const taskCountMatch = sectionBody.match(/(\d+)\s+tasks?/i);
+    const taskCount = taskCountMatch ? parseInt(taskCountMatch[1], 10) : 0;
+
+    // Extract cost estimate from "~$N.NN" pattern
+    const costMatch = sectionBody.match(/~\$(\d+(?:\.\d+)?)/);
+    const costEstimate = costMatch ? parseFloat(costMatch[1]) : null;
+
+    // Extract branch from "gsd/M{NNN}/S{NN}" pattern
+    const branchMatch = sectionBody.match(/gsd\/M\d+\/S\d+/);
+    const branch = branchMatch ? branchMatch[0] : `gsd/${milestoneId}/${id}`;
+
+    // Parse dependencies from "Depends on: SXX Name" lines
+    const depLines = sectionBody.matchAll(/Depends\s+on:\s+(S\d+)\s*(.*)/gi);
+    const dependencies: GSD2SliceInfo["dependencies"] = [];
+    for (const depMatch of depLines) {
+      const depId = depMatch[1];
+      const depName = depMatch[2].trim();
+      // A dependency is complete if the referenced slice is complete
+      // We determine this during post-processing below
+      dependencies.push({ id: depId, name: depName, complete: false });
+    }
+
+    slices.push({ id, name, status, taskCount, costEstimate, branch, dependencies });
+  }
+
+  // Post-process: mark dependency complete based on referenced slice status
+  for (const slice of slices) {
+    for (const dep of slice.dependencies) {
+      const refSlice = slices.find((s) => s.id === dep.id);
+      if (refSlice) {
+        dep.complete = refSlice.status === "complete";
+      }
+    }
+  }
+
+  return { milestoneId, milestoneName, slices };
+}
+
+/**
+ * Parses S{NN}-PLAN.md raw content into a GSD2SlicePlan.
+ *
+ * Tasks are extracted from `## Tasks` section — numbered items `T01: Name [status]`.
+ * Cost estimate read from frontmatter `cost_estimate: ~$0.40`.
+ * Must-haves read from `## Must-Haves` block.
+ * Returns safe empty defaults on missing or malformed input — never throws.
+ */
+export function parsePlan(raw: string, sliceId: string): GSD2SlicePlan {
+  const empty: GSD2SlicePlan = { sliceId, costEstimate: null, tasks: [], mustHaves: [] };
+
+  if (!raw || !raw.trim()) return empty;
+
+  // Parse frontmatter for cost estimate
+  let costEstimate: number | null = null;
+  try {
+    const fm = matter(raw);
+    if (typeof fm.data.cost_estimate === "string") {
+      const costMatch = (fm.data.cost_estimate as string).match(/~?\$?(\d+(?:\.\d+)?)/);
+      if (costMatch) costEstimate = parseFloat(costMatch[1]);
+    }
+  } catch {
+    // ignore
+  }
+
+  // Parse tasks from `## Tasks` section
+  // Match lines like: `- T01: Name [complete]` or `- T01: Name [pending]`
+  const tasks: GSD2TaskEntry[] = [];
+  const taskRegex = /^[-*]\s+(T\d+):\s+([^\[]+?)\s*\[(\w+)\]/gm;
+  let taskMatch: RegExpExecArray | null;
+  while ((taskMatch = taskRegex.exec(raw)) !== null) {
+    const id = taskMatch[1];
+    const name = taskMatch[2].trim();
+    const statusRaw = taskMatch[3].toLowerCase();
+    const status: GSD2TaskEntry["status"] = statusRaw === "complete" ? "complete" : "pending";
+    tasks.push({ id, name, status });
+  }
+
+  // Parse must-haves from `## Must-Haves` section
+  const mustHaves: string[] = [];
+  const mustHavesMatch = raw.match(/^##\s+Must-Haves?\s*\n([\s\S]*?)(?=^##\s|\s*$)/m);
+  if (mustHavesMatch) {
+    const block = mustHavesMatch[1];
+    const lines = block.split("\n");
+    for (const line of lines) {
+      const stripped = line.replace(/^[-*]\s+/, "").trim();
+      if (stripped) mustHaves.push(stripped);
+    }
+  }
+
+  return { sliceId, costEstimate, tasks, mustHaves };
+}
+
+/**
+ * Parses S{NN}-UAT.md raw content into a GSD2UatFile.
+ *
+ * Parses `- [ ] UAT-01: Description` and `- [x] UAT-01: Description` lines.
+ * Returns safe empty defaults on missing or malformed input — never throws.
+ */
+export function parseUat(raw: string, sliceId: string): GSD2UatFile {
+  const empty: GSD2UatFile = { sliceId, items: [] };
+
+  if (!raw || !raw.trim()) return empty;
+
+  const items: GSD2UatItem[] = [];
+  const uatRegex = /^-\s+\[([ xX])\]\s+(UAT-\d+):\s+(.+)$/gm;
+  let uatMatch: RegExpExecArray | null;
+
+  while ((uatMatch = uatRegex.exec(raw)) !== null) {
+    const checkMark = uatMatch[1];
+    const id = uatMatch[2];
+    const text = uatMatch[3].trim();
+    const checked = checkMark.toLowerCase() === "x";
+    items.push({ id, text, checked });
+  }
+
+  return { sliceId, items };
+}
+
+// -- Git branch data helper --
+
+/**
+ * Reads git commit count and last commit message for a given branch.
+ * Returns { commits: 0, lastMessage: "" } if branch not found or any error occurs.
+ */
+async function readGitBranchData(
+  repoRoot: string,
+  branch: string
+): Promise<{ commits: number; lastMessage: string }> {
+  const defaultResult = { commits: 0, lastMessage: "" };
+  if (!branch) return defaultResult;
+
+  try {
+    // Check if branch exists
+    const branchCheck = Bun.spawn(
+      ["git", "branch", "--list", branch],
+      { cwd: repoRoot, stdout: "pipe", stderr: "pipe" }
+    );
+    const branchOut = await new Response(branchCheck.stdout).text();
+    await branchCheck.exited;
+
+    if (!branchOut.trim()) return defaultResult;
+
+    // Get commit count on this branch
+    const countProc = Bun.spawn(
+      ["git", "rev-list", "--count", branch],
+      { cwd: repoRoot, stdout: "pipe", stderr: "pipe" }
+    );
+    const countOut = await new Response(countProc.stdout).text();
+    await countProc.exited;
+
+    const commits = parseInt(countOut.trim(), 10) || 0;
+
+    // Get last commit message
+    const msgProc = Bun.spawn(
+      ["git", "log", "-1", "--format=%s", branch],
+      { cwd: repoRoot, stdout: "pipe", stderr: "pipe" }
+    );
+    const msgOut = await new Response(msgProc.stdout).text();
+    await msgProc.exited;
+
+    const lastMessage = msgOut.trim();
+
+    return { commits, lastMessage };
+  } catch {
+    return defaultResult;
+  }
+}
+
 // -- Main entry point --
 
 /**
@@ -231,6 +462,7 @@ export async function buildFullState(gsdDir: string): Promise<GSD2State> {
     prefsRaw,
     projectRaw,
     contextRaw,
+    uatRaw,
   ] = await Promise.all([
     readFileText(join(gsdDir, `${active_milestone}-ROADMAP.md`)),
     readFileText(join(gsdDir, `${active_slice}-PLAN.md`)),
@@ -239,12 +471,19 @@ export async function buildFullState(gsdDir: string): Promise<GSD2State> {
     readFileText(join(gsdDir, "preferences.md")),
     readFileText(join(gsdDir, "PROJECT.md")),
     readFileText(join(gsdDir, `${active_milestone}-CONTEXT.md`)),
+    readFileText(join(gsdDir, `${active_slice}-UAT.md`)),
   ]);
 
   // Phase 3: Build typed sub-state objects
-  const roadmap: GSD2RoadmapState | null = roadmapRaw ? { raw: roadmapRaw } : null;
-  const activePlan: GSD2SlicePlan | null = planRaw ? { raw: planRaw } : null;
-  const activeTask: GSD2TaskSummary | null = summaryRaw ? { raw: summaryRaw } : null;
+  const roadmap: GSD2RoadmapState | null = roadmapRaw ? parseRoadmap(roadmapRaw) : null;
+  const slices: GSD2SliceInfo[] = roadmapRaw ? parseRoadmap(roadmapRaw).slices : [];
+  const activePlan: GSD2SlicePlan | null = planRaw
+    ? parsePlan(planRaw, active_slice)
+    : null;
+  const activeTask: GSD2TaskSummary | null = summaryRaw
+    ? { taskId: active_task, sliceId: active_slice, summary: summaryRaw.slice(0, 200) }
+    : null;
+  const uatFile: GSD2UatFile | null = uatRaw ? parseUat(uatRaw, active_slice) : null;
   const preferences: GSD2Preferences | null = prefsRaw
     ? parsePreferences(prefsRaw)
     : null;
@@ -252,6 +491,11 @@ export async function buildFullState(gsdDir: string): Promise<GSD2State> {
   // Phase 4: Migration detection
   const repoRoot = resolve(gsdDir, "..");
   const needsMigration = await checkMigrationNeeded(repoRoot, gsdDir);
+
+  // Phase 5: Read git branch data for active slice (non-blocking, defaults to 0/"")
+  const activeSliceBranch = `gsd/${active_milestone}/${active_slice}`;
+  const { commits: gitBranchCommits, lastMessage: lastCommitMessage } =
+    await readGitBranchData(repoRoot, activeSliceBranch);
 
   return {
     projectState,
@@ -263,5 +507,9 @@ export async function buildFullState(gsdDir: string): Promise<GSD2State> {
     project: projectRaw,
     milestoneContext: contextRaw,
     needsMigration,
+    slices,
+    uatFile,
+    gitBranchCommits,
+    lastCommitMessage,
   };
 }
