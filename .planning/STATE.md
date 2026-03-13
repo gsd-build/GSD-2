@@ -3,10 +3,25 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Native Desktop
 status: in_progress
+last_updated: "2026-03-13T11:01:13.210Z"
+last_activity: "2026-03-13 — Plan 15-01 complete: src-tauri/ scaffold with Cargo.toml, tauri.conf.json (1280x800, CSP, devUrl), lib.rs Builder chain with gsd:// URI stub, window-state plugin, and stub modules for plans 15-02 through 15-04"
+progress:
+  total_phases: 10
+  completed_phases: 3
+  total_plans: 29
+  completed_plans: 25
+  percent: 86
+---
+
+---
+gsd_state_version: 1.0
+milestone: v2.0
+milestone_name: Native Desktop
+status: in_progress
 last_updated: "2026-03-13T10:56:23.242Z"
 last_activity: "2026-03-13 — Plan 14-06 complete: gsd-file-api.ts + InlineReadPanel; view_plan/view_task/view_diff/view_uat_results wired; 696 tests pass"
 progress:
-  total_phases: 10
+  [█████████░] 86%
   completed_phases: 3
   total_plans: 29
   completed_plans: 24
@@ -231,12 +246,12 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 
 ## Current Position
 
-Phase: 15 of 20 (Tauri Shell) — In Progress (plan 15-01 done)
-Plan: 1 of 5 complete (plan 01 done — Tauri 2 scaffold: Cargo.toml, tauri.conf.json, lib.rs with gsd:// stub)
-Status: Phase 15 plan 01 complete — plans 15-02/03/04 can execute in parallel (wave 2)
-Last activity: 2026-03-13 — Plan 15-01 complete: src-tauri/ scaffold with Cargo.toml, tauri.conf.json (1280x800, CSP, devUrl), lib.rs Builder chain with gsd:// URI stub, window-state plugin, and stub modules for plans 15-02 through 15-04
+Phase: 15 of 20 (Tauri Shell) — In Progress (plans 15-01, 15-02 done)
+Plan: 2 of 5 complete (plan 02 done — BunState managed state, spawn/watch/kill/restart lifecycle, on_window_event Destroyed handler)
+Status: Phase 15 plans 01 and 02 complete — plans 15-03/04 can execute in parallel (wave 2 remaining)
+Last activity: 2026-03-13 — Plan 15-02 complete: bun_manager.rs full lifecycle (BunState, spawn_bun_server, watch_bun_process, kill_bun_server, restart_bun); lib.rs wired with .manage(bun_state) and on_window_event Destroyed handler
 
-Progress: [████████░░] 83% (24/29 plans complete)
+Progress: [█████████░] 86% (25/29 plans complete)
 
 ## Milestone Archive
 
@@ -320,6 +335,8 @@ Progress: [████████░░] 83% (24/29 plans complete)
 - [Phase 14-slice-integration]: InlineReadPanel uses in-flow layout (not fixed overlay) to avoid z-index conflicts with PanelWrapper; handleSliceAction made async for await fetch() in view_* cases
 - [Phase 15-tauri-shell]: gsd:// protocol registered via Rust register_uri_scheme_protocol (not tauri.conf.json) — Tauri 2 requires Builder API for OS-level URI scheme registration
 - [Phase 15-tauri-shell]: Stub modules (bun_manager, commands, dep_check) declared in lib.rs with empty async fn bodies so mod declarations compile — each stub has plan-number comment pointing to implementing plan
+- [Phase 15]: std::thread::sleep in watch_bun_process avoids indirect tokio time feature dependency in Tauri 2
+- [Phase 15]: WindowEvent::Destroyed used for Bun kill cleanup (not CloseRequested) — fires after window gone, cannot be cancelled
 
 ### Blockers/Concerns
 

@@ -40,7 +40,7 @@ Requirements for the Native Desktop milestone. Each maps to roadmap phases 12–
 ### Tauri Shell (TAURI)
 
 - [x] **TAURI-01**: `src-tauri/` added alongside `packages/`; `tauri.conf.json` configured (productName, identifier, window dimensions, `gsd://` custom protocol, devUrl, CSP for localhost WebSocket)
-- [ ] **TAURI-02**: Rust backend spawns Bun server on app start, stores handle, kills cleanly on window close, emits event to frontend on Bun crash
+- [x] **TAURI-02**: Rust backend spawns Bun server on app start, stores handle, kills cleanly on window close, emits event to frontend on Bun crash
 - [ ] **TAURI-03**: Dependency check on startup — `bun` and `gsd` presence verified; if missing, pre-dashboard dependency screen shown with plain-language install instructions
 - [x] **TAURI-04**: Window state restored (size/position) via `window-state` plugin; OS native title bar (frameless: false)
 - [ ] **TAURI-05**: Tauri IPC commands implemented — `open_folder_dialog`, `get_credential`, `set_credential`, `delete_credential`, `open_external`, `get_platform`, `restart_bun`
@@ -146,7 +146,7 @@ Deferred to future release.
 | SLICE-06 | Phase 14 | Complete |
 | SLICE-07 | Phase 14 | Complete |
 | TAURI-01 | Phase 15 | Complete |
-| TAURI-02 | Phase 15 | Pending |
+| TAURI-02 | Phase 15 | Complete |
 | TAURI-03 | Phase 15 | Pending |
 | TAURI-04 | Phase 15 | Complete |
 | TAURI-05 | Phase 15 | Pending |
