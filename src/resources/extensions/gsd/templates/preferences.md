@@ -15,6 +15,7 @@ git:
   snapshots:
   pre_merge_check:
   commit_type:
+unique_milestone_ids:
 ---
 
 # GSD Skill Preferences

@@ -107,6 +107,8 @@ Setting `prefer_skills: []` does **not** disable skill discovery — it just mea
   - `commit_type`: string — override the conventional commit type prefix. Must be one of: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `perf`, `ci`, `build`, `style`. Default: inferred from diff content.
   - `main_branch`: string — the primary branch name for new git repos (e.g., `"main"`, `"master"`, `"trunk"`). Also used by `getMainBranch()` as the preferred branch when auto-detection is ambiguous. Default: `"main"`.
 
+- `unique_milestone_ids`: boolean — when `true`, generates milestone IDs in `M-{rand6}-{seq}` format (e.g. `M-eh88as-001`) instead of plain sequential `M001`. Prevents ID collisions in team workflows where multiple contributors create milestones concurrently. Both formats coexist — existing `M001`-style milestones remain valid. Default: `false`.
+
 ---
 
 ## Best Practices

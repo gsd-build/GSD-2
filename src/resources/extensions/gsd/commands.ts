@@ -393,6 +393,16 @@ async function handlePrefsWizard(
     prefs.skill_discovery = discoveryChoice;
   }
 
+  // ─── Unique milestone IDs ──────────────────────────────────────────────
+  const currentUnique = prefs.unique_milestone_ids;
+  const uniqueChoice = await ctx.ui.select(
+    `Unique milestone IDs${currentUnique !== undefined ? ` (current: ${currentUnique})` : ""}:`,
+    ["true", "false", "(keep current)"],
+  );
+  if (uniqueChoice && uniqueChoice !== "(keep current)") {
+    prefs.unique_milestone_ids = uniqueChoice === "true";
+  }
+
   // ─── Serialize to frontmatter ───────────────────────────────────────────
   prefs.version = prefs.version || 1;
   const frontmatter = serializePreferencesToFrontmatter(prefs);
