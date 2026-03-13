@@ -20,6 +20,7 @@ const BASELINE_PATTERNS = [
   ".gsd/worktrees/",
   ".gsd/auto.lock",
   ".gsd/metrics.json",
+  ".gsd/completed-units.json",
   ".gsd/STATE.md",
 
   // ── OS junk ──

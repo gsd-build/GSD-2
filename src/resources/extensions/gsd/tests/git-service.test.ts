@@ -210,8 +210,8 @@ async function main(): Promise<void> {
 
   assertEq(
     RUNTIME_EXCLUSION_PATHS.length,
-    6,
-    "exactly 6 runtime exclusion paths"
+    7,
+    "exactly 7 runtime exclusion paths"
   );
 
   const expectedPaths = [
@@ -220,6 +220,7 @@ async function main(): Promise<void> {
     ".gsd/worktrees/",
     ".gsd/auto.lock",
     ".gsd/metrics.json",
+    ".gsd/completed-units.json",
     ".gsd/STATE.md",
   ];
 
@@ -347,52 +348,76 @@ async function main(): Promise<void> {
     rmSync(repo, { recursive: true, force: true });
   }
 
-  // ─── GitServiceImpl: smart staging fallback ────────────────────────────
+  // ─── GitServiceImpl: smart staging excludes tracked runtime files ──────
 
-  console.log("\n=== GitServiceImpl: smart staging fallback ===");
+  console.log("\n=== GitServiceImpl: smart staging excludes tracked runtime files ===");
 
   {
-    // We can't easily make the pathspec fail in a real repo, but we can test
-    // the fallback behavior by verifying that if smart staging somehow fails,
-    // everything gets staged. We do this by checking that a commit with both
-    // runtime and real files works when pathspec would fail.
+    // Reproduces the real bug: .gsd/ runtime files that are already tracked
+    // (in the git index) must be excluded from staging even when .gsd/ is
+    // in .gitignore. The old pathspec-exclude approach failed silently in
+    // this case and fell back to `git add -A`, staging everything.
     //
-    // To force the fallback: temporarily override RUNTIME_EXCLUSION_PATHS
-    // with an invalid pathspec. Since we can't modify a readonly array,
-    // we'll test the actual fallback by creating a custom subclass.
+    // The fix has three layers:
+    // 1. Auto-cleanup: git rm --cached removes tracked runtime files from index
+    // 2. Stage-then-unstage: git add -A + git reset HEAD replaces pathspec excludes
+    // 3. Pre-checkout discard: git checkout -- .gsd/ clears dirty runtime files
 
     const repo = initTempRepo();
+    const svc = new GitServiceImpl(repo);
 
-    // Create a subclass that overrides smartStage to simulate failure + fallback
-    class FallbackTestService extends GitServiceImpl {
-      fallbackUsed = false;
-      smartStageWithBadPathspec(): void {
-        // Simulate: try bad pathspec, catch, fallback
-        try {
-          runGit(this.basePath, ["add", "-A", "--", ".", ":(exclude)__NONEXISTENT_PATHSPEC_SYNTAX_ERROR__["]);
-          // If the above doesn't throw, git accepted it (some versions do).
-          // That's fine — the point is testing the fallback path.
-          throw new Error("force fallback for test");
-        } catch {
-          console.error("GitService: smart staging failed, falling back to git add -A");
-          this.fallbackUsed = true;
-          runGit(this.basePath, ["add", "-A"]);
-        }
-      }
-    }
-
-    const svc = new FallbackTestService(repo);
+    // Simulate a repo where .gsd/ files were previously force-added
+    createFile(repo, ".gsd/metrics.json", '{"version":1}');
+    createFile(repo, ".gsd/completed-units.json", '["unit1"]');
+    createFile(repo, ".gsd/activity/log.jsonl", '{"ts":1}');
     createFile(repo, "src/real.ts", "real code");
-    createFile(repo, ".gsd/activity/log.jsonl", "log");
+    // Force-add .gsd/ files to simulate historical tracking
+    runGit(repo, ["add", "-f", ".gsd/metrics.json", ".gsd/completed-units.json", ".gsd/activity/log.jsonl", "src/real.ts"]);
+    runGit(repo, ["commit", "-F", "-"], { input: "init with tracked runtime files" });
 
-    // Call the fallback path manually
-    svc.smartStageWithBadPathspec();
+    // Add .gitignore with .gsd/ (matches real-world setup from ensureGitignore)
+    createFile(repo, ".gitignore", ".gsd/\n");
+    runGit(repo, ["add", ".gitignore"]);
+    runGit(repo, ["commit", "-F", "-"], { input: "add gitignore" });
 
-    // Check that everything was staged (fallback stages all)
-    const staged = run("git diff --cached --name-only", repo);
-    assert(staged.includes("src/real.ts"), "fallback stages real files");
-    assert(staged.includes(".gsd/activity/log.jsonl"), "fallback stages runtime files too (no exclusion)");
-    assert(svc.fallbackUsed, "fallback path was actually used");
+    // Verify runtime files are tracked (precondition)
+    const tracked = run("git ls-files .gsd/", repo);
+    assert(tracked.includes("metrics.json"), "precondition: metrics.json tracked");
+    assert(tracked.includes("completed-units.json"), "precondition: completed-units.json tracked");
+    assert(tracked.includes("activity/log.jsonl"), "precondition: activity log tracked");
+
+    // Now modify both runtime and real files
+    createFile(repo, ".gsd/metrics.json", '{"version":2}');
+    createFile(repo, ".gsd/completed-units.json", '["unit1","unit2"]');
+    createFile(repo, ".gsd/activity/log.jsonl", '{"ts":2}');
+    createFile(repo, "src/real.ts", "updated code");
+
+    // autoCommit should commit real.ts. The first call also runs auto-cleanup
+    // which removes runtime files from the index via a dedicated commit.
+    const msg = svc.autoCommit("execute-task", "M001/S01/T01");
+    assert(msg !== null, "autoCommit produces a commit");
+
+    const show = run("git show --stat HEAD", repo);
+    assert(show.includes("src/real.ts"), "real files are committed");
+
+    // After the commit, runtime files must no longer be in the git index.
+    // They remain on disk but are untracked (protected by .gitignore).
+    const trackedAfter = run("git ls-files .gsd/", repo);
+    assertEq(trackedAfter, "", "no .gsd/ runtime files remain in the index");
+
+    // Verify a second autoCommit with changed runtime files does NOT stage them
+    createFile(repo, ".gsd/metrics.json", '{"version":3}');
+    createFile(repo, ".gsd/completed-units.json", '["unit1","unit2","unit3"]');
+    createFile(repo, "src/real.ts", "third version");
+
+    const msg2 = svc.autoCommit("execute-task", "M001/S01/T02");
+    assert(msg2 !== null, "second autoCommit produces a commit");
+
+    const show2 = run("git show --stat HEAD", repo);
+    assert(show2.includes("src/real.ts"), "real files committed in second commit");
+    assert(!show2.includes("metrics"), "metrics.json not in second commit");
+    assert(!show2.includes("completed-units"), "completed-units.json not in second commit");
+    assert(!show2.includes("activity"), "activity not in second commit");
 
     rmSync(repo, { recursive: true, force: true });
   }

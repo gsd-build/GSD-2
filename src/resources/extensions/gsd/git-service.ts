@@ -63,6 +63,7 @@ export const RUNTIME_EXCLUSION_PATHS: readonly string[] = [
   ".gsd/worktrees/",
   ".gsd/auto.lock",
   ".gsd/metrics.json",
+  ".gsd/completed-units.json",
   ".gsd/STATE.md",
 ];
 
@@ -130,15 +131,41 @@ export class GitServiceImpl {
    */
   private smartStage(extraExclusions: readonly string[] = []): void {
     const allExclusions = [...RUNTIME_EXCLUSION_PATHS, ...extraExclusions];
-    const excludes = allExclusions.map(p => `':(exclude)${p}'`);
-    const args = ["add", "-A", "--", ".", ...excludes];
-    try {
-      this.git(args);
-    } catch {
-      console.error("GitService: smart staging failed, falling back to git add -A");
-      this.git(["add", "-A"]);
+
+    // One-time cleanup: if runtime files are already tracked in the index
+    // (from older versions where the fallback bug staged them), untrack them
+    // in a dedicated commit. This must happen as a separate commit because
+    // the git reset HEAD step below would otherwise undo the rm --cached.
+    if (!this._runtimeFilesCleanedUp) {
+      let cleaned = false;
+      for (const exclusion of RUNTIME_EXCLUSION_PATHS) {
+        const result = this.git(["rm", "--cached", "-r", "--ignore-unmatch", exclusion], { allowFailure: true });
+        if (result && result.includes("rm '")) cleaned = true;
+      }
+      if (cleaned) {
+        this.git(["commit", "-F", "-"], { input: "chore: untrack .gsd/ runtime files from git index" });
+      }
+      this._runtimeFilesCleanedUp = true;
+    }
+
+    // Stage everything, then unstage excluded paths.
+    //
+    // Previous approach used pathspec excludes (:(exclude)...) with git add -A,
+    // but that fails when .gsd/ is in .gitignore — git exits non-zero before
+    // evaluating the excludes. The catch fallback ran plain `git add -A`,
+    // staging all tracked runtime files unconditionally and defeating the
+    // exclusion list entirely.
+    //
+    // git reset HEAD silently succeeds when the path isn't staged, so no
+    // error handling is needed per-path.
+    this.git(["add", "-A"]);
+    for (const exclusion of allExclusions) {
+      this.git(["reset", "HEAD", "--", exclusion], { allowFailure: true });
     }
   }
+
+  /** Tracks whether runtime file cleanup has run this session. */
+  private _runtimeFilesCleanedUp = false;
 
   /**
    * Stage files (smart staging) and commit.
@@ -312,6 +339,12 @@ export class GitServiceImpl {
     // Exclude .gsd/ to prevent merge conflicts when both branches modify planning artifacts.
     this.autoCommit("pre-switch", current, [".gsd/"]);
 
+    // Discard uncommitted .gsd/ changes so checkout doesn't fail.
+    // These are runtime files (metrics, completed-units, STATE) that were
+    // intentionally excluded from the commit above. If they remain dirty,
+    // git checkout refuses when the target branch has different versions.
+    this.git(["checkout", "--", ".gsd/"], { allowFailure: true });
+
     this.git(["checkout", branch]);
     return created;
   }
@@ -326,6 +359,9 @@ export class GitServiceImpl {
 
     // Exclude .gsd/ to prevent merge conflicts when both branches modify planning artifacts.
     this.autoCommit("pre-switch", current, [".gsd/"]);
+
+    // Discard uncommitted .gsd/ changes so checkout doesn't fail.
+    this.git(["checkout", "--", ".gsd/"], { allowFailure: true });
 
     this.git(["checkout", mainBranch]);
   }
