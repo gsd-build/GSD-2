@@ -3,10 +3,25 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Native Desktop
 status: in_progress
+last_updated: "2026-03-13T11:12:37.565Z"
+last_activity: "2026-03-13 — Plan 15-02 complete: bun_manager.rs full lifecycle (BunState, spawn_bun_server, watch_bun_process, kill_bun_server, restart_bun); lib.rs wired with .manage(bun_state) and on_window_event Destroyed handler"
+progress:
+  total_phases: 10
+  completed_phases: 3
+  total_plans: 29
+  completed_plans: 26
+  percent: 90
+---
+
+---
+gsd_state_version: 1.0
+milestone: v2.0
+milestone_name: Native Desktop
+status: in_progress
 last_updated: "2026-03-13T11:01:13.210Z"
 last_activity: "2026-03-13 — Plan 15-01 complete: src-tauri/ scaffold with Cargo.toml, tauri.conf.json (1280x800, CSP, devUrl), lib.rs Builder chain with gsd:// URI stub, window-state plugin, and stub modules for plans 15-02 through 15-04"
 progress:
-  total_phases: 10
+  [█████████░] 90%
   completed_phases: 3
   total_plans: 29
   completed_plans: 25
@@ -246,12 +261,12 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 
 ## Current Position
 
-Phase: 15 of 20 (Tauri Shell) — In Progress (plans 15-01, 15-02 done)
-Plan: 2 of 5 complete (plan 02 done — BunState managed state, spawn/watch/kill/restart lifecycle, on_window_event Destroyed handler)
-Status: Phase 15 plans 01 and 02 complete — plans 15-03/04 can execute in parallel (wave 2 remaining)
-Last activity: 2026-03-13 — Plan 15-02 complete: bun_manager.rs full lifecycle (BunState, spawn_bun_server, watch_bun_process, kill_bun_server, restart_bun); lib.rs wired with .manage(bun_state) and on_window_event Destroyed handler
+Phase: 15 of 20 (Tauri Shell) — In Progress (plans 15-01, 15-02, 15-03 done)
+Plan: 3 of 5 complete (plan 03 done — dep_check.rs platform-aware checks, dep_screen.html, retry_dep_check IPC)
+Status: Phase 15 plans 01, 02, 03 complete — plan 15-04 (commands) next
+Last activity: 2026-03-13 — Plan 15-03 complete: dep_screen.html with GSD design system colors and window.__TAURI__.invoke retry; dep_check.rs with check_dependency() (which/where) and run_startup_checks() navigating to asset://localhost/dep_screen.html; retry_dep_check IPC registered
 
-Progress: [█████████░] 86% (25/29 plans complete)
+Progress: [█████████░] 90% (26/29 plans complete)
 
 ## Milestone Archive
 
@@ -337,6 +352,8 @@ Progress: [█████████░] 86% (25/29 plans complete)
 - [Phase 15-tauri-shell]: Stub modules (bun_manager, commands, dep_check) declared in lib.rs with empty async fn bodies so mod declarations compile — each stub has plan-number comment pointing to implementing plan
 - [Phase 15]: std::thread::sleep in watch_bun_process avoids indirect tokio time feature dependency in Tauri 2
 - [Phase 15]: WindowEvent::Destroyed used for Bun kill cleanup (not CloseRequested) — fires after window gone, cannot be cancelled
+- [Phase 15]: dep_screen.html served via asset://localhost/ (Tauri asset protocol) — Bun server may not be running when deps are missing
+- [Phase 15]: window.__TAURI__.invoke used in dep_screen.html (no CDN import) — Tauri injects this global automatically into the webview
 
 ### Blockers/Concerns
 
