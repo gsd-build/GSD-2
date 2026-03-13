@@ -3,6 +3,20 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Native Desktop
 status: in_progress
+last_updated: "2026-03-13T08:18:34.455Z"
+last_activity: "2026-03-13 — Plan 13-07 complete: session_interrupt added to SessionAction union, routed in ws-server.ts, handled in pipeline.ts; STREAM-03 and STREAM-07 fully satisfied; 580 tests pass"
+progress:
+  total_phases: 10
+  completed_phases: 2
+  total_plans: 23
+  completed_plans: 18
+---
+
+---
+gsd_state_version: 1.0
+milestone: v2.0
+milestone_name: Native Desktop
+status: in_progress
 last_updated: "2026-03-13T07:22:40.769Z"
 last_activity: "2026-03-13 — Plan 13-06 complete: AppShell wired with isAutoMode/isCrashed/costState/onInterrupt/onDismissCrash; server.ts SIGTERM/SIGINT → killAll(); 578 tests pass; live verification deferred pending GSD 2 CLI install"
 progress:
@@ -126,12 +140,12 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 
 ## Current Position
 
-Phase: 13 of 20 (Session Streaming Hardening) — COMPLETE
-Plan: 7 of 7 (plan 07 complete — session_interrupt routing gap closed, Escape→SIGINT path verified)
-Status: Phase 13 complete — ready for Phase 14
-Last activity: 2026-03-13 — Plan 13-07 complete: session_interrupt added to SessionAction union, routed in ws-server.ts, handled in pipeline.ts; STREAM-03 and STREAM-07 fully satisfied; 580 tests pass
+Phase: 14 of 20 (Slice Integration) — IN PROGRESS
+Plan: 1 of 5 complete (plan 01 done — parseRoadmap/parsePlan/parseUat, GSD2State slices/uatFile/gitBranchCommits)
+Status: Phase 14 in progress — ready for plans 14-02, 14-03, 14-04 (wave 2)
+Last activity: 2026-03-13 — Plan 14-01 complete: parseRoadmap/parsePlan/parseUat replace raw stubs; GSD2State gains slices[], uatFile, gitBranchCommits, lastCommitMessage; SLICE-01 through SLICE-07 satisfied; 607 tests pass
 
-Progress: [█████████░] 94% (17/18 plans complete)
+Progress: [████████░░] 78% (18/23 plans complete)
 
 ## Milestone Archive
 
@@ -198,6 +212,9 @@ Progress: [█████████░] 94% (17/18 plans complete)
 - [Phase 13]: Live GSD 2 session verification deferred — all 578 automated tests pass; manual SC-1 through SC-5 will be validated when GSD 2 CLI is installed
 - [Phase 13]: session_interrupt is fire-and-forget: no publishSessionUpdate needed, interrupt causes no metadata change
 - [Phase 13]: TypeScript discriminant narrowing on action.type correctly resolves action.sessionId inside session_interrupt case without casting
+- [Phase 14-slice-integration]: parseRoadmap uses regex-based section parsing (## S01 headings) not a structured format — matches actual GSD2 roadmap markdown layout
+- [Phase 14-slice-integration]: GSD2TaskSummary now has taskId/sliceId/summary(200 chars) fields — not raw string; backward-compat tests updated
+- [Phase 14-slice-integration]: readGitBranchData checks branch existence before querying count/message — defaults to 0/''
 
 ### Blockers/Concerns
 
