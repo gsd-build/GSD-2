@@ -152,6 +152,7 @@ let currentMilestoneId: string | null = null;
 
 /** Model the user had selected before auto-mode started */
 let originalModelId: string | null = null;
+let originalModelProvider: string | null = null;
 
 /** Progress-aware timeout supervision */
 let unitTimeoutHandle: ReturnType<typeof setTimeout> | null = null;
@@ -272,10 +273,11 @@ export async function stopAuto(ctx?: ExtensionContext, pi?: ExtensionAPI): Promi
   ctx?.ui.setFooter(undefined);
 
   // Restore the user's original model
-  if (pi && ctx && originalModelId) {
-    const original = ctx.modelRegistry.find("anthropic", originalModelId);
+  if (pi && ctx && originalModelId && originalModelProvider) {
+    const original = ctx.modelRegistry.find(originalModelProvider, originalModelId);
     if (original) await pi.setModel(original);
     originalModelId = null;
+    originalModelProvider = null;
   }
 
   cmdCtx = null;
@@ -459,6 +461,7 @@ export async function startAuto(
   currentUnit = null;
   currentMilestoneId = state.activeMilestone?.id ?? null;
   originalModelId = ctx.model?.id ?? null;
+  originalModelProvider = ctx.model?.provider ?? null;
 
   // Initialize metrics — loads existing ledger from disk
   initMetrics(base);
@@ -1414,14 +1417,46 @@ async function dispatchNextUnit(
   // Try primary model, then fallbacks in order if setting fails
   const modelConfig = resolveModelWithFallbacksForUnit(unitType);
   if (modelConfig) {
-    const allModels = ctx.modelRegistry.getAll();
+    const availableModels = ctx.modelRegistry.getAvailable();
     const modelsToTry = [modelConfig.primary, ...modelConfig.fallbacks];
     let modelSet = false;
 
     for (const modelId of modelsToTry) {
-      const model = allModels.find(m => m.id === modelId);
+      // Support "provider/model" format for explicit provider targeting
+      const slashIdx = modelId.indexOf("/");
+      let model;
+      if (slashIdx !== -1) {
+        const provider = modelId.substring(0, slashIdx);
+        const id = modelId.substring(slashIdx + 1);
+        model = availableModels.find(
+          m => m.provider.toLowerCase() === provider.toLowerCase()
+            && m.id.toLowerCase() === id.toLowerCase(),
+        );
+      } else {
+        // For bare IDs, prefer the current session's provider, then first available match
+        const currentProvider = ctx.model?.provider;
+        const exactProviderMatch = availableModels.find(
+          m => m.id === modelId && m.provider === currentProvider,
+        );
+        const anyMatch = availableModels.find(m => m.id === modelId);
+        model = exactProviderMatch ?? anyMatch;
+
+        // Warn if the ID is ambiguous across providers
+        if (anyMatch && !exactProviderMatch) {
+          const providers = availableModels
+            .filter(m => m.id === modelId)
+            .map(m => m.provider);
+          if (providers.length > 1) {
+            ctx.ui.notify(
+              `Model ID "${modelId}" exists in multiple providers (${providers.join(", ")}). ` +
+              `Resolved to ${anyMatch.provider}. Use "provider/model" format for explicit targeting.`,
+              "warning",
+            );
+          }
+        }
+      }
       if (!model) {
-        ctx.ui.notify(`Model ${modelId} not found in registry, trying fallback.`, "warning");
+        ctx.ui.notify(`Model ${modelId} not found in available models, trying fallback.`, "warning");
         continue;
       }
 
