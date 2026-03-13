@@ -15,76 +15,7 @@
  * Adapted from Oh My Pi's hashline implementation for Node.js (no Bun dependency).
  */
 
-// ═══════════════════════════════════════════════════════════════════════════
-// xxHash32 — pure JS implementation (no native dependencies)
-// ═══════════════════════════════════════════════════════════════════════════
-
-const PRIME32_1 = 0x9e3779b1;
-const PRIME32_2 = 0x85ebca77;
-const PRIME32_3 = 0xc2b2ae3d;
-const PRIME32_4 = 0x27d4eb2f;
-const PRIME32_5 = 0x165667b1;
-
-function rotl32(val: number, bits: number): number {
-	return ((val << bits) | (val >>> (32 - bits))) >>> 0;
-}
-
-function imul32(a: number, b: number): number {
-	return Math.imul(a, b) >>> 0;
-}
-
-/**
- * Pure JS xxHash32 operating on a UTF-8 encoded string.
- * Matches Bun.hash.xxHash32(str, seed) behavior.
- */
-function xxHash32(input: string, seed: number): number {
-	const buf = Buffer.from(input, "utf-8");
-	const len = buf.length;
-	let h32: number;
-	let i = 0;
-
-	if (len >= 16) {
-		let v1 = (seed + PRIME32_1 + PRIME32_2) >>> 0;
-		let v2 = (seed + PRIME32_2) >>> 0;
-		let v3 = (seed + 0) >>> 0;
-		let v4 = (seed - PRIME32_1) >>> 0;
-
-		while (i <= len - 16) {
-			v1 = (imul32(rotl32((v1 + imul32(buf.readUInt32LE(i), PRIME32_2)) >>> 0, 13), PRIME32_1)) >>> 0;
-			i += 4;
-			v2 = (imul32(rotl32((v2 + imul32(buf.readUInt32LE(i), PRIME32_2)) >>> 0, 13), PRIME32_1)) >>> 0;
-			i += 4;
-			v3 = (imul32(rotl32((v3 + imul32(buf.readUInt32LE(i), PRIME32_2)) >>> 0, 13), PRIME32_1)) >>> 0;
-			i += 4;
-			v4 = (imul32(rotl32((v4 + imul32(buf.readUInt32LE(i), PRIME32_2)) >>> 0, 13), PRIME32_1)) >>> 0;
-			i += 4;
-		}
-
-		h32 = (rotl32(v1, 1) + rotl32(v2, 7) + rotl32(v3, 12) + rotl32(v4, 18)) >>> 0;
-	} else {
-		h32 = (seed + PRIME32_5) >>> 0;
-	}
-
-	h32 = (h32 + len) >>> 0;
-
-	while (i <= len - 4) {
-		h32 = (h32 + imul32(buf.readUInt32LE(i), PRIME32_3)) >>> 0;
-		h32 = imul32(rotl32(h32, 17), PRIME32_4);
-		i += 4;
-	}
-
-	while (i < len) {
-		h32 = (h32 + imul32(buf[i], PRIME32_5)) >>> 0;
-		h32 = imul32(rotl32(h32, 11), PRIME32_1);
-		i += 1;
-	}
-
-	h32 = imul32(h32 ^ (h32 >>> 15), PRIME32_2);
-	h32 = imul32(h32 ^ (h32 >>> 13), PRIME32_3);
-	h32 = (h32 ^ (h32 >>> 16)) >>> 0;
-
-	return h32;
-}
+import { xxHash32 } from "@gsd/native/xxhash";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Hash Computation

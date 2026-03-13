@@ -51,6 +51,10 @@
     "./image": {
       "types": "./dist/image/index.d.ts",
       "import": "./dist/image/index.js"
+    },
+    "./xxhash": {
+      "types": "./dist/xxhash/index.d.ts",
+      "import": "./dist/xxhash/index.js"
     }
   },
   "files": [
