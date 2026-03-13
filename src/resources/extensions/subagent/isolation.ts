@@ -112,11 +112,6 @@ async function gitSilent(args: string[], cwd: string): Promise<string> {
 	}
 }
 
-async function findGitRoot(cwd: string): Promise<string> {
-	const root = await git(["rev-parse", "--show-toplevel"], cwd);
-	return root.trim();
-}
-
 // ============================================================================
 // Baseline: capture and apply dirty state
 // ============================================================================
@@ -195,6 +190,14 @@ async function applyBaseline(
 		fs.mkdirSync(destDir, { recursive: true });
 		fs.writeFileSync(dest, file.content);
 	}
+
+	// Commit the baseline state so captureDeltaPatch can diff against it
+	// without accidentally including the parent's dirty state in the delta.
+	await gitSilent(["add", "-A"], worktreeDir);
+	await gitSilent(
+		["commit", "--allow-empty", "-m", "gsd: baseline snapshot"],
+		worktreeDir,
+	);
 }
 
 // ============================================================================
@@ -330,13 +333,54 @@ export async function createFuseOverlayIsolation(
 		mergedDir,
 	]);
 
+	// Capture the parent's dirty file set so we can exclude them from the delta.
+	// Upper dir will contain both parent-dirty files (visible through overlay) and
+	// subagent-written files — we only want the latter.
+	const parentDirtyFiles = new Set<string>();
+	const parentStatus = await gitSilent(["status", "--porcelain", "-z"], repoRoot);
+	for (const entry of parentStatus.split("\0").filter(Boolean)) {
+		// Porcelain format: XY filename (skip 3-char prefix)
+		const filePath = entry.slice(3);
+		if (filePath) parentDirtyFiles.add(filePath);
+	}
+
 	return {
 		workDir: mergedDir,
 
 		async captureDelta(): Promise<DeltaPatch[]> {
-			// For FUSE overlay, diff the upper dir against the repo
-			// The upper dir contains only modified/added files
-			return captureDeltaPatch(mergedDir);
+			// Generate patches from upper dir (files actually written by the subagent).
+			// Exclude files that were already dirty in the parent repo.
+			const patches: DeltaPatch[] = [];
+			const diffs: string[] = [];
+
+			const walk = (dir: string, prefix: string) => {
+				for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+					const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+					if (entry.isDirectory()) {
+						walk(path.join(dir, entry.name), rel);
+					} else if (entry.isFile() && !parentDirtyFiles.has(rel)) {
+						// This file was written by the subagent, not inherited from parent
+						diffs.push(rel);
+					}
+				}
+			};
+			walk(upperDir, "");
+
+			if (diffs.length > 0) {
+				// Use git diff in the merged dir (which has the .git) for only subagent files
+				const diff = await gitSilent(
+					["diff", "--binary", "HEAD", "--", ...diffs],
+					mergedDir,
+				);
+				if (diff.trim()) {
+					patches.push({
+						path: path.join(mergedDir, "delta.patch"),
+						content: diff,
+					});
+				}
+			}
+
+			return patches;
 		},
 
 		async cleanup(): Promise<void> {
@@ -452,16 +496,3 @@ export function readIsolationMode(): IsolationMode {
 	}
 }
 
-export function readIsolationMergeStrategy(): "patch" | "branch" {
-	try {
-		const { getAgentDir } = require("@gsd/pi-coding-agent");
-		const settingsPath = path.join(getAgentDir(), "settings.json");
-		if (!fs.existsSync(settingsPath)) return "patch";
-		const settings = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
-		const merge = settings?.taskIsolation?.merge;
-		if (merge === "branch") return "branch";
-		return "patch";
-	} catch {
-		return "patch";
-	}
-}
