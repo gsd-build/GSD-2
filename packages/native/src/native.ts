@@ -129,4 +129,7 @@ export const native = loadNative() as {
   extractAllSections: (content: string, level?: number) => string;
   batchParseGsdFiles: (directory: string) => unknown;
   parseRoadmapFile: (content: string) => unknown;
+  parseJson: (text: string) => unknown;
+  parsePartialJson: (text: string) => unknown;
+  parseStreamingJson: (text: string) => unknown;
 };
