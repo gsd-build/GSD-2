@@ -256,6 +256,20 @@ export function createHashlineEditTool(cwd: string, options?: HashlineEditToolOp
 						// Write result
 						const finalContent = bom + restoreLineEndings(result.lines, originalEnding);
 						const writePath = move ? resolveToCwd(move, cwd) : absolutePath;
+
+						// Prevent silent overwrite when moving to an existing file
+						if (move && writePath !== absolutePath) {
+							try {
+								await ops.access(writePath);
+								// If access succeeds, the file exists — refuse the move
+								throw new Error(`Destination file already exists: ${writePath}. Use a different path or delete the existing file first.`);
+							} catch (err: any) {
+								// Re-throw our own error; swallow only "file not found"
+								if (err.message?.startsWith("Destination file already exists:")) throw err;
+								// File doesn't exist — safe to proceed
+							}
+						}
+
 						await ops.writeFile(writePath, finalContent);
 
 						// If moved, delete original
