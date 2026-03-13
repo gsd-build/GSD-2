@@ -18,6 +18,7 @@ import {
   resolveSliceFile, resolveSlicePath, resolveGsdRootFile, relGsdRootFile,
   relMilestoneFile, relSliceFile, relSlicePath,
 } from "./paths.js";
+import { randomInt } from "node:crypto";
 import { join } from "node:path";
 import { readFileSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { execSync, execFileSync } from "node:child_process";
@@ -103,7 +104,7 @@ function findMilestoneIds(basePath: string): string[] {
     return readdirSync(dir, { withFileTypes: true })
       .filter((d) => d.isDirectory())
       .map((d) => {
-        const match = d.name.match(/^(M\d+)/);
+        const match = d.name.match(/^(M(?:-[a-z0-9]{6}-)?\d+)/);
         return match ? match[1] : d.name;
       })
       .sort();
@@ -112,17 +113,57 @@ function findMilestoneIds(basePath: string): string[] {
   }
 }
 
+// ─── Milestone ID primitives ────────────────────────────────────────────────
+
+/** Matches both classic `M001` and unique `M-abc123-001` formats (anchored). */
+export const MILESTONE_ID_RE = /^M(?:-[a-z0-9]{6}-)?\d{3}$/;
+
+/** Extract the trailing sequential number from a milestone ID. Returns 0 for non-matches. */
+export function extractMilestoneSeq(id: string): number {
+  const m = id.match(/^M(?:-[a-z0-9]{6}-)?(\d{3})$/);
+  return m ? parseInt(m[1], 10) : 0;
+}
+
+/** Structured parse of a milestone ID into optional prefix and sequence number. */
+export function parseMilestoneId(id: string): { prefix?: string; num: number } {
+  const m = id.match(/^M(?:-([a-z0-9]{6})-)?(\d{3})$/);
+  if (!m) return { num: 0 };
+  return {
+    ...(m[1] ? { prefix: m[1] } : {}),
+    num: parseInt(m[2], 10),
+  };
+}
+
+/** Comparator for sorting milestone IDs by sequential number. */
+export function milestoneIdSort(a: string, b: string): number {
+  return extractMilestoneSeq(a) - extractMilestoneSeq(b);
+}
+
+/** Generate a 6-char lowercase `[a-z0-9]` prefix using crypto.randomInt(). */
+export function generateMilestonePrefix(): string {
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  let result = "";
+  for (let i = 0; i < 6; i++) {
+    result += chars[randomInt(36)];
+  }
+  return result;
+}
+
 /** Return the highest numeric suffix among milestone IDs (0 when the list is empty or has no numeric IDs). */
 export function maxMilestoneNum(milestoneIds: string[]): number {
   return milestoneIds.reduce((max, id) => {
-    const num = parseInt(id.replace(/^M/, ""), 10);
+    const num = extractMilestoneSeq(id);
     return num > max ? num : max;
   }, 0);
 }
 
 /** Derive the next milestone ID from existing IDs using max-based approach to avoid collisions after deletions. */
-export function nextMilestoneId(milestoneIds: string[]): string {
-  return `M${String(maxMilestoneNum(milestoneIds) + 1).padStart(3, "0")}`;
+export function nextMilestoneId(milestoneIds: string[], uniqueEnabled?: boolean): string {
+  const seq = String(maxMilestoneNum(milestoneIds) + 1).padStart(3, "0");
+  if (uniqueEnabled) {
+    return `M-${generateMilestonePrefix()}-${seq}`;
+  }
+  return `M${seq}`;
 }
 
 // ─── Queue ─────────────────────────────────────────────────────────────────────
@@ -166,9 +207,9 @@ export async function showQueue(
   const existingContext = await buildExistingMilestonesContext(basePath, milestoneIds, state);
 
   // ── Determine next milestone ID ─────────────────────────────────────
-  const max = maxMilestoneNum(milestoneIds);
-  const nextId = `M${String(max + 1).padStart(3, "0")}`;
-  const nextIdPlus1 = `M${String(max + 2).padStart(3, "0")}`;
+  const uniqueEnabled = !!loadEffectiveGSDPreferences()?.preferences?.unique_milestone_ids;
+  const nextId = nextMilestoneId(milestoneIds, uniqueEnabled);
+  const nextIdPlus1 = nextMilestoneId([...milestoneIds, nextId], uniqueEnabled);
 
   // ── Build preamble ──────────────────────────────────────────────────
   const activePart = state.activeMilestone
@@ -518,7 +559,8 @@ export async function showSmartEntry(
     }
 
     const milestoneIds = findMilestoneIds(basePath);
-    const nextId = nextMilestoneId(milestoneIds);
+    const uniqueMilestoneIds = !!loadEffectiveGSDPreferences()?.preferences?.unique_milestone_ids;
+    const nextId = nextMilestoneId(milestoneIds, uniqueMilestoneIds);
     const isFirst = milestoneIds.length === 0;
 
     if (isFirst) {
@@ -580,7 +622,8 @@ export async function showSmartEntry(
 
     if (choice === "new_milestone") {
       const milestoneIds = findMilestoneIds(basePath);
-      const nextId = nextMilestoneId(milestoneIds);
+      const uniqueMilestoneIds = !!loadEffectiveGSDPreferences()?.preferences?.unique_milestone_ids;
+      const nextId = nextMilestoneId(milestoneIds, uniqueMilestoneIds);
 
       pendingAutoStart = { ctx, pi, basePath, milestoneId: nextId, step: stepMode };
       dispatchWorkflow(pi, buildDiscussPrompt(nextId,
@@ -648,7 +691,8 @@ export async function showSmartEntry(
         }));
       } else if (choice === "skip_milestone") {
         const milestoneIds = findMilestoneIds(basePath);
-        const nextId = nextMilestoneId(milestoneIds);
+        const uniqueMilestoneIds = !!loadEffectiveGSDPreferences()?.preferences?.unique_milestone_ids;
+        const nextId = nextMilestoneId(milestoneIds, uniqueMilestoneIds);
         pendingAutoStart = { ctx, pi, basePath, milestoneId: nextId, step: stepMode };
         dispatchWorkflow(pi, buildDiscussPrompt(nextId,
           `New milestone ${nextId}.`,

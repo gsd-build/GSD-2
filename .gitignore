@@ -55,3 +55,6 @@ TODOS.md
 .gsd/auto.lock
 .gsd/metrics.json
 .gsd/STATE.md
+
+# ── GSD baseline (auto-generated) ──
+.gsd/completed-units.json

@@ -83,6 +83,7 @@ export interface GSDPreferences {
   skill_discovery?: SkillDiscoveryMode;
   auto_supervisor?: AutoSupervisorConfig;
   uat_dispatch?: boolean;
+  unique_milestone_ids?: boolean;
   budget_ceiling?: number;
   remote_questions?: RemoteQuestionsConfig;
   git?: GitPreferences;
@@ -572,6 +573,7 @@ function mergePreferences(base: GSDPreferences, override: GSDPreferences): GSDPr
     skill_discovery: override.skill_discovery ?? base.skill_discovery,
     auto_supervisor: { ...(base.auto_supervisor ?? {}), ...(override.auto_supervisor ?? {}) },
     uat_dispatch: override.uat_dispatch ?? base.uat_dispatch,
+    unique_milestone_ids: override.unique_milestone_ids ?? base.unique_milestone_ids,
     budget_ceiling: override.budget_ceiling ?? base.budget_ceiling,
     remote_questions: override.remote_questions
       ? { ...(base.remote_questions ?? {}), ...override.remote_questions }
@@ -649,6 +651,10 @@ function validatePreferences(preferences: GSDPreferences): {
 
   if (preferences.uat_dispatch !== undefined) {
     validated.uat_dispatch = !!preferences.uat_dispatch;
+  }
+
+  if (preferences.unique_milestone_ids !== undefined) {
+    validated.unique_milestone_ids = !!preferences.unique_milestone_ids;
   }
 
   if (preferences.budget_ceiling !== undefined) {
