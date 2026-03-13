@@ -202,7 +202,7 @@ export {
 export { BlobStore, isBlobRef, parseBlobRef, externalizeImageData, resolveImageData } from "./core/blob-store.js";
 export { ArtifactManager } from "./core/artifact-manager.js";
 export {
-	type BashInterceptorSettings,
+	type AsyncSettings,
 	type CompactionSettings,
 	type ImageSettings,
 	type PackageSource,

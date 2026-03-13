@@ -49,6 +49,11 @@ export interface MarkdownSettings {
 	codeBlockIndent?: string; // default: "  "
 }
 
+export interface AsyncSettings {
+	enabled?: boolean;  // default: false
+	maxJobs?: number;   // default: 100
+}
+
 export type TransportSetting = Transport;
 
 /**
@@ -99,7 +104,7 @@ export interface Settings {
 	autocompleteMaxVisible?: number; // Max visible items in autocomplete dropdown (default: 5)
 	showHardwareCursor?: boolean; // Show terminal cursor while still positioning it for IME
 	markdown?: MarkdownSettings;
-	bashInterceptor?: BashInterceptorSettings;
+	async?: AsyncSettings;
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
@@ -947,11 +952,11 @@ export class SettingsManager {
 		return this.settings.markdown?.codeBlockIndent ?? "  ";
 	}
 
-	getBashInterceptorEnabled(): boolean {
-		return this.settings.bashInterceptor?.enabled ?? true;
+	getAsyncEnabled(): boolean {
+		return this.settings.async?.enabled ?? false;
 	}
 
-	getBashInterceptorRules(): BashInterceptorRule[] | undefined {
-		return this.settings.bashInterceptor?.rules;
+	getAsyncMaxJobs(): number {
+		return this.settings.async?.maxJobs ?? 100;
 	}
 }
