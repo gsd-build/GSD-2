@@ -177,15 +177,18 @@ export function createHashlineEditTool(cwd: string, options?: HashlineEditToolOp
 					try {
 						// Handle delete
 						if (deleteFile) {
+							let fileExists = true;
 							try {
 								await ops.access(absolutePath);
-								await ops.unlink(absolutePath);
 							} catch {
-								// File doesn't exist, that's fine for delete
+								fileExists = false;
+							}
+							if (fileExists) {
+								await ops.unlink(absolutePath);
 							}
 							if (signal) signal.removeEventListener("abort", onAbort);
 							resolve({
-								content: [{ type: "text", text: `Deleted ${path}` }],
+								content: [{ type: "text", text: fileExists ? `Deleted ${path}` : `File not found, nothing to delete: ${path}` }],
 								details: { diff: "" },
 							});
 							return;
