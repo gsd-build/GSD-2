@@ -299,6 +299,16 @@ export async function startPipeline(
             });
             break;
           }
+          case "session_interrupt": {
+            const interruptSession = sessionManager.getSession(action.sessionId);
+            if (interruptSession) {
+              console.log(`[pipeline] Interrupt session: ${action.sessionId}`);
+              interruptSession.processManager.interrupt();
+            } else {
+              console.warn(`[pipeline] session_interrupt: session not found: ${action.sessionId}`);
+            }
+            break;
+          }
         }
       } catch (err) {
         console.error(`[pipeline] Session action error:`, err);
