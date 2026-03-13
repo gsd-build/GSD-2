@@ -98,6 +98,12 @@ export {
   parsePartialJson,
   parseStreamingJson,
 } from "./json-parse/index.js";
+export {
+  processStreamChunk,
+  stripAnsiNative,
+  sanitizeBinaryOutputNative,
+} from "./stream-process/index.js";
+export type { StreamState, StreamChunkResult } from "./stream-process/index.js";
 
 export {
   parseFrontmatter,
