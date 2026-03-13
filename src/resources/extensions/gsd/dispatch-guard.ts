@@ -1,6 +1,8 @@
 import { execSync } from "node:child_process";
-import { relMilestoneFile } from "./paths.js";
+import { readdirSync } from "node:fs";
+import { relMilestoneFile, milestonesDir } from "./paths.js";
 import { parseRoadmapSlices } from "./roadmap-slices.ts";
+import { extractMilestoneSeq, milestoneIdSort } from "./guided-flow.js";
 
 const SLICE_DISPATCH_TYPES = new Set([
   "research-slice",
@@ -22,21 +24,32 @@ function readTrackedFileFromBranch(base: string, branch: string, relPath: string
   }
 }
 
-function milestoneIdFromNumber(num: number): string {
-  return `M${String(num).padStart(3, "0")}`;
-}
-
 export function getPriorSliceCompletionBlocker(base: string, mainBranch: string, unitType: string, unitId: string): string | null {
   if (!SLICE_DISPATCH_TYPES.has(unitType)) return null;
 
   const [targetMid, targetSid] = unitId.split("/");
   if (!targetMid || !targetSid) return null;
 
-  const targetMidNumber = Number.parseInt(targetMid.slice(1), 10);
-  if (!Number.isFinite(targetMidNumber)) return null;
+  const targetSeq = extractMilestoneSeq(targetMid);
+  if (targetSeq === 0) return null;
 
-  for (let milestoneNumber = 1; milestoneNumber <= targetMidNumber; milestoneNumber += 1) {
-    const mid = milestoneIdFromNumber(milestoneNumber);
+  // Scan actual milestone directories instead of iterating by number
+  let milestoneIds: string[];
+  try {
+    milestoneIds = readdirSync(milestonesDir(base), { withFileTypes: true })
+      .filter(d => d.isDirectory())
+      .map(d => {
+        const match = d.name.match(/^(M(?:-[a-z0-9]{6}-)?\d+)/);
+        return match ? match[1] : null;
+      })
+      .filter((id): id is string => id !== null)
+      .sort(milestoneIdSort)
+      .filter(id => extractMilestoneSeq(id) <= targetSeq);
+  } catch {
+    return null;
+  }
+
+  for (const mid of milestoneIds) {
     const roadmapRel = relMilestoneFile(base, mid, "ROADMAP");
     if (!roadmapRel) continue;
 

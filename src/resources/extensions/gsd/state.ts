@@ -30,6 +30,7 @@ import {
   resolveGsdRootFile,
 } from './paths.ts';
 import { getActiveSliceBranch } from './worktree.ts';
+import { milestoneIdSort } from './guided-flow.js';
 
 import { readdirSync } from 'fs';
 import { join } from 'path';
@@ -62,10 +63,10 @@ function findMilestoneIds(basePath: string): string[] {
     return readdirSync(dir, { withFileTypes: true })
       .filter(d => d.isDirectory())
       .map(d => {
-        const match = d.name.match(/^(M\d+)/);
+        const match = d.name.match(/^(M(?:-[a-z0-9]{6}-)?\d+)/);
         return match ? match[1] : d.name;
       })
-      .sort();
+      .sort(milestoneIdSort);
   } catch {
     return [];
   }
@@ -167,7 +168,7 @@ export async function deriveState(basePath: string): Promise<GSDState> {
     }
 
     const roadmap = parseRoadmap(content);
-    const title = roadmap.title.replace(/^M\d+[^:]*:\s*/, '');
+    const title = roadmap.title.replace(/^M(?:-[a-z0-9]{6}-)?\d+[^:]*:\s*/, '');
     const complete = isMilestoneComplete(roadmap);
 
     if (complete) {

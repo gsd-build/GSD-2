@@ -317,7 +317,7 @@ function hasExistingMilestones(wtPath: string): boolean {
   if (!existsSync(mDir)) return false;
   try {
     const entries = readdirSync(mDir, { withFileTypes: true })
-      .filter(d => d.isDirectory() && /^M\d+/.test(d.name));
+      .filter(d => d.isDirectory() && /^M(?:-[a-z0-9]{6}-)?\d+/.test(d.name));
     return entries.length > 0;
   } catch {
     return false;

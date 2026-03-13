@@ -95,7 +95,7 @@ export function getSliceBranchName(milestoneId: string, sliceId: string, worktre
 }
 
 /** Regex that matches both plain and worktree-namespaced slice branches. */
-export const SLICE_BRANCH_RE = /^gsd\/(?:([a-zA-Z0-9_-]+)\/)?(M\d+)\/(S\d+)$/;
+export const SLICE_BRANCH_RE = /^gsd\/(?:([a-zA-Z0-9_-]+)\/)?(M(?:-[a-z0-9]{6}-)?\d+)\/(S\d+)$/;
 
 /**
  * Parse a slice branch name into its components.

@@ -107,7 +107,7 @@ function findMilestoneIds(basePath: string): string[] {
         const match = d.name.match(/^(M(?:-[a-z0-9]{6}-)?\d+)/);
         return match ? match[1] : d.name;
       })
-      .sort();
+      .sort(milestoneIdSort);
   } catch {
     return [];
   }
