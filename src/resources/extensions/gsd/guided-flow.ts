@@ -35,6 +35,11 @@ let pendingAutoStart: {
   step?: boolean; // preserve step mode through discuss → auto transition
 } | null = null;
 
+/** Returns the milestoneId being discussed, or null if no discussion is active */
+export function getDiscussionMilestoneId(): string | null {
+  return pendingAutoStart?.milestoneId ?? null;
+}
+
 /** Called from agent_end to check if auto-mode should start after discuss */
 export function checkAutoStartAfterDiscuss(): boolean {
   if (!pendingAutoStart) return false;
