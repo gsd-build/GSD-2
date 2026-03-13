@@ -527,6 +527,16 @@ export class GitServiceImpl {
     // Pull latest main before merging to avoid conflicts from remote changes
     this.git(["pull", "--rebase", "origin", mainBranch], { allowFailure: true });
 
+    // Untrack runtime files that may have been manually committed (e.g. via `gsd queue`)
+    // to prevent merge conflicts on files that belong in .gitignore (#189)
+    for (const exclusion of RUNTIME_EXCLUSION_PATHS) {
+      this.git(["rm", "--cached", "-r", "--ignore-unmatch", exclusion], { allowFailure: true });
+    }
+    const untrackDiff = this.git(["diff", "--cached", "--stat"], { allowFailure: true });
+    if (untrackDiff && untrackDiff.trim()) {
+      this.git(["commit", "-m", "chore: untrack .gsd/ runtime files before merge"], { allowFailure: true });
+    }
+
     // Merge slice branch — strategy is configurable via git.merge_strategy
     // preference. Default: "squash" (preserves existing behavior).
     // "merge" uses --no-ff which is more resilient to conflicts from
@@ -539,15 +549,43 @@ export class GitServiceImpl {
     try {
       this.git(mergeArgs);
     } catch (mergeError) {
-      // Merge exits non-zero on conflict. Reset to restore a clean state.
-      this.git(["reset", "--hard", "HEAD"], { allowFailure: true });
-      const msg = mergeError instanceof Error ? mergeError.message : String(mergeError);
-      throw new Error(
-        `${strategy === "merge" ? "Merge" : "Squash-merge"} of "${branch}" into "${mainBranch}" failed with conflicts. ` +
-        `Working tree has been reset to a clean state. ` +
-        `Resolve manually: git checkout ${mainBranch} && git merge ${strategy === "merge" ? "--no-ff" : "--squash"} ${branch}\n` +
-        `Original error: ${msg}`,
-      );
+      // Check if conflicts are limited to runtime files we can auto-resolve (#189)
+      const conflicted = this.git(["diff", "--name-only", "--diff-filter=U"], { allowFailure: true });
+      if (conflicted) {
+        const conflictedFiles = conflicted.split("\n").filter(Boolean);
+        const allRuntime = conflictedFiles.every(f =>
+          RUNTIME_EXCLUSION_PATHS.some(excl => f.startsWith(excl.replace(/\/$/, ""))),
+        );
+        if (allRuntime) {
+          // Runtime-only conflicts: take ours and remove from index
+          for (const f of conflictedFiles) {
+            this.git(["checkout", "--ours", "--", f], { allowFailure: true });
+            this.git(["rm", "--cached", "--ignore-unmatch", f], { allowFailure: true });
+          }
+          this.git(["add", "-A"], { allowFailure: true });
+          // Don't throw — let the merge proceed
+        } else {
+          // Non-runtime conflicts: reset and throw as before
+          this.git(["reset", "--hard", "HEAD"], { allowFailure: true });
+          const msg = mergeError instanceof Error ? mergeError.message : String(mergeError);
+          throw new Error(
+            `${strategy === "merge" ? "Merge" : "Squash-merge"} of "${branch}" into "${mainBranch}" failed with conflicts. ` +
+            `Working tree has been reset to a clean state. ` +
+            `Resolve manually: git checkout ${mainBranch} && git merge ${strategy === "merge" ? "--no-ff" : "--squash"} ${branch}\n` +
+            `Original error: ${msg}`,
+          );
+        }
+      } else {
+        // No conflicted files detected but merge still failed — reset and throw
+        this.git(["reset", "--hard", "HEAD"], { allowFailure: true });
+        const msg = mergeError instanceof Error ? mergeError.message : String(mergeError);
+        throw new Error(
+          `${strategy === "merge" ? "Merge" : "Squash-merge"} of "${branch}" into "${mainBranch}" failed. ` +
+          `Working tree has been reset to a clean state. ` +
+          `Resolve manually: git checkout ${mainBranch} && git merge ${strategy === "merge" ? "--no-ff" : "--squash"} ${branch}\n` +
+          `Original error: ${msg}`,
+        );
+      }
     }
 
     // Squash merge needs a separate commit; --no-ff merge already committed
