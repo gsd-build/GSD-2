@@ -12,13 +12,19 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 
-const addonDir = path.resolve(__dirname, "..", "..", "..", "native", "addon");
 const platformTag = `${process.platform}-${process.arch}`;
 
-const candidates = [
+const addonDirs = [
+  // Published package layout: @gsd/native/addon
+  path.resolve(__dirname, "..", "addon"),
+  // Monorepo layout during local development
+  path.resolve(__dirname, "..", "..", "..", "native", "addon"),
+];
+
+const candidates = addonDirs.flatMap((addonDir) => [
   path.join(addonDir, `gsd_engine.${platformTag}.node`),
   path.join(addonDir, "gsd_engine.dev.node"),
-];
+]);
 
 function loadNative(): Record<string, unknown> {
   const errors: string[] = [];

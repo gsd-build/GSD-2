@@ -21,6 +21,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const nativeRoot = path.resolve(__dirname, "..");
 const engineDir = path.join(nativeRoot, "crates", "engine");
 const addonDir = path.join(nativeRoot, "addon");
+const packageAddonDir = path.resolve(nativeRoot, "..", "packages", "native", "addon");
 
 const isDev = process.argv.includes("--dev");
 const profile = isDev ? "debug" : "release";
@@ -66,12 +67,18 @@ if (!fs.existsSync(sourcePath)) {
 }
 
 fs.mkdirSync(addonDir, { recursive: true });
+fs.mkdirSync(packageAddonDir, { recursive: true });
 
 const destFilename = isDev
   ? "gsd_engine.dev.node"
   : `gsd_engine.${platformTag}.node`;
-const destPath = path.join(addonDir, destFilename);
+const destPaths = [
+  path.join(addonDir, destFilename),
+  path.join(packageAddonDir, destFilename),
+];
 
-fs.copyFileSync(sourcePath, destPath);
-console.log(`Installed: ${destPath}`);
+for (const destPath of destPaths) {
+  fs.copyFileSync(sourcePath, destPath);
+  console.log(`Installed: ${destPath}`);
+}
 console.log("Build complete.");

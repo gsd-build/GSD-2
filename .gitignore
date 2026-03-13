@@ -34,6 +34,7 @@ tmp/
 # ── Workspace packages ──
 packages/*/dist/
 packages/*/node_modules/
+packages/native/addon/*.node
 
 # ── GSD baseline (auto-generated) ──
 dist/

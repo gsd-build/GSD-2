@@ -54,7 +54,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "addon"
   ],
   "license": "MIT"
 }
