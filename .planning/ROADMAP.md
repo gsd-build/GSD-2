@@ -116,7 +116,14 @@ Plans:
   3. An In Progress slice shows a task progress bar, running cost, and a "Steer" action that injects direction without stopping auto mode; the card pulses amber
   4. A Needs Review slice presents an interactive UAT checklist; "Merge to main" is locked until all items are checked; the completed checklist is written to `.gsd/S{N}-UAT-RESULTS.md`
   5. A Complete slice shows merge commit info, total cost, and links to view the squash diff and UAT results
-**Plans**: TBD
+**Plans**: 5 plans
+
+Plans:
+- [ ] 14-01-PLAN.md — Wave 1 (TDD): GSD2 data layer parsers — parseRoadmap, parsePlan, parseUat, extend buildFullState (SLICE-01 through SLICE-07)
+- [ ] 14-02-PLAN.md — Wave 2: SliceAccordion + MilestoneHeader + remove Slice tab (SLICE-01, SLICE-07)
+- [ ] 14-03-PLAN.md — Wave 2: Planned + InProgress slice cards + SliceRow dispatcher (SLICE-02, SLICE-03)
+- [ ] 14-04-PLAN.md — Wave 3: NeedsReview + Complete cards + UAT write + SliceAction wiring (SLICE-04, SLICE-05, SLICE-06)
+- [ ] 14-05-PLAN.md — Wave 4: Integration test + human verification (all SLICE-*)
 
 ### Phase 15: Tauri Shell
 **Goal**: Mission Control runs as a native desktop app — Bun server managed by Tauri, window state persisted, IPC commands wired, and a dependency screen shown on first launch if `bun` or `gsd` is missing
@@ -214,8 +221,8 @@ Plans:
 | 11. Documentation Integrity (GAP) | 4/4 | Complete   | 2026-03-12 | 2026-03-12 |
 | 11.1 Pre-v2.0 Stabilization (INSERTED) | 3/4 | Complete    | 2026-03-12 | — |
 | 12. GSD 2 Compatibility Pass | 6/7 | Complete    | 2026-03-12 | — |
-| 13. Session Streaming Hardening | 7/7 | Complete   | 2026-03-13 | — |
-| 14. Slice Integration | v2.0 | 0/TBD | Not started | — |
+| 13. Session Streaming Hardening | 7/7 | Complete    | 2026-03-13 | — |
+| 14. Slice Integration | v2.0 | 0/5 | Not started | — |
 | 15. Tauri Shell | v2.0 | 0/TBD | Not started | — |
 | 16. OAuth + Keychain | v2.0 | 0/TBD | Not started | — |
 | 17. Permission Model | v2.0 | 0/TBD | Not started | — |
