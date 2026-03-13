@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Native Desktop
 status: in_progress
-last_updated: "2026-03-12T20:38:42.179Z"
+last_updated: "2026-03-13T07:03:54.105Z"
 last_activity: "2026-03-12 — Plan 13-05 complete: applyGSD2Event, isAutoMode/isCrashed/interrupt in useSessionManager, EXECUTING badge, phase_transition + tool_use cards"
 progress:
   total_phases: 10
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 17
-  completed_plans: 15
+  completed_plans: 16
   percent: 88
 ---
 
@@ -111,12 +111,12 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 
 ## Current Position
 
-Phase: 13 of 20 (Session Streaming Hardening)
-Plan: 5 of 6 (plan 05 complete — auto mode indicators, EXECUTING badge, phase/tool cards)
-Status: In progress
-Last activity: 2026-03-12 — Plan 13-05 complete: applyGSD2Event, isAutoMode/isCrashed/interrupt in useSessionManager, EXECUTING badge, phase_transition + tool_use cards
+Phase: 13 of 20 (Session Streaming Hardening) — COMPLETE
+Plan: 6 of 6 (plan 06 complete — AppShell full wiring, killAll orphan prevention, human verification approved)
+Status: Phase 13 complete — ready for Phase 14
+Last activity: 2026-03-13 — Plan 13-06 complete: AppShell wired with isAutoMode/isCrashed/costState/onInterrupt/onDismissCrash; server.ts SIGTERM/SIGINT → killAll(); 578 tests pass; live verification deferred pending GSD 2 CLI install
 
-Progress: [████████░░] 82% (14/17 plans complete)
+Progress: [█████████░] 94% (16/17 plans complete)
 
 ## Milestone Archive
 
@@ -180,6 +180,7 @@ Progress: [████████░░] 82% (14/17 plans complete)
 - [Phase 13]: applyGSD2Event is a pure exported helper tested without React; interrupt() sends WebSocket message not direct processManager call
 - [Phase 13]: computeCostState uses float rounding (Math.round * 1e10) to prevent threshold failures at exact 80% boundary
 - [Phase 13]: ChatView accepts costState as a pure render prop — useCostTracker wired in plan 13-05 via useSessionManager
+- [Phase 13]: Live GSD 2 session verification deferred — all 578 automated tests pass; manual SC-1 through SC-5 will be validated when GSD 2 CLI is installed
 
 ### Blockers/Concerns
 
