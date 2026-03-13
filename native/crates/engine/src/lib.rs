@@ -8,6 +8,7 @@
 
 #![allow(clippy::needless_pass_by_value)]
 
+mod clipboard;
 mod fs_cache;
 mod glob;
 mod glob_util;

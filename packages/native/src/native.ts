@@ -55,4 +55,7 @@ export const native = loadNative() as {
   highlightCode: (code: string, lang: string | null, colors: unknown) => unknown;
   supportsLanguage: (lang: string) => unknown;
   getSupportedLanguages: () => unknown;
+  copyToClipboard: (text: string) => void;
+  readTextFromClipboard: () => string | null;
+  readImageFromClipboard: () => Promise<unknown>;
 };
