@@ -257,6 +257,11 @@ export async function stopAuto(ctx?: ExtensionContext, pi?: ExtensionAPI): Promi
     ctx?.ui.notify("Auto-mode stopped.", "info");
   }
 
+  // Sync disk state so next resume starts from accurate state
+  if (basePath) {
+    try { await rebuildState(basePath); } catch { /* non-fatal */ }
+  }
+
   resetMetrics();
   active = false;
   paused = false;
@@ -1181,7 +1186,7 @@ async function dispatchNextUnit(
 
       // Research before roadmap if no research exists
       const researchFile = resolveMilestoneFile(basePath, mid, "RESEARCH");
-      const hasResearch = !!(researchFile && await loadFile(researchFile));
+      const hasResearch = !!researchFile;
 
       if (!hasResearch) {
         unitType = "research-milestone";
@@ -1198,13 +1203,13 @@ async function dispatchNextUnit(
       const sid = state.activeSlice!.id;
       const sTitle = state.activeSlice!.title;
       const researchFile = resolveSliceFile(basePath, mid, sid, "RESEARCH");
-      const hasResearch = !!(researchFile && await loadFile(researchFile));
+      const hasResearch = !!researchFile;
 
       if (!hasResearch) {
         // Skip slice research for S01 when milestone research already exists —
         // the milestone research already covers the same ground for the first slice.
         const milestoneResearchFile = resolveMilestoneFile(basePath, mid, "RESEARCH");
-        const hasMilestoneResearch = !!(milestoneResearchFile && await loadFile(milestoneResearchFile));
+        const hasMilestoneResearch = !!milestoneResearchFile;
         if (hasMilestoneResearch && sid === "S01") {
           unitType = "plan-slice";
           unitId = `${mid}/${sid}`;
