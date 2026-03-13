@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import lockfile from "proper-lockfile";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
+import type { BashInterceptorRule } from "./tools/bash-interceptor.js";
 
 export interface CompactionSettings {
 	enabled?: boolean; // default: true
@@ -39,8 +40,18 @@ export interface ThinkingBudgetsSettings {
 	high?: number;
 }
 
+export interface BashInterceptorSettings {
+	enabled?: boolean; // default: true
+	rules?: BashInterceptorRule[]; // override default rules
+}
+
 export interface MarkdownSettings {
 	codeBlockIndent?: string; // default: "  "
+}
+
+export interface AsyncSettings {
+	enabled?: boolean;  // default: false
+	maxJobs?: number;   // default: 100
 }
 
 export interface TaskIsolationSettings {
@@ -98,6 +109,8 @@ export interface Settings {
 	autocompleteMaxVisible?: number; // Max visible items in autocomplete dropdown (default: 5)
 	showHardwareCursor?: boolean; // Show terminal cursor while still positioning it for IME
 	markdown?: MarkdownSettings;
+	async?: AsyncSettings;
+	bashInterceptor?: BashInterceptorSettings;
 	taskIsolation?: TaskIsolationSettings;
 }
 
@@ -361,6 +374,14 @@ export class SettingsManager {
 
 	getProjectSettings(): Settings {
 		return structuredClone(this.projectSettings);
+	}
+
+	getBashInterceptorEnabled(): boolean {
+		return this.settings.bashInterceptor?.enabled ?? true;
+	}
+
+	getBashInterceptorRules(): BashInterceptorRule[] | undefined {
+		return this.settings.bashInterceptor?.rules;
 	}
 
 	reload(): void {
@@ -944,6 +965,14 @@ export class SettingsManager {
 
 	getCodeBlockIndent(): string {
 		return this.settings.markdown?.codeBlockIndent ?? "  ";
+	}
+
+	getAsyncEnabled(): boolean {
+		return this.settings.async?.enabled ?? false;
+	}
+
+	getAsyncMaxJobs(): number {
+		return this.settings.async?.maxJobs ?? 100;
 	}
 
 	getTaskIsolationMode(): "none" | "worktree" | "fuse-overlay" {
