@@ -9,30 +9,70 @@ import { ProgressBar } from "../src/components/shared/ProgressBar";
 import { MilestoneHeader } from "../src/components/milestone/MilestoneHeader";
 import { PhaseRow } from "../src/components/milestone/PhaseRow";
 import { CommittedHistory } from "../src/components/milestone/CommittedHistory";
-import type { ProjectState, PhaseState, RoadmapState } from "../src/server/types";
+import type { GSD2State, PhaseState } from "../src/server/types";
 
-const mockProjectState: ProjectState = {
-  milestone: "v1.0",
-  milestone_name: "Mission Control",
-  status: "active",
-  branch: "main",
-  stopped_at: "",
-  last_updated: "",
-  last_activity: "",
-  progress: {
-    total_phases: 10,
-    completed_phases: 3,
-    total_plans: 10,
-    completed_plans: 5,
-    percent: 50,
+const mockGsd2State: GSD2State = {
+  projectState: {
+    gsd_state_version: "1.0",
+    milestone: "v1.0",
+    milestone_name: "Mission Control",
+    status: "active",
+    active_milestone: "M001",
+    active_slice: "S01",
+    active_task: "T01",
+    auto_mode: false,
+    cost: 0.50,
+    tokens: 10000,
+    last_updated: "",
+    last_activity: "",
   },
-};
-
-const mockRoadmap: RoadmapState = {
-  phases: [
-    { completed: true, number: 1, name: "Setup", description: "Project setup and config" },
-    { completed: false, number: 2, name: "Pipeline", description: "Data pipeline" },
+  roadmap: {
+    milestoneId: "M001",
+    milestoneName: "Mission Control",
+    slices: [
+      {
+        id: "S01",
+        name: "Foundation",
+        status: "in_progress",
+        taskCount: 3,
+        costEstimate: 0.20,
+        branch: "gsd/M001/S01",
+        dependencies: [],
+      },
+      {
+        id: "S02",
+        name: "UI Layer",
+        status: "planned",
+        taskCount: 5,
+        costEstimate: 0.30,
+        branch: "gsd/M001/S02",
+        dependencies: [],
+      },
+    ],
+  },
+  activePlan: null,
+  activeTask: null,
+  decisions: null,
+  preferences: {
+    budget_ceiling: 1.00,
+  },
+  project: null,
+  milestoneContext: null,
+  needsMigration: false,
+  slices: [
+    {
+      id: "S01",
+      name: "Foundation",
+      status: "in_progress",
+      taskCount: 3,
+      costEstimate: 0.20,
+      branch: "gsd/M001/S01",
+      dependencies: [],
+    },
   ],
+  uatFile: null,
+  gitBranchCommits: 3,
+  lastCommitMessage: "feat: initial setup",
 };
 
 function makePhase(overrides: Partial<PhaseState> = {}): PhaseState {
@@ -68,19 +108,20 @@ describe("ProgressBar", () => {
 });
 
 describe("MilestoneHeader", () => {
-  it("renders branch name, milestone name, and progress when given valid ProjectState", () => {
-    const result = MilestoneHeader({ projectState: mockProjectState, roadmap: mockRoadmap });
+  it("renders milestone name and total cost when given valid GSD2State", () => {
+    const result = MilestoneHeader({ gsd2State: mockGsd2State });
     const json = JSON.stringify(result);
-    expect(json).toContain("main");
     expect(json).toContain("Mission Control");
-    // React serializes mixed children as arrays: [5," / ",10," plans complete"]
-    expect(json).toContain("plans complete");
-    // ProgressBar is a child component, serialized as {"value":50}
-    expect(json).toContain('"value":50');
+    // Total cost of slices: 0.20 (S01 costEstimate)
+    expect(json).toContain("total cost");
+    // Budget ceiling bar rendered (value = 0.20/1.00 * 100 = 20)
+    expect(json).toContain('"value":20');
+    // Active slice shown in badge
+    expect(json).toContain("S01");
   });
 
-  it("renders placeholder/skeleton when projectState is null", () => {
-    const result = MilestoneHeader({ projectState: null, roadmap: null });
+  it("renders placeholder/skeleton when gsd2State is null", () => {
+    const result = MilestoneHeader({ gsd2State: null });
     const json = JSON.stringify(result);
     expect(json).toContain("animate-pulse");
     expect(json).not.toContain("Mission Control");

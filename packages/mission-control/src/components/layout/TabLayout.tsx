@@ -3,18 +3,14 @@ import { cn } from "@/lib/utils";
 import { PanelWrapper } from "@/components/layout/PanelWrapper";
 import { LAYOUT_DEFAULTS } from "@/styles/design-tokens";
 import { MilestoneHeader } from "@/components/milestone/MilestoneHeader";
-import { PhaseList } from "@/components/milestone/PhaseList";
-import { CommittedHistory } from "@/components/milestone/CommittedHistory";
-import { ContextBudgetChart } from "@/components/slice-detail/ContextBudgetChart";
-import { BoundaryMap } from "@/components/slice-detail/BoundaryMap";
-import { UatStatus } from "@/components/slice-detail/UatStatus";
-import { TaskExecuting } from "@/components/active-task/TaskExecuting";
+import { SliceAccordion } from "@/components/milestone/SliceAccordion";
+import { TaskExecutingConnected as TaskExecuting } from "@/components/active-task/TaskExecuting";
 import { TaskWaiting } from "@/components/active-task/TaskWaiting";
 import { ChatPanel } from "@/components/chat/ChatPanel";
-import type { PlanningState, PhaseState, PlanState } from "@/server/types";
+import type { PlanningState, PhaseState, PlanState, SliceAction } from "@/server/types";
 import type { ChatMessage } from "@/server/chat-types";
 
-type TabId = "chat-task" | "milestone" | "slice";
+type TabId = "chat-task" | "milestone";
 
 interface Tab {
   id: TabId;
@@ -24,7 +20,6 @@ interface Tab {
 const TABS: Tab[] = [
   { id: "chat-task", label: "Chat & Task" },
   { id: "milestone", label: "Milestone" },
-  { id: "slice", label: "Slice" },
 ];
 
 const TAB_EMPTY_MESSAGES: Record<TabId, { title: string; description: string }> = {
@@ -36,10 +31,6 @@ const TAB_EMPTY_MESSAGES: Record<TabId, { title: string; description: string }> 
     title: "Milestone",
     description: "No milestone data",
   },
-  slice: {
-    title: "Slice Detail",
-    description: "Select a phase to view details",
-  },
 };
 
 interface TabLayoutProps {
@@ -48,52 +39,50 @@ interface TabLayoutProps {
   chatMessages?: ChatMessage[];
   onChatSend?: (message: string) => void;
   isChatProcessing?: boolean;
+  onSliceAction?: (action: SliceAction) => void;
 }
 
-export function TabLayout({ className, planningState, chatMessages = [], onChatSend, isChatProcessing = false }: TabLayoutProps) {
+export function TabLayout({ className, planningState, chatMessages = [], onChatSend, isChatProcessing = false, onSliceAction }: TabLayoutProps) {
   const [activeTab, setActiveTab] = useState<TabId>("chat-task");
+
+  function handleSliceAction(action: SliceAction) {
+    if (onSliceAction) {
+      onSliceAction(action);
+    } else {
+      console.log("[TabLayout] SliceAction:", action);
+    }
+  }
+
+  function handleStartNext() {
+    const nextPlanned = planningState?.slices.find((s) => s.status === "planned");
+    if (nextPlanned) {
+      handleSliceAction({ type: "start_slice", sliceId: nextPlanned.id });
+    }
+  }
 
   function renderTabContent() {
     if (activeTab === "milestone") {
+      const slices = planningState?.slices ?? [];
+      const activeSliceId = planningState?.projectState.active_slice ?? "";
+      const isAutoMode = planningState?.projectState.auto_mode ?? false;
+
       return (
         <PanelWrapper
           title="Milestone"
           isLoading={planningState === null}
-          isEmpty={planningState !== null && planningState.phases.length === 0}
+          isEmpty={planningState !== null && slices.length === 0}
         >
           <div className="flex flex-col">
             <MilestoneHeader
-              projectState={planningState?.state ?? null}
-              roadmap={planningState?.roadmap ?? null}
+              gsd2State={planningState}
+              onStartNext={handleStartNext}
             />
-            <PhaseList
-              phases={planningState?.phases ?? []}
-              roadmap={planningState?.roadmap ?? null}
+            <SliceAccordion
+              slices={slices}
+              activeSliceId={activeSliceId}
+              isAutoMode={isAutoMode}
+              onAction={handleSliceAction}
             />
-            <CommittedHistory phases={planningState?.phases ?? []} />
-          </div>
-        </PanelWrapper>
-      );
-    }
-
-    if (activeTab === "slice") {
-      // Derive current phase plans: find in_progress phase, or last phase
-      const currentPhase = planningState
-        ? planningState.phases.find((p) => p.status === "in_progress") ??
-          planningState.phases[planningState.phases.length - 1]
-        : undefined;
-      const currentPhasePlans = currentPhase?.plans ?? [];
-
-      return (
-        <PanelWrapper
-          title="Slice Detail"
-          isLoading={planningState === null}
-          isEmpty={planningState !== null && planningState.phases.length === 0}
-        >
-          <div className="space-y-6 p-4">
-            <ContextBudgetChart plans={currentPhasePlans} />
-            <BoundaryMap plans={currentPhasePlans} />
-            <UatStatus phases={planningState?.phases ?? []} />
           </div>
         </PanelWrapper>
       );
@@ -101,8 +90,8 @@ export function TabLayout({ className, planningState, chatMessages = [], onChatS
 
     // Chat & Task tab: ChatPanel as primary, task info as compact secondary
     const currentPhase: PhaseState | undefined = planningState
-      ? planningState.phases.find((p) => p.status === "in_progress") ??
-        planningState.phases[planningState.phases.length - 1]
+      ? (planningState as unknown as { phases?: PhaseState[] }).phases?.find((p) => p.status === "in_progress") ??
+        (planningState as unknown as { phases?: PhaseState[] }).phases?.[(planningState as unknown as { phases?: PhaseState[] }).phases?.length ?? 0 - 1]
       : undefined;
 
     const currentPlan: PlanState | undefined = currentPhase
@@ -118,10 +107,11 @@ export function TabLayout({ className, planningState, chatMessages = [], onChatS
     // Find the next plan for waiting state
     const nextPlan: PlanState | undefined = (() => {
       if (!planningState) return undefined;
+      const phases = (planningState as unknown as { phases?: PhaseState[] }).phases ?? [];
       if (currentPhase && currentPhase.completedPlans < currentPhase.plans.length) {
         return currentPhase.plans[currentPhase.completedPlans];
       }
-      const nextPhase = planningState.phases.find((p) => p.status === "not_started");
+      const nextPhase = phases.find((p) => p.status === "not_started");
       return nextPhase?.plans[0];
     })();
 
@@ -144,7 +134,7 @@ export function TabLayout({ className, planningState, chatMessages = [], onChatS
               />
             ) : (
               <TaskWaiting
-                lastCompleted={planningState?.state.stopped_at}
+                lastCompleted={planningState?.projectState.last_activity}
                 nextTask={nextPlan ? `Plan ${nextPlan.plan}` : undefined}
                 nextPlanNumber={nextPlan?.plan}
               />

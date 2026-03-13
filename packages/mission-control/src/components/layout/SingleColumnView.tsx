@@ -110,7 +110,7 @@ export function SingleColumnView({
       )}
       {activeView.kind === "milestone" && (
         <MilestoneView
-          planningState={planningState}
+          gsd2State={planningState}
           sessions={sessions?.map((s) => ({
             id: s.id,
             name: s.name,

@@ -1,6 +1,9 @@
 /**
  * MilestoneView — standalone milestone overview with optional split view.
  *
+ * Renders SliceAccordion (replacing v1 PhaseList + CommittedHistory).
+ * Uses GSD2State fields (slices, projectState) — no more PhaseState[] props.
+ *
  * When multiple sessions have active worktrees, shows a stacked view
  * with one section per worktree session. Each section displays the session
  * name + branch badge and standard milestone content.
@@ -9,9 +12,8 @@
  */
 import { PanelWrapper } from "@/components/layout/PanelWrapper";
 import { MilestoneHeader } from "@/components/milestone/MilestoneHeader";
-import { PhaseList } from "@/components/milestone/PhaseList";
-import { CommittedHistory } from "@/components/milestone/CommittedHistory";
-import type { PlanningState } from "@/server/types";
+import { SliceAccordion } from "@/components/milestone/SliceAccordion";
+import type { GSD2State, SliceAction } from "@/server/types";
 
 export interface WorktreeSessionInfo {
   id: string;
@@ -21,24 +23,47 @@ export interface WorktreeSessionInfo {
 }
 
 interface MilestoneViewProps {
-  planningState: PlanningState | null;
+  gsd2State: GSD2State | null;
   /** Optional sessions list — when provided, enables split view for worktree sessions. */
   sessions?: WorktreeSessionInfo[];
+  /** Optional action handler — forwarded to SliceAccordion and MilestoneHeader. */
+  onAction?: (action: SliceAction) => void;
 }
 
 /** Standard milestone content (reused in both single and split views). */
-function MilestoneContent({ planningState }: { planningState: PlanningState | null }) {
+function MilestoneContent({ gsd2State, onAction }: { gsd2State: GSD2State | null; onAction?: (action: SliceAction) => void }) {
+  const slices = gsd2State?.slices ?? [];
+  const activeSliceId = gsd2State?.projectState.active_slice ?? "";
+  const isAutoMode = gsd2State?.projectState.auto_mode ?? false;
+
+  function handleSliceAction(action: SliceAction) {
+    if (onAction) {
+      onAction(action);
+    } else {
+      // Log for now — full wiring in 14-03/14-04 connects to WebSocket sendMessage
+      console.log("[MilestoneView] SliceAction:", action);
+    }
+  }
+
+  function handleStartNext() {
+    const nextPlanned = slices.find((s) => s.status === "planned");
+    if (nextPlanned) {
+      handleSliceAction({ type: "start_slice", sliceId: nextPlanned.id });
+    }
+  }
+
   return (
     <div className="flex flex-col">
       <MilestoneHeader
-        projectState={planningState?.state ?? null}
-        roadmap={planningState?.roadmap ?? null}
+        gsd2State={gsd2State}
+        onStartNext={handleStartNext}
       />
-      <PhaseList
-        phases={planningState?.phases ?? []}
-        roadmap={planningState?.roadmap ?? null}
+      <SliceAccordion
+        slices={slices}
+        activeSliceId={activeSliceId}
+        isAutoMode={isAutoMode}
+        onAction={handleSliceAction}
       />
-      <CommittedHistory phases={planningState?.phases ?? []} />
     </div>
   );
 }
@@ -61,8 +86,8 @@ function SessionSectionHeader({ session }: { session: WorktreeSessionInfo }) {
   );
 }
 
-export function MilestoneView({ planningState, sessions }: MilestoneViewProps) {
-  const phases = planningState?.phases ?? [];
+export function MilestoneView({ gsd2State, sessions, onAction }: MilestoneViewProps) {
+  const slices = gsd2State?.slices ?? [];
   const worktreeSessions = sessions?.filter((s) => s.worktreePath) ?? [];
 
   // Split view: when 2+ sessions have worktrees — stacked vertically
@@ -73,15 +98,15 @@ export function MilestoneView({ planningState, sessions }: MilestoneViewProps) {
         <h1 className="sr-only">Milestone</h1>
         <PanelWrapper
           title="Milestone"
-          isLoading={planningState === null}
-          isEmpty={planningState !== null && phases.length === 0}
+          isLoading={gsd2State === null}
+          isEmpty={gsd2State !== null && slices.length === 0}
         >
           <div className="space-y-4">
             {worktreeSessions.map((session, index) => (
               <div key={session.id} className="animate-in fade-in duration-200 rounded-lg border border-navy-600 overflow-hidden" style={{ animationDelay: `${index * 40}ms` }}>
                 <SessionSectionHeader session={session} />
                 <div className="overflow-auto max-h-[50vh]">
-                  <MilestoneContent planningState={planningState} />
+                  <MilestoneContent gsd2State={gsd2State} onAction={onAction} />
                 </div>
               </div>
             ))}
@@ -98,10 +123,10 @@ export function MilestoneView({ planningState, sessions }: MilestoneViewProps) {
       <h1 className="sr-only">Milestone</h1>
       <PanelWrapper
         title="Milestone"
-        isLoading={planningState === null}
-        isEmpty={planningState !== null && phases.length === 0}
+        isLoading={gsd2State === null}
+        isEmpty={gsd2State !== null && slices.length === 0}
       >
-        <MilestoneContent planningState={planningState} />
+        <MilestoneContent gsd2State={gsd2State} onAction={onAction} />
       </PanelWrapper>
     </>
   );

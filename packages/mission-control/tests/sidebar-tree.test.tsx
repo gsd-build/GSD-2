@@ -67,8 +67,8 @@ describe("SingleColumnView", () => {
     });
     const json = JSON.stringify(result);
     expect(json).toContain('"key":"milestone"');
-    // MilestoneView is rendered as a child with planningState prop
-    expect(json).toContain('"planningState":null');
+    // MilestoneView is rendered as a child with gsd2State prop
+    expect(json).toContain('"gsd2State":null');
   });
 
   it("renders SliceView when kind is slice", () => {
@@ -131,8 +131,8 @@ describe("MilestoneView", () => {
     expect(typeof MilestoneView).toBe("function");
   });
 
-  it("renders loading state when planningState is null", () => {
-    const result = MilestoneView({ planningState: null });
+  it("renders loading state when gsd2State is null", () => {
+    const result = MilestoneView({ gsd2State: null });
     const json = JSON.stringify(result);
     expect(json).toContain("Milestone");
   });
