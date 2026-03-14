@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GSD Mission Control — Build real software without the noise.</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: #0F1419;
+      color: #E2E8F0;
+      font-family: 'JetBrains Mono', monospace;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 2rem 1rem;
+      position: relative;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: -1;
+      opacity: 0.03;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20'%3E%3Ctext x='4' y='14' font-family='monospace' font-size='12' fill='%235BC8F0' fill-opacity='0.06'%3E0%3C/text%3E%3C/svg%3E"),
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20'%3E%3Ctext x='4' y='14' font-family='monospace' font-size='12' fill='%235BC8F0' fill-opacity='0.06'%3E1%3C/text%3E%3C/svg%3E");
+      background-size: 20px 20px, 20px 20px;
+      background-position: 0 0, 10px 10px;
+    }
+
+    a {
+      color: #5BC8F0;
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    /* Header / Hero */
+    header {
+      padding: 3rem 0 2rem;
+    }
+
+    .wordmark {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 1rem;
+      color: #5BC8F0;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      margin-bottom: 1.5rem;
+      display: block;
+    }
+
+    h1 {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: clamp(1.75rem, 5vw, 3rem);
+      color: #E2E8F0;
+      line-height: 1.2;
+      margin-bottom: 1rem;
+    }
+
+    .subheadline {
+      font-size: 0.95rem;
+      color: #94A3B8;
+      line-height: 1.7;
+      max-width: 640px;
+      margin-bottom: 0.5rem;
+    }
+
+    /* Download buttons */
+    .download-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin: 2rem 0;
+    }
+
+    .btn {
+      display: inline-block;
+      padding: 0.75rem 1.5rem;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.9rem;
+      cursor: pointer;
+      border-radius: 2px;
+      transition: opacity 0.15s;
+      text-decoration: none;
+    }
+
+    .btn:hover {
+      opacity: 0.85;
+      text-decoration: none;
+    }
+
+    .btn-primary {
+      background: #5BC8F0;
+      color: #0F1419;
+      border: none;
+    }
+
+    .btn-secondary {
+      background: transparent;
+      border: 1px solid #5BC8F0;
+      color: #5BC8F0;
+    }
+
+    .download-note {
+      font-size: 0.8rem;
+      color: #94A3B8;
+      margin-top: 0.5rem;
+    }
+
+    /* Screenshot placeholder */
+    .screenshot-section {
+      margin: 2.5rem 0;
+    }
+
+    .screenshot-placeholder {
+      background: #131C2B;
+      border: 1px solid #1E2D3D;
+      border-radius: 4px;
+      min-height: 240px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Features grid */
+    section.features {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1rem;
+      margin: 2.5rem 0;
+    }
+
+    .feature-card {
+      background: #131C2B;
+      border: 1px solid #1E2D3D;
+      padding: 1.5rem;
+      border-radius: 4px;
+    }
+
+    .feature-card h3 {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.95rem;
+      color: #5BC8F0;
+      margin-bottom: 0.75rem;
+    }
+
+    .feature-card p {
+      font-size: 0.8rem;
+      color: #94A3B8;
+      line-height: 1.6;
+    }
+
+    /* Footer */
+    footer {
+      margin-top: 3rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid #1E2D3D;
+      font-size: 0.75rem;
+      color: #94A3B8;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 2rem;
+    }
+
+    footer p {
+      line-height: 1.6;
+    }
+
+    code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85em;
+      color: #5BC8F0;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <span class="wordmark">GSD Mission Control</span>
+    <h1>Build real software without the noise.</h1>
+    <p class="subheadline">GSD Mission Control brings the discipline of the GSD workflow
+    to a native desktop app. Plan, build, and ship — without touching the terminal.</p>
+
+    <div class="download-row">
+      <a href="https://github.com/gsd-build/gsd-2/releases/latest/download/GSD.Mission.Control_universal.dmg"
+         class="btn btn-primary">
+        Download for macOS
+      </a>
+      <a href="https://github.com/gsd-build/gsd-2/releases/latest/download/GSD.Mission.Control_x64_en-US.msi"
+         class="btn btn-secondary">
+        Download for Windows
+      </a>
+      <a href="https://github.com/gsd-build/gsd-2/releases/latest/download/GSD.Mission.Control_x86_64.AppImage"
+         class="btn btn-secondary">
+        Download for Linux
+      </a>
+    </div>
+    <p class="download-note">
+      Or <a href="https://github.com/gsd-build/gsd-2/releases/latest">view all releases on GitHub &rarr;</a>
+    </p>
+  </header>
+
+  <section class="screenshot-section">
+    <div class="screenshot-placeholder">
+      <p style="color:#94A3B8; font-family:'JetBrains Mono',monospace; font-size:0.75rem; text-align:center; padding:2rem">
+        Screenshot coming soon &mdash; build with <code>npm run tauri:build</code>
+      </p>
+    </div>
+  </section>
+
+  <section class="features">
+    <div class="feature-card">
+      <h3>Plan &rarr; Build &rarr; Ship</h3>
+      <p>Full GSD 2 workflow in one window. Chat drives Claude, dashboard shows every step.</p>
+    </div>
+    <div class="feature-card">
+      <h3>Native desktop speed</h3>
+      <p>Tauri 2 shell &mdash; tiny binary, OS-level keychain, no Electron overhead.</p>
+    </div>
+    <div class="feature-card">
+      <h3>Builder mode</h3>
+      <p>Non-technical users ship real features using plain language &mdash; no slash commands, no jargon.</p>
+    </div>
+  </section>
+
+  <footer>
+    <p>Powered by <a href="https://github.com/gsd-build/gsd-2">GSD 2</a></p>
+    <p>Built by Bantuson &middot; Mzansi Agentive</p>
+  </footer>
+
+</body>
+</html>
