@@ -13,6 +13,19 @@ const PYTHON_SCRIPT = path.join(__dirname, "speech-recognizer.py");
 
 const IS_DARWIN = process.platform === "darwin";
 const IS_LINUX = process.platform === "linux";
+const VOICE_VENV_PYTHON = path.join(
+	process.env.HOME || process.env.USERPROFILE || "/tmp",
+	".gsd",
+	"voice-venv",
+	"bin",
+	"python3",
+);
+
+/** Return the python3 binary path — prefer venv if it exists, else system. */
+function linuxPython(): string {
+	if (fs.existsSync(VOICE_VENV_PYTHON)) return VOICE_VENV_PYTHON;
+	return "python3";
+}
 
 function ensureBinary(): boolean {
 	if (fs.existsSync(RECOGNIZER_BIN)) return true;
@@ -39,9 +52,10 @@ function ensureLinuxReady(ctx: ExtensionContext): boolean {
 		return false;
 	}
 
-	// Check that moonshine-voice and sounddevice are importable
+	// Check that sounddevice is importable
+	const py = linuxPython();
 	try {
-		execSync('python3 -c "import moonshine_voice, sounddevice"', {
+		execSync(`${py} -c "import sounddevice"`, {
 			stdio: "pipe",
 			timeout: 10000,
 		});
@@ -196,9 +210,26 @@ export default function (pi: ExtensionAPI) {
 		onError: (msg: string) => void,
 		onReady: () => void,
 	) {
-		recognizerProcess = IS_LINUX
-			? spawn("python3", [PYTHON_SCRIPT], { stdio: ["pipe", "pipe", "pipe"] })
-			: spawn(RECOGNIZER_BIN, [], { stdio: ["pipe", "pipe", "pipe"] });
+		if (IS_LINUX) {
+			// Pass GROQ_API_KEY to the Python process — check process.env, then .env file
+			const spawnEnv = { ...process.env };
+			if (!spawnEnv.GROQ_API_KEY) {
+				try {
+					const envPath = path.join(process.cwd(), ".env");
+					const envContent = fs.readFileSync(envPath, "utf-8");
+					const match = envContent.match(/^GROQ_API_KEY=(.+)$/m);
+					if (match) spawnEnv.GROQ_API_KEY = match[1].trim();
+				} catch {
+					// .env not found — Python script will emit ERROR if key needed
+				}
+			}
+			recognizerProcess = spawn(linuxPython(), [PYTHON_SCRIPT], {
+				stdio: ["pipe", "pipe", "pipe"],
+				env: spawnEnv,
+			});
+		} else {
+			recognizerProcess = spawn(RECOGNIZER_BIN, [], { stdio: ["pipe", "pipe", "pipe"] });
+		}
 		const rl = readline.createInterface({ input: recognizerProcess.stdout! });
 		rl.on("line", (line: string) => {
 			if (line === "READY") { onReady(); return; }

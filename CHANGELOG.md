@@ -6,6 +6,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Linux voice mode: Groq Whisper API backend for fast, accurate speech-to-text (Ctrl+Alt+V toggle)
+- Auto-reads `GROQ_API_KEY` from project `.env` file
+- Fallback `--backend=local` for offline faster-whisper on CPU
+- Venv-aware Python detection (`~/.gsd/voice-venv/bin/python3`)
+
 ## [2.10.9] - 2026-03-14
 
 ### Added
