@@ -272,8 +272,8 @@ export function ChatView({
               nextPlanNumber={nextPlan?.plan}
             />
           )}
-          {/* Cost badge — shown when costState has a non-zero total */}
-          {costState && costState.totalCost > 0 && (
+          {/* Cost badge — hidden in Builder mode (BUILDER-02) */}
+          {!builderMode && costState && costState.totalCost > 0 && (
             <span
               className="absolute right-2 top-2 font-mono text-xs tabular-nums"
               style={{
@@ -296,8 +296,8 @@ export function ChatView({
         </div>
       </div>
 
-      {/* Budget warning banner — shown at critical level (95%+) */}
-      {costState?.level === "critical" && (
+      {/* Budget warning banner — hidden in Builder mode (BUILDER-02); shown at critical level (95%+) */}
+      {!builderMode && costState?.level === "critical" && (
         <div
           role="alert"
           className="mx-2 mt-1 flex items-center justify-between rounded border px-3 py-2 font-mono text-xs"
