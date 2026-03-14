@@ -446,6 +446,14 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli", GoogleGe
 					}
 
 					// Not retryable or max retries exceeded
+					if (response.status === 404) {
+						throw new Error(
+							`Cloud Code Assist API error (404): Model "${model.id}" was not found. ` +
+							`This model may not be available via Cloud Code Assist. ` +
+							`Try using the "google" provider with a GOOGLE_API_KEY instead, ` +
+							`or switch to a supported model (e.g., gemini-2.5-pro).`,
+						);
+					}
 					throw new Error(`Cloud Code Assist API error (${response.status}): ${extractErrorMessage(errorText)}`);
 				} catch (error) {
 					// Check for abort - fetch throws AbortError, our code throws "Request was aborted"
