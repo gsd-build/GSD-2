@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Native Desktop
 status: in_progress
-last_updated: "2026-03-14T08:09:47.327Z"
-last_activity: "2026-03-14 — Plan 16-04 human verification approved: SC-1..SC-4 all passed — Phase 16 OAuth + Keychain complete"
+last_updated: "2026-03-14T09:26:05.272Z"
+last_activity: "2026-03-14 — Plan 17-01 complete: trust-api.ts (isTrusted/writeTrustFlag/REST routes), TrustDialog, AdvancedPermissionsPanel, SettingsView Build Permissions section; 17 tests pass"
 progress:
   total_phases: 10
   completed_phases: 5
-  total_plans: 33
-  completed_plans: 32
+  total_plans: 36
+  completed_plans: 33
 ---
 
 ---
@@ -370,10 +370,10 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 
 ## Current Position
 
-Phase: 16 of 20 (OAuth + Keychain) — COMPLETE (all 4 plans done, SC-1..SC-4 verified 2026-03-14)
-Plan: 4 of 4 complete (plans 01-04 done — Rust OAuth backend, TS hooks, Provider Picker UI, Settings Provider section + tests)
-Status: Phase 16 fully complete. Human verification approved SC-1 through SC-4. Next: Phase 17 (model config).
-Last activity: 2026-03-14 — Plan 16-04 human verification approved: SC-1..SC-4 all passed — Phase 16 OAuth + Keychain complete
+Phase: 17 of 20 (Permission Model) — IN PROGRESS (plan 01 of 3 done)
+Plan: 1 of 3 complete (plan 01 done — trust-api.ts, TrustDialog, AdvancedPermissionsPanel, SettingsView Build Permissions section)
+Status: Plan 17-01 complete. Next: Plan 17-02 (App.tsx trust flow wiring).
+Last activity: 2026-03-14 — Plan 17-01 complete: trust-api.ts (isTrusted/writeTrustFlag/REST routes), TrustDialog, AdvancedPermissionsPanel, SettingsView Build Permissions section; 17 tests pass
 
 Progress: [██████████] 97% (33/33 plans complete)
 
@@ -482,6 +482,9 @@ Progress: [██████████] 97% (33/33 plans complete)
 - [Phase 16-oauth-keychain]: Provider section inserted as FIRST section in SettingsView — critical config always visible before model settings
 - [Phase 16-oauth-keychain]: Inline confirmation guard (setConfirmChange state) before changeProvider() + window.location.reload() — no modal needed
 - [Phase 16-oauth-keychain]: Human verification SC-1 through SC-4 all passed — auth flow fully verified on 2026-03-14
+- [Phase 17-permission-model]: TrustDialog imported in App.tsx but rendering deferred to plan 02 — import establishes dependency contract
+- [Phase 17-permission-model]: trust flag at .gsd/.mission-control-trust — empty file, presence == trust granted; isTrusted uses access() not readFile
+- [Phase 17-permission-model]: AdvancedPermissionsPanel renders inline in SettingsView Build Permissions section (not modal) — simpler UX, avoids z-index conflicts
 
 ### Blockers/Concerns
 

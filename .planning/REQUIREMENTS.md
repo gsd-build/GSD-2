@@ -57,10 +57,10 @@ Requirements for the Native Desktop milestone. Each maps to roadmap phases 12–
 
 ### Permission Model (PERM)
 
-- [ ] **PERM-01**: Raw "Skip permissions" toggle removed from Settings; replaced with "Manage build permissions →" link opening trust dialog
-- [ ] **PERM-02**: Trust dialog shown once per new project — plain-language explanation of what AI will/won't do; "trust granted" flag stored in `.gsd/.mission-control-trust`
+- [x] **PERM-01**: Raw "Skip permissions" toggle removed from Settings; replaced with "Manage build permissions →" link opening trust dialog
+- [x] **PERM-02**: Trust dialog shown once per new project — plain-language explanation of what AI will/won't do; "trust granted" flag stored in `.gsd/.mission-control-trust`
 - [ ] **PERM-03**: Hard boundary enforcement in Bun process layer — stdout intercepted for out-of-project file ops; violations blocked and surfaced as `BOUNDARY_VIOLATION` event in UI
-- [ ] **PERM-04**: Advanced permission settings — plain-language toggles for package install, shell/build commands, git commits, git push (off by default), ask-before-each-operation (debug mode with warning)
+- [x] **PERM-04**: Advanced permission settings — plain-language toggles for package install, shell/build commands, git commits, git push (off by default), ask-before-each-operation (debug mode with warning)
 
 ### Builder Mode (BUILDER)
 
@@ -157,10 +157,10 @@ Deferred to future release.
 | AUTH-04 | Phase 16 | Complete |
 | AUTH-05 | Phase 16 | Complete |
 | AUTH-06 | Phase 16 | Complete |
-| PERM-01 | Phase 17 | Pending |
-| PERM-02 | Phase 17 | Pending |
+| PERM-01 | Phase 17 | Complete |
+| PERM-02 | Phase 17 | Complete |
 | PERM-03 | Phase 17 | Pending |
-| PERM-04 | Phase 17 | Pending |
+| PERM-04 | Phase 17 | Complete |
 | BUILDER-01 | Phase 18 | Pending |
 | BUILDER-02 | Phase 18 | Pending |
 | BUILDER-03 | Phase 18 | Pending |
