@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { getAgentDir } from "@gsd/pi-coding-agent";
 import type { GitPreferences } from "./git-service.js";
+import type { PostUnitHookConfig, PreDispatchHookConfig } from "./types.js";
 import { VALID_BRANCH_NAME } from "./git-service.js";
 
 const GLOBAL_PREFERENCES_PATH = join(homedir(), ".gsd", "preferences.md");
@@ -93,6 +94,8 @@ export interface GSDPreferences {
   budget_ceiling?: number;
   remote_questions?: RemoteQuestionsConfig;
   git?: GitPreferences;
+  post_unit_hooks?: PostUnitHookConfig[];
+  pre_dispatch_hooks?: PreDispatchHookConfig[];
 }
 
 export interface LoadedGSDPreferences {
@@ -626,6 +629,8 @@ function mergePreferences(base: GSDPreferences, override: GSDPreferences): GSDPr
     git: (base.git || override.git)
       ? { ...(base.git ?? {}), ...(override.git ?? {}) }
       : undefined,
+    post_unit_hooks: mergePostUnitHooks(base.post_unit_hooks, override.post_unit_hooks),
+    pre_dispatch_hooks: mergePreDispatchHooks(base.pre_dispatch_hooks, override.pre_dispatch_hooks),
   };
 }
 
@@ -713,6 +718,138 @@ function validatePreferences(preferences: GSDPreferences): {
     }
   }
 
+  // ─── Post-Unit Hooks ─────────────────────────────────────────────────
+  if (preferences.post_unit_hooks && Array.isArray(preferences.post_unit_hooks)) {
+    const validHooks: PostUnitHookConfig[] = [];
+    const seenNames = new Set<string>();
+    const knownUnitTypes = new Set([
+      "research-milestone", "plan-milestone", "research-slice", "plan-slice",
+      "execute-task", "complete-slice", "replan-slice", "reassess-roadmap",
+      "run-uat", "fix-merge", "complete-milestone",
+    ]);
+    for (const hook of preferences.post_unit_hooks) {
+      if (!hook || typeof hook !== "object") {
+        errors.push("post_unit_hooks entry must be an object");
+        continue;
+      }
+      const name = typeof hook.name === "string" ? hook.name.trim() : "";
+      if (!name) {
+        errors.push("post_unit_hooks entry missing name");
+        continue;
+      }
+      if (seenNames.has(name)) {
+        errors.push(`duplicate post_unit_hooks name: ${name}`);
+        continue;
+      }
+      const after = normalizeStringList(hook.after);
+      if (after.length === 0) {
+        errors.push(`post_unit_hooks "${name}" missing after`);
+        continue;
+      }
+      for (const ut of after) {
+        if (!knownUnitTypes.has(ut)) {
+          errors.push(`post_unit_hooks "${name}" unknown unit type in after: ${ut}`);
+        }
+      }
+      const prompt = typeof hook.prompt === "string" ? hook.prompt.trim() : "";
+      if (!prompt) {
+        errors.push(`post_unit_hooks "${name}" missing prompt`);
+        continue;
+      }
+      const validHook: PostUnitHookConfig = { name, after, prompt };
+      if (hook.max_cycles !== undefined) {
+        const mc = typeof hook.max_cycles === "number" ? hook.max_cycles : Number(hook.max_cycles);
+        validHook.max_cycles = Number.isFinite(mc) ? Math.max(1, Math.min(10, Math.round(mc))) : 1;
+      }
+      if (typeof hook.model === "string" && hook.model.trim()) {
+        validHook.model = hook.model.trim();
+      }
+      if (typeof hook.artifact === "string" && hook.artifact.trim()) {
+        validHook.artifact = hook.artifact.trim();
+      }
+      if (typeof hook.retry_on === "string" && hook.retry_on.trim()) {
+        validHook.retry_on = hook.retry_on.trim();
+      }
+      if (typeof hook.agent === "string" && hook.agent.trim()) {
+        validHook.agent = hook.agent.trim();
+      }
+      if (hook.enabled !== undefined) {
+        validHook.enabled = !!hook.enabled;
+      }
+      seenNames.add(name);
+      validHooks.push(validHook);
+    }
+    if (validHooks.length > 0) {
+      validated.post_unit_hooks = validHooks;
+    }
+  }
+
+  // ─── Pre-Dispatch Hooks ─────────────────────────────────────────────────
+  if (preferences.pre_dispatch_hooks && Array.isArray(preferences.pre_dispatch_hooks)) {
+    const validPreHooks: PreDispatchHookConfig[] = [];
+    const seenPreNames = new Set<string>();
+    const knownUnitTypes = new Set([
+      "research-milestone", "plan-milestone", "research-slice", "plan-slice",
+      "execute-task", "complete-slice", "replan-slice", "reassess-roadmap",
+      "run-uat", "fix-merge", "complete-milestone",
+    ]);
+    const validActions = new Set(["modify", "skip", "replace"]);
+    for (const hook of preferences.pre_dispatch_hooks) {
+      if (!hook || typeof hook !== "object") {
+        errors.push("pre_dispatch_hooks entry must be an object");
+        continue;
+      }
+      const name = typeof hook.name === "string" ? hook.name.trim() : "";
+      if (!name) {
+        errors.push("pre_dispatch_hooks entry missing name");
+        continue;
+      }
+      if (seenPreNames.has(name)) {
+        errors.push(`duplicate pre_dispatch_hooks name: ${name}`);
+        continue;
+      }
+      const before = normalizeStringList(hook.before);
+      if (before.length === 0) {
+        errors.push(`pre_dispatch_hooks "${name}" missing before`);
+        continue;
+      }
+      for (const ut of before) {
+        if (!knownUnitTypes.has(ut)) {
+          errors.push(`pre_dispatch_hooks "${name}" unknown unit type in before: ${ut}`);
+        }
+      }
+      const action = typeof hook.action === "string" ? hook.action.trim() : "";
+      if (!validActions.has(action)) {
+        errors.push(`pre_dispatch_hooks "${name}" invalid action: ${action} (must be modify, skip, or replace)`);
+        continue;
+      }
+      const validHook: PreDispatchHookConfig = { name, before, action: action as PreDispatchHookConfig["action"] };
+      if (typeof hook.prepend === "string" && hook.prepend.trim()) validHook.prepend = hook.prepend.trim();
+      if (typeof hook.append === "string" && hook.append.trim()) validHook.append = hook.append.trim();
+      if (typeof hook.prompt === "string" && hook.prompt.trim()) validHook.prompt = hook.prompt.trim();
+      if (typeof hook.unit_type === "string" && hook.unit_type.trim()) validHook.unit_type = hook.unit_type.trim();
+      if (typeof hook.skip_if === "string" && hook.skip_if.trim()) validHook.skip_if = hook.skip_if.trim();
+      if (typeof hook.model === "string" && hook.model.trim()) validHook.model = hook.model.trim();
+      if (hook.enabled !== undefined) validHook.enabled = !!hook.enabled;
+
+      // Validation: action-specific required fields
+      if (action === "replace" && !validHook.prompt) {
+        errors.push(`pre_dispatch_hooks "${name}" action "replace" requires prompt`);
+        continue;
+      }
+      if (action === "modify" && !validHook.prepend && !validHook.append) {
+        errors.push(`pre_dispatch_hooks "${name}" action "modify" requires prepend or append`);
+        continue;
+      }
+
+      seenPreNames.add(name);
+      validPreHooks.push(validHook);
+    }
+    if (validPreHooks.length > 0) {
+      validated.pre_dispatch_hooks = validPreHooks;
+    }
+  }
+
   // ─── Git Preferences ───────────────────────────────────────────────────
   if (preferences.git && typeof preferences.git === "object") {
     const git: Record<string, unknown> = {};
@@ -793,4 +930,59 @@ function normalizeStringList(value: unknown): string[] {
     .filter((item): item is string => typeof item === "string")
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function mergePostUnitHooks(
+  base?: PostUnitHookConfig[],
+  override?: PostUnitHookConfig[],
+): PostUnitHookConfig[] | undefined {
+  if (!base?.length && !override?.length) return undefined;
+  const merged = [...(base ?? [])];
+  for (const hook of override ?? []) {
+    // Override hooks with same name replace base hooks
+    const idx = merged.findIndex(h => h.name === hook.name);
+    if (idx >= 0) {
+      merged[idx] = hook;
+    } else {
+      merged.push(hook);
+    }
+  }
+  return merged.length > 0 ? merged : undefined;
+}
+
+/**
+ * Resolve enabled post-unit hooks from effective preferences.
+ * Returns an empty array when no hooks are configured.
+ */
+export function resolvePostUnitHooks(): PostUnitHookConfig[] {
+  const prefs = loadEffectiveGSDPreferences();
+  return (prefs?.preferences.post_unit_hooks ?? [])
+    .filter(h => h.enabled !== false);
+}
+
+function mergePreDispatchHooks(
+  base?: PreDispatchHookConfig[],
+  override?: PreDispatchHookConfig[],
+): PreDispatchHookConfig[] | undefined {
+  if (!base?.length && !override?.length) return undefined;
+  const merged = [...(base ?? [])];
+  for (const hook of override ?? []) {
+    const idx = merged.findIndex(h => h.name === hook.name);
+    if (idx >= 0) {
+      merged[idx] = hook;
+    } else {
+      merged.push(hook);
+    }
+  }
+  return merged.length > 0 ? merged : undefined;
+}
+
+/**
+ * Resolve enabled pre-dispatch hooks from effective preferences.
+ * Returns an empty array when no hooks are configured.
+ */
+export function resolvePreDispatchHooks(): PreDispatchHookConfig[] {
+  const prefs = loadEffectiveGSDPreferences();
+  return (prefs?.preferences.pre_dispatch_hooks ?? [])
+    .filter(h => h.enabled !== false);
 }

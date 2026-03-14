@@ -44,6 +44,18 @@ import {
 import { resolveAutoSupervisorConfig, resolveModelForUnit, resolveModelWithFallbacksForUnit, resolveSkillDiscoveryMode, loadEffectiveGSDPreferences } from "./preferences.js";
 import type { GSDPreferences } from "./preferences.js";
 import {
+  checkPostUnitHooks,
+  getActiveHook,
+  resetHookState,
+  isRetryPending,
+  consumeRetryTrigger,
+  runPreDispatchHooks,
+  persistHookState,
+  restoreHookState,
+  clearPersistedHookState,
+  formatHookStatus,
+} from "./post-unit-hooks.js";
+import {
   validatePlanBoundary,
   validateExecuteBoundary,
   validateCompleteBoundary,
@@ -348,6 +360,8 @@ export async function stopAuto(ctx?: ExtensionContext, pi?: ExtensionAPI): Promi
   }
 
   resetMetrics();
+  resetHookState();
+  if (basePath) clearPersistedHookState(basePath);
   active = false;
   paused = false;
   stepMode = false;
@@ -565,6 +579,8 @@ export async function startAuto(
     ctx.ui.setStatus("gsd-auto", stepMode ? "next" : "auto");
     ctx.ui.setFooter(hideFooter);
     ctx.ui.notify(stepMode ? "Step-mode resumed." : "Auto-mode resumed.", "info");
+    // Restore hook state from disk in case session was interrupted
+    restoreHookState(base);
     // Rebuild disk state before resuming — user interaction during pause may have changed files
     try { await rebuildState(base); } catch { /* non-fatal */ }
     try {
@@ -673,6 +689,8 @@ export async function startAuto(
   unitRecoveryCount.clear();
   completedKeySet.clear();
   loadPersistedKeys(base, completedKeySet);
+  resetHookState();
+  restoreHookState(base);
   autoStartTime = Date.now();
   completedUnits = [];
   currentUnit = null;
@@ -808,6 +826,79 @@ export async function handleAgentEnd(
       autoCommitCurrentBranch(basePath, currentUnit.type, currentUnit.id);
     } catch {
       // Non-fatal
+    }
+  }
+
+  // ── Post-unit hooks: check if a configured hook should run before normal dispatch ──
+  if (currentUnit && !stepMode) {
+    const hookUnit = checkPostUnitHooks(currentUnit.type, currentUnit.id, basePath);
+    if (hookUnit) {
+      // Dispatch the hook unit instead of normal flow
+      const hookStartedAt = Date.now();
+      if (currentUnit) {
+        const modelId = ctx.model?.id ?? "unknown";
+        snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
+        saveActivityLog(ctx, basePath, currentUnit.type, currentUnit.id);
+      }
+      currentUnit = { type: hookUnit.unitType, id: hookUnit.unitId, startedAt: hookStartedAt };
+      writeUnitRuntimeRecord(basePath, hookUnit.unitType, hookUnit.unitId, hookStartedAt, {
+        phase: "dispatched",
+        wrapupWarningSent: false,
+        timeoutAt: null,
+        lastProgressAt: hookStartedAt,
+        progressCount: 0,
+        lastProgressKind: "dispatch",
+      });
+
+      const state = await deriveState(basePath);
+      updateProgressWidget(ctx, hookUnit.unitType, hookUnit.unitId, state);
+      const hookState = getActiveHook();
+      ctx.ui.notify(
+        `Running post-unit hook: ${hookUnit.hookName} (cycle ${hookState?.cycle ?? 1})`,
+        "info",
+      );
+
+      // Switch model if the hook specifies one
+      if (hookUnit.model) {
+        const availableModels = ctx.modelRegistry.getAvailable();
+        const match = availableModels.find(m =>
+          m.id === hookUnit.model || `${m.provider}/${m.id}` === hookUnit.model,
+        );
+        if (match) {
+          try {
+            await pi.setModel(match);
+          } catch { /* non-fatal — use current model */ }
+        }
+      }
+
+      const result = await cmdCtx!.newSession();
+      if (result.cancelled) {
+        resetHookState();
+        await stopAuto(ctx, pi);
+        return;
+      }
+      const sessionFile = ctx.sessionManager.getSessionFile();
+      writeLock(basePath, hookUnit.unitType, hookUnit.unitId, completedUnits.length, sessionFile);
+      // Persist hook state so cycle counts survive crashes
+      persistHookState(basePath);
+      pi.sendMessage(
+        { customType: "gsd-auto", content: hookUnit.prompt, display: verbose },
+        { triggerTurn: true },
+      );
+      return; // handleAgentEnd will fire again when hook session completes
+    }
+
+    // Check if a hook requested a retry of the trigger unit
+    if (isRetryPending()) {
+      const trigger = consumeRetryTrigger();
+      if (trigger) {
+        ctx.ui.notify(
+          `Hook requested retry of ${trigger.unitType} ${trigger.unitId}.`,
+          "info",
+        );
+        // Fall through to normal dispatchNextUnit — state derivation will
+        // re-select the same unit since it hasn't been marked complete
+      }
     }
   }
 
@@ -954,6 +1045,7 @@ export function describeNextUnit(state: GSDState): { label: string; description:
 // ─── Progress Widget ──────────────────────────────────────────────────────
 
 function unitVerb(unitType: string): string {
+  if (unitType.startsWith("hook/")) return `hook: ${unitType.slice(5)}`;
   switch (unitType) {
     case "research-milestone":
     case "research-slice": return "researching";
@@ -970,6 +1062,7 @@ function unitVerb(unitType: string): string {
 }
 
 function unitPhaseLabel(unitType: string): string {
+  if (unitType.startsWith("hook/")) return "HOOK";
   switch (unitType) {
     case "research-milestone": return "RESEARCH";
     case "research-slice": return "RESEARCH";
@@ -986,7 +1079,14 @@ function unitPhaseLabel(unitType: string): string {
 }
 
 function peekNext(unitType: string, state: GSDState): string {
+  // Show active hook info in progress display
+  const activeHookState = getActiveHook();
+  if (activeHookState) {
+    return `hook: ${activeHookState.hookName} (cycle ${activeHookState.cycle})`;
+  }
+
   const sid = state.activeSlice?.id ?? "";
+  if (unitType.startsWith("hook/")) return `continue ${sid}`;
   switch (unitType) {
     case "research-milestone": return "plan milestone roadmap";
     case "plan-milestone": return "plan or execute first slice";
@@ -1722,6 +1822,28 @@ async function dispatchNextUnit(
       ctx.ui.notify(`Unexpected phase: ${state.phase}. Stopping auto-mode.`, "warning");
       return;
     }
+  }
+
+  // ── Pre-dispatch hooks: modify, skip, or replace the unit before dispatch ──
+  const preDispatchResult = runPreDispatchHooks(unitType, unitId, prompt, basePath);
+  if (preDispatchResult.firedHooks.length > 0) {
+    ctx.ui.notify(
+      `Pre-dispatch hook${preDispatchResult.firedHooks.length > 1 ? "s" : ""}: ${preDispatchResult.firedHooks.join(", ")}`,
+      "info",
+    );
+  }
+  if (preDispatchResult.action === "skip") {
+    ctx.ui.notify(`Skipping ${unitType} ${unitId} (pre-dispatch hook).`, "info");
+    // Yield then re-dispatch to advance to next unit
+    await new Promise(r => setImmediate(r));
+    await dispatchNextUnit(ctx, pi);
+    return;
+  }
+  if (preDispatchResult.action === "replace") {
+    prompt = preDispatchResult.prompt ?? prompt;
+    if (preDispatchResult.unitType) unitType = preDispatchResult.unitType;
+  } else if (preDispatchResult.prompt) {
+    prompt = preDispatchResult.prompt;
   }
 
   const priorSliceBlocker = getPriorSliceCompletionBlocker(basePath, getMainBranch(basePath), unitType, unitId);
@@ -3002,6 +3124,9 @@ async function collectObservabilityWarnings(
   unitType: string,
   unitId: string,
 ): Promise<import("./observability-validator.ts").ValidationIssue[]> {
+  // Hook units have custom artifacts — skip standard observability checks
+  if (unitType.startsWith("hook/")) return [];
+
   const parts = unitId.split("/");
   const mid = parts[0];
   const sid = parts[1];
