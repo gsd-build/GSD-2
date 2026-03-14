@@ -451,6 +451,7 @@ async function mergeOrphanedSliceBranches(
         `Failed to merge orphaned branch ${branch}: ${message}`,
         "warning",
       );
+    }
   }
 }
 
