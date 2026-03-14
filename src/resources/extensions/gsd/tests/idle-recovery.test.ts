@@ -504,7 +504,8 @@ const ROADMAP_COMPLETE = `# M001: Test Milestone
     assert(result!.includes("S03-PLAN.md"), "steps mention the slice plan");
     assert(result!.includes("T01"), "steps mention the task ID");
     assert(result!.includes("gsd doctor"), "steps include gsd doctor command");
-    assert(result!.includes("- [x]"), "steps show correct checkbox syntax");
+    // Exact slice plan checkbox syntax (no trailing **)
+    assert(result!.includes('"- [x] **T01:"'), "steps show exact checkbox syntax without trailing **");
   } finally {
     rmSync(base, { recursive: true, force: true });
   }

@@ -68,6 +68,14 @@ function xxHash32JS(input: string, seed: number): number {
   return h32;
 }
 
+/**
+ * Pure-JS xxHash32 implementation. Exposed for testing to allow CI to validate
+ * the fallback path independently of native addon availability.
+ */
+export function xxHash32Fallback(input: string, seed: number): number {
+  return xxHash32JS(input, seed);
+}
+
 // Resolve once at module load: prefer native, fall back to JS.
 const _xxHash32Impl: (input: string, seed: number) => number =
   typeof native.xxHash32 === "function"
