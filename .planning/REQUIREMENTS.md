@@ -82,8 +82,8 @@ Requirements for the Native Desktop milestone. Each maps to roadmap phases 12–
 
 ### Distribution (DIST)
 
-- [ ] **DIST-01**: GitHub Actions release pipeline — triggers on `release/*` push or manual dispatch; matrix macOS/Windows/Linux; produces `.dmg`, `.msi`+`.exe`, `.AppImage`+`.deb`; draft GitHub Release created with artifacts
-- [ ] **DIST-02**: Code signing — macOS: Apple Developer ID via GitHub secret; Windows: self-signed for v2.0; Linux: GPG signed AppImage
+- [x] **DIST-01**: GitHub Actions release pipeline — triggers on `release/*` push or manual dispatch; matrix macOS/Windows/Linux; produces `.dmg`, `.msi`+`.exe`, `.AppImage`+`.deb`; draft GitHub Release created with artifacts
+- [x] **DIST-02**: Code signing — macOS: Apple Developer ID via GitHub secret; Windows: self-signed for v2.0; Linux: GPG signed AppImage
 - [ ] **DIST-03**: Auto-update — Tauri updater plugin, check on launch, background download, "Update ready" notification in sidebar footer, update server is GitHub Releases JSON endpoint
 - [ ] **DIST-04**: Landing page (single HTML, GitHub Pages or Vercel) — GSD branding, headline, download buttons linking to latest GitHub Release, "Powered by GSD 2", responsive
 
@@ -173,8 +173,8 @@ Deferred to future release.
 | WORKSPACE-03 | Phase 19 | Complete |
 | WORKSPACE-04 | Phase 19 | Complete |
 | WORKSPACE-05 | Phase 19 | Complete |
-| DIST-01 | Phase 20 | Pending |
-| DIST-02 | Phase 20 | Pending |
+| DIST-01 | Phase 20 | Complete |
+| DIST-02 | Phase 20 | Complete |
 | DIST-03 | Phase 20 | Pending |
 | DIST-04 | Phase 20 | Pending |
 
