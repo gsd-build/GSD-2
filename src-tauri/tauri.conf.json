@@ -61,6 +61,12 @@
         "allow": ["**"],
         "deny": []
       }
+    },
+    "updater": {
+      "pubkey": "",
+      "endpoints": [
+        "https://github.com/gsd-build/gsd-2/releases/latest/download/latest.json"
+      ]
     }
   }
 }

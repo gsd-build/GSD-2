@@ -5,6 +5,7 @@ mod oauth;
 
 use bun_manager::BunState;
 use tauri::{Emitter, Manager};
+use tauri_plugin_updater::UpdaterExt;
 
 /// In-memory store for PKCE verifiers keyed by OAuth state token.
 /// Avoids writing short-lived nonces to the OS keychain.
@@ -27,6 +28,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .register_uri_scheme_protocol("gsd", |app, request| {
             let url = request.uri().to_string();
             if url.starts_with("gsd://oauth/callback") {
@@ -79,9 +81,33 @@ pub fn run() {
             commands::change_provider,
             commands::check_and_refresh_token,
             commands::reveal_path,
+            check_for_updates,
+            install_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// Check whether a newer app version is available via the configured updater endpoint.
+/// Returns true if an update is available, false if not.
+#[tauri::command]
+async fn check_for_updates(app: tauri::AppHandle) -> Result<bool, String> {
+    match app.updater().map_err(|e| e.to_string())?.check().await {
+        Ok(Some(_update)) => Ok(true),
+        Ok(None) => Ok(false),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+/// Download and install the pending update, then restart the app.
+#[tauri::command]
+async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
+    let updater = app.updater().map_err(|e| e.to_string())?;
+    if let Some(update) = updater.check().await.map_err(|e| e.to_string())? {
+        update.download_and_install(|_chunk, _total| {}, || {}).await
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 /// Parse `code` and `state` query parameters from a gsd://oauth/callback URL.
