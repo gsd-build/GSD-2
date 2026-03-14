@@ -6,12 +6,6 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Added
-- Linux voice mode: Groq Whisper API backend for fast, accurate speech-to-text (Ctrl+Alt+V toggle)
-- Auto-reads `GROQ_API_KEY` from project `.env` file
-- Fallback `--backend=local` for offline faster-whisper on CPU
-- Venv-aware Python detection (`~/.gsd/voice-venv/bin/python3`)
-
 ### Fixed
 - Bypass pre-commit hooks (`--no-verify`) on GSD infrastructure commits (auto-commits, slice merges, runtime file cleanup) to prevent lint-staged "empty commit" errors in projects with prettier/eslint hooks (#385)
 - Improve Cloud Code Assist 404 error with actionable model guidance — names the unavailable model and suggests using the `google` provider with `GOOGLE_API_KEY` (#384)
@@ -23,19 +17,32 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [2.10.12] - 2026-03-14
 
+### Added
+- Multi-milestone readiness flow with per-milestone discussion gate (#377)
+
 ### Fixed
-- Fix `npx gsd-pi@latest` failing with `ERR_MODULE_NOT_FOUND: Cannot find package '@gsd/pi-coding-agent'`. The loader now creates workspace package symlinks at runtime before importing, so it works even when `npx` skips postinstall scripts.
+- Fix `npx gsd-pi@latest` failing with `ERR_MODULE_NOT_FOUND: Cannot find package '@gsd/pi-coding-agent'`. The loader now creates workspace package symlinks at runtime before importing, so it works even when `npx` skips postinstall scripts (#380)
 
 ## [2.10.11] - 2026-03-14
 
 ### Fixed
-- Hoist workspace package dependencies (undici, anthropic SDK, openai, chalk, etc.) into root `dependencies` so they install for end users. v2.10.10 removed `bundleDependencies` but didn't promote the transitive deps.
+- Hoist workspace package dependencies (undici, anthropic SDK, openai, chalk, etc.) into root `dependencies` so they install for end users. v2.10.10 removed `bundleDependencies` but didn't promote the transitive deps (#376)
+- Add `undici` as root dependency to resolve startup crash (#372)
+- Check `GROQ_API_KEY` before entering voice mode to prevent crash (#367)
 
 ## [2.10.10] - 2026-03-14
 
+### Added
+- Alibaba Cloud coding-plan provider support (#295)
+- Linux voice mode: Groq Whisper API backend for fast, accurate speech-to-text (#366)
+- Opus 4.6 1M as default model, model selector UX improvements, Discord onboarding (#290)
+
 ### Fixed
-- Fix broken `npm install` / `npx gsd-pi@latest` caused by unpublished `@gsd/*` workspace packages leaking into npm dependencies. Workspace cross-references removed from published package metadata; packages resolve via bundled `node_modules/` at runtime.
-- Add pre-publish tarball install validation (`validate-pack`) to CI and publish pipeline, preventing broken packages from reaching npm.
+- Fix broken `npm install` / `npx gsd-pi@latest` caused by unpublished `@gsd/*` workspace packages leaking into npm dependencies. Workspace cross-references removed from published package metadata; packages resolve via bundled `node_modules/` at runtime (#369)
+- Add pre-publish tarball install validation (`validate-pack`) to CI and publish pipeline, preventing broken packages from reaching npm
+- Handle empty index after runtime file stripping in squash-merge (#364)
+- Add retry logic for transient network/auth failures instead of crashing (#365)
+- Auto-mode: stale lock detection, SIGTERM handler, live-session guard (#362)
 
 ## [2.10.9] - 2026-03-14
 
@@ -97,11 +104,30 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Oversized TUI lines now truncated instead of crashing (#287)
 - Anthropic rate limit backoff now respects server-requested retry delay
 - CI publish guard: skip main package publish if already on npm
+- Strip hashline prefixes from TUI read output (#265)
 
 ## [2.10.5] - 2026-03-13
 
+### Added
+- Async background jobs extension for non-blocking task execution (#260)
+- Multi-credential round-robin with rate-limit fallback across API keys
+- Bash interceptor to block commands that duplicate dedicated tools (Read, Write, Edit, Grep, Glob)
+- `gsd update` subcommand for self-update (#273)
+- Task isolation for subagent filesystem safety (#254)
+- Native Rust streaming JSON parser (#266)
+- Web search provider selection added to onboarding wizard (#278)
+
+### Changed
+- Simplified onboarding into two-step auth flow — plain language instead of OAuth jargon (#274)
+
 ### Fixed
 - `optionalDependencies` in published `gsd-pi@2.10.4` were still pinned to `2.10.2`, causing users to install the broken engine binaries that 2.10.4 was meant to fix (#276)
+- Auto-resolve `.gsd/` planning artifact conflicts during slice merge (#264)
+- Use version ranges for native engine optional dependencies (#286)
+- Guard publish against uncommitted version sync changes
+- Show 'keep current' option in config when already authenticated (#283)
+- Restore bashInterceptor settings dropped by async-jobs merge
+- Collapse tool output by default
 
 ## [2.10.4] - 2026-03-13
 
