@@ -371,6 +371,7 @@ Three specialized subagents for delegated work:
 The best practice for working in teams is to ensure unique milestone names across all branches (by using `unique_milestone_ids`) and checking in the right `.gsd/` artifacts to share valuable context between teammates.
 
 ### Suggested .gitignore setup
+
 ```bash
 # ── GSD: Runtime / Ephemeral (per-developer, per-session) ──────────────────
 # Crash detection sentinel — PID lock, written per auto-mode session
@@ -395,6 +396,7 @@ The best practice for working in teams is to ensure unique milestone names acros
 ### Unique Milestone Names
 
 Create or amend your `.gsd/preferences.md` file within the repo to include `unique_milestone_ids: true` e.g.
+
 ```markdown
 ---
 version: 1
@@ -405,6 +407,14 @@ unique_milestone_ids: true
 With the above `.gitignore` set up, the `.gsd/preferences.md` file is checked into the repo ensuring all teammates use unique milestone names to avoid collisions.
 
 Milestone names will now be generated with a 6 char random string appended e.g. instead of `M001` you'll get something like `M001-ush8s3`
+
+### Migrating an existing git ignored `.gsd/` folder
+
+1. Ensure you are not in the middle of any milestones (clean state)
+2. Update the `.gsd/` related entries in your `.gitignore` to follow the `Suggested .gitignore setup` section under `Working in teams` (ensure you are no longer blanket ignoring the whole `.gsd/` directory)
+3. Update your `.gsd/preferences.md` file within the repo as per section `Unique Milestone Names`
+4. If you want to update all your existing milestones use this prompt in GSD: `I have turned on unique milestone ids, please update all old milestone ids to use this new format e.g. M001-abc123 where abc123 is a random 6 char lowercase alpha numeric string. Update all references in all .gsd file contents, file names and directory names. Validate your work once done to ensure referential integrity.`
+5. Commit to git
 
 ---
 
