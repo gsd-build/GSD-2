@@ -3,10 +3,26 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Native Desktop
 status: in_progress
+stopped_at: Completed 18-02-PLAN.md
+last_updated: "2026-03-14T11:49:14.931Z"
+last_activity: "2026-03-14 — Plan 18-01 complete: Builder mode foundation — InterfaceModeContext, BUILDER_VOCAB, SettingsView toggle, ChatInput builderMode prop, cost badge hidden; BUILDER-01/02/03 satisfied; 739 tests pass"
+progress:
+  total_phases: 10
+  completed_phases: 6
+  total_plans: 40
+  completed_plans: 37
+  percent: 93
+---
+
+---
+gsd_state_version: 1.0
+milestone: v2.0
+milestone_name: Native Desktop
+status: in_progress
 last_updated: "2026-03-14T11:32:40.196Z"
 last_activity: "2026-03-14 — Plan 17-03 complete: human verification approved SC-1..SC-4 — all PERM requirements satisfied"
 progress:
-  total_phases: 10
+  [█████████░] 93%
   completed_phases: 6
   total_plans: 40
   completed_plans: 36
@@ -419,7 +435,7 @@ Phase: 18 of 20 (Builder Mode) — In Progress (1 of 4 plans done)
 Plan: 1 of 4 complete (plan 01 done — InterfaceModeContext, vocab maps, Settings toggle, ChatInput control, cost badge suppression)
 Status: Phase 18 in progress. Next: Phase 18-02 (classifyIntent).
 Last activity: 2026-03-14 — Plan 18-01 complete: Builder mode foundation — InterfaceModeContext, BUILDER_VOCAB, SettingsView toggle, ChatInput builderMode prop, cost badge hidden; BUILDER-01/02/03 satisfied; 739 tests pass
-Stopped at: Completed 18-01-PLAN.md
+Stopped at: Completed 18-02-PLAN.md
 
 Progress: [█████████░] 90% (36/40 plans complete)
 
@@ -537,6 +553,9 @@ Progress: [█████████░] 90% (36/40 plans complete)
 - [Phase 18]: AppShellWithMode thin wrapper: reads interface_mode from useSettings, wraps AppShell in InterfaceModeProvider
 - [Phase 18]: CommandPalette gated via open={builderMode ? false : paletteOpen} — simpler than modifying useCommandPalette hook
 - [Phase 18]: Cost badge and budget warning wrapped with {!builderMode && ...} in ChatView — not deleted, Developer mode unchanged
+- [Phase 18-builder-mode]: fetchFn injected as default parameter for classifyIntent — test isolation without module mocking
+- [Phase 18-builder-mode]: _setAuthOverride test helper in classify-intent-api.ts mirrors _setGlobalDir pattern from settings-api.ts
+- [Phase 18-builder-mode]: RoutingBadge and PhaseGateCard rendered in SingleColumnView chat wrapper — collocated with chat UI, avoids z-index conflicts
 
 ### Blockers/Concerns
 
