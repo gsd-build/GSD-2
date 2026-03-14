@@ -39,6 +39,7 @@ import {
   loadEffectiveGSDPreferences,
   renderPreferencesForSystemPrompt,
   resolveAllSkillReferences,
+  resolveModelWithFallbacksForUnit,
 } from "./preferences.js";
 import { hasSkillSnapshot, detectNewSkills, formatSkillsXml } from "./skill-discovery.js";
 import {
@@ -339,6 +340,61 @@ export default function (pi: ExtensionAPI) {
         "errorMessage" in lastMsg && lastMsg.errorMessage
           ? `: ${lastMsg.errorMessage}`
           : "";
+
+      const dash = getAutoDashboardData();
+      if (dash.currentUnit) {
+        const modelConfig = resolveModelWithFallbacksForUnit(dash.currentUnit.type);
+        if (modelConfig && modelConfig.fallbacks.length > 0) {
+          const availableModels = ctx.modelRegistry.getAvailable();
+          const currentModelId = ctx.model?.id;
+          const modelsToTry = [modelConfig.primary, ...modelConfig.fallbacks];
+
+          let nextModelId: string | undefined;
+          let foundCurrent = false;
+          for (const mId of modelsToTry) {
+            if (foundCurrent) {
+              nextModelId = mId;
+              break;
+            }
+            if (!currentModelId || mId === currentModelId || (mId.includes("/") && mId.endsWith(`/${currentModelId}`))) {
+              foundCurrent = true;
+            }
+          }
+
+          if (nextModelId) {
+            let modelToSet;
+            const slashIdx = nextModelId.indexOf("/");
+            if (slashIdx !== -1) {
+              const provider = nextModelId.substring(0, slashIdx);
+              const id = nextModelId.substring(slashIdx + 1);
+              modelToSet = availableModels.find(
+                m => m.provider.toLowerCase() === provider.toLowerCase()
+                  && m.id.toLowerCase() === id.toLowerCase()
+              );
+            } else {
+              const currentProvider = ctx.model?.provider;
+              const exactProviderMatch = availableModels.find(
+                m => m.id === nextModelId && m.provider === currentProvider
+              );
+              modelToSet = exactProviderMatch ?? availableModels.find(m => m.id === nextModelId);
+            }
+
+            if (modelToSet) {
+              const ok = await pi.setModel(modelToSet, { persist: false });
+              if (ok) {
+                ctx.ui.notify(`Model error${errorDetail}. Switched to fallback: ${nextModelId} and resuming.`, "warning");
+                // Trigger a generic "Continue execution" to resume the task since the previous attempt failed
+                pi.sendMessage(
+                  { customType: "gsd-auto-timeout-recovery", content: "Continue execution.", display: false },
+                  { triggerTurn: true }
+                );
+                return;
+              }
+            }
+          }
+        }
+      }
+
       (ctx as any).log(`Auto-mode paused due to provider error${errorDetail}`);
       await pauseAuto(ctx, pi);
       return;
