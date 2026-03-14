@@ -515,6 +515,37 @@ export function resolveModelForUnit(unitType: string): string | undefined {
  * - Legacy: `planning: claude-opus-4-6`
  * - Extended: `planning: { model: claude-opus-4-6, fallbacks: [glm-5, minimax-m2.5] }`
  */
+/**
+ * Determines the next fallback model to try when the current model fails.
+ * If the current model is not in the configured list, returns the primary model.
+ * If the current model is the last in the list, returns undefined (exhausted).
+ */
+export function getNextFallbackModel(
+  currentModelId: string | undefined,
+  modelConfig: ResolvedModelConfig,
+): string | undefined {
+  const modelsToTry = [modelConfig.primary, ...modelConfig.fallbacks];
+
+  if (!currentModelId) {
+    return modelsToTry[0];
+  }
+
+  let foundCurrent = false;
+  for (let i = 0; i < modelsToTry.length; i++) {
+    const mId = modelsToTry[i];
+    // Check for exact match or provider/model suffix match
+    if (mId === currentModelId || (mId.includes("/") && mId.endsWith(`/${currentModelId}`))) {
+      foundCurrent = true;
+      return modelsToTry[i + 1]; // Return the next one, or undefined if at the end
+    }
+  }
+
+  // If the current model wasn't in our preference list, default to starting the sequence
+  if (!foundCurrent) {
+    return modelsToTry[0];
+  }
+}
+
 export function resolveModelWithFallbacksForUnit(unitType: string): ResolvedModelConfig | undefined {
   const prefs = loadEffectiveGSDPreferences();
   if (!prefs?.preferences.models) return undefined;
