@@ -14,7 +14,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
@@ -42,7 +42,7 @@ test("loader sets all 4 GSD_ env vars and PI_PACKAGE_DIR", async () => {
   // Run loader in a subprocess that prints env vars and exits before TUI starts
   const script = `
     import { fileURLToPath } from 'url';
-    import { dirname, resolve, join } from 'path';
+    import { dirname, resolve, join, delimiter } from 'path';
     import { agentDir } from './app-paths.js';
 
     const pkgDir = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'pkg');
@@ -52,7 +52,7 @@ test("loader sets all 4 GSD_ env vars and PI_PACKAGE_DIR", async () => {
     const resourcesDir = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'resources');
     process.env.GSD_WORKFLOW_PATH = join(resourcesDir, 'GSD-WORKFLOW.md');
     const exts = ['extensions/gsd/index.ts'].map(r => join(resourcesDir, r));
-    process.env.GSD_BUNDLED_EXTENSION_PATHS = exts.join(':');
+    process.env.GSD_BUNDLED_EXTENSION_PATHS = exts.join(delimiter);
 
     // Print for verification
     console.log('PI_PACKAGE_DIR=' + process.env.PI_PACKAGE_DIR);
@@ -91,6 +91,8 @@ test("loader sets all 4 GSD_ env vars and PI_PACKAGE_DIR", async () => {
   assert.ok(loaderSrc.includes("GSD_BIN_PATH"), "loader sets GSD_BIN_PATH");
   assert.ok(loaderSrc.includes("GSD_WORKFLOW_PATH"), "loader sets GSD_WORKFLOW_PATH");
   assert.ok(loaderSrc.includes("GSD_BUNDLED_EXTENSION_PATHS"), "loader sets GSD_BUNDLED_EXTENSION_PATHS");
+  assert.ok(loaderSrc.includes("serializeBundledExtensionPaths"), "loader uses shared bundled path serializer");
+  assert.ok(loaderSrc.includes("join(delimiter)"), "loader uses platform delimiter for NODE_PATH");
 
   // Verify all 11 extension entry points are referenced in loader
   // Loader uses join() calls like join(agentDir, 'extensions', 'gsd', 'index.ts')

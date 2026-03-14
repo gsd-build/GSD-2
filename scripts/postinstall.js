@@ -10,6 +10,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
 const pkg = require(resolve(__dirname, '..', 'package.json'))
 const cwd = resolve(__dirname, '..')
+const shouldSkipBrowserDownload =
+  process.env.PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD === '1' ||
+  process.env.PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD === 'true'
 
 // ---------------------------------------------------------------------------
 // Async exec helper — captures stdout+stderr, never inherits to terminal
@@ -63,7 +66,9 @@ const banner =
   } catch {
     // Clack or picocolors unavailable — fall back to minimal output
     process.stderr.write(`  Run gsd to get started.\n\n`)
-    await run('npx playwright install chromium')
+    if (!shouldSkipBrowserDownload) {
+      await run('npx playwright install chromium')
+    }
     return
   }
 
@@ -77,24 +82,32 @@ const banner =
   // Avoid --with-deps: install scripts should not block on interactive sudo
   // prompts. If Linux libs are missing, suggest the explicit follow-up.
   s.start('Setting up browser tools…')
-  const pwResult = await run('npx playwright install chromium')
-  if (pwResult.ok) {
-    s.stop('Browser tools ready')
-    results.push({ label: 'Browser tools ready', ok: true })
+  if (shouldSkipBrowserDownload) {
+    s.stop(pc.yellow('Browser tools skipped via PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD'))
+    results.push({
+      label: 'Browser tools skipped — run ' + pc.cyan('npx playwright install chromium') + ' later if needed',
+      ok: false,
+    })
   } else {
-    const output = `${pwResult.stdout ?? ''}${pwResult.stderr ?? ''}`
-    if (os.platform() === 'linux' && output.includes('Host system is missing dependencies to run browsers.')) {
-      s.stop(pc.yellow('Browser downloaded, missing Linux deps'))
-      results.push({
-        label: 'Run ' + pc.cyan('sudo npx playwright install-deps chromium') + ' to finish setup',
-        ok: false,
-      })
+    const pwResult = await run('npx playwright install chromium')
+    if (pwResult.ok) {
+      s.stop('Browser tools ready')
+      results.push({ label: 'Browser tools ready', ok: true })
     } else {
-      s.stop(pc.yellow('Browser tools — skipped (non-fatal)'))
-      results.push({
-        label: 'Browser tools unavailable — run ' + pc.cyan('npx playwright install chromium'),
-        ok: false,
-      })
+      const output = `${pwResult.stdout ?? ''}${pwResult.stderr ?? ''}`
+      if (os.platform() === 'linux' && output.includes('Host system is missing dependencies to run browsers.')) {
+        s.stop(pc.yellow('Browser downloaded, missing Linux deps'))
+        results.push({
+          label: 'Run ' + pc.cyan('sudo npx playwright install-deps chromium') + ' to finish setup',
+          ok: false,
+        })
+      } else {
+        s.stop(pc.yellow('Browser tools — skipped (non-fatal)'))
+        results.push({
+          label: 'Browser tools unavailable — run ' + pc.cyan('npx playwright install chromium'),
+          ok: false,
+        })
+      }
     }
   }
 

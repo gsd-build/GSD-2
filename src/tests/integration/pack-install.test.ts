@@ -12,10 +12,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
-import { createReadStream, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { createReadStream, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
 import { createGunzip } from "node:zlib";
 
 const projectRoot = process.cwd();
@@ -24,12 +23,45 @@ if (!existsSync(join(projectRoot, "dist"))) {
   throw new Error("dist/ not found — run: npm run build");
 }
 
-function packTarball(): string {
+type NpmSandbox = {
+  env: NodeJS.ProcessEnv;
+  installPrefix: string;
+  rootDir: string;
+};
+
+function createNpmSandbox(prefix: string): NpmSandbox {
+  const rootDir = mkdtempSync(join(tmpdir(), prefix));
+  const cacheDir = join(rootDir, "npm-cache");
+  const installPrefix = join(rootDir, "install-prefix");
+
+  mkdirSync(cacheDir, { recursive: true });
+  mkdirSync(installPrefix, { recursive: true });
+
+  return {
+    rootDir,
+    installPrefix,
+    env: {
+      ...process.env,
+      NPM_CONFIG_CACHE: cacheDir,
+      npm_config_cache: cacheDir,
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1",
+    },
+  };
+}
+
+function packTarball(sandbox: NpmSandbox): string {
   const pkg = JSON.parse(readFileSync(join(projectRoot, "package.json"), "utf-8"));
   const safeName = pkg.name.replace(/^@[^/]+\//, "").replace(/\//g, "-");
   const tarball = `${safeName}-${pkg.version}.tgz`;
-  execFileSync("npm", ["pack"], { cwd: projectRoot, stdio: ["ignore", "ignore", "pipe"] });
-  return join(projectRoot, tarball);
+  const packDestination = join(sandbox.rootDir, "pack-output");
+
+  mkdirSync(packDestination, { recursive: true });
+  execFileSync("npm", ["pack", "--pack-destination", packDestination], {
+    cwd: projectRoot,
+    env: sandbox.env,
+    stdio: ["ignore", "ignore", "pipe"],
+  });
+  return join(packDestination, tarball);
 }
 
 /** List file paths inside a .tgz using Node built-ins only (no tar CLI or npm package). */
@@ -66,7 +98,8 @@ function listTarEntries(tarballPath: string): Promise<string[]> {
 // ═══════════════════════════════════════════════════════════════════════════
 
 test("npm pack produces tarball with required files", async () => {
-  const tarballPath = packTarball();
+  const sandbox = createNpmSandbox("gsd-pack-test-");
+  const tarballPath = packTarball(sandbox);
 
   assert.ok(existsSync(tarballPath), "tarball created");
 
@@ -90,6 +123,7 @@ test("npm pack produces tarball with required files", async () => {
     assert.equal(pkg.piConfig?.configDir, ".gsd", "pkg/package.json piConfig.configDir is .gsd");
   } finally {
     rmSync(tarballPath, { force: true });
+    rmSync(sandbox.rootDir, { recursive: true, force: true });
   }
 });
 
@@ -98,35 +132,43 @@ test("npm pack produces tarball with required files", async () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 test("tarball installs and gsd binary resolves", async () => {
-  const tarballPath = packTarball();
-
-  const tmp = mkdtempSync(join(tmpdir(), "gsd-install-test-"));
+  const sandbox = createNpmSandbox("gsd-install-test-");
+  const tarballPath = packTarball(sandbox);
 
   try {
     // Install from tarball into a temp prefix
-    execFileSync("npm", ["install", "--prefix", tmp, tarballPath, "--no-save"], {
-      env: { ...process.env, PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1" },
+    execFileSync("npm", ["install", "--prefix", sandbox.installPrefix, tarballPath, "--no-save"], {
+      env: sandbox.env,
       stdio: ["ignore", "ignore", "pipe"],
     });
 
     // Verify the gsd bin exists in the installed package
     const binName = process.platform === "win32" ? "gsd.cmd" : "gsd";
-    const installedBin = join(tmp, "node_modules", ".bin", binName);
+    const installedBin = join(sandbox.installPrefix, "node_modules", ".bin", binName);
     assert.ok(existsSync(installedBin), `gsd binary exists in node_modules/.bin/ (${binName})`);
 
     // Verify loader.js is executable (has shebang)
-    const installedLoader = join(tmp, "node_modules", "gsd-pi", "dist", "loader.js");
+    const installedLoader = join(sandbox.installPrefix, "node_modules", "gsd-pi", "dist", "loader.js");
     const loaderContent = readFileSync(installedLoader, "utf-8");
     if (process.platform !== "win32") {
       assert.ok(loaderContent.startsWith("#!/usr/bin/env node"), "loader.js has node shebang");
     }
 
     // Verify bundled resources are present
-    const installedGsdExt = join(tmp, "node_modules", "gsd-pi", "src", "resources", "extensions", "gsd", "index.ts");
+    const installedGsdExt = join(
+      sandbox.installPrefix,
+      "node_modules",
+      "gsd-pi",
+      "src",
+      "resources",
+      "extensions",
+      "gsd",
+      "index.ts",
+    );
     assert.ok(existsSync(installedGsdExt), "bundled gsd extension present in installed package");
   } finally {
     rmSync(tarballPath, { force: true });
-    rmSync(tmp, { recursive: true, force: true });
+    rmSync(sandbox.rootDir, { recursive: true, force: true });
   }
 });
 
