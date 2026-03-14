@@ -7,10 +7,7 @@ export * from "./models.js";
 export * from "./models-dev-mapper.js";
 export * from "./models-dev-types.js";
 export * from "./models-dev.js";
-<<<<<<< HEAD
-=======
 export * from "./models-dev-snapshot.js";
->>>>>>> gsd/M001/S03
 export * from "./providers/anthropic.js";
 export * from "./providers/azure-openai-responses.js";
 export * from "./providers/google.js";

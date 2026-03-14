@@ -1,11 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
-<<<<<<< HEAD
-import { ModelsDevData } from "./models-dev-types.ts";
-=======
 import { ModelsDevData } from "./models-dev-types.js";
->>>>>>> gsd/M001/S03
 
 const MODELS_DEV_URL = "https://models.dev/api.json";
 const DEFAULT_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours

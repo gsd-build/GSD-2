@@ -1,9 +1,5 @@
 import type { Model, Api, Provider } from "./types.js";
-<<<<<<< HEAD
-import { ModelsDevData, ModelsDevProvider, ModelsDevModel } from "./models-dev-types.ts";
-=======
 import { ModelsDevData, ModelsDevProvider, ModelsDevModel } from "./models-dev-types.js";
->>>>>>> gsd/M001/S03
 
 /**
  * Mapper that transforms models.dev API response into gsd-2's Model<Api>[] format.

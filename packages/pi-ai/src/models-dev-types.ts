@@ -13,11 +13,7 @@ export const ModelsDevModel = z.object({
   release_date: z.string(),
   attachment: z.boolean(),
   reasoning: z.boolean(),
-<<<<<<< HEAD
-  temperature: z.boolean(),
-=======
   temperature: z.boolean().optional(), // Some models omit this
->>>>>>> gsd/M001/S03
   tool_call: z.boolean(),
   interleaved: z
     .union([
@@ -58,11 +54,7 @@ export const ModelsDevModel = z.object({
     .optional(),
   experimental: z.boolean().optional(),
   status: z.enum(["alpha", "beta", "deprecated"]).optional(),
-<<<<<<< HEAD
-  options: z.record(z.string(), z.any()),
-=======
   options: z.record(z.string(), z.any()).optional(), // Some models omit this
->>>>>>> gsd/M001/S03
   headers: z.record(z.string(), z.string()).optional(),
   provider: z.object({ npm: z.string() }).optional(),
   variants: z.record(z.string(), z.record(z.string(), z.any())).optional(),
