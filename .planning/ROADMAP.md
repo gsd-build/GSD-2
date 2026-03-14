@@ -254,4 +254,4 @@ Plans:
 | 17. Permission Model | 3/3 | Complete    | 2026-03-14 | — |
 | 18. Builder Mode | 4/4 | Complete    | 2026-03-14 | — |
 | 19. Project Workspace | 5/5 | Complete    | 2026-03-14 | — |
-| 20. Installer + Distribution | 1/3 | In Progress|  | — |
+| 20. Installer + Distribution | 2/3 | In Progress|  | — |
