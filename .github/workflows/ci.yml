@@ -28,6 +28,9 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Validate package is installable
+        run: npm run validate-pack
+
       - name: Run unit tests
         run: npm run test:unit
 

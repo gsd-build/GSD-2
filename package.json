@@ -1,6 +1,6 @@
 {
   "name": "gsd-pi",
-  "version": "2.10.9",
+  "version": "2.10.10",
   "description": "GSD — Get Shit Done coding agent",
   "license": "MIT",
   "repository": {
@@ -57,14 +57,11 @@
     "pi:uninstall-global": "node scripts/uninstall-pi-global.js",
     "sync-pkg-version": "node scripts/sync-pkg-version.cjs",
     "sync-platform-versions": "node native/scripts/sync-platform-versions.cjs",
-    "prepublishOnly": "npm run sync-pkg-version && npm run sync-platform-versions && git diff --exit-code || (echo 'ERROR: version sync changed files — commit them before publishing' && exit 1) && npm run build"
+    "validate-pack": "bash scripts/validate-pack.sh",
+    "prepublishOnly": "npm run sync-pkg-version && npm run sync-platform-versions && git diff --exit-code || (echo 'ERROR: version sync changed files — commit them before publishing' && exit 1) && npm run build && npm run validate-pack"
   },
   "dependencies": {
     "@clack/prompts": "^1.1.0",
-    "@gsd/pi-agent-core": "*",
-    "@gsd/pi-ai": "*",
-    "@gsd/pi-coding-agent": "*",
-    "@gsd/pi-tui": "*",
     "picocolors": "^1.1.1",
     "picomatch": "^4.0.3",
     "playwright": "^1.58.2",

@@ -9,7 +9,6 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@gsd/native": "*",
     "@types/mime-types": "^2.1.4",
     "chalk": "^5.5.0",
     "get-east-asian-width": "^1.3.0",

@@ -12,6 +12,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Fallback `--backend=local` for offline faster-whisper on CPU
 - Venv-aware Python detection (`~/.gsd/voice-venv/bin/python3`)
 
+## [2.10.10] - 2026-03-14
+
+### Fixed
+- Fix broken `npm install` / `npx gsd-pi@latest` caused by unpublished `@gsd/*` workspace packages leaking into npm dependencies. Workspace cross-references removed from published package metadata; packages resolve via bundled `node_modules/` at runtime.
+- Add pre-publish tarball install validation (`validate-pack`) to CI and publish pipeline, preventing broken packages from reaching npm.
+
 ## [2.10.9] - 2026-03-14
 
 ### Added
@@ -485,7 +491,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - License updated to MIT
 
-[Unreleased]: https://github.com/gsd-build/gsd-2/compare/v2.10.9...HEAD
+[Unreleased]: https://github.com/gsd-build/gsd-2/compare/v2.10.10...HEAD
+[2.10.10]: https://github.com/gsd-build/gsd-2/compare/v2.10.9...v2.10.10
 [2.10.9]: https://github.com/gsd-build/gsd-2/compare/v2.10.8...v2.10.9
 [2.10.8]: https://github.com/gsd-build/gsd-2/compare/v2.10.7...v2.10.8
 [2.10.7]: https://github.com/gsd-build/gsd-2/compare/v2.10.6...v2.10.7
