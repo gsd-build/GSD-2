@@ -78,6 +78,7 @@ pub fn run() {
             commands::get_provider_status,
             commands::change_provider,
             commands::check_and_refresh_token,
+            commands::reveal_path,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

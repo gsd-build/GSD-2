@@ -88,6 +88,24 @@ pub async fn delete_credential(key: String) -> bool {
     }
 }
 
+/// Reveal a file or directory in the native file manager (Finder/Explorer).
+/// Falls back to opening the path as a file:// URL if reveal_item_in_dir is unavailable.
+/// Returns true on success.
+#[tauri::command]
+pub async fn reveal_path(app: AppHandle, path: String) -> bool {
+    app.opener()
+        .reveal_item_in_dir(&path)
+        .map(|_| true)
+        .unwrap_or_else(|_| {
+            // Fallback: open directory itself in file manager
+            let url = format!("file://{}", path);
+            app.opener()
+                .open_url(url, None::<String>)
+                .map(|_| true)
+                .unwrap_or(false)
+        })
+}
+
 /// Open a URL in the system default browser.
 /// Returns true on success.
 #[tauri::command]

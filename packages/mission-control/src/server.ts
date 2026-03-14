@@ -7,6 +7,7 @@ import { handleFsRequest } from "./server/fs-api";
 import { handleDialogRequest } from "./server/dialog-api";
 import { handleGitRequest } from "./server/git-api";
 import { handleRecentProjectsRequest, addRecentProject } from "./server/recent-projects";
+import { handleWorkspaceRequest } from "./server/workspace-api";
 import { handleSettingsRequest } from "./server/settings-api";
 import { handleAssetsRequest } from "./server/assets-api";
 import { handleSessionStatusRequest } from "./server/session-status-api";
@@ -59,6 +60,12 @@ const server = Bun.serve({
     // Route /api/projects/* to recent projects handler
     if (pathname.startsWith("/api/projects/")) {
       const response = await handleRecentProjectsRequest(req, url);
+      if (response) return addCorsHeaders(response);
+    }
+
+    // Route /api/workspace/* to workspace handler
+    if (pathname.startsWith("/api/workspace/")) {
+      const response = await handleWorkspaceRequest(req, url);
       if (response) return addCorsHeaders(response);
     }
 
