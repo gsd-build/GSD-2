@@ -527,10 +527,10 @@ async function main(): Promise<void> {
     const dir = mkdtempSync(join(tmpdir(), "gsd-git-t03-"));
     run("git init -b main", dir);
     run('git config user.name "Pi Test"', dir);
-    run("git config user.email 'pi@example.com'", dir);
+    run('git config user.email "pi@example.com"', dir);
     createFile(dir, ".gitkeep", "");
     run("git add -A", dir);
-    run("git commit -m 'init'", dir);
+    run('git commit -m "init"', dir);
     return dir;
   }
 
@@ -580,10 +580,10 @@ async function main(): Promise<void> {
     const repo = mkdtempSync(join(tmpdir(), "gsd-git-t03-master-"));
     run("git init -b master", repo);
     run('git config user.name "Pi Test"', repo);
-    run("git config user.email 'pi@example.com'", repo);
+    run('git config user.email "pi@example.com"', repo);
     createFile(repo, ".gitkeep", "");
     run("git add -A", repo);
-    run("git commit -m 'init'", repo);
+    run('git commit -m "init"', repo);
 
     const svc = new GitServiceImpl(repo);
     assertEq(svc.getMainBranch(), "master", "getMainBranch returns master when only master exists");
@@ -1639,7 +1639,7 @@ async function main(): Promise<void> {
     run("git checkout -b f-123-new-thing", repo);
     createFile(repo, "setup.txt", "initial setup");
     run("git add -A", repo);
-    run("git commit -m 'initial feature setup'", repo);
+    run('git commit -m "initial feature setup"', repo);
 
     // Record integration branch (this is what auto.ts does at startup)
     writeIntegrationBranch(repo, "M001", "f-123-new-thing");
