@@ -164,6 +164,14 @@ let unitTimeoutHandle: ReturnType<typeof setTimeout> | null = null;
 let wrapupWarningHandle: ReturnType<typeof setTimeout> | null = null;
 let idleWatchdogHandle: ReturnType<typeof setInterval> | null = null;
 
+/** Dispatch gap watchdog — detects when the state machine stalls between units.
+ *  After handleAgentEnd completes, if auto-mode is still active but no new unit
+ *  has been dispatched (sendMessage not called), this timer fires to force a
+ *  re-evaluation. Covers the case where dispatchNextUnit silently fails or
+ *  an unhandled error kills the dispatch chain. */
+let dispatchGapHandle: ReturnType<typeof setTimeout> | null = null;
+const DISPATCH_GAP_TIMEOUT_MS = 30_000; // 30 seconds
+
 /** SIGTERM handler registered while auto-mode is active — cleared on stop/pause. */
 let _sigtermHandler: (() => void) | null = null;
 
@@ -269,6 +277,48 @@ function clearUnitTimeout(): void {
     clearInterval(idleWatchdogHandle);
     idleWatchdogHandle = null;
   }
+  clearDispatchGapWatchdog();
+}
+
+function clearDispatchGapWatchdog(): void {
+  if (dispatchGapHandle) {
+    clearTimeout(dispatchGapHandle);
+    dispatchGapHandle = null;
+  }
+}
+
+/**
+ * Start a watchdog that fires if no new unit is dispatched within DISPATCH_GAP_TIMEOUT_MS
+ * after handleAgentEnd completes. This catches the case where the dispatch chain silently
+ * breaks (e.g., unhandled exception in dispatchNextUnit) and auto-mode is left active but idle.
+ *
+ * The watchdog is cleared on the next successful unit dispatch (clearUnitTimeout is called
+ * at the start of handleAgentEnd, which calls clearDispatchGapWatchdog).
+ */
+function startDispatchGapWatchdog(ctx: ExtensionContext, pi: ExtensionAPI): void {
+  clearDispatchGapWatchdog();
+  dispatchGapHandle = setTimeout(async () => {
+    dispatchGapHandle = null;
+    if (!active || !cmdCtx) return;
+
+    // Auto-mode is active but no unit was dispatched — the state machine stalled.
+    // Re-derive state and attempt a fresh dispatch.
+    ctx.ui.notify(
+      "Dispatch gap detected — no unit dispatched after previous unit completed. Re-evaluating state.",
+      "warning",
+    );
+
+    try {
+      await dispatchNextUnit(ctx, pi);
+    } catch (retryErr) {
+      const message = retryErr instanceof Error ? retryErr.message : String(retryErr);
+      ctx.ui.notify(
+        `Dispatch gap recovery failed: ${message}. Stopping auto-mode.`,
+        "error",
+      );
+      await stopAuto(ctx, pi);
+    }
+  }, DISPATCH_GAP_TIMEOUT_MS);
 }
 
 export async function stopAuto(ctx?: ExtensionContext, pi?: ExtensionAPI): Promise<void> {
@@ -760,7 +810,30 @@ export async function handleAgentEnd(
     return;
   }
 
-  await dispatchNextUnit(ctx, pi);
+  try {
+    await dispatchNextUnit(ctx, pi);
+  } catch (dispatchErr) {
+    // dispatchNextUnit threw — without this catch the error would propagate
+    // to the pi event emitter which may silently swallow async rejections,
+    // leaving auto-mode active but permanently stalled (see #381).
+    const message = dispatchErr instanceof Error ? dispatchErr.message : String(dispatchErr);
+    ctx.ui.notify(
+      `Dispatch error after unit completion: ${message}. Retrying in ${DISPATCH_GAP_TIMEOUT_MS / 1000}s.`,
+      "error",
+    );
+
+    // Start the dispatch gap watchdog to retry after a delay.
+    // This gives transient issues (dirty working tree, branch state) time to settle.
+    startDispatchGapWatchdog(ctx, pi);
+    return;
+  }
+
+  // If dispatchNextUnit returned normally but auto-mode is still active and
+  // no new unit timeout was set (meaning sendMessage was never called), start
+  // the dispatch gap watchdog as a safety net.
+  if (active && !unitTimeoutHandle && !wrapupWarningHandle) {
+    startDispatchGapWatchdog(ctx, pi);
+  }
 
   } finally {
     _handlingAgentEnd = false;

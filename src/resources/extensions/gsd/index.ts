@@ -344,7 +344,22 @@ export default function (pi: ExtensionAPI) {
       return;
     }
 
-    await handleAgentEnd(ctx, pi);
+    try {
+      await handleAgentEnd(ctx, pi);
+    } catch (err) {
+      // Safety net: if handleAgentEnd throws despite its internal try-catch,
+      // ensure auto-mode stops gracefully instead of silently stalling (#381).
+      const message = err instanceof Error ? err.message : String(err);
+      ctx.ui.notify(
+        `Auto-mode error in agent_end handler: ${message}. Stopping auto-mode.`,
+        "error",
+      );
+      try {
+        await pauseAuto(ctx, pi);
+      } catch {
+        // Last resort — at least log
+      }
+    }
   });
 
   // ── session_before_compact ────────────────────────────────────────────────
