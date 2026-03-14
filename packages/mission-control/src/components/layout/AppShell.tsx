@@ -20,6 +20,9 @@ import { FolderPickerModal } from "@/components/modals/FolderPickerModal";
 import { LoadingLogo } from "@/components/session/LoadingLogo";
 import { OnboardingScreen } from "@/components/session/OnboardingScreen";
 import { ResumeCard } from "@/components/session/ResumeCard";
+import ProjectHomeScreen from "@/components/workspace/ProjectHomeScreen";
+import ProjectTabBar from "@/components/workspace/ProjectTabBar";
+import type { OpenProject } from "@/components/workspace/ProjectTabBar";
 import { usePlanningState } from "@/hooks/usePlanningState";
 import { useSessionFlow } from "@/hooks/useSessionFlow";
 import { useSessionManager } from "@/hooks/useSessionManager";
@@ -43,7 +46,11 @@ export function AppShell() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
   const { state, status } = usePlanningState();
-  const { mode, continueHere, dismiss } = useSessionFlow(state, status);
+  const { mode, continueHere, dismiss, goHome } = useSessionFlow(state, status);
+
+  // Multi-project tab state (WORKSPACE-04)
+  const [openProjects, setOpenProjects] = useState<OpenProject[]>([]);
+  const [activeProjectPath, setActiveProjectPath] = useState<string | null>(null);
 
   // Load settings to get budget_ceiling for cost tracking
   const { settings } = useSettings();
@@ -185,6 +192,69 @@ export function AppShell() {
     );
   }
 
+  // Home: project hub shown when user navigates home or has no active project (WORKSPACE-02)
+  if (mode === "home") {
+    return (
+      <>
+        <ProjectHomeScreen
+          builderMode={builderMode}
+          onOpenProject={(path) => {
+            // Add to open projects list if not already there
+            setOpenProjects((prev) => {
+              if (prev.find((p) => p.path === path)) return prev;
+              return [
+                ...prev,
+                {
+                  id: path,
+                  path,
+                  name: path.split("/").pop() ?? path,
+                  isProcessing: false,
+                  isActive: true,
+                },
+              ];
+            });
+            setActiveProjectPath(path);
+            // Switch pipeline to this project path
+            fetch("/api/session/switch", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ path }),
+            }).catch(() => {});
+            dismiss();
+          }}
+          onOpenFolder={() => setFolderPickerOpen(true)}
+          onCreateProject={async (name) => {
+            const res = await fetch("/api/workspace/create", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ name }),
+            }).catch(() => null);
+            if (res?.ok) {
+              const { projectPath } = await res.json();
+              setOpenProjects((prev) => [
+                ...prev,
+                {
+                  id: projectPath,
+                  path: projectPath,
+                  name,
+                  isProcessing: false,
+                  isActive: true,
+                },
+              ]);
+              setActiveProjectPath(projectPath);
+              dismiss();
+            }
+          }}
+        />
+        <FolderPickerModal
+          open={folderPickerOpen}
+          onClose={() => setFolderPickerOpen(false)}
+          onSelect={() => dismiss()}
+        />
+      </>
+    );
+  }
+
   // Onboarding: full-screen welcome for new projects
   if (mode === "onboarding") {
     return (
@@ -245,6 +315,18 @@ export function AppShell() {
           </button>
         </div>
       )}
+      {/* Project tab bar — visible only when 2+ projects are open (WORKSPACE-04) */}
+      <ProjectTabBar
+        openProjects={openProjects.map((p) => ({ ...p, isActive: p.path === activeProjectPath }))}
+        onSwitchProject={(path) => {
+          setActiveProjectPath(path);
+          fetch("/api/session/switch", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ path }),
+          }).catch(() => {});
+        }}
+      />
       <div className="flex flex-1 min-h-0">
       <Sidebar
         collapsed={sidebarCollapsed}
@@ -255,6 +337,7 @@ export function AppShell() {
         activeView={activeView}
         onSelectView={setActiveView}
         onOpenFolder={() => setFolderPickerOpen(true)}
+        onGoHome={goHome}
       />
       <div className="relative min-w-0 flex-1">
         <SingleColumnView

@@ -8,7 +8,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import type { PlanningState } from "../server/types";
 import type { ConnectionStatus } from "./useReconnectingWebSocket";
 
-export type SessionMode = "initializing" | "onboarding" | "resume" | "dashboard";
+export type SessionMode = "initializing" | "onboarding" | "resume" | "dashboard" | "home";
 
 export interface ContinueHereData {
   phase: string;
@@ -27,11 +27,17 @@ export function deriveSessionMode(
   state: PlanningState | null,
   wsStatus: ConnectionStatus,
   continueHere: ContinueHereData | null,
-  skipOnboarding: boolean = false
+  skipOnboarding: boolean = false,
+  goHome: boolean = false
 ): SessionMode {
   // Not connected yet — show loading
   if (wsStatus !== "connected") {
     return "initializing";
+  }
+
+  // User explicitly navigated home — stay on home screen
+  if (goHome) {
+    return "home";
   }
 
   // User explicitly dismissed onboarding (Start Chat or folder selected) — go to dashboard
@@ -62,6 +68,8 @@ export interface UseSessionFlowResult {
   mode: SessionMode;
   continueHere: ContinueHereData | null;
   dismiss: () => void;
+  /** Navigate back to ProjectHomeScreen (sets mode to "home"). */
+  goHome: () => void;
 }
 
 /**
@@ -81,6 +89,7 @@ export function useSessionFlow(
   const [continueHere, setContinueHere] = useState<ContinueHereData | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const [skipOnboarding, setSkipOnboarding] = useState(false);
+  const [goHomeState, setGoHomeState] = useState(false);
   const fetchedRef = useRef(false);
 
   // Fetch continue-here data once when we have state
@@ -109,10 +118,15 @@ export function useSessionFlow(
     setDismissed(true);
     setSkipOnboarding(true);
     setContinueHere(null);
+    setGoHomeState(false); // Returning from home to project clears goHome
+  }, []);
+
+  const goHome = useCallback(() => {
+    setGoHomeState(true);
   }, []);
 
   const effectiveContinueHere = dismissed ? null : continueHere;
-  const mode = deriveSessionMode(state, wsStatus, effectiveContinueHere, skipOnboarding);
+  const mode = deriveSessionMode(state, wsStatus, effectiveContinueHere, skipOnboarding, goHomeState);
 
-  return { mode, continueHere: effectiveContinueHere, dismiss };
+  return { mode, continueHere: effectiveContinueHere, dismiss, goHome };
 }

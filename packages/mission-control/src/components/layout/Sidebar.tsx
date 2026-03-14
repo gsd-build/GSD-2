@@ -7,7 +7,7 @@
  * - ConnectionStatus (bottom)
  */
 import { useCallback } from "react";
-import { PanelLeftClose, PanelLeft, ExternalLink, FolderOpen, Settings } from "lucide-react";
+import { PanelLeftClose, PanelLeft, ExternalLink, FolderOpen, Settings, Home } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LAYOUT_DEFAULTS } from "@/styles/design-tokens";
 import { GsdLogo } from "@/components/sidebar/GsdLogo";
@@ -26,6 +26,8 @@ interface SidebarProps {
   activeView: ViewType;
   onSelectView: (view: ViewType) => void;
   onOpenFolder: () => void;
+  /** Navigate back to the project home screen. */
+  onGoHome?: () => void;
 }
 
 export function Sidebar({
@@ -37,6 +39,7 @@ export function Sidebar({
   activeView,
   onSelectView,
   onOpenFolder,
+  onGoHome,
 }: SidebarProps) {
   const handleNewWindow = useCallback(() => {
     window.open(location.href, "_blank");
@@ -56,6 +59,22 @@ export function Sidebar({
           : LAYOUT_DEFAULTS.sidebarWidth,
       }}
     >
+      {/* Home button — shown when onGoHome prop is provided (WORKSPACE-02) */}
+      {onGoHome && (
+        <div className="border-b border-navy-600 p-2">
+          <button
+            type="button"
+            onClick={onGoHome}
+            aria-label="Home"
+            title="Home"
+            className="flex min-h-[44px] w-full items-center gap-2 rounded p-2 text-sm text-slate-400 transition-colors hover:bg-navy-700 hover:text-slate-300"
+          >
+            <Home className="h-4 w-4" />
+            {!collapsed && <span>Home</span>}
+          </button>
+        </div>
+      )}
+
       {/* Top: Logo + label + collapse toggle */}
       <div className="flex items-center gap-2 border-b border-navy-600 p-2">
         <GsdLogo className="h-6 w-6 text-cyan-accent" />
