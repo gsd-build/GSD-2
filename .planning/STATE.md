@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Native Desktop
 status: in_progress
-stopped_at: Completed 20-02-PLAN.md — tauri-plugin-updater wired, useAppUpdater hook, UpdateBanner in Sidebar
-last_updated: "2026-03-14T20:20:58.568Z"
+stopped_at: Completed 20-03-PLAN.md — landing page (docs/index.html) and GitHub Pages workflow created
+last_updated: "2026-03-14T20:24:38.472Z"
 last_activity: "2026-03-14 — Plan 19-01 complete: 4 RED test stub files created (workspace-api, project-archiving, project-home-screen, project-tab-bar); 747 passing tests unaffected; WORKSPACE-01..05 test coverage established"
 progress:
   total_phases: 10
-  completed_phases: 8
+  completed_phases: 9
   total_plans: 48
-  completed_plans: 46
+  completed_plans: 47
   percent: 91
 ---
 
@@ -466,7 +466,7 @@ Phase: 19 of 20 (Project Workspace) — In Progress (1 of 5 plans done)
 Plan: 1 of 5 complete (plan 01 done — 4 Nyquist Wave 0 RED test stubs created)
 Status: Phase 19 in progress. Next: Phase 19-02 workspace-api implementation.
 Last activity: 2026-03-14 — Plan 19-01 complete: 4 RED test stub files created (workspace-api, project-archiving, project-home-screen, project-tab-bar); 747 passing tests unaffected; WORKSPACE-01..05 test coverage established
-Stopped at: Completed 20-02-PLAN.md — tauri-plugin-updater wired, useAppUpdater hook, UpdateBanner in Sidebar
+Stopped at: Completed 20-03-PLAN.md — landing page (docs/index.html) and GitHub Pages workflow created
 
 Progress: [█████████░] 89% (40/45 plans complete)
 
@@ -604,6 +604,8 @@ Progress: [█████████░] 89% (40/45 plans complete)
 - [Phase 20-installer-distribution]: TAURI_SIGNING_PRIVATE_KEY env present in all 3 matrix jobs (not gated) — required by updater Plan 02
 - [Phase 20]: pubkey left as empty string in tauri.conf.json — CI injects TAURI_SIGNING_PRIVATE_KEY during tauri build --ci
 - [Phase 20]: dynamic import of @tauri-apps/api/core in useAppUpdater.invokeIfTauri — hook silently no-ops outside Tauri webview (browser dev mode)
+- [Phase 20-installer-distribution]: Landing page uses single-file HTML with all CSS inlined — no build step needed, Google Fonts via CDN link
+- [Phase 20-installer-distribution]: Pages workflow path-filtered to docs/** to avoid spurious redeploys on unrelated pushes
 
 ### Blockers/Concerns
 

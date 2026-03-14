@@ -41,7 +41,7 @@
 - [x] **Phase 17: Permission Model** — Trust dialog replaces skip-permissions toggle, hard boundary enforcement, advanced permission toggles (completed 2026-03-14)
 - [x] **Phase 18: Builder Mode** — Interface mode toggle, vocabulary layer, Builder intent classifier, adapted discuss/slice cards, phase gate intercept (completed 2026-03-14)
 - [x] **Phase 19: Project Workspace** — Managed workspace path, project home screen, project cards, multi-session tabs, archiving (completed 2026-03-14)
-- [ ] **Phase 20: Installer + Distribution** — GitHub Actions CI pipeline, code signing, auto-update, landing page
+- [x] **Phase 20: Installer + Distribution** — GitHub Actions CI pipeline, code signing, auto-update, landing page (completed 2026-03-14)
 
 ## Phase Details
 
@@ -254,4 +254,4 @@ Plans:
 | 17. Permission Model | 3/3 | Complete    | 2026-03-14 | — |
 | 18. Builder Mode | 4/4 | Complete    | 2026-03-14 | — |
 | 19. Project Workspace | 5/5 | Complete    | 2026-03-14 | — |
-| 20. Installer + Distribution | 2/3 | In Progress|  | — |
+| 20. Installer + Distribution | 3/3 | Complete   | 2026-03-14 | — |
