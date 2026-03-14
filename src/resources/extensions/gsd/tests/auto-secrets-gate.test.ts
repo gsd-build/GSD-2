@@ -144,6 +144,70 @@ test('secrets gate: pending keys exist — gate triggers collection, manifest up
   }
 });
 
+// ─── Scenario 4: Regression — manifest written after first unit triggers gate on next dispatch ─
+
+test('secrets gate: no manifest on first dispatch, manifest written between dispatches triggers collectSecretsFromManifest on next dispatch', async () => {
+  const tmp = makeTempDir('gate-redispatch');
+  try {
+    delete process.env.GSD_REDISPATCH_TEST_KEY;
+
+    // ── First dispatch: no manifest → getManifestStatus returns null → gate skips ──
+    const statusBefore = await getManifestStatus(tmp, 'M001');
+    assert.strictEqual(
+      statusBefore,
+      null,
+      'first dispatch: no manifest yet — gate should skip',
+    );
+
+    // ── plan-milestone unit runs and writes the manifest ──
+    writeManifest(tmp, `# Secrets Manifest
+
+**Milestone:** M001
+**Generated:** 2025-06-20T12:00:00Z
+
+### GSD_REDISPATCH_TEST_KEY
+
+**Service:** ServiceA
+**Status:** pending
+**Destination:** dotenv
+
+1. Retrieve this key from the service dashboard
+`);
+
+    // ── Next dispatch: manifest now exists with a pending key → gate triggers ──
+    const statusAfter = await getManifestStatus(tmp, 'M001');
+    assert.notStrictEqual(statusAfter, null, 'next dispatch: manifest should now exist');
+    assert.ok(
+      statusAfter!.pending.length > 0,
+      'next dispatch: pending keys should be present',
+    );
+    assert.deepStrictEqual(
+      statusAfter!.pending,
+      ['GSD_REDISPATCH_TEST_KEY'],
+      'pending list should contain the key written by plan-milestone',
+    );
+
+    // ── Simulate gate triggering collectSecretsFromManifest ──
+    const result = await collectSecretsFromManifest(tmp, 'M001', makeNoUICtx(tmp));
+    assert.ok(
+      result.skipped.includes('GSD_REDISPATCH_TEST_KEY'),
+      'key should appear in skipped (no UI to enter value)',
+    );
+
+    // ── Verify manifest is updated on disk — gate will not re-trigger next time ──
+    const statusFinal = await getManifestStatus(tmp, 'M001');
+    assert.notStrictEqual(statusFinal, null);
+    assert.deepStrictEqual(
+      statusFinal!.pending,
+      [],
+      'after collection, no pending keys remain — gate skips on subsequent dispatches',
+    );
+  } finally {
+    delete process.env.GSD_REDISPATCH_TEST_KEY;
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 // ─── Scenario 3: No pending keys — all collected or in env ──────────────────
 
 test('secrets gate: no pending keys — getManifestStatus shows pending.length === 0', async () => {
