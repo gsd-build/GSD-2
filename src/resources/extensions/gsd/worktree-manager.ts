@@ -173,7 +173,6 @@ export function listWorktrees(basePath: string): WorktreeInfo[] {
     .map(baseVariant => {
       const path = join(baseVariant, ".gsd", "worktrees");
       return {
-        path,
         normalized: normalizePathForComparison(path),
       };
     })
@@ -198,6 +197,7 @@ export function listWorktrees(basePath: string): WorktreeInfo[] {
 
     const entryPath = wtLine.replace("worktree ", "");
     const branch = branchLine.replace("branch refs/heads/", "");
+    const branchWorktreeName = branch.startsWith("worktree/") ? branch.slice("worktree/".length) : null;
     const entryVariants = [resolve(entryPath)];
     if (existsSync(entryPath)) {
       entryVariants.push(realpathSync(entryPath));
@@ -206,17 +206,24 @@ export function listWorktrees(basePath: string): WorktreeInfo[] {
     const matchedRoot = worktreeRoots.find(root =>
       normalizedEntryVariants.some(entryVariant => entryVariant.startsWith(`${root.normalized}/`)),
     );
+    const matchesBranchLeaf = branchWorktreeName
+      ? normalizedEntryVariants.some(entryVariant => entryVariant.split("/").pop() === branchWorktreeName)
+      : false;
 
     // Only include worktrees under .gsd/worktrees/
-    if (!matchedRoot) continue;
+    if (!matchedRoot && !matchesBranchLeaf) continue;
 
     const matchedEntryPath = normalizedEntryVariants.find(entryVariant =>
-      entryVariant.startsWith(`${matchedRoot.normalized}/`),
+      matchedRoot ? entryVariant.startsWith(`${matchedRoot.normalized}/`) : false,
     );
-    if (!matchedEntryPath) continue;
+    let name = matchedRoot ? matchedEntryPath?.slice(matchedRoot.normalized.length + 1) ?? "" : "";
 
-    const name = matchedEntryPath.slice(matchedRoot.normalized.length + 1);
-    // Skip nested paths — only direct children
+    // Git on Windows can report a path form that does not map cleanly back to the
+    // repo root even when the branch naming is still authoritative.
+    if ((!name || name.includes("/")) && branchWorktreeName && matchesBranchLeaf) {
+      name = branchWorktreeName;
+    }
+
     if (!name || name.includes("/")) continue;
 
     const resolvedEntryPath = existsSync(entryPath) ? realpathSync(entryPath) : resolve(entryPath);
