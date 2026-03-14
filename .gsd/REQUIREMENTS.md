@@ -4,7 +4,9 @@ This file is the explicit capability and coverage contract for the project.
 
 ## Active
 
-(none)
+- R013 — Reconcile newer upstream changes landed after M003 onto local `main` without regressing validated milestone behavior
+- R014 — Restore current GitHub CI/CD workflow compliance for the reconciled branch
+- R015 — Leave verified local `main` ready to update `models.dev-registration-pr` via a later explicit push
 
 ## Validated
 
@@ -45,10 +47,13 @@ This file is the explicit capability and coverage contract for the project.
 | R010 | operability | validated | M002 | none | Import fixes, testability injection, diagnostics |
 | R011 | operability | validated | M003 | none | M003/S01 clean merge + 41 tests |
 | R012 | operability | validated | M003 | none | M003/S01 build + tests + clean git |
+| R013 | operability | active | M004 | none | Pending M004 execution |
+| R014 | operability | active | M004 | none | Pending M004 execution |
+| R015 | operability | active | M004 | none | Pending M004 execution |
 
 ## Coverage Summary
 
-- Active requirements: 0
-- Mapped to slices: 12
+- Active requirements: 3
+- Mapped to slices: 15
 - Validated: 12
 - Unmapped active requirements: 0

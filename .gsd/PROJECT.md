@@ -40,3 +40,4 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
   - [x] S03: Live models.dev Verification
 - [x] M003: Upstream Reconciliation and PR Preparation — Complete
   - [x] S01: Upstream Merge and Verification
+- [ ] M004: Post-M003 Upstream Drift Reconciliation and CI Restoration — Queued
