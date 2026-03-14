@@ -7,6 +7,7 @@
  * - ConnectionStatus (bottom)
  */
 import { useCallback } from "react";
+import { useAppUpdater } from "@/hooks/useAppUpdater";
 import { PanelLeftClose, PanelLeft, ExternalLink, FolderOpen, Settings, Home } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LAYOUT_DEFAULTS } from "@/styles/design-tokens";
@@ -44,6 +45,8 @@ export function Sidebar({
   const handleNewWindow = useCallback(() => {
     window.open(location.href, "_blank");
   }, []);
+
+  const { updateReady, installing, installUpdate } = useAppUpdater();
 
   return (
     <aside
@@ -151,6 +154,28 @@ export function Sidebar({
           {!collapsed && <span>Settings</span>}
         </button>
       </div>
+
+      {/* Update notification — shown when background download is complete */}
+      {updateReady && (
+        <div
+          className="border-t p-2"
+          style={{ borderColor: '#1E2D3D', backgroundColor: '#131C2B' }}
+        >
+          <button
+            type="button"
+            onClick={installUpdate}
+            disabled={installing}
+            title="Restart to apply update"
+            className="flex w-full items-center gap-2 rounded p-2 text-xs transition-colors hover:bg-navy-700"
+            style={{ color: '#5BC8F0' }}
+          >
+            <span style={{ fontSize: '10px' }}>↑</span>
+            {!collapsed && (
+              <span>{installing ? 'Installing…' : 'Update ready — restart to apply'}</span>
+            )}
+          </button>
+        </div>
+      )}
 
       {/* Bottom: Connection status */}
       <div className="border-t border-navy-600 p-2">
