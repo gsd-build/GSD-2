@@ -41,6 +41,7 @@ import {
   resolveAllSkillReferences,
   resolveModelWithFallbacksForUnit,
   getNextFallbackModel,
+  resolveModelFromRegistry,
 } from "./preferences.js";
 import { hasSkillSnapshot, detectNewSkills, formatSkillsXml } from "./skill-discovery.js";
 import {
@@ -352,21 +353,14 @@ export default function (pi: ExtensionAPI) {
           const nextModelId = getNextFallbackModel(currentModelId, modelConfig);
 
           if (nextModelId) {
-            let modelToSet;
-            const slashIdx = nextModelId.indexOf("/");
-            if (slashIdx !== -1) {
-              const provider = nextModelId.substring(0, slashIdx);
-              const id = nextModelId.substring(slashIdx + 1);
-              modelToSet = availableModels.find(
-                m => m.provider.toLowerCase() === provider.toLowerCase()
-                  && m.id.toLowerCase() === id.toLowerCase()
+            const { model: modelToSet, isAmbiguous, matchedProviders } = resolveModelFromRegistry(nextModelId, availableModels, ctx.model?.provider);
+
+            if (isAmbiguous && modelToSet) {
+              ctx.ui.notify(
+                `Fallback model ID "${nextModelId}" exists in multiple providers (${matchedProviders.join(", ")}). ` +
+                `Resolved to ${modelToSet.provider}. Use "provider/model" format for explicit targeting.`,
+                "warning",
               );
-            } else {
-              const currentProvider = ctx.model?.provider;
-              const exactProviderMatch = availableModels.find(
-                m => m.id === nextModelId && m.provider === currentProvider
-              );
-              modelToSet = exactProviderMatch ?? availableModels.find(m => m.id === nextModelId);
             }
 
             if (modelToSet) {
