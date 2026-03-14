@@ -68,8 +68,8 @@ Requirements for the Native Desktop milestone. Each maps to roadmap phases 12–
 - [x] **BUILDER-02**: Builder vocabulary applied throughout — milestone→version, slice→feature, task→step, must-haves→goals, UAT→testing; context budget, token count, model name hidden
 - [x] **BUILDER-03**: Builder chat input — placeholder "What do you want to build or change?"; slash autocomplete hidden; command palette shortcut hidden
 - [x] **BUILDER-04**: Intent classifier for Builder mode — lightweight Claude API call with STATE.md context; routes to GSD_COMMAND / PHASE_QUESTION / GENERAL_CODING / UI_PHASE_GATE; routing badge shown with override option
-- [ ] **BUILDER-05**: Discuss cards in Builder mode — plain-language labels, "Question N of N" progress, no GSD terminology; decision log visible as "Your decisions so far"
-- [ ] **BUILDER-06**: Slice cards in Builder mode — state labels (Ready to build / Building now / Ready for your review / Done) and action labels (See what will be built / Build this feature / Give direction / Ship it) updated
+- [x] **BUILDER-05**: Discuss cards in Builder mode — plain-language labels, "Question N of N" progress, no GSD terminology; decision log visible as "Your decisions so far"
+- [x] **BUILDER-06**: Slice cards in Builder mode — state labels (Ready to build / Building now / Ready for your review / Done) and action labels (See what will be built / Build this feature / Give direction / Ship it) updated
 - [x] **BUILDER-07**: Phase gate in Builder mode — intercepts frontend build without design contract; shows plain-language prompt to set up design or skip
 
 ### Project Workspace (WORKSPACE)
@@ -165,8 +165,8 @@ Deferred to future release.
 | BUILDER-02 | Phase 18 | Complete |
 | BUILDER-03 | Phase 18 | Complete |
 | BUILDER-04 | Phase 18 | Complete |
-| BUILDER-05 | Phase 18 | Pending |
-| BUILDER-06 | Phase 18 | Pending |
+| BUILDER-05 | Phase 18 | Complete |
+| BUILDER-06 | Phase 18 | Complete |
 | BUILDER-07 | Phase 18 | Complete |
 | WORKSPACE-01 | Phase 19 | Pending |
 | WORKSPACE-02 | Phase 19 | Pending |

@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Native Desktop
 status: in_progress
-stopped_at: Completed 18-02-PLAN.md
-last_updated: "2026-03-14T11:49:14.931Z"
+stopped_at: Completed 18-03-PLAN.md
+last_updated: "2026-03-14T12:02:32.270Z"
 last_activity: "2026-03-14 — Plan 18-01 complete: Builder mode foundation — InterfaceModeContext, BUILDER_VOCAB, SettingsView toggle, ChatInput builderMode prop, cost badge hidden; BUILDER-01/02/03 satisfied; 739 tests pass"
 progress:
   total_phases: 10
   completed_phases: 6
   total_plans: 40
-  completed_plans: 37
+  completed_plans: 38
   percent: 93
 ---
 
@@ -435,7 +435,7 @@ Phase: 18 of 20 (Builder Mode) — In Progress (1 of 4 plans done)
 Plan: 1 of 4 complete (plan 01 done — InterfaceModeContext, vocab maps, Settings toggle, ChatInput control, cost badge suppression)
 Status: Phase 18 in progress. Next: Phase 18-02 (classifyIntent).
 Last activity: 2026-03-14 — Plan 18-01 complete: Builder mode foundation — InterfaceModeContext, BUILDER_VOCAB, SettingsView toggle, ChatInput builderMode prop, cost badge hidden; BUILDER-01/02/03 satisfied; 739 tests pass
-Stopped at: Completed 18-02-PLAN.md
+Stopped at: Completed 18-03-PLAN.md
 
 Progress: [█████████░] 90% (36/40 plans complete)
 
@@ -556,6 +556,7 @@ Progress: [█████████░] 90% (36/40 plans complete)
 - [Phase 18-builder-mode]: fetchFn injected as default parameter for classifyIntent — test isolation without module mocking
 - [Phase 18-builder-mode]: _setAuthOverride test helper in classify-intent-api.ts mirrors _setGlobalDir pattern from settings-api.ts
 - [Phase 18-builder-mode]: RoutingBadge and PhaseGateCard rendered in SingleColumnView chat wrapper — collocated with chat UI, avoids z-index conflicts
+- [Phase 18]: All slice card Builder vocab changes prop-conditional via inline ternaries — no component duplication; SliceAccordion and useChatMode read useBuilderMode() internally and thread builderMode down
 
 ### Blockers/Concerns
 
