@@ -17,7 +17,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
-const projectRoot = join(fileURLToPath(import.meta.url), "..", "..", "..", "..");
+const projectRoot = process.cwd();
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 1. npm pack produces valid tarball with correct file layout
