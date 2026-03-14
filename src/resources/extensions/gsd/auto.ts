@@ -171,7 +171,7 @@ let idleWatchdogHandle: ReturnType<typeof setInterval> | null = null;
  *  re-evaluation. Covers the case where dispatchNextUnit silently fails or
  *  an unhandled error kills the dispatch chain. */
 let dispatchGapHandle: ReturnType<typeof setTimeout> | null = null;
-const DISPATCH_GAP_TIMEOUT_MS = 30_000; // 30 seconds
+const DISPATCH_GAP_TIMEOUT_MS = 5_000; // 5 seconds
 
 /** SIGTERM handler registered while auto-mode is active — cleared on stop/pause. */
 let _sigtermHandler: (() => void) | null = null;
