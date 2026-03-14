@@ -403,11 +403,16 @@ async function mergeOrphanedSliceBranches(
     // relMilestoneFile resolves the actual directory name on disk (handles
     // milestone directories with title suffixes like "M007 Payment System").
     const roadmapRelPath = relMilestoneFile(base, milestoneId, "ROADMAP");
-    const roadmapContent = runGit(
-      base,
-      ["show", `${branch}:${roadmapRelPath}`],
-      { allowFailure: true },
-    );
+    let roadmapContent: string | undefined;
+    try {
+      roadmapContent = execFileSync(
+        "git",
+        ["-C", base, "show", `${branch}:${roadmapRelPath}`],
+        { encoding: "utf8" },
+      );
+    } catch {
+      roadmapContent = undefined;
+    }
     if (!roadmapContent) continue;
 
     const roadmap = parseRoadmap(roadmapContent);
