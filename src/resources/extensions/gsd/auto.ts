@@ -69,7 +69,7 @@ import {
   switchToMain,
   mergeSliceToMain,
 } from "./worktree.ts";
-import { GitServiceImpl } from "./git-service.ts";
+import { GitServiceImpl, runGit } from "./git-service.ts";
 import { getPriorSliceCompletionBlocker } from "./dispatch-guard.ts";
 import type { GitPreferences } from "./git-service.ts";
 import { truncateToWidth, visibleWidth } from "@gsd/pi-tui";
@@ -696,6 +696,7 @@ function unitVerb(unitType: string): string {
     case "replan-slice": return "replanning";
     case "reassess-roadmap": return "reassessing";
     case "run-uat": return "running UAT";
+    case "fix-merge": return "fixing merge";
     default: return unitType;
   }
 }
@@ -711,6 +712,7 @@ function unitPhaseLabel(unitType: string): string {
     case "replan-slice": return "REPLAN";
     case "reassess-roadmap": return "REASSESS";
     case "run-uat": return "UAT";
+    case "fix-merge": return "FIX-MERGE";
     default: return unitType.toUpperCase();
   }
 }
@@ -727,6 +729,7 @@ function peekNext(unitType: string, state: GSDState): string {
     case "replan-slice": return `re-execute ${sid}`;
     case "reassess-roadmap": return "advance to next slice";
     case "run-uat": return "reassess roadmap";
+    case "fix-merge": return "retry merge";
     default: return "";
   }
 }
@@ -1042,6 +1045,13 @@ async function dispatchNextUnit(
     return;
   }
 
+  // Determine next unit (declared early so fix-merge can set them)
+  // Using definite assignment assertion because all code paths assign before use
+  let unitType!: string;
+  let unitId!: string;
+  let prompt!: string;
+  let isFixMerge = false;
+
   // ── General merge guard: merge completed slice branches before advancing ──
   // If we're on a gsd/MID/SID branch and that slice is done (roadmap [x]),
   // merge to main before dispatching the next unit. This handles:
@@ -1080,34 +1090,76 @@ async function dispatchNextUnit(
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
 
-            // Safety net: if mergeSliceToMain failed to clean up (or the error
-            // came from switchToMain), ensure the working tree isn't left in a
-            // conflicted/dirty merge state. Without this, state derivation reads
-            // conflict-marker-filled files, produces a corrupt phase, and
-            // dispatch loops forever (see: merge-bug-fix).
-            try {
-              const { runGit } = await import("./git-service.ts");
-              const status = runGit(basePath, ["status", "--porcelain"], { allowFailure: true });
-              if (status && (status.includes("UU ") || status.includes("AA ") || status.includes("UD "))) {
-                runGit(basePath, ["reset", "--hard", "HEAD"], { allowFailure: true });
-                ctx.ui.notify(
-                  `Cleaned up conflicted merge state after failed squash-merge.`,
-                  "warning",
-                );
-              }
-            } catch { /* best-effort cleanup */ }
+            // Check if we have actual merge conflicts to resolve
+            const status = runGit(basePath, ["status", "--porcelain"], { allowFailure: true });
+            const hasConflicts = status && (status.includes("UU ") || status.includes("AA ") || status.includes("UD "));
 
-            ctx.ui.notify(
-              `Slice merge failed — stopping auto-mode. Fix conflicts manually and restart.\n${message}`,
-              "error",
-            );
-            if (currentUnit) {
-              const modelId = ctx.model?.id ?? "unknown";
-              snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
-              saveActivityLog(ctx, basePath, currentUnit.type, currentUnit.id);
+            if (hasConflicts) {
+              // Instead of stopping auto-mode, dispatch a fix-merge session
+              ctx.ui.notify(
+                `Slice merge has conflicts — dispatching fix-merge session.\n${message}`,
+                "warning",
+              );
+
+              // Get the conflicted files for the prompt
+              const conflictedFiles: string[] = [];
+              const statusLines = status.split("\n");
+              for (const line of statusLines) {
+                if (line.includes("UU ") || line.includes("AA ") || line.includes("UD ")) {
+                  conflictedFiles.push(line.substring(3).trim());
+                }
+              }
+
+              // Build fix-merge prompt
+              const targetBranch = getMainBranch(basePath);
+              const fixMergePrompt = [
+                `**MERGE CONFLICT RESOLUTION REQUIRED**`,
+                ``,
+                `The squash-merge of slice ${branchSid} into ${targetBranch} has conflicts.`,
+                `You must resolve these conflicts to continue.`,
+                ``,
+                `**Conflicted files:**`,
+                ...conflictedFiles.map(f => `- ${f}`),
+                ``,
+                `**Instructions:**`,
+                `1. Read each conflicted file to understand the conflicts`,
+                `2. Resolve all conflicts by editing the files (remove conflict markers)`,
+                `3. Stage the resolved files with \`git add\``,
+                `4. Complete the squash-merge with \`git commit\``,
+                `5. After successful commit, auto-mode will continue automatically`,
+                ``,
+                `**Important:**`,
+                `- Do NOT abort the merge (no \`git merge --abort\`)`,
+                `- Preserve all changes from both branches when resolving`,
+                `- The commit message should reference the slice being merged`,
+              ].join("\n");
+
+              // Set up the fix-merge unit
+              unitType = "fix-merge";
+              unitId = `${branchMid}/${branchSid}`;
+              prompt = fixMergePrompt;
+              isFixMerge = true;
+
+              // Fall through to the normal session dispatch logic below
+            } else {
+              // Non-conflict error (e.g., permission issue, git error)
+              // Reset any partial state and stop auto-mode
+              try {
+                runGit(basePath, ["reset", "--hard", "HEAD"], { allowFailure: true });
+              } catch { /* best-effort cleanup */ }
+
+              ctx.ui.notify(
+                `Slice merge failed (non-conflict error) — stopping auto-mode.\n${message}`,
+                "error",
+              );
+              if (currentUnit) {
+                const modelId = ctx.model?.id ?? "unknown";
+                snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
+                saveActivityLog(ctx, basePath, currentUnit.type, currentUnit.id);
+              }
+              await stopAuto(ctx, pi);
+              return;
             }
-            await stopAuto(ctx, pi);
-            return;
           }
         }
       }
@@ -1125,79 +1177,77 @@ async function dispatchNextUnit(
     return;
   }
 
-  // Determine next unit
-  let unitType: string;
-  let unitId: string;
-  let prompt: string;
-
-  if (state.phase === "complete") {
-    if (currentUnit) {
-      const modelId = ctx.model?.id ?? "unknown";
-      snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
-      saveActivityLog(ctx, basePath, currentUnit.type, currentUnit.id);
-    }
-    // Clear completed-units.json for the finished milestone so it doesn't grow unbounded.
-    try {
-      const file = completedKeysPath(basePath);
-      if (existsSync(file)) writeFileSync(file, JSON.stringify([]), "utf-8");
-      completedKeySet.clear();
-    } catch { /* non-fatal */ }
-    await stopAuto(ctx, pi);
-    return;
-  }
-
-  if (state.phase === "blocked") {
-    if (currentUnit) {
-      const modelId = ctx.model?.id ?? "unknown";
-      snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
-      saveActivityLog(ctx, basePath, currentUnit.type, currentUnit.id);
-    }
-    await stopAuto(ctx, pi);
-    ctx.ui.notify(`Blocked: ${state.blockers.join(", ")}. Fix and run /gsd auto.`, "warning");
-    return;
-  }
-
-  // ── UAT Dispatch: run-uat fires after complete-slice merge, before reassessment ──
-  // Ensures the UAT file and slice summary are both on main when UAT runs.
-  const prefs = loadEffectiveGSDPreferences()?.preferences;
-
-  // Budget ceiling guard — pause before starting next unit if ceiling is hit
-  const budgetCeiling = prefs?.budget_ceiling;
-  if (budgetCeiling !== undefined) {
-    const currentLedger = getLedger();
-    const totalCost = currentLedger ? getProjectTotals(currentLedger.units).cost : 0;
-    if (totalCost >= budgetCeiling) {
-      ctx.ui.notify(
-        `Budget ceiling ${formatCost(budgetCeiling)} reached (spent ${formatCost(totalCost)}). Pausing auto-mode — /gsd auto to continue.`,
-        "warning",
-      );
-      await pauseAuto(ctx, pi);
-      return;
-    }
-  }
-
-  const needsRunUat = await checkNeedsRunUat(basePath, mid, state, prefs);
   // Flag: for human/mixed UAT, pause auto-mode after the prompt is sent so the user
   // can perform the UAT manually. On next resume, result file will exist → skip.
   let pauseAfterUatDispatch = false;
 
-  // ── Phase-first dispatch: complete-slice MUST run before reassessment ──
-  // If the current phase is "summarizing", complete-slice is responsible for
-  // mergeSliceToMain. Reassessment must wait until the merge is done.
-  if (state.phase === "summarizing") {
-    const sid = state.activeSlice!.id;
-    const sTitle = state.activeSlice!.title;
-    unitType = "complete-slice";
-    unitId = `${mid}/${sid}`;
-    prompt = await buildCompleteSlicePrompt(mid, midTitle!, sid, sTitle, basePath);
-  } else {
-    // ── Adaptive Replanning: check if last completed slice needs reassessment ──
-    // Computed here (after summarizing guard) so complete-slice always runs first.
-    const needsReassess = await checkNeedsReassessment(basePath, mid, state);
-    if (needsRunUat) {
-      const { sliceId, uatType } = needsRunUat;
-      unitType = "run-uat";
-      unitId = `${mid}/${sliceId}`;
+  // Determine next unit (skip if already set by fix-merge)
+  if (!isFixMerge) {
+    if (state.phase === "complete") {
+      if (currentUnit) {
+        const modelId = ctx.model?.id ?? "unknown";
+        snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
+        saveActivityLog(ctx, basePath, currentUnit.type, currentUnit.id);
+      }
+      // Clear completed-units.json for the finished milestone so it doesn't grow unbounded.
+      try {
+        const file = completedKeysPath(basePath);
+        if (existsSync(file)) writeFileSync(file, JSON.stringify([]), "utf-8");
+        completedKeySet.clear();
+      } catch { /* non-fatal */ }
+      await stopAuto(ctx, pi);
+      return;
+    }
+
+    if (state.phase === "blocked") {
+      if (currentUnit) {
+        const modelId = ctx.model?.id ?? "unknown";
+        snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
+        saveActivityLog(ctx, basePath, currentUnit.type, currentUnit.id);
+      }
+      await stopAuto(ctx, pi);
+      ctx.ui.notify(`Blocked: ${state.blockers.join(", ")}. Fix and run /gsd auto.`, "warning");
+      return;
+    }
+
+    // ── UAT Dispatch: run-uat fires after complete-slice merge, before reassessment ──
+    // Ensures the UAT file and slice summary are both on main when UAT runs.
+    const prefs = loadEffectiveGSDPreferences()?.preferences;
+
+    // Budget ceiling guard — pause before starting next unit if ceiling is hit
+    const budgetCeiling = prefs?.budget_ceiling;
+    if (budgetCeiling !== undefined) {
+      const currentLedger = getLedger();
+      const totalCost = currentLedger ? getProjectTotals(currentLedger.units).cost : 0;
+      if (totalCost >= budgetCeiling) {
+        ctx.ui.notify(
+          `Budget ceiling ${formatCost(budgetCeiling)} reached (spent ${formatCost(totalCost)}). Pausing auto-mode — /gsd auto to continue.`,
+          "warning",
+        );
+        await pauseAuto(ctx, pi);
+        return;
+      }
+    }
+
+    const needsRunUat = await checkNeedsRunUat(basePath, mid, state, prefs);
+
+    // ── Phase-first dispatch: complete-slice MUST run before reassessment ──
+    // If the current phase is "summarizing", complete-slice is responsible for
+    // mergeSliceToMain. Reassessment must wait until the merge is done.
+    if (state.phase === "summarizing") {
+      const sid = state.activeSlice!.id;
+      const sTitle = state.activeSlice!.title;
+      unitType = "complete-slice";
+      unitId = `${mid}/${sid}`;
+      prompt = await buildCompleteSlicePrompt(mid, midTitle!, sid, sTitle, basePath);
+    } else {
+      // ── Adaptive Replanning: check if last completed slice needs reassessment ──
+      // Computed here (after summarizing guard) so complete-slice always runs first.
+      const needsReassess = await checkNeedsReassessment(basePath, mid, state);
+      if (needsRunUat) {
+        const { sliceId, uatType } = needsRunUat;
+        unitType = "run-uat";
+        unitId = `${mid}/${sliceId}`;
       const uatFile = resolveSliceFile(basePath, mid, sliceId, "UAT")!;
       const uatContent = await loadFile(uatFile);
       prompt = await buildRunUatPrompt(
@@ -1299,6 +1349,15 @@ async function dispatchNextUnit(
       ctx.ui.notify(`Unexpected phase: ${state.phase}. Stopping auto-mode.`, "warning");
       return;
     }
+  }
+  } // end if (!isFixMerge)
+
+  // TypeScript narrowing: unitType, unitId, and prompt are always assigned by this point
+  // (either by fix-merge handling or by the normal unit determination above)
+  if (!unitType || !unitId || !prompt) {
+    await stopAuto(ctx, pi);
+    ctx.ui.notify("Internal error: unit not determined. Stopping auto-mode.", "error");
+    return;
   }
 
   const priorSliceBlocker = getPriorSliceCompletionBlocker(basePath, getMainBranch(basePath), unitType, unitId);
@@ -2869,6 +2928,21 @@ function verifyExpectedArtifact(unitType: string, unitId: string, base: string):
   if (!absPath) return true;
   if (!existsSync(absPath)) return false;
 
+  // fix-merge must have completed the merge (no conflicts, no MERGE_HEAD)
+  if (unitType === "fix-merge") {
+    const status = runGit(base, ["status", "--porcelain"], { allowFailure: true });
+    // Check for conflict markers
+    if (status && (status.includes("UU ") || status.includes("AA ") || status.includes("UD "))) {
+      return false;
+    }
+    // Check for ongoing merge state
+    const mergeHead = runGit(base, ["rev-parse", "--verify", "MERGE_HEAD"], { allowFailure: true });
+    if (mergeHead) {
+      return false;
+    }
+    return true;
+  }
+
   // execute-task must also have its checkbox marked [x] in the slice plan
   if (unitType === "execute-task") {
     const parts = unitId.split("/");
@@ -2953,6 +3027,8 @@ function diagnoseExpectedArtifact(unitType: string, unitId: string, base: string
       return `${relSliceFile(base, mid!, sid!, "UAT-RESULT")} (UAT result)`;
     case "complete-milestone":
       return `${relMilestoneFile(base, mid!, "SUMMARY")} (milestone summary)`;
+    case "fix-merge":
+      return `Merge commit for slice ${sid} into main branch`;
     default:
       return null;
   }

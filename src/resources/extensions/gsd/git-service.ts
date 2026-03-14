@@ -699,24 +699,24 @@ export class GitServiceImpl {
           this.git(["add", "-A"], { allowFailure: true });
           // Don't throw — let the merge proceed
         } else {
-          // Non-.gsd/ conflicts: reset and throw as before
-          this.git(["reset", "--hard", "HEAD"], { allowFailure: true });
+          // Non-runtime conflicts: preserve conflict state for fix-merge session
+          // Don't reset - let auto-mode dispatch a fix-merge session to resolve
           const msg = mergeError instanceof Error ? mergeError.message : String(mergeError);
           throw new Error(
-            `${strategy === "merge" ? "Merge" : "Squash-merge"} of "${branch}" into "${mainBranch}" failed with conflicts in non-.gsd/ files. ` +
-            `Working tree has been reset to a clean state. ` +
-            `Resolve manually: git checkout ${mainBranch} && git merge ${strategy === "merge" ? "--no-ff" : "--squash"} ${branch}\n` +
+            `${strategy === "merge" ? "Merge" : "Squash-merge"} of "${branch}" into "${mainBranch}" failed with conflicts. ` +
+            `Conflict state preserved for auto-resolution.\n` +
+            `Conflicted files: ${conflictedFiles.join(", ")}\n` +
             `Original error: ${msg}`,
           );
         }
       } else {
-        // No conflicted files detected but merge still failed — reset and throw
+        // No conflicted files detected but merge still failed — this is a non-conflict error
+        // Reset to clean state since there's nothing to resolve
         this.git(["reset", "--hard", "HEAD"], { allowFailure: true });
         const msg = mergeError instanceof Error ? mergeError.message : String(mergeError);
         throw new Error(
-          `${strategy === "merge" ? "Merge" : "Squash-merge"} of "${branch}" into "${mainBranch}" failed. ` +
-          `Working tree has been reset to a clean state. ` +
-          `Resolve manually: git checkout ${mainBranch} && git merge ${strategy === "merge" ? "--no-ff" : "--squash"} ${branch}\n` +
+          `${strategy === "merge" ? "Merge" : "Squash-merge"} of "${branch}" into "${mainBranch}" failed (non-conflict error). ` +
+          `Working tree has been reset to a clean state.\n` +
           `Original error: ${msg}`,
         );
       }
