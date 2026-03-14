@@ -276,6 +276,7 @@ export async function stopAuto(ctx?: ExtensionContext, pi?: ExtensionAPI): Promi
   currentMilestoneId = null;
   cachedSliceProgress = null;
   pendingCrashRecovery = null;
+  _handlingAgentEnd = false;
   ctx?.ui.setStatus("gsd-auto", undefined);
   ctx?.ui.setWidget("gsd-progress", undefined);
   ctx?.ui.setFooter(undefined);
@@ -526,11 +527,23 @@ export async function startAuto(
 
 // ─── Agent End Handler ────────────────────────────────────────────────────────
 
+/** Guard against concurrent handleAgentEnd execution. Background job
+ *  notifications and other system messages can trigger multiple agent_end
+ *  events before the first handler finishes (the handler yields at every
+ *  await). Without this guard, concurrent dispatchNextUnit calls race on
+ *  newSession(), causing one to cancel the other and silently stopping
+ *  auto-mode. */
+let _handlingAgentEnd = false;
+
 export async function handleAgentEnd(
   ctx: ExtensionContext,
   pi: ExtensionAPI,
 ): Promise<void> {
   if (!active || !cmdCtx) return;
+  if (_handlingAgentEnd) return;
+  _handlingAgentEnd = true;
+
+  try {
 
   // Unit completed — clear its timeout
   clearUnitTimeout();
@@ -580,6 +593,10 @@ export async function handleAgentEnd(
   }
 
   await dispatchNextUnit(ctx, pi);
+
+  } finally {
+    _handlingAgentEnd = false;
+  }
 }
 
 // ─── Step Mode Wizard ─────────────────────────────────────────────────────

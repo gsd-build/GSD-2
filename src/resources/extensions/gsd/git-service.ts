@@ -98,6 +98,22 @@ export const RUNTIME_EXCLUSION_PATHS: readonly string[] = [
   ".gsd/STATE.md",
 ];
 
+/**
+ * GSD planning artifact paths that must be force-added even when .gsd/
+ * is in .gitignore. These are durable planning files that the agent writes
+ * and that must survive squash-merges to main.
+ *
+ * `git add --force` is a no-op when the path doesn't exist or has no
+ * changes, so this list is safe to apply unconditionally.
+ */
+const GSD_DURABLE_PATHS: readonly string[] = [
+  ".gsd/milestones/",
+  ".gsd/DECISIONS.md",
+  ".gsd/QUEUE.md",
+  ".gsd/PROJECT.md",
+  ".gsd/REQUIREMENTS.md",
+];
+
 // ─── Integration Branch Metadata ───────────────────────────────────────────
 
 /**
@@ -291,6 +307,21 @@ export class GitServiceImpl {
     // git reset HEAD silently succeeds when the path isn't staged, so no
     // error handling is needed per-path.
     this.git(["add", "-A"]);
+
+    // Force-add GSD planning artifacts that live under .gsd/ but may be
+    // blocked by a .gsd/ gitignore pattern. `git add -A` respects .gitignore,
+    // so new files (CONTEXT.md, SUMMARY.md, PLAN.md, etc.) in gitignored
+    // directories are silently skipped. Without this force-add, planning
+    // artifacts are never committed — they exist on disk but not in git.
+    // Squash-merges then delete them on main because they appear as "removed
+    // relative to main" during the merge.
+    //
+    // Only force-add durable planning paths — runtime paths are excluded
+    // by the reset step below.
+    for (const durablePath of GSD_DURABLE_PATHS) {
+      this.git(["add", "--force", "--", durablePath], { allowFailure: true });
+    }
+
     for (const exclusion of allExclusions) {
       this.git(["reset", "HEAD", "--", exclusion], { allowFailure: true });
     }
