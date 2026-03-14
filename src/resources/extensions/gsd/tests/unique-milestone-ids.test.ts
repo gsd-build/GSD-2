@@ -244,7 +244,7 @@ async function main(): Promise<void> {
 }
 
 // When run via vitest, wrap in test(); when run via tsx, call directly.
-const isVitest = typeof globalThis !== 'undefined' && 'vitest' in (globalThis as any).__vitest_worker__?.config?.defines || process.env.VITEST;
+const isVitest = typeof globalThis !== 'undefined' && (globalThis as any).__vitest_worker__?.config?.defines != null && 'vitest' in (globalThis as any).__vitest_worker__.config.defines || process.env.VITEST;
 if (isVitest) {
   const { test } = await import('vitest');
   test('unique-milestone-ids: all ID primitives handle both formats', async () => {
