@@ -3,11 +3,27 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Native Desktop
 status: in_progress
+stopped_at: Completed 19-02-PLAN.md
+last_updated: "2026-03-14T14:54:45.591Z"
+last_activity: "2026-03-14 — Plan 19-01 complete: 4 RED test stub files created (workspace-api, project-archiving, project-home-screen, project-tab-bar); 747 passing tests unaffected; WORKSPACE-01..05 test coverage established"
+progress:
+  total_phases: 10
+  completed_phases: 7
+  total_plans: 45
+  completed_plans: 41
+  percent: 91
+---
+
+---
+gsd_state_version: 1.0
+milestone: v2.0
+milestone_name: Native Desktop
+status: in_progress
 stopped_at: Completed 19-01-PLAN.md
 last_updated: "2026-03-14T14:40:50.974Z"
 last_activity: "2026-03-14 — Plan 18-04 complete: human verification approved SC-1..SC-5 — all 7 BUILDER requirements satisfied; Phase 18 Builder Mode fully complete; 748 tests pass"
 progress:
-  total_phases: 10
+  [█████████░] 91%
   completed_phases: 7
   total_plans: 45
   completed_plans: 40
@@ -450,7 +466,7 @@ Phase: 19 of 20 (Project Workspace) — In Progress (1 of 5 plans done)
 Plan: 1 of 5 complete (plan 01 done — 4 Nyquist Wave 0 RED test stubs created)
 Status: Phase 19 in progress. Next: Phase 19-02 workspace-api implementation.
 Last activity: 2026-03-14 — Plan 19-01 complete: 4 RED test stub files created (workspace-api, project-archiving, project-home-screen, project-tab-bar); 747 passing tests unaffected; WORKSPACE-01..05 test coverage established
-Stopped at: Completed 19-01-PLAN.md
+Stopped at: Completed 19-02-PLAN.md
 
 Progress: [█████████░] 89% (40/45 plans complete)
 
@@ -576,6 +592,7 @@ Progress: [█████████░] 89% (40/45 plans complete)
 - [Phase 19]: workspace-api.test.ts uses _setWorkspaceFilePath test helper (mirrors _setRecentFilePath pattern from recent-projects.ts)
 - [Phase 19]: project-archiving.test.ts imports archiveProject/restoreProject/getArchivedProjects from existing recent-projects.ts — RED via named export not found
 - [Phase 19]: Wave 0 stubs: import from src/ that does not exist yet — module-not-found is correct RED signal for Nyquist compliance
+- [Phase 19]: _setWorkspaceFilePath test helper name matches RED test stub contract from 19-01; reveal_path uses reveal_item_in_dir (opener 2.5.3) with open_url fallback
 
 ### Blockers/Concerns
 
