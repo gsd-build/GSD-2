@@ -166,7 +166,7 @@ def run_groq():
 
     api_key = os.environ.get("GROQ_API_KEY", "")
     if not api_key:
-        emit("ERROR", "GROQ_API_KEY not set. Get a free key at https://console.groq.com")
+        emit("ERROR", "GROQ_API_KEY not set. Run 'gsd config' to set up, or get a free key at https://console.groq.com")
         sys.exit(1)
 
     groq_model = os.environ.get("GSD_GROQ_MODEL", "whisper-large-v3-turbo")

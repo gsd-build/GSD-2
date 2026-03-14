@@ -49,6 +49,12 @@ const TOOL_KEYS: ToolKeyConfig[] = [
     label: 'Jina AI',
     hint: 'clean web page extraction',
   },
+  {
+    provider: 'groq',
+    envVar: 'GROQ_API_KEY',
+    label: 'Groq',
+    hint: 'voice transcription — free at console.groq.com',
+  },
 ]
 
 /** Known LLM provider IDs that, if authed, mean the user doesn't need onboarding */
@@ -764,6 +770,7 @@ export function loadStoredEnvKeys(authStorage: AuthStorage): void {
     ['jina',          'JINA_API_KEY'],
     ['slack_bot',     'SLACK_BOT_TOKEN'],
     ['discord_bot',   'DISCORD_BOT_TOKEN'],
+    ['groq',          'GROQ_API_KEY'],
   ]
   for (const [provider, envVar] of providers) {
     if (!process.env[envVar]) {
