@@ -1,0 +1,2204 @@
+
+> gsd-pi@2.10.12 test:unit
+> node --import ./src/resources/extensions/gsd/tests/resolve-ts.mjs --experimental-strip-types --test src/resources/extensions/gsd/tests/*.test.ts src/resources/extensions/gsd/tests/*.test.mjs src/tests/*.test.ts
+
+TAP version 13
+# ── (a) Basic pruning: one old file deleted, two recent survive
+# ── (b) Highest-seq preserved even when all files are old
+# ── (c) retentionDays=0: all non-highest-seq deleted even if brand-new
+# ── (d) No-op when all files are recent
+# ── (e) Empty directory: no crash
+# ── (f) All old files: only highest-seq survives
+# ── (g) Single file: always preserved (it IS highest-seq)
+# ── (h) Seq number tie-breaker: 010 beats 001 numerically
+# ── (i) Non-matching filenames ignored: notes.txt survives, no crash
+# ── (j) Step-11 prompt text: "refresh current state if needed"
+# Results: 20 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/activity-log-prune.test.ts
+ok 1 - src/resources/extensions/gsd/tests/activity-log-prune.test.ts
+  ---
+  duration_ms: 1087.412623
+  type: 'test'
+  ...
+# auto-draft-pause: 9 passed, 0 failed
+# Subtest: src/resources/extensions/gsd/tests/auto-draft-pause.test.ts
+ok 2 - src/resources/extensions/gsd/tests/auto-draft-pause.test.ts
+  ---
+  duration_ms: 1856.250796
+  type: 'test'
+  ...
+# Results: 3 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/auto-preflight.test.ts
+ok 3 - src/resources/extensions/gsd/tests/auto-preflight.test.ts
+  ---
+  duration_ms: 2042.010714
+  type: 'test'
+  ...
+# Subtest: secrets gate: no manifest exists — getManifestStatus returns null
+ok 4 - secrets gate: no manifest exists — getManifestStatus returns null
+  ---
+  duration_ms: 7.306904
+  type: 'test'
+  ...
+# Subtest: secrets gate: pending keys exist — gate triggers collection, manifest updated on disk
+ok 5 - secrets gate: pending keys exist — gate triggers collection, manifest updated on disk
+  ---
+  duration_ms: 18.261237
+  type: 'test'
+  ...
+# Subtest: secrets gate: no pending keys — getManifestStatus shows pending.length === 0
+ok 6 - secrets gate: no pending keys — getManifestStatus shows pending.length === 0
+  ---
+  duration_ms: 4.656508
+  type: 'test'
+  ...
+# Subtest: resolveAutoSupervisorConfig provides safe timeout defaults
+ok 7 - resolveAutoSupervisorConfig provides safe timeout defaults
+  ---
+  duration_ms: 1.690331
+  type: 'test'
+  ...
+# Subtest: writeUnitRuntimeRecord persists progress and recovery metadata defaults
+ok 8 - writeUnitRuntimeRecord persists progress and recovery metadata defaults
+  ---
+  duration_ms: 1.938674
+  type: 'test'
+  ...
+# Subtest: writeUnitRuntimeRecord keeps explicit recovery attempt fields
+ok 9 - writeUnitRuntimeRecord keeps explicit recovery attempt fields
+  ---
+  duration_ms: 1.709714
+  type: 'test'
+  ...
+# Subtest: collectSecretsFromManifest: categorizes entries — pending keys need collection, existing keys are skipped
+ok 10 - collectSecretsFromManifest: categorizes entries — pending keys need collection, existing keys are skipped
+  ---
+  duration_ms: 840.900501
+  type: 'test'
+  ...
+# Subtest: collectSecretsFromManifest: existing keys are excluded from the collection list — not prompted
+ok 11 - collectSecretsFromManifest: existing keys are excluded from the collection list — not prompted
+  ---
+  duration_ms: 15.583542
+  type: 'test'
+  ...
+# Subtest: collectSecretsFromManifest: manifest statuses are updated after collection
+ok 12 - collectSecretsFromManifest: manifest statuses are updated after collection
+  ---
+  duration_ms: 9.063622
+  type: 'test'
+  ...
+# Subtest: showSecretsSummary: produces lines with correct status glyphs for each entry status
+ok 13 - showSecretsSummary: produces lines with correct status glyphs for each entry status
+  ---
+  duration_ms: 2.847281
+  type: 'test'
+  ...
+# Subtest: showSecretsSummary: existing keys shown with distinct status indicator
+ok 14 - showSecretsSummary: existing keys shown with distinct status indicator
+  ---
+  duration_ms: 1.576778
+  type: 'test'
+  ...
+# Subtest: collectOneSecret: guidance lines appear in render output when guidance is provided
+ok 15 - collectOneSecret: guidance lines appear in render output when guidance is provided
+  ---
+  duration_ms: 3.810763
+  type: 'test'
+  ...
+# Subtest: collectOneSecret: guidance lines wrap long URLs instead of truncating
+ok 16 - collectOneSecret: guidance lines wrap long URLs instead of truncating
+  ---
+  duration_ms: 2.23591
+  type: 'test'
+  ...
+# Subtest: collectOneSecret: no guidance provided — render output has no guidance section
+ok 17 - collectOneSecret: no guidance provided — render output has no guidance section
+  ---
+  duration_ms: 1.170139
+  type: 'test'
+  ...
+# Subtest: collectSecretsFromManifest: returns result with applied, skipped, and existingSkipped arrays
+ok 18 - collectSecretsFromManifest: returns result with applied, skipped, and existingSkipped arrays
+  ---
+  duration_ms: 6.680665
+  type: 'test'
+  ...
+# === complete-milestone prompt template exists ===
+# === prompt variable substitution ===
+# === prompt content integrity ===
+# === diagnoseExpectedArtifact logic for complete-milestone ===
+# === deriveState completing-milestone integration ===
+# Results: 24 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/complete-milestone.test.ts
+ok 7 - src/resources/extensions/gsd/tests/complete-milestone.test.ts
+  ---
+  duration_ms: 989.346436
+  type: 'test'
+  ...
+# === formatCostProjection ===
+# Results: 9 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/cost-projection.test.ts
+ok 8 - src/resources/extensions/gsd/tests/cost-projection.test.ts
+  ---
+  duration_ms: 321.870142
+  type: 'test'
+  ...
+# === blocked-deps ===
+# === unblocked-deps ===
+# === all-blocked ===
+# === absent-context ===
+# === forward-dep ===
+# === empty-deps-list ===
+# Results: 21 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/derive-state-deps.test.ts
+ok 9 - src/resources/extensions/gsd/tests/derive-state-deps.test.ts
+  ---
+  duration_ms: 900.748173
+  type: 'test'
+  ...
+# === CONTEXT-DRAFT.md only → needs-discussion ===
+# === CONTEXT.md only → pre-planning (unchanged) ===
+# === both CONTEXT.md and CONTEXT-DRAFT.md → CONTEXT wins ===
+# === M001 complete, M002 has CONTEXT-DRAFT → M002 needs-discussion ===
+# === multi-milestone: M001 complete, M002 draft, M003 pending ===
+# === milestone with ROADMAP + CONTEXT-DRAFT → normal execution ===
+# === empty milestone dir (no files) → pre-planning ===
+# === CONTEXT-DRAFT on non-active milestone → pending ===
+# ════════════════════════════════════════════════════════════
+# Draft-aware state derivation tests: 39 passed, 0 failed
+# ════════════════════════════════════════════════════════════
+# Subtest: src/resources/extensions/gsd/tests/derive-state-draft.test.ts
+ok 10 - src/resources/extensions/gsd/tests/derive-state-draft.test.ts
+  ---
+  duration_ms: 950.595649
+  type: 'test'
+  ...
+# === empty milestones dir → pre-planning ===
+# === milestone dir exists but no roadmap → pre-planning ===
+# === roadmap with incomplete slice, no plan → planning ===
+# === roadmap + plan with incomplete tasks → executing ===
+# === executing + continue file → resume message ===
+# === all tasks done, slice not [x] → summarizing ===
+# === all milestones complete → complete ===
+# === blocked dependencies ===
+# === multi-milestone registry ===
+# === requirements integration ===
+# === all slices [x], no summary → completing-milestone ===
+# === all slices [x], summary exists → complete ===
+# === multi-milestone completing-milestone ===
+# === milestone with summary and no roadmap → complete ===
+# === all milestones summary-only → complete ===
+# Results: 106 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/derive-state.test.ts
+ok 11 - src/resources/extensions/gsd/tests/derive-state.test.ts
+  ---
+  duration_ms: 1076.01577
+  type: 'test'
+  ...
+# === discuss prompt: resilient vision framing ===
+# Results: 4 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/discuss-prompt.test.ts
+ok 12 - src/resources/extensions/gsd/tests/discuss-prompt.test.ts
+  ---
+  duration_ms: 233.6255
+  type: 'test'
+  ...
+# Results: 4 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/dispatch-guard.test.ts
+ok 13 - src/resources/extensions/gsd/tests/dispatch-guard.test.ts
+  ---
+  duration_ms: 1434.087657
+  type: 'test'
+  ...
+# Subtest: fixLevel:task — detects completion issues but does NOT create summary stub or mark roadmap
+ok 26 - fixLevel:task — detects completion issues but does NOT create summary stub or mark roadmap
+  ---
+  duration_ms: 46.557367
+  type: 'test'
+  ...
+# Subtest: fixLevel:all (default) — detects AND fixes completion issues
+ok 27 - fixLevel:all (default) — detects AND fixes completion issues
+  ---
+  duration_ms: 40.879652
+  type: 'test'
+  ...
+# Subtest: fixLevel:task — still fixes task-level bookkeeping (checkbox marking)
+ok 28 - fixLevel:task — still fixes task-level bookkeeping (checkbox marking)
+  ---
+  duration_ms: 48.269991
+  type: 'test'
+  ...
+# === doctor diagnose ===
+# === doctor formatting ===
+# === doctor default scope ===
+# === doctor fix ===
+# === doctor detects missing milestone summary ===
+# === doctor does NOT flag milestone with summary ===
+# === doctor detects blocker_discovered_no_replan ===
+# === doctor does NOT flag blocker when REPLAN.md exists ===
+# === doctor: done task with must-haves all addressed → no issue ===
+# === doctor: done task with must-haves NOT addressed → warning ===
+# === doctor: done task with no task plan file → no issue ===
+# === doctor: done task with plan but no Must-Haves section → no issue ===
+# Results: 35 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/doctor.test.ts
+ok 15 - src/resources/extensions/gsd/tests/doctor.test.ts
+  ---
+  duration_ms: 1431.730564
+  type: 'test'
+  ...
+# === Draft promotion: full state transition ===
+# === No-draft cleanup: no-op ===
+# === Both files: CONTEXT wins, draft cleanable ===
+# === Static: cleanup code in guided-flow.ts ===
+# draft-promotion: 11 passed, 0 failed
+# Subtest: src/resources/extensions/gsd/tests/draft-promotion.test.ts
+ok 16 - src/resources/extensions/gsd/tests/draft-promotion.test.ts
+  ---
+  duration_ms: 1063.771164
+  type: 'test'
+  ...
+# Subtest: /exit requests graceful shutdown instead of process.exit
+ok 31 - /exit requests graceful shutdown instead of process.exit
+  ---
+  duration_ms: 1.949072
+  type: 'test'
+  ...
+# === inferCommitType ===
+# === RUNTIME_EXCLUSION_PATHS ===
+# === runGit ===
+# === Type exports ===
+# === GitServiceImpl: smart staging ===
+# === GitServiceImpl: smart staging excludes tracked runtime files ===
+# === GitServiceImpl: autoCommit ===
+# === GitServiceImpl: autoCommit on dirty repo ===
+# === GitServiceImpl: empty-after-staging guard ===
+# === GitServiceImpl: autoCommit with extraExclusions ===
+# === GitServiceImpl: autoCommit extraExclusions — only .gsd/ dirty ===
+# === GitServiceImpl: commit empty ===
+# === Branch queries ===
+# === getMainBranch ===
+# === ensureSliceBranch ===
+# === ensureSliceBranch: idempotent ===
+# === ensureSliceBranch: from non-main inherits artifacts ===
+# === ensureSliceBranch: from slice branch falls back to main ===
+# === ensureSliceBranch: auto-commits with smart staging ===
+# === ensureSliceBranch: tracked STATE.md + dirty (checkout conflict regression) ===
+# === ensureSliceBranch: untracked runtime files blocked by target branch (cleanup-commit edge case) ===
+# === switchToMain: tracked STATE.md + dirty (checkout conflict regression) ===
+# === switchToMain ===
+# === switchToMain: idempotent ===
+# === mergeSliceToMain: full lifecycle ===
+# === mergeSliceToMain: fix type ===
+# === mergeSliceToMain: docs type ===
+# === mergeSliceToMain: refactor type ===
+# === mergeSliceToMain: error cases ===
+# === mergeSliceToMain: auto-resolve .gsd/ planning conflicts ===
+# === createSnapshot: enabled ===
+# === createSnapshot: disabled ===
+# === runPreMergeCheck: pass ===
+# === runPreMergeCheck: fail ===
+# === runPreMergeCheck: disabled ===
+# === runPreMergeCheck: custom command ===
+# === mergeSliceToMain: rich commit message ===
+# === Auto-push: enabled ===
+# === Auto-push: disabled ===
+# === Remote fetch: with remote ===
+# GitService: local branch is 1 commit(s) behind upstream
+# === Remote fetch: without remote ===
+# === Facade prefs: snapshot via merge with prefs ===
+# === Facade prefs: no snapshot when prefs omit snapshots ===
+# === VALID_BRANCH_NAME regex ===
+# === getMainBranch: configured main_branch ===
+# === getMainBranch: fallback to auto-detection ===
+# === getMainBranch: ignores invalid branch name ===
+# === PreMergeCheckResult type export ===
+# === Integration branch: write and read ===
+# === Integration branch: updates on branch change ===
+# === Integration branch: same branch is idempotent ===
+# === Integration branch: rejects slice branches ===
+# === Integration branch: rejects invalid names ===
+# === getMainBranch: integration branch from milestone metadata ===
+# === getMainBranch: main_branch pref overrides integration branch ===
+# === getMainBranch: fallback when integration branch deleted ===
+# === End-to-end: feature branch workflow ===
+# === Integration branch: per-milestone isolation ===
+# === Integration branch: backward compat ===
+# === untrackRuntimeFiles ===
+# Results: 201 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/git-service.test.ts
+ok 18 - src/resources/extensions/gsd/tests/git-service.test.ts
+  ---
+  duration_ms: 20077.495638
+  type: 'test'
+  ...
+# === resolveExpectedArtifactPath: research-milestone ===
+# === resolveExpectedArtifactPath: plan-milestone ===
+# === resolveExpectedArtifactPath: research-slice ===
+# === resolveExpectedArtifactPath: plan-slice ===
+# === resolveExpectedArtifactPath: complete-milestone ===
+# === resolveExpectedArtifactPath: unknown unit type → null ===
+# === writeBlockerPlaceholder: writes file for research-slice ===
+# === writeBlockerPlaceholder: creates directory if missing ===
+# === writeBlockerPlaceholder: writes file for research-milestone ===
+# === writeBlockerPlaceholder: unknown type → null ===
+# === skipExecuteTask: writes summary and checks plan checkbox ===
+# === skipExecuteTask: skips summary if already exists ===
+# === skipExecuteTask: skips checkbox if already checked ===
+# === skipExecuteTask: handles special regex chars in task ID ===
+# === verifyExpectedArtifact: fix-merge — clean repo returns true ===
+# === verifyExpectedArtifact: fix-merge — MERGE_HEAD present returns false ===
+# === verifyExpectedArtifact: fix-merge — SQUASH_MSG present returns false ===
+# === verifyExpectedArtifact: fix-merge — real UU conflict returns false ===
+# === verifyExpectedArtifact: fix-merge — real DU conflict returns false ===
+# === verifyExpectedArtifact: fix-merge — real AA conflict returns false ===
+# === verifyExpectedArtifact: complete-slice — all artifacts present + roadmap marked [x] returns true ===
+# === verifyExpectedArtifact: complete-slice — SUMMARY + UAT present but roadmap NOT marked [x] returns false ===
+# === verifyExpectedArtifact: complete-slice — SUMMARY present but UAT missing returns false ===
+# === verifyExpectedArtifact: complete-slice — no roadmap file present is lenient (returns true) ===
+# === buildLoopRemediationSteps: execute-task returns concrete steps ===
+# === buildLoopRemediationSteps: plan-slice returns concrete steps ===
+# === buildLoopRemediationSteps: research-slice returns concrete steps ===
+# === buildLoopRemediationSteps: unknown type returns null ===
+# === skipExecuteTask: loop-recovery writes blocker when both summary and checkbox missing ===
+# Results: 66 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/idle-recovery.test.ts
+ok 19 - src/resources/extensions/gsd/tests/idle-recovery.test.ts
+  ---
+  duration_ms: 2047.269378
+  type: 'test'
+  ...
+# === Group 1: deriveState with new-format-only milestones ===
+# === Group 2: deriveState with mixed old+new format milestones ===
+# === Group 3: indexWorkspace with mixed-format milestones ===
+# === Group 4: inlinePriorMilestoneSummary with mixed formats ===
+# === Group 5: dispatch-guard with new-format milestones ===
+# === Group 6: Branch operations with new-format IDs ===
+# Results: 62 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/integration-mixed-milestones.test.ts
+ok 20 - src/resources/extensions/gsd/tests/integration-mixed-milestones.test.ts
+  ---
+  duration_ms: 2455.321151
+  type: 'test'
+  ...
+# Subtest: getManifestStatus: mixed statuses — categorizes entries correctly
+ok 35 - getManifestStatus: mixed statuses — categorizes entries correctly
+  ---
+  duration_ms: 21.817157
+  type: 'test'
+  ...
+# Subtest: getManifestStatus: all pending — 3 pending entries, none in env
+ok 36 - getManifestStatus: all pending — 3 pending entries, none in env
+  ---
+  duration_ms: 6.791743
+  type: 'test'
+  ...
+# Subtest: getManifestStatus: all collected — 2 collected entries, none in env
+ok 37 - getManifestStatus: all collected — 2 collected entries, none in env
+  ---
+  duration_ms: 5.612547
+  type: 'test'
+  ...
+# Subtest: getManifestStatus: key in env overrides manifest status — collected key in env goes to existing
+ok 38 - getManifestStatus: key in env overrides manifest status — collected key in env goes to existing
+  ---
+  duration_ms: 4.903353
+  type: 'test'
+  ...
+# Subtest: getManifestStatus: missing manifest — returns null
+ok 39 - getManifestStatus: missing manifest — returns null
+  ---
+  duration_ms: 1.153517
+  type: 'test'
+  ...
+# Subtest: getManifestStatus: empty manifest — exists but no H3 sections
+ok 40 - getManifestStatus: empty manifest — exists but no H3 sections
+  ---
+  duration_ms: 5.577531
+  type: 'test'
+  ...
+# Subtest: getManifestStatus: key in .env file counts as existing
+ok 41 - getManifestStatus: key in .env file counts as existing
+  ---
+  duration_ms: 6.288112
+  type: 'test'
+  ...
+# === initMetrics / getLedger ===
+# === snapshotUnitMetrics ===
+# === Persistence across init/reset cycles ===
+# === File content verification ===
+# === Empty session handling ===
+# Results: 24 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/metrics-io.test.ts
+ok 22 - src/resources/extensions/gsd/tests/metrics-io.test.ts
+  ---
+  duration_ms: 392.122077
+  type: 'test'
+  ...
+# === classifyUnitPhase ===
+# === getProjectTotals ===
+# === aggregateByPhase ===
+# === aggregateBySlice ===
+# === aggregateByModel ===
+# === formatCost ===
+# === formatTokenCount ===
+# Results: 53 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/metrics.test.ts
+ok 23 - src/resources/extensions/gsd/tests/metrics.test.ts
+  ---
+  duration_ms: 359.162557
+  type: 'test'
+  ...
+# === Path resolution: .planning appended when source path lacks it ===
+# === Path resolution: .planning used as-is when already present ===
+# === Validation gating: non-existent path returns invalid ===
+# === Validation gating: valid fixture passes validation ===
+# === Full pipeline: parse → transform → preview → write → deriveState ===
+#   --- deriveState ---
+# === .gsd/ exists detection ===
+# Results: 37 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/migrate-command.test.ts
+ok 24 - src/resources/extensions/gsd/tests/migrate-command.test.ts
+  ---
+  duration_ms: 1412.798192
+  type: 'test'
+  ...
+# === Complete .planning directory with all file types ===
+# === Minimal .planning directory (only ROADMAP.md) ===
+# === Missing directory → validation returns fatal error ===
+# === Phase directory with duplicate numbers ===
+# === Plan file with XML-in-markdown ===
+# === Summary file with YAML frontmatter ===
+# === Orphan summaries (no matching plan) ===
+# === .archive/ directory → skipped by default ===
+# === Quick tasks parsed ===
+# === Roadmap with milestone sections and <details> blocks ===
+# === Non-standard phase files → collected as extra files ===
+# === Validation: missing ROADMAP.md → warning (not fatal) ===
+# === Validation: missing PROJECT.md → warning ===
+# Results: 120 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/migrate-parser.test.ts
+ok 25 - src/resources/extensions/gsd/tests/migrate-parser.test.ts
+  ---
+  duration_ms: 1570.795023
+  type: 'test'
+  ...
+# Scenario 1: Flat single-milestone
+# Scenario 2: Multi-milestone
+# Scenario 3: Decimal phase ordering
+# Scenario 4: Completion state mapping
+# Scenario 5: Research consolidation
+# Scenario 6: Requirements classification
+# Scenario 7: Empty phase
+# Scenario 8: Demo derivation
+# Scenario 9: Field defaults
+# Scenario 10: Sequential depends
+# Scenario 11: Requirements edge cases
+# Scenario 12: Vision derivation
+# Scenario 13: Decisions content
+# Scenario 14: No undefined values
+# Scenario 15: Empty research
+# Results: 92 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/migrate-transformer.test.ts
+ok 26 - src/resources/extensions/gsd/tests/migrate-transformer.test.ts
+  ---
+  duration_ms: 406.321467
+  type: 'test'
+  ...
+# === Validator: missing directory → fatal ===
+# === Validator: missing ROADMAP.md → warning (not fatal) ===
+# === Validator: missing PROJECT.md → warning ===
+# === Validator: complete directory → valid with no issues ===
+# === parseOldRoadmap: flat format ===
+# === parseOldRoadmap: milestone-sectioned with <details> ===
+# === parseOldPlan: XML-in-markdown ===
+# === parseOldPlan: plain markdown (no XML tags) ===
+# === parseOldSummary: YAML frontmatter ===
+# === parseOldRequirements ===
+# === parseOldState ===
+# === parseOldConfig: valid JSON ===
+# === parseOldConfig: invalid JSON → null ===
+# === parseOldConfig: non-object JSON → null ===
+# === parseOldProject ===
+# Results: 73 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/migrate-validator-parsers.test.ts
+ok 27 - src/resources/extensions/gsd/tests/migrate-validator-parsers.test.ts
+  ---
+  duration_ms: 1581.784732
+  type: 'test'
+  ...
+# === Scenario 1: Incomplete project — write, parse, deriveState ===
+#   --- file existence ---
+#   --- WrittenFiles counts ---
+#   --- parseRoadmap ---
+#   --- parsePlan S01 ---
+#   --- parseSummary S01 ---
+#   --- deriveState ---
+#   --- generatePreview ---
+# === Scenario 2: Fully complete project — deriveState phase ===
+# Results: 77 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/migrate-writer-integration.test.ts
+ok 28 - src/resources/extensions/gsd/tests/migrate-writer-integration.test.ts
+  ---
+  duration_ms: 1613.457259
+  type: 'test'
+  ...
+# Results: 79 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/migrate-writer.test.ts
+ok 29 - src/resources/extensions/gsd/tests/migrate-writer.test.ts
+  ---
+  duration_ms: 1154.862717
+  type: 'test'
+  ...
+# === parseTaskPlanMustHaves: standard unchecked ===
+# === parseTaskPlanMustHaves: checked [x] and [X] ===
+# === parseTaskPlanMustHaves: no-checkbox bullets ===
+# === parseTaskPlanMustHaves: indented variants ===
+# === parseTaskPlanMustHaves: mixed states ===
+# === parseTaskPlanMustHaves: missing section ===
+# === parseTaskPlanMustHaves: empty section ===
+# === parseTaskPlanMustHaves: YAML frontmatter ===
+# === parseTaskPlanMustHaves: frontmatter-only content ===
+# === parseTaskPlanMustHaves: real task plan format ===
+# === parseTaskPlanMustHaves: empty string ===
+# === parseTaskPlanMustHaves: must-haves with inline code and backticks ===
+# === parseTaskPlanMustHaves: asterisk bullets ===
+# Results: 51 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/must-have-parser.test.ts
+ok 30 - src/resources/extensions/gsd/tests/must-have-parser.test.ts
+  ---
+  duration_ms: 1249.312183
+  type: 'test'
+  ...
+# Subtest: getNextFallbackModel selects next fallback if current is a fallback
+ok 51 - getNextFallbackModel selects next fallback if current is a fallback
+  ---
+  duration_ms: 1.716411
+  type: 'test'
+  ...
+# Subtest: getNextFallbackModel returns undefined if fallbacks exhausted
+ok 52 - getNextFallbackModel returns undefined if fallbacks exhausted
+  ---
+  duration_ms: 0.326559
+  type: 'test'
+  ...
+# Subtest: getNextFallbackModel finds current model when formatted with provider
+ok 53 - getNextFallbackModel finds current model when formatted with provider
+  ---
+  duration_ms: 0.243234
+  type: 'test'
+  ...
+# Subtest: getNextFallbackModel returns primary if current model is not in the list
+ok 54 - getNextFallbackModel returns primary if current model is not in the list
+  ---
+  duration_ms: 0.319599
+  type: 'test'
+  ...
+# Subtest: getNextFallbackModel returns primary if current model is undefined
+ok 55 - getNextFallbackModel returns primary if current model is undefined
+  ---
+  duration_ms: 0.43278
+  type: 'test'
+  ...
+# nextMilestoneId / maxMilestoneNum tests
+# Results: 8 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/next-milestone-id.test.ts
+ok 32 - src/resources/extensions/gsd/tests/next-milestone-id.test.ts
+  ---
+  duration_ms: 842.699831
+  type: 'test'
+  ...
+# === parseSliceBranch: plain branch ===
+# === parseSliceBranch: worktree-namespaced branch ===
+# === parseSliceBranch: non-slice branch not matched ===
+# === orphan detection: no slice branches ===
+# === orphan detection: slice branch not done ===
+# === orphan detection: completed slice branch (orphaned) ===
+# === orphan detection: already merged branch is not orphan ===
+# === orphan detection: worktree-namespaced branch is skipped ===
+# === orphan detection: relMilestoneFile resolves roadmap path for git show ===
+# === orphan merge: squash-merge resolves orphan, artifacts appear on main ===
+# Results: 27 passed, 0 failed
+# Subtest: src/resources/extensions/gsd/tests/orphaned-branch.test.ts
+ok 33 - src/resources/extensions/gsd/tests/orphaned-branch.test.ts
+  ---
+  duration_ms: 1196.044445
+  type: 'test'
+  ...
+# === parseRoadmap: full roadmap ===
+# === parseRoadmap: empty slices section ===
+# === parseRoadmap: malformed checkbox lines ===
+# === parseRoadmap: lowercase vs uppercase X for done ===
+# === parseRoadmap: missing boundary map ===
+# === parseRoadmap: no sections at all ===
+# === parseRoadmap: slice with no demo blockquote ===
+# === parseRoadmap: missing risk defaults to low ===
+# === parsePlan: full plan ===
+# === parsePlan: multi-line task description concatenation ===
+# === parsePlan: task with missing estimate ===
+# === parsePlan: empty tasks section ===
+# === parsePlan: no H1 ===
+# === parsePlan: task estimate backtick in description ===
+# === parsePlan: uppercase X for done ===
+# === parsePlan: no Must-Haves section ===
+# === parsePlan: no Files Likely Touched section ===
+# === parsePlan: old-format task entries (no sublines) ===
+# === parsePlan: new-format task entries with Files and Verify sublines ===
+# === parseSummary: full summary with all frontmatter fields ===
+# === parseSummary: one-liner extraction (bold-wrapped line after H1) ===
+# === parseSummary: non-bold paragraph after H1 (empty one-liner) ===
+# === parseSummary: files-modified parsing (backtick path — description format) ===
+# === parseSummary: missing frontmatter (safe defaults) ===
+# === parseSummary: empty body ===
+# === parseSummary: summary with requires array (nested objects) ===
+# === parseContinue: full continue file with all frontmatter fields ===
+# === parseContinue: string step/totalSteps parsed as integers ===
+# === parseContinue: NaN step values (non-numeric strings) ===
+# === parseContinue: all three status variants ===
+# === parseContinue: missing frontmatter ===
+# === parseContinue: body section extraction ===
+# === parseContinue: total_steps vs totalSteps key support ===
+# === parseRequirementCounts: full requirements file ===
+# === parseRequirementCounts: null input returns all zeros ===
+# === parseRequirementCounts: empty sections return zero counts ===
+# === parseRequirementCounts: blocked status counting ===
+# === parseRequirementCounts: total is sum of all section counts ===
+# === parseSecretsManifest: full manifest with 3 keys ===
+# === parseSecretsManifest: single-key manifest ===
+# === parseSecretsManifest: empty/no-secrets manifest ===
+# === parseSecretsManifest: missing optional fields default correctly ===
+# === parseSecretsManifest: all three status values parse ===
+# === parseSecretsManifest: invalid status defaults to pending ===
+# === parseSecretsManifest + formatSecretsManifest: round-trip ===
+# === LLM round-trip: extra whitespace ===
+# === LLM round-trip: missing optional fields ===
+# === LLM round-trip: extra blank lines ===
+# Results: 377 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/parsers.test.ts
+ok 34 - src/resources/extensions/gsd/tests/parsers.test.ts
+  ---
+  duration_ms: 762.063504
+  type: 'test'
+  ...
+# ── (A) M002 with M001-SUMMARY.md present → string containing "Prior Milestone Summary"
+# ── (B) M001 — first milestone, no prior → null
+# ── (C) M002 with M001 dir but no M001-SUMMARY.md → null
+# ── (D) M003, M002 is immediately prior but has no SUMMARY → null
+# Results: 6 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/plan-milestone.test.ts
+ok 35 - src/resources/extensions/gsd/tests/plan-milestone.test.ts
+  ---
+  duration_ms: 797.90454
+  type: 'test'
+  ...
+# === validateTaskPlanContent: empty Steps section ===
+# === validateTaskPlanContent: missing Steps section entirely ===
+# === validateTaskPlanContent: placeholder-only Verification ===
+# === validateTaskPlanContent: Verification with only template text ===
+# === validateSlicePlanContent: empty inline task entries ===
+# === validateSlicePlanContent: task entries with content are fine ===
+# === validateTaskPlanContent: scope_estimate over threshold ===
+# === validateTaskPlanContent: scope_estimate within limits ===
+# === validateTaskPlanContent: missing scope_estimate ===
+# === validateTaskPlanContent: frontmatter without scope keys ===
+# === Clean task plan: no plan-quality issues ===
+# === Clean slice plan: no plan-quality issues ===
+# Results: 22 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/plan-quality-validator.test.ts
+ok 36 - src/resources/extensions/gsd/tests/plan-quality-validator.test.ts
+  ---
+  duration_ms: 770.421721
+  type: 'test'
+  ...
+# queue-draft-detection: 9 passed, 0 failed
+# Subtest: src/resources/extensions/gsd/tests/queue-draft-detection.test.ts
+ok 37 - src/resources/extensions/gsd/tests/queue-draft-detection.test.ts
+  ---
+  duration_ms: 717.240733
+  type: 'test'
+  ...
+# === reassess-roadmap prompt loads and substitutes ===
+# === reassess-roadmap contains coverage-check instruction ===
+# === coverage-check requires at-least-one semantics ===
+# Results: 18 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/reassess-prompt.test.ts
+ok 38 - src/resources/extensions/gsd/tests/reassess-prompt.test.ts
+  ---
+  duration_ms: 195.166859
+  type: 'test'
+  ...
+# regex-hardening tests
+#   (a) Directory scanning regex
+#   (b) Title-strip regex
+#   (c) SLICE_BRANCH_RE
+#   (d) Milestone detection regex
+#   (e) MILESTONE_CONTEXT_RE
+#   (f) Prompt dispatch regexes
+#   (g) milestoneIdSort
+#   (h) extractMilestoneSeq
+# Results: 82 passed, 0 failed
+# All tests passed
+# Subtest: regex-hardening: all 12 sites accept both formats
+ok 63 - regex-hardening: all 12 sites accept both formats
+  ---
+  duration_ms: 4.679892
+  type: 'test'
+  ...
+# Subtest: parseSlackReply handles single-number single-question answers
+ok 64 - parseSlackReply handles single-number single-question answers
+  ---
+  duration_ms: 3.450095
+  type: 'test'
+  ...
+# Subtest: parseSlackReply handles multiline multi-question answers
+ok 65 - parseSlackReply handles multiline multi-question answers
+  ---
+  duration_ms: 0.551722
+  type: 'test'
+  ...
+# Subtest: parseDiscordResponse handles single-question reactions
+ok 66 - parseDiscordResponse handles single-question reactions
+  ---
+  duration_ms: 0.334633
+  type: 'test'
+  ...
+# Subtest: parseDiscordResponse rejects multi-question reaction parsing
+ok 67 - parseDiscordResponse rejects multi-question reaction parsing
+  ---
+  duration_ms: 0.477893
+  type: 'test'
+  ...
+# Subtest: parseSlackReply truncates user_note longer than 500 chars
+ok 68 - parseSlackReply truncates user_note longer than 500 chars
+  ---
+  duration_ms: 0.282006
+  type: 'test'
+  ...
+# Subtest: isValidChannelId rejects invalid Slack channel IDs
+ok 69 - isValidChannelId rejects invalid Slack channel IDs
+  ---
+  duration_ms: 5.039595
+  type: 'test'
+  ...
+# Subtest: isValidChannelId rejects invalid Discord channel IDs
+ok 70 - isValidChannelId rejects invalid Discord channel IDs
+  ---
+  duration_ms: 0.616495
+  type: 'test'
+  ...
+# Subtest: sanitizeError strips Slack token patterns from error messages
+ok 71 - sanitizeError strips Slack token patterns from error messages
+  ---
+  duration_ms: 0.465228
+  type: 'test'
+  ...
+# Subtest: sanitizeError strips long opaque secrets
+ok 72 - sanitizeError strips long opaque secrets
+  ---
+  duration_ms: 0.385121
+  type: 'test'
+  ...
+# Subtest: sanitizeError preserves short safe messages
+ok 73 - sanitizeError preserves short safe messages
+  ---
+  duration_ms: 0.927637
+  type: 'test'
+  ...
+# Subtest: getLatestPromptSummary returns latest stored prompt
+ok 74 - getLatestPromptSummary returns latest stored prompt
+  ---
+  duration_ms: 3.711863
+  type: 'test'
+  ...
+# Subtest: getLatestPromptSummary sorts by updatedAt, not filename
+ok 75 - getLatestPromptSummary sorts by updatedAt, not filename
+  ---
+  duration_ms: 2.442046
+  type: 'test'
+  ...
+# === parseSummary: blocker_discovered true (string) ===
+# === parseSummary: blocker_discovered false (string) ===
+# === parseSummary: blocker_discovered missing (defaults to false) ===
+# === parseSummary: blocker_discovered true (boolean from YAML) ===
+# === parseSummary: blocker_discovered with full frontmatter ===
+# === deriveState: blocker found, no REPLAN → replanning-slice ===
+# === deriveState: blocker found + REPLAN exists → executing (loop protection) ===
+# === deriveState: no blocker in completed tasks → executing ===
+# === deriveState: multiple completed tasks, one blocker → replanning-slice ===
+# === deriveState: completed task with no summary file → executing ===
+# === prompt: replan-slice template loads and substitutes variables ===
+# === prompt: replan-slice contains preserve-completed-tasks instruction ===
+# === dispatch: diagnoseExpectedArtifact returns REPLAN.md path ===
+# === display: replan-slice prompt template has correct unit header ===
+# === doctor: blocker + no REPLAN.md → blocker_discovered_no_replan issue ===
+# === doctor: blocker + REPLAN.md exists → no blocker_discovered_no_replan issue ===
+# === doctor: no blocker → no blocker_discovered_no_replan issue ===
+# Results: 40 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/replan-slice.test.ts
+ok 42 - src/resources/extensions/gsd/tests/replan-slice.test.ts
+  ---
+  duration_ms: 941.259289
+  type: 'test'
+  ...
+# === requirement counts parser ===
+# === deriveState includes requirements counts ===
+# === doctor flags orphaned active requirement ===
+# Results: 8 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/requirements.test.ts
+ok 43 - src/resources/extensions/gsd/tests/requirements.test.ts
+  ---
+  duration_ms: 828.739444
+  type: 'test'
+  ...
+# === parseRoadmapSlices ===
+# === parseRoadmap integration ===
+# Results: 12 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/roadmap-slices.test.ts
+ok 44 - src/resources/extensions/gsd/tests/roadmap-slices.test.ts
+  ---
+  duration_ms: 790.660082
+  type: 'test'
+  ...
+# ── (a) artifact-driven
+# ── (b) live-runtime
+# ── (c) human-experience
+# ── (d) mixed standalone
+# ── (e) mixed parenthetical
+# ── (f) missing UAT Type section
+# ── (g) UAT Type section present, no UAT mode: bullet
+# ── (h) unknown keyword
+# ── (i) extra whitespace
+# ── (j) case sensitivity
+# ── (k) run-uat prompt template
+# ── (l) dispatch preconditions via resolveSliceFile
+# Results: 29 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/run-uat.test.ts
+ok 45 - src/resources/extensions/gsd/tests/run-uat.test.ts
+  ---
+  duration_ms: 817.209472
+  type: 'test'
+  ...
+# Subtest: secure_env_collect: checkExistingEnvKeys — key found in .env file
+ok 80 - secure_env_collect: checkExistingEnvKeys — key found in .env file
+  ---
+  duration_ms: 15.282432
+  type: 'test'
+  ...
+# Subtest: secure_env_collect: checkExistingEnvKeys — key found in process.env
+ok 81 - secure_env_collect: checkExistingEnvKeys — key found in process.env
+  ---
+  duration_ms: 2.796424
+  type: 'test'
+  ...
+# Subtest: secure_env_collect: checkExistingEnvKeys — key found in both .env and process.env
+ok 82 - secure_env_collect: checkExistingEnvKeys — key found in both .env and process.env
+  ---
+  duration_ms: 3.154447
+  type: 'test'
+  ...
+# Subtest: secure_env_collect: checkExistingEnvKeys — key not found anywhere
+ok 83 - secure_env_collect: checkExistingEnvKeys — key not found anywhere
+  ---
+  duration_ms: 6.433506
+  type: 'test'
+  ...
+# Subtest: secure_env_collect: checkExistingEnvKeys — .env file doesn't exist (ENOENT), still checks process.env
+ok 84 - secure_env_collect: checkExistingEnvKeys — .env file doesn't exist (ENOENT), still checks process.env
+  ---
+  duration_ms: 1.43051
+  type: 'test'
+  ...
+# Subtest: secure_env_collect: checkExistingEnvKeys — empty-string value in process.env counts as existing
+ok 85 - secure_env_collect: checkExistingEnvKeys — empty-string value in process.env counts as existing
+  ---
+  duration_ms: 2.371131
+  type: 'test'
+  ...
+# Subtest: secure_env_collect: checkExistingEnvKeys — returns only existing keys from input list
+ok 86 - secure_env_collect: checkExistingEnvKeys — returns only existing keys from input list
+  ---
+  duration_ms: 3.043795
+  type: 'test'
+  ...
+# Subtest: secure_env_collect: detectDestination — returns 'vercel' when vercel.json exists
+ok 87 - secure_env_collect: detectDestination — returns 'vercel' when vercel.json exists
+  ---
+  duration_ms: 0.883609
+  type: 'test'
+  ...
+# Subtest: secure_env_collect: detectDestination — returns 'convex' when convex/ dir exists
+ok 88 - secure_env_collect: detectDestination — returns 'convex' when convex/ dir exists
+  ---
+  duration_ms: 0.886559
+  type: 'test'
+  ...
+# Subtest: secure_env_collect: detectDestination — returns 'dotenv' when neither exists
+ok 89 - secure_env_collect: detectDestination — returns 'dotenv' when neither exists
+  ---
+  duration_ms: 0.838391
+  type: 'test'
+  ...
+# Subtest: secure_env_collect: detectDestination — vercel takes priority when both exist
+ok 90 - secure_env_collect: detectDestination — vercel takes priority when both exist
+  ---
+  duration_ms: 0.685873
+  type: 'test'
+  ...
+# Subtest: secure_env_collect: detectDestination — convex file (not dir) does not trigger convex
+ok 91 - secure_env_collect: detectDestination — convex file (not dir) does not trigger convex
+  ---
+  duration_ms: 0.646755
+  type: 'test'
+  ...
+# smart-entry-draft: 12 passed, 0 failed
+# Subtest: src/resources/extensions/gsd/tests/smart-entry-draft.test.ts
+ok 47 - src/resources/extensions/gsd/tests/smart-entry-draft.test.ts
+  ---
+  duration_ms: 824.901204
+  type: 'test'
+  ...
+# unique-milestone-ids tests
+#   (a) MILESTONE_ID_RE
+#   (b) extractMilestoneSeq
+#   (c) parseMilestoneId
+#   (d) milestoneIdSort
+#   (e) generateMilestoneSuffix
+#   (f) nextMilestoneId
+#   (g) maxMilestoneNum
+#   (h) Preferences round-trip
+# Results: 62 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/unique-milestone-ids.test.ts
+ok 48 - src/resources/extensions/gsd/tests/unique-milestone-ids.test.ts
+  ---
+  duration_ms: 869.588242
+  type: 'test'
+  ...
+# === runtime record write/read/update ===
+# === execute-task durability inspection ===
+# === runtime record cleanup ===
+# === must-haves: all mentioned in summary ===
+# === must-haves: partially mentioned in summary ===
+# === must-haves: no task plan file ===
+# === must-haves: present but no summary file ===
+# === must-haves: substring matching (no backtick tokens) ===
+# Results: 37 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/unit-runtime.test.ts
+ok 49 - src/resources/extensions/gsd/tests/unit-runtime.test.ts
+  ---
+  duration_ms: 869.001007
+  type: 'test'
+  ...
+# === workspace index ===
+# === doctor scope suggestions ===
+# === next command suggestions ===
+# Results: 10 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/workspace-index.test.ts
+ok 50 - src/resources/extensions/gsd/tests/workspace-index.test.ts
+  ---
+  duration_ms: 861.700258
+  type: 'test'
+  ...
+# === Main tree baseline ===
+# === Create worktree ===
+# === Worktree detection ===
+# === Worktree initial branch ===
+# === ensureSliceBranch in worktree ===
+# === getSliceBranchName with worktree ===
+# === Work and merge slice in worktree ===
+# === Second slice in worktree ===
+# === Main tree independent slice work ===
+# === Parallel worktrees ===
+# === State derivation in worktree ===
+# === autoCommitCurrentBranch in worktree ===
+# === Cleanup ===
+# Results: 40 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/worktree-integration.test.ts
+ok 51 - src/resources/extensions/gsd/tests/worktree-integration.test.ts
+  ---
+  duration_ms: 3186.38034
+  type: 'test'
+  ...
+# === worktreeBranchName ===
+# === createWorktree ===
+# === createWorktree — duplicate ===
+# === createWorktree — invalid name ===
+# === listWorktrees ===
+# === make changes in worktree ===
+# === diffWorktreeGSD ===
+# === getWorktreeGSDDiff ===
+# === getWorktreeLog ===
+# === removeWorktree ===
+# === listWorktrees after removal ===
+# === removeWorktree — already gone ===
+# Results: 26 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/worktree-manager.test.ts
+ok 52 - src/resources/extensions/gsd/tests/worktree-manager.test.ts
+  ---
+  duration_ms: 508.766307
+  type: 'test'
+  ...
+# === ensureSliceBranch ===
+# === idempotent ensure ===
+# === getActiveSliceBranch ===
+# === state surfaces active branch ===
+# === workspace index surfaces branch ===
+# === autoCommitCurrentBranch ===
+# === switchToMain ===
+# === mergeSliceToMain ===
+# === switchToMain auto-commits dirty files ===
+# === getSliceBranchName ===
+# === parseSliceBranch ===
+# === SLICE_BRANCH_RE ===
+# === detectWorktreeName ===
+# === ensureSliceBranch from non-main working branch ===
+# === ensureSliceBranch from slice branch falls back to main ===
+# === captureIntegrationBranch: records current branch ===
+# === captureIntegrationBranch: idempotent ===
+# === captureIntegrationBranch: skips slice branches ===
+# === setActiveMilestoneId + getMainBranch ===
+# === Multi-slice lifecycle on feature branch ===
+# === Resume: milestone ID re-set restores integration branch ===
+# === Backward compat: no metadata, main workflow ===
+# === ensureSliceBranch: S02 from S01 uses integration branch as base ===
+# Results: 97 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/worktree.test.ts
+ok 53 - src/resources/extensions/gsd/tests/worktree.test.ts
+  ---
+  duration_ms: 5726.712405
+  type: 'test'
+  ...
+# Subtest: write-gate: blocks CONTEXT.md write during discussion without depth verification (absolute path)
+ok 99 - write-gate: blocks CONTEXT.md write during discussion without depth verification (absolute path)
+  ---
+  duration_ms: 1.42968
+  type: 'test'
+  ...
+# Subtest: write-gate: blocks CONTEXT.md write during discussion without depth verification (relative path)
+ok 100 - write-gate: blocks CONTEXT.md write during discussion without depth verification (relative path)
+  ---
+  duration_ms: 0.248331
+  type: 'test'
+  ...
+# Subtest: write-gate: allows CONTEXT.md write after depth verification
+ok 101 - write-gate: allows CONTEXT.md write after depth verification
+  ---
+  duration_ms: 0.169627
+  type: 'test'
+  ...
+# Subtest: write-gate: allows CONTEXT.md write outside discussion phase
+ok 102 - write-gate: allows CONTEXT.md write outside discussion phase
+  ---
+  duration_ms: 0.242187
+  type: 'test'
+  ...
+# Subtest: write-gate: allows non-CONTEXT.md writes during discussion
+ok 103 - write-gate: allows non-CONTEXT.md writes during discussion
+  ---
+  duration_ms: 0.191359
+  type: 'test'
+  ...
+# Subtest: write-gate: regex does not match slice context files (S01-CONTEXT.md)
+ok 104 - write-gate: regex does not match slice context files (S01-CONTEXT.md)
+  ---
+  duration_ms: 0.126813
+  type: 'test'
+  ...
+# Subtest: write-gate: blocked reason contains depth_verification keyword
+ok 105 - write-gate: blocked reason contains depth_verification keyword
+  ---
+  duration_ms: 0.256075
+  type: 'test'
+  ...
+# Subtest: app-paths resolve to ~/.gsd/
+ok 106 - app-paths resolve to ~/.gsd/
+  ---
+  duration_ms: 9.596392
+  type: 'test'
+  ...
+# Subtest: loader sets all 4 GSD_ env vars and PI_PACKAGE_DIR
+ok 107 - loader sets all 4 GSD_ env vars and PI_PACKAGE_DIR
+  ---
+  duration_ms: 110.082599
+  type: 'test'
+  ...
+# Subtest: initResources syncs extensions, agents, and skills to target dir
+ok 108 - initResources syncs extensions, agents, and skills to target dir
+  ---
+  duration_ms: 159.264196
+  type: 'test'
+  ...
+# Subtest: loadStoredEnvKeys hydrates process.env from auth.json
+ok 109 - loadStoredEnvKeys hydrates process.env from auth.json
+  ---
+  duration_ms: 5.436894
+  type: 'test'
+  ...
+# Subtest: loadStoredEnvKeys does not overwrite existing env vars
+ok 110 - loadStoredEnvKeys does not overwrite existing env vars
+  ---
+  duration_ms: 3.028879
+  type: 'test'
+  ...
+# Subtest: save creates artifact file with sequential ID
+ok 111 - save creates artifact file with sequential ID
+  ---
+  duration_ms: 4.566811
+  type: 'test'
+  ...
+# Subtest: artifact directory is named after session file without .jsonl
+ok 112 - artifact directory is named after session file without .jsonl
+  ---
+  duration_ms: 0.526903
+  type: 'test'
+  ...
+# Subtest: artifact directory is created lazily on first write
+ok 113 - artifact directory is created lazily on first write
+  ---
+  duration_ms: 0.969107
+  type: 'test'
+  ...
+# Subtest: exists returns true for saved artifact
+ok 114 - exists returns true for saved artifact
+  ---
+  duration_ms: 1.068133
+  type: 'test'
+  ...
+# Subtest: exists returns false for missing artifact
+ok 115 - exists returns false for missing artifact
+  ---
+  duration_ms: 0.466803
+  type: 'test'
+  ...
+# Subtest: allocatePath returns path without writing
+ok 116 - allocatePath returns path without writing
+  ---
+  duration_ms: 0.671999
+  type: 'test'
+  ...
+# Subtest: new manager picks up where previous left off
+ok 117 - new manager picks up where previous left off
+  ---
+  duration_ms: 1.135479
+  type: 'test'
+  ...
+# Subtest: listFiles returns all artifact filenames
+ok 118 - listFiles returns all artifact filenames
+  ---
+  duration_ms: 0.996937
+  type: 'test'
+  ...
+# Subtest: listFiles returns empty for nonexistent dir
+ok 119 - listFiles returns empty for nonexistent dir
+  ---
+  duration_ms: 1.539786
+  type: 'test'
+  ...
+# Subtest: put stores data and returns correct hash
+ok 120 - put stores data and returns correct hash
+  ---
+  duration_ms: 4.771132
+  type: 'test'
+  ...
+# Subtest: put is idempotent — same data returns same hash, no duplicate write
+ok 121 - put is idempotent — same data returns same hash, no duplicate write
+  ---
+  duration_ms: 1.122559
+  type: 'test'
+  ...
+# Subtest: get retrieves stored data
+ok 122 - get retrieves stored data
+  ---
+  duration_ms: 1.30975
+  type: 'test'
+  ...
+# Subtest: get returns null for nonexistent hash
+ok 123 - get returns null for nonexistent hash
+  ---
+  duration_ms: 0.753959
+  type: 'test'
+  ...
+# Subtest: has returns true for stored blob
+ok 124 - has returns true for stored blob
+  ---
+  duration_ms: 1.515392
+  type: 'test'
+  ...
+# Subtest: has returns false for missing blob
+ok 125 - has returns false for missing blob
+  ---
+  duration_ms: 0.67013
+  type: 'test'
+  ...
+# Subtest: ref property returns correct blob: URI
+ok 126 - ref property returns correct blob: URI
+  ---
+  duration_ms: 0.911574
+  type: 'test'
+  ...
+# Subtest: get rejects non-hex hash (path traversal attempt)
+ok 127 - get rejects non-hex hash (path traversal attempt)
+  ---
+  duration_ms: 0.495723
+  type: 'test'
+  ...
+# Subtest: has rejects non-hex hash
+ok 128 - has rejects non-hex hash
+  ---
+  duration_ms: 0.95275
+  type: 'test'
+  ...
+# Subtest: get rejects hash with wrong length
+ok 129 - get rejects hash with wrong length
+  ---
+  duration_ms: 1.006956
+  type: 'test'
+  ...
+# Subtest: isBlobRef identifies valid refs
+ok 130 - isBlobRef identifies valid refs
+  ---
+  duration_ms: 0.261749
+  type: 'test'
+  ...
+# Subtest: parseBlobRef extracts valid hash
+ok 131 - parseBlobRef extracts valid hash
+  ---
+  duration_ms: 0.16132
+  type: 'test'
+  ...
+# Subtest: parseBlobRef rejects non-blob string
+ok 132 - parseBlobRef rejects non-blob string
+  ---
+  duration_ms: 0.116002
+  type: 'test'
+  ...
+# Subtest: parseBlobRef rejects invalid hash format
+ok 133 - parseBlobRef rejects invalid hash format
+  ---
+  duration_ms: 1.461266
+  type: 'test'
+  ...
+# Subtest: externalizeImageData stores base64 and returns blob ref
+ok 134 - externalizeImageData stores base64 and returns blob ref
+  ---
+  duration_ms: 0.895382
+  type: 'test'
+  ...
+# Subtest: externalizeImageData passes through existing blob refs
+ok 135 - externalizeImageData passes through existing blob refs
+  ---
+  duration_ms: 0.425086
+  type: 'test'
+  ...
+# Subtest: resolveImageData round-trips with externalizeImageData
+ok 136 - resolveImageData round-trips with externalizeImageData
+  ---
+  duration_ms: 1.098199
+  type: 'test'
+  ...
+# Subtest: resolveImageData returns non-ref strings unchanged
+ok 137 - resolveImageData returns non-ref strings unchanged
+  ---
+  duration_ms: 0.473749
+  type: 'test'
+  ...
+# Subtest: resolveImageData returns ref unchanged when blob is missing
+ok 138 - resolveImageData returns ref unchanged when blob is missing
+  ---
+  duration_ms: 0.474825
+  type: 'test'
+  ...
+# Subtest: bundled extension paths use the platform delimiter by default
+ok 139 - bundled extension paths use the platform delimiter by default
+  ---
+  duration_ms: 1.891699
+  type: 'test'
+  ...
+# Subtest: bundled extension paths preserve Windows drive letters when semicolon-delimited
+ok 140 - bundled extension paths preserve Windows drive letters when semicolon-delimited
+  ---
+  duration_ms: 0.361431
+  type: 'test'
+  ...
+# \# === (a) Script exists and is executable ===
+# \# === (b) --help shows all commands ===
+# \# === (c) list-workflows finds workflow files ===
+# \# === (d) check-actions validates workflow file ===
+# \# === (e) Commands validate required arguments ===
+# \# ========================================
+# \# Results: 19 passed, 0 failed
+# \# All tests passed ✓
+# Subtest: src/tests/ci_monitor.test.ts
+ok 59 - src/tests/ci_monitor.test.ts
+  ---
+  duration_ms: 522.192682
+  type: 'test'
+  ...
+# Subtest: budgetContent distributes tokens by score (highest first)
+ok 142 - budgetContent distributes tokens by score (highest first)
+  ---
+  duration_ms: 2.327834
+  type: 'test'
+  ...
+# Subtest: budgetContent truncates per-result content when budget is tight
+ok 143 - budgetContent truncates per-result content when budget is tight
+  ---
+  duration_ms: 0.458003
+  type: 'test'
+  ...
+# Subtest: budgetContent uses raw_content when available, falls back to content when null
+ok 144 - budgetContent uses raw_content when available, falls back to content when null
+  ---
+  duration_ms: 0.267965
+  type: 'test'
+  ...
+# Subtest: budgetContent respects maxTokens limit (80% effective budget)
+ok 145 - budgetContent respects maxTokens limit (80% effective budget)
+  ---
+  duration_ms: 0.639124
+  type: 'test'
+  ...
+# Subtest: budgetContent returns empty grounding for empty results array
+ok 146 - budgetContent returns empty grounding for empty results array
+  ---
+  duration_ms: 0.968276
+  type: 'test'
+  ...
+# Subtest: budgetContent produces age as [null, null, ageString] for formatLLMContext compatibility
+ok 147 - budgetContent produces age as [null, null, ageString] for formatLLMContext compatibility
+  ---
+  duration_ms: 0.284812
+  type: 'test'
+  ...
+# Subtest: publishedDateToAge result flows correctly into age array
+ok 148 - publishedDateToAge result flows correctly into age array
+  ---
+  duration_ms: 0.360961
+  type: 'test'
+  ...
+# Subtest: results without published_date get age: null
+ok 149 - results without published_date get age: null
+  ---
+  duration_ms: 0.223676
+  type: 'test'
+  ...
+# Subtest: strict/balanced/lenient map to expected score cutoffs
+ok 150 - strict/balanced/lenient map to expected score cutoffs
+  ---
+  duration_ms: 0.559288
+  type: 'test'
+  ...
+# Subtest: results below threshold score are filtered out
+ok 151 - results below threshold score are filtered out
+  ---
+  duration_ms: 0.607155
+  type: 'test'
+  ...
+# Subtest: cache key with |p:tavily differs from |p:brave for same query
+ok 152 - cache key with |p:tavily differs from |p:brave for same query
+  ---
+  duration_ms: 0.416179
+  type: 'test'
+  ...
+# Subtest: no-key error message mentions both TAVILY_API_KEY and BRAVE_API_KEY
+ok 153 - no-key error message mentions both TAVILY_API_KEY and BRAVE_API_KEY
+  ---
+  duration_ms: 0.123016
+  type: 'test'
+  ...
+# Subtest: Tavily LLM context request uses POST with Bearer auth and advanced search depth
+ok 154 - Tavily LLM context request uses POST with Bearer auth and advanced search depth
+  ---
+  duration_ms: 2.879828
+  type: 'test'
+  ...
+# Subtest: before_provider_request injects web_search for claude models
+ok 155 - before_provider_request injects web_search for claude models
+  ---
+  duration_ms: 3.976826
+  type: 'test'
+  ...
+# Subtest: before_provider_request injects web_search for claude models even without model_select
+ok 156 - before_provider_request injects web_search for claude models even without model_select
+  ---
+  duration_ms: 0.338267
+  type: 'test'
+  ...
+# Subtest: before_provider_request does NOT inject for non-claude models
+ok 157 - before_provider_request does NOT inject for non-claude models
+  ---
+  duration_ms: 0.287355
+  type: 'test'
+  ...
+# Subtest: before_provider_request does NOT inject for claude model on non-Anthropic provider
+ok 158 - before_provider_request does NOT inject for claude model on non-Anthropic provider
+  ---
+  duration_ms: 0.291743
+  type: 'test'
+  ...
+# Subtest: before_provider_request does not double-inject
+ok 159 - before_provider_request does not double-inject
+  ---
+  duration_ms: 0.277003
+  type: 'test'
+  ...
+# Subtest: before_provider_request creates tools array if missing
+ok 160 - before_provider_request creates tools array if missing
+  ---
+  duration_ms: 0.372915
+  type: 'test'
+  ...
+# Subtest: before_provider_request skips when payload is falsy
+ok 161 - before_provider_request skips when payload is falsy
+  ---
+  duration_ms: 0.237512
+  type: 'test'
+  ...
+# Subtest: model_select disables Brave tools when Anthropic + no BRAVE_API_KEY
+ok 162 - model_select disables Brave tools when Anthropic + no BRAVE_API_KEY
+  ---
+  duration_ms: 0.242237
+  type: 'test'
+  ...
+# Subtest: model_select disables all custom search tools when Anthropic even with BRAVE_API_KEY
+ok 163 - model_select disables all custom search tools when Anthropic even with BRAVE_API_KEY
+  ---
+  duration_ms: 0.438225
+  type: 'test'
+  ...
+# Subtest: model_select re-enables Brave tools when switching away from Anthropic
+ok 164 - model_select re-enables Brave tools when switching away from Anthropic
+  ---
+  duration_ms: 0.649581
+  type: 'test'
+  ...
+# Subtest: model_select shows 'Native Anthropic web search active' for Anthropic provider
+ok 165 - model_select shows 'Native Anthropic web search active' for Anthropic provider
+  ---
+  duration_ms: 0.347124
+  type: 'test'
+  ...
+# Subtest: model_select shows warning for non-Anthropic without Brave key
+ok 166 - model_select shows warning for non-Anthropic without Brave key
+  ---
+  duration_ms: 0.250532
+  type: 'test'
+  ...
+# Subtest: session_start shows v4 loaded message
+ok 167 - session_start shows v4 loaded message
+  ---
+  duration_ms: 0.233929
+  type: 'test'
+  ...
+# Subtest: session_start shows Brave status when key present
+ok 168 - session_start shows Brave status when key present
+  ---
+  duration_ms: 0.445284
+  type: 'test'
+  ...
+# Subtest: BRAVE_TOOL_NAMES contains expected tool names
+ok 169 - BRAVE_TOOL_NAMES contains expected tool names
+  ---
+  duration_ms: 1.075187
+  type: 'test'
+  ...
+# Subtest: CUSTOM_SEARCH_TOOL_NAMES contains all custom search tools
+ok 170 - CUSTOM_SEARCH_TOOL_NAMES contains all custom search tools
+  ---
+  duration_ms: 0.130281
+  type: 'test'
+  ...
+# Subtest: before_provider_request removes Brave tools from payload when no BRAVE_API_KEY
+ok 171 - before_provider_request removes Brave tools from payload when no BRAVE_API_KEY
+  ---
+  duration_ms: 0.338293
+  type: 'test'
+  ...
+# Subtest: before_provider_request removes all custom search tools from payload even with BRAVE_API_KEY
+ok 172 - before_provider_request removes all custom search tools from payload even with BRAVE_API_KEY
+  ---
+  duration_ms: 0.334015
+  type: 'test'
+  ...
+# Subtest: model_select re-enable does not duplicate Brave tools across toggle cycles
+ok 173 - model_select re-enable does not duplicate Brave tools across toggle cycles
+  ---
+  duration_ms: 0.36882
+  type: 'test'
+  ...
+# Subtest: mock fire() calls all handlers for the same event
+ok 174 - mock fire() calls all handlers for the same event
+  ---
+  duration_ms: 0.292964
+  type: 'test'
+  ...
+# Subtest: model_select suppresses 'Native search active' notification on session restore
+ok 175 - model_select suppresses 'Native search active' notification on session restore
+  ---
+  duration_ms: 0.184952
+  type: 'test'
+  ...
+# Subtest: model_select DOES show notification on explicit user set
+ok 176 - model_select DOES show notification on explicit user set
+  ---
+  duration_ms: 0.190051
+  type: 'test'
+  ...
+# Subtest: stripThinkingFromHistory removes thinking from earlier assistant messages
+ok 177 - stripThinkingFromHistory removes thinking from earlier assistant messages
+  ---
+  duration_ms: 0.238364
+  type: 'test'
+  ...
+# Subtest: stripThinkingFromHistory strips thinking from all assistant messages
+ok 178 - stripThinkingFromHistory strips thinking from all assistant messages
+  ---
+  duration_ms: 0.197537
+  type: 'test'
+  ...
+# Subtest: stripThinkingFromHistory removes redacted_thinking too
+ok 179 - stripThinkingFromHistory removes redacted_thinking too
+  ---
+  duration_ms: 0.147717
+  type: 'test'
+  ...
+# Subtest: stripThinkingFromHistory strips even single assistant message
+ok 180 - stripThinkingFromHistory strips even single assistant message
+  ---
+  duration_ms: 0.147518
+  type: 'test'
+  ...
+# Subtest: stripThinkingFromHistory handles no assistant messages
+ok 181 - stripThinkingFromHistory handles no assistant messages
+  ---
+  duration_ms: 0.09899
+  type: 'test'
+  ...
+# Subtest: stripThinkingFromHistory handles string content (no array)
+ok 182 - stripThinkingFromHistory handles string content (no array)
+  ---
+  duration_ms: 0.095079
+  type: 'test'
+  ...
+# Subtest: postinstall respects PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD
+ok 183 - postinstall respects PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD
+  ---
+  duration_ms: 91.974377
+  type: 'test'
+  ...
+# Subtest: resolveSearchProvider returns tavily when only TAVILY_API_KEY is set
+ok 184 - resolveSearchProvider returns tavily when only TAVILY_API_KEY is set
+  ---
+  duration_ms: 34.491943
+  type: 'test'
+  ...
+# Subtest: resolveSearchProvider returns brave when only BRAVE_API_KEY is set
+ok 185 - resolveSearchProvider returns brave when only BRAVE_API_KEY is set
+  ---
+  duration_ms: 13.709399
+  type: 'test'
+  ...
+# Subtest: resolveSearchProvider returns tavily when both keys set and preference is auto
+ok 186 - resolveSearchProvider returns tavily when both keys set and preference is auto
+  ---
+  duration_ms: 14.570061
+  type: 'test'
+  ...
+# Subtest: resolveSearchProvider returns tavily when both keys set and preference is tavily
+ok 187 - resolveSearchProvider returns tavily when both keys set and preference is tavily
+  ---
+  duration_ms: 21.346372
+  type: 'test'
+  ...
+# Subtest: resolveSearchProvider returns brave when both keys set and preference is brave
+ok 188 - resolveSearchProvider returns brave when both keys set and preference is brave
+  ---
+  duration_ms: 8.986654
+  type: 'test'
+  ...
+# Subtest: resolveSearchProvider returns null when neither key is set
+ok 189 - resolveSearchProvider returns null when neither key is set
+  ---
+  duration_ms: 4.40457
+  type: 'test'
+  ...
+# Subtest: resolveSearchProvider treats invalid preference as auto
+ok 190 - resolveSearchProvider treats invalid preference as auto
+  ---
+  duration_ms: 51.37753
+  type: 'test'
+  ...
+# Subtest: resolveSearchProvider falls back to other provider when preferred key missing
+ok 191 - resolveSearchProvider falls back to other provider when preferred key missing
+  ---
+  duration_ms: 9.071964
+  type: 'test'
+  ...
+# Subtest: getSearchProviderPreference returns auto when no preference stored
+ok 192 - getSearchProviderPreference returns auto when no preference stored
+  ---
+  duration_ms: 9.603745
+  type: 'test'
+  ...
+# Subtest: getSearchProviderPreference reads from auth.json via AuthStorage
+ok 193 - getSearchProviderPreference reads from auth.json via AuthStorage
+  ---
+  duration_ms: 24.01733
+  type: 'test'
+  ...
+# Subtest: setSearchProviderPreference writes to auth.json via AuthStorage
+ok 194 - setSearchProviderPreference writes to auth.json via AuthStorage
+  ---
+  duration_ms: 28.774985
+  type: 'test'
+  ...
+# Subtest: getSearchProviderPreference returns auto for invalid stored value
+ok 195 - getSearchProviderPreference returns auto for invalid stored value
+  ---
+  duration_ms: 9.50786
+  type: 'test'
+  ...
+# Subtest: getTavilyApiKey reads from process.env.TAVILY_API_KEY
+ok 196 - getTavilyApiKey reads from process.env.TAVILY_API_KEY
+  ---
+  duration_ms: 8.554001
+  type: 'test'
+  ...
+# Subtest: getBraveApiKey reads from process.env.BRAVE_API_KEY
+ok 197 - getBraveApiKey reads from process.env.BRAVE_API_KEY
+  ---
+  duration_ms: 5.576074
+  type: 'test'
+  ...
+# Subtest: provider.ts exports exactly the 5 expected functions
+ok 198 - provider.ts exports exactly the 5 expected functions
+  ---
+  duration_ms: 6.706737
+  type: 'test'
+  ...
+# Subtest: direct arg "tavily" sets preference and notifies
+ok 199 - direct arg "tavily" sets preference and notifies
+  ---
+  duration_ms: 39.799099
+  type: 'test'
+  ...
+# Subtest: direct arg "brave" sets preference and notifies
+ok 200 - direct arg "brave" sets preference and notifies
+  ---
+  duration_ms: 2.800387
+  type: 'test'
+  ...
+# Subtest: direct arg "auto" sets preference and notifies
+ok 201 - direct arg "auto" sets preference and notifies
+  ---
+  duration_ms: 2.583852
+  type: 'test'
+  ...
+# Subtest: no arg shows select UI with 3 options, user picks brave
+ok 202 - no arg shows select UI with 3 options, user picks brave
+  ---
+  duration_ms: 1.992286
+  type: 'test'
+  ...
+# Subtest: cancel (select returns undefined) produces no side effects
+ok 203 - cancel (select returns undefined) produces no side effects
+  ---
+  duration_ms: 6.052817
+  type: 'test'
+  ...
+# Subtest: invalid arg "google" falls back to interactive select
+ok 204 - invalid arg "google" falls back to interactive select
+  ---
+  duration_ms: 3.131062
+  type: 'test'
+  ...
+# Subtest: tab completion returns all 3 options when prefix is empty
+ok 205 - tab completion returns all 3 options when prefix is empty
+  ---
+  duration_ms: 2.89757
+  type: 'test'
+  ...
+# Subtest: tab completion filters by prefix: "t" returns only tavily
+ok 206 - tab completion filters by prefix: "t" returns only tavily
+  ---
+  duration_ms: 1.842317
+  type: 'test'
+  ...
+# Subtest: notify message shows effective provider (fallback case)
+ok 207 - notify message shows effective provider (fallback case)
+  ---
+  duration_ms: 2.413617
+  type: 'test'
+  ...
+# Subtest: notify message shows "none" when no API keys available
+ok 208 - notify message shows "none" when no API keys available
+  ---
+  duration_ms: 2.292995
+  type: 'test'
+  ...
+# Subtest: select options show key unavailability with ✗
+ok 209 - select options show key unavailability with ✗
+  ---
+  duration_ms: 2.101341
+  type: 'test'
+  ...
+# Subtest: command is registered as "search-provider"
+ok 210 - command is registered as "search-provider"
+  ---
+  duration_ms: 0.826147
+  type: 'test'
+  ...
+# Subtest: executeTavilySearch sends POST to Tavily API and produces CachedSearchResult
+ok 211 - executeTavilySearch sends POST to Tavily API and produces CachedSearchResult
+  ---
+  duration_ms: 42.765941
+  type: 'test'
+  ...
+# Subtest: resolveSearchProvider returns 'tavily' when TAVILY_API_KEY is set and BRAVE_API_KEY is not
+ok 212 - resolveSearchProvider returns 'tavily' when TAVILY_API_KEY is set and BRAVE_API_KEY is not
+  ---
+  duration_ms: 0.619864
+  type: 'test'
+  ...
+# Subtest: resolveSearchProvider returns 'brave' when only BRAVE_API_KEY is set
+ok 213 - resolveSearchProvider returns 'brave' when only BRAVE_API_KEY is set
+  ---
+  duration_ms: 0.512472
+  type: 'test'
+  ...
+# Subtest: resolveSearchProvider returns null when neither key is set
+ok 214 - resolveSearchProvider returns null when neither key is set
+  ---
+  duration_ms: 0.240147
+  type: 'test'
+  ...
+# Subtest: cache keys with same query but different providers are distinct strings
+ok 215 - cache keys with same query but different providers are distinct strings
+  ---
+  duration_ms: 0.370754
+  type: 'test'
+  ...
+# Subtest: cache keys with same query, same freshness, different providers are distinct even without domain
+ok 216 - cache keys with same query, same freshness, different providers are distinct even without domain
+  ---
+  duration_ms: 0.262503
+  type: 'test'
+  ...
+# Subtest: no-key error message contains both TAVILY_API_KEY and BRAVE_API_KEY
+ok 217 - no-key error message contains both TAVILY_API_KEY and BRAVE_API_KEY
+  ---
+  duration_ms: 0.147973
+  type: 'test'
+  ...
+# Subtest: Tavily answer field maps to summaryText in CachedSearchResult
+ok 218 - Tavily answer field maps to summaryText in CachedSearchResult
+  ---
+  duration_ms: 0.677221
+  type: 'test'
+  ...
+# Subtest: freshness='week' maps to time_range='week' in Tavily request body
+ok 219 - freshness='week' maps to time_range='week' in Tavily request body
+  ---
+  duration_ms: 0.4361
+  type: 'test'
+  ...
+# Subtest: Tavily domain filter uses include_domains, not site: prefix in query
+ok 220 - Tavily domain filter uses include_domains, not site: prefix in query
+  ---
+  duration_ms: 0.971755
+  type: 'test'
+  ...
+# Subtest: normalizeTavilyResult maps a full Tavily result to SearchResultFormatted
+ok 221 - normalizeTavilyResult maps a full Tavily result to SearchResultFormatted
+  ---
+  duration_ms: 1.932104
+  type: 'test'
+  ...
+# Subtest: normalizeTavilyResult handles minimal result (no published_date, no raw_content)
+ok 222 - normalizeTavilyResult handles minimal result (no published_date, no raw_content)
+  ---
+  duration_ms: 0.23065
+  type: 'test'
+  ...
+# Subtest: normalizeTavilyResult handles empty/untitled result
+ok 223 - normalizeTavilyResult handles empty/untitled result
+  ---
+  duration_ms: 0.174139
+  type: 'test'
+  ...
+# Subtest: publishedDateToAge returns correct relative strings for various offsets
+ok 224 - publishedDateToAge returns correct relative strings for various offsets
+  ---
+  duration_ms: 0.43543
+  type: 'test'
+  ...
+# Subtest: publishedDateToAge returns undefined for invalid date string
+ok 225 - publishedDateToAge returns undefined for invalid date string
+  ---
+  duration_ms: 0.165246
+  type: 'test'
+  ...
+# Subtest: publishedDateToAge returns undefined for future dates
+ok 226 - publishedDateToAge returns undefined for future dates
+  ---
+  duration_ms: 0.147813
+  type: 'test'
+  ...
+# Subtest: mapFreshnessToTavily converts all 4 Brave freshness values
+ok 227 - mapFreshnessToTavily converts all 4 Brave freshness values
+  ---
+  duration_ms: 0.264089
+  type: 'test'
+  ...
+# Subtest: mapFreshnessToTavily passes null through unchanged
+ok 228 - mapFreshnessToTavily passes null through unchanged
+  ---
+  duration_ms: 0.14324
+  type: 'test'
+  ...
+# Subtest: mapFreshnessToTavily returns null for unrecognized values
+ok 229 - mapFreshnessToTavily returns null for unrecognized values
+  ---
+  duration_ms: 0.361553
+  type: 'test'
+  ...
+# Subtest: classifyError for HttpError(401) does NOT contain BRAVE_API_KEY
+ok 230 - classifyError for HttpError(401) does NOT contain BRAVE_API_KEY
+  ---
+  duration_ms: 0.963585
+  type: 'test'
+  ...
+# Subtest: classifyError for HttpError(403) does NOT contain BRAVE_API_KEY
+ok 231 - classifyError for HttpError(403) does NOT contain BRAVE_API_KEY
+  ---
+  duration_ms: 0.199057
+  type: 'test'
+  ...
+# Subtest: resolveToolFromPath finds fd via fdfind fallback
+ok 232 - resolveToolFromPath finds fd via fdfind fallback
+  ---
+  duration_ms: 10.429354
+  type: 'test'
+  ...
+# Subtest: ensureManagedTools provisions fd and rg into managed bin dir
+ok 233 - ensureManagedTools provisions fd and rg into managed bin dir
+  ---
+  duration_ms: 2.264579
+  type: 'test'
+  ...
+# Subtest: ensureManagedTools copies executable when symlink target already exists as a broken link
+ok 234 - ensureManagedTools copies executable when symlink target already exists as a broken link
+  ---
+  duration_ms: 3.047838
+  type: 'test'
+  ...
+# [ttsr] Rule "test-rule": invalid regex "(unclosed" — Invalid regular expression: /(unclosed/: Unterminated group
+# Subtest: matches when condition regex matches text delta
+ok 235 - matches when condition regex matches text delta
+  ---
+  duration_ms: 3.470529
+  type: 'test'
+  ...
+# Subtest: no match when condition does not match
+ok 236 - no match when condition does not match
+  ---
+  duration_ms: 0.435808
+  type: 'test'
+  ...
+# Subtest: matches across multiple deltas (buffering)
+ok 237 - matches across multiple deltas (buffering)
+  ---
+  duration_ms: 0.432351
+  type: 'test'
+  ...
+# Subtest: multiple conditions — match on any
+ok 238 - multiple conditions — match on any
+  ---
+  duration_ms: 0.649565
+  type: 'test'
+  ...
+# Subtest: addRule rejects duplicate names
+ok 239 - addRule rejects duplicate names
+  ---
+  duration_ms: 0.762764
+  type: 'test'
+  ...
+# Subtest: addRule rejects rule with no valid conditions
+ok 240 - addRule rejects rule with no valid conditions
+  ---
+  duration_ms: 0.183408
+  type: 'test'
+  ...
+# Subtest: addRule rejects rule with only invalid regex
+ok 241 - addRule rejects rule with only invalid regex
+  ---
+  duration_ms: 1.178648
+  type: 'test'
+  ...
+# Subtest: default scope matches text and tool, not thinking
+ok 242 - default scope matches text and tool, not thinking
+  ---
+  duration_ms: 0.854954
+  type: 'test'
+  ...
+# Subtest: scope: ["text"] only matches text source
+ok 243 - scope: ["text"] only matches text source
+  ---
+  duration_ms: 0.848769
+  type: 'test'
+  ...
+# Subtest: scope: ["tool:edit"] only matches edit tool
+ok 244 - scope: ["tool:edit"] only matches edit tool
+  ---
+  duration_ms: 1.024647
+  type: 'test'
+  ...
+# Subtest: scope: ["thinking"] matches thinking source
+ok 245 - scope: ["thinking"] matches thinking source
+  ---
+  duration_ms: 0.431015
+  type: 'test'
+  ...
+# Subtest: repeatMode "once" prevents re-triggering after injection
+ok 246 - repeatMode "once" prevents re-triggering after injection
+  ---
+  duration_ms: 0.464944
+  type: 'test'
+  ...
+# Subtest: repeatMode "gap" re-triggers after enough messages
+ok 247 - repeatMode "gap" re-triggers after enough messages
+  ---
+  duration_ms: 0.474749
+  type: 'test'
+  ...
+# Subtest: resetBuffer clears all buffers
+ok 248 - resetBuffer clears all buffers
+  ---
+  duration_ms: 0.350897
+  type: 'test'
+  ...
+# Subtest: buffers are isolated by stream key
+ok 249 - buffers are isolated by stream key
+  ---
+  duration_ms: 0.386458
+  type: 'test'
+  ...
+# Subtest: buffer is capped at 512KB — old content is trimmed
+ok 250 - buffer is capped at 512KB — old content is trimmed
+  ---
+  duration_ms: 1.898078
+  type: 'test'
+  ...
+# Subtest: getInjectedRuleNames returns injected names
+ok 251 - getInjectedRuleNames returns injected names
+  ---
+  duration_ms: 1.194142
+  type: 'test'
+  ...
+# Subtest: restoreInjected prevents firing for "once" mode
+ok 252 - restoreInjected prevents firing for "once" mode
+  ---
+  duration_ms: 0.375663
+  type: 'test'
+  ...
+# Subtest: hasRules returns false when empty
+ok 253 - hasRules returns false when empty
+  ---
+  duration_ms: 0.149735
+  type: 'test'
+  ...
+# Subtest: hasRules returns true after adding rule
+ok 254 - hasRules returns true after adding rule
+  ---
+  duration_ms: 0.279628
+  type: 'test'
+  ...
+# Subtest: loads rule from project .gsd/rules/
+ok 255 - loads rule from project .gsd/rules/
+  ---
+  duration_ms: 4.644395
+  type: 'test'
+  ...
+# Subtest: parses scope and globs from frontmatter
+ok 256 - parses scope and globs from frontmatter
+  ---
+  duration_ms: 1.797024
+  type: 'test'
+  ...
+# Subtest: skips files without valid frontmatter
+ok 257 - skips files without valid frontmatter
+  ---
+  duration_ms: 1.282177
+  type: 'test'
+  ...
+# Subtest: skips rules with no condition
+ok 258 - skips rules with no condition
+  ---
+  duration_ms: 1.062045
+  type: 'test'
+  ...
+# Subtest: returns empty array when .gsd/rules/ does not exist
+ok 259 - returns empty array when .gsd/rules/ does not exist
+  ---
+  duration_ms: 0.472616
+  type: 'test'
+  ...
+# Subtest: loads multiple rules from same directory
+ok 260 - loads multiple rules from same directory
+  ---
+  duration_ms: 1.203752
+  type: 'test'
+  ...
+# Subtest: handles quoted values in frontmatter
+ok 261 - handles quoted values in frontmatter
+  ---
+  duration_ms: 1.056451
+  type: 'test'
+  ...
+# Subtest: compareSemver returns 0 for equal versions
+ok 262 - compareSemver returns 0 for equal versions
+  ---
+  duration_ms: 1.548421
+  type: 'test'
+  ...
+# Subtest: compareSemver returns 1 when first is greater
+ok 263 - compareSemver returns 1 when first is greater
+  ---
+  duration_ms: 0.304364
+  type: 'test'
+  ...
+# Subtest: compareSemver returns -1 when first is smaller
+ok 264 - compareSemver returns -1 when first is smaller
+  ---
+  duration_ms: 0.196222
+  type: 'test'
+  ...
+# Subtest: compareSemver handles versions with different segment counts
+ok 265 - compareSemver handles versions with different segment counts
+  ---
+  duration_ms: 0.189944
+  type: 'test'
+  ...
+# Subtest: readUpdateCache returns null for nonexistent file
+ok 266 - readUpdateCache returns null for nonexistent file
+  ---
+  duration_ms: 1.101763
+  type: 'test'
+  ...
+# Subtest: readUpdateCache returns null for malformed JSON
+ok 267 - readUpdateCache returns null for malformed JSON
+  ---
+  duration_ms: 0.955321
+  type: 'test'
+  ...
+# Subtest: writeUpdateCache + readUpdateCache round-trips correctly
+ok 268 - writeUpdateCache + readUpdateCache round-trips correctly
+  ---
+  duration_ms: 1.867769
+  type: 'test'
+  ...
+# Subtest: writeUpdateCache creates parent directories
+ok 269 - writeUpdateCache creates parent directories
+  ---
+  duration_ms: 1.281287
+  type: 'test'
+  ...
+# Subtest: checkForUpdates calls onUpdate when newer version is available
+ok 270 - checkForUpdates calls onUpdate when newer version is available
+  ---
+  duration_ms: 96.721618
+  type: 'test'
+  ...
+# Subtest: checkForUpdates does not call onUpdate when already on latest
+ok 271 - checkForUpdates does not call onUpdate when already on latest
+  ---
+  duration_ms: 13.855001
+  type: 'test'
+  ...
+# Subtest: checkForUpdates does not call onUpdate when current is ahead
+ok 272 - checkForUpdates does not call onUpdate when current is ahead
+  ---
+  duration_ms: 7.450266
+  type: 'test'
+  ...
+# Subtest: checkForUpdates writes cache after successful fetch
+ok 273 - checkForUpdates writes cache after successful fetch
+  ---
+  duration_ms: 7.358273
+  type: 'test'
+  ...
+# Subtest: checkForUpdates uses cache and skips fetch when checked recently
+ok 274 - checkForUpdates uses cache and skips fetch when checked recently
+  ---
+  duration_ms: 1.880774
+  type: 'test'
+  ...
+# Subtest: checkForUpdates skips notification when cache is fresh and versions match
+ok 275 - checkForUpdates skips notification when cache is fresh and versions match
+  ---
+  duration_ms: 0.778415
+  type: 'test'
+  ...
+# Subtest: checkForUpdates handles server error gracefully
+ok 276 - checkForUpdates handles server error gracefully
+  ---
+  duration_ms: 11.359162
+  type: 'test'
+  ...
+# Subtest: checkForUpdates handles network timeout gracefully
+ok 277 - checkForUpdates handles network timeout gracefully
+  ---
+  duration_ms: 504.302524
+  type: 'test'
+  ...
+# Subtest: checkForUpdates handles missing version field in response
+ok 278 - checkForUpdates handles missing version field in response
+  ---
+  duration_ms: 8.250198
+  type: 'test'
+  ...
+1..278
+# tests 278
+# suites 0
+# pass 278
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 29474.67164

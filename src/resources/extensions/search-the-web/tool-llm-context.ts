@@ -27,7 +27,7 @@ import { normalizeQuery, extractDomain } from "./url-utils.js";
 import { formatLLMContext, type LLMContextSnippet, type LLMContextSource } from "./format.js";
 import type { TavilyResult, TavilySearchResponse } from "./tavily.js";
 import { publishedDateToAge } from "./tavily.js";
-import { getTavilyApiKey, resolveSearchProvider } from "./provider.js";
+import { getTavilyApiKey, getBraveApiKey, resolveSearchProvider } from "./provider.js";
 
 // =============================================================================
 // Types
@@ -93,10 +93,6 @@ contextCache.startPurgeInterval(60_000);
 // =============================================================================
 // Helpers
 // =============================================================================
-
-function getBraveApiKey(): string {
-  return process.env.BRAVE_API_KEY || "";
-}
 
 function braveHeaders(): Record<string, string> {
   return {

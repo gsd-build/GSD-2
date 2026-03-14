@@ -6,6 +6,10 @@
 // 2. extensionless → .ts  (some source files omit extensions in relative imports)
 
 export function resolve(specifier, context, nextResolve) {
+  if (specifier === '@gsd/pi-coding-agent') {
+    return nextResolve(new URL('./mock-pi-coding-agent.ts', import.meta.url).href, context);
+  }
+
   const parentURL = context.parentURL || '';
   const isFromNodeModules = parentURL.includes('/node_modules/');
   const isFromPackages = parentURL.includes('/packages/');

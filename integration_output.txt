@@ -1,0 +1,84 @@
+
+> gsd-pi@2.10.12 test:integration
+> node --import ./src/resources/extensions/gsd/tests/resolve-ts.mjs --experimental-strip-types --test src/resources/extensions/gsd/tests/*integration*.test.ts src/tests/integration/*.test.ts
+
+TAP version 13
+# === Group 1: deriveState with new-format-only milestones ===
+# === Group 2: deriveState with mixed old+new format milestones ===
+# === Group 3: indexWorkspace with mixed-format milestones ===
+# === Group 4: inlinePriorMilestoneSummary with mixed formats ===
+# === Group 5: dispatch-guard with new-format milestones ===
+# === Group 6: Branch operations with new-format IDs ===
+# Results: 62 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/integration-mixed-milestones.test.ts
+ok 1 - src/resources/extensions/gsd/tests/integration-mixed-milestones.test.ts
+  ---
+  duration_ms: 2055.147704
+  type: 'test'
+  ...
+# === Scenario 1: Incomplete project — write, parse, deriveState ===
+#   --- file existence ---
+#   --- WrittenFiles counts ---
+#   --- parseRoadmap ---
+#   --- parsePlan S01 ---
+#   --- parseSummary S01 ---
+#   --- deriveState ---
+#   --- generatePreview ---
+# === Scenario 2: Fully complete project — deriveState phase ===
+# Results: 77 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/migrate-writer-integration.test.ts
+ok 2 - src/resources/extensions/gsd/tests/migrate-writer-integration.test.ts
+  ---
+  duration_ms: 1058.622055
+  type: 'test'
+  ...
+# === Main tree baseline ===
+# === Create worktree ===
+# === Worktree detection ===
+# === Worktree initial branch ===
+# === ensureSliceBranch in worktree ===
+# === getSliceBranchName with worktree ===
+# === Work and merge slice in worktree ===
+# === Second slice in worktree ===
+# === Main tree independent slice work ===
+# === Parallel worktrees ===
+# === State derivation in worktree ===
+# === autoCommitCurrentBranch in worktree ===
+# === Cleanup ===
+# Results: 40 passed, 0 failed
+# All tests passed
+# Subtest: src/resources/extensions/gsd/tests/worktree-integration.test.ts
+ok 3 - src/resources/extensions/gsd/tests/worktree-integration.test.ts
+  ---
+  duration_ms: 3919.788787
+  type: 'test'
+  ...
+# Subtest: npm pack produces tarball with required files
+ok 4 - npm pack produces tarball with required files
+  ---
+  duration_ms: 7452.53055
+  type: 'test'
+  ...
+# Subtest: tarball installs and gsd binary resolves
+ok 5 - tarball installs and gsd binary resolves
+  ---
+  duration_ms: 52047.797243
+  type: 'test'
+  ...
+# Subtest: gsd launches and loads extensions without errors
+ok 6 - gsd launches and loads extensions without errors
+  ---
+  duration_ms: 5749.816411
+  type: 'test'
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 66605.699254

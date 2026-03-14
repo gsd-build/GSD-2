@@ -48,19 +48,31 @@ function makeTmpAuth(data: Record<string, unknown> = {}): { authPath: string; cl
   return { authPath, cleanup: () => rmSync(tmp, { recursive: true, force: true }) }
 }
 
+async function importProviderWithMockHome(homePath: string) {
+  const origHome = process.env.HOME
+  const origProfile = process.env.USERPROFILE
+  process.env.HOME = homePath
+  process.env.USERPROFILE = homePath
+  try {
+    return await import(`../resources/extensions/search-the-web/provider.ts?bust=${Date.now()}_${Math.random()}`)
+  } finally {
+    process.env.HOME = origHome
+    process.env.USERPROFILE = origProfile
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // 1. resolveSearchProvider — 8 scenarios
 // ═══════════════════════════════════════════════════════════════════════════
 
 test('resolveSearchProvider returns tavily when only TAVILY_API_KEY is set', async () => {
-  const { resolveSearchProvider } = await import(
-    '../resources/extensions/search-the-web/provider.ts'
-  )
+  const tmp = mkdtempSync(join(tmpdir(), 'gsd-provider-home-'))
+  const { resolveSearchProvider } = await importProviderWithMockHome(tmp)
   const { authPath, cleanup } = makeTmpAuth()
   try {
     withEnv({ TAVILY_API_KEY: 'tvly-test', BRAVE_API_KEY: undefined }, () => {
       // Override preference read to use our temp auth (auto)
-      const result = resolveSearchProvider('auto')
+      const result = resolveSearchProvider('auto', authPath)
       assert.equal(result, 'tavily')
     })
   } finally {
@@ -69,79 +81,107 @@ test('resolveSearchProvider returns tavily when only TAVILY_API_KEY is set', asy
 })
 
 test('resolveSearchProvider returns brave when only BRAVE_API_KEY is set', async () => {
-  const { resolveSearchProvider } = await import(
-    '../resources/extensions/search-the-web/provider.ts'
-  )
-  withEnv({ TAVILY_API_KEY: undefined, BRAVE_API_KEY: 'BSA-test' }, () => {
-    const result = resolveSearchProvider('auto')
-    assert.equal(result, 'brave')
-  })
+  const tmp = mkdtempSync(join(tmpdir(), 'gsd-provider-home-'))
+  const { resolveSearchProvider } = await importProviderWithMockHome(tmp)
+  const { authPath, cleanup } = makeTmpAuth()
+  try {
+    withEnv({ TAVILY_API_KEY: undefined, BRAVE_API_KEY: 'BSA-test' }, () => {
+      const result = resolveSearchProvider('auto', authPath)
+      assert.equal(result, 'brave')
+    })
+  } finally {
+    cleanup()
+  }
 })
 
 test('resolveSearchProvider returns tavily when both keys set and preference is auto', async () => {
-  const { resolveSearchProvider } = await import(
-    '../resources/extensions/search-the-web/provider.ts'
-  )
-  withEnv({ TAVILY_API_KEY: 'tvly-test', BRAVE_API_KEY: 'BSA-test' }, () => {
-    const result = resolveSearchProvider('auto')
-    assert.equal(result, 'tavily')
-  })
+  const tmp = mkdtempSync(join(tmpdir(), 'gsd-provider-home-'))
+  const { resolveSearchProvider } = await importProviderWithMockHome(tmp)
+  const { authPath, cleanup } = makeTmpAuth()
+  try {
+    withEnv({ TAVILY_API_KEY: 'tvly-test', BRAVE_API_KEY: 'BSA-test' }, () => {
+      const result = resolveSearchProvider('auto', authPath)
+      assert.equal(result, 'tavily')
+    })
+  } finally {
+    cleanup()
+  }
 })
 
 test('resolveSearchProvider returns tavily when both keys set and preference is tavily', async () => {
-  const { resolveSearchProvider } = await import(
-    '../resources/extensions/search-the-web/provider.ts'
-  )
-  withEnv({ TAVILY_API_KEY: 'tvly-test', BRAVE_API_KEY: 'BSA-test' }, () => {
-    const result = resolveSearchProvider('tavily')
-    assert.equal(result, 'tavily')
-  })
+  const tmp = mkdtempSync(join(tmpdir(), 'gsd-provider-home-'))
+  const { resolveSearchProvider } = await importProviderWithMockHome(tmp)
+  const { authPath, cleanup } = makeTmpAuth()
+  try {
+    withEnv({ TAVILY_API_KEY: 'tvly-test', BRAVE_API_KEY: 'BSA-test' }, () => {
+      const result = resolveSearchProvider('tavily', authPath)
+      assert.equal(result, 'tavily')
+    })
+  } finally {
+    cleanup()
+  }
 })
 
 test('resolveSearchProvider returns brave when both keys set and preference is brave', async () => {
-  const { resolveSearchProvider } = await import(
-    '../resources/extensions/search-the-web/provider.ts'
-  )
-  withEnv({ TAVILY_API_KEY: 'tvly-test', BRAVE_API_KEY: 'BSA-test' }, () => {
-    const result = resolveSearchProvider('brave')
-    assert.equal(result, 'brave')
-  })
+  const tmp = mkdtempSync(join(tmpdir(), 'gsd-provider-home-'))
+  const { resolveSearchProvider } = await importProviderWithMockHome(tmp)
+  const { authPath, cleanup } = makeTmpAuth()
+  try {
+    withEnv({ TAVILY_API_KEY: 'tvly-test', BRAVE_API_KEY: 'BSA-test' }, () => {
+      const result = resolveSearchProvider('brave', authPath)
+      assert.equal(result, 'brave')
+    })
+  } finally {
+    cleanup()
+  }
 })
 
 test('resolveSearchProvider returns null when neither key is set', async () => {
-  const { resolveSearchProvider } = await import(
-    '../resources/extensions/search-the-web/provider.ts'
-  )
-  withEnv({ TAVILY_API_KEY: undefined, BRAVE_API_KEY: undefined }, () => {
-    const result = resolveSearchProvider('auto')
-    assert.equal(result, null)
-  })
+  const tmp = mkdtempSync(join(tmpdir(), 'gsd-provider-home-'))
+  const { resolveSearchProvider } = await importProviderWithMockHome(tmp)
+  const { authPath, cleanup } = makeTmpAuth()
+  try {
+    withEnv({ TAVILY_API_KEY: undefined, BRAVE_API_KEY: undefined }, () => {
+      const result = resolveSearchProvider('auto', authPath)
+      assert.equal(result, null)
+    })
+  } finally {
+    cleanup()
+  }
 })
 
 test('resolveSearchProvider treats invalid preference as auto', async () => {
-  const { resolveSearchProvider } = await import(
-    '../resources/extensions/search-the-web/provider.ts'
-  )
-  withEnv({ TAVILY_API_KEY: 'tvly-test', BRAVE_API_KEY: 'BSA-test' }, () => {
-    const result = resolveSearchProvider('google')
-    assert.equal(result, 'tavily', 'invalid preference falls back to auto → tavily first')
-  })
+  const tmp = mkdtempSync(join(tmpdir(), 'gsd-provider-home-'))
+  const { resolveSearchProvider } = await importProviderWithMockHome(tmp)
+  const { authPath, cleanup } = makeTmpAuth()
+  try {
+    withEnv({ TAVILY_API_KEY: 'tvly-test', BRAVE_API_KEY: 'BSA-test' }, () => {
+      const result = resolveSearchProvider('google', authPath)
+      assert.equal(result, 'tavily', 'invalid preference falls back to auto → tavily first')
+    })
+  } finally {
+    cleanup()
+  }
 })
 
 test('resolveSearchProvider falls back to other provider when preferred key missing', async () => {
-  const { resolveSearchProvider } = await import(
-    '../resources/extensions/search-the-web/provider.ts'
-  )
-  // Prefer tavily but only brave key exists → falls back to brave
-  withEnv({ TAVILY_API_KEY: undefined, BRAVE_API_KEY: 'BSA-test' }, () => {
-    const result = resolveSearchProvider('tavily')
-    assert.equal(result, 'brave', 'falls back to brave when tavily preferred but key missing')
-  })
-  // Prefer brave but only tavily key exists → falls back to tavily
-  withEnv({ TAVILY_API_KEY: 'tvly-test', BRAVE_API_KEY: undefined }, () => {
-    const result = resolveSearchProvider('brave')
-    assert.equal(result, 'tavily', 'falls back to tavily when brave preferred but key missing')
-  })
+  const tmp = mkdtempSync(join(tmpdir(), 'gsd-provider-home-'))
+  const { resolveSearchProvider } = await importProviderWithMockHome(tmp)
+  const { authPath, cleanup } = makeTmpAuth()
+  try {
+    // Prefer tavily but only brave key exists → falls back to brave
+    withEnv({ TAVILY_API_KEY: undefined, BRAVE_API_KEY: 'BSA-test' }, () => {
+      const result = resolveSearchProvider('tavily', authPath)
+      assert.equal(result, 'brave', 'falls back to brave when tavily preferred but key missing')
+    })
+    // Prefer brave but only tavily key exists → falls back to tavily
+    withEnv({ TAVILY_API_KEY: 'tvly-test', BRAVE_API_KEY: undefined }, () => {
+      const result = resolveSearchProvider('brave', authPath)
+      assert.equal(result, 'tavily', 'falls back to tavily when brave preferred but key missing')
+    })
+  } finally {
+    cleanup()
+  }
 })
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -149,9 +189,8 @@ test('resolveSearchProvider falls back to other provider when preferred key miss
 // ═══════════════════════════════════════════════════════════════════════════
 
 test('getSearchProviderPreference returns auto when no preference stored', async () => {
-  const { getSearchProviderPreference } = await import(
-    '../resources/extensions/search-the-web/provider.ts'
-  )
+  const tmp = mkdtempSync(join(tmpdir(), 'gsd-provider-home-'))
+  const { getSearchProviderPreference } = await importProviderWithMockHome(tmp)
   const { authPath, cleanup } = makeTmpAuth()
   try {
     const pref = getSearchProviderPreference(authPath)
@@ -162,9 +201,8 @@ test('getSearchProviderPreference returns auto when no preference stored', async
 })
 
 test('getSearchProviderPreference reads from auth.json via AuthStorage', async () => {
-  const { getSearchProviderPreference } = await import(
-    '../resources/extensions/search-the-web/provider.ts'
-  )
+  const tmp = mkdtempSync(join(tmpdir(), 'gsd-provider-home-'))
+  const { getSearchProviderPreference } = await importProviderWithMockHome(tmp)
   const { authPath, cleanup } = makeTmpAuth({
     search_provider: { type: 'api_key', key: 'tavily' },
   })
@@ -177,9 +215,8 @@ test('getSearchProviderPreference reads from auth.json via AuthStorage', async (
 })
 
 test('setSearchProviderPreference writes to auth.json via AuthStorage', async () => {
-  const { getSearchProviderPreference, setSearchProviderPreference } = await import(
-    '../resources/extensions/search-the-web/provider.ts'
-  )
+  const tmp = mkdtempSync(join(tmpdir(), 'gsd-provider-home-'))
+  const { getSearchProviderPreference, setSearchProviderPreference } = await importProviderWithMockHome(tmp)
   const { authPath, cleanup } = makeTmpAuth()
   try {
     setSearchProviderPreference('brave', authPath)
@@ -199,9 +236,8 @@ test('setSearchProviderPreference writes to auth.json via AuthStorage', async ()
 })
 
 test('getSearchProviderPreference returns auto for invalid stored value', async () => {
-  const { getSearchProviderPreference } = await import(
-    '../resources/extensions/search-the-web/provider.ts'
-  )
+  const tmp = mkdtempSync(join(tmpdir(), 'gsd-provider-home-'))
+  const { getSearchProviderPreference } = await importProviderWithMockHome(tmp)
   const { authPath, cleanup } = makeTmpAuth({
     search_provider: { type: 'api_key', key: 'google' },
   })
@@ -218,9 +254,8 @@ test('getSearchProviderPreference returns auto for invalid stored value', async 
 // ═══════════════════════════════════════════════════════════════════════════
 
 test('getTavilyApiKey reads from process.env.TAVILY_API_KEY', async () => {
-  const { getTavilyApiKey } = await import(
-    '../resources/extensions/search-the-web/provider.ts'
-  )
+  const tmp = mkdtempSync(join(tmpdir(), 'gsd-provider-home-'))
+  const { getTavilyApiKey } = await importProviderWithMockHome(tmp)
   withEnv({ TAVILY_API_KEY: 'tvly-test-key' }, () => {
     assert.equal(getTavilyApiKey(), 'tvly-test-key')
   })
@@ -230,9 +265,8 @@ test('getTavilyApiKey reads from process.env.TAVILY_API_KEY', async () => {
 })
 
 test('getBraveApiKey reads from process.env.BRAVE_API_KEY', async () => {
-  const { getBraveApiKey } = await import(
-    '../resources/extensions/search-the-web/provider.ts'
-  )
+  const tmp = mkdtempSync(join(tmpdir(), 'gsd-provider-home-'))
+  const { getBraveApiKey } = await importProviderWithMockHome(tmp)
   withEnv({ BRAVE_API_KEY: 'BSA-test-key' }, () => {
     assert.equal(getBraveApiKey(), 'BSA-test-key')
   })
@@ -246,9 +280,8 @@ test('getBraveApiKey reads from process.env.BRAVE_API_KEY', async () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 test('provider.ts exports exactly the 5 expected functions', async () => {
-  const provider = await import(
-    '../resources/extensions/search-the-web/provider.ts'
-  )
+  const tmp = mkdtempSync(join(tmpdir(), 'gsd-provider-home-'))
+  const provider = await importProviderWithMockHome(tmp)
 
   const expectedExports = [
     'resolveSearchProvider',
