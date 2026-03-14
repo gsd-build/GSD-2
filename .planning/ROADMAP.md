@@ -232,7 +232,7 @@ Plans:
 | 13. Session Streaming Hardening | 7/7 | Complete    | 2026-03-13 | — |
 | 14. Slice Integration | 6/6 | Complete    | 2026-03-13 | — |
 | 15. Tauri Shell | 5/5 | Complete   | 2026-03-13 | — |
-| 16. OAuth + Keychain | 4/4 | Complete   | 2026-03-13 | — |
+| 16. OAuth + Keychain | 4/4 | Complete   | 2026-03-14 | — |
 | 17. Permission Model | v2.0 | 0/TBD | Not started | — |
 | 18. Builder Mode | v2.0 | 0/TBD | Not started | — |
 | 19. Project Workspace | v2.0 | 0/TBD | Not started | — |

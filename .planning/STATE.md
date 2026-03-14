@@ -3,10 +3,25 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Native Desktop
 status: in_progress
+last_updated: "2026-03-14T07:58:50.878Z"
+last_activity: "2026-03-13 — Plan 16-04 complete: SettingsView Provider section (active provider, status dot, change flow), auth.test.ts (7 tests), 698 tests pass"
+progress:
+  total_phases: 10
+  completed_phases: 5
+  total_plans: 33
+  completed_plans: 32
+  percent: 97
+---
+
+---
+gsd_state_version: 1.0
+milestone: v2.0
+milestone_name: Native Desktop
+status: in_progress
 last_updated: "2026-03-13T18:28:35.222Z"
 last_activity: "2026-03-13 — Plan 16-03 complete: ProviderPickerScreen (2x2 grid), OAuthConnectFlow (amber spinner), ApiKeyForm (masked input + Eye toggle); App.tsx auth guard wired; 691 tests pass"
 progress:
-  total_phases: 10
+  [██████████] 97%
   completed_phases: 5
   total_plans: 33
   completed_plans: 32
@@ -341,12 +356,12 @@ See: .planning/PROJECT.md (updated 2026-03-12)
 
 ## Current Position
 
-Phase: 16 of 20 (OAuth + Keychain) — AWAITING HUMAN VERIFICATION (all 4 plans complete, SC-1..SC-4 pending)
+Phase: 16 of 20 (OAuth + Keychain) — COMPLETE (all 4 plans done, SC-1..SC-4 verified 2026-03-14)
 Plan: 4 of 4 complete (plans 01-04 done — Rust OAuth backend, TS hooks, Provider Picker UI, Settings Provider section + tests)
-Status: Plan 16-04 code complete. Awaiting human verification checkpoint SC-1 through SC-4 (tauri:dev manual testing).
-Last activity: 2026-03-13 — Plan 16-04 complete: SettingsView Provider section (active provider, status dot, change flow), auth.test.ts (7 tests), 698 tests pass
+Status: Phase 16 fully complete. Human verification approved SC-1 through SC-4. Next: Phase 17 (model config).
+Last activity: 2026-03-14 — Plan 16-04 human verification approved: SC-1..SC-4 all passed — Phase 16 OAuth + Keychain complete
 
-Progress: [██████████] 97% (32/33 plans complete)
+Progress: [██████████] 97% (33/33 plans complete)
 
 ## Milestone Archive
 
@@ -452,6 +467,7 @@ Progress: [██████████] 97% (32/33 plans complete)
 - [Phase 16]: OAuthConnectFlow CSS keyframes injected via style tag — self-contained component, no separate CSS file needed
 - [Phase 16-oauth-keychain]: Provider section inserted as FIRST section in SettingsView — critical config always visible before model settings
 - [Phase 16-oauth-keychain]: Inline confirmation guard (setConfirmChange state) before changeProvider() + window.location.reload() — no modal needed
+- [Phase 16-oauth-keychain]: Human verification SC-1 through SC-4 all passed — auth flow fully verified on 2026-03-14
 
 ### Blockers/Concerns
 
