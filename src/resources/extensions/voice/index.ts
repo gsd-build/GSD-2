@@ -44,6 +44,12 @@ let linuxReady = false;
 function ensureLinuxReady(ctx: ExtensionContext): boolean {
 	if (linuxReady) return true;
 
+	// Check GROQ_API_KEY is available
+	if (!process.env.GROQ_API_KEY) {
+		ctx.ui.notify("Voice: GROQ_API_KEY not set — run 'gsd config' to configure", "error");
+		return false;
+	}
+
 	// Check python3 exists
 	try {
 		execSync("which python3", { stdio: "pipe" });
@@ -211,21 +217,8 @@ export default function (pi: ExtensionAPI) {
 		onReady: () => void,
 	) {
 		if (IS_LINUX) {
-			// Pass GROQ_API_KEY to the Python process — check process.env, then .env file
-			const spawnEnv = { ...process.env };
-			if (!spawnEnv.GROQ_API_KEY) {
-				try {
-					const envPath = path.join(process.cwd(), ".env");
-					const envContent = fs.readFileSync(envPath, "utf-8");
-					const match = envContent.match(/^GROQ_API_KEY=(.+)$/m);
-					if (match) spawnEnv.GROQ_API_KEY = match[1].trim();
-				} catch {
-					// .env not found — Python script will emit ERROR if key needed
-				}
-			}
 			recognizerProcess = spawn(linuxPython(), [PYTHON_SCRIPT], {
 				stdio: ["pipe", "pipe", "pipe"],
-				env: spawnEnv,
 			});
 		} else {
 			recognizerProcess = spawn(RECOGNIZER_BIN, [], { stdio: ["pipe", "pipe", "pipe"] });
