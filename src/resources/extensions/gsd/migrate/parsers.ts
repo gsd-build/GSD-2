@@ -2,7 +2,7 @@
 // Pure functions that take file content (string) and return typed data.
 // Zero Pi dependencies — uses only exported helpers from files.ts.
 
-import { splitFrontmatter, parseFrontmatterMap, extractBoldField } from '../files.ts';
+import { splitFrontmatter, parseFrontmatterMap, extractBoldField } from '../files.js';
 
 import type {
   PlanningRoadmap,
@@ -17,7 +17,7 @@ import type {
   PlanningRequirement,
   PlanningState,
   PlanningConfig,
-} from './types.ts';
+} from './types.js';
 
 // Re-export PlanningProjectMeta — not in types.ts yet, use string for project field
 // Actually PlanningProjectMeta isn't in types.ts — project is stored as string | null.

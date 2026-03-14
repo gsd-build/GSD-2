@@ -1,7 +1,7 @@
 import { execSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { relMilestoneFile, milestonesDir } from "./paths.js";
-import { parseRoadmapSlices } from "./roadmap-slices.ts";
+import { parseRoadmapSlices } from "./roadmap-slices.js";
 import { extractMilestoneSeq, milestoneIdSort } from "./guided-flow.js";
 
 const SLICE_DISPATCH_TYPES = new Set([

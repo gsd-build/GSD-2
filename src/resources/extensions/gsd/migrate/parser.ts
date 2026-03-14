@@ -14,8 +14,8 @@ import {
   parseOldProject,
   parseOldState,
   parseOldConfig,
-} from './parsers.ts';
-import { validatePlanningDirectory } from './validator.ts';
+} from './parsers.js';
+import { validatePlanningDirectory } from './validator.js';
 
 import type {
   PlanningProject,
@@ -24,7 +24,7 @@ import type {
   PlanningMilestone,
   PlanningResearch,
   PlanningPhaseFile,
-} from './types.ts';
+} from './types.js';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 

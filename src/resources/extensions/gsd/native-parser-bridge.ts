@@ -4,7 +4,7 @@
 //
 // Functions fall back to JS implementations if the native module is unavailable.
 
-import type { Roadmap, BoundaryMapEntry, RoadmapSliceEntry, RiskLevel } from './types.ts';
+import type { Roadmap, BoundaryMapEntry, RoadmapSliceEntry, RiskLevel } from './types.js';
 
 let nativeModule: {
   parseFrontmatter: (content: string) => { metadata: string; body: string };

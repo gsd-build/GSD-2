@@ -16,11 +16,11 @@ import type {
   RequirementCounts,
   SecretsManifest, SecretsManifestEntry, SecretsManifestEntryStatus,
   ManifestStatus,
-} from './types.ts';
+} from './types.js';
 
-import { checkExistingEnvKeys } from '../get-secrets-from-user.ts';
-import { parseRoadmapSlices } from './roadmap-slices.ts';
-import { nativeParseRoadmap, nativeExtractSection, NATIVE_UNAVAILABLE } from './native-parser-bridge.ts';
+import { checkExistingEnvKeys } from '../get-secrets-from-user.js';
+import { parseRoadmapSlices } from './roadmap-slices.js';
+import { nativeParseRoadmap, nativeExtractSection, NATIVE_UNAVAILABLE } from './native-parser-bridge.js';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 

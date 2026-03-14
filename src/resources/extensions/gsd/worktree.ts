@@ -17,12 +17,12 @@
 
 import { sep } from "node:path";
 
-import { GitServiceImpl, writeIntegrationBranch } from "./git-service.ts";
-import { loadEffectiveGSDPreferences } from "./preferences.ts";
+import { GitServiceImpl, writeIntegrationBranch } from "./git-service.js";
+import { loadEffectiveGSDPreferences } from "./preferences.js";
 
 // Re-export MergeSliceResult from the canonical source (D014 — type-only re-export)
-export type { MergeSliceResult } from "./git-service.ts";
-export { MergeConflictError } from "./git-service.ts";
+export type { MergeSliceResult } from "./git-service.js";
+export { MergeConflictError } from "./git-service.js";
 
 // ─── Lazy GitServiceImpl Cache ─────────────────────────────────────────────
 

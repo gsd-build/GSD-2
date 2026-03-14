@@ -1,4 +1,4 @@
-import type { RoadmapSliceEntry, RiskLevel } from "./types.ts";
+import type { RoadmapSliceEntry, RiskLevel } from "./types.js";
 
 function extractSlicesSection(content: string): string {
   const headingMatch = /^## Slices\s*$/m.exec(content);

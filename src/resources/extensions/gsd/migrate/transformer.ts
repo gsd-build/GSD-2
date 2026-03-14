@@ -18,7 +18,7 @@ import type {
   GSDSliceSummaryData,
   GSDTaskSummaryData,
   GSDBoundaryEntry,
-} from './types.ts';
+} from './types.js';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 

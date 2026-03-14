@@ -6,8 +6,8 @@ import {
   relTaskFile,
   resolveSliceFile,
   resolveTaskFile,
-} from "./paths.ts";
-import { loadFile, parseTaskPlanMustHaves, countMustHavesMentionedInSummary } from "./files.ts";
+} from "./paths.js";
+import { loadFile, parseTaskPlanMustHaves, countMustHavesMentionedInSummary } from "./files.js";
 
 export type UnitRuntimePhase =
   | "dispatched"

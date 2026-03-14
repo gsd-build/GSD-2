@@ -9,7 +9,7 @@ import type {
   RoadmapSliceEntry,
   SlicePlan,
   MilestoneRegistryEntry,
-} from './types.ts';
+} from './types.js';
 
 import {
   parseRoadmap,
@@ -18,7 +18,7 @@ import {
   loadFile,
   parseRequirementCounts,
   parseContextDependsOn,
-} from './files.ts';
+} from './files.js';
 
 import {
   milestonesDir,
@@ -28,8 +28,8 @@ import {
   resolveSliceFile,
   resolveTaskFile,
   resolveGsdRootFile,
-} from './paths.ts';
-import { getActiveSliceBranch } from './worktree.ts';
+} from './paths.js';
+import { getActiveSliceBranch } from './worktree.js';
 import { milestoneIdSort } from './guided-flow.js';
 
 import { readdirSync } from 'fs';

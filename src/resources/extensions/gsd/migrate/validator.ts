@@ -5,7 +5,7 @@
 import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-import type { ValidationResult, ValidationIssue, ValidationSeverity } from './types.ts';
+import type { ValidationResult, ValidationIssue, ValidationSeverity } from './types.js';
 
 function issue(file: string, severity: ValidationSeverity, message: string): ValidationIssue {
   return { file, severity, message };

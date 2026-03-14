@@ -69,10 +69,10 @@ import {
   setActiveMilestoneId,
   switchToMain,
   mergeSliceToMain,
-} from "./worktree.ts";
-import { GitServiceImpl, runGit } from "./git-service.ts";
-import { getPriorSliceCompletionBlocker } from "./dispatch-guard.ts";
-import type { GitPreferences } from "./git-service.ts";
+} from "./worktree.js";
+import { GitServiceImpl, runGit } from "./git-service.js";
+import { getPriorSliceCompletionBlocker } from "./dispatch-guard.js";
+import type { GitPreferences } from "./git-service.js";
 import { truncateToWidth, visibleWidth } from "@gsd/pi-tui";
 import { makeUI, GLYPH, INDENT } from "../shared/ui.js";
 import { showNextAction } from "../shared/next-action-ui.js";

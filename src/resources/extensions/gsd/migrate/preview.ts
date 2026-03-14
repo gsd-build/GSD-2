@@ -1,8 +1,8 @@
 // GSD Migration Preview — Pre-write statistics
 // Pure function, no I/O. Computes counts from a GSDProject.
 
-import type { GSDProject } from './types.ts';
-import type { MigrationPreview } from './writer.ts';
+import type { GSDProject } from './types.js';
+import type { MigrationPreview } from './writer.js';
 
 /**
  * Compute pre-write statistics from a GSDProject without performing I/O.

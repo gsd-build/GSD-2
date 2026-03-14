@@ -1,12 +1,12 @@
 // Barrel export for old .planning migration module
 
-export { handleMigrate } from './command.ts';
-export { parsePlanningDirectory } from './parser.ts';
-export { validatePlanningDirectory } from './validator.ts';
-export { transformToGSD } from './transformer.ts';
-export { writeGSDDirectory } from './writer.ts';
-export type { WrittenFiles, MigrationPreview } from './writer.ts';
-export { generatePreview } from './preview.ts';
+export { handleMigrate } from './command.js';
+export { parsePlanningDirectory } from './parser.js';
+export { validatePlanningDirectory } from './validator.js';
+export { transformToGSD } from './transformer.js';
+export { writeGSDDirectory } from './writer.js';
+export type { WrittenFiles, MigrationPreview } from './writer.js';
+export { generatePreview } from './preview.js';
 export type {
   // Input types (old .planning format)
   PlanningProject,
@@ -39,4 +39,4 @@ export type {
   GSDSliceSummaryData,
   GSDTaskSummaryData,
   GSDBoundaryEntry,
-} from './types.ts';
+} from './types.js';

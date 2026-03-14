@@ -16,7 +16,7 @@ import {
   detectWorktreeName,
   getSliceBranchName,
   SLICE_BRANCH_RE,
-} from "./worktree.ts";
+} from "./worktree.js";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
