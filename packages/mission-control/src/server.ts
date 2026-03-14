@@ -13,6 +13,7 @@ import { handleSessionStatusRequest } from "./server/session-status-api";
 import { handleProxyRequest } from "./server/proxy-api";
 import { handleUatResultsRequest } from "./server/uat-results-api";
 import { handleGsdFileRequest } from "./server/gsd-file-api";
+import { isTrusted, writeTrustFlag } from "./server/trust-api";
 
 const repoRoot = resolve(import.meta.dir, "../../..");
 
@@ -150,6 +151,23 @@ const server = Bun.serve({
           Response.json({ error: err.message || "Switch failed" }, { status })
         );
       }
+    }
+
+    // GET /api/trust-status — check if current project has been trusted (PERM-02)
+    if (pathname === "/api/trust-status") {
+      const gsdDir = pipeline.getPlanningDir();
+      const trusted = await isTrusted(gsdDir);
+      return addCorsHeaders(
+        Response.json({ trusted, gsdDir })
+      );
+    }
+
+    // POST /api/trust — write trust flag for a project (PERM-02)
+    if (pathname === "/api/trust" && req.method === "POST") {
+      const body = await req.json() as { dir?: string };
+      const gsdDir = body.dir ?? pipeline.getPlanningDir();
+      await writeTrustFlag(gsdDir);
+      return addCorsHeaders(Response.json({ ok: true }));
     }
 
     // Handle CORS preflight for API routes
