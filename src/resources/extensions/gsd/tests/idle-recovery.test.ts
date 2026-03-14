@@ -413,7 +413,9 @@ function initGitRepo(): string {
 
     try {
       execSync("git merge feature", { cwd: repo, stdio: "pipe" });
-    } catch {}
+    } catch (error) {
+      // expected: merge conflict to create unmerged (UU) entries for this test
+    }
 
     const porcelain = execSync("git status --porcelain", { cwd: repo }).toString();
     assert(porcelain.includes("UU "), "precondition: UU conflict entry in porcelain output");
