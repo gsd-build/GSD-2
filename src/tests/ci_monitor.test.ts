@@ -67,7 +67,6 @@ if (workflows.status === 0) {
 } else {
   // If it fails, should be due to missing directory
   assert(workflows.stderr.includes('No .github/workflows'), 'list-workflows fails gracefully when no workflows dir');
-  passed++; // Count as pass - correct error handling
 }
 
 console.log('\n# === (d) check-actions validates workflow file ===');
@@ -91,8 +90,9 @@ assert(compareMissing.status !== 0, 'compare fails with only one run-id');
 
 console.log('\n# ========================================');
 console.log(`# Results: ${passed} passed, ${failed} failed`);
-console.log('# All tests passed ✓');
 
 if (failed > 0) {
   process.exit(1);
 }
+
+console.log('# All tests passed ✓');

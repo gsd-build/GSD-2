@@ -17,7 +17,13 @@ const gh = (args, opts = {}) => {
   return r.stdout;
 };
 const ghJson = (args, opts) => JSON.parse(gh(args, opts));
-const getRepo = () => process.env.GITHUB_REPOSITORY || ghJson(['repo', 'view', '--json', 'nameWithOwner']).nameWithOwner;
+const cliRepo = (() => {
+  const a = process.argv;
+  const i = a.findIndex(x => x === '--repo' || x === '-R');
+  return i >= 0 && a[i + 1] ? a[i + 1] : null;
+})();
+let _repo = null;
+const getRepo = () => _repo || (_repo = cliRepo || process.env.GITHUB_REPOSITORY || ghJson(['repo', 'view', '--json', 'nameWithOwner']).nameWithOwner);
 const runView = (id, f = 'status,conclusion,jobs') => ghJson(['run', 'view', String(id), '--repo', getRepo(), '--json', f]);
 const runList = (opts = {}) => {
   const args = ['run', 'list', '--repo', getRepo(), '--limit', String(opts.limit || 10),
@@ -25,7 +31,7 @@ const runList = (opts = {}) => {
   if (opts.branch) args.push('--branch', opts.branch);
   return ghJson(args);
 };
-const getLogs = (runId, jobId) => gh(['api', `repos/${getRepo()}/actions/jobs/${jobId}/logs`], { maxBuffer: MAXBUF });
+const getLogs = (runId, jobId) => gh(['run', 'view', String(runId), '--repo', getRepo(), '--log', '--job', String(jobId)], { maxBuffer: MAXBUF });
 const findJob = (runId, name) => {
   const job = runView(runId, 'jobs').jobs?.find(j => j.name === name);
   if (!job) { console.error(`❌ Job "${name}" not found`); process.exit(1); }
@@ -85,13 +91,13 @@ const cmd = {
     const run = runView(id, 'jobs');
     if (!(run.jobs || []).some(j => j.conclusion === 'failure')) { console.log('✅ No failed jobs found.'); return; }
     console.log(`\n❌ Failed jobs in run ${id}:\n`);
-    try { console.log(gh(['run', 'view', String(id), '--repo', getRepo(), '--log-failed'], { maxBuffer: MAXBUF }).split('\n').slice(-(parseInt(opts.lines) || 200)).join('\n')); }
+    try { console.log(gh(['run', 'view', String(id), '--repo', getRepo(), '--log-failed'], { maxBuffer: MAXBUF }).split(/\r?\n/).slice(-(parseInt(opts.lines) || 200)).join('\n')); }
     catch (e) { console.error(`Could not fetch logs: ${e.message}`); }
   },
   log: (id, opts = {}) => {
     console.log(`\n📋 Full logs for run ${id}:\n`);
     try {
-      let lines = gh(['run', 'view', String(id), '--repo', getRepo(), '--log'], { maxBuffer: MAXBUF }).split('\n');
+      let lines = gh(['run', 'view', String(id), '--repo', getRepo(), '--log'], { maxBuffer: MAXBUF }).split(/\r?\n/);
       if (opts.filter) { const re = new RegExp(opts.filter, 'gi'); lines = lines.filter(l => re.test(l)); console.log(`🔍 Filtered (${lines.length} lines):\n`); }
       console.log(lines.slice(-(parseInt(opts.lines) || 500)).join('\n'));
     } catch (e) { console.error(`Could not fetch logs: ${e.message}`); }
@@ -100,7 +106,7 @@ const cmd = {
     if (!opts.pattern) { console.error('❌ --pattern required'); process.exit(1); }
     console.log(`\n🔍 Searching for "${opts.pattern}" in run ${id}:\n`);
     try {
-      const lines = gh(['run', 'view', String(id), '--repo', getRepo(), '--log'], { maxBuffer: MAXBUF }).split('\n');
+      const lines = gh(['run', 'view', String(id), '--repo', getRepo(), '--log'], { maxBuffer: MAXBUF }).split(/\r?\n/);
       const re = new RegExp(opts.pattern, 'gi');
       const matches = lines.map((l, i) => re.test(l) ? { i, l } : null).filter(Boolean);
       if (!matches.length) { console.log('No matches found.'); return; }
@@ -126,7 +132,7 @@ const cmd = {
       if (notOk?.length) { console.log(`\nFailed tests:`); notOk.slice(0, 15).forEach(x => console.log(`  ${x}`)); if (notOk.length > 15) console.log(`  ... and ${notOk.length - 15} more`); }
     } catch (e) { console.error(`Could not fetch logs: ${e.message}`); }
   },
-  tail: (id, job, opts = {}) => console.log(getLogs(id, findJob(id, job).id).split('\n').slice(-(parseInt(opts.lines) || 100)).join('\n')),
+  tail: (id, job, opts = {}) => console.log(getLogs(id, findJob(id, job).id).split(/\r?\n/).slice(-(parseInt(opts.lines) || 100)).join('\n')),
   'wait-for': async (id, jobName, opts = {}) => {
     if (!opts.keyword) { console.error('❌ --keyword required'); process.exit(1); }
     const to = (parseInt(opts.timeout) || TIMEOUT) * 1000, int = (parseInt(opts.interval) || 5) * 1000;
@@ -141,7 +147,7 @@ const cmd = {
         const logs = getLogs(id, job.id);
         if (logs.includes(opts.keyword)) {
           console.log(`\n✅ Found "${opts.keyword}"!`);
-          const lines = logs.split('\n'), idx = lines.findIndex(l => l.includes(opts.keyword));
+          const lines = logs.split(/\r?\n/), idx = lines.findIndex(l => l.includes(opts.keyword));
           if (idx >= 0) console.log('\n' + lines.slice(Math.max(0, idx - 2), idx + 3).join('\n'));
           process.exit(0);
         }
@@ -179,7 +185,7 @@ const cmd = {
     for (const r of list) console.log(`${emoji(r.status, r.conclusion)} ${String(r.databaseId).padEnd(10)} ${new Date(r.createdAt).toLocaleDateString()} ${r.displayTitle?.substring(0, 40) || ''}`);
   },
   'list-workflows': (opts = {}) => {
-    const dir = '.github/workflows';
+    const dir = path.join('.github', 'workflows');
     if (!fs.existsSync(dir)) { console.error('❌ No .github/workflows directory'); process.exit(1); }
     const files = fs.readdirSync(dir).filter(f => f.endsWith('.yml') || f.endsWith('.yaml')).sort();
     if (!files.length) { console.log('No workflow files found.'); return []; }
@@ -193,13 +199,13 @@ const cmd = {
     return files;
   },
   'check-actions': (wf, opts = {}) => {
-    const fp = wf || '.github/workflows/ci.yml';
+    const fp = wf || path.join('.github', 'workflows', 'ci.yml');
     if (!fs.existsSync(fp)) { console.error(`❌ File not found: ${fp}`); process.exit(1); }
     const c = fs.readFileSync(fp, 'utf-8');
     
     // Find all uses: statements
     const actions = new Set();
-    const lines = c.split('\n');
+    const lines = c.split(/\r?\n/);
     for (const line of lines) {
       const m = line.match(/uses:\s*['"]?([^'"\s]+)['"]?/);
       if (m && !m[1].startsWith('./') && !m[1].startsWith('docker://')) {
@@ -259,7 +265,7 @@ COMMANDS:
   list-workflows                      List all workflow files
   check-actions [file]                Check action versions via GraphQL
 
-OPTIONS: --interval, --timeout, --lines, --filter, --pattern, --context, --branch, --keyword, --limit
+OPTIONS: --interval, --timeout, --lines, --filter, --pattern, --context, --branch, --keyword, --limit, --repo/-R
 `;
 
 const REQ = {

@@ -1,7 +1,7 @@
 /**
  * Integration tests for npm pack and install.
  *
- * These tests spawn child processes (npm pack, tar, node)
+ * These tests spawn child processes (npm pack, node)
  * and are resource-intensive. Run separately from unit tests.
  *
  * Prerequisite: npm run build must be run first.
@@ -11,34 +11,65 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { execSync, spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { execFileSync, spawn } from "node:child_process";
+import { createReadStream, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
+import { createGunzip } from "node:zlib";
 
 const projectRoot = process.cwd();
+
+if (!existsSync(join(projectRoot, "dist"))) {
+  throw new Error("dist/ not found — run: npm run build");
+}
+
+function packTarball(): string {
+  const out = execFileSync("npm", ["pack", "--json"], {
+    cwd: projectRoot,
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  return join(projectRoot, JSON.parse(out)[0].filename);
+}
+
+/** List file paths inside a .tgz using Node built-ins only (no tar CLI or npm package). */
+function listTarEntries(tarballPath: string): Promise<string[]> {
+  return new Promise((resolve, reject) => {
+    const files: string[] = [];
+    let buf = Buffer.alloc(0);
+    const gunzip = createGunzip();
+    gunzip.on("data", (chunk: Buffer) => { buf = Buffer.concat([buf, chunk]); });
+    gunzip.on("end", () => {
+      let offset = 0;
+      while (offset + 512 <= buf.length) {
+        const header = buf.subarray(offset, offset + 512);
+        if (header.every(b => b === 0)) break; // end-of-archive sentinel
+        const name   = header.subarray(0,   100).toString("utf8").replace(/\0.*/, "");
+        const prefix = header.subarray(345, 500).toString("utf8").replace(/\0.*/, "");
+        const type   = String.fromCharCode(header[156]);
+        const size   = parseInt(header.subarray(124, 136).toString("utf8").replace(/\0/g, "").trim(), 8) || 0;
+        if (name && type !== "5") files.push(prefix ? `${prefix}/${name}` : name);
+        offset += 512 + Math.ceil(size / 512) * 512;
+      }
+      resolve(files);
+    });
+    gunzip.on("error", reject);
+    createReadStream(tarballPath).pipe(gunzip);
+  });
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 1. npm pack produces valid tarball with correct file layout
 // ═══════════════════════════════════════════════════════════════════════════
 
 test("npm pack produces tarball with required files", async () => {
-  // Pack (assumes build already done)
-  const packOutput = execSync("npm pack --json 2>/dev/null", {
-    cwd: projectRoot,
-    encoding: "utf-8",
-  });
-  const packInfo = JSON.parse(packOutput);
-  const tarball = packInfo[0].filename;
-  const tarballPath = join(projectRoot, tarball);
+  const tarballPath = packTarball();
 
-  assert.ok(existsSync(tarballPath), `tarball ${tarball} created`);
+  assert.ok(existsSync(tarballPath), "tarball created");
 
   try {
-    // List tarball contents
-    const contents = execSync(`tar tzf ${tarballPath}`, { encoding: "utf-8" });
-    const files = contents.split("\n").filter(Boolean);
+    const files = await listTarEntries(tarballPath);
 
     // Critical files must be present
     assert.ok(files.some(f => f.includes("dist/loader.js")), "tarball contains dist/loader.js");
@@ -56,7 +87,6 @@ test("npm pack produces tarball with required files", async () => {
     assert.equal(pkg.piConfig?.name, "gsd", "pkg/package.json piConfig.name is gsd");
     assert.equal(pkg.piConfig?.configDir, ".gsd", "pkg/package.json piConfig.configDir is .gsd");
   } finally {
-    // Clean up tarball
     rmSync(tarballPath, { force: true });
   }
 });
@@ -66,32 +96,28 @@ test("npm pack produces tarball with required files", async () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 test("tarball installs and gsd binary resolves", async () => {
-  // Pack (assumes build already done)
-  const packOutput = execSync("npm pack --json 2>/dev/null", {
-    cwd: projectRoot,
-    encoding: "utf-8",
-  });
-  const packInfo = JSON.parse(packOutput);
-  const tarball = packInfo[0].filename;
-  const tarballPath = join(projectRoot, tarball);
+  const tarballPath = packTarball();
 
   const tmp = mkdtempSync(join(tmpdir(), "gsd-install-test-"));
 
   try {
     // Install from tarball into a temp prefix
-    execSync(`npm install --prefix ${tmp} ${tarballPath} --no-save 2>&1`, {
-      encoding: "utf-8",
+    execFileSync("npm", ["install", "--prefix", tmp, tarballPath, "--no-save"], {
       env: { ...process.env, PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1" },
+      stdio: "ignore",
     });
 
     // Verify the gsd bin exists in the installed package
-    const installedBin = join(tmp, "node_modules", ".bin", "gsd");
-    assert.ok(existsSync(installedBin), "gsd binary exists in node_modules/.bin/");
+    const binName = process.platform === "win32" ? "gsd.cmd" : "gsd";
+    const installedBin = join(tmp, "node_modules", ".bin", binName);
+    assert.ok(existsSync(installedBin), `gsd binary exists in node_modules/.bin/ (${binName})`);
 
     // Verify loader.js is executable (has shebang)
     const installedLoader = join(tmp, "node_modules", "gsd-pi", "dist", "loader.js");
     const loaderContent = readFileSync(installedLoader, "utf-8");
-    assert.ok(loaderContent.startsWith("#!/usr/bin/env node"), "loader.js has node shebang");
+    if (process.platform !== "win32") {
+      assert.ok(loaderContent.startsWith("#!/usr/bin/env node"), "loader.js has node shebang");
+    }
 
     // Verify bundled resources are present
     const installedGsdExt = join(tmp, "node_modules", "gsd-pi", "src", "resources", "extensions", "gsd", "index.ts");
