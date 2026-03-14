@@ -55,7 +55,9 @@ export function setActiveMilestoneId(basePath: string, milestoneId: string | nul
 /**
  * Record the current branch as the integration branch for a milestone.
  * Called once when auto-mode starts — captures where slice branches should
- * merge back to. No-op if already recorded or if on a GSD slice branch.
+ * merge back to. No-op if the same branch is already recorded. Updates the
+ * record when the user starts from a different branch (#300). Always a no-op
+ * if on a GSD slice branch.
  */
 export function captureIntegrationBranch(basePath: string, milestoneId: string): void {
   const svc = getService(basePath);

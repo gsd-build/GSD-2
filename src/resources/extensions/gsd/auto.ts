@@ -476,8 +476,8 @@ export async function startAuto(
 
   // Capture the integration branch — records the branch the user was on when
   // auto-mode started. Slice branches will merge back to this branch instead
-  // of the repo's default (main/master). Idempotent: only writes if not
-  // already recorded, so restarts/resumes don't overwrite.
+  // of the repo's default (main/master). Idempotent when the branch is the
+  // same; updates the record when started from a different branch (#300).
   if (currentMilestoneId) {
     captureIntegrationBranch(base, currentMilestoneId);
     setActiveMilestoneId(base, currentMilestoneId);
