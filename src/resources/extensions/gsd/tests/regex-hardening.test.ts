@@ -11,7 +11,7 @@
 //   (g) milestoneIdSort — mixed-format ordering
 //   (h) extractMilestoneSeq — numeric extraction from both formats
 
-import { test } from 'vitest';
+import { test } from 'node:test';
 
 import {
   MILESTONE_ID_RE,
@@ -312,15 +312,6 @@ async function main(): Promise<void> {
   }
 }
 
-// When run via vitest, wrap in test(); when run via tsx, call directly.
-const isVitest = typeof globalThis !== 'undefined' && 'vitest' in (globalThis as any).__vitest_worker__?.config?.defines || process.env.VITEST;
-if (isVitest) {
-  test('regex-hardening: all 12 sites accept both formats', async () => {
-    await main();
-  });
-} else {
-  main().catch((error) => {
-    console.error(error);
-    process.exit(1);
-  });
-}
+test('regex-hardening: all 12 sites accept both formats', async () => {
+  await main();
+});
