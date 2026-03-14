@@ -205,12 +205,26 @@ export function writeIntegrationBranch(basePath: string, milestoneId: string, br
 
 // ─── Git Helper ────────────────────────────────────────────────────────────
 
-/** Env overlay that suppresses all interactive git credential prompts. */
+/** Env overlay that suppresses interactive git credential prompts and git-svn noise. */
 const GIT_NO_PROMPT_ENV = {
   ...process.env,
   GIT_TERMINAL_PROMPT: "0",
   GIT_ASKPASS: "",
+  GIT_SVN_ID: "",
 };
+
+/**
+ * Strip git-svn noise from error messages.
+ * Some systems (notably Arch Linux) have a buggy git-svn Perl module that
+ * emits warnings on every git invocation, confusing users. See #404.
+ */
+function filterGitSvnNoise(message: string): string {
+  return message
+    .replace(/Duplicate specification "[^"]*" for option "[^"]*"\n?/g, "")
+    .replace(/Unable to determine upstream SVN information from .*\n?/g, "")
+    .replace(/Perhaps the repository is empty\. at .*git-svn.*\n?/g, "")
+    .trim();
+}
 
 /**
  * Run a git command in the given directory.
@@ -229,7 +243,7 @@ export function runGit(basePath: string, args: string[], options: { allowFailure
   } catch (error) {
     if (options.allowFailure) return "";
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`git ${args.join(" ")} failed in ${basePath}: ${message}`);
+    throw new Error(`git ${args.join(" ")} failed in ${basePath}: ${filterGitSvnNoise(message)}`);
   }
 }
 

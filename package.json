@@ -5,11 +5,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/glittercowboy/gsd-pi.git"
+    "url": "https://github.com/gsd-build/gsd-2.git"
   },
-  "homepage": "https://github.com/glittercowboy/gsd-pi#readme",
+  "homepage": "https://github.com/gsd-build/gsd-2#readme",
   "bugs": {
-    "url": "https://github.com/glittercowboy/gsd-pi/issues"
+    "url": "https://github.com/gsd-build/gsd-2/issues"
   },
   "type": "module",
   "workspaces": [
