@@ -316,6 +316,7 @@ auto_supervisor:
   idle_timeout_minutes: 10
   hard_timeout_minutes: 30
 budget_ceiling: 50.00
+unique_milestone_ids: true
 ---
 ```
 
