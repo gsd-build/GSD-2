@@ -1162,7 +1162,14 @@ function updateProgressWidget(
             .join(theme.fg("dim", " "));
 
           const modelId = cmdCtx?.model?.id ?? "";
-          const sRight = modelId ? theme.fg("dim", modelId) : "";
+          const modelProvider = cmdCtx?.model?.provider ?? "";
+          const modelPhase = phaseLabel ? theme.fg("dim", `[${phaseLabel}] `) : "";
+          const modelDisplay = modelProvider && modelId
+            ? `${modelProvider}/${modelId}`
+            : modelId;
+          const sRight = modelDisplay
+            ? `${modelPhase}${theme.fg("dim", modelDisplay)}`
+            : "";
           lines.push(rightAlign(`${pad}${sLeft}`, sRight, width));
         }
 
@@ -1940,16 +1947,37 @@ async function dispatchNextUnit(
     let modelSet = false;
 
     for (const modelId of modelsToTry) {
-      // Support "provider/model" format for explicit provider targeting
+      // Resolve model from available models.
+      // Handles multiple formats:
+      //   "provider/model"           → explicit provider targeting (e.g. "anthropic/claude-opus-4-6")
+      //   "bare-id"                  → match by ID across providers
+      //   "org/model-name"           → OpenRouter-style IDs where the full string is the model ID
+      //   "openrouter/org/model"     → explicit provider + OpenRouter model ID
       const slashIdx = modelId.indexOf("/");
       let model;
       if (slashIdx !== -1) {
-        const provider = modelId.substring(0, slashIdx);
+        const maybeProvider = modelId.substring(0, slashIdx);
         const id = modelId.substring(slashIdx + 1);
-        model = availableModels.find(
-          m => m.provider.toLowerCase() === provider.toLowerCase()
-            && m.id.toLowerCase() === id.toLowerCase(),
-        );
+
+        // Check if the prefix before the first slash is a known provider
+        const knownProviders = new Set(availableModels.map(m => m.provider.toLowerCase()));
+        if (knownProviders.has(maybeProvider.toLowerCase())) {
+          // Explicit "provider/model" format (handles "openrouter/org/model" too)
+          model = availableModels.find(
+            m => m.provider.toLowerCase() === maybeProvider.toLowerCase()
+              && m.id.toLowerCase() === id.toLowerCase(),
+          );
+        }
+
+        // If the prefix wasn't a known provider, or no match was found within that provider,
+        // try matching the full string as a model ID (OpenRouter-style IDs like "org/model-name")
+        if (!model) {
+          const lower = modelId.toLowerCase();
+          model = availableModels.find(
+            m => m.id.toLowerCase() === lower
+              || `${m.provider}/${m.id}`.toLowerCase() === lower,
+          );
+        }
       } else {
         // For bare IDs, prefer the current session's provider, then first available match
         const currentProvider = ctx.model?.provider;
@@ -1983,7 +2011,8 @@ async function dispatchNextUnit(
         const fallbackNote = modelId === modelConfig.primary
           ? ""
           : ` (fallback from ${modelConfig.primary})`;
-        ctx.ui.notify(`Model: ${modelId}${fallbackNote}`, "info");
+        const phase = unitPhaseLabel(unitType);
+        ctx.ui.notify(`Model [${phase}]: ${model.provider}/${model.id}${fallbackNote}`, "info");
         modelSet = true;
         break;
       } else {
