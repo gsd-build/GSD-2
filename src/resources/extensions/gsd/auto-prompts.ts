@@ -777,6 +777,20 @@ export async function buildReplanSlicePrompt(
 
   const replanPath = `${relSlicePath(base, mid, sid)}/${sid}-REPLAN.md`;
 
+  // Build capture context for replan prompt (captures that triggered this replan)
+  let captureContext = "(none)";
+  try {
+    const { loadReplanCaptures } = await import("./triage-resolution.js");
+    const replanCaptures = loadReplanCaptures(base);
+    if (replanCaptures.length > 0) {
+      captureContext = replanCaptures.map(c =>
+        `- **${c.id}**: "${c.text}" — ${c.rationale ?? "no rationale"}`
+      ).join("\n");
+    }
+  } catch {
+    // Non-fatal — captures module may not be available
+  }
+
   return loadPrompt("replan-slice", {
     workingDirectory: base,
     milestoneId: mid,
@@ -787,6 +801,7 @@ export async function buildReplanSlicePrompt(
     blockerTaskId,
     inlinedContext,
     replanPath,
+    captureContext,
   });
 }
 
@@ -849,6 +864,20 @@ export async function buildReassessRoadmapPrompt(
 
   const assessmentPath = relSliceFile(base, mid, completedSliceId, "ASSESSMENT");
 
+  // Build deferred captures context for reassess prompt
+  let deferredCaptures = "(none)";
+  try {
+    const { loadDeferredCaptures } = await import("./triage-resolution.js");
+    const deferred = loadDeferredCaptures(base);
+    if (deferred.length > 0) {
+      deferredCaptures = deferred.map(c =>
+        `- **${c.id}**: "${c.text}" — ${c.rationale ?? "deferred during triage"}`
+      ).join("\n");
+    }
+  } catch {
+    // Non-fatal — captures module may not be available
+  }
+
   return loadPrompt("reassess-roadmap", {
     workingDirectory: base,
     milestoneId: mid,
@@ -858,6 +887,7 @@ export async function buildReassessRoadmapPrompt(
     completedSliceSummaryPath: summaryRel,
     assessmentPath,
     inlinedContext,
+    deferredCaptures,
   });
 }
 

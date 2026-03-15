@@ -39,6 +39,8 @@ export interface AutoDashboardData {
   projectedRemainingCost?: number;
   /** Whether token profile has been auto-downgraded due to budget prediction */
   profileDowngraded?: boolean;
+  /** Number of pending captures awaiting triage (0 if none or file missing) */
+  pendingCaptureCount: number;
 }
 
 // ─── Unit Description Helpers ─────────────────────────────────────────────────

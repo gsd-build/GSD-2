@@ -14,6 +14,7 @@ import { GSDDashboardOverlay } from "./dashboard-overlay.js";
 import { showQueue, showDiscuss } from "./guided-flow.js";
 import { startAuto, stopAuto, pauseAuto, isAutoActive, isAutoPaused, isStepMode, stopAutoRemote } from "./auto.js";
 import { resolveProjectRoot } from "./worktree.js";
+import { appendCapture, hasPendingCaptures, loadPendingCaptures } from "./captures.js";
 import {
   getGlobalGSDPreferencesPath,
   getLegacyGlobalGSDPreferencesPath,
@@ -64,10 +65,11 @@ function projectRoot(): string {
 
 export function registerGSDCommand(pi: ExtensionAPI): void {
   pi.registerCommand("gsd", {
-    description: "GSD — Get Shit Done: /gsd next|auto|stop|pause|status|queue|history|undo|skip|export|cleanup|prefs|config|hooks|doctor|migrate|remote|steer|knowledge",
+    description: "GSD — Get Shit Done: /gsd next|auto|stop|pause|status|queue|capture|triage|history|undo|skip|export|cleanup|prefs|config|hooks|doctor|migrate|remote|steer|knowledge",
     getArgumentCompletions: (prefix: string) => {
       const subcommands = [
         "next", "auto", "stop", "pause", "status", "queue", "discuss",
+        "capture", "triage",
         "history", "undo", "skip", "export", "cleanup", "prefs",
         "config", "hooks", "doctor", "migrate", "remote", "steer", "knowledge",
       ];
@@ -259,6 +261,16 @@ export function registerGSDCommand(pi: ExtensionAPI): void {
         return;
       }
 
+      if (trimmed.startsWith("capture ") || trimmed === "capture") {
+        await handleCapture(trimmed.replace(/^capture\s*/, "").trim(), ctx);
+        return;
+      }
+
+      if (trimmed === "triage") {
+        await handleTriage(ctx, pi, process.cwd());
+        return;
+      }
+
       if (trimmed === "config") {
         await handleConfig(ctx);
         return;
@@ -306,7 +318,7 @@ export function registerGSDCommand(pi: ExtensionAPI): void {
       }
 
       ctx.ui.notify(
-        `Unknown: /gsd ${trimmed}. Use /gsd next|auto|stop|pause|status|queue|discuss|history|undo|skip <unit>|export|cleanup|prefs|config|hooks|doctor|migrate|remote|steer <change>|knowledge <type> <entry>.`,
+        `Unknown: /gsd ${trimmed}. Use /gsd next|auto|stop|pause|status|queue|capture|triage|discuss|history|undo|skip <unit>|export|cleanup|prefs|config|hooks|doctor|migrate|remote|steer <change>|knowledge <type> <entry>.`,
         "warning",
       );
     },
@@ -1193,6 +1205,102 @@ async function handleKnowledge(args: string, ctx: ExtensionCommandContext): Prom
 
   await appendKnowledge(basePath, type, entryText, scope);
   ctx.ui.notify(`Added ${type} to KNOWLEDGE.md: "${entryText}"`, "success");
+}
+
+// ─── Capture Command ──────────────────────────────────────────────────────────
+
+/**
+ * Handle `/gsd capture "..."` — fire-and-forget thought capture.
+ * Appends to `.gsd/CAPTURES.md` without interrupting auto-mode.
+ * Works in all modes: auto running, paused, stopped, no project.
+ */
+async function handleCapture(args: string, ctx: ExtensionCommandContext): Promise<void> {
+  // Strip surrounding quotes from the argument
+  let text = args.trim();
+  if (!text) {
+    ctx.ui.notify('Usage: /gsd capture "your thought here"', "warning");
+    return;
+  }
+  // Remove wrapping quotes (single or double)
+  if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'"))) {
+    text = text.slice(1, -1);
+  }
+  if (!text) {
+    ctx.ui.notify('Usage: /gsd capture "your thought here"', "warning");
+    return;
+  }
+
+  const basePath = process.cwd();
+
+  // Ensure .gsd/ exists — capture should work even without a milestone
+  const gsdDir = join(basePath, ".gsd");
+  if (!existsSync(gsdDir)) {
+    mkdirSync(gsdDir, { recursive: true });
+  }
+
+  const id = appendCapture(basePath, text);
+  ctx.ui.notify(`Captured: ${id} — "${text.length > 60 ? text.slice(0, 57) + "..." : text}"`, "info");
+}
+
+// ─── Triage Command ───────────────────────────────────────────────────────────
+
+/**
+ * Handle `/gsd triage` — manually trigger triage of pending captures.
+ * Dispatches the triage prompt to the LLM for classification.
+ * Triage result handling (confirmation UI) is wired in T03.
+ */
+async function handleTriage(ctx: ExtensionCommandContext, pi: ExtensionAPI, basePath: string): Promise<void> {
+  if (!hasPendingCaptures(basePath)) {
+    ctx.ui.notify("No pending captures to triage.", "info");
+    return;
+  }
+
+  const pending = loadPendingCaptures(basePath);
+  ctx.ui.notify(`Triaging ${pending.length} pending capture${pending.length === 1 ? "" : "s"}...`, "info");
+
+  // Build context for the triage prompt
+  const state = await deriveState(basePath);
+  let currentPlan = "";
+  let roadmapContext = "";
+
+  if (state.activeMilestone && state.activeSlice) {
+    const { resolveSliceFile, resolveMilestoneFile } = await import("./paths.js");
+    const planFile = resolveSliceFile(basePath, state.activeMilestone.id, state.activeSlice.id, "PLAN");
+    if (planFile) {
+      const { loadFile: load } = await import("./files.js");
+      currentPlan = (await load(planFile)) ?? "";
+    }
+    const roadmapFile = resolveMilestoneFile(basePath, state.activeMilestone.id, "ROADMAP");
+    if (roadmapFile) {
+      const { loadFile: load } = await import("./files.js");
+      roadmapContext = (await load(roadmapFile)) ?? "";
+    }
+  }
+
+  // Format pending captures for the prompt
+  const capturesList = pending.map(c =>
+    `- **${c.id}**: "${c.text}" (captured: ${c.timestamp})`
+  ).join("\n");
+
+  // Dispatch triage prompt
+  const { loadPrompt } = await import("./prompt-loader.js");
+  const prompt = loadPrompt("triage-captures", {
+    pendingCaptures: capturesList,
+    currentPlan: currentPlan || "(no active slice plan)",
+    roadmapContext: roadmapContext || "(no active roadmap)",
+  });
+
+  const workflowPath = process.env.GSD_WORKFLOW_PATH ?? join(process.env.HOME ?? "~", ".pi", "GSD-WORKFLOW.md");
+  const workflow = readFileSync(workflowPath, "utf-8");
+
+  pi.sendMessage(
+    {
+      customType: "gsd-triage",
+      content: `Read the following GSD workflow protocol and execute exactly.\n\n${workflow}\n\n## Your Task\n\n${prompt}`,
+      display: false,
+    },
+    { triggerTurn: true },
+  );
 }
 
 async function handleSteer(change: string, ctx: ExtensionCommandContext, pi: ExtensionAPI): Promise<void> {

@@ -19,6 +19,7 @@ import type {
 import { deriveState, invalidateStateCache } from "./state.js";
 import type { BudgetEnforcementMode, GSDState } from "./types.js";
 import { loadFile, parseRoadmap, getManifestStatus, resolveAllOverrides } from "./files.js";
+import { loadPrompt } from "./prompt-loader.js";
 export { inlinePriorMilestoneSummary } from "./files.js";
 import { collectSecretsFromManifest } from "../get-secrets-from-user.js";
 import {
@@ -129,6 +130,7 @@ import {
   deregisterSigtermHandler as _deregisterSigtermHandler,
   detectWorkingTreeActivity,
 } from "./auto-supervisor.js";
+import { hasPendingCaptures, loadPendingCaptures, countPendingCaptures } from "./captures.js";
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
@@ -301,6 +303,15 @@ export { type AutoDashboardData } from "./auto-dashboard.js";
 export function getAutoDashboardData(): AutoDashboardData {
   const ledger = getLedger();
   const totals = ledger ? getProjectTotals(ledger.units) : null;
+  // Pending capture count — lazy check, non-fatal
+  let pendingCaptureCount = 0;
+  try {
+    if (basePath) {
+      pendingCaptureCount = countPendingCaptures(basePath);
+    }
+  } catch {
+    // Non-fatal — captures module may not be loaded
+  }
   return {
     active,
     paused,
@@ -312,6 +323,7 @@ export function getAutoDashboardData(): AutoDashboardData {
     basePath,
     totalCost: totals?.cost ?? 0,
     totalTokens: totals?.tokens.total ?? 0,
+    pendingCaptureCount,
   };
 }
 
@@ -1103,6 +1115,108 @@ export async function handleAgentEnd(
         // Fall through to normal dispatchNextUnit — state derivation will
         // re-select the same unit since it hasn't been marked complete
       }
+    }
+  }
+
+  // ── Triage check: dispatch triage unit if pending captures exist ──────────
+  // Fires after hooks complete, before normal dispatch. Follows the same
+  // early-dispatch-and-return pattern as hooks and fix-merge.
+  // Skip for: step mode (shows wizard instead), triage units (prevent triage-on-triage),
+  // hook units (hooks run before triage conceptually).
+  if (
+    !stepMode &&
+    currentUnit &&
+    !currentUnit.type.startsWith("hook/") &&
+    currentUnit.type !== "triage-captures" &&
+    currentUnit.type !== "quick-task"
+  ) {
+    try {
+      if (hasPendingCaptures(basePath)) {
+        const pending = loadPendingCaptures(basePath);
+        if (pending.length > 0) {
+          const state = await deriveState(basePath);
+          const mid = state.activeMilestone?.id;
+          const sid = state.activeSlice?.id;
+
+          if (mid && sid) {
+            // Build triage prompt with current context
+            let currentPlan = "";
+            let roadmapContext = "";
+            const planFile = resolveSliceFile(basePath, mid, sid, "PLAN");
+            if (planFile) currentPlan = (await loadFile(planFile)) ?? "";
+            const roadmapFile = resolveMilestoneFile(basePath, mid, "ROADMAP");
+            if (roadmapFile) roadmapContext = (await loadFile(roadmapFile)) ?? "";
+
+            const capturesList = pending.map(c =>
+              `- **${c.id}**: "${c.text}" (captured: ${c.timestamp})`
+            ).join("\n");
+
+            const prompt = loadPrompt("triage-captures", {
+              pendingCaptures: capturesList,
+              currentPlan: currentPlan || "(no active slice plan)",
+              roadmapContext: roadmapContext || "(no active roadmap)",
+            });
+
+            ctx.ui.notify(
+              `Triaging ${pending.length} pending capture${pending.length === 1 ? "" : "s"}...`,
+              "info",
+            );
+
+            // Close out previous unit metrics
+            if (currentUnit) {
+              const modelId = ctx.model?.id ?? "unknown";
+              snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
+              saveActivityLog(ctx, basePath, currentUnit.type, currentUnit.id);
+            }
+
+            // Dispatch triage as a new unit (early-dispatch-and-return)
+            const triageUnitType = "triage-captures";
+            const triageUnitId = `${mid}/${sid}/triage`;
+            const triageStartedAt = Date.now();
+            currentUnit = { type: triageUnitType, id: triageUnitId, startedAt: triageStartedAt };
+            writeUnitRuntimeRecord(basePath, triageUnitType, triageUnitId, triageStartedAt, {
+              phase: "dispatched",
+              wrapupWarningSent: false,
+              timeoutAt: null,
+              lastProgressAt: triageStartedAt,
+              progressCount: 0,
+              lastProgressKind: "dispatch",
+            });
+            updateProgressWidget(ctx, triageUnitType, triageUnitId, state);
+
+            const result = await cmdCtx!.newSession();
+            if (result.cancelled) {
+              await stopAuto(ctx, pi);
+              return;
+            }
+            const sessionFile = ctx.sessionManager.getSessionFile();
+            writeLock(basePath, triageUnitType, triageUnitId, completedUnits.length, sessionFile);
+
+            // Start unit timeout for triage (use same supervisor config as hooks)
+            clearUnitTimeout();
+            const supervisor = resolveAutoSupervisorConfig();
+            const triageTimeoutMs = (supervisor.hard_timeout_minutes ?? 30) * 60 * 1000;
+            unitTimeoutHandle = setTimeout(async () => {
+              unitTimeoutHandle = null;
+              if (!active) return;
+              ctx.ui.notify(
+                `Triage unit exceeded timeout. Pausing auto-mode.`,
+                "warning",
+              );
+              await pauseAuto(ctx, pi);
+            }, triageTimeoutMs);
+
+            if (!active) return;
+            pi.sendMessage(
+              { customType: "gsd-auto", content: prompt, display: verbose },
+              { triggerTurn: true },
+            );
+            return; // handleAgentEnd will fire again when triage session completes
+          }
+        }
+      }
+    } catch {
+      // Triage check failure is non-fatal — proceed to normal dispatch
     }
   }
 
