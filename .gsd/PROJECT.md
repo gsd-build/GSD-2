@@ -17,8 +17,8 @@ A user can run `gsd --web`, complete setup, and do the full GSD workflow in a sn
 - The workspace store now drives real dashboard, roadmap, files, activity, terminal, focused-panel prompt handling, workflow controls, continuity, and recovery surfaces instead of mock data.
 - M001 is complete: assembled route/runtime/browser proof is green, the preserved skin is wired to live state/actions, and the milestone-close live browser acceptance bar has been cleared.
 - `launchWebMode` now keeps the parent launcher thin by skipping in-memory extension reload in the short-lived parent process, which materially reduced `gsd --web` startup time.
-- M002 is in progress, and S01-S03 are complete: browser slash commands now dispatch safely in web mode, current-project session browse/resume/rename flows have a dedicated browser contract, live dashboard/sidebar/roadmap/status surfaces refresh from targeted browser state instead of broad `/api/boot` polling, and the browser now exposes an on-demand recovery diagnostics surface with authoritative retry/resume/auth controls.
-- The next slice is S04: run the final assembled `gsd --web` hardening proof for refresh/reopen/interrupted-run scenarios and re-validate the daily-use browser workflow end to end.
+- M002 is complete: browser slash commands now dispatch safely in web mode, current-project session browse/resume/rename/fork plus settings/auth/Git/shell controls are browser-native, dashboard/sidebar/roadmap/status/recovery surfaces stay fresh through targeted invalidation-driven updates instead of aggressive `/api/boot` polling, and packaged-host runtime proof covers refresh, reopen, daily-use browser workflows, and seeded interrupted-run recovery.
+- All currently scoped requirements are validated. Remaining follow-on scope is explicitly deferred (`R020`, `R021`, `R022`) until a new milestone or user request promotes it.
 
 ## Architecture / Key Patterns
 
@@ -29,6 +29,7 @@ A user can run `gsd --web`, complete setup, and do the full GSD workflow in a sn
 - Web mode stays current-project scoped and browser-first
 - M001 preserves the existing Next.js skin and proves it live before reconsidering framework/runtime changes
 - Thin parent launcher → packaged same-origin host → one project-scoped bridge singleton → shared browser workspace store
+- Browser freshness and recovery use typed invalidation events plus narrow same-origin routes instead of broad `/api/boot` polling
 
 ## Capability Contract
 
@@ -37,4 +38,4 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
 ## Milestone Sequence
 
 - [x] M001: Web mode foundation — Browser-first `gsd --web` is real, integrated, and verified end-to-end.
-- [ ] M002: Web parity and hardening — Close remaining TUI parity gaps, harden continuity/recovery/observability, and finish the browser-first flow for reliable daily use. (S01-S03 complete; S04 next)
+- [x] M002: Web parity and hardening — Browser daily-use parity, live freshness, recovery diagnostics, and packaged-host hardening proof are complete.
