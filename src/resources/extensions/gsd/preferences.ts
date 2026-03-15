@@ -634,7 +634,7 @@ function mergePreferences(base: GSDPreferences, override: GSDPreferences): GSDPr
   };
 }
 
-function validatePreferences(preferences: GSDPreferences): {
+export function validatePreferences(preferences: GSDPreferences): {
   preferences: GSDPreferences;
   errors: string[];
 } {
@@ -903,6 +903,22 @@ function validatePreferences(preferences: GSDPreferences): {
         git.main_branch = g.main_branch;
       } else {
         errors.push("git.main_branch must be a valid branch name (alphanumeric, _, -, /, .)");
+      }
+    }
+    if (g.isolation !== undefined) {
+      const validIsolation = new Set(["worktree", "branch"]);
+      if (typeof g.isolation === "string" && validIsolation.has(g.isolation)) {
+        git.isolation = g.isolation as "worktree" | "branch";
+      } else {
+        errors.push("git.isolation must be one of: worktree, branch");
+      }
+    }
+    if (g.merge_to_main !== undefined) {
+      const validMergeToMain = new Set(["milestone", "slice"]);
+      if (typeof g.merge_to_main === "string" && validMergeToMain.has(g.merge_to_main)) {
+        git.merge_to_main = g.merge_to_main as "milestone" | "slice";
+      } else {
+        errors.push("git.merge_to_main must be one of: milestone, slice");
       }
     }
 

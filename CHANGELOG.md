@@ -6,6 +6,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.13.0] - 2026-03-15
+
+### Added
+- **Worktree isolation for auto-mode** — auto-mode creates isolated git worktrees per milestone, with `--no-ff` slice merges preserving commit history and squash merge to main on milestone completion
+- **Self-healing git repair** — automatic recovery from detached HEAD, stale locks, and orphaned worktrees
+- **Worktree-aware doctor** — git health diagnostics and worktree integrity checks
+- **Isolation preferences** — choose between worktree and branch isolation modes
+
+### Fixed
+- **Dispatch loop: parse cache stale data** — `dispatchNextUnit()` cleared path cache but not parse cache, allowing stale roadmap checkbox state to persist through doctor→dispatch transitions (#462)
+- **Dispatch loop: completion not persisted after agent session** — `handleAgentEnd()` now verifies artifacts and persists the completion key before re-entering the dispatch loop, preventing re-dispatch when `deriveState()` sees pre-merge branch state (#462)
+- **Dispatch loop: recovery counter reset without persistence** — loop-recovery and self-repair paths now persist completion keys and include a hard lifetime dispatch cap of 6 (#462, #463)
+- **Dispatch loop: non-execute-task units had no artifact verification** — `complete-slice`, `plan-slice`, and other unit types now verify artifacts on disk before bail-out (#465)
+- `@` file autocomplete debounced to prevent TUI freeze on large codebases (#452)
+- Guard against newer synced resources from future versions (#445)
+- Prevent `web_search` tool injection for non-Anthropic providers serving Claude models (#446)
+
 ## [2.12.0] - 2026-03-15
 
 ### Added
@@ -583,7 +600,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - License updated to MIT
 
-[Unreleased]: https://github.com/gsd-build/gsd-2/compare/v2.12.0...HEAD
+[Unreleased]: https://github.com/gsd-build/gsd-2/compare/v2.13.0...HEAD
+[2.13.0]: https://github.com/gsd-build/gsd-2/compare/v2.12.0...v2.13.0
 [2.12.0]: https://github.com/gsd-build/gsd-2/compare/v2.11.1...v2.12.0
 [2.11.1]: https://github.com/gsd-build/gsd-2/compare/v2.11.0...v2.11.1
 [2.11.0]: https://github.com/gsd-build/gsd-2/compare/v2.10.12...v2.11.0
