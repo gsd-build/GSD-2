@@ -50,7 +50,7 @@ interface SidebarProps {
 
 export function Sidebar({ activeView, onViewChange }: SidebarProps) {
   const workspace = useGSDWorkspaceState()
-  const { sendCommand } = useGSDWorkspaceActions()
+  const { sendCommand, openCommandSurface } = useGSDWorkspaceActions()
   const [expandedMilestones, setExpandedMilestones] = useState<string[]>([])
   const [expandedSlices, setExpandedSlices] = useState<string[]>([])
 
@@ -126,6 +126,8 @@ export function Sidebar({ activeView, onViewChange }: SidebarProps) {
           <button
             className="flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
             title="Settings"
+            onClick={() => openCommandSurface("settings", { source: "sidebar" })}
+            data-testid="sidebar-settings-button"
           >
             <Settings className="h-5 w-5" />
           </button>

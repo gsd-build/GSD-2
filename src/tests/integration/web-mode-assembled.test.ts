@@ -15,6 +15,10 @@ const bootRoute = await import("../../../web/app/api/boot/route.ts");
 const onboardingRoute = await import("../../../web/app/api/onboarding/route.ts");
 const commandRoute = await import("../../../web/app/api/session/command/route.ts");
 const eventsRoute = await import("../../../web/app/api/session/events/route.ts");
+const {
+  dispatchBrowserSlashCommand,
+  getBrowserSlashCommandTerminalNotice,
+} = await import("../../../web/lib/browser-slash-command-dispatch.ts");
 const { AuthStorage } = await import("@gsd/pi-coding-agent");
 
 // ---------------------------------------------------------------------------
@@ -564,6 +568,135 @@ test("assembled lifecycle: boot → onboard → prompt → streaming text → to
     }
   } finally {
     onboarding.resetOnboardingServiceForTests();
+    await bridge.resetBridgeServiceForTests();
+    fixture.cleanup();
+  }
+});
+
+test("assembled slash-command behavior keeps built-ins safe while preserving GSD prompt commands", async () => {
+  const fixture = makeWorkspaceFixture();
+  const sessionPath = createSessionFile(fixture.projectCwd, fixture.sessionsDir, "sess-slash", "Slash Session");
+  const bridgeCommands: any[] = [];
+
+  bridge.configureBridgeServiceForTests({
+    env: {
+      ...process.env,
+      GSD_WEB_PROJECT_CWD: fixture.projectCwd,
+      GSD_WEB_PROJECT_SESSIONS_DIR: fixture.sessionsDir,
+      GSD_WEB_PACKAGE_ROOT: repoRoot,
+    },
+    spawn(command: string, args: readonly string[], options: Record<string, unknown>) {
+      void command;
+      void args;
+      void options;
+      const child = new FakeRpcChild();
+
+      attachJsonLineReader(child.stdin, (line) => {
+        const message = JSON.parse(line) as any;
+        bridgeCommands.push(message);
+
+        if (message.type === "get_state") {
+          child.stdout.write(
+            serializeJsonLine({
+              id: message.id,
+              type: "response",
+              command: "get_state",
+              success: true,
+              data: fakeSessionState("sess-slash", sessionPath),
+            }),
+          );
+          return;
+        }
+
+        if (message.type === "new_session") {
+          child.stdout.write(
+            serializeJsonLine({
+              id: message.id,
+              type: "response",
+              command: "new_session",
+              success: true,
+              data: { cancelled: false },
+            }),
+          );
+          return;
+        }
+
+        if (message.type === "prompt") {
+          child.stdout.write(
+            serializeJsonLine({
+              id: message.id,
+              type: "response",
+              command: "prompt",
+              success: true,
+            }),
+          );
+        }
+      });
+
+      return child as any;
+    },
+    indexWorkspace: async () => fakeWorkspaceIndex(),
+    getAutoDashboardData: () => fakeAutoDashboardData(),
+    getOnboardingNeeded: () => false,
+  });
+
+  try {
+    async function submitBrowserInput(input: string): Promise<{ outcome: any; status: number | null; body: any; notice: string | null }> {
+      const outcome = dispatchBrowserSlashCommand(input);
+
+      if (outcome.kind === "prompt" || outcome.kind === "rpc") {
+        const response = await commandRoute.POST(
+          new Request("http://localhost/api/session/command", {
+            method: "POST",
+            body: JSON.stringify(outcome.command),
+          }),
+        );
+        return {
+          outcome,
+          status: response.status,
+          body: await response.json(),
+          notice: null,
+        };
+      }
+
+      const notice = getBrowserSlashCommandTerminalNotice(outcome)?.message ?? null;
+      return {
+        outcome,
+        status: null,
+        body: null,
+        notice,
+      };
+    }
+
+    const builtInExecution = await submitBrowserInput("/new");
+    assert.equal(builtInExecution.outcome.kind, "rpc");
+    assert.equal(builtInExecution.status, 200);
+    assert.equal(builtInExecution.body.command, "new_session");
+
+    const builtInSurface = await submitBrowserInput("/model");
+    assert.equal(builtInSurface.outcome.kind, "surface");
+    assert.equal(builtInSurface.outcome.surface, "model");
+    assert.equal(builtInSurface.status, null);
+
+    const builtInReject = await submitBrowserInput("/share");
+    assert.equal(builtInReject.outcome.kind, "reject");
+    assert.match(builtInReject.notice ?? "", /blocked instead of falling through to the model/i);
+    assert.equal(builtInReject.status, null);
+
+    const gsdPrompt = await submitBrowserInput("/gsd status");
+    assert.equal(gsdPrompt.outcome.kind, "prompt");
+    assert.equal(gsdPrompt.status, 200);
+    assert.equal(gsdPrompt.body.command, "prompt");
+
+    const sentTypes = bridgeCommands.map((command) => command.type);
+    assert.deepEqual(
+      sentTypes.filter((type) => type !== "get_state"),
+      ["new_session", "prompt"],
+      "only browser-executable slash commands should reach the live bridge; built-in surfaces/rejects must stay out of prompt text",
+    );
+    const promptCommand = bridgeCommands.find((command) => command.type === "prompt");
+    assert.equal(promptCommand?.message, "/gsd status", "GSD commands must stay on the extension prompt path");
+  } finally {
     await bridge.resetBridgeServiceForTests();
     fixture.cleanup();
   }

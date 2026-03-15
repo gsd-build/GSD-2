@@ -52,7 +52,7 @@ This milestone is complete only when all are true:
 
 ## Slices
 
-- [ ] **S01: Safe slash-command dispatch and RPC-backed daily controls** `risk:high` `depends:[]`
+- [x] **S01: Safe slash-command dispatch and RPC-backed daily controls** `risk:high` `depends:[]`
   > After this: A browser user can type or click daily-use built-ins like `/model`, `/thinking`, `/resume`, `/fork`, `/compact`, `/login`, and `/logout` and see real execution, a real browser surface, or a clear rejection instead of model fallthrough.
 - [ ] **S02: Browser-native session and settings parity surfaces** `risk:high` `depends:[S01]`
   > After this: Current-project session browsing/resume/fork/name flows, settings/auth management, and the remaining visible shell affordances have real browser surfaces aligned with TUI semantics rather than inert UI.

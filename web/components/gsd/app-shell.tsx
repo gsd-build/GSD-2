@@ -11,6 +11,7 @@ import { StatusBar } from "@/components/gsd/status-bar"
 import { DualTerminal } from "@/components/gsd/dual-terminal"
 import { FocusedPanel } from "@/components/gsd/focused-panel"
 import { OnboardingGate } from "@/components/gsd/onboarding-gate"
+import { CommandSurface } from "@/components/gsd/command-surface"
 import { cn } from "@/lib/utils"
 import {
   GSDWorkspaceProvider,
@@ -228,6 +229,7 @@ function WorkspaceChrome() {
       </div>
 
       <StatusBar />
+      <CommandSurface />
       <OnboardingGate />
       <FocusedPanel />
     </div>

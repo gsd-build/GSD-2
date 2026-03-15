@@ -542,6 +542,46 @@ export class OnboardingService {
     return await this.buildState();
   }
 
+  async logoutProvider(providerId: string): Promise<OnboardingState> {
+    const authStorage = await this.getAuthStorage();
+    authStorage.reload();
+
+    const currentState = await this.buildState();
+    const requestedProviderId = providerId.trim();
+    const resolvedProviderId =
+      requestedProviderId ||
+      currentState.required.satisfiedBy?.providerId ||
+      currentState.required.providers.find((provider) => provider.configured)?.id;
+
+    if (!resolvedProviderId) {
+      throw new Error("No configured provider is available to log out");
+    }
+
+    const providerState = currentState.required.providers.find((provider) => provider.id === resolvedProviderId);
+    const providerLabel = providerState?.label ?? resolvedProviderId;
+
+    if (!providerState?.configured) {
+      throw new Error(`${providerLabel} is not configured in this workspace`);
+    }
+
+    if (providerState.configuredVia !== "auth_file") {
+      throw new Error(`${providerLabel} is configured via ${providerState.configuredVia} and cannot be logged out from the browser surface`);
+    }
+
+    if (
+      this.activeFlow &&
+      this.activeFlow.state.providerId === resolvedProviderId &&
+      ["running", "awaiting_browser_auth", "awaiting_input"].includes(this.activeFlow.state.status)
+    ) {
+      this.cancelActiveFlow();
+    }
+
+    authStorage.logout(resolvedProviderId);
+    this.lastValidation = null;
+    await this.refreshBridgeAuth();
+    return await this.buildState();
+  }
+
   private async refreshBridgeAuth(): Promise<void> {
     const refreshBridgeAuth = this.deps.refreshBridgeAuth;
     if (!refreshBridgeAuth) {

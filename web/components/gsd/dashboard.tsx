@@ -96,7 +96,7 @@ function formatRelativeTime(isoDate: string): string {
 
 export function Dashboard() {
   const state = useGSDWorkspaceState()
-  const { sendCommand, refreshBoot } = useGSDWorkspaceActions()
+  const { sendCommand, submitInput, switchSessionFromSurface } = useGSDWorkspaceActions()
   const boot = state.boot
   const workspace = boot?.workspace ?? null
   const auto = boot?.auto ?? null
@@ -135,17 +135,11 @@ export function Dashboard() {
   }
 
   const handleSessionSwitch = async (session: BootResumableSession) => {
-    const result = await sendCommand({ type: "switch_session", sessionPath: session.path })
-    if (result?.success !== false) {
-      await refreshBoot({ soft: true })
-    }
+    await switchSessionFromSurface(session.path)
   }
 
   const handleNewSession = async () => {
-    const result = await sendCommand({ type: "new_session" })
-    if (result?.success !== false) {
-      await refreshBoot({ soft: true })
-    }
+    await submitInput("/new")
   }
 
   const resumableSessions = boot?.resumableSessions ?? []

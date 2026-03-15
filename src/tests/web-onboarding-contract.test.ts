@@ -511,3 +511,93 @@ test("successful API-key validation persists the credential and unlocks onboardi
     fixture.cleanup();
   }
 });
+
+test("logout_provider removes saved auth, refreshes the bridge, and relocks onboarding when it was the only provider", async () => {
+  const fixture = makeWorkspaceFixture();
+  const authStorage = AuthStorage.inMemory({
+    openai: { type: "api_key", key: "sk-saved-logout" },
+  } as any);
+  const harness = configureBridgeFixture(fixture, "sess-logout-success");
+  onboarding.configureOnboardingServiceForTests({ authStorage });
+
+  try {
+    const bootBefore = await bootRoute.GET();
+    const bootBeforePayload = (await bootBefore.json()) as any;
+    assert.equal(bootBeforePayload.onboarding.locked, false);
+    assert.equal(bootBeforePayload.onboarding.required.satisfiedBy.providerId, "openai");
+    assert.equal(harness.spawnCalls, 1);
+
+    const logoutResponse = await onboardingRoute.POST(
+      new Request("http://localhost/api/onboarding", {
+        method: "POST",
+        body: JSON.stringify({
+          action: "logout_provider",
+          providerId: "openai",
+        }),
+      }),
+    );
+
+    assert.equal(logoutResponse.status, 200);
+    const logoutPayload = (await logoutResponse.json()) as any;
+    assert.equal(logoutPayload.onboarding.locked, true);
+    assert.equal(logoutPayload.onboarding.lockReason, "required_setup");
+    assert.equal(logoutPayload.onboarding.bridgeAuthRefresh.phase, "succeeded");
+    assert.equal(logoutPayload.onboarding.lastValidation, null);
+    assert.equal(authStorage.hasAuth("openai"), false);
+    assert.equal(harness.spawnCalls, 2);
+
+    const bootAfter = await bootRoute.GET();
+    const bootAfterPayload = (await bootAfter.json()) as any;
+    assert.equal(bootAfterPayload.onboarding.locked, true);
+    assert.equal(bootAfterPayload.onboarding.lockReason, "required_setup");
+    assert.equal(bootAfterPayload.onboarding.bridgeAuthRefresh.phase, "succeeded");
+    assert.equal(bootAfterPayload.onboarding.required.satisfied, false);
+  } finally {
+    onboarding.resetOnboardingServiceForTests();
+    await bridge.resetBridgeServiceForTests();
+    fixture.cleanup();
+  }
+});
+
+test("logout_provider fails clearly for environment-backed auth that the browser cannot remove", async () => {
+  const fixture = makeWorkspaceFixture();
+  const authStorage = AuthStorage.inMemory({});
+  const previousGithubToken = process.env.GITHUB_TOKEN;
+  process.env.GITHUB_TOKEN = "ghu_env_only_token";
+  configureBridgeFixture(fixture, "sess-logout-env");
+  onboarding.configureOnboardingServiceForTests({ authStorage });
+
+  try {
+    const bootBefore = await bootRoute.GET();
+    const bootBeforePayload = (await bootBefore.json()) as any;
+    assert.equal(bootBeforePayload.onboarding.locked, false);
+    assert.equal(bootBeforePayload.onboarding.required.satisfiedBy.providerId, "github-copilot");
+    assert.equal(bootBeforePayload.onboarding.required.satisfiedBy.source, "environment");
+
+    const logoutResponse = await onboardingRoute.POST(
+      new Request("http://localhost/api/onboarding", {
+        method: "POST",
+        body: JSON.stringify({
+          action: "logout_provider",
+          providerId: "github-copilot",
+        }),
+      }),
+    );
+
+    assert.equal(logoutResponse.status, 400);
+    const logoutPayload = (await logoutResponse.json()) as any;
+    assert.match(logoutPayload.error, /cannot be logged out from the browser surface/i);
+    assert.equal(logoutPayload.onboarding.locked, false);
+    assert.equal(logoutPayload.onboarding.required.satisfiedBy.providerId, "github-copilot");
+    assert.equal(logoutPayload.onboarding.required.satisfiedBy.source, "environment");
+  } finally {
+    if (previousGithubToken === undefined) {
+      delete process.env.GITHUB_TOKEN;
+    } else {
+      process.env.GITHUB_TOKEN = previousGithubToken;
+    }
+    onboarding.resetOnboardingServiceForTests();
+    await bridge.resetBridgeServiceForTests();
+    fixture.cleanup();
+  }
+});

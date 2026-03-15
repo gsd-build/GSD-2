@@ -30,6 +30,7 @@ export interface OnboardingAuthStorage {
   hasAuth(provider: string): boolean;
   getOAuthProviders(): OAuthProviderInterface[];
   login(providerId: string, callbacks: OAuthLoginCallbacks): Promise<void>;
+  logout(providerId: string): void;
 }
 
 function ensureAuthFile(authPath: string): void {
@@ -107,6 +108,12 @@ export class FileOnboardingAuthStorage implements OnboardingAuthStorage {
 
     const credentials = await provider.login(callbacks);
     this.set(providerId, { type: "oauth", ...credentials });
+  }
+
+  logout(providerId: string): void {
+    delete this.data[providerId];
+    writeFileSync(this.authPath, JSON.stringify(this.data, null, 2), "utf-8");
+    chmodSync(this.authPath, 0o600);
   }
 
   private mergeApiKeyCredentials(existing: StoredCredential[], credential: ApiKeyCredential): StoredCredential[] {

@@ -17,7 +17,8 @@ A user can run `gsd --web`, complete setup, and do the full GSD workflow in a sn
 - The workspace store now drives real dashboard, roadmap, files, activity, terminal, focused-panel prompt handling, workflow controls, continuity, and recovery surfaces instead of mock data.
 - M001 is complete: assembled route/runtime/browser proof is green, the preserved skin is wired to live state/actions, and the milestone-close live browser acceptance bar has been cleared.
 - `launchWebMode` now keeps the parent launcher thin by skipping in-memory extension reload in the short-lived parent process, which materially reduced `gsd --web` startup time.
-- The next milestone is M002: close remaining lower-frequency TUI/browser parity gaps and harden the browser-first path for daily use.
+- M002 is in progress, and S01 is complete: browser slash commands now dispatch safely in web mode, daily-use built-ins open real browser surfaces or execute/reject explicitly, and GSD-specific slash commands still route through the supported extension path.
+- The next slice is S02: finish the broader browser-native current-project session and settings parity surfaces that build on S01's shared dispatcher and command-surface contract.
 
 ## Architecture / Key Patterns
 
@@ -36,4 +37,4 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
 ## Milestone Sequence
 
 - [x] M001: Web mode foundation — Browser-first `gsd --web` is real, integrated, and verified end-to-end.
-- [ ] M002: Web parity and hardening — Close remaining TUI parity gaps, harden continuity/recovery/observability, and finish the browser-first flow for reliable daily use.
+- [ ] M002: Web parity and hardening — Close remaining TUI parity gaps, harden continuity/recovery/observability, and finish the browser-first flow for reliable daily use. (S01 complete; S02 next)

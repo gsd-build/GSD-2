@@ -5,7 +5,6 @@ import { Compass, Loader2, OctagonX, Wrench } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import {
-  buildPromptCommand,
   getOnboardingPresentation,
   getSessionLabelFromBridge,
   getStatusPresentation,
@@ -56,7 +55,7 @@ function inputModeLabel(mode: InputMode): string {
 
 export function Terminal({ className }: TerminalProps) {
   const workspace = useGSDWorkspaceState()
-  const { sendCommand, clearTerminalLines, refreshBoot, sendAbort, sendSteer } = useGSDWorkspaceActions()
+  const { submitInput, sendAbort, sendSteer } = useGSDWorkspaceActions()
   const [input, setInput] = useState("")
   const [steerMode, setSteerMode] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -89,18 +88,6 @@ export function Terminal({ className }: TerminalProps) {
     const trimmed = input.trim()
     if (!trimmed) return
 
-    if (trimmed === "/clear") {
-      clearTerminalLines()
-      setInput("")
-      return
-    }
-
-    if (trimmed === "/refresh") {
-      await refreshBoot()
-      setInput("")
-      return
-    }
-
     if (inputMode === "steer") {
       await sendSteer(trimmed)
       setInput("")
@@ -108,7 +95,7 @@ export function Terminal({ className }: TerminalProps) {
       return
     }
 
-    await sendCommand(buildPromptCommand(trimmed, workspace.boot?.bridge))
+    await submitInput(trimmed)
     setInput("")
   }
 

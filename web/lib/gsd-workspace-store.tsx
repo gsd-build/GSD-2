@@ -8,6 +8,28 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react"
+import {
+  dispatchBrowserSlashCommand,
+  getBrowserSlashCommandTerminalNotice,
+  type BrowserSlashCommandDispatchResult,
+  type BrowserSlashCommandSurface,
+} from "./browser-slash-command-dispatch"
+import {
+  applyCommandSurfaceActionResult,
+  closeCommandSurfaceState,
+  createInitialCommandSurfaceState,
+  openCommandSurfaceState,
+  setCommandSurfacePending,
+  setCommandSurfaceSection,
+  type CommandSurfaceCompactionResult,
+  type CommandSurfaceForkMessage,
+  type CommandSurfaceModelOption,
+  type CommandSurfaceSection,
+  type CommandSurfaceSessionStats,
+  type CommandSurfaceTarget,
+  type CommandSurfaceThinkingLevel,
+  type WorkspaceCommandSurfaceState,
+} from "./command-surface-contract"
 
 export type WorkspaceStatus = "idle" | "loading" | "ready" | "error"
 export type WorkspaceConnectionState =
@@ -345,6 +367,7 @@ export type WorkspaceOnboardingRequestState =
   | "starting_provider_flow"
   | "submitting_provider_flow_input"
   | "cancelling_provider_flow"
+  | "logging_out_provider"
 
 // A blocking UI request that needs user response before the agent can continue.
 // The `method` field discriminates the payload shape.
@@ -373,6 +396,8 @@ export interface WorkspaceStoreState {
   sessionAttached: boolean
   lastEventType: string | null
   commandInFlight: string | null
+  lastSlashCommandOutcome: BrowserSlashCommandDispatchResult | null
+  commandSurface: WorkspaceCommandSurfaceState
   onboardingRequestState: WorkspaceOnboardingRequestState
   onboardingRequestProviderId: string | null
   // Live interaction state
@@ -390,6 +415,18 @@ const MAX_TERMINAL_LINES = 250
 export const MAX_TRANSCRIPT_BLOCKS = 100
 export const COMMAND_TIMEOUT_MS = 90_000
 export const VISIBILITY_REFRESH_THRESHOLD_MS = 30_000
+const IMPLEMENTED_BROWSER_COMMAND_SURFACES = new Set<BrowserSlashCommandSurface>([
+  "settings",
+  "model",
+  "thinking",
+  "resume",
+  "fork",
+  "compact",
+  "login",
+  "logout",
+  "session",
+  "export",
+])
 
 function timestampLabel(date = new Date()): string {
   return date.toLocaleTimeString("en-US", {
@@ -424,6 +461,10 @@ function normalizeClientError(error: unknown): string {
 
 function getPromptCommandType(bridge: BridgeRuntimeSnapshot | null | undefined): "prompt" | "follow_up" {
   return bridge?.sessionState?.isStreaming ? "follow_up" : "prompt"
+}
+
+function getCommandInputLabel(command: WorkspaceBridgeCommand): string {
+  return typeof command.message === "string" ? command.message : `/${command.type}`
 }
 
 function summarizeBridgeStatus(bridge: BridgeRuntimeSnapshot): { type: TerminalLineType; message: string } {
@@ -778,6 +819,130 @@ export function getModelLabel(bridge: BridgeRuntimeSnapshot | null | undefined):
   return model.id || model.providerId || model.provider || "model pending"
 }
 
+function getCurrentModelSelection(
+  bridge: BridgeRuntimeSnapshot | null | undefined,
+): { provider?: string; modelId?: string } | null {
+  const model = bridge?.sessionState?.model
+  if (!model) return null
+  return {
+    provider: model.provider ?? model.providerId,
+    modelId: model.id,
+  }
+}
+
+function getPreferredOnboardingProviderId(onboarding: WorkspaceOnboardingState | null | undefined): string | null {
+  if (!onboarding) return null
+  if (onboarding.required.satisfiedBy?.providerId) {
+    return onboarding.required.satisfiedBy.providerId
+  }
+
+  const recommended = onboarding.required.providers.find((provider) => !provider.configured && provider.recommended)
+  if (recommended) return recommended.id
+
+  const firstUnconfigured = onboarding.required.providers.find((provider) => !provider.configured)
+  if (firstUnconfigured) return firstUnconfigured.id
+
+  return onboarding.required.providers[0]?.id ?? null
+}
+
+function normalizeAvailableModels(
+  payload: unknown,
+  currentModel: { provider?: string; modelId?: string } | null,
+): CommandSurfaceModelOption[] {
+  const models =
+    payload &&
+    typeof payload === "object" &&
+    "models" in payload &&
+    Array.isArray((payload as { models?: unknown[] }).models)
+      ? (payload as { models: Array<Record<string, unknown>> }).models
+      : []
+
+  return models
+    .map((model) => {
+      const provider =
+        typeof model.provider === "string"
+          ? model.provider
+          : typeof model.providerId === "string"
+            ? model.providerId
+            : undefined
+      const modelId = typeof model.id === "string" ? model.id : undefined
+      if (!provider || !modelId) return null
+
+      return {
+        provider,
+        modelId,
+        name: typeof model.name === "string" ? model.name : undefined,
+        reasoning: Boolean(model.reasoning),
+        isCurrent: provider === currentModel?.provider && modelId === currentModel?.modelId,
+      } satisfies CommandSurfaceModelOption
+    })
+    .filter((model): model is CommandSurfaceModelOption => model !== null)
+    .sort((left, right) => Number(right.isCurrent) - Number(left.isCurrent) || left.provider.localeCompare(right.provider) || left.modelId.localeCompare(right.modelId))
+}
+
+function normalizeSessionStats(payload: unknown): CommandSurfaceSessionStats | null {
+  if (!payload || typeof payload !== "object") return null
+  const stats = payload as Partial<CommandSurfaceSessionStats>
+  if (typeof stats.sessionId !== "string") return null
+
+  return {
+    sessionFile: typeof stats.sessionFile === "string" ? stats.sessionFile : undefined,
+    sessionId: stats.sessionId,
+    userMessages: Number(stats.userMessages ?? 0),
+    assistantMessages: Number(stats.assistantMessages ?? 0),
+    toolCalls: Number(stats.toolCalls ?? 0),
+    toolResults: Number(stats.toolResults ?? 0),
+    totalMessages: Number(stats.totalMessages ?? 0),
+    tokens: {
+      input: Number(stats.tokens?.input ?? 0),
+      output: Number(stats.tokens?.output ?? 0),
+      cacheRead: Number(stats.tokens?.cacheRead ?? 0),
+      cacheWrite: Number(stats.tokens?.cacheWrite ?? 0),
+      total: Number(stats.tokens?.total ?? 0),
+    },
+    cost: Number(stats.cost ?? 0),
+  }
+}
+
+function normalizeForkMessages(payload: unknown): CommandSurfaceForkMessage[] {
+  const messages =
+    payload &&
+    typeof payload === "object" &&
+    "messages" in payload &&
+    Array.isArray((payload as { messages?: unknown[] }).messages)
+      ? (payload as { messages: Array<Record<string, unknown>> }).messages
+      : []
+
+  return messages
+    .map((message) => {
+      const entryId = typeof message.entryId === "string" ? message.entryId : undefined
+      const text = typeof message.text === "string" ? message.text : undefined
+      if (!entryId || !text) return null
+      return { entryId, text } satisfies CommandSurfaceForkMessage
+    })
+    .filter((message): message is CommandSurfaceForkMessage => message !== null)
+}
+
+function normalizeCompactionResult(payload: unknown): CommandSurfaceCompactionResult | null {
+  if (!payload || typeof payload !== "object") return null
+  const result = payload as Partial<CommandSurfaceCompactionResult>
+  if (typeof result.summary !== "string" || typeof result.firstKeptEntryId !== "string") return null
+
+  return {
+    summary: result.summary,
+    firstKeptEntryId: result.firstKeptEntryId,
+    tokensBefore: Number(result.tokensBefore ?? 0),
+    details: result.details,
+  }
+}
+
+function describeSessionPath(sessionPath: string, boot: WorkspaceBootPayload | null): string {
+  const knownSession = boot?.resumableSessions.find((session) => session.path === sessionPath)
+  if (knownSession?.name?.trim()) return knownSession.name.trim()
+  if (knownSession?.id) return knownSession.id
+  return shortenPath(sessionPath)
+}
+
 export interface WorkspaceOnboardingPresentation {
   phase:
     | "loading"
@@ -956,6 +1121,8 @@ function createInitialState(): WorkspaceStoreState {
     sessionAttached: false,
     lastEventType: null,
     commandInFlight: null,
+    lastSlashCommandOutcome: null,
+    commandSurface: createInitialCommandSurfaceState(),
     onboardingRequestState: "idle",
     onboardingRequestProviderId: null,
     // Live interaction state
@@ -1026,6 +1193,764 @@ class GSDWorkspaceStore {
     this.patchState({ terminalLines: replacement })
   }
 
+  openCommandSurface = (
+    surface: BrowserSlashCommandSurface,
+    options: { source?: "slash" | "sidebar" | "surface"; args?: string; selectedTarget?: CommandSurfaceTarget | null } = {},
+  ): void => {
+    this.patchState({
+      commandSurface: openCommandSurfaceState(this.state.commandSurface, {
+        surface,
+        source: options.source ?? "surface",
+        args: options.args ?? "",
+        selectedTarget: options.selectedTarget,
+        onboardingLocked: this.state.boot?.onboarding.locked,
+        currentModel: getCurrentModelSelection(this.state.boot?.bridge),
+        currentThinkingLevel: this.state.boot?.bridge.sessionState?.thinkingLevel ?? null,
+        preferredProviderId: getPreferredOnboardingProviderId(this.state.boot?.onboarding),
+        resumableSessions: this.state.boot?.resumableSessions.map((session) => ({
+          id: session.id,
+          path: session.path,
+          name: session.name,
+          isActive: session.isActive,
+        })),
+      }),
+    })
+  }
+
+  closeCommandSurface = (): void => {
+    this.patchState({
+      commandSurface: closeCommandSurfaceState(this.state.commandSurface),
+    })
+  }
+
+  setCommandSurfaceSection = (section: CommandSurfaceSection): void => {
+    this.patchState({
+      commandSurface: setCommandSurfaceSection(this.state.commandSurface, section, {
+        onboardingLocked: this.state.boot?.onboarding.locked,
+        currentModel: getCurrentModelSelection(this.state.boot?.bridge),
+        currentThinkingLevel: this.state.boot?.bridge.sessionState?.thinkingLevel ?? null,
+        preferredProviderId: getPreferredOnboardingProviderId(this.state.boot?.onboarding),
+        resumableSessions: this.state.boot?.resumableSessions.map((session) => ({
+          id: session.id,
+          path: session.path,
+          name: session.name,
+          isActive: session.isActive,
+        })),
+      }),
+    })
+  }
+
+  selectCommandSurfaceTarget = (target: CommandSurfaceTarget): void => {
+    const nextSection =
+      target.kind === "settings"
+        ? target.section
+        : target.kind === "model"
+          ? "model"
+          : target.kind === "thinking"
+            ? "thinking"
+            : target.kind === "auth"
+              ? "auth"
+              : target.kind === "resume"
+                ? "resume"
+                : target.kind === "fork"
+                  ? "fork"
+                  : target.kind === "session"
+                    ? "session"
+                    : "compact"
+
+    this.patchState({
+      commandSurface: {
+        ...this.state.commandSurface,
+        section: nextSection,
+        selectedTarget: target,
+        lastError: null,
+        lastResult: null,
+      },
+    })
+  }
+
+  loadAvailableModels = async (): Promise<CommandSurfaceModelOption[]> => {
+    this.patchState({
+      commandSurface: setCommandSurfacePending(this.state.commandSurface, "loading_models"),
+    })
+
+    const response = await this.sendCommand(
+      { type: "get_available_models" },
+      { appendInputLine: false, appendResponseLine: false },
+    )
+
+    if (!response || response.success === false) {
+      const message = response?.error ?? this.state.lastClientError ?? "Unknown error"
+      this.patchState({
+        commandSurface: applyCommandSurfaceActionResult(this.state.commandSurface, {
+          action: "loading_models",
+          success: false,
+          message: `Couldn't load models — ${message}`,
+        }),
+      })
+      return []
+    }
+
+    const availableModels = normalizeAvailableModels(response.data, getCurrentModelSelection(this.state.boot?.bridge))
+    const currentTarget = this.state.commandSurface.selectedTarget
+    const selectedTarget =
+      currentTarget?.kind === "model"
+        ? currentTarget
+        : availableModels[0]
+          ? { kind: "model", provider: availableModels[0].provider, modelId: availableModels[0].modelId }
+          : currentTarget
+
+    this.patchState({
+      commandSurface: {
+        ...this.state.commandSurface,
+        pendingAction: null,
+        lastError: null,
+        availableModels,
+        selectedTarget: selectedTarget ?? null,
+      },
+    })
+
+    return availableModels
+  }
+
+  applyModelSelection = async (provider: string, modelId: string): Promise<WorkspaceCommandResponse | null> => {
+    const selectedTarget: CommandSurfaceTarget = { kind: "model", provider, modelId }
+    this.patchState({
+      commandSurface: setCommandSurfacePending(this.state.commandSurface, "set_model", selectedTarget),
+    })
+
+    const response = await this.sendCommand(
+      { type: "set_model", provider, modelId },
+      { appendInputLine: false, appendResponseLine: false },
+    )
+
+    if (!response || response.success === false) {
+      const message = response?.error ?? this.state.lastClientError ?? "Unknown error"
+      this.patchState({
+        commandSurface: applyCommandSurfaceActionResult(this.state.commandSurface, {
+          action: "set_model",
+          success: false,
+          message,
+          selectedTarget,
+        }),
+      })
+      return response
+    }
+
+    const nextBridge = this.state.boot?.bridge.sessionState
+      ? {
+          ...this.state.boot.bridge,
+          sessionState: {
+            ...this.state.boot.bridge.sessionState,
+            model: response.data as WorkspaceModelRef,
+          },
+        }
+      : null
+
+    const nextAvailableModels = this.state.commandSurface.availableModels.map((model) => ({
+      ...model,
+      isCurrent: model.provider === provider && model.modelId === modelId,
+    }))
+
+    this.patchState({
+      ...(nextBridge && this.state.boot ? { boot: cloneBootWithBridge(this.state.boot, nextBridge) } : {}),
+      commandSurface: applyCommandSurfaceActionResult(this.state.commandSurface, {
+        action: "set_model",
+        success: true,
+        message: `Model set to ${provider}/${modelId}`,
+        selectedTarget,
+        availableModels: nextAvailableModels,
+      }),
+    })
+
+    return response
+  }
+
+  applyThinkingLevel = async (level: CommandSurfaceThinkingLevel): Promise<WorkspaceCommandResponse | null> => {
+    const selectedTarget: CommandSurfaceTarget = { kind: "thinking", level }
+    this.patchState({
+      commandSurface: setCommandSurfacePending(this.state.commandSurface, "set_thinking_level", selectedTarget),
+    })
+
+    const response = await this.sendCommand(
+      { type: "set_thinking_level", level },
+      { appendInputLine: false, appendResponseLine: false },
+    )
+
+    if (!response || response.success === false) {
+      const message = response?.error ?? this.state.lastClientError ?? "Unknown error"
+      this.patchState({
+        commandSurface: applyCommandSurfaceActionResult(this.state.commandSurface, {
+          action: "set_thinking_level",
+          success: false,
+          message,
+          selectedTarget,
+        }),
+      })
+      return response
+    }
+
+    const nextBridge = this.state.boot?.bridge.sessionState
+      ? {
+          ...this.state.boot.bridge,
+          sessionState: {
+            ...this.state.boot.bridge.sessionState,
+            thinkingLevel: level,
+          },
+        }
+      : null
+
+    this.patchState({
+      ...(nextBridge && this.state.boot ? { boot: cloneBootWithBridge(this.state.boot, nextBridge) } : {}),
+      commandSurface: applyCommandSurfaceActionResult(this.state.commandSurface, {
+        action: "set_thinking_level",
+        success: true,
+        message: `Thinking level set to ${level}`,
+        selectedTarget,
+      }),
+    })
+
+    return response
+  }
+
+  switchSessionFromSurface = async (sessionPath: string): Promise<WorkspaceCommandResponse | null> => {
+    const selectedTarget: CommandSurfaceTarget = { kind: "resume", sessionPath }
+    this.patchState({
+      commandSurface: setCommandSurfacePending(this.state.commandSurface, "switch_session", selectedTarget),
+    })
+
+    const response = await this.sendCommand(
+      { type: "switch_session", sessionPath },
+      { appendInputLine: false, appendResponseLine: false },
+    )
+
+    if (!response || response.success === false) {
+      const message = response?.error ?? this.state.lastClientError ?? "Unknown error"
+      this.patchState({
+        commandSurface: applyCommandSurfaceActionResult(this.state.commandSurface, {
+          action: "switch_session",
+          success: false,
+          message,
+          selectedTarget,
+        }),
+      })
+      return response
+    }
+
+    if (response.data && typeof response.data === "object" && "cancelled" in response.data && response.data.cancelled) {
+      this.patchState({
+        commandSurface: applyCommandSurfaceActionResult(this.state.commandSurface, {
+          action: "switch_session",
+          success: false,
+          message: "Session switch was cancelled before the browser changed sessions.",
+          selectedTarget,
+        }),
+      })
+      return response
+    }
+
+    await this.refreshBoot({ soft: true })
+
+    this.patchState({
+      commandSurface: applyCommandSurfaceActionResult(this.state.commandSurface, {
+        action: "switch_session",
+        success: true,
+        message: `Switched to ${describeSessionPath(sessionPath, this.state.boot)}`,
+        selectedTarget,
+      }),
+    })
+
+    return response
+  }
+
+  loadSessionStats = async (): Promise<CommandSurfaceSessionStats | null> => {
+    this.patchState({
+      commandSurface: setCommandSurfacePending(this.state.commandSurface, "load_session_stats"),
+    })
+
+    const response = await this.sendCommand(
+      { type: "get_session_stats" },
+      { appendInputLine: false, appendResponseLine: false },
+    )
+
+    if (!response || response.success === false) {
+      const message = response?.error ?? this.state.lastClientError ?? "Unknown error"
+      this.patchState({
+        commandSurface: applyCommandSurfaceActionResult(this.state.commandSurface, {
+          action: "load_session_stats",
+          success: false,
+          message: `Couldn't load session details — ${message}`,
+          sessionStats: null,
+        }),
+      })
+      return null
+    }
+
+    const sessionStats = normalizeSessionStats(response.data)
+    if (!sessionStats) {
+      this.patchState({
+        commandSurface: applyCommandSurfaceActionResult(this.state.commandSurface, {
+          action: "load_session_stats",
+          success: false,
+          message: "Session details response was missing the expected fields.",
+          sessionStats: null,
+        }),
+      })
+      return null
+    }
+
+    this.patchState({
+      commandSurface: applyCommandSurfaceActionResult(this.state.commandSurface, {
+        action: "load_session_stats",
+        success: true,
+        message: `Loaded session details for ${sessionStats.sessionId}`,
+        sessionStats,
+      }),
+    })
+
+    return sessionStats
+  }
+
+  exportSessionFromSurface = async (outputPath?: string): Promise<WorkspaceCommandResponse | null> => {
+    const normalizedOutputPath = outputPath?.trim() || undefined
+    const selectedTarget: CommandSurfaceTarget = { kind: "session", outputPath: normalizedOutputPath }
+    this.patchState({
+      commandSurface: setCommandSurfacePending(this.state.commandSurface, "export_html", selectedTarget),
+    })
+
+    const response = await this.sendCommand(
+      normalizedOutputPath ? { type: "export_html", outputPath: normalizedOutputPath } : { type: "export_html" },
+      { appendInputLine: false, appendResponseLine: false },
+    )
+
+    if (!response || response.success === false) {
+      const message = response?.error ?? this.state.lastClientError ?? "Unknown error"
+      this.patchState({
+        commandSurface: applyCommandSurfaceActionResult(this.state.commandSurface, {
+          action: "export_html",
+          success: false,
+          message: `Couldn't export this session — ${message}`,
+          selectedTarget,
+        }),
+      })
+      return response
+    }
+
+    const exportedPath =
+      response.data && typeof response.data === "object" && "path" in response.data && typeof response.data.path === "string"
+        ? response.data.path
+        : "the generated file"
+
+    this.patchState({
+      commandSurface: applyCommandSurfaceActionResult(this.state.commandSurface, {
+        action: "export_html",
+        success: true,
+        message: `Session exported to ${exportedPath}`,
+        selectedTarget,
+      }),
+    })
+
+    return response
+  }
+
+  loadForkMessages = async (): Promise<CommandSurfaceForkMessage[]> => {
+    this.patchState({
+      commandSurface: setCommandSurfacePending(this.state.commandSurface, "load_fork_messages"),
+    })
+
+    const response = await this.sendCommand(
+      { type: "get_fork_messages" },
+      { appendInputLine: false, appendResponseLine: false },
+    )
+
+    if (!response || response.success === false) {
+      const message = response?.error ?? this.state.lastClientError ?? "Unknown error"
+      this.patchState({
+        commandSurface: applyCommandSurfaceActionResult(this.state.commandSurface, {
+          action: "load_fork_messages",
+          success: false,
+          message: `Couldn't load fork points — ${message}`,
+          forkMessages: [],
+        }),
+      })
+      return []
+    }
+
+    const forkMessages = normalizeForkMessages(response.data)
+    const currentTarget = this.state.commandSurface.selectedTarget
+    const selectedTarget =
+      currentTarget?.kind === "fork" && currentTarget.entryId
+        ? currentTarget
+        : forkMessages[0]
+          ? { kind: "fork", entryId: forkMessages[0].entryId }
+          : currentTarget
+
+    this.patchState({
+      commandSurface: applyCommandSurfaceActionResult(this.state.commandSurface, {
+        action: "load_fork_messages",
+        success: true,
+        message: forkMessages.length > 0 ? `Loaded ${forkMessages.length} fork points.` : "No fork points are available yet.",
+        selectedTarget: selectedTarget ?? null,
+        forkMessages,
+      }),
+    })
+
+    return forkMessages
+  }
+
+  forkSessionFromSurface = async (entryId: string): Promise<WorkspaceCommandResponse | null> => {
+    const selectedTarget: CommandSurfaceTarget = { kind: "fork", entryId }
+    this.patchState({
+      commandSurface: setCommandSurfacePending(this.state.commandSurface, "fork_session", selectedTarget),
+    })
+
+    const response = await this.sendCommand(
+      { type: "fork", entryId },
+      { appendInputLine: false, appendResponseLine: false },
+    )
+
+    if (!response || response.success === false) {
+      const message = response?.error ?? this.state.lastClientError ?? "Unknown error"
+      this.patchState({
+        commandSurface: applyCommandSurfaceActionResult(this.state.commandSurface, {
+          action: "fork_session",
+          success: false,
+          message: `Couldn't create a fork — ${message}`,
+          selectedTarget,
+        }),
+      })
+      return response
+    }
+
+    if (response.data && typeof response.data === "object" && "cancelled" in response.data && response.data.cancelled) {
+      this.patchState({
+        commandSurface: applyCommandSurfaceActionResult(this.state.commandSurface, {
+          action: "fork_session",
+          success: false,
+          message: "Fork creation was cancelled before a new session was created.",
+          selectedTarget,
+        }),
+      })
+      return response
+    }
+
+    await this.refreshBoot({ soft: true })
+
+    const sourceText =
+      response.data && typeof response.data === "object" && "text" in response.data && typeof response.data.text === "string"
+        ? response.data.text.trim()
+        : ""
+
+    this.patchState({
+      commandSurface: applyCommandSurfaceActionResult(this.state.commandSurface, {
+        action: "fork_session",
+        success: true,
+        message: sourceText ? `Forked from “${sourceText.slice(0, 120)}${sourceText.length > 120 ? "…" : ""}”` : "Created a forked session.",
+        selectedTarget,
+      }),
+    })
+
+    return response
+  }
+
+  compactSessionFromSurface = async (customInstructions?: string): Promise<WorkspaceCommandResponse | null> => {
+    const normalizedInstructions = customInstructions?.trim() ?? ""
+    const selectedTarget: CommandSurfaceTarget = { kind: "compact", customInstructions: normalizedInstructions }
+    this.patchState({
+      commandSurface: setCommandSurfacePending(this.state.commandSurface, "compact_session", selectedTarget),
+    })
+
+    const response = await this.sendCommand(
+      normalizedInstructions ? { type: "compact", customInstructions: normalizedInstructions } : { type: "compact" },
+      { appendInputLine: false, appendResponseLine: false },
+    )
+
+    if (!response || response.success === false) {
+      const message = response?.error ?? this.state.lastClientError ?? "Unknown error"
+      this.patchState({
+        commandSurface: applyCommandSurfaceActionResult(this.state.commandSurface, {
+          action: "compact_session",
+          success: false,
+          message: `Couldn't compact the session — ${message}`,
+          selectedTarget,
+          lastCompaction: null,
+        }),
+      })
+      return response
+    }
+
+    const compactionResult = normalizeCompactionResult(response.data)
+    if (!compactionResult) {
+      this.patchState({
+        commandSurface: applyCommandSurfaceActionResult(this.state.commandSurface, {
+          action: "compact_session",
+          success: false,
+          message: "Compaction finished but the browser could not read the compaction result.",
+          selectedTarget,
+          lastCompaction: null,
+        }),
+      })
+      return response
+    }
+
+    this.patchState({
+      commandSurface: applyCommandSurfaceActionResult(this.state.commandSurface, {
+        action: "compact_session",
+        success: true,
+        message: `Compacted ${compactionResult.tokensBefore.toLocaleString()} tokens into a fresh summary${normalizedInstructions ? " with custom instructions" : ""}.`,
+        selectedTarget,
+        lastCompaction: compactionResult,
+      }),
+    })
+
+    return response
+  }
+
+  saveApiKeyFromSurface = async (providerId: string, apiKey: string): Promise<WorkspaceOnboardingState | null> => {
+    const selectedTarget: CommandSurfaceTarget = { kind: "auth", providerId, intent: "manage" }
+    this.patchState({
+      commandSurface: setCommandSurfacePending(this.state.commandSurface, "save_api_key", selectedTarget),
+    })
+
+    const onboarding = await this.saveApiKey(providerId, apiKey)
+    const providerLabel = onboarding ? findOnboardingProviderLabel(onboarding, providerId) : providerId
+
+    if (!onboarding) {
+      this.patchState({
+        commandSurface: applyCommandSurfaceActionResult(this.state.commandSurface, {
+          action: "save_api_key",
+          success: false,
+          message: this.state.lastClientError ?? `${providerLabel} setup failed`,
+          selectedTarget,
+        }),
+      })
+      return null
+    }
+
+    if (onboarding.lastValidation?.status === "failed") {
+      this.patchState({
+        commandSurface: applyCommandSurfaceActionResult(this.state.commandSurface, {
+          action: "save_api_key",
+          success: false,
+          message: onboarding.lastValidation.message,
+          selectedTarget,
+        }),
+      })
+      return onboarding
+    }
+
+    if (onboarding.bridgeAuthRefresh.phase === "failed") {
+      this.patchState({
+        commandSurface: applyCommandSurfaceActionResult(this.state.commandSurface, {
+          action: "save_api_key",
+          success: false,
+          message: onboarding.bridgeAuthRefresh.error ?? `${providerLabel} credentials validated but bridge auth refresh failed`,
+          selectedTarget,
+        }),
+      })
+      return onboarding
+    }
+
+    this.patchState({
+      commandSurface: applyCommandSurfaceActionResult(this.state.commandSurface, {
+        action: "save_api_key",
+        success: true,
+        message: `${providerLabel} credentials validated and saved.`,
+        selectedTarget,
+      }),
+    })
+
+    return onboarding
+  }
+
+  startProviderFlowFromSurface = async (providerId: string): Promise<WorkspaceOnboardingState | null> => {
+    const selectedTarget: CommandSurfaceTarget = { kind: "auth", providerId, intent: "login" }
+    this.patchState({
+      commandSurface: setCommandSurfacePending(this.state.commandSurface, "start_provider_flow", selectedTarget),
+    })
+
+    const onboarding = await this.startProviderFlow(providerId)
+    const providerLabel = onboarding ? findOnboardingProviderLabel(onboarding, providerId) : providerId
+
+    if (!onboarding) {
+      this.patchState({
+        commandSurface: applyCommandSurfaceActionResult(this.state.commandSurface, {
+          action: "start_provider_flow",
+          success: false,
+          message: this.state.lastClientError ?? `${providerLabel} sign-in failed to start`,
+          selectedTarget,
+        }),
+      })
+      return null
+    }
+
+    this.patchState({
+      commandSurface: applyCommandSurfaceActionResult(this.state.commandSurface, {
+        action: "start_provider_flow",
+        success: true,
+        message: `${providerLabel} sign-in started. Continue in the auth section.`,
+        selectedTarget,
+      }),
+    })
+
+    return onboarding
+  }
+
+  submitProviderFlowInputFromSurface = async (flowId: string, input: string): Promise<WorkspaceOnboardingState | null> => {
+    const providerId = this.state.boot?.onboarding.activeFlow?.providerId ?? undefined
+    const selectedTarget: CommandSurfaceTarget = { kind: "auth", providerId, intent: "login" }
+    this.patchState({
+      commandSurface: setCommandSurfacePending(this.state.commandSurface, "submit_provider_flow_input", selectedTarget),
+    })
+
+    const onboarding = await this.submitProviderFlowInput(flowId, input)
+    const providerLabel =
+      onboarding?.activeFlow?.providerLabel ??
+      (providerId && onboarding ? findOnboardingProviderLabel(onboarding, providerId) : providerId) ??
+      "Provider"
+
+    if (!onboarding) {
+      this.patchState({
+        commandSurface: applyCommandSurfaceActionResult(this.state.commandSurface, {
+          action: "submit_provider_flow_input",
+          success: false,
+          message: this.state.lastClientError ?? `${providerLabel} sign-in failed`,
+          selectedTarget,
+        }),
+      })
+      return null
+    }
+
+    if (onboarding.activeFlow?.status === "failed") {
+      this.patchState({
+        commandSurface: applyCommandSurfaceActionResult(this.state.commandSurface, {
+          action: "submit_provider_flow_input",
+          success: false,
+          message: onboarding.activeFlow.error ?? `${providerLabel} sign-in failed`,
+          selectedTarget,
+        }),
+      })
+      return onboarding
+    }
+
+    if (onboarding.bridgeAuthRefresh.phase === "failed") {
+      this.patchState({
+        commandSurface: applyCommandSurfaceActionResult(this.state.commandSurface, {
+          action: "submit_provider_flow_input",
+          success: false,
+          message: onboarding.bridgeAuthRefresh.error ?? `${providerLabel} sign-in completed but bridge auth refresh failed`,
+          selectedTarget,
+        }),
+      })
+      return onboarding
+    }
+
+    const successMessage =
+      onboarding.activeFlow && ["running", "awaiting_browser_auth", "awaiting_input"].includes(onboarding.activeFlow.status)
+        ? `${providerLabel} sign-in advanced. Complete the remaining step in this panel.`
+        : `${providerLabel} sign-in complete.`
+
+    this.patchState({
+      commandSurface: applyCommandSurfaceActionResult(this.state.commandSurface, {
+        action: "submit_provider_flow_input",
+        success: true,
+        message: successMessage,
+        selectedTarget,
+      }),
+    })
+
+    return onboarding
+  }
+
+  cancelProviderFlowFromSurface = async (flowId: string): Promise<WorkspaceOnboardingState | null> => {
+    const providerId = this.state.boot?.onboarding.activeFlow?.providerId ?? undefined
+    const selectedTarget: CommandSurfaceTarget = { kind: "auth", providerId, intent: "login" }
+    this.patchState({
+      commandSurface: setCommandSurfacePending(this.state.commandSurface, "cancel_provider_flow", selectedTarget),
+    })
+
+    const onboarding = await this.cancelProviderFlow(flowId)
+    const providerLabel =
+      onboarding?.activeFlow?.providerLabel ??
+      (providerId && onboarding ? findOnboardingProviderLabel(onboarding, providerId) : providerId) ??
+      "Provider"
+
+    if (!onboarding) {
+      this.patchState({
+        commandSurface: applyCommandSurfaceActionResult(this.state.commandSurface, {
+          action: "cancel_provider_flow",
+          success: false,
+          message: this.state.lastClientError ?? `${providerLabel} sign-in cancellation failed`,
+          selectedTarget,
+        }),
+      })
+      return null
+    }
+
+    this.patchState({
+      commandSurface: applyCommandSurfaceActionResult(this.state.commandSurface, {
+        action: "cancel_provider_flow",
+        success: true,
+        message: `${providerLabel} sign-in cancelled.`,
+        selectedTarget,
+      }),
+    })
+
+    return onboarding
+  }
+
+  logoutProviderFromSurface = async (providerId: string): Promise<WorkspaceOnboardingState | null> => {
+    const selectedTarget: CommandSurfaceTarget = { kind: "auth", providerId, intent: "logout" }
+    this.patchState({
+      commandSurface: setCommandSurfacePending(this.state.commandSurface, "logout_provider", selectedTarget),
+    })
+
+    const onboarding = await this.logoutProvider(providerId)
+    const providerLabel = onboarding ? findOnboardingProviderLabel(onboarding, providerId) : providerId
+
+    if (!onboarding) {
+      this.patchState({
+        commandSurface: applyCommandSurfaceActionResult(this.state.commandSurface, {
+          action: "logout_provider",
+          success: false,
+          message: this.state.lastClientError ?? `${providerLabel} logout failed`,
+          selectedTarget,
+        }),
+      })
+      return null
+    }
+
+    if (onboarding.bridgeAuthRefresh.phase === "failed") {
+      this.patchState({
+        commandSurface: applyCommandSurfaceActionResult(this.state.commandSurface, {
+          action: "logout_provider",
+          success: false,
+          message: onboarding.bridgeAuthRefresh.error ?? `${providerLabel} logout completed but bridge auth refresh failed`,
+          selectedTarget,
+        }),
+      })
+      return onboarding
+    }
+
+    const providerState = onboarding.required.providers.find((provider) => provider.id === providerId)
+    const resultMessage = providerState?.configured
+      ? `${providerLabel} saved credentials were removed, but ${providerState.configuredVia} auth still keeps the provider available.`
+      : onboarding.locked
+        ? `${providerLabel} logged out — required setup is needed again.`
+        : `${providerLabel} logged out.`
+
+    this.patchState({
+      commandSurface: applyCommandSurfaceActionResult(this.state.commandSurface, {
+        action: "logout_provider",
+        success: true,
+        message: resultMessage,
+        selectedTarget,
+      }),
+    })
+
+    return onboarding
+  }
+
   respondToUiRequest = async (id: string, response: Record<string, unknown>): Promise<void> => {
     this.patchState({ commandInFlight: "extension_ui_response" })
     try {
@@ -1084,6 +2009,66 @@ class GSDWorkspaceStore {
 
   sendAbort = async (): Promise<void> => {
     await this.sendCommand({ type: "abort" })
+  }
+
+  submitInput = async (input: string): Promise<BrowserSlashCommandDispatchResult | null> => {
+    const trimmed = input.trim()
+    if (!trimmed) return null
+
+    const outcome = dispatchBrowserSlashCommand(trimmed, {
+      isStreaming: this.state.boot?.bridge.sessionState?.isStreaming,
+    })
+
+    this.patchState({
+      lastSlashCommandOutcome: trimmed.startsWith("/") ? outcome : null,
+    })
+
+    switch (outcome.kind) {
+      case "prompt":
+      case "rpc": {
+        const response = await this.sendCommand(outcome.command, { displayInput: trimmed })
+        if (outcome.kind === "rpc" && outcome.command.type === "new_session" && response?.success !== false) {
+          await this.refreshBoot({ soft: true })
+        }
+        return outcome
+      }
+      case "local":
+        if (outcome.action === "clear_terminal") {
+          this.clearTerminalLines()
+          return outcome
+        }
+        if (outcome.action === "refresh_workspace") {
+          await this.refreshBoot()
+          return outcome
+        }
+        return outcome
+      case "surface": {
+        if (IMPLEMENTED_BROWSER_COMMAND_SURFACES.has(outcome.surface)) {
+          this.patchState({
+            terminalLines: withTerminalLine(this.state.terminalLines, createTerminalLine("input", trimmed)),
+          })
+          this.openCommandSurface(outcome.surface, { source: "slash", args: outcome.args })
+          return outcome
+        }
+
+        const notice = getBrowserSlashCommandTerminalNotice(outcome)
+        let nextLines = withTerminalLine(this.state.terminalLines, createTerminalLine("input", trimmed))
+        if (notice) {
+          nextLines = withTerminalLine(nextLines, createTerminalLine(notice.type, notice.message))
+        }
+        this.patchState({ terminalLines: nextLines })
+        return outcome
+      }
+      case "reject": {
+        const notice = getBrowserSlashCommandTerminalNotice(outcome)
+        let nextLines = withTerminalLine(this.state.terminalLines, createTerminalLine("input", trimmed))
+        if (notice) {
+          nextLines = withTerminalLine(nextLines, createTerminalLine(notice.type, notice.message))
+        }
+        this.patchState({ terminalLines: nextLines })
+        return outcome
+      }
+    }
   }
 
   refreshBoot = async (options: { soft?: boolean } = {}): Promise<void> => {
@@ -1297,15 +2282,53 @@ class GSDWorkspaceStore {
     }
   }
 
-  sendCommand = async (command: WorkspaceBridgeCommand): Promise<WorkspaceCommandResponse | null> => {
-    this.clearCommandTimeout()
+  logoutProvider = async (providerId: string): Promise<WorkspaceOnboardingState | null> => {
     this.patchState({
-      commandInFlight: command.type,
-      terminalLines: withTerminalLine(
-        this.state.terminalLines,
-        createTerminalLine("input", typeof command.message === "string" ? command.message : `/${command.type}`),
-      ),
+      onboardingRequestState: "logging_out_provider",
+      onboardingRequestProviderId: providerId,
+      lastClientError: null,
     })
+
+    try {
+      const onboarding = await this.postOnboardingAction({
+        action: "logout_provider",
+        providerId,
+      })
+      await this.syncAfterOnboardingMutation(onboarding)
+      return onboarding
+    } catch (error) {
+      const message = normalizeClientError(error)
+      this.patchState({
+        lastClientError: message,
+        terminalLines: withTerminalLine(this.state.terminalLines, createTerminalLine("error", `Provider logout failed — ${message}`)),
+      })
+      return null
+    } finally {
+      this.patchState({
+        onboardingRequestState: "idle",
+        onboardingRequestProviderId: null,
+      })
+    }
+  }
+
+  sendCommand = async (
+    command: WorkspaceBridgeCommand,
+    options: { displayInput?: string; appendInputLine?: boolean; appendResponseLine?: boolean } = {},
+  ): Promise<WorkspaceCommandResponse | null> => {
+    this.clearCommandTimeout()
+
+    const nextPatch: Partial<WorkspaceStoreState> = {
+      commandInFlight: command.type,
+    }
+
+    if (options.appendInputLine !== false) {
+      nextPatch.terminalLines = withTerminalLine(
+        this.state.terminalLines,
+        createTerminalLine("input", options.displayInput ?? getCommandInputLabel(command)),
+      )
+    }
+
+    this.patchState(nextPatch)
 
     this.commandTimeoutTimer = setTimeout(() => {
       if (this.state.commandInFlight) {
@@ -1359,7 +2382,9 @@ class GSDWorkspaceStore {
       }
 
       this.patchState({
-        terminalLines: withTerminalLine(this.state.terminalLines, responseToLine(payload)),
+        ...(options.appendResponseLine === false
+          ? {}
+          : { terminalLines: withTerminalLine(this.state.terminalLines, responseToLine(payload)) }),
         lastBridgeError: payload.success ? this.state.lastBridgeError : this.state.boot?.bridge.lastError ?? this.state.lastBridgeError,
       })
       return payload
@@ -1747,13 +2772,33 @@ export function useGSDWorkspaceState(): WorkspaceStoreState {
 export function useGSDWorkspaceActions(): Pick<
   GSDWorkspaceStore,
   | "sendCommand"
+  | "submitInput"
   | "clearTerminalLines"
   | "refreshBoot"
   | "refreshOnboarding"
+  | "openCommandSurface"
+  | "closeCommandSurface"
+  | "setCommandSurfaceSection"
+  | "selectCommandSurfaceTarget"
+  | "loadAvailableModels"
+  | "applyModelSelection"
+  | "applyThinkingLevel"
+  | "switchSessionFromSurface"
+  | "loadSessionStats"
+  | "exportSessionFromSurface"
+  | "loadForkMessages"
+  | "forkSessionFromSurface"
+  | "compactSessionFromSurface"
   | "saveApiKey"
+  | "saveApiKeyFromSurface"
   | "startProviderFlow"
+  | "startProviderFlowFromSurface"
   | "submitProviderFlowInput"
+  | "submitProviderFlowInputFromSurface"
   | "cancelProviderFlow"
+  | "cancelProviderFlowFromSurface"
+  | "logoutProvider"
+  | "logoutProviderFromSurface"
   | "respondToUiRequest"
   | "dismissUiRequest"
   | "sendSteer"
@@ -1762,13 +2807,33 @@ export function useGSDWorkspaceActions(): Pick<
   const store = useWorkspaceStore()
   return {
     sendCommand: store.sendCommand,
+    submitInput: store.submitInput,
     clearTerminalLines: store.clearTerminalLines,
     refreshBoot: store.refreshBoot,
     refreshOnboarding: store.refreshOnboarding,
+    openCommandSurface: store.openCommandSurface,
+    closeCommandSurface: store.closeCommandSurface,
+    setCommandSurfaceSection: store.setCommandSurfaceSection,
+    selectCommandSurfaceTarget: store.selectCommandSurfaceTarget,
+    loadAvailableModels: store.loadAvailableModels,
+    applyModelSelection: store.applyModelSelection,
+    applyThinkingLevel: store.applyThinkingLevel,
+    switchSessionFromSurface: store.switchSessionFromSurface,
+    loadSessionStats: store.loadSessionStats,
+    exportSessionFromSurface: store.exportSessionFromSurface,
+    loadForkMessages: store.loadForkMessages,
+    forkSessionFromSurface: store.forkSessionFromSurface,
+    compactSessionFromSurface: store.compactSessionFromSurface,
     saveApiKey: store.saveApiKey,
+    saveApiKeyFromSurface: store.saveApiKeyFromSurface,
     startProviderFlow: store.startProviderFlow,
+    startProviderFlowFromSurface: store.startProviderFlowFromSurface,
     submitProviderFlowInput: store.submitProviderFlowInput,
+    submitProviderFlowInputFromSurface: store.submitProviderFlowInputFromSurface,
     cancelProviderFlow: store.cancelProviderFlow,
+    cancelProviderFlowFromSurface: store.cancelProviderFlowFromSurface,
+    logoutProvider: store.logoutProvider,
+    logoutProviderFromSurface: store.logoutProviderFromSurface,
     respondToUiRequest: store.respondToUiRequest,
     dismissUiRequest: store.dismissUiRequest,
     sendSteer: store.sendSteer,
@@ -1780,15 +2845,15 @@ export function buildPromptCommand(
   input: string,
   bridge: BridgeRuntimeSnapshot | null | undefined,
 ): WorkspaceBridgeCommand {
-  const trimmed = input.trim()
-  if (trimmed === "/state") {
-    return { type: "get_state" }
+  const outcome = dispatchBrowserSlashCommand(input, {
+    isStreaming: bridge?.sessionState?.isStreaming,
+  })
+
+  if (outcome.kind === "prompt" || outcome.kind === "rpc") {
+    return outcome.command
   }
-  if (trimmed === "/new" || trimmed === "/new-session") {
-    return { type: "new_session" }
-  }
-  return {
-    type: getPromptCommandType(bridge),
-    message: trimmed,
-  }
+
+  throw new Error(
+    `buildPromptCommand cannot serialize ${outcome.input || input} because browser dispatch resolved it to ${outcome.kind}; use submitInput() instead.`,
+  )
 }

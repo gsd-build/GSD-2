@@ -12,7 +12,8 @@ type OnboardingAction =
   | { action: "save_api_key"; providerId: string; apiKey: string }
   | { action: "start_provider_flow"; providerId: string }
   | { action: "continue_provider_flow"; flowId: string; input: string }
-  | { action: "cancel_provider_flow"; flowId: string };
+  | { action: "cancel_provider_flow"; flowId: string }
+  | { action: "logout_provider"; providerId: string };
 
 function noStoreHeaders(): HeadersInit {
   return {
@@ -115,6 +116,21 @@ export async function POST(request: Request): Promise<Response> {
         return Response.json(
           { onboarding },
           {
+            headers: noStoreHeaders(),
+          },
+        );
+      }
+      case "logout_provider": {
+        const onboarding = await onboardingService.logoutProvider(payload.providerId);
+        return Response.json(
+          { onboarding },
+          {
+            status:
+              onboarding.lockReason === "bridge_refresh_failed"
+                ? 503
+                : onboarding.lockReason === "bridge_refresh_pending"
+                  ? 202
+                  : 200,
             headers: noStoreHeaders(),
           },
         );

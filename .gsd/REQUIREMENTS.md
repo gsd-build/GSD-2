@@ -20,10 +20,10 @@ Guidelines:
 - Description: After the primary browser-first loop is real, the remaining lower-frequency TUI capabilities should be brought into browser parity as needed for daily use.
 - Why it matters: The stated goal is full parity with what the TUI can do, not just a browser path for the main happy path.
 - Source: user
-- Primary owning slice: M002 (provisional)
-- Supporting slices: none
+- Primary owning slice: M002/S01
+- Supporting slices: M002/S02, M002/S03, M002/S04
 - Validation: mapped
-- Notes: Exact ownership should be refined after M001 exposed the real gap list.
+- Notes: S01 proved safe browser slash-command dispatch plus RPC-backed/browser-surface outcomes for the daily-use built-ins in scope; S02-S04 still need to finish broader parity, freshness, and assembled runtime hardening before this requirement can validate.
 
 ## Validated
 
@@ -221,7 +221,7 @@ Guidelines:
 | R008 | constraint | validated | M001/S04 | M001/S07 | validated |
 | R009 | quality-attribute | validated | M001/S06 | M001/S01, M001/S03, M001/S04, M001/S05, M001/S07 | validated |
 | R010 | failure-visibility | validated | M001/S06 | M001/S03, M001/S04, M001/S07 | validated |
-| R011 | core-capability | active | M002 (provisional) | none | mapped |
+| R011 | core-capability | active | M002/S01 | M002/S02, M002/S03, M002/S04 | mapped |
 | R020 | admin/support | deferred | none | none | unmapped |
 | R021 | operability | deferred | none | none | unmapped |
 | R022 | operability | deferred | none | none | unmapped |
@@ -232,6 +232,6 @@ Guidelines:
 ## Coverage Summary
 
 - Active requirements: 1
-- Mapped to concrete M001 slices: 0
+- Mapped to concrete M002 slices: 1
 - Validated: 10
 - Unmapped active requirements: 0

@@ -857,3 +857,201 @@ test("(failure-path) UI response errors are visible as lastClientError and pendi
   };
   assert.equal(successState.pendingUiRequests.length, 0, "request removed on success");
 });
+
+test("(session-controls) browser session RPCs round-trip through /api/session/command", async () => {
+  const fixture = makeWorkspaceFixture();
+  const activeSessionPath = createSessionFile(fixture.projectCwd, fixture.sessionsDir, "sess-session", "Session Surface");
+  const nextSessionPath = createSessionFile(fixture.projectCwd, fixture.sessionsDir, "sess-next", "Next Session");
+  const stats = {
+    sessionFile: activeSessionPath,
+    sessionId: "sess-session",
+    userMessages: 4,
+    assistantMessages: 4,
+    toolCalls: 2,
+    toolResults: 2,
+    totalMessages: 12,
+    tokens: {
+      input: 1200,
+      output: 3400,
+      cacheRead: 0,
+      cacheWrite: 0,
+      total: 4600,
+    },
+    cost: 0.42,
+  };
+  const forkMessages = [
+    { entryId: "entry-1", text: "Investigate the login flow" },
+    { entryId: "entry-2", text: "Fix the slash-command dispatcher" },
+  ];
+  const exportPath = join(fixture.projectCwd, "artifacts", "session.html");
+  const harness = createHarness((command, current) => {
+    if (command.type === "get_state") {
+      current.emit({
+        id: command.id,
+        type: "response",
+        command: "get_state",
+        success: true,
+        data: fakeSessionState("sess-session", activeSessionPath),
+      });
+      return;
+    }
+
+    if (command.type === "get_session_stats") {
+      current.emit({
+        id: command.id,
+        type: "response",
+        command: "get_session_stats",
+        success: true,
+        data: stats,
+      });
+      return;
+    }
+
+    if (command.type === "export_html") {
+      current.emit({
+        id: command.id,
+        type: "response",
+        command: "export_html",
+        success: true,
+        data: { path: exportPath },
+      });
+      return;
+    }
+
+    if (command.type === "switch_session") {
+      assert.equal(command.sessionPath, nextSessionPath);
+      current.emit({
+        id: command.id,
+        type: "response",
+        command: "switch_session",
+        success: true,
+        data: { cancelled: false },
+      });
+      return;
+    }
+
+    if (command.type === "get_fork_messages") {
+      current.emit({
+        id: command.id,
+        type: "response",
+        command: "get_fork_messages",
+        success: true,
+        data: { messages: forkMessages },
+      });
+      return;
+    }
+
+    if (command.type === "fork") {
+      assert.equal(command.entryId, "entry-2");
+      current.emit({
+        id: command.id,
+        type: "response",
+        command: "fork",
+        success: true,
+        data: { text: "Fix the slash-command dispatcher", cancelled: false },
+      });
+      return;
+    }
+
+    if (command.type === "compact") {
+      assert.equal(command.customInstructions, "Preserve blockers and current task state");
+      current.emit({
+        id: command.id,
+        type: "response",
+        command: "compact",
+        success: true,
+        data: {
+          summary: "Compacted summary",
+          firstKeptEntryId: "entry-9",
+          tokensBefore: 14200,
+        },
+      });
+      return;
+    }
+
+    assert.fail(`unexpected command: ${command.type}`);
+  });
+
+  setupBridge(harness, fixture);
+
+  try {
+    const sessionResponse = await commandRoute.POST(
+      new Request("http://localhost/api/session/command", {
+        method: "POST",
+        body: JSON.stringify({ type: "get_session_stats" }),
+      }),
+    );
+    assert.equal(sessionResponse.status, 200);
+    const sessionBody = await sessionResponse.json() as any;
+    assert.equal(sessionBody.success, true);
+    assert.equal(sessionBody.command, "get_session_stats");
+    assert.equal(sessionBody.data.sessionId, "sess-session");
+    assert.equal(sessionBody.data.tokens.total, 4600);
+
+    const exportResponse = await commandRoute.POST(
+      new Request("http://localhost/api/session/command", {
+        method: "POST",
+        body: JSON.stringify({ type: "export_html", outputPath: exportPath }),
+      }),
+    );
+    assert.equal(exportResponse.status, 200);
+    const exportBody = await exportResponse.json() as any;
+    assert.equal(exportBody.success, true);
+    assert.equal(exportBody.data.path, exportPath);
+
+    const switchResponse = await commandRoute.POST(
+      new Request("http://localhost/api/session/command", {
+        method: "POST",
+        body: JSON.stringify({ type: "switch_session", sessionPath: nextSessionPath }),
+      }),
+    );
+    assert.equal(switchResponse.status, 200);
+    const switchBody = await switchResponse.json() as any;
+    assert.equal(switchBody.success, true);
+    assert.equal(switchBody.data.cancelled, false);
+
+    const forkMessagesResponse = await commandRoute.POST(
+      new Request("http://localhost/api/session/command", {
+        method: "POST",
+        body: JSON.stringify({ type: "get_fork_messages" }),
+      }),
+    );
+    assert.equal(forkMessagesResponse.status, 200);
+    const forkMessagesBody = await forkMessagesResponse.json() as any;
+    assert.equal(forkMessagesBody.success, true);
+    assert.deepEqual(forkMessagesBody.data.messages, forkMessages);
+
+    const forkResponse = await commandRoute.POST(
+      new Request("http://localhost/api/session/command", {
+        method: "POST",
+        body: JSON.stringify({ type: "fork", entryId: "entry-2" }),
+      }),
+    );
+    assert.equal(forkResponse.status, 200);
+    const forkBody = await forkResponse.json() as any;
+    assert.equal(forkBody.success, true);
+    assert.equal(forkBody.data.cancelled, false);
+    assert.equal(forkBody.data.text, "Fix the slash-command dispatcher");
+
+    const compactResponse = await commandRoute.POST(
+      new Request("http://localhost/api/session/command", {
+        method: "POST",
+        body: JSON.stringify({ type: "compact", customInstructions: "Preserve blockers and current task state" }),
+      }),
+    );
+    assert.equal(compactResponse.status, 200);
+    const compactBody = await compactResponse.json() as any;
+    assert.equal(compactBody.success, true);
+    assert.equal(compactBody.data.summary, "Compacted summary");
+    assert.equal(compactBody.data.tokensBefore, 14200);
+
+    assert.deepEqual(
+      harness.commands.filter((command) => command.type !== "get_state").map((command) => command.type),
+      ["get_session_stats", "export_html", "switch_session", "get_fork_messages", "fork", "compact"],
+      "browser session controls should hit the live command route with the expected RPC sequence",
+    );
+  } finally {
+    await bridge.resetBridgeServiceForTests();
+    fixture.cleanup();
+  }
+});
