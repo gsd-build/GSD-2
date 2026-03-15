@@ -1,20 +1,24 @@
 # GSD State
 
-**Active Milestone:** M001: Memory Database — SQLite-Backed Context Store
-**Active Slice:** S06: Structured LLM Tools + /gsd inspect
-**Phase:** executing
-**Requirements Status:** 21 active · 17 validated · 2 deferred · 5 out of scope
+## Current Focus
+- Milestone: M001 (Memory Database — SQLite-Backed Context Store)
+- Slice: S07 (Integration Verification + Polish)
+- Status: planned
+- Branch: memory-db (worktree)
 
-## Milestone Registry
-- 🔄 **M001:** Memory Database — SQLite-Backed Context Store
-- ⬜ **M003:** M003
+## Progress
+- S01: complete ✓
+- S02: complete ✓
+- S03: complete ✓
+- S04: complete ✓
+- S05: complete ✓
+- S06: complete ✓
+- S07: planned (2 tasks: T01 integration tests, T02 requirements validation)
 
-## Recent Decisions
-- D006: Structured LLM output mechanism → Custom extension tools
-- D007: DB inspection → /gsd inspect slash command
+## Active Requirements
+- R001: active → to be validated by S07
+- R019: active → to be validated by S07
 
-## Blockers
-- None
-
-## Next Action
-Execute T01 of S06 (Markdown generators + DB-first write helpers).
+## Test Suite
+- 291 tests passing, 0 failures
+- 10 DB-specific test files (~3,900 LOC, ~500 assertions)
