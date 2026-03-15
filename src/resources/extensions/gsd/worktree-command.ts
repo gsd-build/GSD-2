@@ -358,7 +358,7 @@ async function handleCreate(
 
     // Create from the main tree, not from inside another worktree
     const mainBase = originalCwd ?? basePath;
-    const info = createWorktree(mainBase, name);
+    const info = await createWorktree(mainBase, name);
 
     // Track original cwd before switching
     if (!originalCwd) originalCwd = basePath;
@@ -674,13 +674,30 @@ async function handleMerge(
     const commitMessage = `${commitType}(${name}): merge worktree ${name}`;
     try {
       mergeWorktreeToMain(basePath, name, commitMessage);
+
+      // Reconcile worktree DB rows back into main (non-fatal)
+      let dbNote = "";
+      try {
+        const { reconcileWorktreeDb } = await import("./gsd-db.js");
+        const mainDb = join(basePath, ".gsd", "gsd.db");
+        const wtDb = join(worktreePath(basePath, name), ".gsd", "gsd.db");
+        const result = reconcileWorktreeDb(mainDb, wtDb);
+        const total = result.decisions + result.requirements + result.artifacts;
+        if (total > 0) {
+          dbNote = `\n  ${CLR.muted("db:")} reconciled ${total} row${total === 1 ? "" : "s"}${result.conflicts.length > 0 ? ` (${result.conflicts.length} conflict${result.conflicts.length === 1 ? "" : "s"})` : ""}`;
+        }
+      } catch (dbErr) {
+        process.stderr.write(`gsd-db: worktree DB reconciliation skipped: ${(dbErr as Error).message}\n`);
+      }
+
       ctx.ui.notify(
         [
           `${CLR.ok("✓")} Merged ${CLR.name(name)} → ${CLR.branch(mainBranch)} ${CLR.muted("(deterministic squash)")}`,
           "",
           `  ${totalChanges} file${totalChanges === 1 ? "" : "s"} changed, ${CLR.ok(`+${totalAdded}`)} ${RED}-${totalRemoved}${RESET} lines`,
           `  ${CLR.muted("commit:")} ${commitMessage}`,
-        ].join("\n"),
+          dbNote,
+        ].filter(Boolean).join("\n"),
         "info",
       );
       return;
@@ -707,6 +724,17 @@ async function handleMerge(
     }
 
     // --- LLM fallback path (conflict resolution) ---
+
+    // Reconcile worktree DB rows before LLM dispatch (non-fatal, independent of code conflicts)
+    try {
+      const { reconcileWorktreeDb } = await import("./gsd-db.js");
+      const mainDb = join(basePath, ".gsd", "gsd.db");
+      const wtDb = join(worktreePath(basePath, name), ".gsd", "gsd.db");
+      reconcileWorktreeDb(mainDb, wtDb);
+    } catch (dbErr) {
+      process.stderr.write(`gsd-db: worktree DB reconciliation skipped: ${(dbErr as Error).message}\n`);
+    }
+
     // Format file lists for the prompt
     const formatFiles = (files: string[]) =>
       files.length > 0 ? files.map(f => `- \`${f}\``).join("\n") : "_(none)_";

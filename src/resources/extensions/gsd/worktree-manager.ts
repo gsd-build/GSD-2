@@ -121,7 +121,7 @@ export function worktreeBranchName(name: string): string {
  * Create a new git worktree under .gsd/worktrees/<name>/ with branch worktree/<name>.
  * The branch is created from the current HEAD of the main branch.
  */
-export function createWorktree(basePath: string, name: string): WorktreeInfo {
+export async function createWorktree(basePath: string, name: string): Promise<WorktreeInfo> {
   // Validate name: alphanumeric, hyphens, underscores only
   if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
     throw new Error(`Invalid worktree name "${name}". Use only letters, numbers, hyphens, and underscores.`);
@@ -163,6 +163,16 @@ export function createWorktree(basePath: string, name: string): WorktreeInfo {
     runGit(basePath, ["worktree", "add", wtPath, branch]);
   } else {
     runGit(basePath, ["worktree", "add", "-b", branch, wtPath, mainBranch]);
+  }
+
+  // Copy the GSD database into the new worktree (non-fatal)
+  try {
+    const { copyWorktreeDb } = await import("./gsd-db.js");
+    const srcDb = join(basePath, ".gsd", "gsd.db");
+    const destDb = join(wtPath, ".gsd", "gsd.db");
+    copyWorktreeDb(srcDb, destDb);
+  } catch (err) {
+    process.stderr.write(`gsd-db: worktree DB copy skipped: ${(err as Error).message}\n`);
   }
 
   return {

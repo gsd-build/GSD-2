@@ -66,3 +66,10 @@ Wire the T01-built `copyWorktreeDb` and `reconcileWorktreeDb` functions into the
 
 - `src/resources/extensions/gsd/worktree-manager.ts` — augmented with `copyWorktreeDb` call in `createWorktree()`
 - `src/resources/extensions/gsd/worktree-command.ts` — augmented with `reconcileWorktreeDb` calls in both merge paths
+
+## Observability Impact
+
+- **DB copy on worktree create:** stderr `"gsd-db: worktree DB copy skipped: <message>"` if copy fails (non-fatal). No output on success — `copyWorktreeDb` already logs its own failure via `"gsd-db: failed to copy DB to worktree: <message>"`.
+- **Reconciliation on deterministic merge:** success notification includes `db: reconciled N rows (N conflicts)` line when rows were merged. stderr `"gsd-db: worktree DB reconciliation skipped: <message>"` if dynamic import or reconciliation fails.
+- **Reconciliation on LLM fallback merge:** stderr `"gsd-db: worktree DB reconciliation skipped: <message>"` on failure. Reconciliation results logged to stderr by `reconcileWorktreeDb` itself.
+- **Inspection:** After worktree create, `ls .gsd/worktrees/<name>/.gsd/gsd.db` confirms copy. After merge, main `.gsd/gsd.db` contains rows from both DBs.

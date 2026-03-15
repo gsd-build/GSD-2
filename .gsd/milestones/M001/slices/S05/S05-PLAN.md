@@ -58,7 +58,7 @@
   - Verify: `npm run test:unit -- --test-name-pattern "worktree-db"` passes all assertions; `npx tsc --noEmit` clean
   - Done when: Both functions exported, tested with ≥20 assertions covering copy, reconciliation, conflict detection, and error handling
 
-- [ ] **T02: Wire DB copy into createWorktree and reconciliation into handleMerge** `est:20m`
+- [x] **T02: Wire DB copy into createWorktree and reconciliation into handleMerge** `est:20m`
   - Why: Integration wiring — connects the tested core functions to the actual worktree lifecycle so DB isolation and merge reconciliation happen automatically
   - Files: `src/resources/extensions/gsd/worktree-manager.ts`, `src/resources/extensions/gsd/worktree-command.ts`
   - Do: In `createWorktree()`, after `git worktree add`, call `copyWorktreeDb()` from main `.gsd/gsd.db` to worktree `.gsd/gsd.db`. In `handleMerge()`, after deterministic `mergeWorktreeToMain()` succeeds (before the return), call `reconcileWorktreeDb()`. In the LLM fallback path, call `reconcileWorktreeDb()` before dispatching the LLM (DB state is independent of code conflicts). Import gsd-db dynamically in worktree-command.ts to preserve graceful degradation.

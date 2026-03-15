@@ -42,7 +42,7 @@ async function main(): Promise<void> {
   assertEq(worktreeBranchName("feature-x"), "worktree/feature-x", "branch name format");
 
   console.log("\n=== createWorktree ===");
-  const info = createWorktree(base, "feature-x");
+  const info = await createWorktree(base, "feature-x");
   assertTrue(info.name === "feature-x", "name matches");
   assertTrue(info.branch === "worktree/feature-x", "branch matches");
   assertTrue(info.exists, "worktree exists");
@@ -57,7 +57,7 @@ async function main(): Promise<void> {
   console.log("\n=== createWorktree — duplicate ===");
   let duplicateError = "";
   try {
-    createWorktree(base, "feature-x");
+    await createWorktree(base, "feature-x");
   } catch (e) {
     duplicateError = (e as Error).message;
   }
@@ -66,7 +66,7 @@ async function main(): Promise<void> {
   console.log("\n=== createWorktree — invalid name ===");
   let invalidError = "";
   try {
-    createWorktree(base, "bad name!");
+    await createWorktree(base, "bad name!");
   } catch (e) {
     invalidError = (e as Error).message;
   }

@@ -91,7 +91,7 @@ async function main(): Promise<void> {
   // ── Create worktree and verify detection ───────────────────────────────────
 
   console.log("\n=== Create worktree ===");
-  const wt = createWorktree(base, "alpha");
+  const wt = await createWorktree(base, "alpha");
   assertTrue(existsSync(wt.path), "worktree created on disk");
   assertEq(wt.branch, "worktree/alpha", "worktree branch name");
 
@@ -177,7 +177,7 @@ async function main(): Promise<void> {
   // ── Parallel worktrees don't conflict ──────────────────────────────────────
 
   console.log("\n=== Parallel worktrees ===");
-  const wt2 = createWorktree(base, "beta");
+  const wt2 = await createWorktree(base, "beta");
   assertEq(getMainBranch(wt2.path), "worktree/beta", "second worktree has its own base branch");
 
   // Both worktrees can create S01 branches without conflict
