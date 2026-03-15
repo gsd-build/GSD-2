@@ -17,7 +17,7 @@ import type {
 } from "@gsd/pi-coding-agent";
 
 import { deriveState, invalidateStateCache } from "./state.js";
-import type { GSDState } from "./types.js";
+import type { BudgetEnforcementMode, GSDState } from "./types.js";
 import { loadFile, parseContinue, parsePlan, parseRoadmap, parseSummary, extractUatType, inlinePriorMilestoneSummary, getManifestStatus, clearParseCache } from "./files.js";
 export { inlinePriorMilestoneSummary };
 import type { UatType } from "./files.js";
@@ -202,8 +202,18 @@ export function getBudgetAlertLevel(budgetPct: number): BudgetAlertLevel {
 
 export function getNewBudgetAlertLevel(previousLevel: BudgetAlertLevel, budgetPct: number): BudgetAlertLevel | null {
   const currentLevel = getBudgetAlertLevel(budgetPct);
-  if (currentLevel >= 100 || currentLevel === 0 || currentLevel <= previousLevel) return null;
+  if (currentLevel === 0 || currentLevel <= previousLevel) return null;
   return currentLevel;
+}
+
+export function getBudgetEnforcementAction(
+  enforcement: BudgetEnforcementMode,
+  budgetPct: number,
+): "none" | "warn" | "pause" | "halt" {
+  if (budgetPct < 1.0) return "none";
+  if (enforcement === "halt") return "halt";
+  if (enforcement === "pause") return "pause";
+  return "warn";
 }
 
 /**
@@ -1679,22 +1689,23 @@ async function dispatchNextUnit(
     const newBudgetAlertLevel = getNewBudgetAlertLevel(lastBudgetAlertLevel, budgetPct);
     const enforcement = prefs?.budget_enforcement ?? "pause";
 
-    if (budgetPct >= 1.0) {
+    const budgetEnforcementAction = getBudgetEnforcementAction(enforcement, budgetPct);
+
+    if (newBudgetAlertLevel === 100 && budgetEnforcementAction !== "none") {
       const msg = `Budget ceiling ${formatCost(budgetCeiling)} reached (spent ${formatCost(totalCost)}).`;
-      lastBudgetAlertLevel = budgetAlertLevel;
-      if (enforcement === "halt") {
+      lastBudgetAlertLevel = newBudgetAlertLevel;
+      if (budgetEnforcementAction === "halt") {
         ctx.ui.notify(`${msg} Stopping auto-mode.`, "error");
         sendDesktopNotification("GSD", msg, "error", "budget");
         await stopAuto(ctx, pi);
         return;
       }
-      if (enforcement === "pause") {
+      if (budgetEnforcementAction === "pause") {
         ctx.ui.notify(`${msg} Pausing auto-mode — /gsd auto to override and continue.`, "warning");
         sendDesktopNotification("GSD", msg, "warning", "budget");
         await pauseAuto(ctx, pi);
         return;
       }
-      // "warn" — continue with warning only
       ctx.ui.notify(`${msg} Continuing (enforcement: warn).`, "warning");
       sendDesktopNotification("GSD", msg, "warning", "budget");
     } else if (newBudgetAlertLevel === 90) {

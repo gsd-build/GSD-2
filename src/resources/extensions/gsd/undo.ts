@@ -137,7 +137,7 @@ export async function handleUndo(args: string, ctx: ExtensionCommandContext, _pi
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function uncheckTaskInPlan(basePath: string, mid: string, sid: string, tid: string): boolean {
+export function uncheckTaskInPlan(basePath: string, mid: string, sid: string, tid: string): boolean {
   const slicePath = resolveSlicePath(basePath, mid, sid);
   if (!slicePath) return false;
 
@@ -169,7 +169,7 @@ function findFileWithPrefix(dir: string, prefix: string, suffix: string): string
   }
 }
 
-function findCommitsForUnit(activityDir: string, unitType: string, unitId: string): string[] {
+export function findCommitsForUnit(activityDir: string, unitType: string, unitId: string): string[] {
   const safeUnitId = unitId.replace(/\//g, "-");
   const commits: string[] = [];
 
