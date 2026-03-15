@@ -120,15 +120,17 @@ export function worktreeBranchName(name: string): string {
 /**
  * Create a new git worktree under .gsd/worktrees/<name>/ with branch worktree/<name>.
  * The branch is created from the current HEAD of the main branch.
+ *
+ * @param opts.branch — override the default `worktree/<name>` branch name
  */
-export function createWorktree(basePath: string, name: string): WorktreeInfo {
+export function createWorktree(basePath: string, name: string, opts: { branch?: string } = {}): WorktreeInfo {
   // Validate name: alphanumeric, hyphens, underscores only
   if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
     throw new Error(`Invalid worktree name "${name}". Use only letters, numbers, hyphens, and underscores.`);
   }
 
   const wtPath = worktreePath(basePath, name);
-  const branch = worktreeBranchName(name);
+  const branch = opts.branch ?? worktreeBranchName(name);
 
   if (existsSync(wtPath)) {
     throw new Error(`Worktree "${name}" already exists at ${wtPath}`);
@@ -260,11 +262,11 @@ export function listWorktrees(basePath: string): WorktreeInfo[] {
 export function removeWorktree(
   basePath: string,
   name: string,
-  opts: { deleteBranch?: boolean; force?: boolean } = {},
+  opts: { deleteBranch?: boolean; force?: boolean; branch?: string } = {},
 ): void {
   const wtPath = worktreePath(basePath, name);
   const resolvedWtPath = existsSync(wtPath) ? realpathSync(wtPath) : wtPath;
-  const branch = worktreeBranchName(name);
+  const branch = opts.branch ?? worktreeBranchName(name);
   const { deleteBranch = true, force = false } = opts;
 
   // If we're inside the worktree, move out first — git can't remove an in-use directory
