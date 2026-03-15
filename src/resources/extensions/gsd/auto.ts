@@ -813,17 +813,37 @@ export async function handleAgentEnd(
     // produced its expected artifact. If so, persist the completion key now so the
     // idempotency check at the top of dispatchNextUnit() skips it — even if
     // deriveState() still returns this unit as active (e.g. branch mismatch).
-    try {
-      if (verifyExpectedArtifact(currentUnit.type, currentUnit.id, basePath)) {
-        const completionKey = `${currentUnit.type}/${currentUnit.id}`;
-        if (!completedKeySet.has(completionKey)) {
-          persistCompletedKey(basePath, completionKey);
-          completedKeySet.add(completionKey);
+    //
+    // IMPORTANT: For non-hook units, defer persistence until after the hook check.
+    // If a post-unit hook requests a retry, we need to remove the completion key
+    // so dispatchNextUnit re-dispatches the trigger unit.
+    let triggerArtifactVerified = false;
+    if (!currentUnit.type.startsWith("hook/")) {
+      try {
+        triggerArtifactVerified = verifyExpectedArtifact(currentUnit.type, currentUnit.id, basePath);
+        if (triggerArtifactVerified) {
+          const completionKey = `${currentUnit.type}/${currentUnit.id}`;
+          if (!completedKeySet.has(completionKey)) {
+            persistCompletedKey(basePath, completionKey);
+            completedKeySet.add(completionKey);
+          }
+          invalidateStateCache();
         }
-        invalidateStateCache();
+      } catch {
+        // Non-fatal — worst case we fall through to normal dispatch which has its own checks
       }
-    } catch {
-      // Non-fatal — worst case we fall through to normal dispatch which has its own checks
+    } else {
+      // Hook unit completed — finalize its runtime record and clear it
+      try {
+        writeUnitRuntimeRecord(basePath, currentUnit.type, currentUnit.id, currentUnit.startedAt, {
+          phase: "finalized",
+          progressCount: 1,
+          lastProgressKind: "hook-completed",
+        });
+        clearUnitRuntimeRecord(basePath, currentUnit.type, currentUnit.id);
+      } catch {
+        // Non-fatal
+      }
     }
   }
 
@@ -879,6 +899,31 @@ export async function handleAgentEnd(
       writeLock(basePath, hookUnit.unitType, hookUnit.unitId, completedUnits.length, sessionFile);
       // Persist hook state so cycle counts survive crashes
       persistHookState(basePath);
+
+      // Start supervision timers for hook units — hooks can get stuck just
+      // like normal units, and without a watchdog auto-mode would hang forever.
+      clearUnitTimeout();
+      const supervisor = resolveAutoSupervisorConfig();
+      const hookHardTimeoutMs = (supervisor.hard_timeout_minutes ?? 30) * 60 * 1000;
+      unitTimeoutHandle = setTimeout(async () => {
+        unitTimeoutHandle = null;
+        if (!active) return;
+        if (currentUnit) {
+          writeUnitRuntimeRecord(basePath, hookUnit.unitType, hookUnit.unitId, currentUnit.startedAt, {
+            phase: "timeout",
+            timeoutAt: Date.now(),
+          });
+        }
+        ctx.ui.notify(
+          `Hook ${hookUnit.hookName} exceeded ${supervisor.hard_timeout_minutes ?? 30}min timeout. Pausing auto-mode.`,
+          "warning",
+        );
+        resetHookState();
+        await pauseAuto(ctx, pi);
+      }, hookHardTimeoutMs);
+
+      // Guard against race with timeout/pause before sending
+      if (!active) return;
       pi.sendMessage(
         { customType: "gsd-auto", content: hookUnit.prompt, display: verbose },
         { triggerTurn: true },
@@ -890,6 +935,11 @@ export async function handleAgentEnd(
     if (isRetryPending()) {
       const trigger = consumeRetryTrigger();
       if (trigger) {
+        // Remove the trigger unit's completion key so dispatchNextUnit
+        // will re-dispatch it instead of skipping it as already-complete.
+        const triggerKey = `${trigger.unitType}/${trigger.unitId}`;
+        completedKeySet.delete(triggerKey);
+        removePersistedKey(basePath, triggerKey);
         ctx.ui.notify(
           `Hook requested retry of ${trigger.unitType} ${trigger.unitId}.`,
           "info",
@@ -1423,23 +1473,37 @@ async function dispatchNextUnit(
   }
 
   // ── Mid-merge safety check: detect leftover merge state from a prior session ──
-  // If MERGE_HEAD or SQUASH_MSG exists, a merge was interrupted. Abort and reset.
+  // If MERGE_HEAD or SQUASH_MSG exists, check whether conflicts are resolved.
+  // If resolved: finalize the commit. If still conflicted: abort and reset.
   {
     const mergeHeadPath = join(basePath, ".git", "MERGE_HEAD");
     const squashMsgPath = join(basePath, ".git", "SQUASH_MSG");
     const hasMergeHead = existsSync(mergeHeadPath);
     const hasSquashMsg = existsSync(squashMsgPath);
     if (hasMergeHead || hasSquashMsg) {
-      if (hasMergeHead) {
-        runGit(basePath, ["merge", "--abort"], { allowFailure: true });
-      } else if (hasSquashMsg) {
-        try { unlinkSync(squashMsgPath); } catch { /* best-effort */ }
+      const unmerged = runGit(basePath, ["diff", "--name-only", "--diff-filter=U"], { allowFailure: true });
+      if (!unmerged || !unmerged.trim()) {
+        // All conflicts resolved — finalize the merge/squash commit
+        try {
+          runGit(basePath, ["commit", "--no-edit"], { allowFailure: false });
+          const mode = hasMergeHead ? "merge" : "squash commit";
+          ctx.ui.notify(`Finalized leftover ${mode} from prior session.`, "info");
+        } catch {
+          // Commit may already exist; non-fatal
+        }
+      } else {
+        // Still conflicted — abort and reset
+        if (hasMergeHead) {
+          runGit(basePath, ["merge", "--abort"], { allowFailure: true });
+        } else if (hasSquashMsg) {
+          try { unlinkSync(squashMsgPath); } catch { /* best-effort */ }
+        }
+        runGit(basePath, ["reset", "--hard", "HEAD"], { allowFailure: true });
+        ctx.ui.notify(
+          "Detected leftover merge state with unresolved conflicts — cleaned up. Re-deriving state.",
+          "warning",
+        );
       }
-      runGit(basePath, ["reset", "--hard", "HEAD"], { allowFailure: true });
-      ctx.ui.notify(
-        "Detected leftover merge state — cleaned up. Re-deriving state.",
-        "warning",
-      );
       invalidateStateCache();
       clearParseCache();
       clearPathCache();
@@ -1923,12 +1987,19 @@ async function dispatchNextUnit(
     // Only mark the previous unit as completed if:
     // 1. We're not about to re-dispatch the same unit (retry scenario)
     // 2. The expected artifact actually exists on disk
+    // For hook units, skip artifact verification — hooks don't produce standard
+    // artifacts and their runtime records were already finalized in handleAgentEnd.
     const closeoutKey = `${currentUnit.type}/${currentUnit.id}`;
     const incomingKey = `${unitType}/${unitId}`;
-    const artifactVerified = verifyExpectedArtifact(currentUnit.type, currentUnit.id, basePath);
+    const isHookUnit = currentUnit.type.startsWith("hook/");
+    const artifactVerified = isHookUnit || verifyExpectedArtifact(currentUnit.type, currentUnit.id, basePath);
     if (closeoutKey !== incomingKey && artifactVerified) {
-      persistCompletedKey(basePath, closeoutKey);
-      completedKeySet.add(closeoutKey);
+      if (!isHookUnit) {
+        // Only persist completion keys for real units — hook keys are
+        // ephemeral and should not pollute the idempotency set.
+        persistCompletedKey(basePath, closeoutKey);
+        completedKeySet.add(closeoutKey);
+      }
 
       completedUnits.push({
         type: currentUnit.type,
@@ -3442,6 +3513,11 @@ export function resolveExpectedArtifactPath(unitType: string, unitId: string, ba
 export function verifyExpectedArtifact(unitType: string, unitId: string, base: string): boolean {
   // Clear stale directory listing cache so artifact checks see fresh disk state (#431)
   clearPathCache();
+
+  // Hook units have no standard artifact — always pass. Their lifecycle
+  // is managed by the hook engine, not the artifact verification system.
+  if (unitType.startsWith("hook/")) return true;
+
 
   const absPath = resolveExpectedArtifactPath(unitType, unitId, base);
   // Unit types with no verifiable artifact always pass (e.g. replan-slice).

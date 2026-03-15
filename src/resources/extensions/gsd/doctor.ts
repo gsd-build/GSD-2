@@ -646,7 +646,7 @@ async function checkGitHealth(
 
   // ── Legacy slice branches ──────────────────────────────────────────────
   try {
-    const sliceBranches = execSync("git branch --list gsd/*/*", {
+    const sliceBranches = execSync('git branch --format="%(refname:short)" --list "gsd/*/*"', {
       cwd: basePath,
       stdio: ["ignore", "pipe", "pipe"],
       encoding: "utf-8",

@@ -296,6 +296,9 @@ export function renderPreferencesForSystemPrompt(preferences: GSDPreferences, re
   if (validated.errors.length > 0) {
     lines.push("- Validation: some preference values were ignored because they were invalid.");
   }
+  for (const warning of validated.warnings) {
+    lines.push(`- Deprecation: ${warning}`);
+  }
 
   preferences = validated.preferences;
 
@@ -641,8 +644,10 @@ function mergePreferences(base: GSDPreferences, override: GSDPreferences): GSDPr
 export function validatePreferences(preferences: GSDPreferences): {
   preferences: GSDPreferences;
   errors: string[];
+  warnings: string[];
 } {
   const errors: string[] = [];
+  const warnings: string[] = [];
   const validated: GSDPreferences = {};
 
   if (preferences.version !== undefined) {
@@ -912,10 +917,10 @@ export function validatePreferences(preferences: GSDPreferences): {
     // Deprecated: isolation and merge_to_main are ignored (branchless architecture).
     // Emit warnings so users know to remove them from preferences.
     if (g.isolation !== undefined) {
-      errors.push("git.isolation is deprecated — worktree isolation is now always enabled. Remove this setting.");
+      warnings.push("git.isolation is deprecated — worktree isolation is now always enabled. Remove this setting.");
     }
     if (g.merge_to_main !== undefined) {
-      errors.push("git.merge_to_main is deprecated — milestone-level merge is now always used. Remove this setting.");
+      warnings.push("git.merge_to_main is deprecated — milestone-level merge is now always used. Remove this setting.");
     }
 
     if (Object.keys(git).length > 0) {
@@ -923,7 +928,7 @@ export function validatePreferences(preferences: GSDPreferences): {
     }
   }
 
-  return { preferences: validated, errors };
+  return { preferences: validated, errors, warnings };
 }
 
 function mergeStringLists(base?: unknown, override?: unknown): string[] | undefined {
