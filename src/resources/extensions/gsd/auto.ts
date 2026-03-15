@@ -2090,6 +2090,23 @@ async function dispatchNextUnit(
     }
   }
 
+  // Fallback: if the idempotency key is missing but the expected artifact already
+  // exists on disk, the task completed in a prior session without persisting the key.
+  // Persist it now and skip re-dispatch. This prevents infinite loops where a task
+  // completes successfully but the completion key was never written (e.g., completed
+  // on the first attempt before hitting the retry-threshold persistence logic).
+  if (verifyExpectedArtifact(unitType, unitId, basePath)) {
+    persistCompletedKey(basePath, idempotencyKey);
+    completedKeySet.add(idempotencyKey);
+    ctx.ui.notify(
+      `Skipping ${unitType} ${unitId} — artifact exists but completion key was missing. Repaired and advancing.`,
+      "info",
+    );
+    await new Promise(r => setImmediate(r));
+    await dispatchNextUnit(ctx, pi);
+    return;
+  }
+
   // Stuck detection — tracks total dispatches per unit (not just consecutive repeats).
   // Pattern A→B→A→B would reset retryCount every time; this map catches it.
   const dispatchKey = `${unitType}/${unitId}`;
