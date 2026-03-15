@@ -37,6 +37,8 @@ export interface GitPreferences {
   commit_type?: string;
   main_branch?: string;
   merge_strategy?: "squash" | "merge";
+  isolation?: "worktree" | "branch";
+  merge_to_main?: "milestone" | "slice";
 }
 
 export const VALID_BRANCH_NAME = /^[a-zA-Z0-9_\-\/.]+$/;
@@ -764,6 +766,15 @@ export class GitServiceImpl {
       this.git(mergeArgs);
     } catch (mergeError) {
       // Check if conflicts can be auto-resolved (#189, #218)
+      //
+      // ─── BRANCH-MODE ONLY (D038) ────────────────────────────────────────
+      // The conflict resolution logic below applies ONLY when git.isolation = "branch".
+      // In worktree isolation mode, each milestone works in its own worktree directory
+      // so merge conflicts between slice branches and main are handled differently
+      // (worktree teardown merges via worktree-manager). This block is never reached
+      // in worktree mode because mergeSliceToMain is only called from the branch-mode
+      // code path. If you're modifying this logic, verify the isolation mode first.
+      // ─────────────────────────────────────────────────────────────────────
       const conflicted = this.git(["diff", "--name-only", "--diff-filter=U"], { allowFailure: true });
       if (conflicted) {
         const conflictedFiles = conflicted.split("\n").filter(Boolean);

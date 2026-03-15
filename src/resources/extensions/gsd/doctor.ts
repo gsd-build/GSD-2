@@ -1,10 +1,14 @@
+import { execSync } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 
 import { loadFile, parsePlan, parseRoadmap, parseSummary, saveFile, parseTaskPlanMustHaves, countMustHavesMentionedInSummary } from "./files.js";
 import { resolveMilestoneFile, resolveMilestonePath, resolveSliceFile, resolveSlicePath, resolveTaskFile, resolveTaskFiles, resolveTasksDir, milestonesDir, gsdRoot, relMilestoneFile, relSliceFile, relTaskFile, relSlicePath, relGsdRootFile, resolveGsdRootFile } from "./paths.js";
 import { deriveState, isMilestoneComplete } from "./state.js";
 import { loadEffectiveGSDPreferences, type GSDPreferences } from "./preferences.js";
+import { listWorktrees } from "./worktree-manager.js";
+import { abortAndReset } from "./git-self-heal.js";
+import { RUNTIME_EXCLUSION_PATHS } from "./git-service.js";
 
 export type DoctorSeverity = "info" | "warning" | "error";
 export type DoctorIssueCode =
@@ -23,7 +27,11 @@ export type DoctorIssueCode =
   | "active_requirement_missing_owner"
   | "blocked_requirement_missing_reason"
   | "blocker_discovered_no_replan"
-  | "delimiter_in_title";
+  | "delimiter_in_title"
+  | "orphaned_auto_worktree"
+  | "stale_milestone_branch"
+  | "corrupt_merge_state"
+  | "tracked_runtime_files";
 
 export interface DoctorIssue {
   severity: DoctorSeverity;
@@ -451,6 +459,191 @@ export function formatDoctorIssuesForPrompt(issues: DoctorIssue[]): string {
   }).join("\n");
 }
 
+async function checkGitHealth(
+  basePath: string,
+  issues: DoctorIssue[],
+  fixesApplied: string[],
+  shouldFix: (code: DoctorIssueCode) => boolean,
+): Promise<void> {
+  // Degrade gracefully if not a git repo
+  try {
+    execSync("git rev-parse --git-dir", { cwd: basePath, stdio: "pipe" });
+  } catch {
+    return; // Not a git repo — skip all git health checks
+  }
+
+  const gitDir = join(basePath, ".git");
+
+  // ── Orphaned auto-worktrees ──────────────────────────────────────────
+  try {
+    const worktrees = listWorktrees(basePath);
+    const milestoneWorktrees = worktrees.filter(wt => wt.branch.startsWith("milestone/"));
+
+    // Load roadmap state once for cross-referencing
+    const state = await deriveState(basePath);
+
+    for (const wt of milestoneWorktrees) {
+      // Extract milestone ID from branch name "milestone/M001" → "M001"
+      const milestoneId = wt.branch.replace(/^milestone\//, "");
+      const milestoneEntry = state.registry.find(m => m.id === milestoneId);
+
+      // Check if milestone is complete via roadmap
+      let isComplete = false;
+      if (milestoneEntry) {
+        const roadmapPath = resolveMilestoneFile(basePath, milestoneId, "ROADMAP");
+        const roadmapContent = roadmapPath ? await loadFile(roadmapPath) : null;
+        if (roadmapContent) {
+          const roadmap = parseRoadmap(roadmapContent);
+          isComplete = isMilestoneComplete(roadmap);
+        }
+      }
+
+      if (isComplete) {
+        issues.push({
+          severity: "warning",
+          code: "orphaned_auto_worktree",
+          scope: "milestone",
+          unitId: milestoneId,
+          message: `Worktree for completed milestone ${milestoneId} still exists at ${wt.path}`,
+          fixable: true,
+        });
+
+        if (shouldFix("orphaned_auto_worktree")) {
+          // Never remove a worktree matching current working directory
+          const cwd = process.cwd();
+          if (wt.path === cwd || cwd.startsWith(wt.path + sep)) {
+            fixesApplied.push(`skipped removing worktree at ${wt.path} (is cwd)`);
+          } else {
+            try {
+              execSync(`git worktree remove --force "${wt.path}"`, { cwd: basePath, stdio: "pipe" });
+              fixesApplied.push(`removed orphaned worktree ${wt.path}`);
+            } catch {
+              fixesApplied.push(`failed to remove worktree ${wt.path}`);
+            }
+          }
+        }
+      }
+    }
+
+    // ── Stale milestone branches ─────────────────────────────────────────
+    try {
+      // Use unquoted glob — single quotes are not interpreted by cmd.exe on Windows,
+      // causing the pattern to match literally instead of as a glob.
+      const branchOutput = execSync("git branch --list milestone/*", { cwd: basePath, stdio: "pipe" }).toString().trim();
+      if (branchOutput) {
+        const branches = branchOutput.split("\n").map(b => b.trim().replace(/^\*\s*/, "")).filter(Boolean);
+        const worktreeBranches = new Set(milestoneWorktrees.map(wt => wt.branch));
+
+        for (const branch of branches) {
+          // Skip branches that have a worktree (handled above)
+          if (worktreeBranches.has(branch)) continue;
+
+          const milestoneId = branch.replace(/^milestone\//, "");
+          const roadmapPath = resolveMilestoneFile(basePath, milestoneId, "ROADMAP");
+          const roadmapContent = roadmapPath ? await loadFile(roadmapPath) : null;
+          if (!roadmapContent) continue;
+
+          const roadmap = parseRoadmap(roadmapContent);
+          if (isMilestoneComplete(roadmap)) {
+            issues.push({
+              severity: "info",
+              code: "stale_milestone_branch",
+              scope: "milestone",
+              unitId: milestoneId,
+              message: `Branch ${branch} exists for completed milestone ${milestoneId}`,
+              fixable: true,
+            });
+
+            if (shouldFix("stale_milestone_branch")) {
+              try {
+                execSync(`git branch -D "${branch}"`, { cwd: basePath, stdio: "pipe" });
+                fixesApplied.push(`deleted stale branch ${branch}`);
+              } catch {
+                fixesApplied.push(`failed to delete branch ${branch}`);
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      // git branch list failed — skip stale branch check
+    }
+  } catch {
+    // listWorktrees or deriveState failed — skip worktree/branch checks
+  }
+
+  // ── Corrupt merge state ────────────────────────────────────────────────
+  try {
+    const mergeStateFiles = ["MERGE_HEAD", "SQUASH_MSG"];
+    const mergeStateDirs = ["rebase-apply", "rebase-merge"];
+    const found: string[] = [];
+
+    for (const f of mergeStateFiles) {
+      if (existsSync(join(gitDir, f))) found.push(f);
+    }
+    for (const d of mergeStateDirs) {
+      if (existsSync(join(gitDir, d))) found.push(d);
+    }
+
+    if (found.length > 0) {
+      issues.push({
+        severity: "error",
+        code: "corrupt_merge_state",
+        scope: "project",
+        unitId: "project",
+        message: `Corrupt merge/rebase state detected: ${found.join(", ")}`,
+        fixable: true,
+      });
+
+      if (shouldFix("corrupt_merge_state")) {
+        const result = abortAndReset(basePath);
+        fixesApplied.push(`cleaned merge state: ${result.cleaned.join(", ")}`);
+      }
+    }
+  } catch {
+    // Can't check .git dir — skip
+  }
+
+  // ── Tracked runtime files ──────────────────────────────────────────────
+  try {
+    const trackedPaths: string[] = [];
+    for (const exclusion of RUNTIME_EXCLUSION_PATHS) {
+      try {
+        const output = execSync(`git ls-files "${exclusion}"`, { cwd: basePath, stdio: "pipe" }).toString().trim();
+        if (output) {
+          trackedPaths.push(...output.split("\n").filter(Boolean));
+        }
+      } catch {
+        // Individual ls-files can fail — continue
+      }
+    }
+
+    if (trackedPaths.length > 0) {
+      issues.push({
+        severity: "warning",
+        code: "tracked_runtime_files",
+        scope: "project",
+        unitId: "project",
+        message: `${trackedPaths.length} runtime file(s) are tracked by git: ${trackedPaths.slice(0, 5).join(", ")}${trackedPaths.length > 5 ? "..." : ""}`,
+        fixable: true,
+      });
+
+      if (shouldFix("tracked_runtime_files")) {
+        try {
+          for (const exclusion of RUNTIME_EXCLUSION_PATHS) {
+            execSync(`git rm --cached -r --ignore-unmatch "${exclusion}"`, { cwd: basePath, stdio: "pipe" });
+          }
+          fixesApplied.push(`untracked ${trackedPaths.length} runtime file(s)`);
+        } catch {
+          fixesApplied.push("failed to untrack runtime files");
+        }
+      }
+    }
+  } catch {
+    // git ls-files failed — skip
+  }
+}
+
 export async function runGSDDoctor(basePath: string, options?: { fix?: boolean; scope?: string; fixLevel?: "task" | "all" }): Promise<DoctorReport> {
   const issues: DoctorIssue[] = [];
   const fixesApplied: string[] = [];
@@ -490,6 +683,9 @@ export async function runGSDDoctor(basePath: string, options?: { fix?: boolean; 
       });
     }
   }
+
+  // Git health checks (orphaned worktrees, stale branches, corrupt merge state, tracked runtime files)
+  await checkGitHealth(basePath, issues, fixesApplied, shouldFix);
 
   const milestonesPath = milestonesDir(basePath);
   if (!existsSync(milestonesPath)) {
