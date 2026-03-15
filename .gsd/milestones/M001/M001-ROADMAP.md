@@ -66,7 +66,7 @@ This milestone is complete only when all are true:
 - [x] **S03: Core Hierarchy + Full Query Layer + Prompt Rewiring** `risk:high` `depends:[S01,S02]`
   > After this: All build*Prompt() functions use DB queries instead of inlineGsdRootFile. Dual-write keeps markdown in sync. Prompts contain only relevant context subsets.
 
-- [ ] **S04: Token Measurement + State Derivation from DB** `risk:medium` `depends:[S03]`
+- [x] **S04: Token Measurement + State Derivation from DB** `risk:medium` `depends:[S03]`
   > After this: Token counts logged per dispatch unit showing before/after savings. deriveState() reads from DB. Savings ≥30% confirmed on planning/research units with fixture data.
 
 - [ ] **S05: Worktree Isolation + Merge Reconciliation** `risk:medium` `depends:[S01,S02]`

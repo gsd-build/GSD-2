@@ -190,6 +190,10 @@ const DISPATCH_GAP_TIMEOUT_MS = 5_000; // 5 seconds
 /** SIGTERM handler registered while auto-mode is active — cleared on stop/pause. */
 let _sigtermHandler: (() => void) | null = null;
 
+/** Per-dispatch prompt measurement — set after finalPrompt assembly, passed to snapshotUnitMetrics */
+let lastPromptCharCount: number | undefined;
+let lastBaselineCharCount: number | undefined;
+
 /**
  * Register a SIGTERM handler that clears the lock file and exits cleanly.
  * Captures the active base path at registration time so the handler
@@ -886,7 +890,7 @@ export async function handleAgentEnd(
       const hookStartedAt = Date.now();
       if (currentUnit) {
         const modelId = ctx.model?.id ?? "unknown";
-        snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
+        snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId, { promptCharCount: lastPromptCharCount, baselineCharCount: lastBaselineCharCount });
         saveActivityLog(ctx, basePath, currentUnit.type, currentUnit.id);
       }
       currentUnit = { type: hookUnit.unitType, id: hookUnit.unitId, startedAt: hookStartedAt };
@@ -1432,6 +1436,10 @@ async function dispatchNextUnit(
   // Clear stale directory listing cache so deriveState sees fresh disk state (#431)
   clearPathCache();
 
+  // Reset prompt measurement from any prior dispatch
+  lastPromptCharCount = undefined;
+  lastBaselineCharCount = undefined;
+
   let state = await deriveState(basePath);
   let mid = state.activeMilestone?.id;
   let midTitle = state.activeMilestone?.title;
@@ -1457,7 +1465,7 @@ async function dispatchNextUnit(
     // Save final session before stopping
     if (currentUnit) {
       const modelId = ctx.model?.id ?? "unknown";
-      snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
+      snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId, { promptCharCount: lastPromptCharCount, baselineCharCount: lastBaselineCharCount });
       saveActivityLog(ctx, basePath, currentUnit.type, currentUnit.id);
     }
     await stopAuto(ctx, pi);
@@ -1520,7 +1528,7 @@ async function dispatchNextUnit(
         );
         if (currentUnit) {
           const modelId = ctx.model?.id ?? "unknown";
-          snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
+          snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId, { promptCharCount: lastPromptCharCount, baselineCharCount: lastBaselineCharCount });
           saveActivityLog(ctx, basePath, currentUnit.type, currentUnit.id);
         }
         await stopAuto(ctx, pi);
@@ -1586,6 +1594,7 @@ async function dispatchNextUnit(
                   currentUnit.id,
                   currentUnit.startedAt,
                   modelId,
+                  { promptCharCount: lastPromptCharCount, baselineCharCount: lastBaselineCharCount },
                 );
                 saveActivityLog(ctx, basePath, currentUnit.type, currentUnit.id);
               }
@@ -1636,7 +1645,7 @@ async function dispatchNextUnit(
             );
             if (currentUnit) {
               const modelId = ctx.model?.id ?? "unknown";
-              snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
+              snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId, { promptCharCount: lastPromptCharCount, baselineCharCount: lastBaselineCharCount });
               saveActivityLog(ctx, basePath, currentUnit.type, currentUnit.id);
             }
             await stopAuto(ctx, pi);
@@ -1651,7 +1660,7 @@ async function dispatchNextUnit(
   if (!mid || !midTitle) {
     if (currentUnit) {
       const modelId = ctx.model?.id ?? "unknown";
-      snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
+      snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId, { promptCharCount: lastPromptCharCount, baselineCharCount: lastBaselineCharCount });
       saveActivityLog(ctx, basePath, currentUnit.type, currentUnit.id);
     }
     await stopAuto(ctx, pi);
@@ -1666,7 +1675,7 @@ async function dispatchNextUnit(
   if (state.phase === "complete") {
     if (currentUnit) {
       const modelId = ctx.model?.id ?? "unknown";
-      snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
+      snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId, { promptCharCount: lastPromptCharCount, baselineCharCount: lastBaselineCharCount });
       saveActivityLog(ctx, basePath, currentUnit.type, currentUnit.id);
     }
     // Clear completed-units.json for the finished milestone so it doesn't grow unbounded.
@@ -1682,7 +1691,7 @@ async function dispatchNextUnit(
   if (state.phase === "blocked") {
     if (currentUnit) {
       const modelId = ctx.model?.id ?? "unknown";
-      snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
+      snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId, { promptCharCount: lastPromptCharCount, baselineCharCount: lastBaselineCharCount });
       saveActivityLog(ctx, basePath, currentUnit.type, currentUnit.id);
     }
     await stopAuto(ctx, pi);
@@ -1867,7 +1876,7 @@ async function dispatchNextUnit(
     } else {
       if (currentUnit) {
         const modelId = ctx.model?.id ?? "unknown";
-        snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
+        snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId, { promptCharCount: lastPromptCharCount, baselineCharCount: lastBaselineCharCount });
         saveActivityLog(ctx, basePath, currentUnit.type, currentUnit.id);
       }
       await stopAuto(ctx, pi);
@@ -1940,7 +1949,7 @@ async function dispatchNextUnit(
   if (prevCount >= MAX_UNIT_DISPATCHES) {
     if (currentUnit) {
       const modelId = ctx.model?.id ?? "unknown";
-      snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
+      snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId, { promptCharCount: lastPromptCharCount, baselineCharCount: lastBaselineCharCount });
     }
     saveActivityLog(ctx, basePath, unitType, unitId);
 
@@ -2039,7 +2048,7 @@ async function dispatchNextUnit(
   // The session still holds the previous unit's data (newSession hasn't fired yet).
   if (currentUnit) {
     const modelId = ctx.model?.id ?? "unknown";
-    snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
+    snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId, { promptCharCount: lastPromptCharCount, baselineCharCount: lastBaselineCharCount });
     saveActivityLog(ctx, basePath, currentUnit.type, currentUnit.id);
 
     // Only mark the previous unit as completed if:
@@ -2126,6 +2135,28 @@ async function dispatchNextUnit(
   const repairBlock = buildObservabilityRepairBlock(observabilityIssues);
   if (repairBlock) {
     finalPrompt = `${finalPrompt}${repairBlock}`;
+  }
+
+  // ── Prompt char measurement (R010) ──
+  // Capture the fully-assembled prompt length for token savings analysis.
+  // Baseline = full-markdown file sizes when DB is active (when DB is off,
+  // both paths produce identical content so savings = 0).
+  lastPromptCharCount = finalPrompt.length;
+  lastBaselineCharCount = undefined;
+  if (isDbAvailable()) {
+    try {
+      const [decisionsContent, requirementsContent, projectContent] = await Promise.all([
+        inlineGsdRootFile(basePath, "decisions.md", "Decisions"),
+        inlineGsdRootFile(basePath, "requirements.md", "Requirements"),
+        inlineGsdRootFile(basePath, "project.md", "Project"),
+      ]);
+      lastBaselineCharCount =
+        (decisionsContent?.length ?? 0) +
+        (requirementsContent?.length ?? 0) +
+        (projectContent?.length ?? 0);
+    } catch {
+      // Non-fatal — baseline measurement is best-effort
+    }
   }
 
   // Switch model if preferences specify one for this unit type
@@ -2282,7 +2313,7 @@ async function dispatchNextUnit(
 
     if (currentUnit) {
       const modelId = ctx.model?.id ?? "unknown";
-      snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
+      snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId, { promptCharCount: lastPromptCharCount, baselineCharCount: lastBaselineCharCount });
     }
     saveActivityLog(ctx, basePath, unitType, unitId);
 
@@ -2308,7 +2339,7 @@ async function dispatchNextUnit(
         timeoutAt: Date.now(),
       });
       const modelId = ctx.model?.id ?? "unknown";
-      snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
+      snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId, { promptCharCount: lastPromptCharCount, baselineCharCount: lastBaselineCharCount });
     }
     saveActivityLog(ctx, basePath, unitType, unitId);
 

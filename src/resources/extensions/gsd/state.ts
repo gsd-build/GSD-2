@@ -32,6 +32,7 @@ import {
 import { getActiveSliceBranch } from './worktree.js';
 import { milestoneIdSort, findMilestoneIds } from './guided-flow.js';
 import { nativeBatchParseGsdFiles, type BatchParsedFile } from './native-parser-bridge.js';
+import { isDbAvailable, _getAdapter } from './gsd-db.js';
 
 import { join, resolve } from 'path';
 
@@ -124,54 +125,76 @@ export async function deriveState(basePath: string): Promise<GSDState> {
 async function _deriveStateImpl(basePath: string): Promise<GSDState> {
   const milestoneIds = findMilestoneIds(basePath);
 
-  // ── Batch-parse file cache ──────────────────────────────────────────────
-  // When the native Rust parser is available, read every .md file under .gsd/
-  // in one call and build an in-memory content map keyed by absolute path.
-  // This eliminates O(N) individual fs.readFile calls during traversal.
+  // ── Content cache: DB-first, native-batch fallback ───────────────────────
+  // When the DB is available, load artifact content from the artifacts table
+  // (indexed SELECT instead of O(N) file I/O). Falls back to native Rust batch
+  // parser, which in turn falls back to sequential JS reads via cachedLoadFile.
   const fileContentCache = new Map<string, string>();
   const gsdDir = gsdRoot(basePath);
 
-  const batchFiles = nativeBatchParseGsdFiles(gsdDir);
-  if (batchFiles) {
-    for (const f of batchFiles) {
-      // Reconstruct the full file content from parsed components so downstream
-      // parsers (parseRoadmap, parseSummary, etc.) receive the same input they
-      // expect from loadFile(). Files with frontmatter get it re-serialized;
-      // files without get just the body.
-      const absPath = resolve(gsdDir, f.path);
-      const hasMetadata = Object.keys(f.metadata).length > 0;
-      if (hasMetadata) {
-        // Re-serialize frontmatter as simple YAML key: value lines
-        const fmLines: string[] = ['---'];
-        for (const [key, value] of Object.entries(f.metadata)) {
-          if (Array.isArray(value)) {
-            if (value.length === 0) {
-              fmLines.push(`${key}: []`);
-            } else if (typeof value[0] === 'object' && value[0] !== null) {
-              fmLines.push(`${key}:`);
-              for (const obj of value) {
-                const entries = Object.entries(obj as Record<string, unknown>);
-                if (entries.length > 0) {
-                  fmLines.push(`  - ${entries[0][0]}: ${entries[0][1]}`);
-                  for (let i = 1; i < entries.length; i++) {
-                    fmLines.push(`    ${entries[i][0]}: ${entries[i][1]}`);
+  let dbContentLoaded = false;
+  if (isDbAvailable()) {
+    const adapter = _getAdapter();
+    if (adapter) {
+      try {
+        const rows = adapter.prepare('SELECT path, full_content FROM artifacts').all();
+        for (const row of rows) {
+          const relPath = row['path'] as string;
+          const content = row['full_content'] as string;
+          const absPath = resolve(gsdDir, relPath);
+          fileContentCache.set(absPath, content);
+        }
+        dbContentLoaded = rows.length > 0;
+      } catch {
+        // DB query failed — fall through to native batch parse
+      }
+    }
+  }
+
+  // Fall back to native batch parser when DB didn't provide content
+  if (!dbContentLoaded) {
+    const batchFiles = nativeBatchParseGsdFiles(gsdDir);
+    if (batchFiles) {
+      for (const f of batchFiles) {
+        // Reconstruct the full file content from parsed components so downstream
+        // parsers (parseRoadmap, parseSummary, etc.) receive the same input they
+        // expect from loadFile(). Files with frontmatter get it re-serialized;
+        // files without get just the body.
+        const absPath = resolve(gsdDir, f.path);
+        const hasMetadata = Object.keys(f.metadata).length > 0;
+        if (hasMetadata) {
+          // Re-serialize frontmatter as simple YAML key: value lines
+          const fmLines: string[] = ['---'];
+          for (const [key, value] of Object.entries(f.metadata)) {
+            if (Array.isArray(value)) {
+              if (value.length === 0) {
+                fmLines.push(`${key}: []`);
+              } else if (typeof value[0] === 'object' && value[0] !== null) {
+                fmLines.push(`${key}:`);
+                for (const obj of value) {
+                  const entries = Object.entries(obj as Record<string, unknown>);
+                  if (entries.length > 0) {
+                    fmLines.push(`  - ${entries[0][0]}: ${entries[0][1]}`);
+                    for (let i = 1; i < entries.length; i++) {
+                      fmLines.push(`    ${entries[i][0]}: ${entries[i][1]}`);
+                    }
                   }
+                }
+              } else {
+                fmLines.push(`${key}:`);
+                for (const item of value) {
+                  fmLines.push(`  - ${item}`);
                 }
               }
             } else {
-              fmLines.push(`${key}:`);
-              for (const item of value) {
-                fmLines.push(`  - ${item}`);
-              }
+              fmLines.push(`${key}: ${value}`);
             }
-          } else {
-            fmLines.push(`${key}: ${value}`);
           }
+          fmLines.push('---');
+          fileContentCache.set(absPath, fmLines.join('\n') + '\n\n' + f.body);
+        } else {
+          fileContentCache.set(absPath, f.body);
         }
-        fmLines.push('---');
-        fileContentCache.set(absPath, fmLines.join('\n') + '\n\n' + f.body);
-      } else {
-        fileContentCache.set(absPath, f.body);
       }
     }
   }

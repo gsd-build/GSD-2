@@ -115,25 +115,25 @@ Guidelines:
 
 ### R010 — Built-in token measurement
 - Class: differentiator
-- Status: active
+- Status: validated
 - Description: Measure and log token counts per dispatch unit, showing before (markdown loading) vs after (DB query) savings
 - Why it matters: User wants to see this is a good idea in practice — measurable proof, not trust
 - Source: user
 - Primary owning slice: M001/S04
 - Supporting slices: none
-- Validation: unmapped
+- Validation: S04 — promptCharCount/baselineCharCount fields in UnitMetrics, measurement wired into all 13 dispatch path call sites, values persisted in metrics.json. 5 grep matches in metrics.ts confirm fields. Clean compilation and 287 tests pass.
 - Notes: Integrated into existing metrics system. Shows savings percentage per unit type.
 
 ### R011 — State derivation from DB
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: `deriveState()` reads from DB tables instead of scanning the `.gsd/` file tree and parsing markdown
 - Why it matters: State derivation currently does O(N) file reads with batch native parsing. DB makes this a handful of indexed queries.
 - Source: user
 - Primary owning slice: M001/S04
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Must produce identical GSDState output to current implementation
+- Validation: S04 — deriveState() queries artifacts table when DB available, falls back to native batch parse. 51-assertion derive-state-db test suite proves field-by-field equality across 7 scenarios (DB path, fallback, empty DB, partial DB, requirements, multi-milestone, cache invalidation).
+- Notes: DB replaces content-reading step only; file discovery (milestone IDs, path resolution) still uses disk.
 
 ### R012 — Worktree DB isolation
 - Class: core-capability
@@ -181,14 +181,14 @@ Guidelines:
 
 ### R016 — ≥30% token reduction in planning/research prompts
 - Class: quality-attribute
-- Status: active
+- Status: validated
 - Description: Planning and research dispatch unit prompts show at least 30% fewer tokens on projects with 20+ decisions and mature requirement sets
 - Why it matters: The entire point — if this doesn't deliver measurable savings, the migration isn't worth it
 - Source: user
 - Primary owning slice: M001/S04
 - Supporting slices: M001/S03, M001/S07
-- Validation: unmapped
-- Notes: Measured via built-in token measurement (R010). Validated on real project data.
+- Validation: S04 — 99-assertion token-savings test with 24 decisions across 3 milestones and 21 requirements across 5 slices. Plan-slice: 52.2% savings. Decisions-only: 66.3% savings. Research composite: 32.2% savings. All exceed 30% threshold.
+- Notes: Measured via built-in token measurement (R010). Fixture-proven; real project validation in S07.
 
 ### R017 — Sub-5ms query latency
 - Class: quality-attribute
@@ -295,6 +295,18 @@ Guidelines:
 - Validated by: M001/S01
 - Proof: Decisions use auto-increment `seq` PK, requirements use stable `id` PK. Schema structure verified in gsd-db.test.ts.
 
+### R010 — Built-in token measurement
+- Validated by: M001/S04
+- Proof: promptCharCount/baselineCharCount fields in UnitMetrics interface; measurement wired into all 13 dispatch path snapshotUnitMetrics call sites; values persisted in metrics.json. 5 grep matches in metrics.ts. Clean compilation, 287 tests pass.
+
+### R011 — State derivation from DB
+- Validated by: M001/S04
+- Proof: deriveState() queries `SELECT path, full_content FROM artifacts` when DB available, populates fileContentCache. Falls back to native batch parse when unavailable. 51-assertion derive-state-db test suite proves field-by-field equality across 7 scenarios.
+
+### R016 — ≥30% token reduction in planning/research prompts
+- Validated by: M001/S04
+- Proof: 99-assertion token-savings test with 24 decisions across 3 milestones, 21 requirements across 5 slices. Plan-slice: 52.2% savings. Decisions-only: 66.3%. Research composite: 32.2%. All exceed 30% threshold.
+
 ## Deferred
 
 ### R030 — Vector search layer
@@ -389,13 +401,13 @@ Guidelines:
 | R007 | core-capability | validated | M001/S03 | none | S03 validated |
 | R008 | core-capability | validated | M001/S03 | none | S03 validated |
 | R009 | continuity | validated | M001/S03 | M001/S06 | S03 validated |
-| R010 | differentiator | active | M001/S04 | none | unmapped |
-| R011 | core-capability | active | M001/S04 | none | unmapped |
+| R010 | differentiator | validated | M001/S04 | none | S04 validated |
+| R011 | core-capability | validated | M001/S04 | none | S04 validated |
 | R012 | core-capability | active | M001/S05 | none | unmapped |
 | R013 | core-capability | active | M001/S05 | none | unmapped |
 | R014 | core-capability | active | M001/S06 | none | unmapped |
 | R015 | operability | active | M001/S06 | none | unmapped |
-| R016 | quality-attribute | active | M001/S04 | M001/S03, M001/S07 | unmapped |
+| R016 | quality-attribute | validated | M001/S04 | M001/S03, M001/S07 | S04 validated |
 | R017 | quality-attribute | validated | M001/S01 | none | S01 validated |
 | R018 | quality-attribute | validated | M001/S02 | none | S02 validated |
 | R019 | quality-attribute | active | M001/S04 | M001/S07 | unmapped |
@@ -411,7 +423,7 @@ Guidelines:
 
 ## Coverage Summary
 
-- Active requirements: 9
-- Mapped to slices: 9
-- Validated: 12 (R002, R003, R004, R005, R006, R007, R008, R009, R017, R018, R020, R021)
+- Active requirements: 6
+- Mapped to slices: 6
+- Validated: 15 (R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R016, R017, R018, R020, R021)
 - Unmapped active requirements: 0

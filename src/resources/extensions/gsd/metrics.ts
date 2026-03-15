@@ -39,6 +39,8 @@ export interface UnitMetrics {
   toolCalls: number;
   assistantMessages: number;
   userMessages: number;
+  promptCharCount?: number;    // character length of the fully-assembled prompt at dispatch
+  baselineCharCount?: number;  // character length of full-markdown decisions+requirements+project (for savings comparison)
 }
 
 export interface MetricsLedger {
@@ -104,6 +106,7 @@ export function snapshotUnitMetrics(
   unitId: string,
   startedAt: number,
   model: string,
+  opts?: { promptCharCount?: number; baselineCharCount?: number },
 ): UnitMetrics | null {
   if (!ledger) return null;
 
@@ -156,6 +159,8 @@ export function snapshotUnitMetrics(
     toolCalls,
     assistantMessages,
     userMessages,
+    ...(opts?.promptCharCount != null ? { promptCharCount: opts.promptCharCount } : {}),
+    ...(opts?.baselineCharCount != null ? { baselineCharCount: opts.baselineCharCount } : {}),
   };
 
   ledger.units.push(unit);
