@@ -159,7 +159,7 @@ function openRawDb(path: string): unknown {
 
 // ─── Schema ────────────────────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 function initSchema(db: DbAdapter, fileBacked: boolean): void {
   // WAL mode for file-backed databases (must be outside transaction)
@@ -207,6 +207,18 @@ function initSchema(db: DbAdapter, fileBacked: boolean): void {
       )
     `);
 
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS artifacts (
+        path TEXT PRIMARY KEY,
+        artifact_type TEXT NOT NULL DEFAULT '',
+        milestone_id TEXT DEFAULT NULL,
+        slice_id TEXT DEFAULT NULL,
+        task_id TEXT DEFAULT NULL,
+        full_content TEXT NOT NULL DEFAULT '',
+        imported_at TEXT NOT NULL DEFAULT ''
+      )
+    `);
+
     // Views — DROP + CREATE since CREATE VIEW IF NOT EXISTS doesn't update definitions
     db.exec(`CREATE VIEW IF NOT EXISTS active_decisions AS SELECT * FROM decisions WHERE superseded_by IS NULL`);
     db.exec(`CREATE VIEW IF NOT EXISTS active_requirements AS SELECT * FROM requirements WHERE superseded_by IS NULL`);
@@ -214,9 +226,49 @@ function initSchema(db: DbAdapter, fileBacked: boolean): void {
     // Insert schema version if not already present
     const existing = db.prepare('SELECT count(*) as cnt FROM schema_version').get();
     if (existing && (existing['cnt'] as number) === 0) {
-      db.prepare('INSERT INTO schema_version (version, applied_at) VALUES (?, ?)').run(
-        SCHEMA_VERSION,
-        new Date().toISOString(),
+      db.prepare('INSERT INTO schema_version (version, applied_at) VALUES (:version, :applied_at)').run(
+        { ':version': SCHEMA_VERSION, ':applied_at': new Date().toISOString() },
+      );
+    }
+
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+
+  // Run incremental migrations for existing databases
+  migrateSchema(db);
+}
+
+/**
+ * Incremental schema migration. Reads current version from schema_version table
+ * and applies DDL for each version step up to SCHEMA_VERSION.
+ */
+function migrateSchema(db: DbAdapter): void {
+  const row = db.prepare('SELECT MAX(version) as v FROM schema_version').get();
+  const currentVersion = row ? (row['v'] as number) : 0;
+
+  if (currentVersion >= SCHEMA_VERSION) return;
+
+  db.exec('BEGIN');
+  try {
+    // v1 → v2: add artifacts table
+    if (currentVersion < 2) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS artifacts (
+          path TEXT PRIMARY KEY,
+          artifact_type TEXT NOT NULL DEFAULT '',
+          milestone_id TEXT DEFAULT NULL,
+          slice_id TEXT DEFAULT NULL,
+          task_id TEXT DEFAULT NULL,
+          full_content TEXT NOT NULL DEFAULT '',
+          imported_at TEXT NOT NULL DEFAULT ''
+        )
+      `);
+
+      db.prepare('INSERT INTO schema_version (version, applied_at) VALUES (:version, :applied_at)').run(
+        { ':version': 2, ':applied_at': new Date().toISOString() },
       );
     }
 
@@ -460,4 +512,76 @@ export function _resetProvider(): void {
   loadAttempted = false;
   providerModule = null;
   providerName = null;
+}
+
+// ─── Upsert Wrappers (for idempotent import) ─────────────────────────────
+
+/**
+ * Insert or replace a decision. Uses the `id` UNIQUE constraint for idempotency.
+ */
+export function upsertDecision(d: Omit<Decision, 'seq'>): void {
+  if (!currentDb) throw new Error('gsd-db: No database open');
+  currentDb.prepare(
+    `INSERT OR REPLACE INTO decisions (id, when_context, scope, decision, choice, rationale, revisable, superseded_by)
+     VALUES (:id, :when_context, :scope, :decision, :choice, :rationale, :revisable, :superseded_by)`,
+  ).run({
+    ':id': d.id,
+    ':when_context': d.when_context,
+    ':scope': d.scope,
+    ':decision': d.decision,
+    ':choice': d.choice,
+    ':rationale': d.rationale,
+    ':revisable': d.revisable,
+    ':superseded_by': d.superseded_by ?? null,
+  });
+}
+
+/**
+ * Insert or replace a requirement. Uses the `id` PK for idempotency.
+ */
+export function upsertRequirement(r: Requirement): void {
+  if (!currentDb) throw new Error('gsd-db: No database open');
+  currentDb.prepare(
+    `INSERT OR REPLACE INTO requirements (id, class, status, description, why, source, primary_owner, supporting_slices, validation, notes, full_content, superseded_by)
+     VALUES (:id, :class, :status, :description, :why, :source, :primary_owner, :supporting_slices, :validation, :notes, :full_content, :superseded_by)`,
+  ).run({
+    ':id': r.id,
+    ':class': r.class,
+    ':status': r.status,
+    ':description': r.description,
+    ':why': r.why,
+    ':source': r.source,
+    ':primary_owner': r.primary_owner,
+    ':supporting_slices': r.supporting_slices,
+    ':validation': r.validation,
+    ':notes': r.notes,
+    ':full_content': r.full_content,
+    ':superseded_by': r.superseded_by ?? null,
+  });
+}
+
+/**
+ * Insert or replace an artifact. Uses the `path` PK for idempotency.
+ */
+export function insertArtifact(a: {
+  path: string;
+  artifact_type: string;
+  milestone_id: string | null;
+  slice_id: string | null;
+  task_id: string | null;
+  full_content: string;
+}): void {
+  if (!currentDb) throw new Error('gsd-db: No database open');
+  currentDb.prepare(
+    `INSERT OR REPLACE INTO artifacts (path, artifact_type, milestone_id, slice_id, task_id, full_content, imported_at)
+     VALUES (:path, :artifact_type, :milestone_id, :slice_id, :task_id, :full_content, :imported_at)`,
+  ).run({
+    ':path': a.path,
+    ':artifact_type': a.artifact_type,
+    ':milestone_id': a.milestone_id,
+    ':slice_id': a.slice_id,
+    ':task_id': a.task_id,
+    ':full_content': a.full_content,
+    ':imported_at': new Date().toISOString(),
+  });
 }

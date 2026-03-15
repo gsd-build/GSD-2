@@ -627,6 +627,26 @@ export async function startAuto(
     } catch { /* nothing to commit */ }
   }
 
+  // Auto-migrate: create gsd.db from markdown if DB doesn't exist yet
+  const gsdDbPath = join(gsdDir, "gsd.db");
+  if (existsSync(gsdDir) && !existsSync(gsdDbPath)) {
+    // Check if there are markdown files worth importing
+    const hasDecisions = existsSync(join(gsdDir, "DECISIONS.md"));
+    const hasRequirements = existsSync(join(gsdDir, "REQUIREMENTS.md"));
+    const hasMilestones = existsSync(join(gsdDir, "milestones"));
+    if (hasDecisions || hasRequirements || hasMilestones) {
+      try {
+        const { openDatabase: openDb } = await import("./gsd-db.js");
+        const { migrateFromMarkdown } = await import("./md-importer.js");
+        openDb(gsdDbPath);
+        migrateFromMarkdown(base);
+      } catch (err) {
+        // Graceful degradation (D003): migration failure must not block auto-mode
+        process.stderr.write(`gsd-migrate: auto-migration failed: ${(err as Error).message}\n`);
+      }
+    }
+  }
+
   // Initialize GitServiceImpl — basePath is set and git repo confirmed
   gitService = new GitServiceImpl(basePath, loadEffectiveGSDPreferences()?.preferences?.git ?? {});
 

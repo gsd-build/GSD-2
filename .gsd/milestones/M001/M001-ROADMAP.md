@@ -60,7 +60,7 @@ This milestone is complete only when all are true:
 - [x] **S01: DB Foundation + Decisions + Requirements** `risk:high` `depends:[]`
   > After this: SQLite DB opens with schema, decisions and requirements tables populated, active_decisions and active_requirements views return correct filtered subsets. Graceful fallback tested — system works without better-sqlite3.
 
-- [ ] **S02: Markdown Importers + Auto-Migration** `risk:medium` `depends:[S01]`
+- [x] **S02: Markdown Importers + Auto-Migration** `risk:medium` `depends:[S01]`
   > After this: Existing GSD project starts up, gsd.db appears silently with all artifact types imported. Round-trip fidelity verified for every artifact type.
 
 - [ ] **S03: Core Hierarchy + Full Query Layer + Prompt Rewiring** `risk:high` `depends:[S01,S02]`

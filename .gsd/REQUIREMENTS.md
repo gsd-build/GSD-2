@@ -22,7 +22,7 @@ Guidelines:
 - Source: user
 - Primary owning slice: M001/S01
 - Supporting slices: none
-- Validation: S01 — DB opens, schema inits with version table, typed wrappers work. Forward-only migration path untested (only version 1 exists).
+- Validation: S01 — DB opens, schema inits with version table, typed wrappers work. S02 — Forward-only migration v1→v2 proven (artifacts table added without data loss).
 - Notes: WAL mode enabled. Schema version tracked in `schema_version` table. Provider chain: node:sqlite → better-sqlite3 → null (D010).
 
 ### R002 — Graceful fallback to markdown if better-sqlite3 unavailable
@@ -38,25 +38,25 @@ Guidelines:
 
 ### R003 — Markdown importers for all artifact types
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: Importers that parse existing markdown files (DECISIONS.md, REQUIREMENTS.md, roadmaps, plans, summaries, contexts, research, continues, queue, secrets manifest, PROJECT.md) into DB rows using existing parsers from `files.ts`
 - Why it matters: Existing projects must seamlessly transition to DB storage without data loss
 - Source: user
 - Primary owning slice: M001/S02
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Reuses `parseRoadmap`, `parsePlan`, `parseSummary`, `parseContinue`, `parseRequirementCounts`, `parseSecretsManifest`, etc.
+- Validation: S02 — parseDecisionsTable, parseRequirementsSections, and importHierarchyArtifacts tested with 70 assertions. All artifact types imported and queryable. Round-trip fidelity verified.
+- Notes: Custom parsers (not reusing files.ts parsers) for DECISIONS.md pipe-table and REQUIREMENTS.md section/bullet format. Hierarchy artifacts stored as full_content blobs.
 
 ### R004 — Silent auto-migration on first run
 - Class: primary-user-loop
-- Status: active
+- Status: validated
 - Description: On startup, if `.gsd/` exists with markdown files but no `gsd.db`, migration runs automatically with zero user interaction. One-line log summary.
 - Why it matters: Must feel automagical — zero friction transition
 - Source: user
 - Primary owning slice: M001/S02
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Detection: no gsd.db + markdown files present → migrate. Atomic transaction wraps all inserts.
+- Validation: S02 — Auto-migration wired into startAuto() with dynamic imports and try/catch guard. Compiles clean. Detects DECISIONS.md, REQUIREMENTS.md, or milestones/ before importing.
+- Notes: Detection: no gsd.db + markdown files present → migrate. Atomic transaction wraps all inserts. Failure logs to stderr, never blocks auto-mode (D003, D014).
 
 ### R005 — Selective context queries for decisions
 - Class: core-capability
@@ -203,14 +203,14 @@ Guidelines:
 
 ### R018 — 100% migration fidelity
 - Class: quality-attribute
-- Status: active
+- Status: validated
 - Description: All data from markdown artifacts is recoverable from the DB after import — no silent data loss
 - Why it matters: Trust in the migration — users must not lose project history
 - Source: user
 - Primary owning slice: M001/S02
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Validated by round-trip tests: import markdown → export from DB → compare
+- Validation: S02 — 70-assertion round-trip test suite. Decision fields (id, when_context, scope, decision, choice, rationale, revisable, superseded_by) verified. Requirement fields (id, class, status, description, why, source, primary_owner, supporting_slices, validation, notes) verified across all sections. Hierarchy artifacts content-checked.
+- Notes: Validated by round-trip tests: import markdown → query from DB → compare field values.
 
 ### R019 — No regression in auto-mode output quality
 - Class: quality-attribute
@@ -247,9 +247,21 @@ Guidelines:
 
 ## Validated
 
+### R003 — Markdown importers for all artifact types
+- Validated by: M001/S02
+- Proof: 70-assertion test suite covering parseDecisionsTable, parseRequirementsSections, importHierarchyArtifacts, migrateFromMarkdown orchestrator. All artifact types imported and round-trip verified.
+
+### R004 — Silent auto-migration on first run
+- Validated by: M001/S02
+- Proof: Auto-migration wired into startAuto() with dynamic imports and try/catch guard. Detects markdown files, opens DB, runs migrateFromMarkdown. Compiles clean, tested via compilation.
+
 ### R017 — Sub-5ms query latency
 - Validated by: M001/S01
 - Proof: 50 decisions + 50 requirements queried in 0.62ms. Test assertion in context-store.test.ts enforces <5ms.
+
+### R018 — 100% migration fidelity
+- Validated by: M001/S02
+- Proof: 70-assertion round-trip test suite. All Decision and Requirement fields verified against source markdown. Hierarchy artifact content verified. Supersession chains preserved. Idempotent re-import confirmed.
 
 ### R020 — WAL mode enabled
 - Validated by: M001/S01
@@ -344,10 +356,10 @@ Guidelines:
 
 | ID | Class | Status | Primary owner | Supporting | Proof |
 |---|---|---|---|---|---|
-| R001 | core-capability | active | M001/S01 | none | S01 partial |
+| R001 | core-capability | active | M001/S01 | none | S01+S02 partial |
 | R002 | failure-visibility | active | M001/S01 | M001/S03 | S01 partial |
-| R003 | core-capability | active | M001/S02 | none | unmapped |
-| R004 | primary-user-loop | active | M001/S02 | none | unmapped |
+| R003 | core-capability | validated | M001/S02 | none | S02 validated |
+| R004 | primary-user-loop | validated | M001/S02 | none | S02 validated |
 | R005 | core-capability | active | M001/S01 | M001/S03 | S01 partial |
 | R006 | core-capability | active | M001/S01 | M001/S03 | S01 partial |
 | R007 | core-capability | active | M001/S03 | none | unmapped |
@@ -361,7 +373,7 @@ Guidelines:
 | R015 | operability | active | M001/S06 | none | unmapped |
 | R016 | quality-attribute | active | M001/S04 | M001/S03, M001/S07 | unmapped |
 | R017 | quality-attribute | validated | M001/S01 | none | S01 validated |
-| R018 | quality-attribute | active | M001/S02 | none | unmapped |
+| R018 | quality-attribute | validated | M001/S02 | none | S02 validated |
 | R019 | quality-attribute | active | M001/S04 | M001/S07 | unmapped |
 | R020 | quality-attribute | validated | M001/S01 | none | S01 validated |
 | R021 | constraint | validated | M001/S01 | none | S01 validated |
@@ -375,7 +387,7 @@ Guidelines:
 
 ## Coverage Summary
 
-- Active requirements: 18
-- Mapped to slices: 18
-- Validated: 3 (R017, R020, R021)
+- Active requirements: 15
+- Mapped to slices: 15
+- Validated: 6 (R003, R004, R017, R018, R020, R021)
 - Unmapped active requirements: 0
