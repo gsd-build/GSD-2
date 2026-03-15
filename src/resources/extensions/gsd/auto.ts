@@ -1380,6 +1380,9 @@ async function dispatchNextUnit(
     return;
   }
 
+  // Clear stale directory listing cache so deriveState sees fresh disk state (#431)
+  clearPathCache();
+
   let state = await deriveState(basePath);
   let mid = state.activeMilestone?.id;
   let midTitle = state.activeMilestone?.title;
@@ -3555,6 +3558,9 @@ export function resolveExpectedArtifactPath(unitType: string, unitId: string, ba
  * skipped writing the UAT file (see #176).
  */
 export function verifyExpectedArtifact(unitType: string, unitId: string, base: string): boolean {
+  // Clear stale directory listing cache so artifact checks see fresh disk state (#431)
+  clearPathCache();
+
   // fix-merge has no file artifact — verify by checking git state
   if (unitType === "fix-merge") {
     const unmerged = runGit(base, ["diff", "--name-only", "--diff-filter=U"], { allowFailure: true });
