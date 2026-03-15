@@ -574,4 +574,25 @@ const ROADMAP_COMPLETE = `# M001: Test Milestone
   }
 }
 
+// ═══ verifyExpectedArtifact: hook unit types ═════════════════════════════════
+
+console.log("\n=== verifyExpectedArtifact: hook types always return true ===");
+
+{
+  const base = createFixtureBase();
+  try {
+    // Hook units don't have standard artifacts — they should always pass
+    const result1 = verifyExpectedArtifact("hook/code-review", "M001/S01/T01", base);
+    assertTrue(result1, "hook/code-review should always return true");
+
+    const result2 = verifyExpectedArtifact("hook/simplify", "M001/S01/T02", base);
+    assertTrue(result2, "hook/simplify should always return true");
+
+    const result3 = verifyExpectedArtifact("hook/custom-hook", "M001/S01", base);
+    assertTrue(result3, "hook/custom-hook at slice level should return true");
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+}
+
 report();
