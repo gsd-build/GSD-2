@@ -5,7 +5,7 @@
 import type { ExtensionCommandContext, ExtensionAPI } from "@gsd/pi-coding-agent";
 import { existsSync, readFileSync, writeFileSync, unlinkSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { deriveState, invalidateStateCache } from "./state.js";
 import { gsdRoot, resolveTasksDir, resolveSlicePath, buildTaskFileName } from "./paths.js";
 import { sendDesktopNotification } from "./notifications.js";
@@ -106,11 +106,11 @@ export async function handleUndo(args: string, ctx: ExtensionCommandContext, _pi
     if (commits.length > 0) {
       for (const sha of commits.reverse()) {
         try {
-          execSync(`git revert --no-commit ${sha}`, { cwd: basePath, timeout: 10000, stdio: "ignore" });
+          execFileSync("git", ["revert", "--no-commit", sha], { cwd: basePath, timeout: 10000, stdio: "ignore" });
           commitsReverted++;
         } catch {
           // Revert conflict or already reverted — skip
-          try { execSync("git revert --abort", { cwd: basePath, timeout: 5000, stdio: "ignore" }); } catch { /* no-op */ }
+          try { execFileSync("git", ["revert", "--abort"], { cwd: basePath, timeout: 5000, stdio: "ignore" }); } catch { /* no-op */ }
           break;
         }
       }
@@ -132,7 +132,7 @@ export async function handleUndo(args: string, ctx: ExtensionCommandContext, _pi
   }
 
   ctx.ui.notify(results.join("\n"), "success");
-  sendDesktopNotification("GSD", `Undone: ${unitType} (${unitId})`, "info");
+  sendDesktopNotification("GSD", `Undone: ${unitType} (${unitId})`, "info", "complete");
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -192,12 +192,9 @@ function findCommitsForUnit(activityDir: string, unitType: string, unitId: strin
           const blocks = Array.isArray(entry.message.content) ? entry.message.content : [];
           for (const block of blocks) {
             if (block.type === "tool_result" && typeof block.content === "string") {
-              // Match git commit output patterns like "[branch abc1234] message"
-              const commitMatch = block.content.match(/\[[\w/.-]+\s+([a-f0-9]{7,40})\]/g);
-              if (commitMatch) {
-                for (const m of commitMatch) {
-                  const sha = m.match(/\s+([a-f0-9]{7,40})\]/)?.[1];
-                  if (sha && !commits.includes(sha)) commits.push(sha);
+              for (const sha of extractCommitShas(block.content)) {
+                if (!commits.includes(sha)) {
+                  commits.push(sha);
                 }
               }
             }
@@ -207,5 +204,16 @@ function findCommitsForUnit(activityDir: string, unitType: string, unitId: strin
     }
   } catch { /* activity dir issues — skip */ }
 
+  return commits;
+}
+
+export function extractCommitShas(content: string): string[] {
+  const commits: string[] = [];
+  for (const match of content.matchAll(/\[[\w/.-]+\s+([a-f0-9]{7,40})\]/g)) {
+    const sha = match[1];
+    if (sha && !commits.includes(sha)) {
+      commits.push(sha);
+    }
+  }
   return commits;
 }

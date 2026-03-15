@@ -754,11 +754,11 @@ async function handleDryRun(ctx: ExtensionCommandContext, basePath: string): Pro
 // ─── Branch cleanup handler ──────────────────────────────────────────────────
 
 async function handleCleanupBranches(ctx: ExtensionCommandContext, basePath: string): Promise<void> {
-  const { execSync } = await import("node:child_process");
+  const { execFileSync } = await import("node:child_process");
 
   let branches: string[];
   try {
-    const output = execSync("git branch --list 'gsd/*'", { cwd: basePath, timeout: 10000 }).toString();
+    const output = execFileSync("git", ["branch", "--list", "gsd/*"], { cwd: basePath, timeout: 10000, encoding: "utf-8" });
     branches = output.split("\n").map(b => b.trim().replace(/^\* /, "")).filter(Boolean);
   } catch {
     ctx.ui.notify("No GSD branches found.", "info");
@@ -772,15 +772,15 @@ async function handleCleanupBranches(ctx: ExtensionCommandContext, basePath: str
 
   let mainBranch: string;
   try {
-    mainBranch = execSync("git symbolic-ref refs/remotes/origin/HEAD --short 2>/dev/null || echo main", { cwd: basePath, timeout: 5000 })
-      .toString().trim().replace("origin/", "");
+    mainBranch = execFileSync("git", ["symbolic-ref", "refs/remotes/origin/HEAD", "--short"], { cwd: basePath, timeout: 5000, encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] })
+      .trim().replace("origin/", "");
   } catch {
     mainBranch = "main";
   }
 
   let merged: string[];
   try {
-    const output = execSync(`git branch --merged ${mainBranch} --list 'gsd/*'`, { cwd: basePath, timeout: 10000 }).toString();
+    const output = execFileSync("git", ["branch", "--merged", mainBranch, "--list", "gsd/*"], { cwd: basePath, timeout: 10000, encoding: "utf-8" });
     merged = output.split("\n").map(b => b.trim()).filter(Boolean);
   } catch {
     merged = [];
@@ -794,7 +794,7 @@ async function handleCleanupBranches(ctx: ExtensionCommandContext, basePath: str
   let deleted = 0;
   for (const branch of merged) {
     try {
-      execSync(`git branch -d "${branch}"`, { cwd: basePath, timeout: 5000, stdio: "ignore" });
+      execFileSync("git", ["branch", "-d", branch], { cwd: basePath, timeout: 5000, stdio: "ignore" });
       deleted++;
     } catch { /* skip branches that can't be deleted */ }
   }
@@ -805,11 +805,11 @@ async function handleCleanupBranches(ctx: ExtensionCommandContext, basePath: str
 // ─── Snapshot cleanup handler ─────────────────────────────────────────────────
 
 async function handleCleanupSnapshots(ctx: ExtensionCommandContext, basePath: string): Promise<void> {
-  const { execSync } = await import("node:child_process");
+  const { execFileSync } = await import("node:child_process");
 
   let refs: string[];
   try {
-    const output = execSync("git for-each-ref refs/gsd/snapshots/ --format='%(refname)'", { cwd: basePath, timeout: 10000 }).toString();
+    const output = execFileSync("git", ["for-each-ref", "refs/gsd/snapshots/", "--format=%(refname)"], { cwd: basePath, timeout: 10000, encoding: "utf-8" });
     refs = output.split("\n").filter(Boolean);
   } catch {
     ctx.ui.notify("No snapshot refs found.", "info");
@@ -834,7 +834,7 @@ async function handleCleanupSnapshots(ctx: ExtensionCommandContext, basePath: st
     const sorted = labelRefs.sort();
     for (const old of sorted.slice(0, -5)) {
       try {
-        execSync(`git update-ref -d ${old}`, { cwd: basePath, timeout: 5000, stdio: "ignore" });
+        execFileSync("git", ["update-ref", "-d", old], { cwd: basePath, timeout: 5000, stdio: "ignore" });
         pruned++;
       } catch { /* skip */ }
     }
