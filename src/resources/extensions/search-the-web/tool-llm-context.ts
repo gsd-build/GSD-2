@@ -28,6 +28,7 @@ import { formatLLMContext, type LLMContextSnippet, type LLMContextSource } from 
 import type { TavilyResult, TavilySearchResponse } from "./tavily.js";
 import { publishedDateToAge } from "./tavily.js";
 import { getTavilyApiKey, getOllamaApiKey, resolveSearchProvider } from "./provider.js";
+import { writeTempOutputFile } from "./temp-output-file.js";
 
 // =============================================================================
 // Types
@@ -372,7 +373,7 @@ export function registerLLMContextTool(pi: ExtensionAPI) {
         const truncation = truncateHead(output, { maxLines: DEFAULT_MAX_LINES, maxBytes: DEFAULT_MAX_BYTES });
         let content = truncation.content;
         if (truncation.truncated) {
-          const tempFile = await (pi as any).writeTempFile(output, { prefix: "llm-context-" });
+          const tempFile = await writeTempOutputFile(output, { prefix: "llm-context-" });
           content += `\n\n[Truncated. Full content: ${tempFile}]`;
         }
 
@@ -542,7 +543,7 @@ export function registerLLMContextTool(pi: ExtensionAPI) {
         let content = truncation.content;
 
         if (truncation.truncated) {
-          const tempFile = await (pi as any).writeTempFile(output, { prefix: "llm-context-" });
+          const tempFile = await writeTempOutputFile(output, { prefix: "llm-context-" });
           content += `\n\n[Truncated. Full content: ${tempFile}]`;
         }
 

@@ -18,6 +18,7 @@ import { fetchSimple, HttpError } from "./http.js";
 import { extractDomain } from "./url-utils.js";
 import { formatPageContent, type FormatPageOptions } from "./format.js";
 import { getOllamaApiKey } from "./provider.js";
+import { writeTempOutputFile } from "./temp-output-file.js";
 
 // =============================================================================
 // Cache
@@ -501,7 +502,7 @@ export function registerFetchPageTool(pi: ExtensionAPI) {
       const finalTruncation = truncateHead(output, { maxLines: DEFAULT_MAX_LINES, maxBytes: DEFAULT_MAX_BYTES });
       let content = finalTruncation.content;
       if (finalTruncation.truncated) {
-        const tempFile = await (pi as any).writeTempFile(output, { prefix: "fetch-page-" });
+        const tempFile = await writeTempOutputFile(output, { prefix: "fetch-page-" });
         content += `\n\n[Truncated to fit context. Full content: ${tempFile}]`;
       }
 

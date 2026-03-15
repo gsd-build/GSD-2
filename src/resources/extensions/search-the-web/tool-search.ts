@@ -22,6 +22,7 @@ import { normalizeQuery, toDedupeKey, detectFreshness } from "./url-utils.js";
 import { formatSearchResults, type SearchResultFormatted, type FormatSearchOptions } from "./format.js";
 import { getTavilyApiKey, getOllamaApiKey, resolveSearchProvider } from "./provider.js";
 import { normalizeTavilyResult, mapFreshnessToTavily, type TavilySearchResponse } from "./tavily.js";
+import { writeTempOutputFile } from "./temp-output-file.js";
 
 // =============================================================================
 // Types
@@ -416,7 +417,7 @@ export function registerSearchTool(pi: ExtensionAPI) {
         const truncation = truncateHead(output, { maxLines: DEFAULT_MAX_LINES, maxBytes: DEFAULT_MAX_BYTES });
         let content = truncation.content;
         if (truncation.truncated) {
-          const tempFile = await (pi as any).writeTempFile(output, { prefix: "web-search-" });
+          const tempFile = await writeTempOutputFile(output, { prefix: "web-search-" });
           content += `\n\n[Truncated: ${truncation.outputLines}/${truncation.totalLines} lines (${formatSize(truncation.outputBytes)}/${formatSize(truncation.totalBytes)}). Full results: ${tempFile}]`;
         }
 
@@ -543,7 +544,7 @@ export function registerSearchTool(pi: ExtensionAPI) {
         let content = truncation.content;
 
         if (truncation.truncated) {
-          const tempFile = await (pi as any).writeTempFile(output, { prefix: "web-search-" });
+          const tempFile = await writeTempOutputFile(output, { prefix: "web-search-" });
           content += `\n\n[Truncated: ${truncation.outputLines}/${truncation.totalLines} lines (${formatSize(truncation.outputBytes)}/${formatSize(truncation.totalBytes)}). Full results: ${tempFile}]`;
         }
 

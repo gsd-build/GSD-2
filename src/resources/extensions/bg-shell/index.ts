@@ -51,6 +51,7 @@ import { writeFileSync, readFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { shortcutDesc } from "../shared/terminal.js";
 import { createRequire } from "node:module";
+import { getDisplayThinkingLevel } from "./thinking-level.js";
 
 // ── Windows VT Input Restoration ────────────────────────────────────────────
 // Child processes (esp. Git Bash / MSYS2) can strip the ENABLE_VIRTUAL_TERMINAL_INPUT
@@ -2645,7 +2646,7 @@ export default function (pi: ExtensionAPI) {
 					const modelName = ctx?.model?.id || "no-model";
 					let rightSide = modelName;
 					if (ctx?.model?.reasoning) {
-						const thinkingLevel = (ctx as any).getThinkingLevel?.() || "off";
+						const thinkingLevel = getDisplayThinkingLevel(pi);
 						rightSide = thinkingLevel === "off" ? `${modelName} • thinking off` : `${modelName} • ${thinkingLevel}`;
 					}
 					if (footerData.getAvailableProviderCount() > 1 && ctx?.model) {
