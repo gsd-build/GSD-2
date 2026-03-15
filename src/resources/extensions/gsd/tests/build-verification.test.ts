@@ -83,10 +83,11 @@ async function main(): Promise<void> {
     const dir = createTempDir();
     try {
       const svc = new GitServiceImpl(dir);
-      const result = svc.runBuildCheck('echo "build ok"');
+      const cmd = 'node -e "process.stdout.write(\'build ok\')"';
+      const result = svc.runBuildCheck(cmd);
       assertEq(result.passed, true, 'passed is true');
       assertEq(result.skipped, false, 'skipped is false');
-      assertEq(result.command, 'echo "build ok"', 'command is recorded');
+      assertEq(result.command, cmd, 'command is recorded');
     } finally {
       cleanup(dir);
     }
@@ -98,7 +99,7 @@ async function main(): Promise<void> {
     const dir = createTempDir();
     try {
       const svc = new GitServiceImpl(dir);
-      const result = svc.runBuildCheck('echo "error: TS2345" >&2 && exit 1');
+      const result = svc.runBuildCheck('node -e "process.stderr.write(\'error: TS2345\'); process.exit(1)"');
       assertEq(result.passed, false, 'passed is false');
       assertEq(result.skipped, false, 'skipped is false');
       assertTrue(!!result.error, 'error is set');
@@ -114,9 +115,9 @@ async function main(): Promise<void> {
   {
     const dir = createTempDir();
     try {
-      // Generate output larger than 8KB
+      // Generate output larger than 8KB using Node (cross-platform)
       const svc = new GitServiceImpl(dir);
-      const result = svc.runBuildCheck(`python3 -c "print('x' * 20000)" >&2; exit 1`);
+      const result = svc.runBuildCheck(`node -e "process.stderr.write('x'.repeat(20000)); process.exit(1)"`);
       assertEq(result.passed, false, 'truncated: passed is false');
       assertTrue(!!result.output, 'truncated: output is set');
       assertTrue(result.output!.length <= 8300, `truncated: output length <= 8300 (got ${result.output!.length})`);
