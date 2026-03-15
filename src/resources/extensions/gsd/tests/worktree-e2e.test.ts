@@ -1,17 +1,15 @@
 /**
  * worktree-e2e.test.ts -- End-to-end tests for worktree-isolated git flow.
  *
- * Covers 5 cross-cutting groups not tested by individual slice tests:
+ * Covers cross-cutting groups not tested by individual slice tests:
  *   1. Full lifecycle chain (create -> slice commits -> merge to milestone -> merge to main)
- *   2. Preference gating (shouldUseWorktreeIsolation with overrides)
- *   3. merge_to_main mode resolution (getMergeToMainMode)
- *   4. Self-heal in merge context (abortAndReset, withMergeHeal)
- *   5. Doctor detection of orphaned worktrees
+ *   2. Self-heal: abortAndReset cleans up failed merges
+ *   3. Doctor detection of orphaned worktrees
  */
 
 import {
   mkdtempSync, mkdirSync, writeFileSync, rmSync,
-  existsSync, realpathSync, readFileSync,
+  existsSync, realpathSync,
 } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -20,11 +18,9 @@ import { execSync } from "node:child_process";
 import {
   createAutoWorktree,
   mergeMilestoneToMain,
-  mergeSliceToMilestone,
-  shouldUseWorktreeIsolation,
 } from "../auto-worktree.ts";
 import { getSliceBranchName } from "../worktree.ts";
-import { abortAndReset, withMergeHeal, MergeConflictError } from "../git-self-heal.ts";
+import { abortAndReset } from "../git-self-heal.ts";
 import { runGSDDoctor } from "../doctor.ts";
 import { createTestContext } from "./test-helpers.ts";
 
@@ -60,11 +56,11 @@ function makeRoadmap(
 }
 
 function addSliceToMilestone(
-  repo: string,
+  _repo: string,
   wtPath: string,
   milestoneId: string,
   sliceId: string,
-  sliceTitle: string,
+  _sliceTitle: string,
   commits: Array<{ file: string; content: string; message: string }>,
 ): void {
   const normalizedPath = wtPath.replaceAll("\\", "/");
@@ -81,7 +77,7 @@ function addSliceToMilestone(
     run(`git commit -m "${c.message}"`, wtPath);
   }
   run(`git checkout milestone/${milestoneId}`, wtPath);
-  mergeSliceToMilestone(repo, milestoneId, sliceId, sliceTitle);
+  run(`git merge --no-ff ${sliceBranch} -m "merge ${sliceId}"`, wtPath);
 }
 
 async function main(): Promise<void> {
@@ -144,59 +140,10 @@ async function main(): Promise<void> {
     }
 
     // ================================================================
-    // Group 2: Preference gating (shouldUseWorktreeIsolation)
-    // ================================================================
-    console.log("\n=== Preference gating ===");
-    {
-      const repo = createTempRepo();
-      tempDirs.push(repo);
-
-      // Override to branch mode
-      const branchResult = shouldUseWorktreeIsolation(repo, { isolation: "branch" });
-      assertEq(branchResult, false, "isolation=branch returns false");
-
-      // Override to worktree mode
-      const wtResult = shouldUseWorktreeIsolation(repo, { isolation: "worktree" });
-      assertEq(wtResult, true, "isolation=worktree returns true");
-
-      // Default (no legacy branches) returns true
-      const defaultResult = shouldUseWorktreeIsolation(repo);
-      assertEq(defaultResult, true, "new project defaults to worktree (true)");
-    }
-
-    // ================================================================
-    // Group 3: merge_to_main mode resolution
-    // ================================================================
-    console.log("\n=== merge_to_main mode ===");
-    {
-      // getMergeToMainMode reads from loadEffectiveGSDPreferences — test via legacy branch detection
-      // Instead, test that the function returns the default "milestone" when no prefs set
-      // (Cannot inject overridePrefs — function signature doesn't accept them)
-      // We verify the shouldUseWorktreeIsolation override path handles legacy detection
-      const repo = createTempRepo();
-      tempDirs.push(repo);
-
-      // Create a legacy gsd/*/* branch to test legacy detection
-      run("git checkout -b gsd/M001/S01", repo);
-      writeFileSync(join(repo, "legacy.txt"), "legacy\n");
-      run("git add .", repo);
-      run("git commit -m legacy", repo);
-      run("git checkout main", repo);
-
-      const legacyResult = shouldUseWorktreeIsolation(repo);
-      assertEq(legacyResult, false, "legacy gsd branches detected -> branch mode");
-
-      // Explicit worktree override wins over legacy detection
-      const overrideResult = shouldUseWorktreeIsolation(repo, { isolation: "worktree" });
-      assertEq(overrideResult, true, "explicit worktree override wins over legacy");
-    }
-
-    // ================================================================
-    // Group 4: Self-heal (abortAndReset, withMergeHeal)
+    // Group 2: Self-heal (abortAndReset)
     // ================================================================
     console.log("\n=== Self-heal ===");
     {
-      // 4a: abortAndReset cleans up MERGE_HEAD
       const repo = createTempRepo();
       tempDirs.push(repo);
 
@@ -218,36 +165,9 @@ async function main(): Promise<void> {
       assertTrue(!existsSync(join(repo, ".git", "MERGE_HEAD")), "MERGE_HEAD removed after abort");
       assertTrue(abortResult.cleaned.length > 0, "abortAndReset reports cleaned items");
     }
-    {
-      // 4b: withMergeHeal throws MergeConflictError for real conflicts
-      const repo = createTempRepo();
-      tempDirs.push(repo);
-
-      run("git checkout -b conflict-branch", repo);
-      writeFileSync(join(repo, "file.txt"), "branch version\n");
-      run("git add .", repo);
-      run("git commit -m branch-ver", repo);
-      run("git checkout main", repo);
-      writeFileSync(join(repo, "file.txt"), "main version\n");
-      run("git add .", repo);
-      run("git commit -m main-ver", repo);
-
-      let caughtError: unknown = null;
-      try {
-        withMergeHeal(repo, () => {
-          execSync("git merge conflict-branch", { cwd: repo, stdio: "pipe" });
-        });
-      } catch (e) {
-        caughtError = e;
-      }
-      assertTrue(caughtError instanceof MergeConflictError, "withMergeHeal throws MergeConflictError");
-      if (caughtError instanceof MergeConflictError) {
-        assertTrue(caughtError.conflictedFiles.length > 0, "MergeConflictError has conflictedFiles");
-      }
-    }
 
     // ================================================================
-    // Group 5: Doctor detects orphaned worktrees
+    // Group 3: Doctor detects orphaned worktrees
     // Skip on Windows: git worktree path resolution in temp dirs uses
     // UNC/8.3 forms that don't match after normalization.
     // ================================================================

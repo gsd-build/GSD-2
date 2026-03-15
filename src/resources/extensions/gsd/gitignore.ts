@@ -15,7 +15,7 @@ import { execSync } from "node:child_process";
  * No one ever wants these tracked.
  */
 const BASELINE_PATTERNS = [
-  // ── GSD runtime (not source artifacts) ──
+  // ── GSD runtime (not source artifacts — planning files are tracked) ──
   ".gsd/activity/",
   ".gsd/runtime/",
   ".gsd/worktrees/",
@@ -23,7 +23,10 @@ const BASELINE_PATTERNS = [
   ".gsd/metrics.json",
   ".gsd/completed-units.json",
   ".gsd/STATE.md",
+  ".gsd/gsd.db",
   ".gsd/DISCUSSION-MANIFEST.json",
+  ".gsd/milestones/**/*-CONTINUE.md",
+  ".gsd/milestones/**/continue.md",
 
   // ── OS junk ──
   ".DS_Store",
@@ -117,8 +120,8 @@ export function ensureGitignore(basePath: string): boolean {
  * Only removes from the index (`--cached`), never from disk. Idempotent.
  */
 export function untrackRuntimeFiles(basePath: string): void {
-  // The GSD runtime paths are the first 7 entries in BASELINE_PATTERNS
-  const runtimePaths = BASELINE_PATTERNS.slice(0, 7);
+  // The GSD runtime paths are the first 11 entries in BASELINE_PATTERNS
+  const runtimePaths = BASELINE_PATTERNS.slice(0, 11);
 
   for (const pattern of runtimePaths) {
     // Use -r for directory patterns (trailing slash), strip the slash for the command

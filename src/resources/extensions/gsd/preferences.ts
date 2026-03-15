@@ -729,7 +729,7 @@ export function validatePreferences(preferences: GSDPreferences): {
     const knownUnitTypes = new Set([
       "research-milestone", "plan-milestone", "research-slice", "plan-slice",
       "execute-task", "complete-slice", "replan-slice", "reassess-roadmap",
-      "run-uat", "fix-merge", "complete-milestone",
+      "run-uat", "complete-milestone",
     ]);
     for (const hook of preferences.post_unit_hooks) {
       if (!hook || typeof hook !== "object") {
@@ -795,7 +795,7 @@ export function validatePreferences(preferences: GSDPreferences): {
     const knownUnitTypes = new Set([
       "research-milestone", "plan-milestone", "research-slice", "plan-slice",
       "execute-task", "complete-slice", "replan-slice", "reassess-roadmap",
-      "run-uat", "fix-merge", "complete-milestone",
+      "run-uat", "complete-milestone",
     ]);
     const validActions = new Set(["modify", "skip", "replace"]);
     for (const hook of preferences.pre_dispatch_hooks) {
@@ -909,21 +909,13 @@ export function validatePreferences(preferences: GSDPreferences): {
         errors.push("git.main_branch must be a valid branch name (alphanumeric, _, -, /, .)");
       }
     }
+    // Deprecated: isolation and merge_to_main are ignored (branchless architecture).
+    // Emit warnings so users know to remove them from preferences.
     if (g.isolation !== undefined) {
-      const validIsolation = new Set(["worktree", "branch"]);
-      if (typeof g.isolation === "string" && validIsolation.has(g.isolation)) {
-        git.isolation = g.isolation as "worktree" | "branch";
-      } else {
-        errors.push("git.isolation must be one of: worktree, branch");
-      }
+      errors.push("git.isolation is deprecated — worktree isolation is now always enabled. Remove this setting.");
     }
     if (g.merge_to_main !== undefined) {
-      const validMergeToMain = new Set(["milestone", "slice"]);
-      if (typeof g.merge_to_main === "string" && validMergeToMain.has(g.merge_to_main)) {
-        git.merge_to_main = g.merge_to_main as "milestone" | "slice";
-      } else {
-        errors.push("git.merge_to_main must be one of: milestone, slice");
-      }
+      errors.push("git.merge_to_main is deprecated — milestone-level merge is now always used. Remove this setting.");
     }
 
     if (Object.keys(git).length > 0) {

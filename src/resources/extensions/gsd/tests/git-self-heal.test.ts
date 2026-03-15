@@ -6,17 +6,14 @@
  */
 
 import { execSync } from "node:child_process";
-import { existsSync, mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { rmSync } from "node:fs";
 import assert from "node:assert/strict";
 import {
   abortAndReset,
-  withMergeHeal,
-  recoverCheckout,
   formatGitError,
-  MergeConflictError,
 } from "../git-self-heal.js";
 
 // ─── Helpers ─────────────────────────────────────────────────────────
@@ -100,107 +97,6 @@ console.log("── abortAndReset ──");
     assert.deepStrictEqual(result.cleaned, [], "clean repo should produce empty cleaned array");
 
     console.log("  ✓ no-op on clean state");
-  } finally {
-    cleanup(dir);
-  }
-}
-
-// ─── withMergeHeal ───────────────────────────────────────────────────
-
-console.log("── withMergeHeal ──");
-
-// Test: transient failure succeeds on retry
-{
-  const dir = makeTempRepo();
-  try {
-    let callCount = 0;
-    const result = withMergeHeal(dir, () => {
-      callCount++;
-      if (callCount === 1) throw new Error("transient git error");
-      return "success";
-    });
-
-    assert.strictEqual(result, "success", "should return mergeFn result on retry");
-    assert.strictEqual(callCount, 2, "should have called mergeFn twice");
-
-    console.log("  ✓ transient failure succeeds on retry");
-  } finally {
-    cleanup(dir);
-  }
-}
-
-// Test: real conflict escalates immediately (no retry)
-{
-  const dir = makeTempRepo();
-  try {
-    // Set up a real merge conflict
-    execSync("git checkout -b conflict-branch", { cwd: dir, stdio: "pipe" });
-    writeFileSync(join(dir, "conflict.txt"), "branch A\n");
-    execSync("git add -A && git commit -m \"branch A\"", { cwd: dir, stdio: "pipe" });
-    execSync("git checkout main", { cwd: dir, stdio: "pipe" });
-    writeFileSync(join(dir, "conflict.txt"), "branch B\n");
-    execSync("git add -A && git commit -m \"branch B\"", { cwd: dir, stdio: "pipe" });
-
-    let callCount = 0;
-    try {
-      withMergeHeal(dir, () => {
-        callCount++;
-        // Actually perform the conflicting merge
-        execSync("git merge conflict-branch", { cwd: dir, stdio: "pipe" });
-      });
-      assert.fail("should have thrown MergeConflictError");
-    } catch (err) {
-      assert.ok(err instanceof MergeConflictError, `should throw MergeConflictError, got ${(err as Error).constructor.name}`);
-      assert.strictEqual(callCount, 1, "should NOT retry on real conflict");
-    }
-
-    console.log("  ✓ real conflict escalates immediately without retry");
-  } finally {
-    cleanup(dir);
-  }
-}
-
-// ─── recoverCheckout ─────────────────────────────────────────────────
-
-console.log("── recoverCheckout ──");
-
-// Test: dirty index recovery
-{
-  const dir = makeTempRepo();
-  try {
-    // Create a branch to checkout to
-    execSync("git checkout -b target-branch", { cwd: dir, stdio: "pipe" });
-    execSync("git checkout main", { cwd: dir, stdio: "pipe" });
-
-    // Dirty the index
-    writeFileSync(join(dir, "README.md"), "dirty changes\n");
-    execSync("git add README.md", { cwd: dir, stdio: "pipe" });
-
-    // Normal checkout would complain about dirty index
-    recoverCheckout(dir, "target-branch");
-
-    const branch = execSync("git branch --show-current", { cwd: dir, encoding: "utf-8" }).trim();
-    assert.strictEqual(branch, "target-branch", "should be on target branch after recovery");
-
-    console.log("  ✓ recovers checkout with dirty index");
-  } finally {
-    cleanup(dir);
-  }
-}
-
-// Test: non-existent branch throws with context
-{
-  const dir = makeTempRepo();
-  try {
-    try {
-      recoverCheckout(dir, "nonexistent-branch");
-      assert.fail("should have thrown");
-    } catch (err) {
-      assert.ok((err as Error).message.includes("recoverCheckout failed"), "should include context in error");
-      assert.ok((err as Error).message.includes("nonexistent-branch"), "should mention branch name");
-    }
-
-    console.log("  ✓ throws with context for non-existent branch");
   } finally {
     cleanup(dir);
   }
