@@ -131,7 +131,9 @@ export function checkAutoStartAfterDiscuss(): boolean {
   try { unlinkSync(manifestPath); } catch { /* may not exist for single-milestone */ }
 
   pendingAutoStart = null;
-  startAuto(ctx, pi, basePath, false, { step }).catch(() => {});
+  startAuto(ctx, pi, basePath, false, { step }).catch((err) => {
+    if (process.env.GSD_DEBUG) console.error('[gsd] auto start error:', err);
+  });
   return true;
 }
 

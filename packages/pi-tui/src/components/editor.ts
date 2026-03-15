@@ -2064,6 +2064,10 @@ https://github.com/EsotericSoftware/spine-runtimes/actions/runs/19536643416/job/
 		this.lastAutocompleteLookupPrefix = null;
 	}
 
+	public dispose(): void {
+		this.clearAutocompleteDebounce();
+	}
+
 	public isShowingAutocomplete(): boolean {
 		return this.autocompleteState !== null;
 	}
