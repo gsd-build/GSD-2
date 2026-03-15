@@ -13,8 +13,6 @@ import {
   Wrench,
   MessageSquare,
   Loader2,
-  Plus,
-  ArrowRightLeft,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
@@ -28,12 +26,10 @@ import {
   getCurrentBranch,
   getCurrentSlice,
   getLiveAutoDashboard,
-  getLiveResumableSessions,
   getLiveWorkspaceIndex,
   getModelLabel,
   type WorkspaceTerminalLine,
   type TerminalLineType,
-  type BootResumableSession,
 } from "@/lib/gsd-workspace-store"
 import { getTaskStatus, type ItemStatus } from "@/lib/workspace-status"
 import { deriveWorkflowAction } from "@/lib/workflow-actions"
@@ -101,8 +97,6 @@ export function Dashboard() {
   const state = useGSDWorkspaceState()
   const {
     sendCommand,
-    submitInput,
-    switchSessionFromSurface,
     openCommandSurface,
     setCommandSurfaceSection,
   } = useGSDWorkspaceActions()
@@ -110,7 +104,6 @@ export function Dashboard() {
   const workspace = getLiveWorkspaceIndex(state)
   const auto = getLiveAutoDashboard(state)
   const bridge = boot?.bridge ?? null
-  const resumableSessions = getLiveResumableSessions(state)
   const recoverySummary = state.live.recoverySummary
   const freshness = state.live.freshness
 
@@ -146,14 +139,6 @@ export function Dashboard() {
 
   const handleWorkflowAction = (command: string) => {
     void sendCommand(buildPromptCommand(command, bridge))
-  }
-
-  const handleSessionSwitch = async (session: BootResumableSession) => {
-    await switchSessionFromSurface(session.path)
-  }
-
-  const handleNewSession = async () => {
-    await submitInput("/new")
   }
 
   const openRecoverySummary = () => {
@@ -406,65 +391,6 @@ export function Dashboard() {
           </div>
         </div>
 
-        {resumableSessions.length > 0 && (
-          <div className="mt-6 rounded-md border border-border bg-card" data-testid="dashboard-session-picker">
-            <div className="flex items-center justify-between border-b border-border px-4 py-3">
-              <h2 className="text-sm font-semibold">Sessions</h2>
-              <button
-                onClick={() => void handleNewSession()}
-                disabled={workflowAction.disabled}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-xs font-medium transition-colors hover:bg-accent",
-                  workflowAction.disabled && "cursor-not-allowed opacity-50",
-                )}
-              >
-                <Plus className="h-3 w-3" />
-                New Session
-              </button>
-            </div>
-            <div className="divide-y divide-border">
-              {resumableSessions.map((session) => (
-                <div
-                  key={session.id}
-                  className={cn(
-                    "flex items-center gap-3 px-4 py-2.5",
-                    session.isActive && "bg-accent/20",
-                  )}
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate text-sm font-medium">
-                        {session.name || session.id}
-                      </span>
-                      {session.isActive && (
-                        <span className="flex-shrink-0 rounded-full bg-success/20 px-2 py-0.5 text-[10px] font-medium text-success">
-                          Active
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                      <span>{session.messageCount} messages</span>
-                      <span>{formatRelativeTime(session.modifiedAt)}</span>
-                    </div>
-                  </div>
-                  {!session.isActive && (
-                    <button
-                      onClick={() => void handleSessionSwitch(session)}
-                      disabled={workflowAction.disabled}
-                      className={cn(
-                        "inline-flex items-center gap-1 rounded-md border border-border bg-background px-2.5 py-1 text-xs font-medium transition-colors hover:bg-accent",
-                        workflowAction.disabled && "cursor-not-allowed opacity-50",
-                      )}
-                    >
-                      <ArrowRightLeft className="h-3 w-3" />
-                      Switch
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
         <div className="mt-6 rounded-md border border-border bg-card">
           <div className="border-b border-border px-4 py-3">
