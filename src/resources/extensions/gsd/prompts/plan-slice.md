@@ -12,6 +12,8 @@ Pay particular attention to **Forward Intelligence** sections — they contain h
 
 {{dependencySummaries}}
 
+{{executorContextConstraints}}
+
 Narrate your decomposition reasoning — why you're grouping work this way, what risks are driving the order, what verification strategy you're choosing and why. Keep the narration proportional to the work — a simple slice doesn't need a long justification.
 
 **Right-size the plan.** If the slice is simple enough to be 1 task, plan 1 task. Don't split into multiple tasks just because you can identify sub-steps. Don't fill in sections with "None" when the section doesn't apply — omit them entirely. The plan's job is to guide execution, not to fill a template.

@@ -37,7 +37,7 @@ Then:
 9. If the task plan includes an Observability Impact section, verify those signals directly. Skip this step if the task plan omits the section.
 10. **If execution is running long or verification fails:**
 
-    **Context budget:** If you've used most of your context and haven't finished all steps, stop implementing and prioritize writing the task summary with clear notes on what's done and what remains. A partial summary that enables clean resumption is more valuable than one more half-finished step with no documentation. Never sacrifice summary quality for one more implementation step.
+    **Context budget:** You have approximately **{{verificationBudget}}** reserved for verification context. If you've used most of your context and haven't finished all steps, stop implementing and prioritize writing the task summary with clear notes on what's done and what remains. A partial summary that enables clean resumption is more valuable than one more half-finished step with no documentation. Never sacrifice summary quality for one more implementation step.
 
     **Debugging discipline:** If a verification check fails or implementation hits unexpected behavior:
     - Form a hypothesis first. State what you think is wrong and why, then test that specific theory. Don't shotgun-fix.

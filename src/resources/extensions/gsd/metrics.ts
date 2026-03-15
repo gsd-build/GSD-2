@@ -39,6 +39,17 @@ export interface UnitMetrics {
   toolCalls: number;
   assistantMessages: number;
   userMessages: number;
+  // Budget fields (optional — absent in pre-M009 metrics data)
+  contextWindowTokens?: number;
+  truncationSections?: number;
+  continueHereFired?: boolean;
+}
+
+/** Budget state passed to snapshotUnitMetrics for persistence in the metrics ledger. */
+export interface BudgetInfo {
+  contextWindowTokens?: number;
+  truncationSections?: number;
+  continueHereFired?: boolean;
 }
 
 export interface MetricsLedger {
@@ -104,6 +115,7 @@ export function snapshotUnitMetrics(
   unitId: string,
   startedAt: number,
   model: string,
+  budgetInfo?: BudgetInfo,
 ): UnitMetrics | null {
   if (!ledger) return null;
 
@@ -156,6 +168,11 @@ export function snapshotUnitMetrics(
     toolCalls,
     assistantMessages,
     userMessages,
+    ...(budgetInfo && {
+      ...(budgetInfo.contextWindowTokens !== undefined && { contextWindowTokens: budgetInfo.contextWindowTokens }),
+      ...(budgetInfo.truncationSections !== undefined && { truncationSections: budgetInfo.truncationSections }),
+      ...(budgetInfo.continueHereFired !== undefined && { continueHereFired: budgetInfo.continueHereFired }),
+    }),
   };
 
   ledger.units.push(unit);
@@ -194,6 +211,7 @@ export interface ModelAggregate {
   units: number;
   tokens: TokenCounts;
   cost: number;
+  contextWindowTokens?: number;
 }
 
 export interface ProjectTotals {
@@ -204,6 +222,8 @@ export interface ProjectTotals {
   toolCalls: number;
   assistantMessages: number;
   userMessages: number;
+  totalTruncationSections: number;
+  continueHereFiredCount: number;
 }
 
 function emptyTokens(): TokenCounts {
@@ -269,6 +289,9 @@ export function aggregateByModel(units: UnitMetrics[]): ModelAggregate[] {
     agg.units++;
     agg.tokens = addTokens(agg.tokens, u.tokens);
     agg.cost += u.cost;
+    if (u.contextWindowTokens !== undefined && agg.contextWindowTokens === undefined) {
+      agg.contextWindowTokens = u.contextWindowTokens;
+    }
   }
   return Array.from(map.values()).sort((a, b) => b.cost - a.cost);
 }
@@ -282,6 +305,8 @@ export function getProjectTotals(units: UnitMetrics[]): ProjectTotals {
     toolCalls: 0,
     assistantMessages: 0,
     userMessages: 0,
+    totalTruncationSections: 0,
+    continueHereFiredCount: 0,
   };
   for (const u of units) {
     totals.tokens = addTokens(totals.tokens, u.tokens);
@@ -290,6 +315,8 @@ export function getProjectTotals(units: UnitMetrics[]): ProjectTotals {
     totals.toolCalls += u.toolCalls;
     totals.assistantMessages += u.assistantMessages;
     totals.userMessages += u.userMessages;
+    totals.totalTruncationSections += u.truncationSections ?? 0;
+    if (u.continueHereFired) totals.continueHereFiredCount++;
   }
   return totals;
 }

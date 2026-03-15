@@ -20,6 +20,7 @@ import { deriveState, invalidateStateCache } from "./state.js";
 import type { GSDState } from "./types.js";
 import { loadFile, parseContinue, parsePlan, parseRoadmap, parseSummary, extractUatType, inlinePriorMilestoneSummary, getManifestStatus, clearParseCache } from "./files.js";
 export { inlinePriorMilestoneSummary };
+export { inlineDependencySummaries };
 import type { UatType } from "./files.js";
 import { collectSecretsFromManifest } from "../get-secrets-from-user.js";
 import { loadPrompt, inlineTemplate } from "./prompt-loader.js";
@@ -67,7 +68,9 @@ import { snapshotSkills, clearSkillSnapshot } from "./skill-discovery.js";
 import {
   initMetrics, resetMetrics, snapshotUnitMetrics, getLedger,
   getProjectTotals, formatCost, formatTokenCount,
+  type BudgetInfo,
 } from "./metrics.js";
+import { computeBudgets, resolveExecutorContextWindow, truncateAtSectionBoundary, type TruncationResult } from "./context-budget.js";
 import { dirname, join } from "node:path";
 import { readdirSync, readFileSync, existsSync, mkdirSync, writeFileSync, unlinkSync } from "node:fs";
 import { execSync, execFileSync } from "node:child_process";
@@ -193,10 +196,25 @@ let currentMilestoneId: string | null = null;
 let originalModelId: string | null = null;
 let originalModelProvider: string | null = null;
 
+/** Accumulated truncation count for the current unit — reset on unit start */
+export let lastTruncationCount = 0;
+/** Whether the continue-here context-pressure handler fired in the current unit */
+export let continueHereFiredForWidget = false;
+
+/** Capture current budget state for metrics persistence */
+function currentBudgetInfo(): BudgetInfo {
+  return {
+    contextWindowTokens: cmdCtx?.model?.contextWindow,
+    truncationSections: lastTruncationCount,
+    continueHereFired: continueHereFiredForWidget,
+  };
+}
+
 /** Progress-aware timeout supervision */
 let unitTimeoutHandle: ReturnType<typeof setTimeout> | null = null;
 let wrapupWarningHandle: ReturnType<typeof setTimeout> | null = null;
 let idleWatchdogHandle: ReturnType<typeof setInterval> | null = null;
+let continueHereHandle: ReturnType<typeof setInterval> | null = null;
 
 /** Dispatch gap watchdog — detects when the state machine stalls between units.
  *  After handleAgentEnd completes, if auto-mode is still active but no new unit
@@ -310,6 +328,10 @@ function clearUnitTimeout(): void {
   if (idleWatchdogHandle) {
     clearInterval(idleWatchdogHandle);
     idleWatchdogHandle = null;
+  }
+  if (continueHereHandle) {
+    clearInterval(continueHereHandle);
+    continueHereHandle = null;
   }
   clearDispatchGapWatchdog();
 }
@@ -981,7 +1003,7 @@ export async function handleAgentEnd(
       const hookStartedAt = Date.now();
       if (currentUnit) {
         const modelId = ctx.model?.id ?? "unknown";
-        snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
+        snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId, currentBudgetInfo());
         saveActivityLog(ctx, basePath, currentUnit.type, currentUnit.id);
       }
       currentUnit = { type: hookUnit.unitType, id: hookUnit.unitId, startedAt: hookStartedAt };
@@ -1434,12 +1456,19 @@ function updateProgressWidget(
           const cxDisplay = cxPct === "?"
             ? `?/${formatWidgetTokens(cxWindow)}`
             : `${cxPct}%/${formatWidgetTokens(cxWindow)}`;
-          if (cxPctVal > 90) {
+          if (continueHereFiredForWidget) {
+            sp.push(theme.fg("error", cxDisplay));
+            sp.push(theme.fg("error", "→ wrap-up"));
+          } else if (cxPctVal > 90) {
             sp.push(theme.fg("error", cxDisplay));
           } else if (cxPctVal > 70) {
             sp.push(theme.fg("warning", cxDisplay));
           } else {
             sp.push(cxDisplay);
+          }
+
+          if (lastTruncationCount > 0) {
+            sp.push(theme.fg("warning", `▼${lastTruncationCount} trunc`));
           }
 
           const sLeft = sp.map(p => p.includes("\x1b[") ? p : theme.fg("dim", p))
@@ -1586,7 +1615,7 @@ async function dispatchNextUnit(
     // Save final session before stopping
     if (currentUnit) {
       const modelId = ctx.model?.id ?? "unknown";
-      snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
+      snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId, currentBudgetInfo());
       saveActivityLog(ctx, basePath, currentUnit.type, currentUnit.id);
     }
     await stopAuto(ctx, pi);
@@ -1649,7 +1678,7 @@ async function dispatchNextUnit(
         );
         if (currentUnit) {
           const modelId = ctx.model?.id ?? "unknown";
-          snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
+          snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId, currentBudgetInfo());
           saveActivityLog(ctx, basePath, currentUnit.type, currentUnit.id);
         }
         await stopAuto(ctx, pi);
@@ -1772,7 +1801,7 @@ async function dispatchNextUnit(
             );
             if (currentUnit) {
               const modelId = ctx.model?.id ?? "unknown";
-              snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
+              snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId, currentBudgetInfo());
               saveActivityLog(ctx, basePath, currentUnit.type, currentUnit.id);
             }
             await stopAuto(ctx, pi);
@@ -1787,7 +1816,7 @@ async function dispatchNextUnit(
   if (!mid || !midTitle) {
     if (currentUnit) {
       const modelId = ctx.model?.id ?? "unknown";
-      snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
+      snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId, currentBudgetInfo());
       saveActivityLog(ctx, basePath, currentUnit.type, currentUnit.id);
     }
     await stopAuto(ctx, pi);
@@ -1802,7 +1831,7 @@ async function dispatchNextUnit(
   if (state.phase === "complete") {
     if (currentUnit) {
       const modelId = ctx.model?.id ?? "unknown";
-      snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
+      snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId, currentBudgetInfo());
       saveActivityLog(ctx, basePath, currentUnit.type, currentUnit.id);
     }
     // Clear completed-units.json for the finished milestone so it doesn't grow unbounded.
@@ -1839,7 +1868,7 @@ async function dispatchNextUnit(
   if (state.phase === "blocked") {
     if (currentUnit) {
       const modelId = ctx.model?.id ?? "unknown";
-      snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
+      snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId, currentBudgetInfo());
       saveActivityLog(ctx, basePath, currentUnit.type, currentUnit.id);
     }
     await stopAuto(ctx, pi);
@@ -2024,7 +2053,7 @@ async function dispatchNextUnit(
     } else {
       if (currentUnit) {
         const modelId = ctx.model?.id ?? "unknown";
-        snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
+        snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId, currentBudgetInfo());
         saveActivityLog(ctx, basePath, currentUnit.type, currentUnit.id);
       }
       await stopAuto(ctx, pi);
@@ -2117,7 +2146,7 @@ async function dispatchNextUnit(
   if (prevCount >= MAX_UNIT_DISPATCHES) {
     if (currentUnit) {
       const modelId = ctx.model?.id ?? "unknown";
-      snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
+      snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId, currentBudgetInfo());
     }
     saveActivityLog(ctx, basePath, unitType, unitId);
 
@@ -2251,7 +2280,7 @@ async function dispatchNextUnit(
   // The session still holds the previous unit's data (newSession hasn't fired yet).
   if (currentUnit) {
     const modelId = ctx.model?.id ?? "unknown";
-    snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
+    snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId, currentBudgetInfo());
     saveActivityLog(ctx, basePath, currentUnit.type, currentUnit.id);
 
     // Only mark the previous unit as completed if:
@@ -2283,6 +2312,8 @@ async function dispatchNextUnit(
     }
   }
   currentUnit = { type: unitType, id: unitId, startedAt: Date.now() };
+  lastTruncationCount = 0;
+  continueHereFiredForWidget = false;
   writeUnitRuntimeRecord(basePath, unitType, unitId, currentUnit.startedAt, {
     phase: "dispatched",
     wrapupWarningSent: false,
@@ -2501,7 +2532,7 @@ async function dispatchNextUnit(
 
     if (currentUnit) {
       const modelId = ctx.model?.id ?? "unknown";
-      snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
+      snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId, currentBudgetInfo());
     }
     saveActivityLog(ctx, basePath, unitType, unitId);
 
@@ -2518,6 +2549,47 @@ async function dispatchNextUnit(
     await pauseAuto(ctx, pi);
   }, 15000);
 
+  // Context-pressure monitor: polls getContextUsage() every 15s and fires a
+  // one-shot steering message when context consumption crosses the continue
+  // threshold.  This is the primary defense against context exhaustion since
+  // compaction is blocked during auto-mode.
+  const contextWindow = cmdCtx?.model?.contextWindow ?? 0;
+  const continueThreshold = computeBudgets(contextWindow).continueThresholdPercent;
+  continueHereHandle = setInterval(() => {
+    if (!active || !currentUnit) return;
+    const usage = cmdCtx?.getContextUsage?.();
+    if (!usage || usage.percent == null) return;
+    if (usage.percent < continueThreshold) return;
+
+    // One-shot: fire once, then disable
+    continueHereFiredForWidget = true;
+    writeUnitRuntimeRecord(basePath, unitType, unitId, currentUnit.startedAt, {
+      continueHereFired: true,
+    });
+    snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId, currentBudgetInfo());
+    pi.sendMessage(
+      {
+        customType: "gsd-auto-continue-here",
+        display: verbose,
+        content: [
+          "**CONTEXT BUDGET CRITICAL — stop implementation now.**",
+          `Context usage has reached ${usage.percent.toFixed(0)}% (threshold: ${continueThreshold}%).`,
+          "You must immediately:",
+          "1. Stop all implementation work",
+          "2. Write the task summary with clear progress notes and what remains",
+          "3. Mark the task done in the slice plan",
+          "4. Include precise resume state so the next unit can continue cleanly",
+          "Do NOT start any new implementation steps.",
+        ].join("\n"),
+      },
+      { triggerTurn: true, deliverAs: "steer" },
+    );
+    if (continueHereHandle) {
+      clearInterval(continueHereHandle);
+      continueHereHandle = null;
+    }
+  }, 15000);
+
   unitTimeoutHandle = setTimeout(async () => {
     unitTimeoutHandle = null;
     if (!active) return;
@@ -2527,7 +2599,7 @@ async function dispatchNextUnit(
         timeoutAt: Date.now(),
       });
       const modelId = ctx.model?.id ?? "unknown";
-      snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
+      snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId, currentBudgetInfo());
     }
     saveActivityLog(ctx, basePath, unitType, unitId);
 
@@ -2634,6 +2706,7 @@ async function inlineFileOptional(
  */
 async function inlineDependencySummaries(
   mid: string, sid: string, base: string,
+  summaryBudgetChars?: number,
 ): Promise<string> {
   const roadmapFile = resolveMilestoneFile(base, mid, "ROADMAP");
   const roadmapContent = roadmapFile ? await loadFile(roadmapFile) : null;
@@ -2657,7 +2730,13 @@ async function inlineDependencySummaries(
       sections.push(`- \`${relPath}\` _(not found)_`);
     }
   }
-  return sections.join("\n\n");
+  const joined = sections.join("\n\n");
+  if (summaryBudgetChars != null && joined.length > summaryBudgetChars) {
+    const result = truncateAtSectionBoundary(joined, summaryBudgetChars);
+    lastTruncationCount += result.droppedSections;
+    return result.content;
+  }
+  return joined;
 }
 
 /**
@@ -2679,6 +2758,9 @@ async function buildResearchMilestonePrompt(mid: string, midTitle: string, base:
   const contextPath = resolveMilestoneFile(base, mid, "CONTEXT");
   const contextRel = relMilestoneFile(base, mid, "CONTEXT");
 
+  const sessionContextWindow = cmdCtx?.model?.contextWindow ?? 0;
+  const budget = computeBudgets(sessionContextWindow);
+
   const inlined: string[] = [];
   inlined.push(await inlineFile(contextPath, contextRel, "Milestone Context"));
   const projectInline = await inlineGsdRootFile(base, "project.md", "Project");
@@ -2689,7 +2771,11 @@ async function buildResearchMilestonePrompt(mid: string, midTitle: string, base:
   if (decisionsInline) inlined.push(decisionsInline);
   inlined.push(inlineTemplate("research", "Research"));
 
-  const inlinedContext = `## Inlined Context (preloaded — do not re-read these files)\n\n${inlined.join("\n\n---\n\n")}`;
+  const { content: inlinedContext, droppedSections: _ds1 } = truncateAtSectionBoundary(
+    `## Inlined Context (preloaded — do not re-read these files)\n\n${inlined.join("\n\n---\n\n")}`,
+    budget.inlineContextBudgetChars,
+  );
+  lastTruncationCount += _ds1;
 
   const outputRelPath = relMilestoneFile(base, mid, "RESEARCH");
   return loadPrompt("research-milestone", {
@@ -2707,6 +2793,9 @@ async function buildPlanMilestonePrompt(mid: string, midTitle: string, base: str
   const contextRel = relMilestoneFile(base, mid, "CONTEXT");
   const researchPath = resolveMilestoneFile(base, mid, "RESEARCH");
   const researchRel = relMilestoneFile(base, mid, "RESEARCH");
+
+  const sessionContextWindow = cmdCtx?.model?.contextWindow ?? 0;
+  const budget = computeBudgets(sessionContextWindow);
 
   const inlined: string[] = [];
   inlined.push(await inlineFile(contextPath, contextRel, "Milestone Context"));
@@ -2726,7 +2815,11 @@ async function buildPlanMilestonePrompt(mid: string, midTitle: string, base: str
   inlined.push(inlineTemplate("task-plan", "Task Plan"));
   inlined.push(inlineTemplate("secrets-manifest", "Secrets Manifest"));
 
-  const inlinedContext = `## Inlined Context (preloaded — do not re-read these files)\n\n${inlined.join("\n\n---\n\n")}`;
+  const { content: inlinedContext, droppedSections: _ds2 } = truncateAtSectionBoundary(
+    `## Inlined Context (preloaded — do not re-read these files)\n\n${inlined.join("\n\n---\n\n")}`,
+    budget.inlineContextBudgetChars,
+  );
+  lastTruncationCount += _ds2;
 
   const outputRelPath = relMilestoneFile(base, mid, "ROADMAP");
   const secretsOutputPath = relMilestoneFile(base, mid, "SECRETS");
@@ -2751,6 +2844,9 @@ async function buildResearchSlicePrompt(
   const milestoneResearchPath = resolveMilestoneFile(base, mid, "RESEARCH");
   const milestoneResearchRel = relMilestoneFile(base, mid, "RESEARCH");
 
+  const sessionContextWindow = cmdCtx?.model?.contextWindow ?? 0;
+  const budget = computeBudgets(sessionContextWindow);
+
   const inlined: string[] = [];
   inlined.push(await inlineFile(roadmapPath, roadmapRel, "Milestone Roadmap"));
   const contextInline = await inlineFileOptional(contextPath, contextRel, "Milestone Context");
@@ -2763,9 +2859,13 @@ async function buildResearchSlicePrompt(
   if (requirementsInline) inlined.push(requirementsInline);
   inlined.push(inlineTemplate("research", "Research"));
 
-  const depContent = await inlineDependencySummaries(mid, sid, base);
+  const depContent = await inlineDependencySummaries(mid, sid, base, budget.summaryBudgetChars);
 
-  const inlinedContext = `## Inlined Context (preloaded — do not re-read these files)\n\n${inlined.join("\n\n---\n\n")}`;
+  const { content: inlinedContext, droppedSections: _ds3 } = truncateAtSectionBoundary(
+    `## Inlined Context (preloaded — do not re-read these files)\n\n${inlined.join("\n\n---\n\n")}`,
+    budget.inlineContextBudgetChars,
+  );
+  lastTruncationCount += _ds3;
 
   const outputRelPath = relSliceFile(base, mid, sid, "RESEARCH");
   return loadPrompt("research-slice", {
@@ -2789,6 +2889,18 @@ async function buildPlanSlicePrompt(
   const researchPath = resolveSliceFile(base, mid, sid, "RESEARCH");
   const researchRel = relSliceFile(base, mid, sid, "RESEARCH");
 
+  const sessionContextWindow = cmdCtx?.model?.contextWindow ?? 0;
+  const budget = computeBudgets(sessionContextWindow);
+
+  // Resolve executor context window for task-count and per-task budget guidance
+  const prefs = loadEffectiveGSDPreferences()?.preferences;
+  const executorContextWindow = resolveExecutorContextWindow(
+    cmdCtx?.modelRegistry as import("./context-budget.js").MinimalModelRegistry | undefined,
+    prefs,
+    sessionContextWindow,
+  );
+  const executorBudget = computeBudgets(executorContextWindow);
+
   const inlined: string[] = [];
   inlined.push(await inlineFile(roadmapPath, roadmapRel, "Milestone Roadmap"));
   const researchInline = await inlineFileOptional(researchPath, researchRel, "Slice Research");
@@ -2800,9 +2912,26 @@ async function buildPlanSlicePrompt(
   inlined.push(inlineTemplate("plan", "Slice Plan"));
   inlined.push(inlineTemplate("task-plan", "Task Plan"));
 
-  const depContent = await inlineDependencySummaries(mid, sid, base);
+  const depContent = await inlineDependencySummaries(mid, sid, base, budget.summaryBudgetChars);
 
-  const inlinedContext = `## Inlined Context (preloaded — do not re-read these files)\n\n${inlined.join("\n\n---\n\n")}`;
+  const { content: inlinedContext, droppedSections: _ds4 } = truncateAtSectionBoundary(
+    `## Inlined Context (preloaded — do not re-read these files)\n\n${inlined.join("\n\n---\n\n")}`,
+    budget.inlineContextBudgetChars,
+  );
+  lastTruncationCount += _ds4;
+
+  // Format executor constraints for the planning template
+  const { min, max } = executorBudget.taskCountRange;
+  const execWindowK = Math.round(executorContextWindow / 1000);
+  const perTaskBudgetK = Math.round(executorBudget.inlineContextBudgetChars / 1000);
+  const executorContextConstraints = [
+    `## Executor Context Constraints`,
+    ``,
+    `The agent that executes each task has a **${execWindowK}K token** context window.`,
+    `- Recommended task count for this slice: **${min}–${max} tasks**`,
+    `- Each task gets ~${perTaskBudgetK}K chars of inline context (plans, code, decisions)`,
+    `- Keep individual tasks completable within a single context window — if a task needs more context than fits, split it`,
+  ].join("\n");
 
   const outputRelPath = relSliceFile(base, mid, sid, "PLAN");
   return loadPrompt("plan-slice", {
@@ -2813,6 +2942,7 @@ async function buildPlanSlicePrompt(
     outputPath: outputRelPath,
     inlinedContext,
     dependencySummaries: depContent,
+    executorContextConstraints,
   });
 }
 
@@ -2820,6 +2950,9 @@ async function buildExecuteTaskPrompt(
   mid: string, sid: string, sTitle: string,
   tid: string, tTitle: string, base: string,
 ): Promise<string> {
+
+  const sessionContextWindow = cmdCtx?.model?.contextWindow ?? 0;
+  const budget = computeBudgets(sessionContextWindow);
 
   const priorSummaries = await getPriorTaskSummaryPaths(mid, sid, tid, base);
   const priorLines = priorSummaries.length > 0
@@ -2859,11 +2992,33 @@ async function buildExecuteTaskPrompt(
     legacyContinuePath ? `${relSlicePath(base, mid, sid)}/continue.md` : null,
   );
 
-  const carryForwardSection = await buildCarryForwardSection(priorSummaries, base);
+  let carryForwardSection = await buildCarryForwardSection(priorSummaries, base);
   const inlinedTemplates = [
     inlineTemplate("task-summary", "Task Summary"),
     inlineTemplate("decisions", "Decisions"),
   ].join("\n\n---\n\n");
+
+  // Assemble all inlined content and apply budget enforcement
+  const assembledContent = [carryForwardSection, taskPlanInline, slicePlanExcerpt]
+    .filter(s => s.length > 0)
+    .join("\n\n---\n\n");
+
+  let finalTaskPlan = taskPlanInline;
+  let finalSliceExcerpt = slicePlanExcerpt;
+
+  if (assembledContent.length > budget.inlineContextBudgetChars) {
+    // Truncate the assembled blob and pass as a single section
+    const { content: truncatedContent, droppedSections: _ds5 } = truncateAtSectionBoundary(assembledContent, budget.inlineContextBudgetChars);
+    lastTruncationCount += _ds5;
+    carryForwardSection = truncatedContent;
+    finalTaskPlan = "";
+    finalSliceExcerpt = "";
+  }
+
+  const verificationBudgetChars = budget.verificationBudgetChars;
+  const verificationBudget = verificationBudgetChars > 0
+    ? `~${Math.round(verificationBudgetChars / 1000)}K chars`
+    : "limited";
 
   const taskSummaryPath = `${relSlicePath(base, mid, sid)}/tasks/${tid}-SUMMARY.md`;
 
@@ -2872,12 +3027,13 @@ async function buildExecuteTaskPrompt(
     planPath: relSliceFile(base, mid, sid, "PLAN"),
     slicePath: relSlicePath(base, mid, sid),
     taskPlanPath: taskPlanRelPath,
-    taskPlanInline,
-    slicePlanExcerpt,
+    taskPlanInline: finalTaskPlan,
+    slicePlanExcerpt: finalSliceExcerpt,
     carryForwardSection,
     resumeSection,
     priorTaskLines: priorLines,
     taskSummaryPath,
+    verificationBudget,
     inlinedTemplates,
   });
 }
@@ -2890,6 +3046,9 @@ async function buildCompleteSlicePrompt(
   const roadmapRel = relMilestoneFile(base, mid, "ROADMAP");
   const slicePlanPath = resolveSliceFile(base, mid, sid, "PLAN");
   const slicePlanRel = relSliceFile(base, mid, sid, "PLAN");
+
+  const sessionContextWindow = cmdCtx?.model?.contextWindow ?? 0;
+  const budget = computeBudgets(sessionContextWindow);
 
   const inlined: string[] = [];
   inlined.push(await inlineFile(roadmapPath, roadmapRel, "Milestone Roadmap"));
@@ -2914,7 +3073,11 @@ async function buildCompleteSlicePrompt(
   inlined.push(inlineTemplate("slice-summary", "Slice Summary"));
   inlined.push(inlineTemplate("uat", "UAT"));
 
-  const inlinedContext = `## Inlined Context (preloaded — do not re-read these files)\n\n${inlined.join("\n\n---\n\n")}`;
+  const { content: inlinedContext, droppedSections: _ds6 } = truncateAtSectionBoundary(
+    `## Inlined Context (preloaded — do not re-read these files)\n\n${inlined.join("\n\n---\n\n")}`,
+    budget.inlineContextBudgetChars,
+  );
+  lastTruncationCount += _ds6;
 
   const sliceRel = relSlicePath(base, mid, sid);
   const sliceSummaryPath = `${sliceRel}/${sid}-SUMMARY.md`;
@@ -2935,6 +3098,9 @@ async function buildCompleteMilestonePrompt(
 ): Promise<string> {
   const roadmapPath = resolveMilestoneFile(base, mid, "ROADMAP");
   const roadmapRel = relMilestoneFile(base, mid, "ROADMAP");
+
+  const sessionContextWindow = cmdCtx?.model?.contextWindow ?? 0;
+  const budget = computeBudgets(sessionContextWindow);
 
   const inlined: string[] = [];
   inlined.push(await inlineFile(roadmapPath, roadmapRel, "Milestone Roadmap"));
@@ -2967,7 +3133,11 @@ async function buildCompleteMilestonePrompt(
   if (contextInline) inlined.push(contextInline);
   inlined.push(inlineTemplate("milestone-summary", "Milestone Summary"));
 
-  const inlinedContext = `## Inlined Context (preloaded — do not re-read these files)\n\n${inlined.join("\n\n---\n\n")}`;
+  const { content: inlinedContext, droppedSections: _ds7 } = truncateAtSectionBoundary(
+    `## Inlined Context (preloaded — do not re-read these files)\n\n${inlined.join("\n\n---\n\n")}`,
+    budget.inlineContextBudgetChars,
+  );
+  lastTruncationCount += _ds7;
 
   const milestoneSummaryPath = `${relMilestonePath(base, mid)}/${mid}-SUMMARY.md`;
 
