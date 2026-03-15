@@ -8,10 +8,11 @@
  * Diagnostic extraction is handled by session-forensics.ts.
  */
 
-import { writeFileSync, mkdirSync, readdirSync, unlinkSync, statSync } from "node:fs";
-import { existsSync } from "node:fs";
+import { writeFileSync, mkdirSync, readdirSync, unlinkSync, statSync, openSync, closeSync, constants } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
+
+const SEQ_PREFIX_RE = /^(\d+)-/;
 import type { ExtensionContext } from "@gsd/pi-coding-agent";
 import { gsdRoot } from "./paths.js";
 
@@ -26,7 +27,7 @@ function scanNextSequence(activityDir: string): number {
   let maxSeq = 0;
   try {
     for (const f of readdirSync(activityDir)) {
-      const match = f.match(/^(\d+)-/);
+      const match = f.match(SEQ_PREFIX_RE);
       if (match) maxSeq = Math.max(maxSeq, parseInt(match[1], 10));
     }
   } catch {
@@ -55,14 +56,24 @@ function nextActivityFilePath(
   unitType: string,
   safeUnitId: string,
 ): string {
-  while (true) {
+  // Use O_CREAT | O_EXCL for atomic "create if absent" — no directory scan needed.
+  for (let attempts = 0; attempts < 1000; attempts++) {
     const seq = String(state.nextSeq).padStart(3, "0");
     const filePath = join(activityDir, `${seq}-${unitType}-${safeUnitId}.jsonl`);
-    if (!existsSync(filePath)) {
+    try {
+      const fd = openSync(filePath, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY);
+      closeSync(fd);
       return filePath;
+    } catch (err: any) {
+      if (err?.code === "EEXIST") {
+        state.nextSeq++;
+        continue;
+      }
+      throw err;
     }
-    state.nextSeq = scanNextSequence(activityDir);
   }
+  // Fallback: should never reach here in practice
+  throw new Error(`Failed to find available activity log sequence in ${activityDir}`);
 }
 
 export function saveActivityLog(
@@ -99,7 +110,7 @@ export function pruneActivityLogs(activityDir: string, retentionDays: number): v
     const files = readdirSync(activityDir);
     const entries: { seq: number; filePath: string }[] = [];
     for (const f of files) {
-      const match = f.match(/^(\d+)-/);
+      const match = f.match(SEQ_PREFIX_RE);
       if (match) entries.push({ seq: parseInt(match[1], 10), filePath: join(activityDir, f) });
     }
     if (entries.length === 0) return;
