@@ -107,20 +107,7 @@ import {
   buildLoopRemediationSteps,
   reconcileMergeState,
 } from "./auto-recovery.js";
-import {
-  buildResearchMilestonePrompt,
-  buildPlanMilestonePrompt,
-  buildResearchSlicePrompt,
-  buildPlanSlicePrompt,
-  buildExecuteTaskPrompt,
-  buildCompleteSlicePrompt,
-  buildCompleteMilestonePrompt,
-  buildReplanSlicePrompt,
-  buildRunUatPrompt,
-  buildReassessRoadmapPrompt,
-  checkNeedsReassessment,
-  checkNeedsRunUat,
-} from "./auto-prompts.js";
+import { resolveDispatch } from "./auto-dispatch.js";
 import {
   type AutoDashboardData,
   updateProgressWidget as _updateProgressWidget,
@@ -1347,143 +1334,26 @@ async function dispatchNextUnit(
 
   await runSecretsGate();
 
-  const needsRunUat = await checkNeedsRunUat(basePath, mid, state, prefs);
-  // Flag: for human/mixed UAT, pause auto-mode after the prompt is sent so the user
-  // can perform the UAT manually. On next resume, result file will exist → skip.
-  let pauseAfterUatDispatch = false;
+  // ── Dispatch table: resolve phase → unit type + prompt ──
+  const dispatchResult = await resolveDispatch({
+    basePath, mid, midTitle: midTitle!, state, prefs,
+  });
 
-  // ── Phase-first dispatch: complete-slice MUST run before reassessment ──
-  // If the current phase is "summarizing", complete-slice is responsible for
-  // complete-slice must run before reassessment.
-  if (state.phase === "summarizing") {
-    const sid = state.activeSlice!.id;
-    const sTitle = state.activeSlice!.title;
-    unitType = "complete-slice";
-    unitId = `${mid}/${sid}`;
-    prompt = await buildCompleteSlicePrompt(mid, midTitle!, sid, sTitle, basePath);
-  } else {
-    // ── Adaptive Replanning: check if last completed slice needs reassessment ──
-    // Computed here (after summarizing guard) so complete-slice always runs first.
-    const needsReassess = await checkNeedsReassessment(basePath, mid, state);
-    if (needsRunUat) {
-      const { sliceId, uatType } = needsRunUat;
-      unitType = "run-uat";
-      unitId = `${mid}/${sliceId}`;
-      const uatFile = resolveSliceFile(basePath, mid, sliceId, "UAT")!;
-      const uatContent = await loadFile(uatFile);
-      prompt = await buildRunUatPrompt(
-        mid, sliceId, relSliceFile(basePath, mid, sliceId, "UAT"), uatContent ?? "", basePath,
-      );
-      // For non-artifact-driven UAT types, pause after the prompt is dispatched.
-      // The agent receives the prompt, writes S0x-UAT-RESULT.md surfacing the UAT,
-      // then auto-mode pauses for human execution. On resume, result file exists → skip.
-      if (uatType !== "artifact-driven") {
-        pauseAfterUatDispatch = true;
-      }
-    } else if (needsReassess) {
-      unitType = "reassess-roadmap";
-      unitId = `${mid}/${needsReassess.sliceId}`;
-      prompt = await buildReassessRoadmapPrompt(mid, midTitle!, needsReassess.sliceId, basePath);
-    } else if (state.phase === "needs-discussion") {
-      // Draft milestone — pause auto-mode and notify user.
-      // This milestone has a CONTEXT-DRAFT.md from a prior multi-milestone discussion
-      // where the user chose "Needs own discussion". Auto-mode cannot proceed because
-      // the draft is seed material, not a finalized context — planning requires a
-      // dedicated discussion first.
-      await stopAuto(ctx, pi);
-      ctx.ui.notify(
-        `${mid}: ${midTitle} has draft context from a prior discussion — needs its own discussion before planning.\nRun /gsd to discuss.`,
-        "warning",
-      );
-      return;
-
-    } else if (state.phase === "pre-planning") {
-      // Need roadmap — check if context exists
-      const contextFile = resolveMilestoneFile(basePath, mid, "CONTEXT");
-      const hasContext = !!(contextFile && await loadFile(contextFile));
-
-      if (!hasContext) {
-        await stopAuto(ctx, pi);
-        ctx.ui.notify("No context or roadmap yet. Run /gsd to discuss first.", "warning");
-        return;
-      }
-
-      // Research before roadmap if no research exists
-      const researchFile = resolveMilestoneFile(basePath, mid, "RESEARCH");
-      const hasResearch = !!researchFile;
-
-      if (!hasResearch) {
-        unitType = "research-milestone";
-        unitId = mid;
-        prompt = await buildResearchMilestonePrompt(mid, midTitle!, basePath);
-      } else {
-        unitType = "plan-milestone";
-        unitId = mid;
-        prompt = await buildPlanMilestonePrompt(mid, midTitle!, basePath);
-      }
-
-    } else if (state.phase === "planning") {
-      // Slice needs planning — but research first if no research exists
-      const sid = state.activeSlice!.id;
-      const sTitle = state.activeSlice!.title;
-      const researchFile = resolveSliceFile(basePath, mid, sid, "RESEARCH");
-      const hasResearch = !!researchFile;
-
-      if (!hasResearch) {
-        // Skip slice research for S01 when milestone research already exists —
-        // the milestone research already covers the same ground for the first slice.
-        const milestoneResearchFile = resolveMilestoneFile(basePath, mid, "RESEARCH");
-        const hasMilestoneResearch = !!milestoneResearchFile;
-        if (hasMilestoneResearch && sid === "S01") {
-          unitType = "plan-slice";
-          unitId = `${mid}/${sid}`;
-          prompt = await buildPlanSlicePrompt(mid, midTitle!, sid, sTitle, basePath);
-        } else {
-          unitType = "research-slice";
-          unitId = `${mid}/${sid}`;
-          prompt = await buildResearchSlicePrompt(mid, midTitle!, sid, sTitle, basePath);
-        }
-      } else {
-        unitType = "plan-slice";
-        unitId = `${mid}/${sid}`;
-        prompt = await buildPlanSlicePrompt(mid, midTitle!, sid, sTitle, basePath);
-      }
-
-    } else if (state.phase === "replanning-slice") {
-      // Blocker discovered — replan the slice before continuing
-      const sid = state.activeSlice!.id;
-      const sTitle = state.activeSlice!.title;
-      unitType = "replan-slice";
-      unitId = `${mid}/${sid}`;
-      prompt = await buildReplanSlicePrompt(mid, midTitle!, sid, sTitle, basePath);
-
-    } else if (state.phase === "executing" && state.activeTask) {
-      // Execute next task
-      const sid = state.activeSlice!.id;
-      const sTitle = state.activeSlice!.title;
-      const tid = state.activeTask.id;
-      const tTitle = state.activeTask.title;
-      unitType = "execute-task";
-      unitId = `${mid}/${sid}/${tid}`;
-      prompt = await buildExecuteTaskPrompt(mid, sid, sTitle, tid, tTitle, basePath);
-
-    } else if (state.phase === "completing-milestone") {
-      // All slices done — complete the milestone
-      unitType = "complete-milestone";
-      unitId = mid;
-      prompt = await buildCompleteMilestonePrompt(mid, midTitle!, basePath);
-
-    } else {
-      if (currentUnit) {
-        const modelId = ctx.model?.id ?? "unknown";
-        snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
-        saveActivityLog(ctx, basePath, currentUnit.type, currentUnit.id);
-      }
-      await stopAuto(ctx, pi);
-      ctx.ui.notify(`Unhandled phase "${state.phase}" — run /gsd doctor to diagnose.`, "info");
-      return;
+  if (dispatchResult.action === "stop") {
+    if (currentUnit) {
+      const modelId = ctx.model?.id ?? "unknown";
+      snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
+      saveActivityLog(ctx, basePath, currentUnit.type, currentUnit.id);
     }
+    await stopAuto(ctx, pi);
+    ctx.ui.notify(dispatchResult.reason, dispatchResult.level);
+    return;
   }
+
+  unitType = dispatchResult.unitType;
+  unitId = dispatchResult.unitId;
+  prompt = dispatchResult.prompt;
+  let pauseAfterUatDispatch = dispatchResult.pauseAfterDispatch ?? false;
 
   // ── Pre-dispatch hooks: modify, skip, or replace the unit before dispatch ──
   const preDispatchResult = runPreDispatchHooks(unitType, unitId, prompt, basePath);
