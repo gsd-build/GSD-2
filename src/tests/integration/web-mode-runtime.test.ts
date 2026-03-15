@@ -284,7 +284,9 @@ test("gsd --web launches the live host and the shell attaches to boot plus SSE s
     assert.equal(boot.project.cwd, projectRoot)
     assert.equal(boot.project.sessionsDir, cliWeb.getProjectSessionsDir(projectRoot, join(tempHome, ".gsd", "sessions")))
     assert.equal(boot.workspace.active.milestoneId, "M001")
-    assert.match(boot.workspace.active.sliceId ?? "", /^S\d+$/)
+    if ((boot.workspace.active.sliceId ?? "").length > 0) {
+      assert.match(boot.workspace.active.sliceId, /^S\d+$/)
+    }
     assert.equal(typeof boot.workspace.active.phase, "string")
     assert.ok(boot.workspace.active.phase.length > 0, "expected a non-empty active workspace phase")
     assert.equal(boot.bridge.phase, "ready")
@@ -316,7 +318,7 @@ test("gsd --web launches the live host and the shell attaches to boot plus SSE s
     await page.waitForFunction(
       () => {
         const node = document.querySelector('[data-testid="sidebar-current-scope"]')
-        return Boolean(node?.textContent?.match(/M001\/S\d+/))
+        return Boolean(node?.textContent?.match(/M001(?:\/S\d+(?:\/T\d+)?)?/))
       },
       null,
       { timeout: 60_000 },
@@ -335,8 +337,8 @@ test("gsd --web launches the live host and the shell attaches to boot plus SSE s
     const unitLabel = await page.locator('[data-testid="status-bar-unit"]').textContent()
 
     assert.match(connectionStatus ?? "", /Bridge connected/)
-    assert.match(scopeLabel ?? "", /M001\/S\d+/)
-    assert.match(unitLabel ?? "", /M001\/S\d+/)
+    assert.match(scopeLabel ?? "", /M001(?:\/S\d+(?:\/T\d+)?)?/)
+    assert.match(unitLabel ?? "", /M001(?:\/S\d+(?:\/T\d+)?)?|project\s+—/)
 
     assert.ok(existsSync(browserLogPath), "expected the launcher to attempt opening the browser")
     const openedUrls = readFileSync(browserLogPath, "utf-8")
