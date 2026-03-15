@@ -1921,6 +1921,31 @@ async function dispatchNextUnit(
       }
     }
 
+    // Final reconciliation pass for planning units (research-slice,
+    // research-milestone, plan-slice, plan-milestone): write a blocker
+    // placeholder artifact so the pipeline can advance past the stuck unit
+    // instead of stopping completely. Without this, auto-mode stops, the user
+    // restarts, the dispatch counter resets, and the same unit loops again —
+    // indefinitely. The placeholder signals to downstream sessions that this
+    // unit stalled and needs human review.
+    if (["research-slice", "research-milestone", "plan-slice", "plan-milestone"].includes(unitType)) {
+      const placeholder = writeBlockerPlaceholder(
+        unitType, unitId, basePath,
+        `Dispatched ${prevCount + 1} times without producing the required artifact.`,
+      );
+      if (placeholder && verifyExpectedArtifact(unitType, unitId, basePath)) {
+        ctx.ui.notify(
+          `Loop recovery: ${unitType} ${unitId} stuck after ${prevCount + 1} dispatches — blocker placeholder written, pipeline advancing.\n   Review and replace: ${placeholder}`,
+          "warning",
+        );
+        unitDispatchCount.delete(dispatchKey);
+        // Yield to the event loop before recursing so pending I/O settles.
+        await new Promise(r => setImmediate(r));
+        await dispatchNextUnit(ctx, pi);
+        return;
+      }
+    }
+
     const expected = diagnoseExpectedArtifact(unitType, unitId, basePath);
     const remediation = buildLoopRemediationSteps(unitType, unitId, basePath);
     await stopAuto(ctx, pi);
