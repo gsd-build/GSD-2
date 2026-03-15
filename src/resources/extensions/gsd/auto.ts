@@ -507,7 +507,7 @@ export async function startAuto(
 
     // ── Auto-worktree: re-enter worktree on resume if not already inside ──
     // Skip if already inside a worktree (manual /worktree) to prevent nesting.
-    if (currentMilestoneId && originalBasePath && !isInAutoWorktree(basePath) && !detectWorktreeName(basePath)) {
+    if (currentMilestoneId && originalBasePath && !isInAutoWorktree(basePath) && !detectWorktreeName(basePath) && !detectWorktreeName(originalBasePath)) {
       try {
         const existingWtPath = getAutoWorktreePath(originalBasePath, currentMilestoneId);
         if (existingWtPath) {
