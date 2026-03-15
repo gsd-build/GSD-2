@@ -335,10 +335,12 @@ function startDispatchGapWatchdog(ctx: ExtensionContext, pi: ExtensionAPI): void
 
     // Auto-mode is active but no unit was dispatched — the state machine stalled.
     // Re-derive state and attempt a fresh dispatch.
-    ctx.ui.notify(
-      "Dispatch gap detected — no unit dispatched after previous unit completed. Re-evaluating state.",
-      "warning",
-    );
+    if (verbose) {
+      ctx.ui.notify(
+        "Dispatch gap detected — re-evaluating state.",
+        "info",
+      );
+    }
 
     try {
       await dispatchNextUnit(ctx, pi);
@@ -1507,7 +1509,7 @@ async function dispatchNextUnit(
 ): Promise<void> {
   if (!active || !cmdCtx) {
     if (active && !cmdCtx) {
-      ctx.ui.notify("Auto-mode dispatch failed: no command context. Run /gsd auto to restart.", "error");
+      ctx.ui.notify("Auto-mode session expired. Run /gsd auto to restart.", "info");
     }
     return;
   }
@@ -1518,7 +1520,7 @@ async function dispatchNextUnit(
     return; // Another dispatch is in progress — bail silently
   }
   _dispatching = true;
-
+  try {
   // Recursion depth guard: when many units are skipped in sequence (e.g., after
   // crash recovery with 10+ completed units), recursive dispatchNextUnit calls
   // can freeze the TUI or overflow the stack. Yield generously after MAX_SKIP_DEPTH.
@@ -1861,7 +1863,7 @@ async function dispatchNextUnit(
         saveActivityLog(ctx, basePath, currentUnit.type, currentUnit.id);
       }
       await stopAuto(ctx, pi);
-      ctx.ui.notify(`Unexpected phase: ${state.phase}. Stopping auto-mode.`, "warning");
+      ctx.ui.notify(`Unhandled phase "${state.phase}" — run /gsd doctor to diagnose.`, "info");
       return;
     }
   }
@@ -2181,7 +2183,7 @@ async function dispatchNextUnit(
   const result = await cmdCtx!.newSession();
   if (result.cancelled) {
     await stopAuto(ctx, pi);
-    ctx.ui.notify("New session cancelled — auto-mode stopped.", "warning");
+    ctx.ui.notify("Auto-mode stopped.", "info");
     return;
   }
 
@@ -2287,7 +2289,7 @@ async function dispatchNextUnit(
         }
       }
       if (!model) {
-        ctx.ui.notify(`Model ${modelId} not found in available models, trying fallback.`, "warning");
+        if (verbose) ctx.ui.notify(`Model ${modelId} not found, trying fallback.`, "info");
         continue;
       }
 
@@ -2303,25 +2305,14 @@ async function dispatchNextUnit(
       } else {
         const nextModel = modelsToTry[modelsToTry.indexOf(modelId) + 1];
         if (nextModel) {
-          ctx.ui.notify(
-            `Failed to set model ${modelId}, trying fallback ${nextModel}...`,
-            "warning",
-          );
+          if (verbose) ctx.ui.notify(`Failed to set model ${modelId}, trying ${nextModel}...`, "info");
         } else {
-          ctx.ui.notify(
-            `Failed to set model ${modelId} and all fallbacks exhausted. Using default model.`,
-            "warning",
-          );
+          ctx.ui.notify(`All preferred models unavailable for ${unitType}. Using default.`, "warning");
         }
       }
     }
 
-    if (!modelSet) {
-      ctx.ui.notify(
-        `Could not set any preferred model for ${unitType}. Continuing with default.`,
-        "warning",
-      );
-    }
+    // modelSet=false is already handled by the "all fallbacks exhausted" warning above
   }
 
   // Start progress-aware supervision: a soft warning, an idle watchdog, and
@@ -2433,6 +2424,9 @@ async function dispatchNextUnit(
       "info",
     );
     await pauseAuto(ctx, pi);
+  }
+  } finally {
+    _dispatching = false;
   }
 }
 
