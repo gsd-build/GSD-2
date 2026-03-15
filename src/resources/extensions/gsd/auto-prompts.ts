@@ -202,6 +202,7 @@ export async function buildCarryForwardSection(priorSummaryPaths: string[], base
     const provided = summary.frontmatter.provides.slice(0, 2).join("; ");
     const decisions = summary.frontmatter.key_decisions.slice(0, 2).join("; ");
     const patterns = summary.frontmatter.patterns_established.slice(0, 2).join("; ");
+    const keyFiles = summary.frontmatter.key_files.slice(0, 3).join("; ");
     const diagnostics = extractMarkdownSection(content, "Diagnostics");
 
     const parts = [summary.title || relPath];
@@ -209,6 +210,7 @@ export async function buildCarryForwardSection(priorSummaryPaths: string[], base
     if (provided) parts.push(`provides: ${provided}`);
     if (decisions) parts.push(`decisions: ${decisions}`);
     if (patterns) parts.push(`patterns: ${patterns}`);
+    if (keyFiles) parts.push(`key_files: ${keyFiles}`);
     if (diagnostics) parts.push(`diagnostics: ${oneLine(diagnostics)}`);
 
     return `- \`${relPath}\` — ${parts.join(" | ")}`;
@@ -458,6 +460,7 @@ export async function buildResearchSlicePrompt(
 
   const outputRelPath = relSliceFile(base, mid, sid, "RESEARCH");
   return loadPrompt("research-slice", {
+    workingDirectory: base,
     milestoneId: mid, sliceId: sid, sliceTitle: sTitle,
     slicePath: relSlicePath(base, mid, sid),
     roadmapPath: roadmapRel,
@@ -495,6 +498,7 @@ export async function buildPlanSlicePrompt(
 
   const outputRelPath = relSliceFile(base, mid, sid, "PLAN");
   return loadPrompt("plan-slice", {
+    workingDirectory: base,
     milestoneId: mid, sliceId: sid, sliceTitle: sTitle,
     slicePath: relSlicePath(base, mid, sid),
     roadmapPath: roadmapRel,
@@ -557,6 +561,7 @@ export async function buildExecuteTaskPrompt(
   const taskSummaryPath = `${relSlicePath(base, mid, sid)}/tasks/${tid}-SUMMARY.md`;
 
   return loadPrompt("execute-task", {
+    workingDirectory: base,
     milestoneId: mid, sliceId: sid, sliceTitle: sTitle, taskId: tid, taskTitle: tTitle,
     planPath: relSliceFile(base, mid, sid, "PLAN"),
     slicePath: relSlicePath(base, mid, sid),
@@ -610,6 +615,7 @@ export async function buildCompleteSlicePrompt(
   const sliceUatPath = `${sliceRel}/${sid}-UAT.md`;
 
   return loadPrompt("complete-slice", {
+    workingDirectory: base,
     milestoneId: mid, sliceId: sid, sliceTitle: sTitle,
     slicePath: sliceRel,
     roadmapPath: roadmapRel,

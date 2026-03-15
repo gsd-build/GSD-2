@@ -1112,7 +1112,7 @@ export async function showSmartEntry(
         inlineTemplate("uat", "UAT"),
       ].join("\n\n---\n\n");
       dispatchWorkflow(pi, loadPrompt("guided-complete-slice", {
-        milestoneId, sliceId, sliceTitle, inlinedTemplates: completeSliceTemplates,
+        workingDirectory: basePath, milestoneId, sliceId, sliceTitle, inlinedTemplates: completeSliceTemplates,
       }));
     } else if (choice === "status") {
       const { fireStatusViaCommand } = await import("./commands.js");
