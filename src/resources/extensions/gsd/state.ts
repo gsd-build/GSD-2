@@ -224,9 +224,21 @@ async function _deriveStateImpl(basePath: string): Promise<GSDState> {
           const draftFile = resolveMilestoneFile(basePath, mid, "CONTEXT-DRAFT");
           if (draftFile) activeMilestoneHasDraft = true;
         }
-        activeMilestone = { id: mid, title: mid };
-        activeMilestoneFound = true;
-        registry.push({ id: mid, title: mid, status: 'active' });
+
+        // Check milestone-level dependencies before promoting to active.
+        // Without this, a queued milestone with depends_on in its CONTEXT
+        // frontmatter would be promoted to active even when its deps are unmet
+        // (the dep check only existed in the has-roadmap path previously).
+        const contextContent = contextFile ? await cachedLoadFile(contextFile) : null;
+        const deps = parseContextDependsOn(contextContent);
+        const depsUnmet = deps.some(dep => !completeMilestoneIds.has(dep));
+        if (depsUnmet) {
+          registry.push({ id: mid, title: mid, status: 'pending', dependsOn: deps });
+        } else {
+          activeMilestone = { id: mid, title: mid };
+          activeMilestoneFound = true;
+          registry.push({ id: mid, title: mid, status: 'active', ...(deps.length > 0 ? { dependsOn: deps } : {}) });
+        }
       } else {
         registry.push({ id: mid, title: mid, status: 'pending' });
       }

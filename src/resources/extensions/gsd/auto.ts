@@ -93,6 +93,7 @@ import {
   getAutoWorktreeOriginalBase,
   mergeMilestoneToMain,
 } from "./auto-worktree.js";
+import { pruneQueueOrder } from "./queue-order.js";
 import { showNextAction } from "../shared/next-action-ui.js";
 import {
   resolveExpectedArtifactPath,
@@ -1251,6 +1252,11 @@ async function dispatchNextUnit(
     unitLifetimeDispatches.clear();
     // Capture integration branch for the new milestone and update git service
     captureIntegrationBranch(originalBasePath || basePath, mid, { commitDocs: loadEffectiveGSDPreferences()?.preferences?.git?.commit_docs });
+    // Prune completed milestone from queue order file
+    const pendingIds = state.registry
+      .filter(m => m.status !== "complete")
+      .map(m => m.id);
+    pruneQueueOrder(basePath, pendingIds);
   }
   if (mid) {
     currentMilestoneId = mid;
