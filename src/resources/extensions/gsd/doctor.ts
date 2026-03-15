@@ -31,7 +31,8 @@ export type DoctorIssueCode =
   | "orphaned_auto_worktree"
   | "stale_milestone_branch"
   | "corrupt_merge_state"
-  | "tracked_runtime_files";
+  | "tracked_runtime_files"
+  | "legacy_slice_branches";
 
 export interface DoctorIssue {
   severity: DoctorSeverity;
@@ -641,6 +642,28 @@ async function checkGitHealth(
     }
   } catch {
     // git ls-files failed — skip
+  }
+
+  // ── Legacy slice branches ──────────────────────────────────────────────
+  try {
+    const sliceBranches = execSync('git branch --format="%(refname:short)" --list "gsd/*/*"', {
+      cwd: basePath,
+      stdio: ["ignore", "pipe", "pipe"],
+      encoding: "utf-8",
+    }).trim();
+    if (sliceBranches) {
+      const branchList = sliceBranches.split("\n").map(b => b.trim()).filter(Boolean);
+      issues.push({
+        severity: "info",
+        code: "legacy_slice_branches",
+        scope: "project",
+        unitId: "project",
+        message: `${branchList.length} legacy slice branch(es) found: ${branchList.slice(0, 3).join(", ")}${branchList.length > 3 ? "..." : ""}. These are no longer used (branchless architecture). Delete with: git branch -D ${branchList.join(" ")}`,
+        fixable: false,
+      });
+    }
+  } catch {
+    // git branch list failed — skip
   }
 }
 

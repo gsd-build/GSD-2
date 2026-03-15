@@ -14,7 +14,6 @@ import { execSync } from "node:child_process";
 import {
   createAutoWorktree,
   mergeMilestoneToMain,
-  mergeSliceToMilestone,
   getAutoWorktreeOriginalBase,
 } from "../auto-worktree.ts";
 import { getSliceBranchName } from "../worktree.ts";
@@ -71,7 +70,9 @@ function addSliceToMilestone(
     run(`git commit -m "${c.message}"`, wtPath);
   }
   run(`git checkout milestone/${milestoneId}`, wtPath);
-  mergeSliceToMilestone(repo, milestoneId, sliceId, sliceTitle);
+  run(`git merge --no-ff ${sliceBranch} -m "feat(${milestoneId}/${sliceId}): ${sliceTitle}"`, wtPath);
+  // Clean up the slice branch
+  run(`git branch -d ${sliceBranch}`, wtPath);
 }
 
 async function main(): Promise<void> {
