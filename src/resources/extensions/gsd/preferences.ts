@@ -482,16 +482,20 @@ function parseFrontmatterBlock(frontmatter: string): GSDPreferences {
   return root as GSDPreferences;
 }
 
-function parseScalar(value: string): string | number | boolean {
+function parseScalar(value: string): unknown {
   if (value === "true") return true;
   if (value === "false") return false;
+  // Recognize empty array/object literals (with or without surrounding quotes)
+  const unquoted = value.replace(/^['\"]|['\"]$/g, "");
+  if (unquoted === "[]") return [];
+  if (unquoted === "{}") return {};
   if (/^-?\d+$/.test(value)) {
     const n = Number(value);
     // Keep large integers (e.g. Discord channel IDs) as strings to avoid precision loss
     if (Number.isSafeInteger(n)) return n;
     return value;
   }
-  return value.replace(/^['\"]|['\"]$/g, "");
+  return unquoted;
 }
 
 /**
