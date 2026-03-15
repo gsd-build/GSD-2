@@ -1,24 +1,19 @@
 # GSD State
 
-## Current Focus
-- Milestone: M001 (Memory Database — SQLite-Backed Context Store)
-- Slice: S07 (Integration Verification + Polish)
-- Status: planned
-- Branch: memory-db (worktree)
+**Active Milestone:** M003: M003
+**Active Slice:** None
+**Phase:** pre-planning
+**Requirements Status:** 21 active · 21 validated · 2 deferred · 5 out of scope
 
-## Progress
-- S01: complete ✓
-- S02: complete ✓
-- S03: complete ✓
-- S04: complete ✓
-- S05: complete ✓
-- S06: complete ✓
-- S07: planned (2 tasks: T01 integration tests, T02 requirements validation)
+## Milestone Registry
+- ✅ **M001:** Memory Database — SQLite-Backed Context Store
+- 🔄 **M003:** M003
 
-## Active Requirements
-- R001: active → to be validated by S07
-- R019: active → to be validated by S07
+## Recent Decisions
+- None recorded
 
-## Test Suite
-- 291 tests passing, 0 failures
-- 10 DB-specific test files (~3,900 LOC, ~500 assertions)
+## Blockers
+- None
+
+## Next Action
+Plan milestone M003.
