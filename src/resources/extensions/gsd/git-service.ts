@@ -86,6 +86,8 @@ export interface PreMergeCheckResult {
   skipped?: boolean;
   command?: string;
   error?: string;
+  /** Truncated build output (stderr + stdout) for injection into fix prompts */
+  output?: string;
 }
 
 // ─── Constants ─────────────────────────────────────────────────────────────
@@ -605,7 +607,6 @@ export class GitServiceImpl {
    * Run pre-merge verification check. Auto-detects test runner from project
    * files, or uses custom command from prefs.pre_merge_check.
    * Gated on prefs.pre_merge_check (false = skip, string = custom command).
-   * Stub: to be implemented in T03.
    */
   runPreMergeCheck(): PreMergeCheckResult {
     if (this.prefs.pre_merge_check === false || this.prefs.pre_merge_check === undefined) {
@@ -631,12 +632,38 @@ export class GitServiceImpl {
       }
     }
 
+    return this.runCheckCommand(command);
+  }
+
+  /**
+   * Run a build verification command (e.g., `npm run build`, `tsc --noEmit`).
+   * Called after slice merges when `build_command` preference is configured.
+   * Returns the result with truncated output for error injection.
+   */
+  runBuildCheck(command: string): PreMergeCheckResult {
+    return this.runCheckCommand(command);
+  }
+
+  private runCheckCommand(command: string): PreMergeCheckResult {
     try {
-      execSync(command, { cwd: this.basePath, stdio: "pipe", encoding: "utf-8" });
+      execSync(command, { cwd: this.basePath, stdio: "pipe", encoding: "utf-8", timeout: 300_000 });
       return { passed: true, skipped: false, command };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      return { passed: false, skipped: false, command, error: msg };
+      // Extract stderr/stdout from ExecSyncError for the LLM to see
+      let output = "";
+      if (err && typeof err === "object") {
+        const e = err as { stderr?: string | Buffer; stdout?: string | Buffer };
+        const stderr = typeof e.stderr === "string" ? e.stderr : e.stderr?.toString() ?? "";
+        const stdout = typeof e.stdout === "string" ? e.stdout : e.stdout?.toString() ?? "";
+        output = (stderr + "\n" + stdout).trim();
+      }
+      // Truncate to ~8KB to avoid bloating the prompt
+      const MAX_OUTPUT = 8192;
+      if (output.length > MAX_OUTPUT) {
+        output = output.slice(0, MAX_OUTPUT) + "\n\n... (output truncated)";
+      }
+      return { passed: false, skipped: false, command, error: msg, output };
     }
   }
 

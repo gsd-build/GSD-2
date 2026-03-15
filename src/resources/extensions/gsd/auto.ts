@@ -41,7 +41,7 @@ import {
   readUnitRuntimeRecord,
   writeUnitRuntimeRecord,
 } from "./unit-runtime.js";
-import { resolveAutoSupervisorConfig, resolveModelForUnit, resolveModelWithFallbacksForUnit, resolveSkillDiscoveryMode, loadEffectiveGSDPreferences } from "./preferences.js";
+import { resolveAutoSupervisorConfig, resolveModelForUnit, resolveModelWithFallbacksForUnit, resolveSkillDiscoveryMode, loadEffectiveGSDPreferences, resolveBuildCommand } from "./preferences.js";
 import type { GSDPreferences } from "./preferences.js";
 import {
   checkPostUnitHooks,
@@ -1066,6 +1066,7 @@ function unitVerb(unitType: string): string {
     case "reassess-roadmap": return "reassessing";
     case "run-uat": return "running UAT";
     case "fix-merge": return "resolving conflicts";
+    case "build-fix": return "fixing build errors";
     default: return unitType;
   }
 }
@@ -1083,6 +1084,7 @@ function unitPhaseLabel(unitType: string): string {
     case "reassess-roadmap": return "REASSESS";
     case "run-uat": return "UAT";
     case "fix-merge": return "MERGE-FIX";
+    case "build-fix": return "BUILD-FIX";
     default: return unitType.toUpperCase();
   }
 }
@@ -1107,6 +1109,7 @@ function peekNext(unitType: string, state: GSDState): string {
     case "reassess-roadmap": return "advance to next slice";
     case "run-uat": return "reassess roadmap";
     case "fix-merge": return "continue merge";
+    case "build-fix": return "continue after build fix";
     default: return "";
   }
 }
@@ -1521,6 +1524,62 @@ async function dispatchNextUnit(
               `Merged ${mergeResult.branch} → ${targetBranch}.`,
               "info",
             );
+
+            // ── Build verification: run build_command after merge if configured ──
+            const buildCmd = resolveBuildCommand(basePath);
+            if (buildCmd) {
+              ctx.ui.notify(`Running build check: ${buildCmd}`, "info");
+              const gitSvc = new GitServiceImpl(basePath);
+              const buildResult = gitSvc.runBuildCheck(buildCmd);
+              if (!buildResult.passed) {
+                ctx.ui.notify(
+                  `Build failed after merging ${mergeResult.branch} — dispatching build-fix session.`,
+                  "warning",
+                );
+
+                // Close out current unit before dispatching build-fix
+                if (currentUnit) {
+                  const modelId = ctx.model?.id ?? "unknown";
+                  snapshotUnitMetrics(ctx, currentUnit.type, currentUnit.id, currentUnit.startedAt, modelId);
+                  saveActivityLog(ctx, basePath, currentUnit.type, currentUnit.id);
+                }
+
+                const buildFixUnitType = "build-fix";
+                const buildFixUnitId = `${branchMid}/${branchSid}`;
+                currentUnit = { type: buildFixUnitType, id: buildFixUnitId, startedAt: Date.now() };
+                writeUnitRuntimeRecord(basePath, buildFixUnitType, buildFixUnitId, currentUnit.startedAt, {
+                  phase: "dispatched",
+                  wrapupWarningSent: false,
+                  timeoutAt: null,
+                  lastProgressAt: currentUnit.startedAt,
+                  progressCount: 0,
+                  lastProgressKind: "dispatch",
+                });
+                updateProgressWidget(ctx, buildFixUnitType, buildFixUnitId, state);
+                const result = await cmdCtx!.newSession();
+                if (result.cancelled) {
+                  await stopAuto(ctx, pi);
+                  return;
+                }
+                const sessionFile = ctx.sessionManager.getSessionFile();
+                writeLock(basePath, buildFixUnitType, buildFixUnitId, completedUnits.length, sessionFile);
+
+                const buildFixPrompt = loadPrompt("build-fix", {
+                  buildCommand: buildCmd,
+                  buildOutput: buildResult.output || buildResult.error || "Build failed with no output captured.",
+                  milestoneId: branchMid,
+                  sliceId: branchSid,
+                  sliceTitle: sliceEntry.title || branchSid,
+                });
+                pi.sendMessage(
+                  { customType: "gsd-auto", content: buildFixPrompt, display: verbose },
+                  { triggerTurn: true },
+                );
+                return;
+              }
+              ctx.ui.notify(`Build check passed.`, "info");
+            }
+
             // Re-derive state from main so downstream logic sees merged state
             invalidateStateCache();
             clearParseCache();

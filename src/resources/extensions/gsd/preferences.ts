@@ -94,6 +94,7 @@ export interface GSDPreferences {
   budget_ceiling?: number;
   remote_questions?: RemoteQuestionsConfig;
   git?: GitPreferences;
+  build_command?: string | boolean;
   post_unit_hooks?: PostUnitHookConfig[];
   pre_dispatch_hooks?: PreDispatchHookConfig[];
 }
@@ -621,6 +622,7 @@ function mergePreferences(base: GSDPreferences, override: GSDPreferences): GSDPr
     skill_discovery: override.skill_discovery ?? base.skill_discovery,
     auto_supervisor: { ...(base.auto_supervisor ?? {}), ...(override.auto_supervisor ?? {}) },
     uat_dispatch: override.uat_dispatch ?? base.uat_dispatch,
+    build_command: override.build_command ?? base.build_command,
     unique_milestone_ids: override.unique_milestone_ids ?? base.unique_milestone_ids,
     budget_ceiling: override.budget_ceiling ?? base.budget_ceiling,
     remote_questions: override.remote_questions
@@ -718,6 +720,23 @@ function validatePreferences(preferences: GSDPreferences): {
     }
   }
 
+  // ─── Build Command ──────────────────────────────────────────────────
+  if (preferences.build_command !== undefined) {
+    const bc = preferences.build_command;
+    if (typeof bc === "string") {
+      const trimmed = bc.trim();
+      if (trimmed) {
+        validated.build_command = trimmed;
+      } else {
+        errors.push("build_command string must not be empty");
+      }
+    } else if (typeof bc === "boolean") {
+      validated.build_command = bc;
+    } else {
+      errors.push("build_command must be a string or boolean");
+    }
+  }
+
   // ─── Post-Unit Hooks ─────────────────────────────────────────────────
   if (preferences.post_unit_hooks && Array.isArray(preferences.post_unit_hooks)) {
     const validHooks: PostUnitHookConfig[] = [];
@@ -725,7 +744,7 @@ function validatePreferences(preferences: GSDPreferences): {
     const knownUnitTypes = new Set([
       "research-milestone", "plan-milestone", "research-slice", "plan-slice",
       "execute-task", "complete-slice", "replan-slice", "reassess-roadmap",
-      "run-uat", "fix-merge", "complete-milestone",
+      "run-uat", "fix-merge", "build-fix", "complete-milestone",
     ]);
     for (const hook of preferences.post_unit_hooks) {
       if (!hook || typeof hook !== "object") {
@@ -791,7 +810,7 @@ function validatePreferences(preferences: GSDPreferences): {
     const knownUnitTypes = new Set([
       "research-milestone", "plan-milestone", "research-slice", "plan-slice",
       "execute-task", "complete-slice", "replan-slice", "reassess-roadmap",
-      "run-uat", "fix-merge", "complete-milestone",
+      "run-uat", "fix-merge", "build-fix", "complete-milestone",
     ]);
     const validActions = new Set(["modify", "skip", "replace"]);
     for (const hook of preferences.pre_dispatch_hooks) {
@@ -985,4 +1004,28 @@ export function resolvePreDispatchHooks(): PreDispatchHookConfig[] {
   const prefs = loadEffectiveGSDPreferences();
   return (prefs?.preferences.pre_dispatch_hooks ?? [])
     .filter(h => h.enabled !== false);
+}
+
+/**
+ * Resolve the build command from preferences.
+ * Returns the command string to run, or null if build verification is disabled.
+ *
+ * - `string`: use that exact command
+ * - `true`: auto-detect from package.json (uses `npm run build` if a `build` script exists)
+ * - `false` / undefined: disabled
+ */
+export function resolveBuildCommand(basePath: string): string | null {
+  const prefs = loadEffectiveGSDPreferences();
+  const bc = prefs?.preferences.build_command;
+  if (!bc) return null;
+  if (typeof bc === "string") return bc;
+
+  // Auto-detect: look for package.json with a build script
+  try {
+    const pkgPath = join(basePath, "package.json");
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+    if (pkg.scripts?.build) return "npm run build";
+  } catch { /* no package.json or invalid — skip */ }
+
+  return null;
 }
