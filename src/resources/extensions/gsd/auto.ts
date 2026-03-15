@@ -1520,7 +1520,7 @@ async function dispatchNextUnit(
     return; // Another dispatch is in progress — bail silently
   }
   _dispatching = true;
-
+  try {
   // Recursion depth guard: when many units are skipped in sequence (e.g., after
   // crash recovery with 10+ completed units), recursive dispatchNextUnit calls
   // can freeze the TUI or overflow the stack. Yield generously after MAX_SKIP_DEPTH.
@@ -2424,6 +2424,9 @@ async function dispatchNextUnit(
       "info",
     );
     await pauseAuto(ctx, pi);
+  }
+  } finally {
+    _dispatching = false;
   }
 }
 
