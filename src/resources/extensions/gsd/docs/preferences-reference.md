@@ -108,8 +108,49 @@ Setting `prefer_skills: []` does **not** disable skill discovery — it just mea
   - `pre_merge_check`: boolean or `"auto"` — run pre-merge checks before merging a worktree back to the integration branch. `true` always runs, `false` never runs, `"auto"` runs when CI is detected. Default: `false`.
   - `commit_type`: string — override the conventional commit type prefix. Must be one of: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `perf`, `ci`, `build`, `style`. Default: inferred from diff content.
   - `main_branch`: string — the primary branch name for new git repos (e.g., `"main"`, `"master"`, `"trunk"`). Also used by `getMainBranch()` as the preferred branch when auto-detection is ambiguous. Default: `"main"`.
+  - `merge_strategy`: `"squash"` or `"merge"` — controls how worktree branches are merged back. `"squash"` combines all commits into one; `"merge"` preserves individual commits. Default: `"squash"`.
+  - `isolation`: `"worktree"` or `"branch"` — controls auto-mode git isolation strategy. `"worktree"` creates a milestone worktree for isolated work; `"branch"` works directly in the project root (useful for submodule-heavy repos). Default: `"worktree"`.
 
 - `unique_milestone_ids`: boolean — when `true`, generates milestone IDs in `M{seq}-{rand6}` format (e.g. `M001-eh88as`) instead of plain sequential `M001`. Prevents ID collisions in team workflows where multiple contributors create milestones concurrently. Both formats coexist — existing `M001`-style milestones remain valid. Default: `false`.
+
+- `budget_ceiling`: number — maximum dollar amount to spend on auto-mode. When reached, behavior is controlled by `budget_enforcement`. Default: no limit.
+
+- `budget_enforcement`: `"warn"`, `"pause"`, or `"halt"` — action taken when `budget_ceiling` is reached.
+  - `warn` — log a warning but continue execution.
+  - `pause` — pause auto-mode and wait for user confirmation.
+  - `halt` — stop auto-mode immediately.
+  - Default: `"pause"`.
+
+- `context_pause_threshold`: number (0-100) — context window usage percentage at which auto-mode should pause to suggest checkpointing. Set to `0` to disable. Default: `0` (disabled).
+
+- `notifications`: configures desktop notification behavior during auto-mode. Keys:
+  - `enabled`: boolean — master toggle for all notifications. Default: `true`.
+  - `on_complete`: boolean — notify when a unit completes. Default: `true`.
+  - `on_error`: boolean — notify on errors. Default: `true`.
+  - `on_budget`: boolean — notify when budget thresholds are reached. Default: `true`.
+  - `on_milestone`: boolean — notify when a milestone finishes. Default: `true`.
+  - `on_attention`: boolean — notify when manual attention is needed. Default: `true`.
+
+- `uat_dispatch`: boolean — when `true`, enables UAT (User Acceptance Testing) dispatch mode. Default: `false`.
+
+- `post_unit_hooks`: array — hooks that fire after a unit completes. Each entry has:
+  - `name`: string — unique hook identifier.
+  - `after`: string[] — unit types that trigger this hook (e.g., `["execute-task"]`).
+  - `prompt`: string — prompt sent to the LLM. Supports `{milestoneId}`, `{sliceId}`, `{taskId}` substitutions.
+  - `max_cycles`: number — max times this hook fires per trigger (default: 1, max: 10).
+  - `model`: string — optional model override.
+  - `artifact`: string — expected output file (skip if exists).
+  - `retry_on`: string — file that triggers re-run of the trigger unit.
+  - `enabled`: boolean — toggle without removing (default: `true`).
+
+- `pre_dispatch_hooks`: array — hooks that fire before a unit is dispatched. Each entry has:
+  - `name`: string — unique hook identifier.
+  - `before`: string[] — unit types to intercept.
+  - `action`: `"modify"`, `"skip"`, or `"replace"` — what to do with the unit.
+  - `prepend`: string — text prepended to unit prompt (for `"modify"` action).
+  - `append`: string — text appended to unit prompt (for `"modify"` action).
+  - `prompt`: string — replacement prompt (for `"replace"` action).
+  - `enabled`: boolean — toggle without removing (default: `true`).
 
 ---
 
@@ -276,3 +317,56 @@ git:
 ```
 
 All git fields are optional. Omit any field to use the default behavior. Project-level preferences override global preferences on a per-field basis.
+
+---
+
+## Budget & Cost Control Example
+
+```yaml
+---
+version: 1
+budget_ceiling: 10.00
+budget_enforcement: pause
+context_pause_threshold: 80
+---
+```
+
+Sets a $10 budget ceiling. Auto-mode pauses when the ceiling is reached. Context window pauses at 80% usage for checkpointing.
+
+---
+
+## Notifications Example
+
+```yaml
+---
+version: 1
+notifications:
+  enabled: true
+  on_complete: false
+  on_error: true
+  on_budget: true
+  on_milestone: true
+  on_attention: true
+---
+```
+
+Disables per-unit completion notifications (noisy in long runs) while keeping error, budget, milestone, and attention notifications enabled.
+
+---
+
+## Post-Unit Hooks Example
+
+```yaml
+---
+version: 1
+post_unit_hooks:
+  - name: code-review
+    after:
+      - execute-task
+    prompt: "Review the code changes in {sliceId}/{taskId} for quality, security, and test coverage."
+    max_cycles: 1
+    artifact: REVIEW.md
+---
+```
+
+Runs an automated code review after each task execution. Skips if `REVIEW.md` already exists (idempotent).

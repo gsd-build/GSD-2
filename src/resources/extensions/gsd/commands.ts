@@ -487,8 +487,10 @@ async function handlePrefsWizard(
     prefs.auto_supervisor = autoSup;
   }
 
-  // ─── Git main branch ────────────────────────────────────────────────────
+  // ─── Git settings ───────────────────────────────────────────────────────
   const git: Record<string, unknown> = (prefs.git as Record<string, unknown>) ?? {};
+
+  // main_branch
   const currentBranch = git.main_branch ? String(git.main_branch) : "";
   const branchInput = await ctx.ui.input(
     `Git main branch${currentBranch ? ` (current: ${currentBranch})` : ""}:`,
@@ -502,6 +504,90 @@ async function handlePrefsWizard(
       delete git.main_branch;
     }
   }
+
+  // Boolean git toggles
+  const gitBooleanFields = [
+    { key: "auto_push", label: "Auto-push commits after committing", defaultVal: false },
+    { key: "push_branches", label: "Push milestone branches to remote", defaultVal: false },
+    { key: "snapshots", label: "Create WIP snapshot commits during long tasks", defaultVal: false },
+  ] as const;
+
+  for (const field of gitBooleanFields) {
+    const current = git[field.key];
+    const currentStr = current !== undefined ? String(current) : "";
+    const choice = await ctx.ui.select(
+      `${field.label}${currentStr ? ` (current: ${currentStr})` : ` (default: ${field.defaultVal})`}:`,
+      ["true", "false", "(keep current)"],
+    );
+    if (choice && choice !== "(keep current)") {
+      git[field.key] = choice === "true";
+    }
+  }
+
+  // remote
+  const currentRemote = git.remote ? String(git.remote) : "";
+  const remoteInput = await ctx.ui.input(
+    `Git remote name${currentRemote ? ` (current: ${currentRemote})` : " (default: origin)"}:`,
+    currentRemote || "origin",
+  );
+  if (remoteInput !== null && remoteInput !== undefined) {
+    const val = remoteInput.trim();
+    if (val && val !== "origin") {
+      git.remote = val;
+    } else if (!val && currentRemote) {
+      delete git.remote;
+    }
+  }
+
+  // pre_merge_check
+  const currentPreMerge = git.pre_merge_check !== undefined ? String(git.pre_merge_check) : "";
+  const preMergeChoice = await ctx.ui.select(
+    `Pre-merge check${currentPreMerge ? ` (current: ${currentPreMerge})` : " (default: false)"}:`,
+    ["true", "false", "auto", "(keep current)"],
+  );
+  if (preMergeChoice && preMergeChoice !== "(keep current)") {
+    if (preMergeChoice === "auto") {
+      git.pre_merge_check = "auto";
+    } else {
+      git.pre_merge_check = preMergeChoice === "true";
+    }
+  }
+
+  // commit_type
+  const currentCommitType = git.commit_type ? String(git.commit_type) : "";
+  const commitTypes = ["feat", "fix", "refactor", "docs", "test", "chore", "perf", "ci", "build", "style", "(inferred — default)", "(keep current)"];
+  const commitChoice = await ctx.ui.select(
+    `Default commit type${currentCommitType ? ` (current: ${currentCommitType})` : ""}:`,
+    commitTypes,
+  );
+  if (commitChoice && commitChoice !== "(keep current)") {
+    if (commitChoice.startsWith("(inferred")) {
+      delete git.commit_type;
+    } else {
+      git.commit_type = commitChoice;
+    }
+  }
+
+  // merge_strategy
+  const currentMerge = git.merge_strategy ? String(git.merge_strategy) : "";
+  const mergeChoice = await ctx.ui.select(
+    `Merge strategy${currentMerge ? ` (current: ${currentMerge})` : ""}:`,
+    ["squash", "merge", "(keep current)"],
+  );
+  if (mergeChoice && mergeChoice !== "(keep current)") {
+    git.merge_strategy = mergeChoice;
+  }
+
+  // isolation
+  const currentIsolation = git.isolation ? String(git.isolation) : "";
+  const isolationChoice = await ctx.ui.select(
+    `Git isolation strategy${currentIsolation ? ` (current: ${currentIsolation})` : " (default: worktree)"}:`,
+    ["worktree", "branch", "(keep current)"],
+  );
+  if (isolationChoice && isolationChoice !== "(keep current)") {
+    git.isolation = isolationChoice;
+  }
+
   if (Object.keys(git).length > 0) {
     prefs.git = git;
   }
@@ -524,6 +610,89 @@ async function handlePrefsWizard(
   );
   if (uniqueChoice && uniqueChoice !== "(keep current)") {
     prefs.unique_milestone_ids = uniqueChoice === "true";
+  }
+
+  // ─── Budget & cost control ────────────────────────────────────────────
+  const currentCeiling = prefs.budget_ceiling;
+  const ceilingStr = currentCeiling !== undefined ? String(currentCeiling) : "";
+  const ceilingInput = await ctx.ui.input(
+    `Budget ceiling (USD)${ceilingStr ? ` (current: $${ceilingStr})` : " (default: no limit)"}:`,
+    ceilingStr || "",
+  );
+  if (ceilingInput !== null && ceilingInput !== undefined) {
+    const val = ceilingInput.trim().replace(/^\$/, "");
+    if (val && !isNaN(Number(val)) && isFinite(Number(val))) {
+      prefs.budget_ceiling = Number(val);
+    } else if (val && (isNaN(Number(val)) || !isFinite(Number(val)))) {
+      ctx.ui.notify(`Invalid budget ceiling "${val}" — must be a number. Keeping previous value.`, "warning");
+    } else if (!val && ceilingStr) {
+      delete prefs.budget_ceiling;
+    }
+  }
+
+  const currentEnforcement = (prefs.budget_enforcement as string) ?? "";
+  const enforcementChoice = await ctx.ui.select(
+    `Budget enforcement${currentEnforcement ? ` (current: ${currentEnforcement})` : " (default: pause)"}:`,
+    ["warn", "pause", "halt", "(keep current)"],
+  );
+  if (enforcementChoice && enforcementChoice !== "(keep current)") {
+    prefs.budget_enforcement = enforcementChoice;
+  }
+
+  const currentContextPause = prefs.context_pause_threshold;
+  const contextPauseStr = currentContextPause !== undefined ? String(currentContextPause) : "";
+  const contextPauseInput = await ctx.ui.input(
+    `Context pause threshold (0-100%, 0=disabled)${contextPauseStr ? ` (current: ${contextPauseStr}%)` : " (default: 0)"}:`,
+    contextPauseStr || "0",
+  );
+  if (contextPauseInput !== null && contextPauseInput !== undefined) {
+    const val = contextPauseInput.trim().replace(/%$/, "");
+    if (val && !isNaN(Number(val)) && Number(val) >= 0 && Number(val) <= 100) {
+      const num = Number(val);
+      if (num === 0) {
+        delete prefs.context_pause_threshold;
+      } else {
+        prefs.context_pause_threshold = num;
+      }
+    } else if (val && (isNaN(Number(val)) || Number(val) < 0 || Number(val) > 100)) {
+      ctx.ui.notify(`Invalid context pause threshold "${val}" — must be 0-100. Keeping previous value.`, "warning");
+    }
+  }
+
+  // ─── Notifications ────────────────────────────────────────────────────
+  const notif: Record<string, boolean> = (prefs.notifications as Record<string, boolean>) ?? {};
+  const notifFields = [
+    { key: "enabled", label: "Notifications enabled (master toggle)", defaultVal: true },
+    { key: "on_complete", label: "Notify on unit completion", defaultVal: true },
+    { key: "on_error", label: "Notify on errors", defaultVal: true },
+    { key: "on_budget", label: "Notify on budget thresholds", defaultVal: true },
+    { key: "on_milestone", label: "Notify on milestone completion", defaultVal: true },
+    { key: "on_attention", label: "Notify when manual attention needed", defaultVal: true },
+  ] as const;
+
+  for (const field of notifFields) {
+    const current = notif[field.key];
+    const currentStr = current !== undefined ? String(current) : "";
+    const choice = await ctx.ui.select(
+      `${field.label}${currentStr ? ` (current: ${currentStr})` : ` (default: ${field.defaultVal})`}:`,
+      ["true", "false", "(keep current)"],
+    );
+    if (choice && choice !== "(keep current)") {
+      notif[field.key] = choice === "true";
+    }
+  }
+  if (Object.keys(notif).length > 0) {
+    prefs.notifications = notif;
+  }
+
+  // ─── UAT dispatch ─────────────────────────────────────────────────────
+  const currentUat = prefs.uat_dispatch;
+  const uatChoice = await ctx.ui.select(
+    `UAT dispatch mode${currentUat !== undefined ? ` (current: ${currentUat})` : " (default: false)"}:`,
+    ["true", "false", "(keep current)"],
+  );
+  if (uatChoice && uatChoice !== "(keep current)") {
+    prefs.uat_dispatch = uatChoice === "true";
   }
 
   // ─── Serialize to frontmatter ───────────────────────────────────────────
@@ -616,7 +785,10 @@ function serializePreferencesToFrontmatter(prefs: Record<string, unknown>): stri
   const orderedKeys = [
     "version", "always_use_skills", "prefer_skills", "avoid_skills",
     "skill_rules", "custom_instructions", "models", "skill_discovery",
-    "auto_supervisor", "uat_dispatch", "unique_milestone_ids", "budget_ceiling", "remote_questions", "git",
+    "auto_supervisor", "uat_dispatch", "unique_milestone_ids",
+    "budget_ceiling", "budget_enforcement", "context_pause_threshold",
+    "notifications", "remote_questions", "git",
+    "post_unit_hooks", "pre_dispatch_hooks",
   ];
 
   const seen = new Set<string>();
