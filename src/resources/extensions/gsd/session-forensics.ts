@@ -22,6 +22,7 @@ import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 import { nativeParseJsonlTail } from "./native-parser-bridge.js";
 import { nativeWorkingTreeStatus, nativeDiffStat } from "./native-git-bridge.js";
+import { listWorktrees } from "./worktree-manager.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -296,7 +297,19 @@ export function synthesizeCrashRecovery(
  * Replaces the old shallow getLastActivityDiagnostic().
  */
 export function getDeepDiagnostic(basePath: string): string | null {
-  const activityDir = join(basePath, ".gsd", "activity");
+  // Prefer worktree activity logs when a worktree is active
+  let activityDir = join(basePath, ".gsd", "activity");
+  try {
+    const worktrees = listWorktrees(basePath);
+    for (const wt of worktrees) {
+      const wtActivityDir = join(wt.path, ".gsd", "activity");
+      if (wt.exists && existsSync(wtActivityDir)) {
+        activityDir = wtActivityDir;
+        break;
+      }
+    }
+  } catch { /* worktree listing failure is non-fatal */ }
+
   const trace = readLastActivityLog(activityDir);
   if (!trace || trace.toolCallCount === 0) return null;
   return formatTraceSummary(trace);

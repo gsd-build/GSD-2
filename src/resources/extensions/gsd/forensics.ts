@@ -27,6 +27,8 @@ import { isAutoActive } from "./auto.js";
 import { loadPrompt } from "./prompt-loader.js";
 import { gsdRoot } from "./paths.js";
 import { formatDuration } from "./history.js";
+import { listWorktrees } from "./worktree-manager.js";
+import { getAutoWorktreePath } from "./auto-worktree.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -74,6 +76,42 @@ function parseJSONL(raw: string): unknown[] {
   }).filter(Boolean) as unknown[];
 }
 
+// ─── Worktree-aware base path resolution ──────────────────────────────────────
+
+/**
+ * Resolve the base path for forensic analysis. When an active worktree exists
+ * (from auto-mode or a crashed session), its `.gsd/` contains the real activity
+ * logs and state. Prefer the worktree path over the project root.
+ */
+function resolveForensicBasePath(basePath: string): string {
+  // Check crash lock first — it may reference a worktree session
+  const crashLock = readCrashLock(basePath);
+
+  // Find active worktrees
+  try {
+    const worktrees = listWorktrees(basePath);
+    if (worktrees.length > 0) {
+      // If there's a crash lock, try to find the worktree that matches the crashed milestone
+      if (crashLock) {
+        for (const wt of worktrees) {
+          if (wt.exists && existsSync(join(wt.path, ".gsd", "activity"))) {
+            return wt.path;
+          }
+        }
+      }
+
+      // Otherwise pick the first worktree that has activity logs
+      for (const wt of worktrees) {
+        if (wt.exists && existsSync(join(wt.path, ".gsd", "activity"))) {
+          return wt.path;
+        }
+      }
+    }
+  } catch { /* worktree listing failure is non-fatal */ }
+
+  return basePath;
+}
+
 // ─── Entry Point ──────────────────────────────────────────────────────────────
 
 export async function handleForensics(
@@ -107,7 +145,8 @@ export async function handleForensics(
 
   ctx.ui.notify("Building forensic report...", "info");
 
-  const report = await buildForensicReport(basePath);
+  const forensicBase = resolveForensicBasePath(basePath);
+  const report = await buildForensicReport(basePath, forensicBase);
   const savedPath = saveForensicReport(basePath, report, problemDescription);
 
   // Derive GSD source dir for prompt
@@ -131,26 +170,30 @@ export async function handleForensics(
 
 // ─── Report Builder ───────────────────────────────────────────────────────────
 
-async function buildForensicReport(basePath: string): Promise<ForensicReport> {
+async function buildForensicReport(basePath: string, forensicBase?: string): Promise<ForensicReport> {
   const anomalies: ForensicAnomaly[] = [];
+  // forensicBase is the worktree path (when active), or basePath itself
+  const activityBase = forensicBase ?? basePath;
 
-  // 1. Derive current state
+  // 1. Derive current state (use worktree path for accurate state)
   let activeMilestone: string | null = null;
   let activeSlice: string | null = null;
   try {
-    const state = await deriveState(basePath);
+    const state = await deriveState(activityBase);
     activeMilestone = state.activeMilestone?.id ?? null;
     activeSlice = state.activeSlice?.id ?? null;
   } catch { /* state derivation failure is non-fatal */ }
 
-  // 2. Scan activity logs (last 5)
-  const unitTraces = scanActivityLogs(basePath);
+  // 2. Scan activity logs from the resolved base (worktree-aware)
+  const unitTraces = scanActivityLogs(activityBase);
 
   // 3. Load metrics
   const metrics = loadLedgerFromDisk(basePath);
 
-  // 4. Load completed keys
-  const completedKeys = loadCompletedKeys(basePath);
+  // 4. Load completed keys (check worktree first, fall back to root)
+  const completedKeys = loadCompletedKeys(activityBase).length > 0
+    ? loadCompletedKeys(activityBase)
+    : loadCompletedKeys(basePath);
 
   // 5. Check crash lock
   const crashLock = readCrashLock(basePath);

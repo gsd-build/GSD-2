@@ -8,7 +8,7 @@ import { loadEffectiveGSDPreferences, type GSDPreferences } from "./preferences.
 import { listWorktrees, resolveGitDir } from "./worktree-manager.js";
 import { abortAndReset } from "./git-self-heal.js";
 import { RUNTIME_EXCLUSION_PATHS } from "./git-service.js";
-import { nativeIsRepo, nativeWorktreeRemove, nativeBranchList, nativeBranchDelete, nativeLsFiles, nativeRmCached } from "./native-git-bridge.js";
+import { nativeIsRepo, nativeWorktreeRemove, nativeBranchList, nativeBranchDelete, nativeLsFiles, nativeRmCached, nativeCommitCountBetween } from "./native-git-bridge.js";
 import { readCrashLock, isLockProcessAlive, clearLock } from "./crash-recovery.js";
 import { ensureGitignore } from "./gitignore.js";
 
@@ -657,12 +657,24 @@ async function checkGitHealth(
   try {
     const branchList = nativeBranchList(basePath, "gsd/*/*");
     if (branchList.length > 0) {
+      // Check if any legacy branches contain commits not on the current HEAD
+      let branchesWithUniqueCommits = 0;
+      for (const branch of branchList) {
+        try {
+          const uniqueCount = nativeCommitCountBetween(basePath, "HEAD", branch);
+          if (uniqueCount > 0) branchesWithUniqueCommits++;
+        } catch { /* non-fatal — git rev-list may fail for invalid refs */ }
+      }
+
+      const hasUniqueWork = branchesWithUniqueCommits > 0;
       issues.push({
-        severity: "info",
+        severity: hasUniqueWork ? "warning" : "info",
         code: "legacy_slice_branches",
         scope: "project",
         unitId: "project",
-        message: `${branchList.length} legacy slice branch(es) found: ${branchList.slice(0, 3).join(", ")}${branchList.length > 3 ? "..." : ""}. These are no longer used (branchless architecture). Delete with: git branch -D ${branchList.join(" ")}`,
+        message: hasUniqueWork
+          ? `${branchList.length} legacy slice branch(es) found: ${branchList.slice(0, 3).join(", ")}${branchList.length > 3 ? "..." : ""}. ${branchesWithUniqueCommits} branch(es) contain commits not on HEAD — review before deleting. Delete with: git branch -D ${branchList.join(" ")}`
+          : `${branchList.length} legacy slice branch(es) found: ${branchList.slice(0, 3).join(", ")}${branchList.length > 3 ? "..." : ""}. These are no longer used (branchless architecture). Delete with: git branch -D ${branchList.join(" ")}`,
         fixable: false,
       });
     }

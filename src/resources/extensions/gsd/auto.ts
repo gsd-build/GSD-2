@@ -183,6 +183,16 @@ function syncStateToProjectRoot(worktreePath: string, projectRoot: string, miles
       cpSync(srcMilestone, dstMilestone, { recursive: true, force: true });
     }
   } catch { /* non-fatal */ }
+
+  // 3. Activity logs — so forensics reading from root gets current data
+  try {
+    const srcActivity = join(wtGsd, "activity");
+    const dstActivity = join(prGsd, "activity");
+    if (existsSync(srcActivity)) {
+      mkdirSync(dstActivity, { recursive: true });
+      cpSync(srcActivity, dstActivity, { recursive: true, force: true });
+    }
+  } catch { /* non-fatal */ }
 }
 
 // ─── State ────────────────────────────────────────────────────────────────────
