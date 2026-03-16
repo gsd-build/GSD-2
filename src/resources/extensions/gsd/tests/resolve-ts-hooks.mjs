@@ -11,8 +11,9 @@ export function resolve(specifier, context, nextResolve) {
   const isFromPackages = parentURL.includes('/packages/');
 
   if (!isFromNodeModules && !isFromPackages && !specifier.startsWith('node:')) {
-    // Rewrite .js → .ts
-    if (specifier.endsWith('.js')) {
+    // Rewrite .js → .ts, but only for source files — skip anything targeting a /dist/ path
+    // since dist files are already compiled JS and don't have a .ts counterpart there.
+    if (specifier.endsWith('.js') && !specifier.includes('/dist/')) {
       const tsSpecifier = specifier.replace(/\.js$/, '.ts');
       try {
         return nextResolve(tsSpecifier, context);
