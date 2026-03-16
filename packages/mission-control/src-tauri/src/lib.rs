@@ -1,26 +1,19 @@
 mod bun_manager;
 mod commands;
 mod dep_check;
-mod oauth;
 
 use bun_manager::BunState;
 use tauri::{Emitter, Manager};
 use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_updater::UpdaterExt;
-
-/// In-memory store for PKCE verifiers keyed by OAuth state token.
-/// Avoids writing short-lived nonces to the OS keychain.
-pub struct PkceStore(pub std::sync::Mutex<std::collections::HashMap<String, String>>);
 use tauri_plugin_window_state::{Builder as WindowStateBuilder, StateFlags};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let bun_state = BunState::new();
-    let pkce_store = PkceStore(std::sync::Mutex::new(std::collections::HashMap::new()));
 
     tauri::Builder::default()
         .manage(bun_state)
-        .manage(pkce_store)
         .plugin(
             WindowStateBuilder::default()
                 .with_state_flags(StateFlags::all())
@@ -79,13 +72,6 @@ pub fn run() {
             commands::get_platform,
             commands::restart_bun,
             commands::retry_dep_check,
-            commands::get_active_provider,
-            commands::start_oauth,
-            commands::complete_oauth,
-            commands::save_api_key,
-            commands::get_provider_status,
-            commands::change_provider,
-            commands::check_and_refresh_token,
             commands::reveal_path,
             check_for_updates,
             install_update,

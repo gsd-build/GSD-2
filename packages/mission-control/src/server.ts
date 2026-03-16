@@ -15,6 +15,7 @@ import { handleUatResultsRequest } from "./server/uat-results-api";
 import { handleGsdFileRequest } from "./server/gsd-file-api";
 import { isTrusted, writeTrustFlag } from "./server/trust-api";
 import { handleClassifyIntentRequest } from "./server/classify-intent-api";
+import { handleAuthRequest } from "./server/auth-api";
 
 const repoRoot = resolve(import.meta.dir, "../../..");
 
@@ -57,6 +58,12 @@ const server = Bun.serve({
   async fetch(req) {
     const url = new URL(req.url);
     const { pathname } = url;
+
+    // Route /api/auth/* to auth handler
+    if (pathname.startsWith("/api/auth/")) {
+      const response = await handleAuthRequest(req, url);
+      if (response) return addCorsHeaders(response);
+    }
 
     // Route /api/fs/* to file system handler
     if (pathname.startsWith("/api/fs/")) {

@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { GsdLogo } from "@/components/sidebar/GsdLogo";
-import { startOAuth } from "@/auth";
 import { OAuthConnectFlow } from "./OAuthConnectFlow";
 import { ApiKeyForm } from "./ApiKeyForm";
 
@@ -53,7 +52,6 @@ const PROVIDERS: ProviderCard[] = [
 export interface ProviderPickerScreenProps {
   heading?: string;
   onAuthenticated: (provider: string) => void;
-  setPendingProvider: (provider: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -63,13 +61,12 @@ export interface ProviderPickerScreenProps {
 export function ProviderPickerScreen({
   heading = "Connect your AI provider to start building",
   onAuthenticated,
-  setPendingProvider,
 }: ProviderPickerScreenProps) {
   const [selected, setSelected] = useState<ProviderID | null>(null);
   const [flowState, setFlowState] = useState<FlowState>("idle");
   const [error, setError] = useState<string | null>(null);
 
-  const handleConnect = async () => {
+  const handleConnect = () => {
     if (!selected) return;
 
     const provider = PROVIDERS.find((p) => p.id === selected);
@@ -78,25 +75,20 @@ export function ProviderPickerScreen({
     setError(null);
 
     if (provider.authType === "oauth") {
-      const result = await startOAuth(selected);
-      if (result.auth_url) {
-        setPendingProvider(selected);
-        setFlowState("oauth-pending");
-      } else {
-        setError("Failed to start authentication. Please try again.");
-      }
+      setFlowState("oauth-pending");
     } else {
       setFlowState("api-key-form");
     }
   };
 
-  // --- OAuth flow in progress ---
+  // --- OAuth device-code flow in progress ---
   if (flowState === "oauth-pending" && selected) {
     return (
       <div style={styles.fullScreen}>
         <div style={styles.card}>
           <OAuthConnectFlow
             provider={selected}
+            onAuthenticated={onAuthenticated}
             onCancel={() => setFlowState("idle")}
             onError={(msg) => {
               setError(msg);

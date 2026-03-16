@@ -1,11 +1,14 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { startDeviceCodeFlow, submitDeviceCode } from "@/auth/auth-api";
+import type { AuthEvent } from "@/auth/auth-api";
 
 // ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
 
 export interface OAuthConnectFlowProps {
-  provider: string; // "anthropic" | "github-copilot"
+  provider: string;
+  onAuthenticated: (provider: string) => void;
   onCancel: () => void;
   onError: (message: string) => void;
 }
@@ -17,71 +20,152 @@ export interface OAuthConnectFlowProps {
 const PROVIDER_DISPLAY: Record<string, string> = {
   anthropic: "Claude Max (Anthropic)",
   "github-copilot": "GitHub Copilot",
+  "google-antigravity": "Google (Gemini)",
+  "google-gemini-cli": "Google (Gemini CLI)",
 };
 
 function getProviderDisplay(provider: string): string {
   return PROVIDER_DISPLAY[provider] ?? provider;
 }
 
-// Timeout: 5 minutes
-const OAUTH_TIMEOUT_MS = 5 * 60 * 1000;
+async function openInBrowser(url: string): Promise<void> {
+  if (typeof window !== "undefined" && "__TAURI__" in window) {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("open_external", { url }).catch(() => window.open(url, "_blank"));
+  } else {
+    window.open(url, "_blank");
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-/**
- * OAuthConnectFlow — visual waiting screen shown while the OAuth browser flow
- * is in progress. Purely presentational: the actual oauth-callback event is
- * handled by useAuthGuard in the parent.
- *
- * Auto-dismisses with an error after OAUTH_TIMEOUT_MS of no response.
- */
-export function OAuthConnectFlow({ provider, onCancel, onError }: OAuthConnectFlowProps) {
+type Step = "connecting" | "show-url" | "show-code";
+
+export function OAuthConnectFlow({ provider, onAuthenticated, onCancel, onError }: OAuthConnectFlowProps) {
   const providerDisplay = getProviderDisplay(provider);
 
-  // Set up timeout on mount
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [step, setStep] = useState<Step>("connecting");
+  const [authUrl, setAuthUrl] = useState("");
+  const [promptMessage, setPromptMessage] = useState("");
+  const [code, setCode] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    timerRef.current = setTimeout(() => {
-      onError("Authentication timed out. Please try again.");
-    }, OAUTH_TIMEOUT_MS);
+    const abort = startDeviceCodeFlow(provider, (event: AuthEvent) => {
+      if (event.type === "url") {
+        setAuthUrl(event.url);
+        setStep("show-url");
+        openInBrowser(event.url);
+      } else if (event.type === "prompt") {
+        setPromptMessage(event.message);
+        setStep("show-code");
+      } else if (event.type === "done") {
+        onAuthenticated(event.provider);
+      } else if (event.type === "error") {
+        onError(event.message);
+      }
+      // "progress" events are silently ignored (no UI update needed)
+    });
+    abortRef.current = abort;
+    return () => abort.abort();
+  }, [provider, onAuthenticated, onError]);
 
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, [onError]);
+  const handleSubmitCode = async () => {
+    if (!code.trim() || submitting) return;
+    setSubmitting(true);
+    try {
+      await submitDeviceCode(provider, code.trim());
+      // Server resolves the promise — done/error event will arrive via SSE
+    } catch {
+      onError("Failed to submit code. Please try again.");
+      setSubmitting(false);
+    }
+  };
+
+  const handleCancel = () => {
+    abortRef.current?.abort();
+    onCancel();
+  };
 
   return (
     <div style={styles.container}>
       {/* Provider name */}
       <h2 style={styles.providerName}>{providerDisplay}</h2>
 
-      {/* Status heading */}
-      <p style={styles.statusHeading}>Opening your browser...</p>
+      {/* Step: connecting */}
+      {step === "connecting" && (
+        <>
+          <p style={styles.statusHeading}>Starting authentication…</p>
+          <div style={styles.spinnerWrapper}>
+            <div className="gsd-oauth-spinner" style={styles.spinner} />
+          </div>
+        </>
+      )}
 
-      {/* Description */}
-      <p style={styles.description}>
-        {"We've opened "}
-        <strong style={{ color: "#FFFFFF" }}>{providerDisplay}</strong>
-        {" in your browser."}
-        <br />
-        Complete sign-in there, then return here.
-      </p>
+      {/* Step: show-url — open browser */}
+      {step === "show-url" && (
+        <>
+          <p style={styles.statusHeading}>Complete sign-in in your browser</p>
+          <p style={styles.description}>
+            Your browser should have opened automatically.
+            <br />
+            If not, click the button below.
+          </p>
+          <button
+            onClick={() => openInBrowser(authUrl)}
+            style={styles.openButton}
+          >
+            Open browser →
+          </button>
+          <p style={styles.hint}>
+            After you approve access, return here — we'll continue automatically.
+          </p>
+          <div style={styles.spinnerWrapper}>
+            <div className="gsd-oauth-spinner" style={styles.spinner} />
+            <span className="gsd-oauth-pulse" style={styles.spinnerLabel}>Waiting for approval…</span>
+          </div>
+        </>
+      )}
 
-      {/* Amber spinner */}
-      <div style={styles.spinnerWrapper}>
-        <div className="gsd-oauth-spinner" style={styles.spinner} />
-        <span className="gsd-oauth-pulse" style={styles.spinnerLabel}>Opening in browser...</span>
-      </div>
+      {/* Step: show-code — user must paste code */}
+      {step === "show-code" && (
+        <>
+          <p style={styles.statusHeading}>Enter your authorisation code</p>
+          <p style={styles.description}>{promptMessage}</p>
+          <input
+            type="text"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSubmitCode()}
+            placeholder="Paste code here…"
+            style={styles.codeInput}
+            autoFocus
+            spellCheck={false}
+            autoComplete="off"
+          />
+          <button
+            onClick={handleSubmitCode}
+            disabled={!code.trim() || submitting}
+            style={{
+              ...styles.submitButton,
+              ...(!code.trim() || submitting ? styles.submitButtonDisabled : {}),
+            }}
+          >
+            {submitting ? "Verifying…" : "Continue"}
+          </button>
+        </>
+      )}
 
       {/* Cancel */}
-      <button onClick={onCancel} style={styles.cancelButton}>
+      <button onClick={handleCancel} style={styles.cancelButton}>
         Cancel
       </button>
 
-      {/* Keyframe animation injected via style tag */}
+      {/* Keyframe animations */}
       <style>{`
         @keyframes gsd-oauth-spin {
           from { transform: rotate(0deg); }
@@ -91,12 +175,8 @@ export function OAuthConnectFlow({ provider, onCancel, onError }: OAuthConnectFl
           0%, 100% { opacity: 1; }
           50%       { opacity: 0.4; }
         }
-        .gsd-oauth-spinner {
-          animation: gsd-oauth-spin 1s linear infinite;
-        }
-        .gsd-oauth-pulse {
-          animation: gsd-oauth-pulse 2s ease-in-out infinite;
-        }
+        .gsd-oauth-spinner { animation: gsd-oauth-spin 1s linear infinite; }
+        .gsd-oauth-pulse   { animation: gsd-oauth-pulse 2s ease-in-out infinite; }
       `}</style>
     </div>
   );
@@ -127,6 +207,7 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#F59E0B",
     margin: 0,
     fontWeight: 600,
+    textAlign: "center",
   },
   description: {
     fontFamily: "'JetBrains Mono', monospace",
@@ -135,6 +216,13 @@ const styles: Record<string, React.CSSProperties> = {
     margin: 0,
     textAlign: "center",
     lineHeight: "1.6",
+  },
+  hint: {
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: "12px",
+    color: "#64748B",
+    margin: 0,
+    textAlign: "center",
   },
   spinnerWrapper: {
     display: "flex",
@@ -148,12 +236,52 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: "50%",
     border: "3px solid rgba(245,158,11,0.2)",
     borderTopColor: "#F59E0B",
-    // Note: animation applied via className below, but we add a fallback here
   } as React.CSSProperties,
   spinnerLabel: {
     fontFamily: "'JetBrains Mono', monospace",
     fontSize: "13px",
     color: "#F59E0B",
+  },
+  openButton: {
+    fontFamily: "'Share Tech Mono', monospace",
+    fontSize: "14px",
+    color: "#0F1419",
+    background: "#5BC8F0",
+    border: "none",
+    borderRadius: "8px",
+    padding: "12px 24px",
+    cursor: "pointer",
+    fontWeight: 600,
+  },
+  codeInput: {
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: "14px",
+    color: "#FFFFFF",
+    background: "#131C2B",
+    border: "1px solid #1E2D3D",
+    borderRadius: "6px",
+    padding: "10px 14px",
+    outline: "none",
+    width: "100%",
+    boxSizing: "border-box",
+    textAlign: "center",
+    letterSpacing: "0.05em",
+  } as React.CSSProperties,
+  submitButton: {
+    fontFamily: "'Share Tech Mono', monospace",
+    fontSize: "14px",
+    color: "#0F1419",
+    background: "#5BC8F0",
+    border: "none",
+    borderRadius: "8px",
+    padding: "12px 24px",
+    cursor: "pointer",
+    fontWeight: 600,
+    width: "100%",
+  },
+  submitButtonDisabled: {
+    opacity: 0.4,
+    cursor: "not-allowed",
   },
   cancelButton: {
     fontFamily: "'JetBrains Mono', monospace",
@@ -164,6 +292,5 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: "6px",
     padding: "8px 20px",
     cursor: "pointer",
-    transition: "border-color 0.15s, color 0.15s",
   },
 };

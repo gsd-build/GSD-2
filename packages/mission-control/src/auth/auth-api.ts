@@ -1,39 +1,14 @@
 /**
- * auth-api.ts — TypeScript bridge to all Rust OAuth/keychain commands.
+ * auth-api.ts — fetch-based auth API (talks to Bun server at /api/auth/*).
  *
- * All functions guard against non-Tauri (browser dev mode) execution via
- * isTauri(). When not in Tauri, safe defaults are returned so the app does
- * not crash during local development.
+ * Works in browser dev mode AND Tauri — no Tauri invoke required.
+ * AuthStorage on the Bun server handles OAuth device-code flow, API key
+ * storage, and token refresh transparently.
  */
 
 // ---------------------------------------------------------------------------
-// Tauri environment detection
+// Types
 // ---------------------------------------------------------------------------
-
-/** Returns true when running inside a Tauri webview. */
-function isTauri(): boolean {
-  return typeof window !== "undefined" && "__TAURI__" in window;
-}
-
-/**
- * Thin invoke wrapper that:
- * 1. Dynamically imports @tauri-apps/api/core so bundlers can tree-shake it.
- * 2. Throws a clear error if called outside Tauri.
- */
-async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  if (!isTauri()) throw new Error("Not running in Tauri");
-  const { invoke: tauriInvoke } = await import("@tauri-apps/api/core");
-  return tauriInvoke<T>(cmd, args);
-}
-
-// ---------------------------------------------------------------------------
-// Shared types
-// ---------------------------------------------------------------------------
-
-export interface StartOAuthResult {
-  auth_url: string;
-  state: string;
-}
 
 export interface ProviderStatus {
   active_provider: string | null;
@@ -49,124 +24,171 @@ export interface RefreshResult {
   provider: string | null;
 }
 
+export type AuthEvent =
+  | { type: "url"; url: string; instructions?: string }
+  | { type: "prompt"; message: string }
+  | { type: "progress"; message: string }
+  | { type: "done"; provider: string }
+  | { type: "error"; message: string };
+
 // ---------------------------------------------------------------------------
-// API functions
+// Status queries
 // ---------------------------------------------------------------------------
 
 /**
- * Returns the currently stored provider name, or null when no provider is
- * configured (first launch / after sign-out).
- *
- * Non-Tauri fallback: null — the provider picker will be shown during dev.
+ * Returns the active provider name, or null when no credentials are stored.
  */
 export async function getActiveProvider(): Promise<string | null> {
-  if (!isTauri()) return null;
   try {
-    return await invoke<string | null>("get_active_provider");
-  } catch (e) {
-    console.error("[auth-api] getActiveProvider:", e);
+    const r = await fetch("/api/auth/status");
+    const data = (await r.json()) as { authenticated: boolean; provider: string | null };
+    return data.provider;
+  } catch {
     return null;
   }
 }
 
 /**
- * Initiates an OAuth flow for the given provider.
- * Returns the URL to open in the system browser and a CSRF state token.
+ * Returns provider status in the shape SettingsView expects.
+ * AuthStorage handles token refresh silently, so expiry fields are always benign.
  */
-export async function startOAuth(provider: string): Promise<StartOAuthResult> {
+export async function getProviderStatus(): Promise<ProviderStatus> {
   try {
-    return await invoke<StartOAuthResult>("start_oauth", { provider });
-  } catch (e) {
-    console.error("[auth-api] startOAuth:", e);
-    return { auth_url: "", state: "" };
+    const r = await fetch("/api/auth/status");
+    const data = (await r.json()) as { authenticated: boolean; provider: string | null };
+    return {
+      active_provider: data.provider,
+      last_refreshed: null,
+      expires_at: null,
+      is_expired: false,
+      expires_soon: false,
+    };
+  } catch {
+    return { active_provider: null, last_refreshed: null, expires_at: null, is_expired: false, expires_soon: false };
   }
 }
 
 /**
- * Exchanges the OAuth callback code + state for tokens and persists them to
- * the OS keychain.
- *
- * Returns true on success.
+ * Checks auth status. AuthStorage handles silent token refresh internally,
+ * so we only flag needs_reauth when no provider is configured at all.
  */
-export async function completeOAuth(
+export async function checkAndRefreshToken(): Promise<RefreshResult> {
+  try {
+    const r = await fetch("/api/auth/status");
+    const data = (await r.json()) as { authenticated: boolean; provider: string | null };
+    return { needs_reauth: false, refreshed: false, provider: data.provider };
+  } catch {
+    return { needs_reauth: false, refreshed: false, provider: null };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// OAuth device-code flow
+// ---------------------------------------------------------------------------
+
+/**
+ * Start a device-code OAuth login via SSE. Calls onEvent for each server-sent
+ * event ({ type: "url" | "prompt" | "progress" | "done" | "error" }).
+ *
+ * Returns an AbortController — call abort() to cancel the flow.
+ */
+export function startDeviceCodeFlow(
   provider: string,
-  code: string,
-  state: string,
-): Promise<boolean> {
-  try {
-    return await invoke<boolean>("complete_oauth", { provider, code, state });
-  } catch (e) {
-    console.error("[auth-api] completeOAuth:", e);
-    return false;
-  }
+  onEvent: (e: AuthEvent) => void,
+): AbortController {
+  const abort = new AbortController();
+
+  (async () => {
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider }),
+        signal: abort.signal,
+      });
+
+      if (!response.ok || !response.body) {
+        onEvent({ type: "error", message: "Failed to start login" });
+        return;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            try {
+              onEvent(JSON.parse(line.slice(6)) as AuthEvent);
+            } catch {
+              // ignore malformed SSE line
+            }
+          }
+        }
+      }
+    } catch (e: unknown) {
+      if (e instanceof Error && e.name !== "AbortError") {
+        onEvent({ type: "error", message: e.message ?? "Login failed" });
+      }
+    }
+  })();
+
+  return abort;
 }
 
 /**
- * Stores a raw API key in the OS keychain for providers that use key-based
- * auth rather than OAuth.
- *
- * Returns true on success.
+ * Submit the device code entered by the user to the pending server-side prompt.
+ */
+export async function submitDeviceCode(provider: string, code: string): Promise<void> {
+  await fetch("/api/auth/code", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ provider, code }),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// API key login
+// ---------------------------------------------------------------------------
+
+/**
+ * Save a raw API key for a provider.
  */
 export async function saveApiKey(provider: string, key: string): Promise<boolean> {
   try {
-    return await invoke<boolean>("save_api_key", { provider, key });
-  } catch (e) {
-    console.error("[auth-api] saveApiKey:", e);
+    const r = await fetch("/api/auth/login-api-key", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider, key }),
+    });
+    return r.ok;
+  } catch {
     return false;
   }
 }
 
-/**
- * Reads the current provider status (expiry, refresh timestamps, etc.) from
- * the keychain.
- *
- * Non-Tauri fallback: a zeroed-out struct so callers can safely destructure.
- */
-export async function getProviderStatus(): Promise<ProviderStatus> {
-  const fallback: ProviderStatus = {
-    active_provider: null,
-    last_refreshed: null,
-    expires_at: null,
-    is_expired: false,
-    expires_soon: false,
-  };
-  if (!isTauri()) return fallback;
-  try {
-    return await invoke<ProviderStatus>("get_provider_status");
-  } catch (e) {
-    console.error("[auth-api] getProviderStatus:", e);
-    return fallback;
-  }
-}
+// ---------------------------------------------------------------------------
+// Logout / provider change
+// ---------------------------------------------------------------------------
 
 /**
- * Clears the stored provider credentials so the user can pick a new one.
- *
- * Returns true on success.
+ * Remove credentials for a provider (or all providers when omitted).
  */
-export async function changeProvider(): Promise<boolean> {
+export async function changeProvider(provider?: string): Promise<boolean> {
   try {
-    return await invoke<boolean>("change_provider");
-  } catch (e) {
-    console.error("[auth-api] changeProvider:", e);
+    const r = await fetch("/api/auth/logout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(provider ? { provider } : {}),
+    });
+    return r.ok;
+  } catch {
     return false;
-  }
-}
-
-/**
- * Checks whether stored tokens are about to expire and silently refreshes
- * them if possible. Returns a struct indicating whether re-auth is required.
- *
- * Non-Tauri fallback: { needs_reauth: false, refreshed: false, provider: null }
- * so the app does not show a re-auth prompt in dev mode.
- */
-export async function checkAndRefreshToken(): Promise<RefreshResult> {
-  const fallback: RefreshResult = { needs_reauth: false, refreshed: false, provider: null };
-  if (!isTauri()) return fallback;
-  try {
-    return await invoke<RefreshResult>("check_and_refresh_token");
-  } catch (e) {
-    console.error("[auth-api] checkAndRefreshToken:", e);
-    return fallback;
   }
 }

@@ -7,7 +7,7 @@ import { useAuthGuard } from "./auth";
 import { useTokenRefresh } from "./auth";
 
 export default function App() {
-  const { state, setAuthenticated, setPendingProvider } = useAuthGuard();
+  const { state, setAuthenticated } = useAuthGuard();
   const tokenRefresh = useTokenRefresh();
 
   // Trust state: checked after auth passes (PERM-02)
@@ -45,7 +45,6 @@ export default function App() {
         <ProviderPickerScreen
           heading={heading}
           onAuthenticated={setAuthenticated}
-          setPendingProvider={setPendingProvider}
         />
       </ErrorBoundary>
     );
