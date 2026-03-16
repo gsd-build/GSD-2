@@ -19,9 +19,16 @@ function makeTmpDir(): string {
   return mkdtempSync(join(tmpdir(), "gsd-wt-hook-test-"));
 }
 
+const isWin = process.platform === "win32";
+
+/** Return the platform-appropriate hook file path (adds .bat on Windows). */
+function hookPath(base: string): string {
+  return isWin ? `${base}.bat` : base;
+}
+
 /** Create a cross-platform Node.js hook script. */
 function writeNodeHookScript(path: string, code: string): void {
-  const script = process.platform === "win32"
+  const script = isWin
     ? `@echo off\nnode -e "${code.replace(/"/g, '\\"')}"\n`
     : `#!/usr/bin/env node\n${code}\n`;
   writeFileSync(path, script);
@@ -61,16 +68,16 @@ test("executes hook script with correct SOURCE_DIR and WORKTREE_DIR env vars", (
   try {
     const hooksDir = join(src, ".gsd", "hooks");
     mkdirSync(hooksDir, { recursive: true });
-    const hookScript = join(hooksDir, "post-create");
+    const hookFile = hookPath(join(hooksDir, "post-create"));
     const code = [
       `const fs = require("fs");`,
       `const path = require("path");`,
       `const out = path.join(process.env.WORKTREE_DIR, "hook-output.txt");`,
       `fs.writeFileSync(out, "SOURCE=" + process.env.SOURCE_DIR + "\\n" + "WORKTREE=" + process.env.WORKTREE_DIR + "\\n");`,
     ].join("\n");
-    writeNodeHookScript(hookScript, code);
+    writeNodeHookScript(hookFile, code);
 
-    const result = runWorktreePostCreateHook(src, wt, ".gsd/hooks/post-create");
+    const result = runWorktreePostCreateHook(src, wt, hookPath(".gsd/hooks/post-create"));
     assert.equal(result, null, "should succeed");
 
     const outputFile = join(wt, "hook-output.txt");
@@ -91,10 +98,10 @@ test("returns error message when hook script fails", () => {
   try {
     const hooksDir = join(src, ".gsd", "hooks");
     mkdirSync(hooksDir, { recursive: true });
-    const hookScript = join(hooksDir, "failing-hook");
-    writeNodeHookScript(hookScript, `process.exit(1);`);
+    const hookFile = hookPath(join(hooksDir, "failing-hook"));
+    writeNodeHookScript(hookFile, `process.exit(1);`);
 
-    const result = runWorktreePostCreateHook(src, wt, ".gsd/hooks/failing-hook");
+    const result = runWorktreePostCreateHook(src, wt, hookPath(".gsd/hooks/failing-hook"));
     assert.ok(result !== null, "should return error string");
     assert.ok(result!.includes("hook failed"), "error should mention 'hook failed'");
   } finally {
@@ -107,15 +114,15 @@ test("supports absolute hook paths", () => {
   const src = makeTmpDir();
   const wt = makeTmpDir();
   try {
-    const hookScript = join(src, "absolute-hook");
+    const hookFile = hookPath(join(src, "absolute-hook"));
     const code = [
       `const fs = require("fs");`,
       `const path = require("path");`,
       `fs.writeFileSync(path.join(process.env.WORKTREE_DIR, "absolute-hook-ran"), "");`,
     ].join("\n");
-    writeNodeHookScript(hookScript, code);
+    writeNodeHookScript(hookFile, code);
 
-    const result = runWorktreePostCreateHook(src, wt, hookScript);
+    const result = runWorktreePostCreateHook(src, wt, hookFile);
     assert.equal(result, null, "absolute path hook should succeed");
     assert.ok(existsSync(join(wt, "absolute-hook-ran")), "hook should have run");
   } finally {
@@ -130,7 +137,7 @@ test("hook can copy files from source to worktree", () => {
   try {
     writeFileSync(join(src, ".env"), "DB_HOST=localhost\nAPI_KEY=secret123\n");
 
-    const hookScript = join(src, "setup-hook");
+    const hookFile = hookPath(join(src, "setup-hook"));
     const code = [
       `const fs = require("fs");`,
       `const path = require("path");`,
@@ -138,9 +145,9 @@ test("hook can copy files from source to worktree", () => {
       `const envDst = path.join(process.env.WORKTREE_DIR, ".env");`,
       `fs.copyFileSync(envSrc, envDst);`,
     ].join("\n");
-    writeNodeHookScript(hookScript, code);
+    writeNodeHookScript(hookFile, code);
 
-    const result = runWorktreePostCreateHook(src, wt, hookScript);
+    const result = runWorktreePostCreateHook(src, wt, hookFile);
     assert.equal(result, null, "hook should succeed");
 
     assert.ok(existsSync(join(wt, ".env")), ".env should be copied to worktree");

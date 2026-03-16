@@ -7,7 +7,7 @@
  */
 
 import { existsSync, cpSync, readFileSync, realpathSync, utimesSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { execSync } from "node:child_process";
 import {
   createWorktree,
@@ -93,7 +93,7 @@ export function runWorktreePostCreateHook(sourceDir: string, worktreeDir: string
   if (!hookPath) return null;
 
   // Resolve relative paths against the source project root
-  const resolved = hookPath.startsWith("/") ? hookPath : join(sourceDir, hookPath);
+  const resolved = isAbsolute(hookPath) ? hookPath : join(sourceDir, hookPath);
   if (!existsSync(resolved)) {
     return `Worktree post-create hook not found: ${resolved}`;
   }
