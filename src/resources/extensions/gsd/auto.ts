@@ -18,7 +18,7 @@ import type {
 
 import { deriveState, invalidateStateCache } from "./state.js";
 import type { BudgetEnforcementMode, GSDState } from "./types.js";
-import { loadFile, parseRoadmap, getManifestStatus } from "./files.js";
+import { loadFile, parseRoadmap, getManifestStatus, resolveAllOverrides } from "./files.js";
 export { inlinePriorMilestoneSummary } from "./files.js";
 import { collectSecretsFromManifest } from "../get-secrets-from-user.js";
 import {
@@ -39,7 +39,7 @@ import {
   readUnitRuntimeRecord,
   writeUnitRuntimeRecord,
 } from "./unit-runtime.js";
-import { resolveAutoSupervisorConfig, resolveModelWithFallbacksForUnit, loadEffectiveGSDPreferences } from "./preferences.js";
+import { resolveAutoSupervisorConfig, resolveModelWithFallbacksForUnit, loadEffectiveGSDPreferences, resolveSkillDiscoveryMode } from "./preferences.js";
 import { sendDesktopNotification } from "./notifications.js";
 import type { GSDPreferences } from "./preferences.js";
 import {
@@ -68,6 +68,7 @@ import {
 } from "./metrics.js";
 import { join } from "node:path";
 import { sep as pathSep } from "node:path";
+import { homedir } from "node:os";
 import { readdirSync, readFileSync, existsSync, mkdirSync, writeFileSync, unlinkSync, statSync } from "node:fs";
 import { execSync, execFileSync } from "node:child_process";
 import {
@@ -107,7 +108,7 @@ import {
   buildLoopRemediationSteps,
   reconcileMergeState,
 } from "./auto-recovery.js";
-import { resolveDispatch } from "./auto-dispatch.js";
+import { resolveDispatch, resetRewriteCircuitBreaker } from "./auto-dispatch.js";
 import {
   type AutoDashboardData,
   updateProgressWidget as _updateProgressWidget,
@@ -155,6 +156,33 @@ const unitRecoveryCount = new Map<string, number>();
 
 /** Persisted completed-unit keys — survives restarts. Loaded from .gsd/completed-units.json. */
 const completedKeySet = new Set<string>();
+
+/** Resource sync timestamp captured at auto-mode start. If the managed-resources
+ *  manifest changes mid-session (e.g. /gsd:update or dev edit + copy-resources),
+ *  templates on disk may expect variables the in-memory code doesn't provide.
+ *  Detect this and stop gracefully instead of crashing. */
+let resourceSyncedAtOnStart: number | null = null;
+
+function readResourceSyncedAt(): number | null {
+  const agentDir = process.env.GSD_CODING_AGENT_DIR || join(homedir(), ".gsd", "agent");
+  const manifestPath = join(agentDir, "managed-resources.json");
+  try {
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
+    return typeof manifest?.syncedAt === "number" ? manifest.syncedAt : null;
+  } catch {
+    return null;
+  }
+}
+
+function checkResourcesStale(): string | null {
+  if (resourceSyncedAtOnStart === null) return null;
+  const current = readResourceSyncedAt();
+  if (current === null) return null;
+  if (current !== resourceSyncedAtOnStart) {
+    return "GSD resources were updated since this session started. Restart gsd to load the new code.";
+  }
+  return null;
+}
 
 /**
  * Resolve whether auto-mode should use worktree isolation.
@@ -618,6 +646,7 @@ export async function startAuto(
   resetHookState();
   restoreHookState(base);
   autoStartTime = Date.now();
+  resourceSyncedAtOnStart = readResourceSyncedAt();
   completedUnits = [];
   currentUnit = null;
   currentMilestoneId = state.activeMilestone?.id ?? null;
@@ -825,6 +854,17 @@ export async function handleAgentEnd(
       autoCommitCurrentBranch(basePath, currentUnit.type, currentUnit.id);
     } catch {
       // Non-fatal
+    }
+
+    // ── Rewrite-docs completion: resolve overrides and reset circuit breaker ──
+    if (currentUnit.type === "rewrite-docs") {
+      try {
+        await resolveAllOverrides(basePath);
+        resetRewriteCircuitBreaker();
+        ctx.ui.notify("Override(s) resolved — rewrite-docs completed.", "info");
+      } catch {
+        // Non-fatal — verifyExpectedArtifact will catch unresolved overrides
+      }
     }
 
     // ── Path A fix: verify artifact and persist completion before re-entering dispatch ──
@@ -1141,6 +1181,18 @@ async function dispatchNextUnit(
     await new Promise(r => setTimeout(r, 200));
   }
 
+  // Resource version guard: detect mid-session resource updates.
+  // Templates are read from disk on each dispatch but extension code is loaded
+  // once at startup. If resources were re-synced (e.g. /gsd:update, npm update,
+  // or dev copy-resources), templates may expect variables the in-memory code
+  // doesn't provide. Stop gracefully instead of crashing.
+  const staleMsg = checkResourcesStale();
+  if (staleMsg) {
+    await stopAuto(ctx, pi);
+    ctx.ui.notify(staleMsg, "error");
+    return;
+  }
+
   // Clear all caches so deriveState sees fresh disk state (#431).
   // Parse cache is also cleared — doctor may have re-populated it with
   // stale data between handleAgentEnd and this dispatch call (Path B fix).
@@ -1229,6 +1281,7 @@ async function dispatchNextUnit(
     if (currentMilestoneId && isInAutoWorktree(basePath) && originalBasePath) {
       try {
         const roadmapPath = resolveMilestoneFile(originalBasePath, currentMilestoneId, "ROADMAP");
+        if (!roadmapPath) throw new Error(`Cannot resolve ROADMAP file for milestone ${currentMilestoneId}`);
         const roadmapContent = readFileSync(roadmapPath, "utf-8");
         const mergeResult = mergeMilestoneToMain(originalBasePath, currentMilestoneId, roadmapContent);
         basePath = originalBasePath;
@@ -1314,7 +1367,7 @@ async function dispatchNextUnit(
   const contextThreshold = prefs?.context_pause_threshold ?? 0; // 0 = disabled by default
   if (contextThreshold > 0 && cmdCtx) {
     const contextUsage = cmdCtx.getContextUsage();
-    if (contextUsage && contextUsage.percent >= contextThreshold) {
+    if (contextUsage && contextUsage.percent !== null && contextUsage.percent >= contextThreshold) {
       const msg = `Context window at ${contextUsage.percent}% (threshold: ${contextThreshold}%). Pausing to prevent truncated output.`;
       ctx.ui.notify(`${msg} Run /gsd auto to continue (will start fresh session).`, "warning");
       sendDesktopNotification("GSD", `Context ${contextUsage.percent}% — paused`, "warning", "attention");
@@ -1365,6 +1418,13 @@ async function dispatchNextUnit(
     }
     await stopAuto(ctx, pi);
     ctx.ui.notify(dispatchResult.reason, dispatchResult.level);
+    return;
+  }
+
+  if (dispatchResult.action !== "dispatch") {
+    // skip action — yield and re-dispatch
+    await new Promise(r => setImmediate(r));
+    await dispatchNextUnit(ctx, pi);
     return;
   }
 

@@ -62,6 +62,7 @@ async function main(): Promise<void> {
     let threw = false;
     try {
       result = loadPromptFromWorktree("complete-milestone", {
+        workingDirectory: "/tmp/test-project",
         milestoneId: "M001",
         milestoneTitle: "Test Milestone",
         roadmapPath: ".gsd/milestones/M001/M001-ROADMAP.md",
@@ -81,6 +82,7 @@ async function main(): Promise<void> {
   console.log("\n=== prompt variable substitution ===");
   {
     const prompt = loadPromptFromWorktree("complete-milestone", {
+      workingDirectory: "/tmp/test-project",
       milestoneId: "M001",
       milestoneTitle: "Integration Feature",
       roadmapPath: ".gsd/milestones/M001/M001-ROADMAP.md",
@@ -101,6 +103,7 @@ async function main(): Promise<void> {
   console.log("\n=== prompt content integrity ===");
   {
     const prompt = loadPromptFromWorktree("complete-milestone", {
+      workingDirectory: "/tmp/test-project",
       milestoneId: "M002",
       milestoneTitle: "Completion Workflow",
       roadmapPath: ".gsd/milestones/M002/M002-ROADMAP.md",

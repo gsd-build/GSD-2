@@ -5,7 +5,7 @@
 // Only READ operations are native — WRITE operations (commit, merge, checkout, push)
 // remain as execSync calls in git-service.ts.
 
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 
 /** Env overlay that suppresses interactive git credential prompts and git-svn noise. */
 const GIT_NO_PROMPT_ENV = {
@@ -44,10 +44,10 @@ function loadNative(): typeof nativeModule {
   return nativeModule;
 }
 
-/** Run a git command via execSync. Returns trimmed stdout. */
+/** Run a git command via execFileSync. Returns trimmed stdout. */
 function gitExec(basePath: string, args: string[], allowFailure = false): string {
   try {
-    return execSync(`git ${args.join(" ")}`, {
+    return execFileSync("git", args, {
       cwd: basePath,
       stdio: ["ignore", "pipe", "pipe"],
       encoding: "utf-8",

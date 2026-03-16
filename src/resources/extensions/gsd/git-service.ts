@@ -8,7 +8,7 @@
  * paths, commit type inference, and the runGit shell helper.
  */
 
-import { execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, sep } from "node:path";
 
@@ -212,7 +212,7 @@ function filterGitSvnNoise(message: string): string {
  */
 export function runGit(basePath: string, args: string[], options: { allowFailure?: boolean; input?: string } = {}): string {
   try {
-    return execSync(`git ${args.join(" ")}`, {
+    return execFileSync("git", args, {
       cwd: basePath,
       stdio: [options.input != null ? "pipe" : "ignore", "pipe", "pipe"],
       encoding: "utf-8",
@@ -452,7 +452,7 @@ export class GitServiceImpl {
     } else {
       // Auto-detect: look for package.json with a test script
       try {
-        const pkg = execSync("cat package.json", { cwd: this.basePath, encoding: "utf-8" });
+        const pkg = execFileSync("cat", ["package.json"], { cwd: this.basePath, encoding: "utf-8" });
         const parsed = JSON.parse(pkg);
         if (parsed.scripts?.test) {
           command = "npm test";

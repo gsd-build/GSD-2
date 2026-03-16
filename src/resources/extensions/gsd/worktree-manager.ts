@@ -16,7 +16,7 @@
  */
 
 import { existsSync, mkdirSync, realpathSync } from "node:fs";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { join, resolve, sep } from "node:path";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -69,7 +69,7 @@ function filterGitSvnNoise(message: string): string {
 
 function runGit(cwd: string, args: string[], opts: { allowFailure?: boolean } = {}): string {
   try {
-    return execSync(`git ${args.join(" ")}`, {
+    return execFileSync("git", args, {
       cwd,
       stdio: ["ignore", "pipe", "pipe"],
       encoding: "utf-8",

@@ -2,6 +2,10 @@ You are executing GSD auto-mode.
 
 ## UNIT: Research Milestone {{milestoneId}} ("{{milestoneTitle}}")
 
+## Working Directory
+
+Your working directory is `{{workingDirectory}}`. All file reads, writes, and shell commands MUST operate relative to this directory. Do NOT `cd` to any other directory.
+
 All relevant context has been preloaded below — start working immediately without re-reading these files.
 
 {{inlinedContext}}

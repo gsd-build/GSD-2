@@ -25,10 +25,10 @@ import type {
 } from "@gsd/pi-coding-agent";
 import { createBashTool, createWriteTool, createReadTool, createEditTool, isToolCallEventType } from "@gsd/pi-coding-agent";
 
-import { registerGSDCommand } from "./commands.js";
+import { registerGSDCommand, loadToolApiKeys } from "./commands.js";
 import { registerExitCommand } from "./exit-command.js";
 import { registerWorktreeCommand, getWorktreeOriginalCwd, getActiveWorktreeName } from "./worktree-command.js";
-import { saveFile, formatContinue, loadFile, parseContinue, parseSummary } from "./files.js";
+import { saveFile, formatContinue, loadFile, parseContinue, parseSummary, loadActiveOverrides, formatOverridesSection } from "./files.js";
 import { loadPrompt } from "./prompt-loader.js";
 import { deriveState } from "./state.js";
 import { isAutoActive, isAutoPaused, handleAgentEnd, pauseAuto, getAutoDashboardData } from "./auto.js";
@@ -188,7 +188,7 @@ export default function (pi: ExtensionAPI) {
   };
   pi.registerTool(dynamicEdit as any);
 
-  // ── session_start: render branded GSD header + remote channel status ──
+  // ── session_start: render branded GSD header + load tool keys + remote status ──
   pi.on("session_start", async (_event, ctx) => {
     // Theme access throws in RPC mode (no TUI) — header is decorative, skip it
     try {
@@ -203,6 +203,9 @@ export default function (pi: ExtensionAPI) {
     } catch {
       // RPC mode — no TUI, skip header rendering
     }
+
+    // Load tool API keys from auth.json into environment
+    loadToolApiKeys();
 
     // Notify remote questions status if configured
     try {
@@ -600,9 +603,13 @@ async function buildTaskExecutionContextInjection(
   const priorTaskLines = await buildCarryForwardLines(basePath, milestoneId, sliceId, taskId);
   const resumeSection = await buildResumeSection(basePath, milestoneId, sliceId);
 
+  const activeOverrides = await loadActiveOverrides(basePath);
+  const overridesSection = formatOverridesSection(activeOverrides);
+
   return [
     "[GSD Guided Execute Context]",
     "Use this injected context as startup context for guided task execution. Treat the inlined task plan as the authoritative local execution contract. Use source artifacts to verify details and run checks.",
+    overridesSection, "",
     "",
     resumeSection,
     "",

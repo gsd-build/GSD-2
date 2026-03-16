@@ -6,6 +6,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.15.1] - 2026-03-15
+
+### Fixed
+- Auto-mode worktree path resolution — prompt templates now include working directory, preventing artifacts from being written to the wrong location and causing infinite re-dispatches
+- Auto-mode resource sync detection — gracefully stops when resources change mid-session instead of crashing
+- Auto-mode missing import for `resolveSkillDiscoveryMode` causing crash on startup
+- Auto-mode recovery hardened — checkbox verification falls through correctly, corrupt roadmaps fail verification instead of silently passing, atomic writes for completed-units.json, and task completion verified via artifacts not just file existence
+- Auto-mode progress widget now refreshes from disk every 5 seconds during unit execution instead of appearing frozen
+- Undo command now invalidates all caches (not just state cache), preventing stale results after undoing completed tasks
+
+### Changed
+- CI pipeline supports prerelease publishing with `--tag next` for testing before stable release
+
+### Added
+- Unit tests for auto-dashboard, auto-recovery, and crash-recovery modules (46 new tests)
+
 ## [2.15.0] - 2026-03-15
 
 ### Added
@@ -686,7 +702,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - License updated to MIT
 
-[Unreleased]: https://github.com/gsd-build/gsd-2/compare/v2.15.0...HEAD
+[Unreleased]: https://github.com/gsd-build/gsd-2/compare/v2.15.1...HEAD
+[2.15.1]: https://github.com/gsd-build/gsd-2/releases/tag/v2.15.1
 [2.15.0]: https://github.com/gsd-build/gsd-2/compare/v2.14.4...v2.15.0
 [2.14.4]: https://github.com/gsd-build/gsd-2/compare/v2.14.3...v2.14.4
 [2.14.3]: https://github.com/gsd-build/gsd-2/compare/v2.14.2...v2.14.3

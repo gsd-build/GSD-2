@@ -1,5 +1,5 @@
 export type ProviderErrorPauseUI = {
-  notify(message: string, level: string): void;
+  notify(message: string, level?: "info" | "warning" | "error" | "success"): void;
 };
 
 export async function pauseAutoForProviderError(
