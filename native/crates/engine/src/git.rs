@@ -32,6 +32,35 @@ fn git_err(context: &str, e: git2::Error) -> Error {
     Error::new(Status::GenericFailure, format!("{context}: {e}"))
 }
 
+/// Validate that a file path stays within the repository boundary.
+/// Prevents path traversal attacks via patterns like `../../etc/passwd`.
+fn validate_path_within_repo(repo_path: &str, file_path: &str) -> Result<std::path::PathBuf> {
+    let repo_dir = std::fs::canonicalize(repo_path).map_err(|e| {
+        Error::new(Status::GenericFailure, format!("Failed to canonicalize repo path '{repo_path}': {e}"))
+    })?;
+    let full_path = repo_dir.join(file_path);
+    let canonical = if full_path.exists() {
+        std::fs::canonicalize(&full_path).map_err(|e| {
+            Error::new(Status::GenericFailure, format!("Failed to canonicalize path '{file_path}': {e}"))
+        })?
+    } else if let Some(parent) = full_path.parent() {
+        if parent.exists() {
+            let cp = std::fs::canonicalize(parent).map_err(|e| {
+                Error::new(Status::GenericFailure, format!("Failed to canonicalize parent of '{file_path}': {e}"))
+            })?;
+            cp.join(full_path.file_name().unwrap_or_default())
+        } else {
+            full_path.clone()
+        }
+    } else {
+        full_path.clone()
+    };
+    if !canonical.starts_with(&repo_dir) {
+        return Err(Error::new(Status::GenericFailure, format!("Path '{file_path}' escapes repository boundary")));
+    }
+    Ok(canonical)
+}
+
 /// Resolve a ref string to an Oid. Supports branch names, tags, HEAD, etc.
 fn resolve_ref(repo: &Repository, refspec: &str) -> Result<git2::Oid> {
     repo.revparse_single(refspec)
@@ -754,7 +783,7 @@ pub fn git_ls_files(repo_path: String, pathspec: String) -> Result<Vec<String>> 
     let mut files = Vec::new();
     for entry in index.iter() {
         let path = String::from_utf8_lossy(&entry.path).to_string();
-        if path.starts_with(&pathspec) || pathspec.ends_with('/') && path.starts_with(&pathspec) {
+        if path.starts_with(&pathspec) || (pathspec.ends_with('/') && path.starts_with(pathspec.trim_end_matches('/'))) {
             files.push(path);
         }
     }
@@ -1011,6 +1040,23 @@ pub fn git_commit(
         .index()
         .map_err(|e| git_err("Failed to read index", e))?;
 
+    // If message is empty, read from MERGE_MSG or SQUASH_MSG (--no-edit equivalent)
+    let message = if message.is_empty() {
+        let merge_msg_path = repo.path().join("MERGE_MSG");
+        let squash_msg_path = repo.path().join("SQUASH_MSG");
+        if merge_msg_path.exists() {
+            std::fs::read_to_string(&merge_msg_path)
+                .unwrap_or_else(|_| "Merge commit".to_string())
+        } else if squash_msg_path.exists() {
+            std::fs::read_to_string(&squash_msg_path)
+                .unwrap_or_else(|_| "Squash commit".to_string())
+        } else {
+            "Merge commit".to_string()
+        }
+    } else {
+        message
+    };
+
     // Write the index as a tree
     let tree_oid = index
         .write_tree()
@@ -1057,10 +1103,13 @@ pub fn git_commit(
         .commit(Some("HEAD"), &sig, &sig, &message, &tree, &parents)
         .map_err(|e| git_err("Failed to create commit", e))?;
 
-    // Also clean up SQUASH_MSG if present
-    let squash_msg_path = repo.path().join("SQUASH_MSG");
-    if squash_msg_path.exists() {
-        std::fs::remove_file(&squash_msg_path).ok();
+    // Clean up merge/squash message files after commit
+    for msg_file in &["SQUASH_MSG", "MERGE_MSG"] {
+        let msg_path = repo.path().join(msg_file);
+        if msg_path.exists() {
+            std::fs::remove_file(&msg_path)
+                .map_err(|e| Error::new(Status::GenericFailure, format!("Failed to clean up {msg_file}: {e}")))?;
+        }
     }
 
     Ok(format!("{oid}"))
@@ -1128,13 +1177,14 @@ pub fn git_checkout_theirs(repo_path: String, paths: Vec<String>) -> Result<()> 
                 .add(&resolved)
                 .map_err(|e| git_err(&format!("Failed to add resolved '{path}'"), e))?;
 
-            // Also checkout the file to working directory
+            // Also checkout the file to working directory (with path traversal validation)
             let blob = repo
                 .find_blob(blob_id)
                 .map_err(|e| git_err(&format!("Failed to find blob for '{path}'"), e))?;
-            let full_path = Path::new(&repo_path).join(path);
+            let full_path = validate_path_within_repo(&repo_path, path)?;
             if let Some(parent) = full_path.parent() {
-                std::fs::create_dir_all(parent).ok();
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| Error::new(Status::GenericFailure, format!("Failed to create directory for '{path}': {e}")))?;
             }
             std::fs::write(&full_path, blob.content())
                 .map_err(|e| Error::new(Status::GenericFailure, format!("Failed to write '{path}': {e}")))?;
@@ -1238,7 +1288,8 @@ pub fn git_merge_abort(repo_path: String) -> Result<()> {
         .map_err(|e| git_err("Failed to reset", e))?;
 
     // Clean up merge state files
-    repo.cleanup_state().ok();
+    repo.cleanup_state()
+        .map_err(|e| git_err("Failed to cleanup merge state", e))?;
 
     Ok(())
 }
@@ -1270,14 +1321,17 @@ pub fn git_rebase_abort(repo_path: String) -> Result<()> {
 
         // Clean up rebase state directories
         if rebase_merge.exists() {
-            std::fs::remove_dir_all(&rebase_merge).ok();
+            std::fs::remove_dir_all(&rebase_merge)
+                .map_err(|e| Error::new(Status::GenericFailure, format!("Failed to remove rebase-merge state: {e}")))?;
         }
         if rebase_apply.exists() {
-            std::fs::remove_dir_all(&rebase_apply).ok();
+            std::fs::remove_dir_all(&rebase_apply)
+                .map_err(|e| Error::new(Status::GenericFailure, format!("Failed to remove rebase-apply state: {e}")))?;
         }
     }
 
-    repo.cleanup_state().ok();
+    repo.cleanup_state()
+        .map_err(|e| git_err("Failed to cleanup repo state", e))?;
     Ok(())
 }
 
@@ -1310,7 +1364,7 @@ pub fn git_branch_delete(repo_path: String, branch: String, force: Option<bool>)
         .find_branch(&branch, BranchType::Local)
         .map_err(|e| git_err(&format!("Branch '{branch}' not found"), e))?;
 
-    if force.unwrap_or(true) {
+    if force.unwrap_or(false) {
         // Force delete (like -D): delete the ref directly
         let refname = format!("refs/heads/{branch}");
         if let Ok(mut reference) = repo.find_reference(&refname) {
@@ -1418,11 +1472,13 @@ pub fn git_rm_force(repo_path: String, paths: Vec<String>) -> Result<()> {
         .map_err(|e| git_err("Failed to read index", e))?;
 
     for path in &paths {
-        index.remove_path(Path::new(path)).ok();
-        // Also delete from working tree
-        let full_path = Path::new(&repo_path).join(path);
+        index.remove_path(Path::new(path))
+            .map_err(|e| git_err(&format!("Failed to remove '{path}' from index"), e))?;
+        // Also delete from working tree (with path traversal validation)
+        let full_path = validate_path_within_repo(&repo_path, path)?;
         if full_path.exists() {
-            std::fs::remove_file(&full_path).ok();
+            std::fs::remove_file(&full_path)
+                .map_err(|e| Error::new(Status::GenericFailure, format!("Failed to delete '{path}': {e}")))?;
         }
     }
 

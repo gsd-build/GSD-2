@@ -241,7 +241,7 @@ export function removeWorktree(
   const wtPath = worktreePath(basePath, name);
   const resolvedWtPath = existsSync(wtPath) ? realpathSync(wtPath) : wtPath;
   const branch = opts.branch ?? worktreeBranchName(name);
-  const { deleteBranch = true } = opts;
+  const { deleteBranch = true, force = true } = opts;
 
   // If we're inside the worktree, move out first — git can't remove an in-use directory
   const cwd = process.cwd();
@@ -258,10 +258,10 @@ export function removeWorktree(
     return;
   }
 
-  // Force-remove to handle dirty worktrees
-  try { nativeWorktreeRemove(basePath, wtPath, true); } catch { /* may fail */ }
+  // Remove worktree (force if requested, to handle dirty worktrees)
+  try { nativeWorktreeRemove(basePath, wtPath, force); } catch { /* may fail */ }
 
-  // If the directory is still there (e.g. locked), try harder
+  // If the directory is still there (e.g. locked), try harder with force
   if (existsSync(wtPath)) {
     try { nativeWorktreeRemove(basePath, wtPath, true); } catch { /* may fail */ }
   }

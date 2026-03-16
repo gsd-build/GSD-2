@@ -330,7 +330,15 @@ export function nativeDiffStat(basePath: string, fromRef: string, toRef: string)
   }
 
   const result = gitExec(basePath, args, true);
-  return { filesChanged: 0, insertions: 0, deletions: 0, summary: result };
+  // Parse numeric stats from the summary line (e.g. "3 files changed, 10 insertions(+), 2 deletions(-)")
+  let filesChanged = 0, insertions = 0, deletions = 0;
+  const statsMatch = result.match(/(\d+) files? changed(?:, (\d+) insertions?\(\+\))?(?:, (\d+) deletions?\(-\))?/);
+  if (statsMatch) {
+    filesChanged = parseInt(statsMatch[1] ?? "0", 10);
+    insertions = parseInt(statsMatch[2] ?? "0", 10);
+    deletions = parseInt(statsMatch[3] ?? "0", 10);
+  }
+  return { filesChanged, insertions, deletions, summary: result };
 }
 
 /**
@@ -526,7 +534,7 @@ export function nativeLsFiles(basePath: string, pathspec: string): string[] {
     return native.gitLsFiles(basePath, pathspec);
   }
 
-  const result = gitExec(basePath, ["ls-files", `"${pathspec}"`], true);
+  const result = gitFileExec(basePath, ["ls-files", pathspec], true);
   if (!result) return [];
   return result.split("\n").filter(Boolean);
 }
@@ -578,12 +586,26 @@ export function nativeBatchInfo(basePath: string): GitBatchInfo {
   const status = gitExec(basePath, ["status", "--porcelain"], true);
   const hasChanges = status !== "";
 
+  // Parse porcelain status to count staged vs unstaged changes
+  let stagedCount = 0;
+  let unstagedCount = 0;
+  if (status) {
+    for (const line of status.split("\n")) {
+      if (!line || line.length < 2) continue;
+      const x = line[0]; // index (staged) status
+      const y = line[1]; // worktree (unstaged) status
+      if (x !== " " && x !== "?") stagedCount++;
+      if (y !== " " && y !== "?") unstagedCount++;
+      if (x === "?" && y === "?") unstagedCount++; // untracked files
+    }
+  }
+
   return {
     branch,
     hasChanges,
     status,
-    stagedCount: 0,
-    unstagedCount: 0,
+    stagedCount,
+    unstagedCount,
   };
 }
 
