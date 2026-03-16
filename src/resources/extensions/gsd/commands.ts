@@ -66,10 +66,10 @@ function projectRoot(): string {
 
 export function registerGSDCommand(pi: ExtensionAPI): void {
   pi.registerCommand("gsd", {
-    description: "GSD — Get Shit Done: /gsd next|auto|stop|pause|status|visualize|queue|capture|triage|history|undo|skip|export|cleanup|prefs|config|hooks|doctor|migrate|remote|steer|knowledge",
+    description: "GSD — Get Shit Done: /gsd help|next|auto|stop|pause|status|visualize|queue|capture|triage|history|undo|skip|export|cleanup|prefs|config|hooks|doctor|migrate|remote|steer|knowledge",
     getArgumentCompletions: (prefix: string) => {
       const subcommands = [
-        "next", "auto", "stop", "pause", "status", "visualize", "queue", "discuss",
+        "help", "next", "auto", "stop", "pause", "status", "visualize", "queue", "discuss",
         "capture", "triage",
         "history", "undo", "skip", "export", "cleanup", "prefs",
         "config", "hooks", "doctor", "migrate", "remote", "steer", "knowledge",
@@ -160,6 +160,11 @@ export function registerGSDCommand(pi: ExtensionAPI): void {
 
     async handler(args: string, ctx: ExtensionCommandContext) {
       const trimmed = (typeof args === "string" ? args : "").trim();
+
+      if (trimmed === "help" || trimmed === "h" || trimmed === "?") {
+        showHelp(ctx);
+        return;
+      }
 
       if (trimmed === "status") {
         await handleStatus(ctx);
@@ -324,11 +329,53 @@ export function registerGSDCommand(pi: ExtensionAPI): void {
       }
 
       ctx.ui.notify(
-        `Unknown: /gsd ${trimmed}. Use /gsd next|auto|stop|pause|status|visualize|queue|capture|triage|discuss|history|undo|skip <unit>|export|cleanup|prefs|config|hooks|doctor|migrate|remote|steer <change>|knowledge <type> <entry>.`,
+        `Unknown: /gsd ${trimmed}. Run /gsd help for available commands.`,
         "warning",
       );
     },
   });
+}
+
+function showHelp(ctx: ExtensionCommandContext): void {
+  const lines = [
+    "GSD — Get Shit Done\n",
+    "WORKFLOW",
+    "  /gsd               Run next unit in step mode (same as /gsd next)",
+    "  /gsd next           Execute next task, then pause  [--dry-run] [--verbose]",
+    "  /gsd auto           Run all queued units continuously  [--verbose]",
+    "  /gsd stop           Stop auto-mode gracefully",
+    "  /gsd pause          Pause auto-mode (preserves state, /gsd auto to resume)",
+    "  /gsd discuss        Start guided milestone/slice discussion",
+    "",
+    "VISIBILITY",
+    "  /gsd status         Show progress dashboard  (Ctrl+Alt+G)",
+    "  /gsd visualize      Interactive tree visualizer with 4-tab TUI",
+    "  /gsd queue          Show queued/dispatched units and execution order",
+    "  /gsd history        View execution history  [--cost] [--phase] [--model] [N]",
+    "",
+    "COURSE CORRECTION",
+    "  /gsd steer <desc>   Apply user override to active work",
+    "  /gsd capture <text> Quick-capture a thought to CAPTURES.md",
+    "  /gsd triage         Classify and route pending captures",
+    "  /gsd skip <unit>    Prevent a unit from auto-mode dispatch",
+    "  /gsd undo           Revert last completed unit  [--force]",
+    "",
+    "PROJECT KNOWLEDGE",
+    "  /gsd knowledge <type> <text>   Add rule, pattern, or lesson to KNOWLEDGE.md",
+    "",
+    "CONFIGURATION",
+    "  /gsd prefs          Manage preferences  [global|project|status|wizard|setup]",
+    "  /gsd config         Set API keys for external tools",
+    "  /gsd hooks          Show post-unit hook configuration",
+    "",
+    "MAINTENANCE",
+    "  /gsd doctor         Diagnose and repair .gsd/ state  [audit|fix|heal] [scope]",
+    "  /gsd export         Export milestone/slice results  [--json|--markdown]",
+    "  /gsd cleanup        Remove merged branches or snapshots  [branches|snapshots]",
+    "  /gsd migrate        Upgrade .gsd/ structures to new format",
+    "  /gsd remote         Control remote auto-mode  [slack|discord|status|disconnect]",
+  ];
+  ctx.ui.notify(lines.join("\n"), "info");
 }
 
 async function handleStatus(ctx: ExtensionCommandContext): Promise<void> {
