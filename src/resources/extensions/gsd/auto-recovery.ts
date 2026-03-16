@@ -26,6 +26,7 @@ import {
   buildTaskFileName,
   resolveMilestoneFile,
   clearPathCache,
+  resolveGsdRootFile,
 } from "./paths.js";
 import { parseRoadmap } from "./files.js";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, renameSync } from "node:fs";
@@ -78,6 +79,8 @@ export function resolveExpectedArtifactPath(unitType: string, unitId: string, ba
       const dir = resolveMilestonePath(base, mid);
       return dir ? join(dir, buildMilestoneFileName(mid, "SUMMARY")) : null;
     }
+    case "rewrite-docs":
+      return null;
     default:
       return null;
   }
@@ -100,6 +103,13 @@ export function verifyExpectedArtifact(unitType: string, unitId: string, base: s
   // is managed by the hook engine, not the artifact verification system.
   if (unitType.startsWith("hook/")) return true;
 
+
+  if (unitType === "rewrite-docs") {
+    const overridesPath = resolveGsdRootFile(base, "OVERRIDES");
+    if (!existsSync(overridesPath)) return true;
+    const content = readFileSync(overridesPath, "utf-8");
+    return !content.includes("**Scope:** active");
+  }
 
   const absPath = resolveExpectedArtifactPath(unitType, unitId, base);
   // Unit types with no verifiable artifact always pass (e.g. replan-slice).
@@ -206,6 +216,8 @@ export function diagnoseExpectedArtifact(unitType: string, unitId: string, base:
       return `Slice ${sid} marked [x] in ${relMilestoneFile(base, mid!, "ROADMAP")} + summary + UAT written`;
     case "replan-slice":
       return `${relSliceFile(base, mid!, sid!, "REPLAN")} + updated ${relSliceFile(base, mid!, sid!, "PLAN")}`;
+    case "rewrite-docs":
+      return "Active overrides resolved in .gsd/OVERRIDES.md + plan documents updated";
     case "reassess-roadmap":
       return `${relSliceFile(base, mid!, sid!, "ASSESSMENT")} (roadmap reassessment)`;
     case "run-uat":
