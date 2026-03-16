@@ -2,7 +2,7 @@
  * Remote Questions — shared types
  */
 
-export type RemoteChannel = "slack" | "discord";
+export type RemoteChannel = "slack" | "discord" | "telegram";
 
 export interface RemoteQuestionOption {
   label: string;

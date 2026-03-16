@@ -16,12 +16,14 @@ export interface ResolvedConfig {
 const ENV_KEYS: Record<RemoteChannel, string> = {
   slack: "SLACK_BOT_TOKEN",
   discord: "DISCORD_BOT_TOKEN",
+  telegram: "TELEGRAM_BOT_TOKEN",
 };
 
 // Channel ID format validation — prevents SSRF if preferences are attacker-controlled
 const CHANNEL_ID_PATTERNS: Record<RemoteChannel, RegExp> = {
   slack: /^[A-Z0-9]{9,12}$/,
   discord: /^\d{17,20}$/,
+  telegram: /^-?\d{5,20}$/,
 };
 
 const DEFAULT_TIMEOUT_MINUTES = 5;
@@ -35,7 +37,7 @@ export function resolveRemoteConfig(): ResolvedConfig | null {
   const prefs = loadEffectiveGSDPreferences();
   const rq: RemoteQuestionsConfig | undefined = prefs?.preferences.remote_questions;
   if (!rq || !rq.channel || !rq.channel_id) return null;
-  if (rq.channel !== "slack" && rq.channel !== "discord") return null;
+  if (rq.channel !== "slack" && rq.channel !== "discord" && rq.channel !== "telegram") return null;
 
   const channelId = String(rq.channel_id);
   if (!CHANNEL_ID_PATTERNS[rq.channel].test(channelId)) return null;
@@ -59,7 +61,7 @@ export function getRemoteConfigStatus(): string {
   const prefs = loadEffectiveGSDPreferences();
   const rq: RemoteQuestionsConfig | undefined = prefs?.preferences.remote_questions;
   if (!rq || !rq.channel || !rq.channel_id) return "Remote questions: not configured";
-  if (rq.channel !== "slack" && rq.channel !== "discord") return `Remote questions: unknown channel type \"${rq.channel}\"`;
+  if (rq.channel !== "slack" && rq.channel !== "discord" && rq.channel !== "telegram") return `Remote questions: unknown channel type \"${rq.channel}\"`;
   const channelId = String(rq.channel_id);
   if (!CHANNEL_ID_PATTERNS[rq.channel].test(channelId)) return `Remote questions: invalid ${rq.channel} channel ID format`;
   const envVar = ENV_KEYS[rq.channel];

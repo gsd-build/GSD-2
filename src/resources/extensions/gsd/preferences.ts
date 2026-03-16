@@ -106,7 +106,7 @@ export interface AutoSupervisorConfig {
 }
 
 export interface RemoteQuestionsConfig {
-  channel: "slack" | "discord";
+  channel: "slack" | "discord" | "telegram";
   channel_id: string | number;
   timeout_minutes?: number;        // clamped to 1-30
   poll_interval_seconds?: number;  // clamped to 2-30

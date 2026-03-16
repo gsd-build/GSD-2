@@ -141,6 +141,97 @@ export function parseDiscordResponse(
   return { answers };
 }
 
+export interface TelegramInlineButton {
+  text: string;
+  callback_data: string;
+}
+
+export interface TelegramInlineKeyboardMarkup {
+  inline_keyboard: TelegramInlineButton[][];
+}
+
+export interface TelegramMessage {
+  text: string;
+  parse_mode: "HTML";
+  reply_markup?: TelegramInlineKeyboardMarkup;
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+export function formatForTelegram(prompt: RemotePrompt): TelegramMessage {
+  const lines: string[] = ["<b>GSD needs your input</b>", ""];
+
+  for (let qi = 0; qi < prompt.questions.length; qi++) {
+    const q = prompt.questions[qi];
+    lines.push(`<b>${escapeHtml(q.header)}</b>`);
+    lines.push(escapeHtml(q.question));
+    lines.push("");
+
+    for (let i = 0; i < q.options.length; i++) {
+      lines.push(`${i + 1}. <b>${escapeHtml(q.options[i].label)}</b> — ${escapeHtml(q.options[i].description)}`);
+    }
+
+    lines.push("");
+    if (prompt.questions.length === 1) {
+      lines.push(q.allowMultiple
+        ? "Reply with comma-separated numbers (1,3) or free text."
+        : "Reply with a number or tap a button below.");
+    } else {
+      lines.push(`Question ${qi + 1}/${prompt.questions.length} — reply with one line per question or use semicolons.`);
+    }
+
+    if (qi < prompt.questions.length - 1) lines.push("");
+  }
+
+  const result: TelegramMessage = {
+    text: lines.join("\n"),
+    parse_mode: "HTML",
+  };
+
+  // Inline keyboard for single-question with <=5 options
+  const isSingle = prompt.questions.length === 1;
+  if (isSingle && prompt.questions[0].options.length <= 5) {
+    result.reply_markup = {
+      inline_keyboard: prompt.questions[0].options.map((opt, i) => [{
+        text: `${i + 1}. ${opt.label}`,
+        callback_data: `${prompt.id}:${i}`,
+      }]),
+    };
+  }
+
+  return result;
+}
+
+export function parseTelegramResponse(
+  callbackData: string | null,
+  replyText: string | null,
+  questions: RemoteQuestion[],
+  promptId: string,
+): RemoteAnswer {
+  // Handle callback_data from inline keyboard button press
+  if (callbackData) {
+    const match = callbackData.match(new RegExp(`^${promptId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:(\\d+)$`));
+    if (match && questions.length === 1) {
+      const idx = parseInt(match[1], 10);
+      const q = questions[0];
+      if (idx >= 0 && idx < q.options.length) {
+        return { answers: { [q.id]: { answers: [q.options[idx].label] } } };
+      }
+    }
+  }
+
+  // Handle text reply — delegate to parseSlackReply (text parsing is format-agnostic)
+  if (replyText) return parseSlackReply(replyText, questions);
+
+  const answers: RemoteAnswer["answers"] = {};
+  for (const q of questions) {
+    answers[q.id] = { answers: [], user_note: "No response provided" };
+  }
+  return { answers };
+}
+
 function parseAnswerForQuestion(text: string, q: RemoteQuestion): { answers: string[]; user_note?: string } {
   if (!text) return { answers: [], user_note: "No response provided" };
 
