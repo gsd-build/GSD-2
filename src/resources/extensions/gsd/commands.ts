@@ -66,13 +66,13 @@ function projectRoot(): string {
 
 export function registerGSDCommand(pi: ExtensionAPI): void {
   pi.registerCommand("gsd", {
-    description: "GSD — Get Shit Done: /gsd help|next|auto|stop|pause|status|visualize|queue|capture|triage|history|undo|skip|export|cleanup|prefs|config|hooks|doctor|migrate|remote|steer|knowledge",
+    description: "GSD — Get Shit Done: /gsd help|next|auto|stop|pause|status|visualize|queue|capture|triage|history|undo|skip|export|cleanup|prefs|config|hooks|run-hook|doctor|migrate|remote|steer|knowledge",
     getArgumentCompletions: (prefix: string) => {
       const subcommands = [
         "help", "next", "auto", "stop", "pause", "status", "visualize", "queue", "discuss",
         "capture", "triage",
         "history", "undo", "skip", "export", "cleanup", "prefs",
-        "config", "hooks", "doctor", "migrate", "remote", "steer", "knowledge",
+        "config", "hooks", "run-hook", "doctor", "migrate", "remote", "steer", "knowledge",
       ];
       const parts = prefix.trim().split(/\s+/);
 
@@ -290,6 +290,26 @@ export function registerGSDCommand(pi: ExtensionAPI): void {
       if (trimmed === "hooks") {
         const { formatHookStatus } = await import("./post-unit-hooks.js");
         ctx.ui.notify(formatHookStatus(), "info");
+        return;
+      }
+
+      if (trimmed.startsWith("run-hook ")) {
+        await handleRunHook(trimmed.replace(/^run-hook\s*/, "").trim(), ctx, pi);
+        return;
+      }
+      if (trimmed === "run-hook") {
+        ctx.ui.notify(`Usage: /gsd run-hook <hook-name> <unit-type> <unit-id>
+
+Unit types:
+  execute-task   - Task execution (unit-id: M001/S01/T01)
+  plan-slice     - Slice planning (unit-id: M001/S01)
+  research-milestone - Milestone research (unit-id: M001)
+  complete-slice - Slice completion (unit-id: M001/S01)
+  complete-milestone - Milestone completion (unit-id: M001)
+
+Examples:
+  /gsd run-hook code-review execute-task M001/S01/T01
+  /gsd run-hook lint-check plan-slice M001/S01`, "warning");
         return;
       }
 
@@ -1533,5 +1553,71 @@ async function handleSteer(change: string, ctx: ExtensionCommandContext, pi: Ext
       display: false,
     }, { triggerTurn: true });
     ctx.ui.notify(`Override registered: "${change}". Update plan documents to reflect this change.`, "info");
+  }
+}
+
+async function handleRunHook(args: string, ctx: ExtensionCommandContext, pi: ExtensionAPI): Promise<void> {
+  const parts = args.trim().split(/\s+/);
+  if (parts.length < 3) {
+    ctx.ui.notify(`Usage: /gsd run-hook <hook-name> <unit-type> <unit-id>
+
+Unit types:
+  execute-task   - Task execution (unit-id: M001/S01/T01)
+  plan-slice     - Slice planning (unit-id: M001/S01)
+  research-milestone - Milestone research (unit-id: M001)
+  complete-slice - Slice completion (unit-id: M001/S01)
+  complete-milestone - Milestone completion (unit-id: M001)
+
+Examples:
+  /gsd run-hook code-review execute-task M001/S01/T01
+  /gsd run-hook lint-check plan-slice M001/S01`, "warning");
+    return;
+  }
+
+  const [hookName, unitType, unitId] = parts;
+  const basePath = projectRoot();
+
+  // Import the hook trigger function
+  const { triggerHookManually, formatHookStatus, getHookStatus } = await import("./post-unit-hooks.js");
+  const { dispatchHookUnit } = await import("./auto.js");
+  
+  // Check if the hook exists
+  const hooks = getHookStatus();
+  const hookExists = hooks.some(h => h.name === hookName);
+  if (!hookExists) {
+    ctx.ui.notify(`Hook "${hookName}" not found. Configured hooks:\n${formatHookStatus()}`, "error");
+    return;
+  }
+
+  // Validate unit ID format
+  const unitIdPattern = /^M\d{3}\/S\d{2,3}\/T\d{2,3}$/;
+  if (!unitIdPattern.test(unitId)) {
+    ctx.ui.notify(`Invalid unit ID format: "${unitId}". Expected format: M004/S04/T03`, "warning");
+    return;
+  }
+
+  // Trigger the hook manually
+  const hookUnit = triggerHookManually(hookName, unitType, unitId, basePath);
+  if (!hookUnit) {
+    ctx.ui.notify(`Failed to trigger hook "${hookName}". The hook may be disabled or not configured for unit type "${unitType}".`, "error");
+    return;
+  }
+
+  ctx.ui.notify(`Manually triggering hook: ${hookName} for ${unitType} ${unitId}`, "info");
+
+  // Dispatch the hook unit directly, bypassing normal pre-dispatch hooks
+  const success = await dispatchHookUnit(
+    ctx,
+    pi,
+    hookName,
+    unitType,
+    unitId,
+    hookUnit.prompt,
+    hookUnit.model,
+    basePath,
+  );
+
+  if (!success) {
+    ctx.ui.notify("Failed to dispatch hook. Auto-mode may have been cancelled.", "error");
   }
 }
