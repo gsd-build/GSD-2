@@ -8,7 +8,7 @@
 // Critical invariant: generated markdown must round-trip through
 // parseDecisionsTable() and parseRequirementsSections() with field fidelity.
 
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import type { Decision, Requirement } from './types.js';
 import { resolveGsdRootFile } from './paths.js';
 import { saveFile } from './files.js';
@@ -327,8 +327,12 @@ export async function saveArtifactToDb(
       full_content: opts.content,
     });
 
-    // Write the file to disk
-    const fullPath = join(basePath, '.gsd', opts.path);
+    // Write the file to disk (guard against path traversal)
+    const gsdDir = resolve(basePath, '.gsd');
+    const fullPath = resolve(basePath, '.gsd', opts.path);
+    if (!fullPath.startsWith(gsdDir)) {
+      throw new Error(`saveArtifactToDb: path escapes .gsd/ directory: ${opts.path}`);
+    }
     await saveFile(fullPath, opts.content);
   } catch (err) {
     process.stderr.write(`gsd-db: saveArtifactToDb failed: ${(err as Error).message}\n`);

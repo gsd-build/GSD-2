@@ -539,9 +539,10 @@ export function reconcileWorktreeDb(
     return zero;
   }
 
-  // Safety: reject paths with single quotes (SQL injection via ATTACH)
-  if (worktreeDbPath.includes("'")) {
-    process.stderr.write(`gsd-db: worktree DB reconciliation failed: path contains single quote\n`);
+  // Safety: reject paths with characters that could enable SQL injection via ATTACH.
+  // SQLite ATTACH doesn't support parameterized binding, so we allowlist safe chars.
+  if (!/^[a-zA-Z0-9_.\-\/ ]+$/.test(worktreeDbPath)) {
+    process.stderr.write(`gsd-db: worktree DB reconciliation failed: path contains unsafe characters\n`);
     return zero;
   }
 
