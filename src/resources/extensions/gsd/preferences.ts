@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { getAgentDir } from "@gsd/pi-coding-agent";
@@ -1130,4 +1130,62 @@ export function resolvePreDispatchHooks(): PreDispatchHookConfig[] {
   const prefs = loadEffectiveGSDPreferences();
   return (prefs?.preferences.pre_dispatch_hooks ?? [])
     .filter(h => h.enabled !== false);
+}
+
+/**
+ * Validate a model ID string.
+ * Returns true if the ID looks like a valid model identifier.
+ */
+export function validateModelId(modelId: string): boolean {
+  if (!modelId || typeof modelId !== "string") return false;
+  const trimmed = modelId.trim();
+  if (trimmed.length === 0 || trimmed.length > 256) return false;
+  // Allow alphanumeric, hyphens, underscores, dots, slashes, colons
+  return /^[a-zA-Z0-9\-_./:]+$/.test(trimmed);
+}
+
+/**
+ * Update the models section of the global GSD preferences file.
+ * Performs a safe read-modify-write: reads current content, updates the models
+ * YAML block, and writes back. Creates the file if it doesn't exist.
+ */
+export function updatePreferencesModels(models: GSDModelConfigV2): void {
+  const prefsPath = getGlobalGSDPreferencesPath();
+
+  let content = "";
+  if (existsSync(prefsPath)) {
+    content = readFileSync(prefsPath, "utf-8");
+  }
+
+  // Build the new models block
+  const lines: string[] = ["models:"];
+  for (const [phase, value] of Object.entries(models)) {
+    if (typeof value === "string") {
+      lines.push(`  ${phase}: ${value}`);
+    } else if (value && typeof value === "object") {
+      const config = value as GSDPhaseModelConfig;
+      lines.push(`  ${phase}:`);
+      lines.push(`    model: ${config.model}`);
+      if (config.provider) {
+        lines.push(`    provider: ${config.provider}`);
+      }
+      if (config.fallbacks && config.fallbacks.length > 0) {
+        lines.push(`    fallbacks:`);
+        for (const fb of config.fallbacks) {
+          lines.push(`      - ${fb}`);
+        }
+      }
+    }
+  }
+  const modelsBlock = lines.join("\n");
+
+  // Replace existing models block or append
+  const modelsRegex = /^models:[\s\S]*?(?=\n[a-z_]|\n*$)/m;
+  if (modelsRegex.test(content)) {
+    content = content.replace(modelsRegex, modelsBlock);
+  } else {
+    content = content.trimEnd() + "\n\n" + modelsBlock + "\n";
+  }
+
+  writeFileSync(prefsPath, content, "utf-8");
 }
