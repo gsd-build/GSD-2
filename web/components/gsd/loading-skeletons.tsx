@@ -26,8 +26,8 @@ function CurrentUnitCardSkeleton({ icon }: { icon: React.ReactNode }) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Current Unit</p>
-          <Skeleton className="mt-2 h-7 w-24" />
-          <Skeleton className="mt-1.5 h-3 w-20" />
+          <Skeleton className="mt-2 h-7 w-20" />
+          <Skeleton className="mt-1.5 h-3 w-16" />
         </div>
         <div className="shrink-0 rounded-md bg-accent p-2 text-muted-foreground">{icon}</div>
       </div>

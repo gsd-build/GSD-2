@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import {
   Activity,
   Clock,
@@ -13,6 +14,7 @@ import {
   Wrench,
   MessageSquare,
   Loader2,
+  Milestone,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
@@ -33,6 +35,7 @@ import {
 } from "@/lib/gsd-workspace-store"
 import { getTaskStatus, type ItemStatus } from "@/lib/workspace-status"
 import { deriveWorkflowAction } from "@/lib/workflow-actions"
+import { NewMilestoneDialog } from "@/components/gsd/new-milestone-dialog"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   CurrentSliceCardSkeleton,
@@ -118,6 +121,7 @@ interface DashboardProps {
 export function Dashboard({ onSwitchView, onExpandTerminal }: DashboardProps = {}) {
   const state = useGSDWorkspaceState()
   const { sendCommand } = useGSDWorkspaceActions()
+  const [milestoneDialogOpen, setMilestoneDialogOpen] = useState(false)
   const boot = state.boot
   const workspace = getLiveWorkspaceIndex(state)
   const auto = getLiveAutoDashboard(state)
@@ -157,6 +161,15 @@ export function Dashboard({ onSwitchView, onExpandTerminal }: DashboardProps = {
   const handleWorkflowAction = (command: string) => {
     void sendCommand(buildPromptCommand(command, bridge))
     onExpandTerminal?.()
+  }
+
+  const handlePrimaryAction = () => {
+    if (!workflowAction.primary) return
+    if (workflowAction.isNewMilestone) {
+      setMilestoneDialogOpen(true)
+    } else {
+      handleWorkflowAction(workflowAction.primary.command)
+    }
   }
 
   const recentLines: WorkspaceTerminalLine[] = (state.terminalLines ?? []).slice(-6)
@@ -212,7 +225,7 @@ export function Dashboard({ onSwitchView, onExpandTerminal }: DashboardProps = {
           ) : null}
           {!isConnecting && workflowAction.primary && (
             <button
-              onClick={() => handleWorkflowAction(workflowAction.primary!.command)}
+              onClick={handlePrimaryAction}
               disabled={workflowAction.disabled}
               className={cn(
                 "inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
@@ -225,6 +238,8 @@ export function Dashboard({ onSwitchView, onExpandTerminal }: DashboardProps = {
             >
               {state.commandInFlight ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : workflowAction.isNewMilestone ? (
+                <Milestone className="h-3.5 w-3.5" />
               ) : (
                 <Play className="h-3.5 w-3.5" />
               )}
@@ -287,8 +302,8 @@ export function Dashboard({ onSwitchView, onExpandTerminal }: DashboardProps = {
                 <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Current Unit</p>
                 {isConnecting ? (
                   <>
-                    <Skeleton className="mt-2 h-6 w-40" />
-                    <Skeleton className="mt-1.5 h-3 w-28" />
+                    <Skeleton className="mt-2 h-7 w-20" />
+                    <Skeleton className="mt-1.5 h-3 w-16" />
                   </>
                 ) : (
                   <>
@@ -527,6 +542,8 @@ export function Dashboard({ onSwitchView, onExpandTerminal }: DashboardProps = {
           </div>
         )}
       </div>
+
+      <NewMilestoneDialog open={milestoneDialogOpen} onOpenChange={setMilestoneDialogOpen} />
     </div>
   )
 }

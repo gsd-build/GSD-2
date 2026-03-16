@@ -26,6 +26,8 @@ export interface WorkflowActionResult {
   secondaries: { label: string; command: string }[]
   disabled: boolean
   disabledReason?: string
+  /** When true, the primary action should open the New Milestone dialog instead of sending a command directly. */
+  isNewMilestone: boolean
 }
 
 export function deriveWorkflowAction(input: WorkflowActionInput): WorkflowActionResult {
@@ -38,7 +40,7 @@ export function deriveWorkflowAction(input: WorkflowActionInput): WorkflowAction
     projectDetectionKind !== "active-gsd" &&
     projectDetectionKind !== "empty-gsd"
   ) {
-    return { primary: null, secondaries: [], disabled: true, disabledReason: "Project setup pending" }
+    return { primary: null, secondaries: [], disabled: true, disabledReason: "Project setup pending", isNewMilestone: false }
   }
 
   // Determine disabled state and reason
@@ -59,6 +61,7 @@ export function deriveWorkflowAction(input: WorkflowActionInput): WorkflowAction
   // Derive primary action
   let primary: WorkflowAction | null = null
   const secondaries: { label: string; command: string }[] = []
+  let isNewMilestone = false
 
   if (autoActive && !autoPaused) {
     primary = { label: "Stop Auto", command: "/gsd stop", variant: "destructive" }
@@ -66,7 +69,11 @@ export function deriveWorkflowAction(input: WorkflowActionInput): WorkflowAction
     primary = { label: "Resume Auto", command: "/gsd auto", variant: "default" }
   } else {
     // Auto is not active
-    if (phase === "planning") {
+    if (phase === "complete") {
+      // All milestones done — surface a distinct "New Milestone" action
+      primary = { label: "New Milestone", command: "/gsd", variant: "default" }
+      isNewMilestone = true
+    } else if (phase === "planning") {
       primary = { label: "Plan", command: "/gsd", variant: "default" }
     } else if (phase === "executing" || phase === "summarizing") {
       primary = { label: "Start Auto", command: "/gsd auto", variant: "default" }
@@ -76,11 +83,11 @@ export function deriveWorkflowAction(input: WorkflowActionInput): WorkflowAction
       primary = { label: "Continue", command: "/gsd", variant: "default" }
     }
 
-    // Add "Step" secondary when auto is not active
-    if (primary.command !== "/gsd next") {
+    // Add "Step" secondary when auto is not active (not for new milestone — no step concept there)
+    if (primary.command !== "/gsd next" && !isNewMilestone) {
       secondaries.push({ label: "Step", command: "/gsd next" })
     }
   }
 
-  return { primary, secondaries, disabled, disabledReason }
+  return { primary, secondaries, disabled, disabledReason, isNewMilestone }
 }

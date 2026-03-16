@@ -1,8 +1,9 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { Sidebar, MilestoneExplorer } from "@/components/gsd/sidebar"
 import { Terminal } from "@/components/gsd/terminal"
+import { ShellTerminal } from "@/components/gsd/shell-terminal"
 import { Dashboard } from "@/components/gsd/dashboard"
 import { Roadmap } from "@/components/gsd/roadmap"
 import { FilesView } from "@/components/gsd/files-view"
@@ -68,6 +69,10 @@ function viewStorageKey(projectCwd: string): string {
 function WorkspaceChrome() {
   const [activeView, setActiveView] = useState("dashboard")
   const [isTerminalExpanded, setIsTerminalExpanded] = useState(false)
+  const [terminalHeight, setTerminalHeight] = useState(300)
+  const isDraggingTerminal = useRef(false)
+  const dragStartY = useRef(0)
+  const dragStartHeight = useRef(0)
   const [viewRestored, setViewRestored] = useState(false)
   const workspace = useGSDWorkspaceState()
   const { refreshBoot } = useGSDWorkspaceActions()
@@ -119,6 +124,38 @@ function WorkspaceChrome() {
   const handleViewChange = useCallback((view: string) => {
     setActiveView(view)
   }, [])
+
+  // Terminal panel drag-to-resize
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDraggingTerminal.current) return
+      const delta = dragStartY.current - e.clientY
+      const newHeight = Math.max(150, Math.min(600, dragStartHeight.current + delta))
+      setTerminalHeight(newHeight)
+    }
+    const handleMouseUp = () => {
+      isDraggingTerminal.current = false
+      document.body.style.cursor = ""
+      document.body.style.userSelect = ""
+    }
+    document.addEventListener("mousemove", handleMouseMove)
+    document.addEventListener("mouseup", handleMouseUp)
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove)
+      document.removeEventListener("mouseup", handleMouseUp)
+    }
+  }, [])
+
+  const handleTerminalDragStart = useCallback(
+    (e: React.MouseEvent) => {
+      isDraggingTerminal.current = true
+      dragStartY.current = e.clientY
+      dragStartHeight.current = terminalHeight
+      document.body.style.cursor = "row-resize"
+      document.body.style.userSelect = "none"
+    },
+    [terminalHeight],
+  )
 
   const retryDisabled = !!workspace.commandInFlight || workspace.onboardingRequestState !== "idle"
   const isConnecting = workspace.bootStatus === "idle" || workspace.bootStatus === "loading"
@@ -224,48 +261,38 @@ function WorkspaceChrome() {
           </div>
 
           {activeView !== "power" && (
-            <div className="border-t border-border">
-              <button
-                onClick={() => !isConnecting && setIsTerminalExpanded(!isTerminalExpanded)}
-                disabled={isConnecting}
-                className={cn(
-                  "flex h-8 w-full items-center justify-between bg-card px-3 text-xs",
-                  !isConnecting && "transition-colors hover:bg-accent/50",
-                  isConnecting && "cursor-default",
-                )}
-              >
-                <span className="min-w-0 flex items-center gap-2 text-muted-foreground">
-                  <span className="font-medium text-foreground">Terminal</span>
-                  <span className="truncate font-mono text-[10px]" data-testid="workspace-session-label">
-                    {isConnecting ? (
-                      <Skeleton className="inline-block h-3 w-36 align-middle" />
-                    ) : (
-                      sessionLabel || "Waiting for live session…"
-                    )}
-                  </span>
-                </span>
-                <span className="flex items-center gap-2 text-muted-foreground">
-                  <span
-                    className={cn(
-                      "h-1.5 w-1.5 rounded-full",
-                      isConnecting
-                        ? "bg-muted-foreground/30 animate-pulse"
-                        : connectionDotClass(status.tone),
-                      !isConnecting && status.tone === "success" && "animate-pulse",
-                    )}
-                  />
-                  <span className={cn("font-medium", isConnecting && "text-muted-foreground/50")}>
-                    {runtimeLabel}
-                  </span>
-                </span>
-              </button>
+            <div className="border-t border-border flex flex-col" style={{ flexShrink: 0 }}>
+              {/* Drag handle + toggle header */}
               <div
                 className={cn(
-                  "overflow-hidden transition-all duration-200",
-                  isTerminalExpanded ? "h-64" : "h-0",
+                  "flex h-8 w-full items-center justify-between bg-card px-3 text-xs",
+                  isTerminalExpanded && "cursor-row-resize",
                 )}
+                onMouseDown={(e) => {
+                  if (isTerminalExpanded) handleTerminalDragStart(e)
+                }}
               >
-                <Terminal className="h-full" />
+                <button
+                  onClick={() => !isConnecting && setIsTerminalExpanded(!isTerminalExpanded)}
+                  disabled={isConnecting}
+                  className={cn(
+                    "flex items-center gap-2 text-muted-foreground",
+                    !isConnecting && "transition-colors hover:text-foreground",
+                    isConnecting && "cursor-default",
+                  )}
+                >
+                  <span className="font-medium text-foreground">Terminal</span>
+                  <span className="text-[10px] text-muted-foreground/50">
+                    {isTerminalExpanded ? "▼" : "▲"}
+                  </span>
+                </button>
+              </div>
+              {/* Terminal content */}
+              <div
+                className="overflow-hidden"
+                style={{ height: isTerminalExpanded ? terminalHeight : 0, transition: isDraggingTerminal.current ? "none" : "height 200ms" }}
+              >
+                <ShellTerminal className="h-full" />
               </div>
             </div>
           )}

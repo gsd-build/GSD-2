@@ -17,6 +17,7 @@ import {
   Columns2,
   LogOut,
   Loader2,
+  Milestone,
   SkipForward,
 } from "lucide-react"
 import {
@@ -41,6 +42,7 @@ import {
 import { getMilestoneStatus, getSliceStatus, getTaskStatus, type ItemStatus } from "@/lib/workspace-status"
 import { deriveWorkflowAction } from "@/lib/workflow-actions"
 import { Skeleton } from "@/components/ui/skeleton"
+import { NewMilestoneDialog } from "@/components/gsd/new-milestone-dialog"
 
 const StatusIcon = ({ status }: { status: ItemStatus }) => {
   if (status === "done") {
@@ -179,6 +181,7 @@ export function MilestoneExplorer({ isConnecting = false }: { isConnecting?: boo
   const { sendCommand } = useGSDWorkspaceActions()
   const [expandedMilestones, setExpandedMilestones] = useState<string[]>([])
   const [expandedSlices, setExpandedSlices] = useState<string[]>([])
+  const [milestoneDialogOpen, setMilestoneDialogOpen] = useState(false)
 
   const liveWorkspace = getLiveWorkspaceIndex(workspace)
   const milestones = liveWorkspace?.milestones ?? []
@@ -199,6 +202,15 @@ export function MilestoneExplorer({ isConnecting = false }: { isConnecting?: boo
 
   const handleCommand = (command: string) => {
     void sendCommand(buildPromptCommand(command, bridge))
+  }
+
+  const handlePrimaryAction = () => {
+    if (!workflowAction.primary) return
+    if (workflowAction.isNewMilestone) {
+      setMilestoneDialogOpen(true)
+    } else {
+      handleCommand(workflowAction.primary.command)
+    }
   }
 
   useEffect(() => {
@@ -374,7 +386,7 @@ export function MilestoneExplorer({ isConnecting = false }: { isConnecting?: boo
         <div className="border-t border-border px-3 py-2.5">
           <div className="flex items-center gap-2">
             <button
-              onClick={() => handleCommand(workflowAction.primary!.command)}
+              onClick={handlePrimaryAction}
               disabled={workflowAction.disabled}
               className={cn(
                 "inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-md px-3 text-sm font-medium transition-colors",
@@ -387,6 +399,8 @@ export function MilestoneExplorer({ isConnecting = false }: { isConnecting?: boo
             >
               {workspace.commandInFlight ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : workflowAction.isNewMilestone ? (
+                <Milestone className="h-3.5 w-3.5" />
               ) : (
                 <Play className="h-3.5 w-3.5" />
               )}
@@ -409,6 +423,8 @@ export function MilestoneExplorer({ isConnecting = false }: { isConnecting?: boo
           </div>
         </div>
       )}
+
+      <NewMilestoneDialog open={milestoneDialogOpen} onOpenChange={setMilestoneDialogOpen} />
     </div>
   )
 }

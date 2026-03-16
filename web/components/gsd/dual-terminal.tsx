@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react"
 import { cn } from "@/lib/utils"
-import { GripVertical, Wrench, Play, Loader2 } from "lucide-react"
+import { GripVertical, Wrench, Play, Loader2, Milestone } from "lucide-react"
 import {
   useGSDWorkspaceState,
   useGSDWorkspaceActions,
@@ -15,6 +15,7 @@ import {
 } from "@/lib/gsd-workspace-store"
 import { deriveWorkflowAction } from "@/lib/workflow-actions"
 import { ScopeBadge } from "@/components/gsd/scope-badge"
+import { NewMilestoneDialog } from "@/components/gsd/new-milestone-dialog"
 import { Terminal } from "./terminal"
 
 function AutoTerminal() {
@@ -150,6 +151,7 @@ function AutoTerminal() {
 
 export function DualTerminal() {
   const [splitPosition, setSplitPosition] = useState(50)
+  const [milestoneDialogOpen, setMilestoneDialogOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const isDragging = useRef(false)
   const state = useGSDWorkspaceState()
@@ -173,6 +175,15 @@ export function DualTerminal() {
 
   const handleWorkflowAction = (command: string) => {
     void sendCommand(buildPromptCommand(command, bridge))
+  }
+
+  const handlePrimaryAction = () => {
+    if (!workflowAction.primary) return
+    if (workflowAction.isNewMilestone) {
+      setMilestoneDialogOpen(true)
+    } else {
+      handleWorkflowAction(workflowAction.primary.command)
+    }
   }
 
   const handleMouseDown = () => {
@@ -210,7 +221,7 @@ export function DualTerminal() {
           <div className="flex items-center gap-2" data-testid="power-mode-action-bar">
             {workflowAction.primary && (
               <button
-                onClick={() => handleWorkflowAction(workflowAction.primary!.command)}
+                onClick={handlePrimaryAction}
                 disabled={workflowAction.disabled}
                 className={cn(
                   "inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium transition-colors",
@@ -223,6 +234,8 @@ export function DualTerminal() {
               >
                 {state.commandInFlight ? (
                   <Loader2 className="h-3 w-3 animate-spin" />
+                ) : workflowAction.isNewMilestone ? (
+                  <Milestone className="h-3 w-3" />
                 ) : (
                   <Play className="h-3 w-3" />
                 )}
@@ -277,6 +290,8 @@ export function DualTerminal() {
           <Terminal className="h-full" />
         </div>
       </div>
+
+      <NewMilestoneDialog open={milestoneDialogOpen} onOpenChange={setMilestoneDialogOpen} />
     </div>
   )
 }

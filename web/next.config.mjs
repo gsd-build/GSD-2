@@ -14,7 +14,7 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  serverExternalPackages: ['@gsd/native'],
+  serverExternalPackages: ['@gsd/native', 'node-pty'],
 }
 
 export default nextConfig
