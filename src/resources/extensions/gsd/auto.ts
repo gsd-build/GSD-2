@@ -263,6 +263,31 @@ export async function completeAutoWorktreeMilestoneCeremony(
   };
 }
 
+/**
+ * Detect and escape a stale worktree cwd (#608).
+ *
+ * After milestone completion + merge, the worktree directory is removed but
+ * the process cwd may still point inside `.gsd/worktrees/<MID>/`.
+ * When a new session starts, `process.cwd()` is passed as `base` to startAuto
+ * and all subsequent writes land in the wrong directory. This function detects
+ * that scenario and chdir back to the project root.
+ *
+ * Returns the corrected base path.
+ */
+function escapeStaleWorktree(base: string): string {
+  const marker = `${pathSep}.gsd${pathSep}worktrees${pathSep}`;
+  const idx = base.indexOf(marker);
+  if (idx === -1) return base;
+
+  const projectRoot = base.slice(0, idx);
+  try {
+    process.chdir(projectRoot);
+  } catch {
+    return base;
+  }
+  return projectRoot;
+}
+
 /** Crash recovery prompt — set by startAuto, consumed by first dispatchNextUnit */
 let pendingCrashRecovery: string | null = null;
 
@@ -606,6 +631,11 @@ export async function startAuto(
   options?: { step?: boolean },
 ): Promise<void> {
   const requestedStepMode = options?.step ?? false;
+
+  // Escape stale worktree cwd from a previous milestone (#608).
+  // After milestone merge + worktree removal, the process cwd may still point
+  // inside .gsd/worktrees/<MID>/ — detect and chdir back to project root.
+  base = escapeStaleWorktree(base);
 
   // If resuming from paused state, just re-activate and dispatch next unit.
   // The conversation is still intact — no need to reinitialize everything.
