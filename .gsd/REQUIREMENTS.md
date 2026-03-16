@@ -56,8 +56,8 @@ This file is the explicit capability and coverage contract for the project.
 - Source: execution (memory-db port)
 - Primary owning slice: M004/S03
 - Supporting slices: M004/S06
-- Validation: S03 — markdown-to-DB direction wired: migrateFromMarkdown(basePath) called in handleAgentEnd after doctor/rebuildState/commit, guarded by isDbAvailable(), non-fatal. prompt-db.test.ts re-import section proves updated markdown is reflected in DB queries. DB-to-markdown direction (structured tools) deferred to S06.
-- Notes: Re-import in `handleAgentEnd` after auto-commit. DB-first write in structured tools triggers markdown generation (S06).
+- Validation: S03 — markdown-to-DB direction wired: migrateFromMarkdown(basePath) called in handleAgentEnd after doctor/rebuildState/commit, guarded by isDbAvailable(), non-fatal. prompt-db.test.ts re-import section proves updated markdown is reflected in DB queries. S06 — DB-to-markdown direction complete: gsd_save_decision calls generateDecisionsMd→writeFileSync, gsd_update_requirement calls generateRequirementsMd→writeFileSync, gsd_save_summary writes artifact content to disk. Both directions wired and tested (gsd-tools.test.ts 35 assertions).
+- Notes: Re-import in `handleAgentEnd` after auto-commit. DB-first write in structured tools triggers markdown generation. End-to-end loop (tool write → markdown regen → re-import idempotency) deferred to S07.
 
 ### R051 — Token measurement with before/after comparison
 - Class: operability
@@ -105,25 +105,25 @@ This file is the explicit capability and coverage contract for the project.
 
 ### R055 — Structured LLM tools for decisions/requirements/summaries
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: Three tools registered: `gsd_save_decision` (auto-assigns D-numbers, writes to DB + regenerates DECISIONS.md), `gsd_update_requirement` (verifies existence, updates DB + regenerates REQUIREMENTS.md), `gsd_save_summary` (writes artifact to DB + disk).
 - Why it matters: Eliminates the markdown-then-parse roundtrip. LLM writes structured data directly, guaranteeing parseable output.
 - Source: execution (memory-db port)
 - Primary owning slice: M004/S06
 - Supporting slices: M004/S03
-- Validation: unmapped
-- Notes: Port from memory-db. DB-first write pattern: upsert → fetch all → generate markdown → write file.
+- Validation: S06 — all 3 tools registered in index.ts with dynamic-import pattern (D049). gsd-tools.test.ts 35 assertions prove: ID auto-assignment (D001→D002→D003 sequential), DB row creation, DECISIONS.md/REQUIREMENTS.md regeneration, error path for missing requirement (throws with ID in message), DB-unavailable fallback (nextDecisionId returns D001, no throw), saveArtifactToDb at slice/milestone/task path levels, tool result shape.
+- Notes: Port from memory-db. DB-first write pattern: upsert → fetch all → generate markdown → write file. Dynamic import (D049) used in all 3 execute() bodies.
 
 ### R056 — /gsd inspect command for DB diagnostics
 - Class: operability
-- Status: active
+- Status: validated
 - Description: A `/gsd inspect` slash command that dumps schema version, table row counts, and recent entries from each table.
 - Why it matters: When things go wrong, the user needs visibility into DB state without running raw SQL.
 - Source: execution (memory-db port)
 - Primary owning slice: M004/S06
 - Supporting slices: M004/S01
-- Validation: unmapped
-- Notes: Port from memory-db. Autocomplete for subcommands (decisions, requirements, artifacts, all).
+- Validation: S06 — handleInspect and formatInspectOutput wired in commands.ts. `inspect` added to subcommands autocomplete array and handler dispatch. gsd-inspect.test.ts 32 assertions prove formatInspectOutput output across 5 scenarios: full output with sections, empty data, null schema version → "unknown", 5-entry recent lists, multiline text format (not JSON). Handler dispatch and error path confirmed by grep.
+- Notes: Port from memory-db. Uses _getAdapter() for raw SQL queries (schema_version, counts, recent entries). Per-table subcommand filtering not implemented — all tables shown unconditionally.
 
 ### R057 — ≥30% token savings on planning/research dispatches
 - Class: quality-attribute
@@ -662,20 +662,20 @@ This file is the explicit capability and coverage contract for the project.
 | R047 | core-capability | active | M004/S02 | M004/S01 | S02 md-importer.test.ts 70 assertions: parsers, supersession, orchestrator, idempotency, missing files, round-trip |
 | R048 | quality-attribute | active | M004/S02 | M004/S06 | S02 db-writer.test.ts 127 assertions: generators, round-trip parse→generate→parse, write helpers, ID sequencing |
 | R049 | core-capability | active | M004/S03 | M004/S01, M004/S02 | S03 — 19 calls rewired, 52 assertions, scoped filtering proven |
-| R050 | continuity | active | M004/S03 | M004/S06 | S03 — markdown→DB re-import wired in handleAgentEnd, tested. DB→markdown deferred to S06 |
+| R050 | continuity | active | M004/S03 | M004/S06 | S03 markdown→DB wired; S06 DB→markdown complete: gsd_save_decision/gsd_update_requirement/gsd_save_summary regenerate markdown. Both directions proven (gsd-tools.test.ts 35 assertions). |
 | R051 | operability | active | M004/S04 | M004/S03 | S04 token-savings.test.ts 99 assertions: 52.2% plan-slice, 66.3% decisions-only, 32.2% research composite. All 11 snapshotUnitMetrics call sites updated. |
 | R052 | core-capability | active | M004/S04 | M004/S01, M004/S02 | S04 derive-state-db.test.ts 51 assertions: DB path = identical GSDState, fallback, empty DB falls through, partial DB fills gaps, multi-milestone, cache invalidation. |
 | R053 | integration | validated | M004/S05 | M004/S01 | S05 copy hook in copyPlanningArtifacts, worktree-db-integration.test.ts cases 1+2 |
 | R054 | integration | validated | M004/S05 | M004/S01 | S05 reconcile hooks in mergeMilestoneToMain + handleMerge, worktree-db-integration.test.ts cases 3+4+5 |
-| R055 | core-capability | active | M004/S06 | M004/S03 | unmapped |
-| R056 | operability | active | M004/S06 | M004/S01 | unmapped |
+| R055 | core-capability | validated | M004/S06 | M004/S03 | S06 gsd-tools.test.ts 35 assertions: ID auto-assignment, DB write, markdown regen, error paths, DB-unavailable fallback. All 3 tools registered in index.ts. |
+| R056 | operability | validated | M004/S06 | M004/S01 | S06 gsd-inspect.test.ts 32 assertions: formatInspectOutput format across 5 scenarios. handleInspect wired in handler dispatch with autocomplete. |
 | R057 | quality-attribute | active | M004/S07 | M004/S03, M004/S04 | unmapped |
 
 ## Coverage Summary
 
-- Active requirements: 10
+- Active requirements: 8
 - Mapped to slices: 13
-- Validated: 38
+- Validated: 40
 - Deferred: 5
 - Out of scope: 4
 - Unmapped active requirements: 0

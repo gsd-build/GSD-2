@@ -76,7 +76,7 @@ This milestone is complete only when all are true:
 - [x] **S05: Worktree DB Isolation** `risk:medium` `depends:[S01,S02]`
   > After this: `createWorktree` copies gsd.db to new worktrees (sync, non-fatal). Merge paths reconcile worktree DB rows back via ATTACH DATABASE with conflict detection.
 
-- [ ] **S06: Structured LLM Tools + /gsd inspect** `risk:medium` `depends:[S03]`
+- [x] **S06: Structured LLM Tools + /gsd inspect** `risk:medium` `depends:[S03]`
   > After this: LLM writes decisions/requirements/summaries via tool calls that write to DB first, then regenerate markdown. `/gsd inspect` dumps schema version, table counts, recent entries.
 
 - [ ] **S07: Integration Verification + Polish** `risk:low` `depends:[S03,S04,S05,S06]`
