@@ -26,12 +26,16 @@ import { nativeParseRoadmap, nativeExtractSection, nativeParsePlanFile, nativePa
 
 const CACHE_MAX = 50;
 
-/** Fast composite key: length + first/last 100 chars. Unique enough for distinct markdown files. */
+/** Fast composite key: length + first/mid/last 100 chars. The middle sample
+ *  prevents collisions when only a few characters change in the interior of
+ *  a file (e.g., a checkbox [ ] → [x] that doesn't alter length or endpoints). */
 function cacheKey(content: string): string {
   const len = content.length;
   const head = content.slice(0, 100);
+  const midStart = Math.max(0, Math.floor(len / 2) - 50);
+  const mid = len > 200 ? content.slice(midStart, midStart + 100) : '';
   const tail = len > 100 ? content.slice(-100) : '';
-  return `${len}:${head}:${tail}`;
+  return `${len}:${head}:${mid}:${tail}`;
 }
 
 const _parseCache = new Map<string, unknown>();
