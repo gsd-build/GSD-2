@@ -93,13 +93,13 @@ export function resolveExpectedArtifactPath(unitType: string, unitId: string, ba
  * skipped writing the UAT file (see #176).
  */
 export function verifyExpectedArtifact(unitType: string, unitId: string, base: string): boolean {
-  // Clear stale directory listing cache so artifact checks see fresh disk state (#431)
-  clearPathCache();
-
   // Hook units have no standard artifact — always pass. Their lifecycle
   // is managed by the hook engine, not the artifact verification system.
   if (unitType.startsWith("hook/")) return true;
 
+  // Clear stale directory listing cache so artifact checks see fresh disk state (#431).
+  // Moved after hook check to avoid unnecessary cache clears for hook units.
+  clearPathCache();
 
   const absPath = resolveExpectedArtifactPath(unitType, unitId, base);
   // Unit types with no verifiable artifact always pass (e.g. replan-slice).
@@ -274,7 +274,8 @@ export function persistCompletedKey(base: string, key: string): void {
       keys = JSON.parse(readFileSync(file, "utf-8"));
     }
   } catch (e) { /* corrupt file — start fresh */ void e; }
-  if (!keys.includes(key)) {
+  const keySet = new Set(keys);
+  if (!keySet.has(key)) {
     keys.push(key);
     // Atomic write: tmp file + rename prevents partial writes on crash
     const tmpFile = file + ".tmp";
@@ -288,9 +289,12 @@ export function removePersistedKey(base: string, key: string): void {
   const file = completedKeysPath(base);
   try {
     if (existsSync(file)) {
-      let keys: string[] = JSON.parse(readFileSync(file, "utf-8"));
-      keys = keys.filter(k => k !== key);
-      writeFileSync(file, JSON.stringify(keys), "utf-8");
+      const keys: string[] = JSON.parse(readFileSync(file, "utf-8"));
+      const filtered = keys.filter(k => k !== key);
+      // Only write if the key was actually present
+      if (filtered.length !== keys.length) {
+        writeFileSync(file, JSON.stringify(filtered), "utf-8");
+      }
     }
   } catch (e) { /* non-fatal: removePersistedKey failure */ void e; }
 }
@@ -335,8 +339,11 @@ export function reconcileMergeState(basePath: string, ctx: ExtensionContext): bo
   } else {
     // Still conflicted — try auto-resolving .gsd/ state file conflicts (#530)
     const conflictedFiles = unmerged.trim().split("\n").filter(Boolean);
-    const gsdConflicts = conflictedFiles.filter(f => f.startsWith(".gsd/"));
-    const codeConflicts = conflictedFiles.filter(f => !f.startsWith(".gsd/"));
+    const gsdConflicts: string[] = [];
+    const codeConflicts: string[] = [];
+    for (const f of conflictedFiles) {
+      (f.startsWith(".gsd/") ? gsdConflicts : codeConflicts).push(f);
+    }
 
     if (gsdConflicts.length > 0 && codeConflicts.length === 0) {
       // All conflicts are in .gsd/ state files — auto-resolve by accepting theirs

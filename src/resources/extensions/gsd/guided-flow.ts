@@ -132,6 +132,7 @@ export function checkAutoStartAfterDiscuss(): boolean {
 
   pendingAutoStart = null;
   startAuto(ctx, pi, basePath, false, { step }).catch((err) => {
+    ctx.ui.notify(`Auto-start failed: ${err instanceof Error ? err.message : String(err)}`, "warning");
     if (process.env.GSD_DEBUG) console.error('[gsd] auto start error:', err);
   });
   return true;
