@@ -9,7 +9,6 @@ const _geistMono = Geist_Mono({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: 'GSD 2 — Autonomous Coding Agent',
   description: 'The evolution of Get Shit Done — now a real coding agent. One command. Walk away. Come back to a built project.',
-  generator: 'v0.app',
   icons: {
     icon: [
       {

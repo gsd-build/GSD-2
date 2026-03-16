@@ -187,9 +187,21 @@ function WorkspaceChrome() {
       <header className="flex h-12 flex-shrink-0 items-center justify-between border-b border-border bg-card px-4">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
-            <div className="flex h-5 w-5 items-center justify-center rounded bg-foreground text-xs font-bold text-background">
-              G
-            </div>
+            <svg
+              width="18"
+              height="25"
+              viewBox="0 0 433 600"
+              fill="currentColor"
+              xmlns="http://www.w3.org/2000/svg"
+              className="shrink-0"
+              aria-hidden="true"
+            >
+              <rect y="115" width="115" height="370" />
+              <rect x="58" y="600" width="115" height="324" transform="rotate(-90 58 600)" />
+              <rect x="58" y="115" width="115" height="324" transform="rotate(-90 58 115)" />
+              <rect x="310" y="485" width="115" height="123" transform="rotate(-90 310 485)" />
+              <rect x="216" y="370" width="115" height="217" transform="rotate(-90 216 370)" />
+            </svg>
             <span className="font-semibold tracking-tight">GSD 2</span>
           </div>
           <span className="text-2xl font-thin text-muted-foreground/50 leading-none select-none">/</span>
