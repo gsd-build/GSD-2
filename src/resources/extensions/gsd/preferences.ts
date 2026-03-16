@@ -1046,6 +1046,10 @@ export function validatePreferences(preferences: GSDPreferences): {
         errors.push("git.isolation must be one of: worktree, branch");
       }
     }
+    if (g.commit_docs !== undefined) {
+      if (typeof g.commit_docs === "boolean") git.commit_docs = g.commit_docs;
+      else errors.push("git.commit_docs must be a boolean");
+    }
     // Deprecated: merge_to_main is ignored (branchless architecture).
     if (g.merge_to_main !== undefined) {
       warnings.push("git.merge_to_main is deprecated — milestone-level merge is now always used. Remove this setting.");

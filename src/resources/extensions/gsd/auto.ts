@@ -557,17 +557,21 @@ export async function startAuto(
   }
 
   // Ensure .gitignore has baseline patterns
-  ensureGitignore(base);
+  const commitDocs = loadEffectiveGSDPreferences()?.preferences?.git?.commit_docs;
+  ensureGitignore(base, { commitDocs });
   untrackRuntimeFiles(base);
 
   // Bootstrap .gsd/ if it doesn't exist
   const gsdDir = join(base, ".gsd");
   if (!existsSync(gsdDir)) {
     mkdirSync(join(gsdDir, "milestones"), { recursive: true });
-    try {
-      nativeAddPaths(base, [".gsd", ".gitignore"]);
-      nativeCommit(base, "chore: init gsd");
-    } catch { /* nothing to commit */ }
+    // Only commit .gsd/ init when commit_docs is not explicitly false
+    if (commitDocs !== false) {
+      try {
+        nativeAddPaths(base, [".gsd", ".gitignore"]);
+        nativeCommit(base, "chore: init gsd");
+      } catch { /* nothing to commit */ }
+    }
   }
 
   // Initialize GitServiceImpl — basePath is set and git repo confirmed
@@ -658,7 +662,7 @@ export async function startAuto(
   // of the repo's default (main/master). Idempotent when the branch is the
   // same; updates the record when started from a different branch (#300).
   if (currentMilestoneId) {
-    captureIntegrationBranch(base, currentMilestoneId);
+    captureIntegrationBranch(base, currentMilestoneId, { commitDocs });
     setActiveMilestoneId(base, currentMilestoneId);
   }
 
@@ -1211,7 +1215,7 @@ async function dispatchNextUnit(
     unitRecoveryCount.clear();
     unitLifetimeDispatches.clear();
     // Capture integration branch for the new milestone and update git service
-    captureIntegrationBranch(originalBasePath || basePath, mid);
+    captureIntegrationBranch(originalBasePath || basePath, mid, { commitDocs: loadEffectiveGSDPreferences()?.preferences?.git?.commit_docs });
   }
   if (mid) {
     currentMilestoneId = mid;
