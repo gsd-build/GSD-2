@@ -18,7 +18,7 @@ import type {
 
 import { deriveState, invalidateStateCache } from "./state.js";
 import type { BudgetEnforcementMode, GSDState } from "./types.js";
-import { loadFile, parseRoadmap, getManifestStatus } from "./files.js";
+import { loadFile, parseRoadmap, getManifestStatus, resolveAllOverrides } from "./files.js";
 export { inlinePriorMilestoneSummary } from "./files.js";
 import { collectSecretsFromManifest } from "../get-secrets-from-user.js";
 import {
@@ -108,7 +108,7 @@ import {
   buildLoopRemediationSteps,
   reconcileMergeState,
 } from "./auto-recovery.js";
-import { resolveDispatch } from "./auto-dispatch.js";
+import { resolveDispatch, resetRewriteCircuitBreaker } from "./auto-dispatch.js";
 import {
   type AutoDashboardData,
   updateProgressWidget as _updateProgressWidget,
@@ -854,6 +854,17 @@ export async function handleAgentEnd(
       autoCommitCurrentBranch(basePath, currentUnit.type, currentUnit.id);
     } catch {
       // Non-fatal
+    }
+
+    // ── Rewrite-docs completion: resolve overrides and reset circuit breaker ──
+    if (currentUnit.type === "rewrite-docs") {
+      try {
+        await resolveAllOverrides(basePath);
+        resetRewriteCircuitBreaker();
+        ctx.ui.notify("Override(s) resolved — rewrite-docs completed.", "info");
+      } catch {
+        // Non-fatal — verifyExpectedArtifact will catch unresolved overrides
+      }
     }
 
     // ── Path A fix: verify artifact and persist completion before re-entering dispatch ──

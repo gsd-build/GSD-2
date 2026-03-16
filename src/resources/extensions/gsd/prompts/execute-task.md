@@ -8,6 +8,8 @@ Your working directory is `{{workingDirectory}}`. All file reads, writes, and sh
 
 A researcher explored the codebase and a planner decomposed the work — you are the executor. The task plan below is your authoritative contract. It contains the specific files, steps, and verification you need. Don't re-research or re-plan — build what the plan says, verify it works, and document what happened.
 
+{{overridesSection}}
+
 {{resumeSection}}
 
 {{carryForwardSection}}

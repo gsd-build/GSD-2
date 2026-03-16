@@ -12,7 +12,7 @@
 import type { GSDState } from "./types.js";
 import type { GSDPreferences } from "./preferences.js";
 import type { UatType } from "./files.js";
-import { loadFile, extractUatType } from "./files.js";
+import { loadFile, extractUatType, loadActiveOverrides } from "./files.js";
 import {
   resolveMilestoneFile, resolveSliceFile,
   relSliceFile,
@@ -28,6 +28,7 @@ import {
   buildReplanSlicePrompt,
   buildRunUatPrompt,
   buildReassessRoadmapPrompt,
+  buildRewriteDocsPrompt,
   checkNeedsReassessment,
   checkNeedsRunUat,
 } from "./auto-prompts.js";
@@ -54,9 +55,38 @@ interface DispatchRule {
   match: (ctx: DispatchContext) => Promise<DispatchAction | null>;
 }
 
+// ─── Rewrite Circuit Breaker ──────────────────────────────────────────────
+
+const MAX_REWRITE_ATTEMPTS = 3;
+let rewriteAttemptCount = 0;
+export function resetRewriteCircuitBreaker(): void {
+  rewriteAttemptCount = 0;
+}
+
 // ─── Rules ────────────────────────────────────────────────────────────────
 
 const DISPATCH_RULES: DispatchRule[] = [
+  {
+    name: "rewrite-docs (override gate)",
+    match: async ({ mid, midTitle, state, basePath }) => {
+      const pendingOverrides = await loadActiveOverrides(basePath);
+      if (pendingOverrides.length === 0) return null;
+      if (rewriteAttemptCount >= MAX_REWRITE_ATTEMPTS) {
+        const { resolveAllOverrides } = await import("./files.js");
+        await resolveAllOverrides(basePath);
+        rewriteAttemptCount = 0;
+        return null;
+      }
+      rewriteAttemptCount++;
+      const unitId = state.activeSlice ? `${mid}/${state.activeSlice.id}` : mid;
+      return {
+        action: "dispatch",
+        unitType: "rewrite-docs",
+        unitId,
+        prompt: await buildRewriteDocsPrompt(mid, midTitle, state.activeSlice, basePath, pendingOverrides),
+      };
+    },
+  },
   {
     name: "summarizing → complete-slice",
     match: async ({ state, mid, midTitle, basePath }) => {
