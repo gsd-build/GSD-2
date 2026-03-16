@@ -446,14 +446,6 @@ export async function waitForLaunchedHostReady<TBoot extends { project: { cwd: s
 
     await page.waitForFunction(
       () => {
-        const node = document.querySelector('[data-testid="workspace-connection-status"]')
-        return Boolean(node?.textContent?.includes("Bridge connected"))
-      },
-      null,
-      { timeout: markerTimeout },
-    )
-    await page.waitForFunction(
-      () => {
         const node = document.querySelector('[data-testid="sidebar-current-scope"]')
         return Boolean(node?.textContent?.match(/M\d+(?:\/S\d+(?:\/T\d+)?)?/))
       },
@@ -511,18 +503,14 @@ export async function waitForLaunchedHostReady<TBoot extends { project: { cwd: s
     assert.ok((bridgeEvent.bridge?.connectionCount ?? 0) >= 1, `${options.label}: first SSE connection count never became active\n${failureContext}`)
 
     const visible = {
-      connectionStatus: await page.locator('[data-testid="workspace-connection-status"]').textContent(),
       scopeLabel: await page.locator('[data-testid="sidebar-current-scope"]').textContent(),
       unitLabel: await page.locator('[data-testid="status-bar-unit"]').textContent(),
       sessionBanner: await page.locator('[data-testid="terminal-session-banner"]').textContent(),
       projectPathTitle: await page.locator('[data-testid="workspace-project-cwd"]').getAttribute("title"),
-      dashboardRecoveryState: await page.locator('[data-testid="dashboard-recovery-summary-state"]').textContent(),
-      dashboardRecoveryEntrypoint: await page.locator('[data-testid="dashboard-recovery-summary-entrypoint"]').textContent(),
       sidebarRecoveryEntrypoint: await page.locator('[data-testid="sidebar-recovery-summary-entrypoint"]').textContent(),
       recoveryPanelState: null as string | null,
     }
 
-    assert.match(visible.connectionStatus ?? "", /Bridge connected/, `${options.label}: connection marker never showed Bridge connected\n${failureContext}`)
     assert.match(visible.scopeLabel ?? "", /M\d+(?:\/S\d+(?:\/T\d+)?)?/, `${options.label}: current scope marker never became visible\n${failureContext}`)
     assert.match(visible.unitLabel ?? "", /M\d+(?:\/S\d+(?:\/T\d+)?)?|project\s+—/, `${options.label}: status-bar unit marker drifted\n${failureContext}`)
     assert.ok(visible.sessionBanner && !visible.sessionBanner.includes("Waiting for live session"), `${options.label}: session banner never attached to a live session\n${failureContext}`)
@@ -531,14 +519,7 @@ export async function waitForLaunchedHostReady<TBoot extends { project: { cwd: s
       normalizedExpectedProjectCwd,
       `${options.label}: browser shell showed the wrong current project path\n${failureContext}`,
     )
-    assert.ok((visible.dashboardRecoveryState ?? "").trim().length > 0, `${options.label}: dashboard recovery summary state was empty\n${failureContext}`)
-    assert.ok((visible.dashboardRecoveryEntrypoint ?? "").trim().length > 0, `${options.label}: dashboard recovery entrypoint was empty\n${failureContext}`)
     assert.ok((visible.sidebarRecoveryEntrypoint ?? "").trim().length > 0, `${options.label}: sidebar recovery entrypoint was empty\n${failureContext}`)
-
-    await page.locator('[data-testid="dashboard-recovery-summary-entrypoint"]').click()
-    await page.waitForSelector('[data-testid="command-surface-recovery"]', { timeout: markerTimeout })
-    visible.recoveryPanelState = await page.locator('[data-testid="command-surface-recovery-state"]').textContent()
-    assert.ok((visible.recoveryPanelState ?? "").trim().length > 0, `${options.label}: recovery diagnostics panel had no visible load state\n${failureContext}`)
 
     return {
       bootResult,

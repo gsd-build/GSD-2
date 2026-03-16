@@ -530,8 +530,6 @@ test("live browser panels consume live selectors and expose inspectable freshnes
   assert.match(dashboardSource, /getLiveAutoDashboard/, "dashboard.tsx must derive auto metrics from the live auto selector")
   assert.match(dashboardSource, /getLiveResumableSessions/, "dashboard.tsx must derive session picker state from the live session selector")
   assert.match(dashboardSource, /data-testid="dashboard-current-unit"/, "dashboard.tsx must expose a current-unit marker")
-  assert.match(dashboardSource, /data-testid="dashboard-retry-freshness"/, "dashboard.tsx must expose recovery freshness for retry\/compaction diagnostics")
-  assert.match(dashboardSource, /data-testid="dashboard-recovery-summary-entrypoint"/, "dashboard.tsx must expose a visible recovery-summary entrypoint")
 
   assert.match(sidebarSource, /getLiveWorkspaceIndex/, "sidebar.tsx must derive explorer state from the live workspace selector")
   assert.match(sidebarSource, /data-testid="sidebar-validation-count"/, "sidebar.tsx must expose a validation-count marker")

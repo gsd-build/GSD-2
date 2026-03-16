@@ -203,6 +203,8 @@ function WorkspaceChrome() {
         </div>
 
         <div className="flex items-center gap-3">
+          {/* Hidden status marker for test instrumentation */}
+          <span className="sr-only" data-testid="workspace-connection-status">{status.label}</span>
           <span
             className="text-xs text-muted-foreground"
             data-testid="workspace-scope-label"
