@@ -22,6 +22,7 @@ The GSD extension is fully functional with:
 - Auto-worktree lifecycle: `auto-worktree.ts` module creates isolated worktrees per milestone (`milestone/<MID>` branches), wired into auto.ts startAuto/resume/stop with split-brain prevention
 - Branch-per-slice git model with squash merge to main (legacy mode, supported via `git.isolation: "branch"` preference)
 - Decomposed auto-mode: `auto-prompts.ts` (prompt builders), `auto-dispatch.ts` (unit→prompt routing), `auto-recovery.ts` (timeout/crash recovery), `auto-worktree.ts` (worktree lifecycle)
+- SQLite DB foundation: `gsd-db.ts` with tiered provider chain (node:sqlite → better-sqlite3 → null), schema init, typed CRUD wrappers, WAL mode, transaction support, worktree DB copy/reconcile; `context-store.ts` with query filtering and prompt formatters. 133 assertions proving all contracts. Not yet wired into auto-mode.
 
 ## Architecture / Key Patterns
 

@@ -61,7 +61,7 @@ This milestone is complete only when all are true:
 
 ## Slices
 
-- [ ] **S01: DB Foundation + Schema** `risk:high` `depends:[]`
+- [x] **S01: DB Foundation + Schema** `risk:high` `depends:[]`
   > After this: SQLite DB opens with tiered provider chain, schema inits with decisions/requirements/artifacts tables plus filtered views, typed CRUD wrappers work, graceful fallback returns empty results when SQLite unavailable. Proven by unit tests against real DB.
 
 - [ ] **S02: Markdown Importers + Auto-Migration** `risk:medium` `depends:[S01]`

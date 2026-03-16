@@ -12,7 +12,7 @@ This file is the explicit capability and coverage contract for the project.
 - Source: execution (memory-db port)
 - Primary owning slice: M004/S01
 - Supporting slices: none
-- Validation: unmapped
+- Validation: S01 gsd-db.test.ts (41 assertions) proves provider detection, schema init, CRUD, views, WAL, transactions, fallback. context-store.test.ts (56 assertions) proves query filtering and formatters. worktree-db.test.ts (36 assertions) proves copy/reconcile.
 - Notes: Port from memory-db worktree `gsd-db.ts`. Tiered provider chain proven on Node 22.20.0. `node:sqlite` returns null-prototype rows — DbAdapter normalizes via spread.
 
 ### R046 — Graceful degradation when SQLite unavailable
@@ -23,7 +23,7 @@ This file is the explicit capability and coverage contract for the project.
 - Source: execution (memory-db port)
 - Primary owning slice: M004/S01
 - Supporting slices: M004/S03
-- Validation: unmapped
+- Validation: S01 DB layer fallback proven — queryDecisions/queryRequirements return [], queryArtifact/queryProject return null when DB unavailable (gsd-db.test.ts, context-store.test.ts). Prompt builder fallback path not yet wired (S03).
 - Notes: Every query function guards with `isDbAvailable()` + try/catch. Every prompt builder falls back to existing `inlineGsdRootFile`.
 
 ### R047 — Auto-migration from markdown to DB on first run
@@ -657,8 +657,8 @@ This file is the explicit capability and coverage contract for the project.
 | R042 | core-capability | deferred | none | none | unmapped |
 | R043 | quality-attribute | deferred | none | none | unmapped |
 | R044 | anti-feature | out-of-scope | none | none | n/a |
-| R045 | core-capability | active | M004/S01 | none | unmapped |
-| R046 | continuity | active | M004/S01 | M004/S03 | unmapped |
+| R045 | core-capability | active | M004/S01 | none | S01 133 assertions: provider, schema, CRUD, views, WAL, transactions, query, formatters, worktree ops, fallback |
+| R046 | continuity | active | M004/S01 | M004/S03 | S01 DB layer fallback proven (returns empty). Prompt builder fallback pending S03 |
 | R047 | core-capability | active | M004/S02 | M004/S01 | unmapped |
 | R048 | quality-attribute | active | M004/S02 | M004/S06 | unmapped |
 | R049 | core-capability | active | M004/S03 | M004/S01, M004/S02 | unmapped |
