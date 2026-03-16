@@ -93,7 +93,12 @@ test("stopAutoRemote sends SIGTERM to a live process and returns found:true", as
       child.on("exit", (code) => resolve(code));
       setTimeout(() => resolve(null), 5000);
     });
-    assert.equal(exitCode, 0, "child should have exited cleanly via SIGTERM");
+    // On Windows, SIGTERM is not interceptable — the process exits with code 1
+    // rather than running the handler. Accept either clean exit (0) or forced (1).
+    assert.ok(exitCode !== null, "child should have exited after SIGTERM");
+    if (process.platform !== "win32") {
+      assert.equal(exitCode, 0, "child should have exited cleanly via SIGTERM");
+    }
   } finally {
     try { child.kill("SIGKILL"); } catch { /* already dead */ }
     cleanup(base);
