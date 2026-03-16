@@ -26,9 +26,13 @@ Narrate your decomposition reasoning — why you're grouping work this way, what
 
 **Right-size the plan.** If the slice is simple enough to be 1 task, plan 1 task. Don't split into multiple tasks just because you can identify sub-steps. Don't fill in sections with "None" when the section doesn't apply — omit them entirely. The plan's job is to guide execution, not to fill a template.
 
+{{executorContextConstraints}}
+
 Then:
 0. If `REQUIREMENTS.md` was preloaded above, identify which Active requirements the roadmap says this slice owns or supports. These are the requirements this plan must deliver — every owned requirement needs at least one task that directly advances it, and verification must prove the requirement is met.
-1. Use the **Slice Plan** and **Task Plan** output templates from the inlined context above
+1. Read the templates:
+   - `~/.gsd/agent/extensions/gsd/templates/plan.md`
+   - `~/.gsd/agent/extensions/gsd/templates/task-plan.md`
 2. If a `GSD Skill Preferences` block is present in system context, use it to decide which skills to load and follow during planning, without overriding required plan formatting
 3. Define slice-level verification — the objective stopping condition for this slice:
    - For non-trivial slices: plan actual test files with real assertions. Name the files.

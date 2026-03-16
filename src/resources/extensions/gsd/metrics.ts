@@ -40,11 +40,22 @@ export interface UnitMetrics {
   toolCalls: number;
   assistantMessages: number;
   userMessages: number;
+  // Budget fields (optional — absent in pre-M009 metrics data)
+  contextWindowTokens?: number;
+  truncationSections?: number;
+  continueHereFired?: boolean;
   promptCharCount?: number;
   baselineCharCount?: number;
   tier?: string;           // complexity tier (light/standard/heavy) if dynamic routing active
   modelDowngraded?: boolean; // true if dynamic routing used a cheaper model
   skills?: string[];       // skill names available/loaded during this unit (#599)
+}
+
+/** Budget state passed to snapshotUnitMetrics for persistence in the metrics ledger. */
+export interface BudgetInfo {
+  contextWindowTokens?: number;
+  truncationSections?: number;
+  continueHereFired?: boolean;
 }
 
 export interface MetricsLedger {
@@ -110,7 +121,7 @@ export function snapshotUnitMetrics(
   unitId: string,
   startedAt: number,
   model: string,
-  opts?: { promptCharCount?: number; baselineCharCount?: number; tier?: string; modelDowngraded?: boolean },
+  opts?: { tier?: string; modelDowngraded?: boolean; contextWindowTokens?: number; truncationSections?: number; continueHereFired?: boolean; promptCharCount?: number; baselineCharCount?: number },
 ): UnitMetrics | null {
   if (!ledger) return null;
 
@@ -163,10 +174,13 @@ export function snapshotUnitMetrics(
     toolCalls,
     assistantMessages,
     userMessages,
-    ...(opts?.promptCharCount != null ? { promptCharCount: opts.promptCharCount } : {}),
-    ...(opts?.baselineCharCount != null ? { baselineCharCount: opts.baselineCharCount } : {}),
     ...(opts?.tier ? { tier: opts.tier } : {}),
     ...(opts?.modelDowngraded !== undefined ? { modelDowngraded: opts.modelDowngraded } : {}),
+    ...(opts?.contextWindowTokens !== undefined ? { contextWindowTokens: opts.contextWindowTokens } : {}),
+    ...(opts?.truncationSections !== undefined ? { truncationSections: opts.truncationSections } : {}),
+    ...(opts?.continueHereFired !== undefined ? { continueHereFired: opts.continueHereFired } : {}),
+    ...(opts?.promptCharCount != null ? { promptCharCount: opts.promptCharCount } : {}),
+    ...(opts?.baselineCharCount != null ? { baselineCharCount: opts.baselineCharCount } : {}),
   };
 
   // Auto-capture skill telemetry (#599)
@@ -211,6 +225,7 @@ export interface ModelAggregate {
   units: number;
   tokens: TokenCounts;
   cost: number;
+  contextWindowTokens?: number;
 }
 
 export interface ProjectTotals {
@@ -221,6 +236,8 @@ export interface ProjectTotals {
   toolCalls: number;
   assistantMessages: number;
   userMessages: number;
+  totalTruncationSections: number;
+  continueHereFiredCount: number;
 }
 
 function emptyTokens(): TokenCounts {
@@ -286,6 +303,9 @@ export function aggregateByModel(units: UnitMetrics[]): ModelAggregate[] {
     agg.units++;
     agg.tokens = addTokens(agg.tokens, u.tokens);
     agg.cost += u.cost;
+    if (u.contextWindowTokens !== undefined && agg.contextWindowTokens === undefined) {
+      agg.contextWindowTokens = u.contextWindowTokens;
+    }
   }
   return Array.from(map.values()).sort((a, b) => b.cost - a.cost);
 }
@@ -299,6 +319,8 @@ export function getProjectTotals(units: UnitMetrics[]): ProjectTotals {
     toolCalls: 0,
     assistantMessages: 0,
     userMessages: 0,
+    totalTruncationSections: 0,
+    continueHereFiredCount: 0,
   };
   for (const u of units) {
     totals.tokens = addTokens(totals.tokens, u.tokens);
@@ -307,6 +329,8 @@ export function getProjectTotals(units: UnitMetrics[]): ProjectTotals {
     totals.toolCalls += u.toolCalls;
     totals.assistantMessages += u.assistantMessages;
     totals.userMessages += u.userMessages;
+    totals.totalTruncationSections += u.truncationSections ?? 0;
+    if (u.continueHereFired) totals.continueHereFiredCount++;
   }
   return totals;
 }

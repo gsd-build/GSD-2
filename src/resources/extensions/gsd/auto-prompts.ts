@@ -55,7 +55,7 @@ export async function inlineFileOptional(
  * Load and inline dependency slice summaries (full content, not just paths).
  */
 export async function inlineDependencySummaries(
-  mid: string, sid: string, base: string,
+  mid: string, sid: string, base: string, budgetChars?: number,
 ): Promise<string> {
   const roadmapFile = resolveMilestoneFile(base, mid, "ROADMAP");
   const roadmapContent = roadmapFile ? await loadFile(roadmapFile) : null;
@@ -79,7 +79,14 @@ export async function inlineDependencySummaries(
       sections.push(`- \`${relPath}\` _(not found)_`);
     }
   }
-  return sections.join("\n\n");
+
+  const result = sections.join("\n\n");
+  // When a budget is provided, truncate at section boundaries to fit
+  if (budgetChars !== undefined && result.length > budgetChars) {
+    const { truncateAtSectionBoundary } = await import("./context-budget.js");
+    return truncateAtSectionBoundary(result, budgetChars).content;
+  }
+  return result;
 }
 
 /**

@@ -15,6 +15,7 @@ import { getAutoDashboardData, type AutoDashboardData } from "./auto.js";
 import {
   getLedger, getProjectTotals, aggregateByPhase, aggregateBySlice,
   aggregateByModel, formatCost, formatTokenCount, formatCostProjection,
+  type UnitMetrics,
 } from "./metrics.js";
 import { loadEffectiveGSDPreferences } from "./preferences.js";
 import { getActiveWorktreeName } from "./worktree-command.js";
@@ -413,11 +414,33 @@ export class GSDDashboardOverlay {
       lines.push(row(th.fg("text", th.bold("Completed"))));
       lines.push(blank());
 
+      // Build ledger lookup for budget indicators (last entry wins for retries)
+      const ledgerLookup = new Map<string, UnitMetrics>();
+      const currentLedger = getLedger();
+      if (currentLedger) {
+        for (const lu of currentLedger.units) {
+          ledgerLookup.set(`${lu.type}:${lu.id}`, lu);
+        }
+      }
+
       const recent = [...this.dashData.completedUnits].reverse().slice(0, 10);
       for (const u of recent) {
         const left = `  ${th.fg("success", "✓")} ${th.fg("muted", unitLabel(u.type))} ${th.fg("muted", u.id)}`;
+
+        // Budget indicators from ledger
+        const ledgerEntry = ledgerLookup.get(`${u.type}:${u.id}`);
+        let budgetMarkers = "";
+        if (ledgerEntry) {
+          if (ledgerEntry.truncationSections && ledgerEntry.truncationSections > 0) {
+            budgetMarkers += th.fg("warning", ` ▼${ledgerEntry.truncationSections}`);
+          }
+          if (ledgerEntry.continueHereFired === true) {
+            budgetMarkers += th.fg("error", " → wrap-up");
+          }
+        }
+
         const right = th.fg("dim", formatDuration(u.finishedAt - u.startedAt));
-        lines.push(row(joinColumns(left, right, contentWidth)));
+        lines.push(row(joinColumns(`${left}${budgetMarkers}`, right, contentWidth)));
       }
 
       if (this.dashData.completedUnits.length > 10) {
@@ -447,6 +470,18 @@ export class GSDDashboardOverlay {
         `${th.fg("dim", "cache-r:")} ${th.fg("text", formatTokenCount(totals.tokens.cacheRead))}`,
         `${th.fg("dim", "cache-w:")} ${th.fg("text", formatTokenCount(totals.tokens.cacheWrite))}`,
       ], contentWidth, "  ")));
+
+      // Budget aggregate line — only when data exists
+      if (totals.totalTruncationSections > 0 || totals.continueHereFiredCount > 0) {
+        const budgetParts: string[] = [];
+        if (totals.totalTruncationSections > 0) {
+          budgetParts.push(th.fg("warning", `${totals.totalTruncationSections} sections truncated`));
+        }
+        if (totals.continueHereFiredCount > 0) {
+          budgetParts.push(th.fg("error", `${totals.continueHereFiredCount} continue-here fired`));
+        }
+        lines.push(row(budgetParts.join(`  ${th.fg("dim", "·")}  `)));
+      }
 
       const phases = aggregateByPhase(ledger.units);
       if (phases.length > 0) {
@@ -492,14 +527,17 @@ export class GSDDashboardOverlay {
       }
 
       const models = aggregateByModel(ledger.units);
-      if (models.length > 1) {
+      if (models.length >= 1) {
         lines.push(blank());
         lines.push(row(th.fg("dim", "By Model")));
         for (const m of models) {
           const pct = totals.cost > 0 ? Math.round((m.cost / totals.cost) * 100) : 0;
           const modelName = truncateToWidth(m.model, 38);
+          const ctxWindow = m.contextWindowTokens !== undefined
+            ? th.fg("dim", ` [${formatTokenCount(m.contextWindowTokens)}]`)
+            : "";
           const left = `  ${th.fg("text", modelName.padEnd(38))}${th.fg("warning", formatCost(m.cost).padStart(8))}`;
-          const right = th.fg("dim", `${String(pct).padStart(3)}%  ${m.units} units`);
+          const right = th.fg("dim", `${String(pct).padStart(3)}%  ${m.units} units`) + ctxWindow;
           lines.push(row(joinColumns(left, right, contentWidth)));
         }
       }
