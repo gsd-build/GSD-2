@@ -2134,7 +2134,3 @@ https://github.com/EsotericSoftware/spine-runtimes/actions/runs/19536643416/job/
 		}
 	}
 }
-);
-		}
-	}
-}

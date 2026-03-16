@@ -62,7 +62,7 @@
   - Verify: `rg "<<<<<<|>>>>>>|======" .` → empty (zero conflict markers in entire repo). `git diff --check` → clean.
   - Done when: All 50 file conflicts resolved. Zero residual conflict markers anywhere in the repository.
 
-- [ ] **T04: Build stabilization — npm install, compile, fix TypeScript errors** `est:2h`
+- [x] **T04: Build stabilization — npm install, compile, fix TypeScript errors** `est:2h`
   - Why: The proof gate for S01. Regenerates the lockfile from the merged package.json, then runs both build targets. Upstream's interface changes (types.ts, state.ts, preferences.ts, git-service.ts) may break web code that imports from these modules. This task fixes any TypeScript compilation errors to achieve green builds.
   - Files: `package-lock.json` (regenerated), plus any web/src files with broken imports — likely candidates: `src/web/bridge-service.ts`, `src/web/git-summary-service.ts`, `web/src/stores/gsd-workspace-store.tsx`, `web/src/lib/command-surface-contract.ts`, `src/resources/extensions/gsd/cache.ts` (may need import updates)
   - Do: (1) `npm install` to regenerate lockfile. (2) `npm run build` — capture errors. (3) Fix TypeScript errors: update import paths, align type references with upstream's new interfaces, update web code that references changed upstream exports. (4) Re-run `npm run build` until clean. (5) `npm run build:web-host` — capture errors. (6) Fix any Next.js build errors. (7) Re-run until clean. (8) Commit the merge.

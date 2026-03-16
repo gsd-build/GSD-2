@@ -19,3 +19,15 @@ Web code (`src/web/`) only imports from `native-git-bridge.ts` — NOT from auto
 ## Upstream Cache API Consolidation
 
 Upstream replaced per-module cache clears (`clearParseCache` from files.ts, `clearPathCache` from paths.ts, `invalidateStateCache` from state.ts) with `invalidateAllCaches()` from `cache.ts`. The individual exports may no longer exist. Any code importing them needs migration to the centralized API.
+
+## Clean dist/ Before Rebuilding After Merge
+
+After a large upstream merge, stale `.d.ts` files in `packages/*/dist/` can trigger TS5055 ("Cannot write file ... would overwrite input file"). Always `rm -rf packages/*/dist/` before the first build after a merge. The build chain recreates dist/ from source.
+
+## Fork Files Must Not Import from dist/
+
+Fork-only files in `packages/pi-ai/src/` (like `web-runtime-oauth.ts`) that import from `../dist/` create circular build dependencies — dist doesn't exist until the build runs, but the build can't run without dist. Change to source-relative imports (`./oauth.js` instead of `../dist/oauth.js`).
+
+## Conflict Marker Scanning — Use Anchored Patterns
+
+`rg "======"` matches JavaScript strict equality operators (`===`). Always use anchored patterns for conflict marker scans: `rg "^<<<<<<<|^>>>>>>>|^=======$"` to avoid false positives.

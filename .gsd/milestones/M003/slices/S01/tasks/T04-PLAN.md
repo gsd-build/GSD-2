@@ -113,3 +113,11 @@ The proof gate for S01. Regenerate `package-lock.json` from the merged `package.
 - Any web source files fixed for TypeScript compatibility — exact files depend on what errors appear
 - Merge commit on `main` branch incorporating all 398 upstream commits
 - Both `npm run build` and `npm run build:web-host` exit 0
+
+## Observability Impact
+
+- **Build health:** `npm run build && npm run build:web-host` — both must exit 0. Non-zero indicates a regression introduced after this task.
+- **Lockfile integrity:** `test -f package-lock.json && echo "present"` — must be present. If absent, `npm install` was not run or lockfile was deleted.
+- **Conflict markers:** `rg "^<<<<<<<|^>>>>>>>|^=======$" . -g '!node_modules' -g '!.git'` — must return empty. Any matches indicate an incomplete merge.
+- **Upstream delta:** `git log --oneline HEAD..upstream/main | wc -l` — must be 0. Non-zero means upstream commits are missing.
+- **Stale dist artifacts:** If `npm run build` fails with TS5055 ("Cannot write file ... would overwrite input"), clean `packages/*/dist/` and rebuild.

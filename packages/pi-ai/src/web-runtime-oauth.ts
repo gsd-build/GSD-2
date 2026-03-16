@@ -6,4 +6,4 @@ export {
   type OAuthLoginCallbacks,
   type OAuthPrompt,
   type OAuthProviderInterface,
-} from "../dist/oauth.js";
+} from "./oauth.js";

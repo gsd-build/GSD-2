@@ -137,37 +137,6 @@ export function clearPathCache(): void {
   nativeTreeBase = null;
 }
 
-// ─── Directory Listing Cache ──────────────────────────────────────────────────
-
-const dirEntryCache = new Map<string, Dirent[]>();
-const dirListCache = new Map<string, string[]>();
-
-function cachedReaddirWithTypes(dirPath: string): Dirent[] {
-  const cached = dirEntryCache.get(dirPath);
-  if (cached) return cached;
-  const entries = readdirSync(dirPath, { withFileTypes: true });
-  dirEntryCache.set(dirPath, entries);
-  return entries;
-}
-
-function cachedReaddir(dirPath: string): string[] {
-  const cached = dirListCache.get(dirPath);
-  if (cached) return cached;
-  const entries = readdirSync(dirPath);
-  dirListCache.set(dirPath, entries);
-  return entries;
-}
-
-/**
- * Clear the directory listing cache.
- * Call after milestone transitions, file creation in planning directories,
- * or at the start/end of a dispatch cycle.
- */
-export function clearPathCache(): void {
-  dirEntryCache.clear();
-  dirListCache.clear();
-}
-
 // ─── Name Builders ─────────────────────────────────────────────────────────
 
 /**
