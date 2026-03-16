@@ -74,7 +74,18 @@ Both files require zero adaptation — import paths match M004 layout exactly (c
 - `.gsd/REQUIREMENTS.md` — requirements to promote; current Active count = 8 (R045–R052, R057)
 - S01–S06 summaries (in `.gsd/milestones/M004/slices/`) — evidence for Validation fields when promoting requirements
 
-## Expected Output
+## Observability Impact
+
+No production code changes in this task — no new log lines, no new DB operations, no new error paths in the shipped extension. The observability surfaces introduced are test-side only:
+
+- **Test stdout headers** — each scenario prints `=== integration-X: Y ===` to stdout. A future agent running the test file sees exactly which scenario was executing when a failure occurred.
+- **`gsd-migrate: imported N decisions...` logs** — emitted by `migrateFromMarkdown` on every call, printed inline with test output. Confirms import counts at each pipeline step.
+- **`Token savings: XX.X%` line** — lifecycle test step 5 logs the real savings measurement on every run. If the ≥30% assertion ever fails, this line shows the actual value.
+- **`Results: N passed, 0 failed` summary** — each test file prints this before exit. Grep-able from any CI log.
+- **Exit code 1 on failure** — `createTestContext().report()` exits non-zero if any assertion failed. The `npm test` process chain propagates this correctly.
+- **REQUIREMENTS.md as state surface** — `grep -c "| validated |" .gsd/REQUIREMENTS.md` reports validated count (43 after this task). Runnable by any agent to verify requirements state.
+
+
 
 - `src/resources/extensions/gsd/tests/integration-lifecycle.test.ts` — new file, verbatim port, all assertions passing
 - `src/resources/extensions/gsd/tests/integration-edge.test.ts` — new file, verbatim port, all assertions passing

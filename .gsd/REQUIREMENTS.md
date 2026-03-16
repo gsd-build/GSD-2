@@ -6,7 +6,7 @@ This file is the explicit capability and coverage contract for the project.
 
 ### R045 — SQLite DB layer with tiered provider chain
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: A SQLite abstraction layer that tries `node:sqlite` (Node 22.5+), falls back to `better-sqlite3`, then to null. A thin `DbAdapter` interface normalizes API differences. Schema init creates decisions, requirements, artifacts tables plus filtered views. WAL mode on file-backed databases.
 - Why it matters: The foundation for surgical context injection. Without a queryable store, prompts must dump entire files.
 - Source: execution (memory-db port)
@@ -17,7 +17,7 @@ This file is the explicit capability and coverage contract for the project.
 
 ### R047 — Auto-migration from markdown to DB on first run
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: When auto-mode starts on a project with `.gsd/` markdown files but no `gsd.db`, silently import all artifact types into a fresh DB. Idempotent — safe to re-run.
 - Why it matters: Existing projects must transparently gain DB benefits without manual migration.
 - Source: execution (memory-db port)
@@ -28,7 +28,7 @@ This file is the explicit capability and coverage contract for the project.
 
 ### R048 — Round-trip fidelity for all artifact types
 - Class: quality-attribute
-- Status: active
+- Status: validated
 - Description: Importing markdown into DB and regenerating markdown produces field-identical output. No data loss, no format drift.
 - Why it matters: Dual-write means DB→markdown generation must be faithful. Format drift corrupts the human-readable artifacts.
 - Source: execution (memory-db port)
@@ -39,7 +39,7 @@ This file is the explicit capability and coverage contract for the project.
 
 ### R049 — Surgical prompt injection via DB queries
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: All prompt builders in `auto-prompts.ts` use scoped DB queries instead of whole-file `inlineGsdRootFile` for decisions, requirements, and project context. Decisions filtered by milestone, requirements filtered by slice ownership.
 - Why it matters: This is the core value — smaller, more relevant prompts mean better agent reasoning and fewer wasted tokens.
 - Source: user
@@ -50,7 +50,7 @@ This file is the explicit capability and coverage contract for the project.
 
 ### R050 — Dual-write keeping markdown and DB in sync
 - Class: continuity
-- Status: active
+- Status: validated
 - Description: After each dispatch unit completes and auto-commits, re-import modified markdown files into the DB. Structured LLM tools write to DB first, then regenerate markdown. Both directions stay synchronized.
 - Why it matters: Markdown files are the human-readable source of truth. The DB is the query index. They must agree.
 - Source: execution (memory-db port)
@@ -61,7 +61,7 @@ This file is the explicit capability and coverage contract for the project.
 
 ### R051 — Token measurement with before/after comparison
 - Class: operability
-- Status: active
+- Status: validated
 - Description: `promptCharCount` and `baselineCharCount` fields added to `UnitMetrics`. Measurement wired into all `snapshotUnitMetrics` call sites. Baseline = full markdown content. Prompt = DB-scoped content. Difference = token savings.
 - Why it matters: Proves the ≥30% savings claim with real data. Enables ongoing monitoring of prompt efficiency.
 - Source: execution (memory-db port)
@@ -72,7 +72,7 @@ This file is the explicit capability and coverage contract for the project.
 
 ### R052 — DB-first state derivation with filesystem fallback
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: `deriveState()` queries the artifacts table for file content when DB is available, replacing the batch file-parse step. File discovery still uses disk. Falls back to filesystem when DB unavailable.
 - Why it matters: Faster state derivation on large projects. Consistent with DB-first architecture.
 - Source: execution (memory-db port)
@@ -127,13 +127,13 @@ This file is the explicit capability and coverage contract for the project.
 
 ### R057 — ≥30% token savings on planning/research dispatches
 - Class: quality-attribute
-- Status: active
+- Status: validated
 - Description: Surgical prompt injection delivers ≥30% fewer prompt characters compared to whole-file loading, measured on mature projects with multiple milestones, decisions, and requirements.
 - Why it matters: The primary user-visible value of the entire DB architecture. If savings aren't real, the complexity isn't justified.
 - Source: user
 - Primary owning slice: M004/S07
 - Supporting slices: M004/S03, M004/S04
-- Validation: unmapped
+- Validation: S07 — token-savings.test.ts 99 assertions: plan-slice 52.2% savings, research-milestone 32.2% composite (66.3% decisions-only), all ≥30% threshold assertions passing against current codebase. integration-lifecycle.test.ts step 5 prints 42.4% savings and asserts savingsPercent ≥ 30 on real file-backed DB with 14 decisions + 12 requirements. No cross-contamination between milestone scopes verified.
 - Notes: Memory-db proved: 52.2% plan-slice, 66.3% decisions-only, 32.2% research composite, 42.4% lifecycle. Must re-prove against current codebase.
 
 ## Validated
@@ -657,25 +657,25 @@ This file is the explicit capability and coverage contract for the project.
 | R042 | core-capability | deferred | none | none | unmapped |
 | R043 | quality-attribute | deferred | none | none | unmapped |
 | R044 | anti-feature | out-of-scope | none | none | n/a |
-| R045 | core-capability | active | M004/S01 | none | S01 133 assertions: provider, schema, CRUD, views, WAL, transactions, query, formatters, worktree ops, fallback |
+| R045 | core-capability | validated | M004/S01 | none | S01 133 assertions: provider, schema, CRUD, views, WAL, transactions, query, formatters, worktree ops, fallback. S07 integration-lifecycle WAL mode + availability assertion. |
 | R046 | continuity | validated | M004/S01 | M004/S03 | S01 DB layer fallback + S03 prompt builder fallback + lifecycle hooks: full chain proven |
-| R047 | core-capability | active | M004/S02 | M004/S01 | S02 md-importer.test.ts 70 assertions: parsers, supersession, orchestrator, idempotency, missing files, round-trip |
-| R048 | quality-attribute | active | M004/S02 | M004/S06 | S02 db-writer.test.ts 127 assertions: generators, round-trip parse→generate→parse, write helpers, ID sequencing |
-| R049 | core-capability | active | M004/S03 | M004/S01, M004/S02 | S03 — 19 calls rewired, 52 assertions, scoped filtering proven |
-| R050 | continuity | active | M004/S03 | M004/S06 | S03 markdown→DB wired; S06 DB→markdown complete: gsd_save_decision/gsd_update_requirement/gsd_save_summary regenerate markdown. Both directions proven (gsd-tools.test.ts 35 assertions). |
-| R051 | operability | active | M004/S04 | M004/S03 | S04 token-savings.test.ts 99 assertions: 52.2% plan-slice, 66.3% decisions-only, 32.2% research composite. All 11 snapshotUnitMetrics call sites updated. |
-| R052 | core-capability | active | M004/S04 | M004/S01, M004/S02 | S04 derive-state-db.test.ts 51 assertions: DB path = identical GSDState, fallback, empty DB falls through, partial DB fills gaps, multi-milestone, cache invalidation. |
+| R047 | core-capability | validated | M004/S02 | M004/S01 | S02 md-importer.test.ts 70 assertions: parsers, supersession, orchestrator, idempotency, missing files, round-trip. S07 integration-lifecycle 14+12+1 first import, 15 decisions after re-import. |
+| R048 | quality-attribute | validated | M004/S02 | M004/S06 | S02 db-writer.test.ts 127 assertions: generators, round-trip parse→generate→parse, write helpers, ID sequencing. S07 integration-lifecycle step 7 full round-trip field fidelity. |
+| R049 | core-capability | validated | M004/S03 | M004/S01, M004/S02 | S03 — 19 calls rewired, 52 assertions, scoped filtering proven. S07 integration-lifecycle steps 3-5 prove scoped queries + formatters in pipeline. |
+| R050 | continuity | validated | M004/S03 | M004/S06 | S03 markdown→DB wired; S06 DB→markdown complete: gsd_save_decision/gsd_update_requirement/gsd_save_summary regenerate markdown. Both directions proven (gsd-tools.test.ts 35 assertions). S07 integration-lifecycle step 6 re-import after content change. |
+| R051 | operability | validated | M004/S04 | M004/S03 | S04 token-savings.test.ts 99 assertions: 52.2% plan-slice, 66.3% decisions-only, 32.2% research composite. S07 integration-lifecycle 42.4% savings assertion. All 11 snapshotUnitMetrics call sites updated. |
+| R052 | core-capability | validated | M004/S04 | M004/S01, M004/S02 | S04 derive-state-db.test.ts 51 assertions: DB path = identical GSDState, fallback, empty DB falls through, partial DB fills gaps, multi-milestone, cache invalidation. |
 | R053 | integration | validated | M004/S05 | M004/S01 | S05 copy hook in copyPlanningArtifacts, worktree-db-integration.test.ts cases 1+2 |
 | R054 | integration | validated | M004/S05 | M004/S01 | S05 reconcile hooks in mergeMilestoneToMain + handleMerge, worktree-db-integration.test.ts cases 3+4+5 |
 | R055 | core-capability | validated | M004/S06 | M004/S03 | S06 gsd-tools.test.ts 35 assertions: ID auto-assignment, DB write, markdown regen, error paths, DB-unavailable fallback. All 3 tools registered in index.ts. |
 | R056 | operability | validated | M004/S06 | M004/S01 | S06 gsd-inspect.test.ts 32 assertions: formatInspectOutput format across 5 scenarios. handleInspect wired in handler dispatch with autocomplete. |
-| R057 | quality-attribute | active | M004/S07 | M004/S03, M004/S04 | unmapped |
+| R057 | quality-attribute | validated | M004/S07 | M004/S03, M004/S04 | S07 token-savings.test.ts 99 assertions all ≥30%; integration-lifecycle 42.4% savings assertion against file-backed DB with 14 decisions + 12 requirements. |
 
 ## Coverage Summary
 
-- Active requirements: 8
-- Mapped to slices: 13
-- Validated: 40
+- Active requirements: 0
+- Mapped to slices: 0
+- Validated: 46
 - Deferred: 5
 - Out of scope: 4
 - Unmapped active requirements: 0
