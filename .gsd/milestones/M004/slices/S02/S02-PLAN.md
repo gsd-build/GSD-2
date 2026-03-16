@@ -53,7 +53,7 @@
   - Verify: `node --experimental-sqlite --import ./src/resources/extensions/gsd/tests/resolve-ts.mjs --experimental-strip-types --test src/resources/extensions/gsd/tests/md-importer.test.ts` — all 71 assertions pass
   - Done when: md-importer.ts exports `parseDecisionsTable`, `parseRequirementsSections`, `migrateFromMarkdown`; test suite passes with 71 assertions; `npx tsc --noEmit` clean
 
-- [ ] **T02: Port db-writer.ts and its test suite** `est:20m`
+- [x] **T02: Port db-writer.ts and its test suite** `est:20m`
   - Why: Completes the DB↔markdown bidirectional bridge. Generators + write helpers are consumed by S06 (structured LLM tools) and S03 (dual-write). Proves R048 round-trip fidelity (generate→parse→compare).
   - Files: `src/resources/extensions/gsd/db-writer.ts`, `src/resources/extensions/gsd/tests/db-writer.test.ts`
   - Do: Copy db-writer.ts from memory-db worktree at `/Users/lexchristopherson/Developer/gsd-2/.gsd/worktrees/memory-db/src/resources/extensions/gsd/db-writer.ts`. Imports from `types.js`, `paths.js`, `files.js` — all exist with compatible exports. Uses `await import('./gsd-db.js')` for lazy loading (avoids circular imports). Copy db-writer.test.ts from `/Users/lexchristopherson/Developer/gsd-2/.gsd/worktrees/memory-db/src/resources/extensions/gsd/tests/db-writer.test.ts`. Test imports from `../gsd-db.ts`, `../md-importer.ts`, `../db-writer.ts`, `../types.ts`.

@@ -36,6 +36,12 @@ Port the DB writer module from the memory-db reference worktree. This module gen
 - `node --experimental-sqlite --import ./src/resources/extensions/gsd/tests/resolve-ts.mjs --experimental-strip-types --test src/resources/extensions/gsd/tests/gsd-db.test.ts src/resources/extensions/gsd/tests/context-store.test.ts src/resources/extensions/gsd/tests/worktree-db.test.ts src/resources/extensions/gsd/tests/md-importer.test.ts`
 - `npx tsc --noEmit`
 
+## Observability Impact
+
+- **Stderr logging**: All three DB write helpers (`saveDecisionToDb`, `updateRequirementInDb`, `saveArtifactToDb`) emit `gsd-db:` prefixed stderr lines on failure, including the function name and error message. `nextDecisionId` also logs failures to stderr before falling back to `D001`.
+- **Inspection**: After any write operation, the generated markdown file (DECISIONS.md or REQUIREMENTS.md) is immediately readable on disk. DB state can be queried directly via `_getAdapter()`.
+- **Failure visibility**: `updateRequirementInDb` throws with the missing ID in the error message when a requirement doesn't exist. All write helpers re-throw after logging, so callers see the original error.
+
 ## Inputs
 
 - `/Users/lexchristopherson/Developer/gsd-2/.gsd/worktrees/memory-db/src/resources/extensions/gsd/db-writer.ts` — source file to port (337 lines)
