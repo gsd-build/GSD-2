@@ -24,6 +24,27 @@ export type CommandSurfaceSection =
   | "fork"
   | "session"
   | "compact"
+  // GSD subcommand surfaces (S02)
+  | "gsd-status"
+  | "gsd-visualize"
+  | "gsd-forensics"
+  | "gsd-doctor"
+  | "gsd-skill-health"
+  | "gsd-knowledge"
+  | "gsd-capture"
+  | "gsd-triage"
+  | "gsd-quick"
+  | "gsd-history"
+  | "gsd-undo"
+  | "gsd-inspect"
+  | "gsd-prefs"
+  | "gsd-config"
+  | "gsd-hooks"
+  | "gsd-mode"
+  | "gsd-steer"
+  | "gsd-export"
+  | "gsd-cleanup"
+  | "gsd-queue"
 export type CommandSurfaceSource = "slash" | "sidebar" | "surface"
 export type CommandSurfacePendingAction =
   | "loading_models"
@@ -309,6 +330,7 @@ export type CommandSurfaceTarget =
   | { kind: "fork"; entryId?: string }
   | { kind: "session"; outputPath?: string }
   | { kind: "compact"; customInstructions: string }
+  | { kind: "gsd"; surface: string; subcommand: string; args: string }
 
 export interface WorkspaceCommandSurfaceState {
   open: boolean
@@ -531,6 +553,27 @@ export function commandSurfaceSectionForRequest(request: CommandSurfaceOpenReque
       return "session"
     case "compact":
       return "compact"
+    // GSD subcommand surfaces (S02)
+    case "gsd-status": return "gsd-status"
+    case "gsd-visualize": return "gsd-visualize"
+    case "gsd-forensics": return "gsd-forensics"
+    case "gsd-doctor": return "gsd-doctor"
+    case "gsd-skill-health": return "gsd-skill-health"
+    case "gsd-knowledge": return "gsd-knowledge"
+    case "gsd-capture": return "gsd-capture"
+    case "gsd-triage": return "gsd-triage"
+    case "gsd-quick": return "gsd-quick"
+    case "gsd-history": return "gsd-history"
+    case "gsd-undo": return "gsd-undo"
+    case "gsd-inspect": return "gsd-inspect"
+    case "gsd-prefs": return "gsd-prefs"
+    case "gsd-config": return "gsd-config"
+    case "gsd-hooks": return "gsd-hooks"
+    case "gsd-mode": return "gsd-mode"
+    case "gsd-steer": return "gsd-steer"
+    case "gsd-export": return "gsd-export"
+    case "gsd-cleanup": return "gsd-cleanup"
+    case "gsd-queue": return "gsd-queue"
     default:
       return null
   }
@@ -655,6 +698,12 @@ export function buildCommandSurfaceTarget(request: CommandSurfaceOpenRequest): C
 
   if (request.surface === "compact") {
     return buildCompactTarget(request)
+  }
+
+  // GSD subcommand surfaces — generic target (S02)
+  if (request.surface?.startsWith("gsd-")) {
+    const subcommand = request.surface.slice(4) // "gsd-forensics" -> "forensics"
+    return { kind: "gsd", surface: request.surface, subcommand, args: request.args ?? "" }
   }
 
   return buildSettingsTarget(section)

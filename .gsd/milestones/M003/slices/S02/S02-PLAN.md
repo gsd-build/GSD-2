@@ -51,7 +51,7 @@
   - Verify: `npx tsx -e "import { dispatchBrowserSlashCommand } from './web/lib/browser-slash-command-dispatch.ts'; const r = dispatchBrowserSlashCommand('/gsd forensics'); console.log(r.kind, r.surface)"` prints `surface gsd-forensics`
   - Done when: every GSD subcommand dispatches to the correct kind (surface, prompt, or local) and the file has no TypeScript errors per `npx tsc --noEmit`
 
-- [ ] **T02: Wire contract types, store, and component stubs for GSD surfaces** `est:45m`
+- [x] **T02: Wire contract types, store, and component stubs for GSD surfaces** `est:45m`
   - Why: The dispatch function produces surface results, but without section/target routing, store entries, and component cases, opening a GSD surface crashes or shows nothing. This task completes the end-to-end wiring.
   - Files: `web/lib/command-surface-contract.ts`, `web/lib/gsd-workspace-store.tsx`, `web/components/gsd/command-surface.tsx`
   - Do: Add `CommandSurfaceSection` variants for each GSD surface (e.g., `"gsd-forensics"`, `"gsd-doctor"`, etc.). Add `CommandSurfaceTarget` variants with appropriate payload shapes. Wire `commandSurfaceSectionForRequest()` and `buildCommandSurfaceTarget()` for all new surfaces. Add all 20 new surfaces to `IMPLEMENTED_BROWSER_COMMAND_SURFACES`. Add placeholder section rendering in `command-surface.tsx` for each GSD section.

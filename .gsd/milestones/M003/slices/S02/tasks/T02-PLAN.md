@@ -114,3 +114,12 @@ This task propagates the 20 new surface types through the three remaining files 
 - `web/lib/command-surface-contract.ts` — expanded with 20 new `CommandSurfaceSection` members, 1 new `CommandSurfaceTarget` variant, updated routing functions
 - `web/lib/gsd-workspace-store.tsx` — `IMPLEMENTED_BROWSER_COMMAND_SURFACES` has 32 entries (12 existing + 20 new), `gsd_help` local action handled
 - `web/components/gsd/command-surface.tsx` — generic GSD section placeholder renders for all `gsd-*` sections
+
+## Observability Impact
+
+- **Section routing**: `commandSurfaceSectionForRequest()` now returns a non-null `CommandSurfaceSection` for all 20 `gsd-*` surfaces. A future agent can verify coverage by calling the function with each surface name and checking the return value is not null.
+- **Target building**: `buildCommandSurfaceTarget()` returns `{ kind: "gsd", surface, subcommand, args }` for all GSD surfaces. The `kind` field is inspectable at runtime to confirm GSD dispatch paths are wired.
+- **Implemented set**: `IMPLEMENTED_BROWSER_COMMAND_SURFACES` gates whether a surface command opens the Sheet or falls through to a terminal notice. All 20 GSD surfaces are in the set — dispatching `/gsd <subcmd>` opens the Sheet instead of printing a "not implemented" notice.
+- **Help action**: `/gsd help` now emits a `system` terminal line with `GSD_HELP_TEXT` content — visible in the browser terminal output.
+- **Placeholder rendering**: GSD sections render a `data-testid="gsd-surface-{section}"` div — inspectable via DOM or accessibility tree. A blank render for a GSD section indicates a wiring gap.
+- **Failure visibility**: If a new GSD surface is added to `BrowserSlashCommandSurface` but not to `CommandSurfaceSection`, TypeScript will error at the switch cases. If added to the section type but not to `IMPLEMENTED_BROWSER_COMMAND_SURFACES`, the surface will fall through to a terminal notice instead of opening the Sheet.

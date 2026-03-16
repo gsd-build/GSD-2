@@ -1910,7 +1910,17 @@ export function CommandSurface() {
       case "fork": return renderForkSection()
       case "session": return renderSessionSection()
       case "compact": return renderCompactSection()
-      default: return null
+      default:
+        // GSD subcommand surfaces — generic placeholder (S02)
+        if (commandSurface.section?.startsWith("gsd-")) {
+          return (
+            <div className="p-4 text-sm text-muted-foreground" data-testid={`gsd-surface-${commandSurface.section}`}>
+              <p className="font-medium text-foreground">/gsd {commandSurface.section.slice(4)}</p>
+              <p className="mt-1">This surface will be implemented in a future update.</p>
+            </div>
+          )
+        }
+        return null
     }
   }
 

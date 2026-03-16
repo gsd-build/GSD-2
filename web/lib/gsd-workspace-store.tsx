@@ -11,6 +11,7 @@ import {
 import {
   dispatchBrowserSlashCommand,
   getBrowserSlashCommandTerminalNotice,
+  GSD_HELP_TEXT,
   type BrowserSlashCommandDispatchResult,
   type BrowserSlashCommandSurface,
 } from "./browser-slash-command-dispatch"
@@ -529,6 +530,27 @@ const IMPLEMENTED_BROWSER_COMMAND_SURFACES = new Set<BrowserSlashCommandSurface>
   "logout",
   "session",
   "export",
+  // GSD subcommand surfaces (S02)
+  "gsd-status",
+  "gsd-visualize",
+  "gsd-forensics",
+  "gsd-doctor",
+  "gsd-skill-health",
+  "gsd-knowledge",
+  "gsd-capture",
+  "gsd-triage",
+  "gsd-quick",
+  "gsd-history",
+  "gsd-undo",
+  "gsd-inspect",
+  "gsd-prefs",
+  "gsd-config",
+  "gsd-hooks",
+  "gsd-mode",
+  "gsd-steer",
+  "gsd-export",
+  "gsd-cleanup",
+  "gsd-queue",
 ])
 
 function timestampLabel(date = new Date()): string {
@@ -3497,6 +3519,15 @@ export class GSDWorkspaceStore {
         }
         if (outcome.action === "refresh_workspace") {
           await this.refreshBoot()
+          return outcome
+        }
+        if (outcome.action === "gsd_help") {
+          this.patchState({
+            terminalLines: withTerminalLine(
+              withTerminalLine(this.state.terminalLines, createTerminalLine("input", trimmed)),
+              createTerminalLine("system", GSD_HELP_TEXT),
+            ),
+          })
           return outcome
         }
         return outcome
