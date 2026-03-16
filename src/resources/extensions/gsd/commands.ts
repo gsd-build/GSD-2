@@ -22,7 +22,7 @@ import {
   loadEffectiveGSDPreferences,
   resolveAllSkillReferences,
 } from "./preferences.js";
-import { loadFile, saveFile } from "./files.js";
+import { loadFile, saveFile, appendOverride } from "./files.js";
 import {
   formatDoctorIssuesForPrompt,
   formatDoctorReport,
@@ -57,11 +57,11 @@ function dispatchDoctorHeal(pi: ExtensionAPI, scope: string | undefined, reportT
 
 export function registerGSDCommand(pi: ExtensionAPI): void {
   pi.registerCommand("gsd", {
-    description: "GSD — Get Shit Done: /gsd next|auto|stop|pause|status|queue|history|undo|skip|export|cleanup|prefs|config|hooks|doctor|migrate|remote",
+    description: "GSD — Get Shit Done: /gsd next|auto|stop|pause|status|queue|steer|history|undo|skip|export|cleanup|prefs|config|hooks|doctor|migrate|remote",
     getArgumentCompletions: (prefix: string) => {
       const subcommands = [
         "next", "auto", "stop", "pause", "status", "queue", "discuss",
-        "history", "undo", "skip", "export", "cleanup", "prefs",
+        "steer", "history", "undo", "skip", "export", "cleanup", "prefs",
         "config", "hooks", "doctor", "migrate", "remote",
       ];
       const parts = prefix.trim().split(/\s+/);
@@ -248,6 +248,19 @@ export function registerGSDCommand(pi: ExtensionAPI): void {
         return;
       }
 
+      if (trimmed.startsWith("steer ")) {
+        await handleSteer(trimmed.replace(/^steer\s+/, "").trim(), ctx, pi);
+        return;
+      }
+
+      if (trimmed === "steer") {
+        ctx.ui.notify(
+          "Usage: /gsd steer <description of change>. Example: /gsd steer Use Postgres instead of SQLite",
+          "warning",
+        );
+        return;
+      }
+
       if (trimmed === "migrate" || trimmed.startsWith("migrate ")) {
         const { handleMigrate } = await import("./migrate/command.js");
         await handleMigrate(trimmed.replace(/^migrate\s*/, "").trim(), ctx, pi);
@@ -266,7 +279,7 @@ export function registerGSDCommand(pi: ExtensionAPI): void {
       }
 
       ctx.ui.notify(
-        `Unknown: /gsd ${trimmed}. Use /gsd next|auto|stop|pause|status|queue|discuss|history|undo|skip <unit>|export|cleanup|prefs|config|hooks|doctor|migrate|remote.`,
+        `Unknown: /gsd ${trimmed}. Use /gsd next|auto|stop|pause|status|queue|discuss|steer <change>|history|undo|skip <unit>|export|cleanup|prefs|config|hooks|doctor|migrate|remote.`,
         "warning",
       );
     },
@@ -929,4 +942,65 @@ async function handleCleanupSnapshots(ctx: ExtensionCommandContext, basePath: st
   }
 
   ctx.ui.notify(`Pruned ${pruned} old snapshot refs. ${refs.length - pruned} remain.`, "success");
+}
+
+// ─── /gsd steer ───────────────────────────────────────────────────────────────
+
+async function handleSteer(
+  change: string,
+  ctx: ExtensionCommandContext,
+  pi: ExtensionAPI,
+): Promise<void> {
+  const basePath = process.cwd();
+  const state = await deriveState(basePath);
+
+  const mid = state.activeMilestone?.id ?? "none";
+  const sid = state.activeSlice?.id ?? "none";
+  const tid = state.activeTask?.id ?? "none";
+  const appliedAt = `${mid}/${sid}/${tid}`;
+
+  await appendOverride(basePath, change, appliedAt);
+
+  if (isAutoActive()) {
+    // Auto-mode is running — the override is now on disk and will be picked up
+    // by the next task dispatch via override injection. Send a steering message
+    // to the current session so it's aware immediately.
+    pi.sendMessage(
+      {
+        customType: "gsd-hard-steer",
+        content: [
+          "HARD STEER — User override registered.",
+          "",
+          `**Override:** ${change}`,
+          "",
+          "This override has been saved to `.gsd/OVERRIDES.md` and will be injected into all future task prompts.",
+          "A document rewrite unit will run before the next task to propagate this change across all active plan documents.",
+          "",
+          "If you are mid-task, finish your current work respecting this override. The next dispatched unit will be a document rewrite.",
+        ].join("\n"),
+        display: false,
+      },
+      { triggerTurn: true },
+    );
+    ctx.ui.notify(`Override registered: "${change}". Will be applied before next task dispatch.`, "info");
+  } else {
+    // Not in auto-mode — send as a message for the current interactive session
+    pi.sendMessage(
+      {
+        customType: "gsd-hard-steer",
+        content: [
+          "HARD STEER — User override registered.",
+          "",
+          `**Override:** ${change}`,
+          "",
+          "This override has been saved to `.gsd/OVERRIDES.md`.",
+          "Before continuing, read `.gsd/OVERRIDES.md` and update the current plan documents to reflect this change.",
+          "Focus on: active slice plan, incomplete task plans, and DECISIONS.md.",
+        ].join("\n"),
+        display: false,
+      },
+      { triggerTurn: true },
+    );
+    ctx.ui.notify(`Override registered: "${change}". Update plan documents to reflect this change.`, "info");
+  }
 }

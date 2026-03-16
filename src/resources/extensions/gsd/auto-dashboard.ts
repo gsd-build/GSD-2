@@ -49,6 +49,7 @@ export function unitVerb(unitType: string): string {
     case "execute-task": return "executing";
     case "complete-slice": return "completing";
     case "replan-slice": return "replanning";
+    case "rewrite-docs": return "rewriting";
     case "reassess-roadmap": return "reassessing";
     case "run-uat": return "running UAT";
     default: return unitType;
@@ -65,6 +66,7 @@ export function unitPhaseLabel(unitType: string): string {
     case "execute-task": return "EXECUTE";
     case "complete-slice": return "COMPLETE";
     case "replan-slice": return "REPLAN";
+    case "rewrite-docs": return "REWRITE";
     case "reassess-roadmap": return "REASSESS";
     case "run-uat": return "UAT";
     default: return unitType.toUpperCase();
@@ -88,6 +90,7 @@ function peekNext(unitType: string, state: GSDState): string {
     case "execute-task": return `continue ${sid}`;
     case "complete-slice": return "reassess roadmap";
     case "replan-slice": return `re-execute ${sid}`;
+    case "rewrite-docs": return "continue execution";
     case "reassess-roadmap": return "advance to next slice";
     case "run-uat": return "reassess roadmap";
     default: return "";

@@ -6,8 +6,8 @@
  * utility.
  */
 
-import { loadFile, parseContinue, parseRoadmap, parseSummary, extractUatType } from "./files.js";
-import type { UatType } from "./files.js";
+import { loadFile, parseContinue, parsePlan, parseRoadmap, parseSummary, extractUatType, loadActiveOverrides, formatOverridesSection } from "./files.js";
+import type { Override, UatType } from "./files.js";
 import { loadPrompt, inlineTemplate } from "./prompt-loader.js";
 import {
   resolveMilestoneFile, resolveSliceFile, resolveSlicePath,
@@ -458,6 +458,10 @@ export async function buildResearchSlicePrompt(
 
   const depContent = await inlineDependencySummaries(mid, sid, base);
 
+  const activeOverrides = await loadActiveOverrides(base);
+  const overridesInline = formatOverridesSection(activeOverrides);
+  if (overridesInline) inlined.unshift(overridesInline);
+
   const inlinedContext = `## Inlined Context (preloaded — do not re-read these files)\n\n${inlined.join("\n\n---\n\n")}`;
 
   const outputRelPath = relSliceFile(base, mid, sid, "RESEARCH");
@@ -495,6 +499,10 @@ export async function buildPlanSlicePrompt(
   inlined.push(inlineTemplate("task-plan", "Task Plan"));
 
   const depContent = await inlineDependencySummaries(mid, sid, base);
+
+  const planActiveOverrides = await loadActiveOverrides(base);
+  const planOverridesInline = formatOverridesSection(planActiveOverrides);
+  if (planOverridesInline) inlined.unshift(planOverridesInline);
 
   const inlinedContext = `## Inlined Context (preloaded — do not re-read these files)\n\n${inlined.join("\n\n---\n\n")}`;
 
@@ -562,6 +570,9 @@ export async function buildExecuteTaskPrompt(
 
   const taskSummaryPath = `${relSlicePath(base, mid, sid)}/tasks/${tid}-SUMMARY.md`;
 
+  const activeOverrides = await loadActiveOverrides(base);
+  const overridesSection = formatOverridesSection(activeOverrides);
+
   return loadPrompt("execute-task", {
     workingDirectory: base,
     milestoneId: mid, sliceId: sid, sliceTitle: sTitle, taskId: tid, taskTitle: tTitle,
@@ -572,6 +583,7 @@ export async function buildExecuteTaskPrompt(
     slicePlanExcerpt,
     carryForwardSection,
     resumeSection,
+    overridesSection,
     priorTaskLines: priorLines,
     taskSummaryPath,
     inlinedTemplates,
@@ -609,6 +621,10 @@ export async function buildCompleteSlicePrompt(
   }
   inlined.push(inlineTemplate("slice-summary", "Slice Summary"));
   inlined.push(inlineTemplate("uat", "UAT"));
+
+  const completeActiveOverrides = await loadActiveOverrides(base);
+  const completeOverridesInline = formatOverridesSection(completeActiveOverrides);
+  if (completeOverridesInline) inlined.unshift(completeOverridesInline);
 
   const inlinedContext = `## Inlined Context (preloaded — do not re-read these files)\n\n${inlined.join("\n\n---\n\n")}`;
 
@@ -713,6 +729,10 @@ export async function buildReplanSlicePrompt(
   const decisionsInline = await inlineGsdRootFile(base, "decisions.md", "Decisions");
   if (decisionsInline) inlined.push(decisionsInline);
 
+  const replanActiveOverrides = await loadActiveOverrides(base);
+  const replanOverridesInline = formatOverridesSection(replanActiveOverrides);
+  if (replanOverridesInline) inlined.unshift(replanOverridesInline);
+
   const inlinedContext = `## Inlined Context (preloaded — do not re-read these files)\n\n${inlined.join("\n\n---\n\n")}`;
 
   const replanPath = `${relSlicePath(base, mid, sid)}/${sid}-REPLAN.md`;
@@ -793,5 +813,96 @@ export async function buildReassessRoadmapPrompt(
     completedSliceSummaryPath: summaryRel,
     assessmentPath,
     inlinedContext,
+  });
+}
+
+// ─── Rewrite-Docs Prompt ──────────────────────────────────────────────────────
+
+export async function buildRewriteDocsPrompt(
+  mid: string, midTitle: string,
+  activeSlice: { id: string; title: string } | null,
+  base: string,
+  overrides: Override[],
+): Promise<string> {
+  const sid = activeSlice?.id;
+  const sTitle = activeSlice?.title ?? "";
+
+  // Build list of documents to review
+  const docList: string[] = [];
+
+  // Active slice plan and incomplete task plans
+  if (sid) {
+    const slicePlanPath = resolveSliceFile(base, mid, sid, "PLAN");
+    const slicePlanRel = relSliceFile(base, mid, sid, "PLAN");
+    if (slicePlanPath) {
+      docList.push(`- Slice plan: \`${slicePlanRel}\``);
+
+      // Find incomplete task plans
+      const tDir = resolveTasksDir(base, mid, sid);
+      if (tDir) {
+        const planContent = await loadFile(slicePlanPath);
+        if (planContent) {
+          const plan = parsePlan(planContent);
+          for (const task of plan.tasks) {
+            if (!task.done) {
+              const taskPlanPath = resolveTaskFile(base, mid, sid, task.id, "PLAN");
+              if (taskPlanPath) {
+                const taskRelPath = `${relSlicePath(base, mid, sid)}/tasks/${task.id}-PLAN.md`;
+                docList.push(`- Task plan: \`${taskRelPath}\``);
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Root-level documents
+  const decisionsPath = resolveGsdRootFile(base, "DECISIONS");
+  if (existsSync(decisionsPath)) {
+    docList.push(`- Decisions: \`${relGsdRootFile("DECISIONS")}\``);
+  }
+  const requirementsPath = resolveGsdRootFile(base, "REQUIREMENTS");
+  if (existsSync(requirementsPath)) {
+    docList.push(`- Requirements: \`${relGsdRootFile("REQUIREMENTS")}\``);
+  }
+  const projectPath = resolveGsdRootFile(base, "PROJECT");
+  if (existsSync(projectPath)) {
+    docList.push(`- Project: \`${relGsdRootFile("PROJECT")}\``);
+  }
+
+  // Milestone context (read-only reference)
+  const contextPath = resolveMilestoneFile(base, mid, "CONTEXT");
+  const contextRel = relMilestoneFile(base, mid, "CONTEXT");
+  if (contextPath) {
+    docList.push(`- Milestone context (reference only): \`${contextRel}\``);
+  }
+
+  // Roadmap
+  const roadmapPath = resolveMilestoneFile(base, mid, "ROADMAP");
+  const roadmapRel = relMilestoneFile(base, mid, "ROADMAP");
+  if (roadmapPath) {
+    docList.push(`- Roadmap: \`${roadmapRel}\``);
+  }
+
+  const overrideContent = overrides.map((o, i) => [
+    `### Override ${i + 1}`,
+    `**Change:** ${o.change}`,
+    `**Issued:** ${o.timestamp}`,
+    `**During:** ${o.appliedAt}`,
+  ].join("\n")).join("\n\n");
+
+  const documentList = docList.length > 0
+    ? docList.join("\n")
+    : "- No active plan documents found.";
+
+  return loadPrompt("rewrite-docs", {
+    milestoneId: mid,
+    milestoneTitle: midTitle,
+    sliceId: sid ?? "none",
+    sliceTitle: sTitle,
+    overrideContent,
+    documentList,
+    overridesPath: relGsdRootFile("OVERRIDES"),
   });
 }

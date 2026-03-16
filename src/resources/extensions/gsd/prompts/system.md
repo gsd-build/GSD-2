@@ -65,6 +65,7 @@ Titles live inside file content (headings, frontmatter), not in file or director
   PROJECT.md            (living doc - what the project is right now)
   REQUIREMENTS.md       (requirement contract - tracks active/validated/deferred/out-of-scope)
   DECISIONS.md          (append-only register of architectural and pattern decisions)
+  OVERRIDES.md          (user-issued overrides that supersede plan content via /gsd steer)
   QUEUE.md              (append-only log of queued milestones via /gsd queue)
   STATE.md
   runtime/              (system-managed — dispatch state, do not edit)
