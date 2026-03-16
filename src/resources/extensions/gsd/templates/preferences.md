@@ -1,5 +1,6 @@
 ---
 version: 1
+mode:
 always_use_skills: []
 prefer_skills: []
 avoid_skills: []

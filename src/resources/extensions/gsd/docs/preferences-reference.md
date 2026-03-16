@@ -72,6 +72,20 @@ Setting `prefer_skills: []` does **not** disable skill discovery — it just mea
 
 - `version`: schema version. Start at `1`.
 
+- `mode`: workflow mode — `"solo"` or `"team"`. Sets sensible defaults for git and project settings based on your workflow. Mode defaults are the lowest priority layer — any explicit preference overrides them. Omit to configure everything manually.
+
+  | Setting | `solo` | `team` |
+  |---|---|---|
+  | `git.auto_push` | `true` | `false` |
+  | `git.push_branches` | `false` | `true` |
+  | `git.pre_merge_check` | `false` | `true` |
+  | `git.merge_strategy` | `"squash"` | `"squash"` |
+  | `git.isolation` | `"worktree"` | `"worktree"` |
+  | `git.commit_docs` | `true` | `true` |
+  | `unique_milestone_ids` | `false` | `true` |
+
+  Quick setup: `/gsd mode` (global) or `/gsd mode project` (project-level).
+
 - `always_use_skills`: skills GSD should use whenever they are relevant.
 
 - `prefer_skills`: soft defaults GSD should prefer when relevant.
@@ -187,6 +201,45 @@ Setting `prefer_skills: []` does **not** disable skill discovery — it just mea
 - Prefer skill names for stable built-in skills.
 - Prefer absolute paths for local personal skills.
 - **Omit fields you don't need** — empty arrays add noise with no effect.
+
+---
+
+## Workflow Mode Examples
+
+**Solo developer — auto-push, simple IDs:**
+
+```yaml
+---
+version: 1
+mode: solo
+---
+```
+
+Equivalent to setting `git.auto_push: true`, `git.push_branches: false`, `git.pre_merge_check: false`, `git.merge_strategy: squash`, `git.isolation: worktree`, `git.commit_docs: true`, `unique_milestone_ids: false`.
+
+**Team — unique IDs, push branches, pre-merge checks:**
+
+```yaml
+---
+version: 1
+mode: team
+---
+```
+
+Equivalent to setting `git.auto_push: false`, `git.push_branches: true`, `git.pre_merge_check: true`, `git.merge_strategy: squash`, `git.isolation: worktree`, `git.commit_docs: true`, `unique_milestone_ids: true`.
+
+**Mode with overrides — team mode but with auto-push:**
+
+```yaml
+---
+version: 1
+mode: team
+git:
+  auto_push: true
+---
+```
+
+Gets all team defaults except `auto_push`, which is explicitly overridden to `true`. Any explicit setting always wins over the mode default.
 
 ---
 

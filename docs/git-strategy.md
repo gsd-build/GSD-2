@@ -57,6 +57,29 @@ Use the `/worktree` (or `/wt`) command for manual worktree management:
 /worktree remove
 ```
 
+## Workflow Modes
+
+Instead of configuring each git setting individually, set `mode` to get sensible defaults for your workflow:
+
+```yaml
+mode: solo    # personal projects — auto-push, squash, simple IDs
+mode: team    # shared repos — unique IDs, push branches, pre-merge checks
+```
+
+| Setting | `solo` | `team` |
+|---|---|---|
+| `git.auto_push` | `true` | `false` |
+| `git.push_branches` | `false` | `true` |
+| `git.pre_merge_check` | `false` | `true` |
+| `git.merge_strategy` | `"squash"` | `"squash"` |
+| `git.isolation` | `"worktree"` | `"worktree"` |
+| `git.commit_docs` | `true` | `true` |
+| `unique_milestone_ids` | `false` | `true` |
+
+Mode defaults are the lowest priority — any explicit preference overrides them. For example, `mode: solo` with `git.auto_push: false` gives you everything from solo except auto-push.
+
+Existing configs without `mode` work exactly as before — no defaults are injected.
+
 ## Git Preferences
 
 Configure git behavior in preferences:

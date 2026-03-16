@@ -4,19 +4,21 @@ GSD supports multi-user workflows where several developers work on the same repo
 
 ## Setup
 
-### 1. Enable Unique Milestone IDs
+### 1. Set Team Mode
 
-Prevent ID collisions when multiple developers create milestones:
+The simplest way to configure GSD for team use is to set `mode: team` in your project preferences. This enables unique milestone IDs, push branches, and pre-merge checks in one setting:
 
 ```yaml
 # .gsd/preferences.md (project-level, committed to git)
 ---
 version: 1
-unique_milestone_ids: true
+mode: team
 ---
 ```
 
-This generates milestone IDs like `M001-eh88as` instead of plain `M001`. The random suffix ensures no two developers clash.
+This is equivalent to manually setting `unique_milestone_ids: true`, `git.push_branches: true`, `git.pre_merge_check: true`, and other team-appropriate defaults. You can still override individual settings — for example, adding `git.auto_push: true` on top of `mode: team` if your team prefers auto-push.
+
+Alternatively, you can configure each setting individually without using a mode (see [Git Strategy](git-strategy.md) for details).
 
 ### 2. Configure `.gitignore`
 
