@@ -33,6 +33,7 @@ import {
   nativeAddPaths,
   nativeRmForce,
   nativeBranchDelete,
+  nativeBranchExists,
 } from "./native-git-bridge.js";
 
 // ─── Module State ──────────────────────────────────────────────────────────
@@ -93,11 +94,21 @@ export function autoWorktreeBranch(milestoneId: string): string {
 export function createAutoWorktree(basePath: string, milestoneId: string): string {
   const branch = autoWorktreeBranch(milestoneId);
 
-  // Use the integration branch recorded in META.json as the start point.
-  // This ensures the worktree branch is created from the branch the user
-  // was on when they started the milestone (e.g. f-setup-gsd-2), not main.
-  const integrationBranch = readIntegrationBranch(basePath, milestoneId) ?? undefined;
-  const info = createWorktree(basePath, milestoneId, { branch, startPoint: integrationBranch });
+  // Check if the milestone branch already exists — it survives auto-mode
+  // stop/pause and contains committed work from prior sessions. If it exists,
+  // re-attach the worktree to it WITHOUT resetting. Only create a fresh branch
+  // from the integration branch when no prior work exists.
+  const branchExists = nativeBranchExists(basePath, branch);
+
+  let info: { name: string; path: string; branch: string; exists: boolean };
+  if (branchExists) {
+    // Re-attach worktree to the existing milestone branch (preserving commits)
+    info = createWorktree(basePath, milestoneId, { branch, reuseExistingBranch: true });
+  } else {
+    // Fresh start — create branch from integration branch
+    const integrationBranch = readIntegrationBranch(basePath, milestoneId) ?? undefined;
+    info = createWorktree(basePath, milestoneId, { branch, startPoint: integrationBranch });
+  }
 
   // Copy .gsd/ planning artifacts from the source repo into the new worktree.
   // Worktrees are fresh git checkouts — untracked files don't carry over.
@@ -157,8 +168,13 @@ function copyPlanningArtifacts(srcBase: string, wtPath: string): void {
  * Teardown an auto-worktree: chdir back to original base, then remove
  * the worktree and its branch.
  */
-export function teardownAutoWorktree(originalBasePath: string, milestoneId: string): void {
+export function teardownAutoWorktree(
+  originalBasePath: string,
+  milestoneId: string,
+  opts: { preserveBranch?: boolean } = {},
+): void {
   const branch = autoWorktreeBranch(milestoneId);
+  const { preserveBranch = false } = opts;
   const previousCwd = process.cwd();
 
   try {
@@ -171,7 +187,7 @@ export function teardownAutoWorktree(originalBasePath: string, milestoneId: stri
   }
 
   nudgeGitBranchCache(previousCwd);
-  removeWorktree(originalBasePath, milestoneId, { branch });
+  removeWorktree(originalBasePath, milestoneId, { branch, deleteBranch: !preserveBranch });
 }
 
 /**

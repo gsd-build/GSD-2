@@ -389,7 +389,7 @@ export async function buildResearchMilestonePrompt(mid: string, midTitle: string
     milestoneId: mid, milestoneTitle: midTitle,
     milestonePath: relMilestonePath(base, mid),
     contextPath: contextRel,
-    outputPath: outputRelPath,
+    outputPath: join(base, outputRelPath),
     inlinedContext,
     ...buildSkillDiscoveryVars(),
   });
@@ -432,14 +432,14 @@ export async function buildPlanMilestonePrompt(mid: string, midTitle: string, ba
   const inlinedContext = `## Inlined Context (preloaded — do not re-read these files)\n\n${inlined.join("\n\n---\n\n")}`;
 
   const outputRelPath = relMilestoneFile(base, mid, "ROADMAP");
-  const secretsOutputPath = relMilestoneFile(base, mid, "SECRETS");
+  const secretsOutputPath = join(base, relMilestoneFile(base, mid, "SECRETS"));
   return loadPrompt("plan-milestone", {
     workingDirectory: base,
     milestoneId: mid, milestoneTitle: midTitle,
     milestonePath: relMilestonePath(base, mid),
     contextPath: contextRel,
     researchPath: researchRel,
-    outputPath: outputRelPath,
+    outputPath: join(base, outputRelPath),
     secretsOutputPath,
     inlinedContext,
   });
@@ -484,7 +484,7 @@ export async function buildResearchSlicePrompt(
     roadmapPath: roadmapRel,
     contextPath: contextRel,
     milestoneResearchPath: milestoneResearchRel,
-    outputPath: outputRelPath,
+    outputPath: join(base, outputRelPath),
     inlinedContext,
     dependencySummaries: depContent,
     ...buildSkillDiscoveryVars(),
@@ -531,7 +531,7 @@ export async function buildPlanSlicePrompt(
     slicePath: relSlicePath(base, mid, sid),
     roadmapPath: roadmapRel,
     researchPath: researchRel,
-    outputPath: outputRelPath,
+    outputPath: join(base, outputRelPath),
     inlinedContext,
     dependencySummaries: depContent,
   });
@@ -598,7 +598,7 @@ export async function buildExecuteTaskPrompt(
         ...(knowledgeInlineET ? [knowledgeInlineET] : []),
       ].join("\n\n---\n\n");
 
-  const taskSummaryPath = `${relSlicePath(base, mid, sid)}/tasks/${tid}-SUMMARY.md`;
+  const taskSummaryPath = join(base, `${relSlicePath(base, mid, sid)}/tasks/${tid}-SUMMARY.md`);
 
   const activeOverrides = await loadActiveOverrides(base);
   const overridesSection = formatOverridesSection(activeOverrides);
@@ -607,7 +607,7 @@ export async function buildExecuteTaskPrompt(
     overridesSection,
     workingDirectory: base,
     milestoneId: mid, sliceId: sid, sliceTitle: sTitle, taskId: tid, taskTitle: tTitle,
-    planPath: relSliceFile(base, mid, sid, "PLAN"),
+    planPath: join(base, relSliceFile(base, mid, sid, "PLAN")),
     slicePath: relSlicePath(base, mid, sid),
     taskPlanPath: taskPlanRelPath,
     taskPlanInline,
@@ -665,14 +665,14 @@ export async function buildCompleteSlicePrompt(
   const inlinedContext = `## Inlined Context (preloaded — do not re-read these files)\n\n${inlined.join("\n\n---\n\n")}`;
 
   const sliceRel = relSlicePath(base, mid, sid);
-  const sliceSummaryPath = `${sliceRel}/${sid}-SUMMARY.md`;
-  const sliceUatPath = `${sliceRel}/${sid}-UAT.md`;
+  const sliceSummaryPath = join(base, `${sliceRel}/${sid}-SUMMARY.md`);
+  const sliceUatPath = join(base, `${sliceRel}/${sid}-UAT.md`);
 
   return loadPrompt("complete-slice", {
     workingDirectory: base,
     milestoneId: mid, sliceId: sid, sliceTitle: sTitle,
     slicePath: sliceRel,
-    roadmapPath: roadmapRel,
+    roadmapPath: join(base, roadmapRel),
     inlinedContext,
     sliceSummaryPath,
     sliceUatPath,
@@ -723,7 +723,7 @@ export async function buildCompleteMilestonePrompt(
 
   const inlinedContext = `## Inlined Context (preloaded — do not re-read these files)\n\n${inlined.join("\n\n---\n\n")}`;
 
-  const milestoneSummaryPath = `${relMilestonePath(base, mid)}/${mid}-SUMMARY.md`;
+  const milestoneSummaryPath = join(base, `${relMilestonePath(base, mid)}/${mid}-SUMMARY.md`);
 
   return loadPrompt("complete-milestone", {
     workingDirectory: base,
@@ -775,7 +775,7 @@ export async function buildReplanSlicePrompt(
 
   const inlinedContext = `## Inlined Context (preloaded — do not re-read these files)\n\n${inlined.join("\n\n---\n\n")}`;
 
-  const replanPath = `${relSlicePath(base, mid, sid)}/${sid}-REPLAN.md`;
+  const replanPath = join(base, `${relSlicePath(base, mid, sid)}/${sid}-REPLAN.md`);
 
   // Build capture context for replan prompt (captures that triggered this replan)
   let captureContext = "(none)";
@@ -797,7 +797,7 @@ export async function buildReplanSlicePrompt(
     sliceId: sid,
     sliceTitle: sTitle,
     slicePath: relSlicePath(base, mid, sid),
-    planPath: slicePlanRel,
+    planPath: join(base, slicePlanRel),
     blockerTaskId,
     inlinedContext,
     replanPath,
@@ -823,7 +823,7 @@ export async function buildRunUatPrompt(
 
   const inlinedContext = `## Inlined Context (preloaded — do not re-read these files)\n\n${inlined.join("\n\n---\n\n")}`;
 
-  const uatResultPath = relSliceFile(base, mid, sliceId, "UAT-RESULT");
+  const uatResultPath = join(base, relSliceFile(base, mid, sliceId, "UAT-RESULT"));
   const uatType = extractUatType(uatContent) ?? "human-experience";
 
   return loadPrompt("run-uat", {
@@ -862,7 +862,7 @@ export async function buildReassessRoadmapPrompt(
 
   const inlinedContext = `## Inlined Context (preloaded — do not re-read these files)\n\n${inlined.join("\n\n---\n\n")}`;
 
-  const assessmentPath = relSliceFile(base, mid, completedSliceId, "ASSESSMENT");
+  const assessmentPath = join(base, relSliceFile(base, mid, completedSliceId, "ASSESSMENT"));
 
   // Build deferred captures context for reassess prompt
   let deferredCaptures = "(none)";
