@@ -40,7 +40,7 @@ function run(cmd: string, cwd: string): string {
 }
 
 function commitCount(cwd: string, branch: string): number {
-  return run(`git rev-list --count ${branch}`, cwd);
+  return parseInt(run(`git rev-list --count ${branch}`, cwd), 10);
 }
 
 function headSha(cwd: string, ref: string): string {
