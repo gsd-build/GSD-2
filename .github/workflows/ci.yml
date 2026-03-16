@@ -40,8 +40,8 @@ jobs:
       - name: Run integration tests
         run: npm run test:integration
 
-      # - name: Check GSD milestones are complete
-      #   run: npm run check:milestones
+      - name: Check GSD milestones are complete
+        run: npm run check:milestones
 
       - name: Check GSD milestones use the unique naming convention
         run: npm run check:milestone-ids
