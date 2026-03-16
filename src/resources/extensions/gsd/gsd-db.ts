@@ -57,7 +57,7 @@ function suppressSqliteWarning(): void {
     ) {
       return false;
     }
-    return origEmit.apply(process, [event, ...args] as Parameters<typeof process.emit>);
+    return origEmit.apply(process, [event, ...args] as Parameters<typeof process.emit>) as unknown as boolean;
   };
 }
 

@@ -208,7 +208,7 @@ console.log('=== md-importer: parseRequirementsSections ===');
   assertEq(r001?.supporting_slices, 'none', 'R001 supporting_slices');
   assertEq(r001?.validation, 'unmapped', 'R001 validation');
   assertEq(r001?.notes, 'WAL mode enabled', 'R001 notes');
-  assertTrue(r001?.full_content?.includes('### R001'), 'R001 full_content should have heading');
+  assertTrue(r001?.full_content?.includes('### R001') ?? false, 'R001 full_content should have heading');
 
   // Validated section — R017 (abbreviated format with "Validated by" / "Proof" bullets)
   const r017 = reqs.find(r => r.id === 'R017');

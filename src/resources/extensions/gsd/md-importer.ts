@@ -239,7 +239,7 @@ export function parseRequirementsSections(content: string): Requirement[] {
         if (key === 'id' || key === 'superseded_by') continue;
         const val = req[key];
         if (val && val !== '' && (!existing[key] || existing[key] === '')) {
-          (existing as Record<string, unknown>)[key] = val;
+          (existing as unknown as Record<string, unknown>)[key] = val;
         }
       }
     }

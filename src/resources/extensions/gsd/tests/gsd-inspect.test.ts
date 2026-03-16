@@ -122,4 +122,4 @@ console.log("# === gsd-inspect: output format ===");
   assertTrue(!output.startsWith("{"), "output is not JSON");
 }
 
-report("gsd-inspect");
+report();
