@@ -17,6 +17,10 @@ const GIT_NO_PROMPT_ENV = {
   GIT_SVN_ID: "",
 };
 
+// Issue #453: keep auto-mode bookkeeping on the stable git CLI path unless a
+// caller explicitly opts into the native helper.
+const NATIVE_GSD_GIT_ENABLED = process.env.GSD_ENABLE_NATIVE_GSD_GIT === "1";
+
 // ─── Native Module Types ──────────────────────────────────────────────────
 
 interface GitDiffStat {
@@ -116,6 +120,7 @@ let loadAttempted = false;
 function loadNative(): typeof nativeModule {
   if (loadAttempted) return nativeModule;
   loadAttempted = true;
+  if (!NATIVE_GSD_GIT_ENABLED) return nativeModule;
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports

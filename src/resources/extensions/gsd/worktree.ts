@@ -54,10 +54,10 @@ export function setActiveMilestoneId(basePath: string, milestoneId: string | nul
  * record when the user starts from a different branch (#300). Always a no-op
  * if on a GSD slice branch.
  */
-export function captureIntegrationBranch(basePath: string, milestoneId: string): void {
+export function captureIntegrationBranch(basePath: string, milestoneId: string, options?: { commitDocs?: boolean }): void {
   const svc = getService(basePath);
   const current = svc.getCurrentBranch();
-  writeIntegrationBranch(basePath, milestoneId, current);
+  writeIntegrationBranch(basePath, milestoneId, current, options);
 }
 
 // ─── Pure Utility Functions (unchanged) ────────────────────────────────────

@@ -712,7 +712,8 @@ export async function showSmartEntry(
   }
 
   // ── Ensure .gitignore has baseline patterns ──────────────────────────
-  ensureGitignore(basePath);
+  const commitDocs = loadEffectiveGSDPreferences()?.preferences?.git?.commit_docs;
+  ensureGitignore(basePath, { commitDocs });
   untrackRuntimeFiles(basePath);
 
   // ── No GSD project OR no milestone → Create first/next milestone ────
@@ -723,11 +724,14 @@ export async function showSmartEntry(
 
     // ── Create PREFERENCES.md template ────────────────────────────────
     ensurePreferences(basePath);
-    try {
-      nativeAddPaths(basePath, [".gsd", ".gitignore"]);
-      nativeCommit(basePath, "chore: init gsd");
-    } catch {
-      // nothing to commit — that's fine
+    // Only commit .gsd/ init when commit_docs is not explicitly false
+    if (commitDocs !== false) {
+      try {
+        nativeAddPaths(basePath, [".gsd", ".gitignore"]);
+        nativeCommit(basePath, "chore: init gsd");
+      } catch {
+        // nothing to commit — that's fine
+      }
     }
   }
 

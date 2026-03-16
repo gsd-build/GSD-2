@@ -47,6 +47,11 @@ export interface GitPreferences {
    *  - "branch": works directly in the project root (for submodule-heavy repos)
    */
   isolation?: "worktree" | "branch";
+  /** When false, prevents GSD from committing .gsd/ planning artifacts to git.
+   *  The .gsd/ folder is added to .gitignore and kept local-only.
+   *  Default: true (planning docs are tracked in git).
+   */
+  commit_docs?: boolean;
 }
 
 export const VALID_BRANCH_NAME = /^[a-zA-Z0-9_\-\/.]+$/;
@@ -152,7 +157,7 @@ export function readIntegrationBranch(basePath: string, milestoneId: string): st
  *
  * The file is committed immediately so the metadata is persisted in git.
  */
-export function writeIntegrationBranch(basePath: string, milestoneId: string, branch: string): void {
+export function writeIntegrationBranch(basePath: string, milestoneId: string, branch: string, options?: { commitDocs?: boolean }): void {
   // Don't record slice branches as the integration target
   if (SLICE_BRANCH_RE.test(branch)) return;
   // Validate
@@ -178,12 +183,15 @@ export function writeIntegrationBranch(basePath: string, milestoneId: string, br
   writeFileSync(metaFile, JSON.stringify(existing, null, 2) + "\n", "utf-8");
 
   // Commit immediately so the metadata is persisted in git.
-  try {
-    nativeAddPaths(basePath, [metaFile]);
-    nativeCommit(basePath, `chore(${milestoneId}): record integration branch`, { allowEmpty: false });
-  } catch {
-    // Non-fatal — file is on disk even if commit fails (e.g. nothing to commit
-    // because the file was already tracked with identical content)
+  // Skip when commit_docs is explicitly false — .gsd/ is local-only.
+  if (options?.commitDocs !== false) {
+    try {
+      nativeAddPaths(basePath, [metaFile]);
+      nativeCommit(basePath, `chore(${milestoneId}): record integration branch`, { allowEmpty: false });
+    } catch {
+      // Non-fatal — file is on disk even if commit fails (e.g. nothing to commit
+      // because the file was already tracked with identical content)
+    }
   }
 }
 
@@ -284,7 +292,10 @@ export class GitServiceImpl {
    * @param extraExclusions Additional pathspec exclusions beyond RUNTIME_EXCLUSION_PATHS.
    */
   private smartStage(extraExclusions: readonly string[] = []): void {
-    const allExclusions = [...RUNTIME_EXCLUSION_PATHS, ...extraExclusions];
+    // When commit_docs is false, exclude the entire .gsd/ directory from staging
+    const commitDocsDisabled = this.prefs.commit_docs === false;
+    const gsdExclusion = commitDocsDisabled ? [".gsd/"] : [];
+    const allExclusions = [...RUNTIME_EXCLUSION_PATHS, ...gsdExclusion, ...extraExclusions];
 
     // One-time cleanup: if runtime files are already tracked in the index
     // (from older versions where the fallback bug staged them), untrack them

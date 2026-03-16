@@ -15,8 +15,8 @@ import {
   relMilestoneFile, relSliceFile, relSlicePath, relMilestonePath,
   resolveGsdRootFile, relGsdRootFile,
 } from "./paths.js";
-import { resolveSkillDiscoveryMode } from "./preferences.js";
-import type { GSDState } from "./types.js";
+import { resolveSkillDiscoveryMode, resolveInlineLevel } from "./preferences.js";
+import type { GSDState, InlineLevel } from "./types.js";
 import type { GSDPreferences } from "./preferences.js";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
@@ -395,7 +395,8 @@ export async function buildResearchMilestonePrompt(mid: string, midTitle: string
   });
 }
 
-export async function buildPlanMilestonePrompt(mid: string, midTitle: string, base: string): Promise<string> {
+export async function buildPlanMilestonePrompt(mid: string, midTitle: string, base: string, level?: InlineLevel): Promise<string> {
+  const inlineLevel = level ?? resolveInlineLevel();
   const contextPath = resolveMilestoneFile(base, mid, "CONTEXT");
   const contextRel = relMilestoneFile(base, mid, "CONTEXT");
   const researchPath = resolveMilestoneFile(base, mid, "RESEARCH");
@@ -408,19 +409,25 @@ export async function buildPlanMilestonePrompt(mid: string, midTitle: string, ba
   const { inlinePriorMilestoneSummary } = await import("./files.js");
   const priorSummaryInline = await inlinePriorMilestoneSummary(mid, base);
   if (priorSummaryInline) inlined.push(priorSummaryInline);
-  const projectInline = await inlineGsdRootFile(base, "project.md", "Project");
+  const projectInline = inlineLevel !== "minimal" ? await inlineGsdRootFile(base, "project.md", "Project") : null;
   if (projectInline) inlined.push(projectInline);
-  const requirementsInline = await inlineGsdRootFile(base, "requirements.md", "Requirements");
+  const requirementsInline = inlineLevel !== "minimal" ? await inlineGsdRootFile(base, "requirements.md", "Requirements") : null;
   if (requirementsInline) inlined.push(requirementsInline);
-  const decisionsInline = await inlineGsdRootFile(base, "decisions.md", "Decisions");
+  const decisionsInline = inlineLevel !== "minimal" ? await inlineGsdRootFile(base, "decisions.md", "Decisions") : null;
   if (decisionsInline) inlined.push(decisionsInline);
   const knowledgeInlinePM = await inlineGsdRootFile(base, "knowledge.md", "Project Knowledge");
   if (knowledgeInlinePM) inlined.push(knowledgeInlinePM);
   inlined.push(inlineTemplate("roadmap", "Roadmap"));
-  inlined.push(inlineTemplate("decisions", "Decisions"));
-  inlined.push(inlineTemplate("plan", "Slice Plan"));
-  inlined.push(inlineTemplate("task-plan", "Task Plan"));
-  inlined.push(inlineTemplate("secrets-manifest", "Secrets Manifest"));
+  if (inlineLevel === "full") {
+    inlined.push(inlineTemplate("decisions", "Decisions"));
+    inlined.push(inlineTemplate("plan", "Slice Plan"));
+    inlined.push(inlineTemplate("task-plan", "Task Plan"));
+    inlined.push(inlineTemplate("secrets-manifest", "Secrets Manifest"));
+  } else if (inlineLevel === "standard") {
+    inlined.push(inlineTemplate("decisions", "Decisions"));
+    inlined.push(inlineTemplate("plan", "Slice Plan"));
+    inlined.push(inlineTemplate("task-plan", "Task Plan"));
+  }
 
   const inlinedContext = `## Inlined Context (preloaded — do not re-read these files)\n\n${inlined.join("\n\n---\n\n")}`;
 
@@ -485,8 +492,9 @@ export async function buildResearchSlicePrompt(
 }
 
 export async function buildPlanSlicePrompt(
-  mid: string, _midTitle: string, sid: string, sTitle: string, base: string,
+  mid: string, _midTitle: string, sid: string, sTitle: string, base: string, level?: InlineLevel,
 ): Promise<string> {
+  const inlineLevel = level ?? resolveInlineLevel();
   const roadmapPath = resolveMilestoneFile(base, mid, "ROADMAP");
   const roadmapRel = relMilestoneFile(base, mid, "ROADMAP");
   const researchPath = resolveSliceFile(base, mid, sid, "RESEARCH");
@@ -496,14 +504,18 @@ export async function buildPlanSlicePrompt(
   inlined.push(await inlineFile(roadmapPath, roadmapRel, "Milestone Roadmap"));
   const researchInline = await inlineFileOptional(researchPath, researchRel, "Slice Research");
   if (researchInline) inlined.push(researchInline);
-  const decisionsInline = await inlineGsdRootFile(base, "decisions.md", "Decisions");
-  if (decisionsInline) inlined.push(decisionsInline);
-  const requirementsInline = await inlineGsdRootFile(base, "requirements.md", "Requirements");
-  if (requirementsInline) inlined.push(requirementsInline);
+  if (inlineLevel !== "minimal") {
+    const decisionsInline = await inlineGsdRootFile(base, "decisions.md", "Decisions");
+    if (decisionsInline) inlined.push(decisionsInline);
+    const requirementsInline = await inlineGsdRootFile(base, "requirements.md", "Requirements");
+    if (requirementsInline) inlined.push(requirementsInline);
+  }
   const knowledgeInlinePS = await inlineGsdRootFile(base, "knowledge.md", "Project Knowledge");
   if (knowledgeInlinePS) inlined.push(knowledgeInlinePS);
   inlined.push(inlineTemplate("plan", "Slice Plan"));
-  inlined.push(inlineTemplate("task-plan", "Task Plan"));
+  if (inlineLevel === "full") {
+    inlined.push(inlineTemplate("task-plan", "Task Plan"));
+  }
 
   const depContent = await inlineDependencySummaries(mid, sid, base);
   const planActiveOverrides = await loadActiveOverrides(base);
@@ -527,8 +539,9 @@ export async function buildPlanSlicePrompt(
 
 export async function buildExecuteTaskPrompt(
   mid: string, sid: string, sTitle: string,
-  tid: string, tTitle: string, base: string,
+  tid: string, tTitle: string, base: string, level?: InlineLevel,
 ): Promise<string> {
+  const inlineLevel = level ?? resolveInlineLevel();
 
   const priorSummaries = await getPriorTaskSummaryPaths(mid, sid, tid, base);
   const priorLines = priorSummaries.length > 0
@@ -568,16 +581,22 @@ export async function buildExecuteTaskPrompt(
     legacyContinuePath ? `${relSlicePath(base, mid, sid)}/continue.md` : null,
   );
 
-  const carryForwardSection = await buildCarryForwardSection(priorSummaries, base);
+  // For minimal inline level, only carry forward the most recent prior summary
+  const effectivePriorSummaries = inlineLevel === "minimal" && priorSummaries.length > 1
+    ? priorSummaries.slice(-1)
+    : priorSummaries;
+  const carryForwardSection = await buildCarryForwardSection(effectivePriorSummaries, base);
 
   // Inline project knowledge if available
   const knowledgeInlineET = await inlineGsdRootFile(base, "knowledge.md", "Project Knowledge");
 
-  const inlinedTemplates = [
-    inlineTemplate("task-summary", "Task Summary"),
-    inlineTemplate("decisions", "Decisions"),
-    ...(knowledgeInlineET ? [knowledgeInlineET] : []),
-  ].join("\n\n---\n\n");
+  const inlinedTemplates = inlineLevel === "minimal"
+    ? inlineTemplate("task-summary", "Task Summary")
+    : [
+        inlineTemplate("task-summary", "Task Summary"),
+        inlineTemplate("decisions", "Decisions"),
+        ...(knowledgeInlineET ? [knowledgeInlineET] : []),
+      ].join("\n\n---\n\n");
 
   const taskSummaryPath = `${relSlicePath(base, mid, sid)}/tasks/${tid}-SUMMARY.md`;
 
@@ -602,8 +621,9 @@ export async function buildExecuteTaskPrompt(
 }
 
 export async function buildCompleteSlicePrompt(
-  mid: string, _midTitle: string, sid: string, sTitle: string, base: string,
+  mid: string, _midTitle: string, sid: string, sTitle: string, base: string, level?: InlineLevel,
 ): Promise<string> {
+  const inlineLevel = level ?? resolveInlineLevel();
 
   const roadmapPath = resolveMilestoneFile(base, mid, "ROADMAP");
   const roadmapRel = relMilestoneFile(base, mid, "ROADMAP");
@@ -613,8 +633,10 @@ export async function buildCompleteSlicePrompt(
   const inlined: string[] = [];
   inlined.push(await inlineFile(roadmapPath, roadmapRel, "Milestone Roadmap"));
   inlined.push(await inlineFile(slicePlanPath, slicePlanRel, "Slice Plan"));
-  const requirementsInline = await inlineGsdRootFile(base, "requirements.md", "Requirements");
-  if (requirementsInline) inlined.push(requirementsInline);
+  if (inlineLevel !== "minimal") {
+    const requirementsInline = await inlineGsdRootFile(base, "requirements.md", "Requirements");
+    if (requirementsInline) inlined.push(requirementsInline);
+  }
   const knowledgeInlineCS = await inlineGsdRootFile(base, "knowledge.md", "Project Knowledge");
   if (knowledgeInlineCS) inlined.push(knowledgeInlineCS);
 
@@ -633,7 +655,9 @@ export async function buildCompleteSlicePrompt(
     }
   }
   inlined.push(inlineTemplate("slice-summary", "Slice Summary"));
-  inlined.push(inlineTemplate("uat", "UAT"));
+  if (inlineLevel !== "minimal") {
+    inlined.push(inlineTemplate("uat", "UAT"));
+  }
   const completeActiveOverrides = await loadActiveOverrides(base);
   const completeOverridesInline = formatOverridesSection(completeActiveOverrides);
   if (completeOverridesInline) inlined.unshift(completeOverridesInline);
@@ -656,8 +680,9 @@ export async function buildCompleteSlicePrompt(
 }
 
 export async function buildCompleteMilestonePrompt(
-  mid: string, midTitle: string, base: string,
+  mid: string, midTitle: string, base: string, level?: InlineLevel,
 ): Promise<string> {
+  const inlineLevel = level ?? resolveInlineLevel();
   const roadmapPath = resolveMilestoneFile(base, mid, "ROADMAP");
   const roadmapRel = relMilestoneFile(base, mid, "ROADMAP");
 
@@ -678,13 +703,15 @@ export async function buildCompleteMilestonePrompt(
     }
   }
 
-  // Inline root GSD files
-  const requirementsInline = await inlineGsdRootFile(base, "requirements.md", "Requirements");
-  if (requirementsInline) inlined.push(requirementsInline);
-  const decisionsInline = await inlineGsdRootFile(base, "decisions.md", "Decisions");
-  if (decisionsInline) inlined.push(decisionsInline);
-  const projectInline = await inlineGsdRootFile(base, "project.md", "Project");
-  if (projectInline) inlined.push(projectInline);
+  // Inline root GSD files (skip for minimal — completion can read these if needed)
+  if (inlineLevel !== "minimal") {
+    const requirementsInline = await inlineGsdRootFile(base, "requirements.md", "Requirements");
+    if (requirementsInline) inlined.push(requirementsInline);
+    const decisionsInline = await inlineGsdRootFile(base, "decisions.md", "Decisions");
+    if (decisionsInline) inlined.push(decisionsInline);
+    const projectInline = await inlineGsdRootFile(base, "project.md", "Project");
+    if (projectInline) inlined.push(projectInline);
+  }
   const knowledgeInlineCM = await inlineGsdRootFile(base, "knowledge.md", "Project Knowledge");
   if (knowledgeInlineCM) inlined.push(knowledgeInlineCM);
   // Inline milestone context file (milestone-level, not GSD root)
@@ -796,8 +823,9 @@ export async function buildRunUatPrompt(
 }
 
 export async function buildReassessRoadmapPrompt(
-  mid: string, midTitle: string, completedSliceId: string, base: string,
+  mid: string, midTitle: string, completedSliceId: string, base: string, level?: InlineLevel,
 ): Promise<string> {
+  const inlineLevel = level ?? resolveInlineLevel();
   const roadmapPath = resolveMilestoneFile(base, mid, "ROADMAP");
   const roadmapRel = relMilestoneFile(base, mid, "ROADMAP");
   const summaryPath = resolveSliceFile(base, mid, completedSliceId, "SUMMARY");
@@ -806,12 +834,14 @@ export async function buildReassessRoadmapPrompt(
   const inlined: string[] = [];
   inlined.push(await inlineFile(roadmapPath, roadmapRel, "Current Roadmap"));
   inlined.push(await inlineFile(summaryPath, summaryRel, `${completedSliceId} Summary`));
-  const projectInline = await inlineGsdRootFile(base, "project.md", "Project");
-  if (projectInline) inlined.push(projectInline);
-  const requirementsInline = await inlineGsdRootFile(base, "requirements.md", "Requirements");
-  if (requirementsInline) inlined.push(requirementsInline);
-  const decisionsInline = await inlineGsdRootFile(base, "decisions.md", "Decisions");
-  if (decisionsInline) inlined.push(decisionsInline);
+  if (inlineLevel !== "minimal") {
+    const projectInline = await inlineGsdRootFile(base, "project.md", "Project");
+    if (projectInline) inlined.push(projectInline);
+    const requirementsInline = await inlineGsdRootFile(base, "requirements.md", "Requirements");
+    if (requirementsInline) inlined.push(requirementsInline);
+    const decisionsInline = await inlineGsdRootFile(base, "decisions.md", "Decisions");
+    if (decisionsInline) inlined.push(decisionsInline);
+  }
   const knowledgeInlineRA = await inlineGsdRootFile(base, "knowledge.md", "Project Knowledge");
   if (knowledgeInlineRA) inlined.push(knowledgeInlineRA);
 

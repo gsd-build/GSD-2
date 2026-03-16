@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 import { deriveState } from "./state.js";
 import { GSDDashboardOverlay } from "./dashboard-overlay.js";
 import { showQueue, showDiscuss } from "./guided-flow.js";
-import { startAuto, stopAuto, pauseAuto, isAutoActive, isAutoPaused, isStepMode } from "./auto.js";
+import { startAuto, stopAuto, pauseAuto, isAutoActive, isAutoPaused, isStepMode, stopAutoRemote } from "./auto.js";
 import {
   getGlobalGSDPreferencesPath,
   getLegacyGlobalGSDPreferencesPath,
@@ -185,7 +185,15 @@ export function registerGSDCommand(pi: ExtensionAPI): void {
 
       if (trimmed === "stop") {
         if (!isAutoActive() && !isAutoPaused()) {
-          ctx.ui.notify("Auto-mode is not running.", "info");
+          // Not running in this process — check for a remote auto-mode session
+          const result = stopAutoRemote(process.cwd());
+          if (result.found) {
+            ctx.ui.notify(`Sent stop signal to auto-mode session (PID ${result.pid}). It will shut down gracefully.`, "info");
+          } else if (result.error) {
+            ctx.ui.notify(`Failed to stop remote auto-mode: ${result.error}`, "error");
+          } else {
+            ctx.ui.notify("Auto-mode is not running.", "info");
+          }
           return;
         }
         await stopAuto(ctx, pi);
@@ -518,6 +526,16 @@ async function handlePrefsWizard(
       delete git.main_branch;
     }
   }
+  // ─── Git commit_docs ────────────────────────────────────────────────────
+  const currentCommitDocs = git.commit_docs;
+  const commitDocsChoice = await ctx.ui.select(
+    `Track .gsd/ planning docs in git${currentCommitDocs !== undefined ? ` (current: ${currentCommitDocs})` : ""}:`,
+    ["true", "false", "(keep current)"],
+  );
+  if (commitDocsChoice && commitDocsChoice !== "(keep current)") {
+    git.commit_docs = commitDocsChoice === "true";
+  }
+
   if (Object.keys(git).length > 0) {
     prefs.git = git;
   }

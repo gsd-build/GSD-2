@@ -11,6 +11,7 @@ import type { ExtensionContext } from "@gsd/pi-coding-agent";
 import {
   clearUnitRuntimeRecord,
 } from "./unit-runtime.js";
+import { clearParseCache } from "./files.js";
 import {
   nativeConflictFiles,
   nativeCommit,
@@ -107,9 +108,13 @@ export function verifyExpectedArtifact(unitType: string, unitId: string, base: s
   // is managed by the hook engine, not the artifact verification system.
   if (unitType.startsWith("hook/")) return true;
 
-  // Clear stale directory listing cache so artifact checks see fresh disk state (#431).
-  // Moved after hook check to avoid unnecessary cache clears for hook units.
+  // Clear stale directory listing cache AND parse cache so artifact checks see
+  // fresh disk state (#431). The parse cache must also be cleared because
+  // cacheKey() uses length + first/last 100 chars — when a checkbox changes
+  // from [ ] to [x], the key collides with the pre-edit version, returning
+  // stale parsed results (e.g., slice.done = false when it's actually true).
   clearPathCache();
+  clearParseCache();
 
   if (unitType === "rewrite-docs") {
     const overridesPath = resolveGsdRootFile(base, "OVERRIDES");
