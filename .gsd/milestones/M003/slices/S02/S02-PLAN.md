@@ -27,6 +27,7 @@
 - `npx tsx --test src/tests/web-command-parity-contract.test.ts` — all existing + new GSD dispatch tests pass
 - `npm run build` — TypeScript compilation succeeds with all new types
 - `npm run build:web-host` — Next.js production build succeeds with new component stubs
+- Diagnostic check: dispatching an unknown subcommand (`/gsd xyznotreal`) returns `kind: "prompt"` with the full original input preserved — confirms no silent swallowing. Dispatching a surface subcommand (`/gsd forensics`) returns `kind: "surface"` with `surface: "gsd-forensics"` — confirms classification is inspectable. `getBrowserSlashCommandTerminalNotice()` returns a system notice for surface outcomes and null for passthrough — confirms failure/success visibility in browser terminal.
 
 ## Observability / Diagnostics
 
@@ -43,7 +44,7 @@
 
 ## Tasks
 
-- [ ] **T01: Add GSD subcommand dispatch function with surface union expansion** `est:45m`
+- [x] **T01: Add GSD subcommand dispatch function with surface union expansion** `est:45m`
   - Why: The core dispatch logic — without this, every `/gsd *` command falls through to prompt. This is the architectural foundation S04-S07 depend on.
   - Files: `web/lib/browser-slash-command-dispatch.ts`
   - Do: Add `dispatchGSDSubcommand()` function that parses the subcommand from args and returns the appropriate dispatch result. Expand `BrowserSlashCommandSurface` union with 20 `gsd-`-prefixed members. Add `GSD_SURFACE_SUBCOMMANDS` map and `GSD_PASSTHROUGH_SUBCOMMANDS` set. Handle edge cases: bare `/gsd` → passthrough, `/gsd help` → local with help text, unknown subcommands → passthrough. Wire into `dispatchBrowserSlashCommand()` when `parsed.name === "gsd"`.

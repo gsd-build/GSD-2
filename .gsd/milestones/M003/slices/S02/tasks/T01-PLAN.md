@@ -85,6 +85,13 @@ Currently, when a user types `/gsd status` in the browser, `parseSlashCommand` r
 - S01 summary: upstream's `commands.ts` registers these subcommands: `help, next, auto, stop, pause, status, visualize, queue, quick, discuss, capture, triage, history, undo, skip, export, cleanup, mode, prefs, config, hooks, run-hook, skill-health, doctor, forensics, migrate, remote, steer, inspect, knowledge`.
 - Research classification: 20 subcommands → surfaces, 9 → bridge passthrough, 1 → inline help, bare `/gsd` → passthrough.
 
+## Observability Impact
+
+- **New inspectable signals:** `dispatchGSDSubcommand()` classifies every `/gsd *` input into one of three outcomes (`surface`, `prompt` passthrough, `local` help). The return value is a structured `BrowserSlashCommandDispatchResult` — agents and tests can inspect `.kind`, `.surface`, `.action`, and `.slashCommandName` fields directly.
+- **Failure visibility:** Unknown subcommands return `kind: "prompt"` with `slashCommandName: "gsd"` — downstream handlers (extension bridge) surface "Unknown" errors. No silent swallowing occurs. `getBrowserSlashCommandTerminalNotice()` emits `type: "system"` notices for surface-routed commands, making dispatch outcomes visible in the browser terminal.
+- **How to inspect later:** Run `dispatchBrowserSlashCommand("/gsd <subcmd>")` and check the result shape. The parity contract test (T03) enumerates all subcommands and their expected outcomes — failures appear as assertion mismatches.
+- **What changed:** Before this task, all `/gsd *` input fell through to `kind: "prompt"` with no subcommand classification. After, 20 subcommands route to dedicated surfaces, 9 pass through explicitly, 1 renders local help, and unknown subs still pass through with `slashCommandName` set for downstream error handling.
+
 ## Expected Output
 
 - `web/lib/browser-slash-command-dispatch.ts` — expanded with 20 new union members, GSD dispatch maps, `dispatchGSDSubcommand()` function, wired into main dispatch. File grows from ~179 lines to ~280-300 lines.
