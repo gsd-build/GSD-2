@@ -31,6 +31,11 @@ Then:
 3. Build the real thing. If the task plan says "create login endpoint", build an endpoint that actually authenticates against a real store, not one that returns a hardcoded success response. If the task plan says "create dashboard page", build a page that renders real data from the API, not a component with hardcoded props. Stubs and mocks are for tests, not for the shipped feature.
 4. Write or update tests as part of execution — tests are verification, not an afterthought. If the slice plan defines test files in its Verification section and this is the first task, create them (they should initially fail).
 5. When implementing non-trivial runtime behavior (async flows, API boundaries, background processes, error paths), add or preserve agent-usable observability. Skip this for simple changes where it doesn't apply.
+
+   **Background process rule:** Never use bare `command &` to run background processes. The shell's `&` operator leaves stdout/stderr attached to the parent, which causes the Bash tool to hang indefinitely waiting for those streams to close. Always redirect output before backgrounding:
+   - Correct: `command > /dev/null 2>&1 &` or `nohup command > /dev/null 2>&1 &`
+   - Example: `python -m http.server 8080 > /dev/null 2>&1 &` (NOT `python -m http.server 8080 &`)
+   - Preferred: use the `bg_shell` tool if available — it manages process lifecycle correctly without stream-inheritance issues
 6. Verify must-haves are met by running concrete checks (tests, commands, observable behaviors)
 7. Run the slice-level verification checks defined in the slice plan's Verification section. Track which pass. On the final task of the slice, all must pass before marking done. On intermediate tasks, partial passes are expected — note which ones pass in the summary.
 8. If the task touches UI, browser flows, DOM behavior, or user-visible web state:

@@ -337,8 +337,12 @@ let lastBaselineCharCount: number | undefined;
 /** SIGTERM handler registered while auto-mode is active — cleared on stop/pause. */
 let _sigtermHandler: (() => void) | null = null;
 
-/** Tool calls currently being executed — prevents false idle detection during long-running tools. */
-const inFlightTools = new Set<string>();
+/**
+ * Tool calls currently being executed — prevents false idle detection during long-running tools.
+ * Maps toolCallId → start timestamp (ms) so the idle watchdog can detect tools that have been
+ * running suspiciously long (e.g., a Bash command hung because `&` kept stdout open).
+ */
+const inFlightTools = new Map<string, number>();
 
 type BudgetAlertLevel = 0 | 75 | 90 | 100;
 
@@ -417,11 +421,11 @@ export function isAutoPaused(): boolean {
 
 /**
  * Mark a tool execution as in-flight. Called from index.ts on tool_execution_start.
- * Prevents the idle watchdog from declaring the agent idle while tools are executing.
+ * Records start time so the idle watchdog can detect tools hung longer than the idle timeout.
  */
 export function markToolStart(toolCallId: string): void {
   if (!active) return;
-  inFlightTools.add(toolCallId);
+  inFlightTools.set(toolCallId, Date.now());
 }
 
 /**
@@ -429,6 +433,16 @@ export function markToolStart(toolCallId: string): void {
  */
 export function markToolEnd(toolCallId: string): void {
   inFlightTools.delete(toolCallId);
+}
+
+/**
+ * Returns the age (ms) of the oldest currently in-flight tool, or 0 if none.
+ * Exported for testing.
+ */
+export function getOldestInFlightToolAgeMs(): number {
+  if (inFlightTools.size === 0) return 0;
+  const oldestStart = Math.min(...inFlightTools.values());
+  return Date.now() - oldestStart;
 }
 
 /**
@@ -2844,13 +2858,27 @@ async function dispatchNextUnit(
     if (Date.now() - runtime.lastProgressAt < idleTimeoutMs) return;
 
     // Agent has tool calls currently executing (await_job, long bash, etc.) —
-    // not idle, just waiting for tool completion.
+    // not idle, just waiting for tool completion. But only suppress recovery
+    // if the tool started recently. A tool in-flight for longer than the idle
+    // timeout is likely stuck — e.g., `python -m http.server 8080 &` keeps the
+    // shell's stdout/stderr open, causing the Bash tool to hang indefinitely.
     if (inFlightTools.size > 0) {
-      writeUnitRuntimeRecord(basePath, unitType, unitId, currentUnit.startedAt, {
-        lastProgressAt: Date.now(),
-        lastProgressKind: "tool-in-flight",
-      });
-      return;
+      const oldestStart = Math.min(...inFlightTools.values());
+      const toolAgeMs = Date.now() - oldestStart;
+      if (toolAgeMs < idleTimeoutMs) {
+        writeUnitRuntimeRecord(basePath, unitType, unitId, currentUnit.startedAt, {
+          lastProgressAt: Date.now(),
+          lastProgressKind: "tool-in-flight",
+        });
+        return;
+      }
+      // Oldest tool has been running >= idleTimeoutMs — treat as a stuck/hung
+      // tool (e.g., background process holding stdout open). Fall through to
+      // idle recovery without resetting the progress clock.
+      ctx.ui.notify(
+        `Stalled tool detected: a tool has been in-flight for ${Math.round(toolAgeMs / 60000)}min. Treating as hung — attempting idle recovery.`,
+        "warning",
+      );
     }
 
     // Before triggering recovery, check if the agent is actually producing

@@ -1,6 +1,6 @@
 /**
  * In-flight tool tracking tests — verifies that markToolStart/markToolEnd
- * correctly manage the in-flight tools set used by the idle watchdog to
+ * correctly manage the in-flight tools map used by the idle watchdog to
  * distinguish "agent waiting on long-running tool" from "agent is idle".
  *
  * Background: The idle watchdog checks every 15s for agent progress. Without
@@ -8,12 +8,15 @@
  * can run 20+ minutes for evaluations, deployments, test suites) are falsely
  * declared idle and interrupted by recovery steering messages.
  *
- * The fix hooks tool_execution_start/end events to track active tool calls.
- * When tools are in-flight, the watchdog resets lastProgressAt instead of
- * triggering idle recovery.
+ * The fix hooks tool_execution_start/end events to track active tool calls
+ * with start timestamps. When tools are in-flight and started recently
+ * (< idleTimeoutMs), the watchdog resets lastProgressAt instead of triggering
+ * idle recovery. When a tool has been in-flight for longer than idleTimeoutMs,
+ * it is treated as stuck (e.g., `command &` keeping stdout open) and recovery
+ * proceeds anyway.
  */
 
-import { markToolStart, markToolEnd, isAutoActive } from "../auto.ts";
+import { markToolStart, markToolEnd, isAutoActive, getOldestInFlightToolAgeMs } from "../auto.ts";
 import { createTestContext } from './test-helpers.ts';
 
 const { assertEq, assertTrue, report } = createTestContext();
@@ -49,9 +52,17 @@ const { assertEq, assertTrue, report } = createTestContext();
 // ═══ Integration contract: expected exports from auto.ts ═════════════════════
 
 {
-  console.log("\n=== auto.ts exports markToolStart and markToolEnd ===");
+  console.log("\n=== auto.ts exports markToolStart, markToolEnd, and getOldestInFlightToolAgeMs ===");
   assertEq(typeof markToolStart, "function", "markToolStart should be a function");
   assertEq(typeof markToolEnd, "function", "markToolEnd should be a function");
+  assertEq(typeof getOldestInFlightToolAgeMs, "function", "getOldestInFlightToolAgeMs should be a function");
+}
+
+{
+  console.log("\n=== getOldestInFlightToolAgeMs: returns 0 when no tools in-flight ===");
+  // When auto-mode is inactive, inFlightTools map is empty → age is 0
+  const age = getOldestInFlightToolAgeMs();
+  assertEq(age, 0, "should return 0 when no tools are in-flight");
 }
 
 {
