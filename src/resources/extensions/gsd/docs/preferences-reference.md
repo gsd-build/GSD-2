@@ -82,7 +82,7 @@ Setting `prefer_skills: []` does **not** disable skill discovery — it just mea
 
 - `custom_instructions`: extra durable instructions related to skill use. For operational project knowledge (recurring rules, gotchas, patterns), use `.gsd/KNOWLEDGE.md` instead — it's injected into every agent prompt automatically and agents can append to it during execution.
 
-- `models`: per-stage model selection for auto-mode. Keys: `research`, `planning`, `execution`, `completion`. Values can be:
+- `models`: per-stage model selection for auto-mode. Keys: `research`, `planning`, `execution`, `execution_simple`, `completion`, `subagent`. Values can be:
   - Simple string: `"claude-sonnet-4-6"` — single model, no fallbacks
   - Provider-qualified string: `"bedrock/claude-sonnet-4-6"` — targets a specific provider when the same model ID exists across multiple providers
   - Object with fallbacks: `{ model: "claude-opus-4-6", fallbacks: ["glm-5", "minimax-m2.5"] }` — tries fallbacks in order if primary fails
@@ -124,6 +124,19 @@ Setting `prefer_skills: []` does **not** disable skill discovery — it just mea
 
 - `context_pause_threshold`: number (0-100) — context window usage percentage at which auto-mode should pause to suggest checkpointing. Set to `0` to disable. Default: `0` (disabled).
 
+- `token_profile`: `"budget"`, `"balanced"`, or `"quality"` — coordinates model selection, phase skipping, and context compression. `budget` skips research/reassessment and uses cheaper models; `balanced` (default) runs all phases; `quality` prefers higher-quality models. See token-optimization docs.
+
+- `phases`: fine-grained control over which phases run. Usually set by `token_profile`, but can be overridden. Keys:
+  - `skip_research`: boolean — skip milestone-level research. Default: `false`.
+  - `skip_reassess`: boolean — skip roadmap reassessment after each slice. Default: `false`.
+  - `skip_slice_research`: boolean — skip per-slice research. Default: `false`.
+
+- `remote_questions`: route interactive questions to Slack/Discord for headless auto-mode. Keys:
+  - `channel`: `"slack"` or `"discord"` — channel type.
+  - `channel_id`: string or number — channel ID.
+  - `timeout_minutes`: number — question timeout in minutes (clamped 1-30).
+  - `poll_interval_seconds`: number — poll interval in seconds (clamped 2-30).
+
 - `notifications`: configures desktop notification behavior during auto-mode. Keys:
   - `enabled`: boolean — master toggle for all notifications. Default: `true`.
   - `on_complete`: boolean — notify when a unit completes. Default: `true`.
@@ -140,8 +153,9 @@ Setting `prefer_skills: []` does **not** disable skill discovery — it just mea
   - `prompt`: string — prompt sent to the LLM. Supports `{milestoneId}`, `{sliceId}`, `{taskId}` substitutions.
   - `max_cycles`: number — max times this hook fires per trigger (default: 1, max: 10).
   - `model`: string — optional model override.
-  - `artifact`: string — expected output file (skip if exists).
-  - `retry_on`: string — file that triggers re-run of the trigger unit.
+  - `artifact`: string — expected output file name (relative to task/slice dir). Hook is skipped if file already exists (idempotent).
+  - `retry_on`: string — if this file is produced instead of the artifact, re-run the trigger unit then re-run hooks.
+  - `agent`: string — agent definition file to use for hook execution.
   - `enabled`: boolean — toggle without removing (default: `true`).
 
 - `pre_dispatch_hooks`: array — hooks that fire before a unit is dispatched. Each entry has:
@@ -150,8 +164,18 @@ Setting `prefer_skills: []` does **not** disable skill discovery — it just mea
   - `action`: `"modify"`, `"skip"`, or `"replace"` — what to do with the unit.
   - `prepend`: string — text prepended to unit prompt (for `"modify"` action).
   - `append`: string — text appended to unit prompt (for `"modify"` action).
-  - `prompt`: string — replacement prompt (for `"replace"` action).
+  - `prompt`: string — replacement prompt (for `"replace"` action; required when action is `"replace"`).
+  - `unit_type`: string — override unit type label (for `"replace"` action).
+  - `skip_if`: string — for `"skip"` action: only skip if this file exists (relative to unit dir).
+  - `model`: string — optional model override when this hook fires.
   - `enabled`: boolean — toggle without removing (default: `true`).
+
+  **Action validation:**
+  - `"modify"` requires at least one of `prepend` or `append`.
+  - `"replace"` requires `prompt`.
+  - `"skip"` is valid with no additional fields.
+
+  **Known unit types for `before`/`after`:** `research-milestone`, `plan-milestone`, `research-slice`, `plan-slice`, `execute-task`, `complete-slice`, `replan-slice`, `reassess-roadmap`, `run-uat`.
 
 ---
 
@@ -371,3 +395,84 @@ post_unit_hooks:
 ```
 
 Runs an automated code review after each task execution. Skips if `REVIEW.md` already exists (idempotent).
+
+---
+
+## Pre-Dispatch Hooks Examples
+
+**Modify — inject instructions before every task:**
+
+```yaml
+---
+version: 1
+pre_dispatch_hooks:
+  - name: enforce-standards
+    before:
+      - execute-task
+    action: modify
+    prepend: "Follow our TypeScript coding standards and always run linting."
+---
+```
+
+**Skip — skip per-slice research when a research file already exists:**
+
+```yaml
+---
+version: 1
+pre_dispatch_hooks:
+  - name: skip-existing-research
+    before:
+      - research-slice
+    action: skip
+    skip_if: RESEARCH.md
+---
+```
+
+**Replace — substitute a custom prompt for task execution:**
+
+```yaml
+---
+version: 1
+pre_dispatch_hooks:
+  - name: tdd-execute
+    before:
+      - execute-task
+    action: replace
+    prompt: "Implement the task using strict TDD. Write failing tests first, then implement, then refactor."
+    model: claude-opus-4-6
+---
+```
+
+---
+
+## Token Profile & Phases Example
+
+```yaml
+---
+version: 1
+token_profile: budget
+phases:
+  skip_research: true
+  skip_reassess: true
+  skip_slice_research: false
+---
+```
+
+Uses the `budget` profile to minimize token usage, with explicit override to keep slice-level research enabled.
+
+---
+
+## Remote Questions Example
+
+```yaml
+---
+version: 1
+remote_questions:
+  channel: slack
+  channel_id: "C0123456789"
+  timeout_minutes: 15
+  poll_interval_seconds: 10
+---
+```
+
+Routes interactive questions to a Slack channel for headless auto-mode sessions. Questions time out after 15 minutes if unanswered.
