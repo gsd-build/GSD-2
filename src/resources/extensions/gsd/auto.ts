@@ -1377,12 +1377,12 @@ async function dispatchNextUnit(
     unitRecoveryCount.clear();
     unitLifetimeDispatches.clear();
     // Capture integration branch for the new milestone and update git service
-    captureIntegrationBranch(originalBasePath || basePath, mid, { commitDocs: loadEffectiveGSDPreferences()?.preferences?.git?.commit_docs });
+    captureIntegrationBranch(originalBasePath || basePath, milestoneTransition.to, { commitDocs: loadEffectiveGSDPreferences()?.preferences?.git?.commit_docs });
     // Prune completed milestone from queue order file
-    const pendingIds = state.registry
+    const pendingMilestoneIds = state.registry
       .filter(m => m.status !== "complete")
       .map(m => m.id);
-    pruneQueueOrder(basePath, pendingIds);
+    pruneQueueOrder(basePath, pendingMilestoneIds);
   }
   if (mid) {
     currentMilestoneId = mid;
@@ -2095,7 +2095,7 @@ async function dispatchNextUnit(
     if (inFlightTools.size > 0) {
       writeUnitRuntimeRecord(basePath, unitType, unitId, currentUnit.startedAt, {
         lastProgressAt: Date.now(),
-        lastProgressKind: "tool-in-flight",
+        lastProgressKind: "tool_in_flight",
       });
       return;
     }
