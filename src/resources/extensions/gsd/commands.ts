@@ -13,6 +13,7 @@ import { deriveState } from "./state.js";
 import { GSDDashboardOverlay } from "./dashboard-overlay.js";
 import { showQueue, showDiscuss } from "./guided-flow.js";
 import { startAuto, stopAuto, pauseAuto, isAutoActive, isAutoPaused, isStepMode, stopAutoRemote } from "./auto.js";
+import { resolveProjectRoot } from "./worktree.js";
 import {
   getGlobalGSDPreferencesPath,
   getLegacyGlobalGSDPreferencesPath,
@@ -54,6 +55,11 @@ function dispatchDoctorHeal(pi: ExtensionAPI, scope: string | undefined, reportT
     { customType: "gsd-doctor-heal", content, display: false },
     { triggerTurn: true },
   );
+}
+
+/** Resolve the effective project root, accounting for worktree paths. */
+function projectRoot(): string {
+  return resolveProjectRoot(process.cwd());
 }
 
 export function registerGSDCommand(pi: ExtensionAPI): void {
@@ -169,24 +175,24 @@ export function registerGSDCommand(pi: ExtensionAPI): void {
 
       if (trimmed === "next" || trimmed.startsWith("next ")) {
         if (trimmed.includes("--dry-run")) {
-          await handleDryRun(ctx, process.cwd());
+          await handleDryRun(ctx, projectRoot());
           return;
         }
         const verboseMode = trimmed.includes("--verbose");
-        await startAuto(ctx, pi, process.cwd(), verboseMode, { step: true });
+        await startAuto(ctx, pi, projectRoot(), verboseMode, { step: true });
         return;
       }
 
       if (trimmed === "auto" || trimmed.startsWith("auto ")) {
         const verboseMode = trimmed.includes("--verbose");
-        await startAuto(ctx, pi, process.cwd(), verboseMode);
+        await startAuto(ctx, pi, projectRoot(), verboseMode);
         return;
       }
 
       if (trimmed === "stop") {
         if (!isAutoActive() && !isAutoPaused()) {
           // Not running in this process — check for a remote auto-mode session
-          const result = stopAutoRemote(process.cwd());
+          const result = stopAutoRemote(projectRoot());
           if (result.found) {
             ctx.ui.notify(`Sent stop signal to auto-mode session (PID ${result.pid}). It will shut down gracefully.`, "info");
           } else if (result.error) {
@@ -214,42 +220,42 @@ export function registerGSDCommand(pi: ExtensionAPI): void {
       }
 
       if (trimmed === "history" || trimmed.startsWith("history ")) {
-        await handleHistory(trimmed.replace(/^history\s*/, "").trim(), ctx, process.cwd());
+        await handleHistory(trimmed.replace(/^history\s*/, "").trim(), ctx, projectRoot());
         return;
       }
 
       if (trimmed === "undo" || trimmed.startsWith("undo ")) {
-        await handleUndo(trimmed.replace(/^undo\s*/, "").trim(), ctx, pi, process.cwd());
+        await handleUndo(trimmed.replace(/^undo\s*/, "").trim(), ctx, pi, projectRoot());
         return;
       }
 
       if (trimmed.startsWith("skip ")) {
-        await handleSkip(trimmed.replace(/^skip\s*/, "").trim(), ctx, process.cwd());
+        await handleSkip(trimmed.replace(/^skip\s*/, "").trim(), ctx, projectRoot());
         return;
       }
 
       if (trimmed === "export" || trimmed.startsWith("export ")) {
-        await handleExport(trimmed.replace(/^export\s*/, "").trim(), ctx, process.cwd());
+        await handleExport(trimmed.replace(/^export\s*/, "").trim(), ctx, projectRoot());
         return;
       }
 
       if (trimmed === "cleanup branches") {
-        await handleCleanupBranches(ctx, process.cwd());
+        await handleCleanupBranches(ctx, projectRoot());
         return;
       }
 
       if (trimmed === "cleanup snapshots") {
-        await handleCleanupSnapshots(ctx, process.cwd());
+        await handleCleanupSnapshots(ctx, projectRoot());
         return;
       }
 
       if (trimmed === "queue") {
-        await showQueue(ctx, pi, process.cwd());
+        await showQueue(ctx, pi, projectRoot());
         return;
       }
 
       if (trimmed === "discuss") {
-        await showDiscuss(ctx, pi, process.cwd());
+        await showDiscuss(ctx, pi, projectRoot());
         return;
       }
 
@@ -295,7 +301,7 @@ export function registerGSDCommand(pi: ExtensionAPI): void {
 
       if (trimmed === "") {
         // Bare /gsd defaults to step mode
-        await startAuto(ctx, pi, process.cwd(), false, { step: true });
+        await startAuto(ctx, pi, projectRoot(), false, { step: true });
         return;
       }
 
@@ -308,7 +314,7 @@ export function registerGSDCommand(pi: ExtensionAPI): void {
 }
 
 async function handleStatus(ctx: ExtensionCommandContext): Promise<void> {
-  const basePath = process.cwd();
+  const basePath = projectRoot();
   const state = await deriveState(basePath);
 
   if (state.registry.length === 0) {
@@ -392,9 +398,9 @@ async function handleDoctor(args: string, ctx: ExtensionCommandContext, pi: Exte
   const parts = trimmed ? trimmed.split(/\s+/) : [];
   const mode = parts[0] === "fix" || parts[0] === "heal" || parts[0] === "audit" ? parts[0] : "doctor";
   const requestedScope = mode === "doctor" ? parts[0] : parts[1];
-  const scope = await selectDoctorScope(process.cwd(), requestedScope);
+  const scope = await selectDoctorScope(projectRoot(), requestedScope);
   const effectiveScope = mode === "audit" ? requestedScope : scope;
-  const report = await runGSDDoctor(process.cwd(), {
+  const report = await runGSDDoctor(projectRoot(), {
     fix: mode === "fix" || mode === "heal",
     scope: effectiveScope,
   });

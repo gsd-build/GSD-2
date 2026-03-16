@@ -77,6 +77,28 @@ export function detectWorktreeName(basePath: string): string | null {
 }
 
 /**
+ * Resolve the project root from a path that may be inside a worktree.
+ * If the path contains `/.gsd/worktrees/<name>/`, returns the portion
+ * before `/.gsd/`. Otherwise returns the input unchanged.
+ *
+ * Use this in commands that call `process.cwd()` to ensure they always
+ * operate against the real project root, not a worktree subdirectory.
+ */
+export function resolveProjectRoot(basePath: string): string {
+  const normalizedPath = basePath.replaceAll("\\", "/");
+  const marker = "/.gsd/worktrees/";
+  const idx = normalizedPath.indexOf(marker);
+  if (idx === -1) return basePath;
+  // Return the original path up to the .gsd/ marker (un-normalized)
+  // Account for potential OS-specific separators
+  const sep = basePath.includes("\\") ? "\\" : "/";
+  const markerOs = `${sep}.gsd${sep}worktrees${sep}`;
+  const idxOs = basePath.indexOf(markerOs);
+  if (idxOs !== -1) return basePath.slice(0, idxOs);
+  return basePath.slice(0, idx);
+}
+
+/**
  * Get the slice branch name, namespaced by worktree when inside one.
  *
  * In the main tree:     gsd/<milestoneId>/<sliceId>

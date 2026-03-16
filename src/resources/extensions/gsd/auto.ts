@@ -29,7 +29,7 @@ import {
   buildMilestoneFileName, buildSliceFileName, buildTaskFileName,
 } from "./paths.js";
 import { invalidateAllCaches } from "./cache.js";
-import { saveActivityLog } from "./activity-log.js";
+import { saveActivityLog, clearActivityLogState } from "./activity-log.js";
 import { synthesizeCrashRecovery, getDeepDiagnostic } from "./session-forensics.js";
 import { writeLock, clearLock, readCrashLock, formatCrashInfo, isLockProcessAlive } from "./crash-recovery.js";
 import {
@@ -92,6 +92,7 @@ import {
   getAutoWorktreePath,
   getAutoWorktreeOriginalBase,
   mergeMilestoneToMain,
+  autoWorktreeBranch,
 } from "./auto-worktree.js";
 import { pruneQueueOrder } from "./queue-order.js";
 import { showNextAction } from "../shared/next-action-ui.js";
@@ -262,7 +263,6 @@ export async function completeAutoWorktreeMilestoneCeremony(
     mergeResult,
   };
 }
-
 /**
  * Detect and escape a stale worktree cwd (#608).
  *
@@ -279,10 +279,12 @@ function escapeStaleWorktree(base: string): string {
   const idx = base.indexOf(marker);
   if (idx === -1) return base;
 
+  // base is inside .gsd/worktrees/<something> — extract the project root
   const projectRoot = base.slice(0, idx);
   try {
     process.chdir(projectRoot);
   } catch {
+    // If chdir fails, return the original — caller will handle errors downstream
     return base;
   }
   return projectRoot;
@@ -538,12 +540,16 @@ export async function stopAuto(ctx?: ExtensionContext, pi?: ExtensionAPI): Promi
         `Auto-worktree teardown failed: ${err instanceof Error ? err.message : String(err)}`,
         "warning",
       );
-      // Force basePath back to original even if teardown failed
-      if (originalBasePath) {
-        basePath = originalBasePath;
-        try { process.chdir(basePath); } catch { /* best-effort */ }
-      }
     }
+  }
+
+  // Always restore cwd to project root on stop (#608).
+  // Even if isInAutoWorktree returned false (e.g., module state was already
+  // cleared by mergeMilestoneToMain), the process cwd may still be inside
+  // the worktree directory. Force it back to originalBasePath.
+  if (originalBasePath) {
+    basePath = originalBasePath;
+    try { process.chdir(basePath); } catch { /* best-effort */ }
   }
 
   const ledger = getLedger();
@@ -576,7 +582,9 @@ export async function stopAuto(ctx?: ExtensionContext, pi?: ExtensionAPI): Promi
   currentUnit = null;
   currentMilestoneId = null;
   originalBasePath = "";
+  completedUnits = [];
   clearSliceProgressCache();
+  clearActivityLogState();
   pendingCrashRecovery = null;
   _handlingAgentEnd = false;
   ctx?.ui.setStatus("gsd-auto", undefined);
@@ -1494,6 +1502,39 @@ async function dispatchNextUnit(
           `Milestone merge failed: ${err instanceof Error ? err.message : String(err)}`,
           "warning",
         );
+        // Ensure cwd is restored even if merge failed partway through (#608).
+        // mergeMilestoneToMain may have chdir'd but then thrown, leaving us
+        // in an indeterminate location.
+        if (originalBasePath) {
+          basePath = originalBasePath;
+          try { process.chdir(basePath); } catch { /* best-effort */ }
+        }
+      }
+    } else if (currentMilestoneId && !isInAutoWorktree(basePath)) {
+      // Branch isolation mode (#603): no worktree, but we may be on a milestone/* branch.
+      // Squash-merge back to the integration branch (or main) before stopping.
+      try {
+        const currentBranch = getCurrentBranch(basePath);
+        const milestoneBranch = autoWorktreeBranch(currentMilestoneId);
+        if (currentBranch === milestoneBranch) {
+          const roadmapPath = resolveMilestoneFile(basePath, currentMilestoneId, "ROADMAP");
+          if (roadmapPath) {
+            const roadmapContent = readFileSync(roadmapPath, "utf-8");
+            // mergeMilestoneToMain handles: auto-commit, checkout integration branch,
+            // squash merge, commit, optional push, branch deletion.
+            const mergeResult = mergeMilestoneToMain(basePath, currentMilestoneId, roadmapContent);
+            gitService = new GitServiceImpl(basePath, loadEffectiveGSDPreferences()?.preferences?.git ?? {});
+            ctx.ui.notify(
+              `Milestone ${currentMilestoneId} merged (branch mode).${mergeResult.pushed ? " Pushed to remote." : ""}`,
+              "info",
+            );
+          }
+        }
+      } catch (err) {
+        ctx.ui.notify(
+          `Milestone merge failed (branch mode): ${err instanceof Error ? err.message : String(err)}`,
+          "warning",
+        );
       }
     }
     sendDesktopNotification("GSD", `Milestone ${mid} complete!`, "success", "milestone");
@@ -1920,6 +1961,10 @@ async function dispatchNextUnit(
         startedAt: currentUnit.startedAt,
         finishedAt: Date.now(),
       });
+      // Cap to last 200 entries to prevent unbounded growth (#611)
+      if (completedUnits.length > 200) {
+        completedUnits = completedUnits.slice(-200);
+      }
       clearUnitRuntimeRecord(basePath, currentUnit.type, currentUnit.id);
       unitDispatchCount.delete(`${currentUnit.type}/${currentUnit.id}`);
       unitRecoveryCount.delete(`${currentUnit.type}/${currentUnit.id}`);
