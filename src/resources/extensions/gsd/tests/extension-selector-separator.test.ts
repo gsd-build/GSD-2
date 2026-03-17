@@ -1,14 +1,14 @@
-import { describe, expect, it, vi, beforeAll } from "vitest";
-import { initTheme } from "../../../../../packages/pi-coding-agent/src/modes/interactive/theme/theme.js";
-import { SEPARATOR_PREFIX, ExtensionSelectorComponent } from "../../../../../packages/pi-coding-agent/src/modes/interactive/components/extension-selector.js";
+import test, { describe, beforeEach } from "node:test";
+import assert from "node:assert/strict";
+import { initTheme } from "../../../../../packages/pi-coding-agent/src/modes/interactive/theme/theme.ts";
+import { SEPARATOR_PREFIX, ExtensionSelectorComponent } from "../../../../../packages/pi-coding-agent/src/modes/interactive/components/extension-selector.ts";
 
-beforeAll(() => {
-	initTheme("default", false);
-});
+// Initialize theme once before tests run (component uses theme.fg in constructor)
+initTheme("default", false);
 
 describe("SEPARATOR_PREFIX", () => {
-	it("is the expected three-dash prefix", () => {
-		expect(SEPARATOR_PREFIX).toBe("───");
+	test("is the expected three-dash prefix", () => {
+		assert.strictEqual(SEPARATOR_PREFIX, "───");
 	});
 });
 
@@ -23,52 +23,53 @@ describe("ExtensionSelectorComponent separator handling", () => {
 		"(clear)",
 	];
 
-	it("initialises selectedIndex on first non-separator item", () => {
-		const onSelect = vi.fn();
-		const sel = new ExtensionSelectorComponent("Test", options, onSelect, vi.fn());
+	test("initialises selectedIndex on first non-separator item", () => {
+		let selected: string | undefined;
+		const sel = new ExtensionSelectorComponent("Test", options, (s) => { selected = s; }, () => {});
 		sel.handleInput("\n");
-		expect(onSelect).toHaveBeenCalledWith("claude-opus-4-6 · anthropic");
+		assert.strictEqual(selected, "claude-opus-4-6 · anthropic");
 	});
 
-	it("skips separators when navigating down", () => {
-		const onSelect = vi.fn();
-		const sel = new ExtensionSelectorComponent("Test", options, onSelect, vi.fn());
+	test("skips separators when navigating down", () => {
+		let selected: string | undefined;
+		const sel = new ExtensionSelectorComponent("Test", options, (s) => { selected = s; }, () => {});
 		sel.handleInput("\x1b[B"); // -> claude-sonnet-4-5
 		sel.handleInput("\x1b[B"); // -> skip separator -> gpt-4o
 		sel.handleInput("\n");
-		expect(onSelect).toHaveBeenCalledWith("gpt-4o · openai");
+		assert.strictEqual(selected, "gpt-4o · openai");
 	});
 
-	it("skips separators when navigating up from below separator", () => {
-		const onSelect = vi.fn();
-		const sel = new ExtensionSelectorComponent("Test", options, onSelect, vi.fn());
+	test("skips separators when navigating up from below separator", () => {
+		let selected: string | undefined;
+		const sel = new ExtensionSelectorComponent("Test", options, (s) => { selected = s; }, () => {});
 		sel.handleInput("\x1b[B"); // -> claude-sonnet-4-5
 		sel.handleInput("\x1b[B"); // -> skip separator -> gpt-4o
 		sel.handleInput("\x1b[A"); // -> skip separator -> claude-sonnet-4-5
 		sel.handleInput("\n");
-		expect(onSelect).toHaveBeenCalledWith("claude-sonnet-4-5 · anthropic");
+		assert.strictEqual(selected, "claude-sonnet-4-5 · anthropic");
 	});
 
-	it("does not fire onSelect for separator on Enter", () => {
-		const onSelect = vi.fn();
+	test("does not fire onSelect for separator on Enter", () => {
+		let selected: string | undefined;
 		const opts = [
 			`${SEPARATOR_PREFIX} group ${SEPARATOR_PREFIX}`,
 			"item-a",
 		];
-		const sel = new ExtensionSelectorComponent("Test", opts, onSelect, vi.fn());
+		const sel = new ExtensionSelectorComponent("Test", opts, (s) => { selected = s; }, () => {});
 		sel.handleInput("\n");
-		expect(onSelect).toHaveBeenCalledWith("item-a");
+		assert.strictEqual(selected, "item-a");
 	});
 
-	it("works with no separators (backward compatible)", () => {
-		const onSelect = vi.fn();
+	test("works with no separators (backward compatible)", () => {
+		let selected: string | undefined;
 		const plain = ["alpha", "beta", "gamma"];
-		const sel = new ExtensionSelectorComponent("Test", plain, onSelect, vi.fn());
+		const sel = new ExtensionSelectorComponent("Test", plain, (s) => { selected = s; }, () => {});
 		sel.handleInput("\n");
-		expect(onSelect).toHaveBeenCalledWith("alpha");
-		onSelect.mockClear();
+		assert.strictEqual(selected, "alpha");
+
+		selected = undefined;
 		sel.handleInput("\x1b[B");
 		sel.handleInput("\n");
-		expect(onSelect).toHaveBeenCalledWith("beta");
+		assert.strictEqual(selected, "beta");
 	});
 });
