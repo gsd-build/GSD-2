@@ -736,6 +736,7 @@ export async function stopAuto(ctx?: ExtensionContext, pi?: ExtensionAPI, reason
   clearSliceProgressCache();
   clearActivityLogState();
   resetProactiveHealing();
+  recentlyEvictedKeys.clear();
   pendingCrashRecovery = null;
   pendingVerificationRetry = null;
   verificationRetryCount.clear();
@@ -2201,6 +2202,9 @@ const MAX_SKIP_DEPTH = 20;
  *  allowed via _skipDepth > 0. */
 let _dispatching = false;
 
+/** Keys recently evicted by skip-loop breaker — prevents re-persistence in the fallback path (#912). */
+const recentlyEvictedKeys = new Set<string>();
+
 async function dispatchNextUnit(
   ctx: ExtensionContext,
   pi: ExtensionAPI,
@@ -2718,6 +2722,7 @@ async function dispatchNextUnit(
         }
         unitConsecutiveSkips.delete(idempotencyKey);
         completedKeySet.delete(idempotencyKey);
+        recentlyEvictedKeys.add(idempotencyKey);
         removePersistedKey(basePath, idempotencyKey);
         invalidateAllCaches();
         ctx.ui.notify(
@@ -2766,9 +2771,11 @@ async function dispatchNextUnit(
   // Fallback: if the idempotency key is missing but the expected artifact already
   // exists on disk, the task completed in a prior session without persisting the key.
   // Persist it now and skip re-dispatch. This prevents infinite loops where a task
-  // completes successfully but the completion key was never written (e.g., completed
-  // on the first attempt before hitting the retry-threshold persistence logic).
-  if (verifyExpectedArtifact(unitType, unitId, basePath)) {
+  // completes successfully but the completion key was never written.
+  //
+  // EXCEPTION: if the key was just evicted by the skip-loop breaker above, do NOT
+  // re-persist — that would recreate the exact loop the breaker was trying to break (#912).
+  if (verifyExpectedArtifact(unitType, unitId, basePath) && !recentlyEvictedKeys.has(idempotencyKey)) {
     persistCompletedKey(basePath, idempotencyKey);
     completedKeySet.add(idempotencyKey);
     invalidateAllCaches();
