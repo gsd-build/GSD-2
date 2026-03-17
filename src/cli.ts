@@ -18,7 +18,7 @@ import { loadStoredEnvKeys } from './wizard.js'
 import { getPiDefaultModelAndProvider, migratePiCredentials } from './pi-migration.js'
 import { shouldRunOnboarding, runOnboarding } from './onboarding.js'
 import chalk from 'chalk'
-import { checkForUpdates } from './update-check.js'
+import { checkForUpdates, checkAndPromptForUpdates } from './update-check.js'
 import { printHelp, printSubcommandHelp } from './help-text.js'
 
 // ---------------------------------------------------------------------------
@@ -211,9 +211,17 @@ if (!isPrintMode && shouldRunOnboarding(authStorage, settingsManager.getDefaultP
   process.stdin.pause()
 }
 
-// Non-blocking update check — runs at most once per 24h, fire-and-forget
+// Update check — interactive prompt when stdin is a TTY, passive banner otherwise
 if (!isPrintMode) {
-  checkForUpdates().catch(() => {})
+  if (process.stdin.isTTY) {
+    const updated = await checkAndPromptForUpdates().catch(() => false)
+    if (updated) {
+      // User chose to update — exit so they relaunch with the new version
+      process.exit(0)
+    }
+  } else {
+    checkForUpdates().catch(() => {})
+  }
 }
 
 // Warn if terminal is too narrow for readable output
