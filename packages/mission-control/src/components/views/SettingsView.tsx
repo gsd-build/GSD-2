@@ -291,7 +291,7 @@ export function SettingsView() {
       </div>
 
       {/* Scrollable sections */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto scrollbar-thin" style={{ scrollbarWidth: "thin", scrollbarColor: "#334155 transparent" }}>
         {/* 0. Provider */}
         <Section
           title="Provider"

@@ -12,6 +12,7 @@ import { AssetsView } from "@/components/views/AssetsView";
 import { ReviewViewWithAnimation } from "@/components/views/ReviewView";
 import { RoutingBadge } from "@/components/chat/RoutingBadge";
 import { PhaseGateCard } from "@/components/chat/PhaseGateCard";
+import { FolderOpen } from "lucide-react";
 import type { ViewType } from "@/lib/view-types";
 import type { PlanningState } from "@/server/types";
 import type { ChatMessage, ReviewResults } from "@/server/chat-types";
@@ -73,6 +74,8 @@ interface SingleColumnViewProps {
   onClearPhaseGate?: () => void;
   /** Send message bypassing Builder mode classification (for PhaseGate skip path) */
   onSendDirectMessage?: (message: string) => void;
+  /** Phase 20.1: Project name to display in the right panel header bar above all views */
+  projectName?: string;
 }
 
 export function SingleColumnView({
@@ -106,15 +109,22 @@ export function SingleColumnView({
   onClearRoutingBadge,
   onClearPhaseGate,
   onSendDirectMessage,
+  projectName,
 }: SingleColumnViewProps) {
   return (
     // tabIndex={-1} enables programmatic focus after Ctrl+1-5 panel switch (KEYS-06)
     <main
-      className="flex-1 min-w-0 h-full overflow-hidden"
+      className="flex-1 min-w-0 h-full overflow-hidden flex flex-col"
       tabIndex={-1}
       ref={headingRef as React.RefObject<HTMLElement | null>}
     >
-      <div key={activeView.kind} className="animate-in fade-in duration-200 h-full">
+      {projectName && (
+        <div className="flex items-center gap-2 px-4 py-1.5 border-b border-navy-600 bg-navy-900 shrink-0">
+          <FolderOpen className="h-3 w-3 text-slate-500" />
+          <span className="text-xs font-mono text-slate-400 truncate">{projectName}</span>
+        </div>
+      )}
+      <div key={activeView.kind} className="animate-in fade-in duration-200 flex-1 min-h-0 overflow-hidden">
       {activeView.kind === "chat" && (
         <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
           {/* Phase gate card — intercept UI_PHASE_GATE intent (BUILDER-04) */}

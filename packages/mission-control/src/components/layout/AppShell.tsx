@@ -45,6 +45,22 @@ const PLANNING_DIR = ".planning";
 export function AppShell() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
+
+  // Restore last project path on mount so the user doesn't have to reselect after
+  // hot reload or server restart
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("gsd-mc-last-path");
+      if (saved) {
+        fetch("/api/project/switch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: saved }),
+        }).catch(() => {});
+      }
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const { state, status } = usePlanningState();
   const { mode, continueHere, dismiss, goHome } = useSessionFlow(state, status);
 
@@ -89,7 +105,7 @@ export function AppShell() {
     resetCrash,
     boundaryViolation,
     dismissBoundaryViolation,
-  } = useSessionManager("ws://localhost:4001", { budgetCeiling });
+  } = useSessionManager("ws://localhost:4011", { budgetCeiling });
 
   // handleBuilderSend: classify intent before dispatching in Builder mode (BUILDER-04)
   const handleBuilderSend = useCallback(async (message: string) => {
@@ -135,7 +151,7 @@ export function AppShell() {
   const { headingRef } = usePanelFocus((kind) => setActiveView({ kind }));
 
   const { overlay: discussOverlay, reviewResults, handleFix, dismissReview, chatModeState } = useChatMode(
-    "ws://localhost:4001",
+    "ws://localhost:4011",
     sendMessage,
   );
 
@@ -199,6 +215,7 @@ export function AppShell() {
         <ProjectHomeScreen
           builderMode={builderMode}
           onOpenProject={(path) => {
+            try { localStorage.setItem("gsd-mc-last-path", path); } catch {}
             // Add to open projects list if not already there
             setOpenProjects((prev) => {
               if (prev.find((p) => p.path === path)) return prev;
@@ -249,7 +266,7 @@ export function AppShell() {
         <FolderPickerModal
           open={folderPickerOpen}
           onClose={() => setFolderPickerOpen(false)}
-          onSelect={() => dismiss()}
+          onSelect={(path) => { try { localStorage.setItem("gsd-mc-last-path", path); } catch {} dismiss(); }}
         />
       </>
     );
@@ -296,11 +313,16 @@ export function AppShell() {
         <FolderPickerModal
           open={folderPickerOpen}
           onClose={() => setFolderPickerOpen(false)}
-          onSelect={() => dismiss()}
+          onSelect={(path) => { try { localStorage.setItem("gsd-mc-last-path", path); } catch {} dismiss(); }}
         />
       </>
     );
   }
+
+  // Phase 20.1: derive projectName once, share with Sidebar and SingleColumnView
+  const projectName = activeProjectPath
+    ? (activeProjectPath.split(/[\\/]/).filter(Boolean).pop() ?? state?.projectState?.milestone_name ?? undefined)
+    : (state?.projectState?.milestone_name || undefined);
 
   // Dashboard (with optional ResumeCard overlay)
   return (
@@ -367,12 +389,7 @@ export function AppShell() {
           if (view.kind !== "chat") setPreviewOpen(false);
         }}
         onOpenFolder={() => setFolderPickerOpen(true)}
-        projectName={
-          state?.projectState?.milestone_name ||
-          (activeProjectPath
-            ? (activeProjectPath.split(/[\\/]/).filter(Boolean).pop() ?? undefined)
-            : undefined)
-        }
+        projectName={projectName}
       />
       <div className="flex flex-1 min-w-0 overflow-hidden">
         <div className={previewOpen ? "flex flex-col w-[380px] min-w-[320px] shrink-0" : "flex flex-col flex-1 min-w-0"}>
@@ -413,6 +430,7 @@ export function AppShell() {
             onClearRoutingBadge={() => setRoutingBadgeState(null)}
             onClearPhaseGate={() => setPhaseGateState(null)}
             onSendDirectMessage={sendMessage}
+            projectName={projectName}
           />
           {mode === "resume" && continueHere && (
             <ResumeCard
