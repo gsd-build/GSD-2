@@ -8,6 +8,7 @@
 import { execSync, execFileSync } from "node:child_process";
 import { existsSync, readFileSync, unlinkSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { GSDError, GSD_GIT_ERROR } from "./errors.js";
 
 /** Env overlay that suppresses interactive git credential prompts and git-svn noise. */
 const GIT_NO_PROMPT_ENV = {
@@ -148,7 +149,7 @@ function gitExec(basePath: string, args: string[], allowFailure = false): string
     }).trim();
   } catch {
     if (allowFailure) return "";
-    throw new Error(`git ${args.join(" ")} failed in ${basePath}`);
+    throw new GSDError(GSD_GIT_ERROR, `git ${args.join(" ")} failed in ${basePath}`);
   }
 }
 
@@ -162,7 +163,7 @@ function gitFileExec(basePath: string, args: string[], allowFailure = false): st
     }).trim();
   } catch {
     if (allowFailure) return "";
-    throw new Error(`git ${args.join(" ")} failed in ${basePath}`);
+    throw new GSDError(GSD_GIT_ERROR, `git ${args.join(" ")} failed in ${basePath}`);
   }
 }
 

@@ -29,7 +29,7 @@ import {
   nativeUpdateRef,
   nativeAddPaths,
 } from "./native-git-bridge.js";
-import { GSDError, GSD_MERGE_CONFLICT } from "./errors.js";
+import { GSDError, GSD_MERGE_CONFLICT, GSD_GIT_ERROR } from "./errors.js";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -292,7 +292,7 @@ export function runGit(basePath: string, args: string[], options: { allowFailure
   } catch (error) {
     if (options.allowFailure) return "";
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`git ${args.join(" ")} failed in ${basePath}: ${filterGitSvnNoise(message)}`);
+    throw new GSDError(GSD_GIT_ERROR, `git ${args.join(" ")} failed in ${basePath}: ${filterGitSvnNoise(message)}`);
   }
 }
 

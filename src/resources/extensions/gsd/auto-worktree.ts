@@ -8,6 +8,7 @@
 
 import { existsSync, cpSync, readFileSync, writeFileSync, readdirSync, mkdirSync, realpathSync, utimesSync, unlinkSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
+import { GSDError, GSD_IO_ERROR, GSD_GIT_ERROR } from "./errors.js";
 import { copyWorktreeDb, reconcileWorktreeDb, isDbAvailable } from "./gsd-db.js";
 import { execSync, execFileSync } from "node:child_process";
 import {
@@ -301,7 +302,8 @@ export function createAutoWorktree(basePath: string, milestoneId: string): strin
   } catch (err) {
     // If chdir fails, the worktree was created but we couldn't enter it.
     // Don't store originalBase -- caller can retry or clean up.
-    throw new Error(
+    throw new GSDError(
+      GSD_IO_ERROR,
       `Auto-worktree created at ${info.path} but chdir failed: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
@@ -367,7 +369,8 @@ export function teardownAutoWorktree(
     process.chdir(originalBasePath);
     originalBase = null;
   } catch (err) {
-    throw new Error(
+    throw new GSDError(
+      GSD_IO_ERROR,
       `Failed to chdir back to ${originalBasePath} during teardown: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
@@ -425,22 +428,22 @@ export function getAutoWorktreePath(basePath: string, milestoneId: string): stri
 export function enterAutoWorktree(basePath: string, milestoneId: string): string {
   const p = worktreePath(basePath, milestoneId);
   if (!existsSync(p)) {
-    throw new Error(`Auto-worktree for ${milestoneId} does not exist at ${p}`);
+    throw new GSDError(GSD_IO_ERROR, `Auto-worktree for ${milestoneId} does not exist at ${p}`);
   }
 
   // Validate this is a real git worktree, not a stray directory (#695)
   const gitPath = join(p, ".git");
   if (!existsSync(gitPath)) {
-    throw new Error(`Auto-worktree path ${p} exists but is not a git worktree (no .git)`);
+    throw new GSDError(GSD_GIT_ERROR, `Auto-worktree path ${p} exists but is not a git worktree (no .git)`);
   }
   try {
     const content = readFileSync(gitPath, "utf8").trim();
     if (!content.startsWith("gitdir: ")) {
-      throw new Error(`Auto-worktree path ${p} has a .git but it is not a worktree gitdir pointer`);
+      throw new GSDError(GSD_GIT_ERROR, `Auto-worktree path ${p} has a .git but it is not a worktree gitdir pointer`);
     }
   } catch (err) {
     if (err instanceof Error && err.message.includes("worktree")) throw err;
-    throw new Error(`Auto-worktree path ${p} exists but .git is unreadable`);
+    throw new GSDError(GSD_IO_ERROR, `Auto-worktree path ${p} exists but .git is unreadable`);
   }
 
   const previousCwd = process.cwd();
@@ -449,7 +452,8 @@ export function enterAutoWorktree(basePath: string, milestoneId: string): string
     process.chdir(p);
     originalBase = basePath;
   } catch (err) {
-    throw new Error(
+    throw new GSDError(
+      GSD_IO_ERROR,
       `Failed to enter auto-worktree at ${p}: ${err instanceof Error ? err.message : String(err)}`,
     );
   }

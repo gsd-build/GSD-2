@@ -17,6 +17,7 @@
 
 import { existsSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
+import { GSDError, GSD_PARSE_ERROR, GSD_STALE_STATE, GSD_LOCK_HELD, GSD_GIT_ERROR, GSD_MERGE_CONFLICT } from "./errors.js";
 import {
   nativeBranchDelete,
   nativeBranchExists,
@@ -121,14 +122,14 @@ export function worktreeBranchName(name: string): string {
 export function createWorktree(basePath: string, name: string, opts: { branch?: string; startPoint?: string; reuseExistingBranch?: boolean } = {}): WorktreeInfo {
   // Validate name: alphanumeric, hyphens, underscores only
   if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
-    throw new Error(`Invalid worktree name "${name}". Use only letters, numbers, hyphens, and underscores.`);
+    throw new GSDError(GSD_PARSE_ERROR, `Invalid worktree name "${name}". Use only letters, numbers, hyphens, and underscores.`);
   }
 
   const wtPath = worktreePath(basePath, name);
   const branch = opts.branch ?? worktreeBranchName(name);
 
   if (existsSync(wtPath)) {
-    throw new Error(`Worktree "${name}" already exists at ${wtPath}`);
+    throw new GSDError(GSD_STALE_STATE, `Worktree "${name}" already exists at ${wtPath}`);
   }
 
   // Ensure the .gsd/worktrees/ directory exists
@@ -151,7 +152,8 @@ export function createWorktree(basePath: string, name: string, opts: { branch?: 
     const branchInUse = worktreeEntries.some(entry => entry.branch === branch);
 
     if (branchInUse) {
-      throw new Error(
+      throw new GSDError(
+        GSD_LOCK_HELD,
         `Branch "${branch}" is already in use by another worktree. ` +
         `Remove the existing worktree first with /worktree remove ${name}.`,
       );
@@ -432,12 +434,12 @@ export function mergeWorktreeToMain(basePath: string, name: string, commitMessag
   const current = nativeGetCurrentBranch(basePath);
 
   if (current !== mainBranch) {
-    throw new Error(`Must be on ${mainBranch} to merge. Currently on ${current}.`);
+    throw new GSDError(GSD_GIT_ERROR, `Must be on ${mainBranch} to merge. Currently on ${current}.`);
   }
 
   const result = nativeMergeSquash(basePath, branch);
   if (!result.success) {
-    throw new Error(`Merge conflicts detected in: ${result.conflicts.join(", ")}`);
+    throw new GSDError(GSD_MERGE_CONFLICT, `Merge conflicts detected in: ${result.conflicts.join(", ")}`);
   }
 
   nativeCommit(basePath, commitMessage);

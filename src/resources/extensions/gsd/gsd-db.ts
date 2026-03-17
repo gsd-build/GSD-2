@@ -9,6 +9,7 @@ import { createRequire } from 'node:module';
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { Decision, Requirement } from './types.js';
+import { GSDError, GSD_STALE_STATE } from './errors.js';
 
 // Create a require function for loading native modules in ESM context
 const _require = createRequire(import.meta.url);
@@ -416,7 +417,7 @@ export function closeDatabase(): void {
  * Runs a function inside a transaction. Rolls back on error.
  */
 export function transaction<T>(fn: () => T): T {
-  if (!currentDb) throw new Error('gsd-db: No database open');
+  if (!currentDb) throw new GSDError(GSD_STALE_STATE, 'gsd-db: No database open');
   currentDb.exec('BEGIN');
   try {
     const result = fn();
@@ -434,7 +435,7 @@ export function transaction<T>(fn: () => T): T {
  * Insert a decision. The `seq` field is auto-generated.
  */
 export function insertDecision(d: Omit<Decision, 'seq'>): void {
-  if (!currentDb) throw new Error('gsd-db: No database open');
+  if (!currentDb) throw new GSDError(GSD_STALE_STATE, 'gsd-db: No database open');
   currentDb.prepare(
     `INSERT INTO decisions (id, when_context, scope, decision, choice, rationale, revisable, superseded_by)
      VALUES (:id, :when_context, :scope, :decision, :choice, :rationale, :revisable, :superseded_by)`,
@@ -495,7 +496,7 @@ export function getActiveDecisions(): Decision[] {
  * Insert a requirement.
  */
 export function insertRequirement(r: Requirement): void {
-  if (!currentDb) throw new Error('gsd-db: No database open');
+  if (!currentDb) throw new GSDError(GSD_STALE_STATE, 'gsd-db: No database open');
   currentDb.prepare(
     `INSERT INTO requirements (id, class, status, description, why, source, primary_owner, supporting_slices, validation, notes, full_content, superseded_by)
      VALUES (:id, :class, :status, :description, :why, :source, :primary_owner, :supporting_slices, :validation, :notes, :full_content, :superseded_by)`,
@@ -747,7 +748,7 @@ export function _resetProvider(): void {
  * Insert or replace a decision. Uses the `id` UNIQUE constraint for idempotency.
  */
 export function upsertDecision(d: Omit<Decision, 'seq'>): void {
-  if (!currentDb) throw new Error('gsd-db: No database open');
+  if (!currentDb) throw new GSDError(GSD_STALE_STATE, 'gsd-db: No database open');
   currentDb.prepare(
     `INSERT OR REPLACE INTO decisions (id, when_context, scope, decision, choice, rationale, revisable, superseded_by)
      VALUES (:id, :when_context, :scope, :decision, :choice, :rationale, :revisable, :superseded_by)`,
@@ -767,7 +768,7 @@ export function upsertDecision(d: Omit<Decision, 'seq'>): void {
  * Insert or replace a requirement. Uses the `id` PK for idempotency.
  */
 export function upsertRequirement(r: Requirement): void {
-  if (!currentDb) throw new Error('gsd-db: No database open');
+  if (!currentDb) throw new GSDError(GSD_STALE_STATE, 'gsd-db: No database open');
   currentDb.prepare(
     `INSERT OR REPLACE INTO requirements (id, class, status, description, why, source, primary_owner, supporting_slices, validation, notes, full_content, superseded_by)
      VALUES (:id, :class, :status, :description, :why, :source, :primary_owner, :supporting_slices, :validation, :notes, :full_content, :superseded_by)`,
@@ -813,7 +814,7 @@ export function insertArtifact(a: {
   task_id: string | null;
   full_content: string;
 }): void {
-  if (!currentDb) throw new Error('gsd-db: No database open');
+  if (!currentDb) throw new GSDError(GSD_STALE_STATE, 'gsd-db: No database open');
   currentDb.prepare(
     `INSERT OR REPLACE INTO artifacts (path, artifact_type, milestone_id, slice_id, task_id, full_content, imported_at)
      VALUES (:path, :artifact_type, :milestone_id, :slice_id, :task_id, :full_content, :imported_at)`,

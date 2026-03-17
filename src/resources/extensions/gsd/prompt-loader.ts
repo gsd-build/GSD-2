@@ -18,6 +18,7 @@
  */
 
 import { readFileSync, readdirSync } from "node:fs";
+import { GSDError, GSD_PARSE_ERROR } from "./errors.js";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -87,10 +88,11 @@ export function loadPrompt(name: string, vars: Record<string, string> = {}): str
       .map(m => m.slice(2, -2))
       .filter(key => !(key in vars));
     if (missing.length > 0) {
-      throw new Error(
+      throw new GSDError(
+        GSD_PARSE_ERROR,
         `loadPrompt("${name}"): template declares {{${missing.join("}}, {{")}}}} but no value was provided. ` +
         `This usually means the extension code in memory is older than the template on disk. ` +
-        `Restart pi to reload the extension.`
+        `Restart pi to reload the extension.`,
       );
     }
   }

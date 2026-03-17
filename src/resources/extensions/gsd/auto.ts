@@ -101,6 +101,7 @@ import {
   getProjectTotals, formatCost, formatTokenCount,
 } from "./metrics.js";
 import { computeBudgets, resolveExecutorContextWindow } from "./context-budget.js";
+import { GSDError, GSD_ARTIFACT_MISSING } from "./errors.js";
 import { join } from "node:path";
 import { sep as pathSep } from "node:path";
 import { readdirSync, readFileSync, existsSync, mkdirSync, writeFileSync, renameSync, unlinkSync, statSync } from "node:fs";
@@ -2301,7 +2302,7 @@ async function dispatchNextUnit(
     if (s.currentMilestoneId && isInAutoWorktree(s.basePath) && s.originalBasePath) {
       try {
         const roadmapPath = resolveMilestoneFile(s.originalBasePath, s.currentMilestoneId, "ROADMAP");
-        if (!roadmapPath) throw new Error(`Cannot resolve ROADMAP file for milestone ${ s.currentMilestoneId }`);
+        if (!roadmapPath) throw new GSDError(GSD_ARTIFACT_MISSING, `Cannot resolve ROADMAP file for milestone ${ s.currentMilestoneId }`);
         const roadmapContent = readFileSync(roadmapPath, "utf-8");
         const mergeResult = mergeMilestoneToMain(s.originalBasePath, s.currentMilestoneId, roadmapContent);
         s.basePath = s.originalBasePath;

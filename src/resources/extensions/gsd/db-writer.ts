@@ -12,6 +12,7 @@ import { join, resolve } from 'node:path';
 import type { Decision, Requirement } from './types.js';
 import { resolveGsdRootFile } from './paths.js';
 import { saveFile } from './files.js';
+import { GSDError, GSD_STALE_STATE, GSD_IO_ERROR } from './errors.js';
 
 // ─── Markdown Generators ──────────────────────────────────────────────────
 
@@ -249,7 +250,7 @@ export async function updateRequirementInDb(
 
     const existing = db.getRequirementById(id);
     if (!existing) {
-      throw new Error(`Requirement ${id} not found`);
+      throw new GSDError(GSD_STALE_STATE, `Requirement ${id} not found`);
     }
 
     // Merge updates into existing
@@ -331,7 +332,7 @@ export async function saveArtifactToDb(
     const gsdDir = resolve(basePath, '.gsd');
     const fullPath = resolve(basePath, '.gsd', opts.path);
     if (!fullPath.startsWith(gsdDir)) {
-      throw new Error(`saveArtifactToDb: path escapes .gsd/ directory: ${opts.path}`);
+      throw new GSDError(GSD_IO_ERROR, `saveArtifactToDb: path escapes .gsd/ directory: ${opts.path}`);
     }
     await saveFile(fullPath, opts.content);
   } catch (err) {
