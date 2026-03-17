@@ -1094,11 +1094,13 @@ export async function runGSDDoctor(basePath: string, options?: { fix?: boolean; 
       const tasksDir = resolveTasksDir(basePath, milestoneId, slice.id);
       if (!tasksDir) {
         issues.push({
-          severity: "error",
+          severity: slice.done ? "warning" : "error",
           code: "missing_tasks_dir",
           scope: "slice",
           unitId,
-          message: `Missing tasks directory for ${unitId}`,
+          message: slice.done
+            ? `Missing tasks directory for ${unitId} (slice is complete — cosmetic only)`
+            : `Missing tasks directory for ${unitId}`,
           file: relSlicePath(basePath, milestoneId, slice.id),
           fixable: true,
         });
@@ -1112,15 +1114,17 @@ export async function runGSDDoctor(basePath: string, options?: { fix?: boolean; 
       const planContent = planPath ? await loadFile(planPath) : null;
       const plan = planContent ? parsePlan(planContent) : null;
       if (!plan) {
-        issues.push({
-          severity: "warning",
-          code: "missing_slice_plan",
-          scope: "slice",
-          unitId,
-          message: `Slice ${unitId} has no plan file`,
-          file: relSliceFile(basePath, milestoneId, slice.id, "PLAN"),
-          fixable: false,
-        });
+        if (!slice.done) {
+          issues.push({
+            severity: "warning",
+            code: "missing_slice_plan",
+            scope: "slice",
+            unitId,
+            message: `Slice ${unitId} has no plan file`,
+            file: relSliceFile(basePath, milestoneId, slice.id, "PLAN"),
+            fixable: false,
+          });
+        }
         continue;
       }
 
