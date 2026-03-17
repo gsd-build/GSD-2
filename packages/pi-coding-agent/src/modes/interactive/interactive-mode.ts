@@ -3883,12 +3883,16 @@ export class InteractiveMode {
 			const selector = new OAuthSelectorComponent(
 				mode,
 				this.session.modelRegistry.authStorage,
-				async (providerId: string) => {
+				(providerId: string) => {
 					done();
 
-					if (mode === "login") {
-						await this.showLoginDialog(providerId);
-					} else {
+					// OAuthSelectorComponent calls this synchronously (no await),
+					// so we must catch async errors here to prevent unhandled rejections
+					// when the user cancels the login dialog (#821).
+					const handleAsync = async () => {
+						if (mode === "login") {
+							await this.showLoginDialog(providerId);
+						} else {
 						// Logout flow
 						const providerInfo = this.session.modelRegistry.authStorage
 							.getOAuthProviders()
@@ -3919,6 +3923,11 @@ export class InteractiveMode {
 							this.showError(`Logout failed: ${error instanceof Error ? error.message : String(error)}`);
 						}
 					}
+					};
+					handleAsync().catch(() => {
+						// Swallow — showLoginDialog already handles its own errors.
+						// This prevents unhandled rejections when login is cancelled.
+					});
 				},
 				() => {
 					done();
