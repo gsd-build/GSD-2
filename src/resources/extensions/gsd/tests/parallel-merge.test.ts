@@ -305,13 +305,13 @@ test("mergeCompletedMilestone — conflict returns structured error with file li
     run("git checkout -b milestone/M020", repo);
     writeFileSync(join(repo, "README.md"), "# M020 version\n");
     run("git add .", repo);
-    run("git commit -m 'M020 changes README'", repo);
+    run('git commit -m "M020 changes README"', repo);
     run("git checkout main", repo);
 
     // Modify README.md on main to create conflict
     writeFileSync(join(repo, "README.md"), "# main version (diverged)\n");
     run("git add .", repo);
-    run("git commit -m 'main changes README'", repo);
+    run('git commit -m "main changes README"', repo);
 
     // Set up roadmap
     setupRoadmap(repo, "M020", "Conflict Test", ["S01: Conflict scenario"]);
@@ -387,7 +387,7 @@ test("mergeAllCompleted — stops on first conflict, skips later milestones", as
     run("git checkout -b milestone/M001", repo);
     writeFileSync(join(repo, "README.md"), "# M001 version\n");
     run("git add .", repo);
-    run("git commit -m 'M001 changes README'", repo);
+    run('git commit -m "M001 changes README"', repo);
     run("git checkout main", repo);
 
     // M002: adds a new file (would NOT conflict)
@@ -398,7 +398,7 @@ test("mergeAllCompleted — stops on first conflict, skips later milestones", as
     // Modify README.md on main to create conflict with M001
     writeFileSync(join(repo, "README.md"), "# main diverged version\n");
     run("git add .", repo);
-    run("git commit -m 'main diverges README'", repo);
+    run('git commit -m "main diverges README"', repo);
 
     setupRoadmap(repo, "M001", "Conflict milestone", ["S01: Conflict test"]);
     setupRoadmap(repo, "M002", "Clean milestone", ["S01: Clean test"]);
