@@ -167,6 +167,41 @@ import { hasPendingCaptures, loadPendingCaptures, countPendingCaptures } from ".
 // already-completed units.
 
 /**
+ * Sync milestone artifacts from project root INTO worktree before deriveState.
+ * Covers the case where the LLM wrote artifacts to the main repo filesystem
+ * (e.g. via absolute paths) but the worktree has stale data. Also deletes
+ * gsd.db in the worktree so it rebuilds from fresh disk state (#853).
+ * Non-fatal — sync failure should never block dispatch.
+ */
+function syncProjectRootToWorktree(projectRoot: string, worktreePath: string, milestoneId: string | null): void {
+  if (!worktreePath || !projectRoot || worktreePath === projectRoot) return;
+  if (!milestoneId) return;
+
+  const prGsd = join(projectRoot, ".gsd");
+  const wtGsd = join(worktreePath, ".gsd");
+
+  // Copy milestone directory from project root to worktree if the project root
+  // has newer artifacts (e.g. slices that don't exist in the worktree yet)
+  try {
+    const srcMilestone = join(prGsd, "milestones", milestoneId);
+    const dstMilestone = join(wtGsd, "milestones", milestoneId);
+    if (existsSync(srcMilestone)) {
+      mkdirSync(dstMilestone, { recursive: true });
+      cpSync(srcMilestone, dstMilestone, { recursive: true, force: false });
+    }
+  } catch { /* non-fatal */ }
+
+  // Delete worktree gsd.db so it rebuilds from the freshly synced files.
+  // Stale DB rows are the root cause of the infinite skip loop (#853).
+  try {
+    const wtDb = join(wtGsd, "gsd.db");
+    if (existsSync(wtDb)) {
+      unlinkSync(wtDb);
+    }
+  } catch { /* non-fatal */ }
+}
+
+/**
  * Sync dispatch-critical .gsd/ state files from worktree to project root.
  * Only runs when inside an auto-worktree (worktreePath differs from projectRoot).
  * Copies: STATE.md + active milestone directory (roadmap, slice plans, task summaries).
@@ -2066,6 +2101,14 @@ async function dispatchNextUnit(
     }
   } catch {
     // Non-fatal — health gate failure should never block dispatch
+  }
+
+  // ── Sync project root artifacts into worktree (#853) ─────────────────
+  // When the LLM writes artifacts to the main repo filesystem instead of
+  // the worktree, the worktree's gsd.db becomes stale. Sync before
+  // deriveState to ensure the worktree has the latest artifacts.
+  if (originalBasePath && basePath !== originalBasePath && currentMilestoneId) {
+    syncProjectRootToWorktree(originalBasePath, basePath, currentMilestoneId);
   }
 
   const stopDeriveTimer = debugTime("derive-state");
