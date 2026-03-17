@@ -281,7 +281,8 @@ test("unit-classify: escalateTier function exists", () => {
 
 test("unit-classify: tierLabel function exists", () => {
   assert.ok(
-    complexitySrcFull.includes("export function tierLabel"),
+    complexitySrcFull.includes("export function tierLabel") ||
+    complexitySrcFull.includes("export { tierLabel"),
     "should export tierLabel for dashboard display",
   );
 });
