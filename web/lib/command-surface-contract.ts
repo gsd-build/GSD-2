@@ -1,4 +1,5 @@
 import type { BrowserSlashCommandDispatchResult, BrowserSlashCommandSurface } from "./browser-slash-command-dispatch"
+import type { DoctorFixResult, DoctorReport, ForensicReport, SkillHealthReport } from "./diagnostics-types"
 import type { GitSummaryResponse } from "./git-summary-contract"
 import type {
   SessionBrowserNameFilter,
@@ -332,6 +333,45 @@ export type CommandSurfaceTarget =
   | { kind: "compact"; customInstructions: string }
   | { kind: "gsd"; surface: string; subcommand: string; args: string }
 
+// ─── Diagnostics panel state ──────────────────────────────────────────────────
+
+export type CommandSurfaceDiagnosticsPhase = "idle" | "loading" | "loaded" | "error"
+
+export interface CommandSurfaceDiagnosticsPhaseState<T> {
+  phase: CommandSurfaceDiagnosticsPhase
+  data: T | null
+  error: string | null
+  lastLoadedAt: string | null
+}
+
+export interface CommandSurfaceDoctorState extends CommandSurfaceDiagnosticsPhaseState<DoctorReport> {
+  fixPending: boolean
+  lastFixResult: DoctorFixResult | null
+  lastFixError: string | null
+}
+
+export interface CommandSurfaceDiagnosticsState {
+  forensics: CommandSurfaceDiagnosticsPhaseState<ForensicReport>
+  doctor: CommandSurfaceDoctorState
+  skillHealth: CommandSurfaceDiagnosticsPhaseState<SkillHealthReport>
+}
+
+export function createInitialDiagnosticsPhaseState<T>(): CommandSurfaceDiagnosticsPhaseState<T> {
+  return { phase: "idle", data: null, error: null, lastLoadedAt: null }
+}
+
+export function createInitialDoctorState(): CommandSurfaceDoctorState {
+  return { phase: "idle", data: null, error: null, lastLoadedAt: null, fixPending: false, lastFixResult: null, lastFixError: null }
+}
+
+export function createInitialDiagnosticsState(): CommandSurfaceDiagnosticsState {
+  return {
+    forensics: createInitialDiagnosticsPhaseState<ForensicReport>(),
+    doctor: createInitialDoctorState(),
+    skillHealth: createInitialDiagnosticsPhaseState<SkillHealthReport>(),
+  }
+}
+
 export interface WorkspaceCommandSurfaceState {
   open: boolean
   activeSurface: BrowserSlashCommandSurface | null
@@ -348,6 +388,7 @@ export interface WorkspaceCommandSurfaceState {
   lastCompaction: CommandSurfaceCompactionResult | null
   gitSummary: CommandSurfaceGitSummaryState
   recovery: CommandSurfaceRecoveryState
+  diagnostics: CommandSurfaceDiagnosticsState
   sessionBrowser: CommandSurfaceSessionBrowserState
   resumeRequest: CommandSurfaceSessionMutationState
   renameRequest: CommandSurfaceSessionMutationState
@@ -522,6 +563,7 @@ export function createInitialCommandSurfaceState(): WorkspaceCommandSurfaceState
     lastCompaction: null,
     gitSummary: createInitialCommandSurfaceGitSummaryState(),
     recovery: createInitialCommandSurfaceRecoveryState(),
+    diagnostics: createInitialDiagnosticsState(),
     sessionBrowser: createInitialCommandSurfaceSessionBrowserState(),
     resumeRequest: createInitialCommandSurfaceSessionMutationState(),
     renameRequest: createInitialCommandSurfaceSessionMutationState(),
@@ -730,6 +772,7 @@ export function openCommandSurfaceState(
     lastCompaction: null,
     gitSummary: createInitialCommandSurfaceGitSummaryState(),
     recovery: createInitialCommandSurfaceRecoveryState(),
+    diagnostics: createInitialDiagnosticsState(),
     sessionBrowser: buildInitialSessionBrowserState(request),
     resumeRequest: createInitialCommandSurfaceSessionMutationState(),
     renameRequest: createInitialCommandSurfaceSessionMutationState(),

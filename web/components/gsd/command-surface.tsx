@@ -56,6 +56,7 @@ import {
   IS_DEV_MODE,
   useDevOverrides,
 } from "@/lib/dev-overrides"
+import { DoctorPanel, ForensicsPanel, SkillHealthPanel } from "./diagnostics-panels"
 import {
   formatCost,
   formatTokens,
@@ -302,6 +303,9 @@ export function CommandSurface() {
     selectCommandSurfaceTarget,
     loadGitSummary,
     loadRecoveryDiagnostics,
+    loadForensicsDiagnostics,
+    loadDoctorDiagnostics,
+    loadSkillHealthDiagnostics,
     updateSessionBrowserState,
     loadSessionBrowser,
     renameSessionFromSurface,
@@ -372,6 +376,28 @@ export function CommandSurface() {
     commandSurface.recovery.stale,
     commandSurface.recovery.error,
     loadRecoveryDiagnostics,
+  ])
+
+  // Auto-fetch diagnostics panels when their sections open
+  const diagnostics = commandSurface.diagnostics
+  useEffect(() => {
+    if (!commandSurface.open) return
+    if (commandSurface.section === "gsd-forensics" && diagnostics.forensics.phase === "idle") {
+      void loadForensicsDiagnostics()
+    } else if (commandSurface.section === "gsd-doctor" && diagnostics.doctor.phase === "idle") {
+      void loadDoctorDiagnostics()
+    } else if (commandSurface.section === "gsd-skill-health" && diagnostics.skillHealth.phase === "idle") {
+      void loadSkillHealthDiagnostics()
+    }
+  }, [
+    commandSurface.open,
+    commandSurface.section,
+    diagnostics.forensics.phase,
+    diagnostics.doctor.phase,
+    diagnostics.skillHealth.phase,
+    loadForensicsDiagnostics,
+    loadDoctorDiagnostics,
+    loadSkillHealthDiagnostics,
   ])
 
   useEffect(() => {
@@ -1910,6 +1936,9 @@ export function CommandSurface() {
       case "fork": return renderForkSection()
       case "session": return renderSessionSection()
       case "compact": return renderCompactSection()
+      case "gsd-forensics": return <ForensicsPanel />
+      case "gsd-doctor": return <DoctorPanel />
+      case "gsd-skill-health": return <SkillHealthPanel />
       default:
         // GSD subcommand surfaces — generic placeholder (S02)
         if (commandSurface.section?.startsWith("gsd-")) {

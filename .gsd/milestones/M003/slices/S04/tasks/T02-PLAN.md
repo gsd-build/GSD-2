@@ -121,3 +121,11 @@ This follows the exact pattern used for recovery diagnostics: `CommandSurfaceRec
 - `web/lib/gsd-workspace-store.tsx` — modified: 4 new fetch methods (~120-160 new lines), diagnostics initial state wired
 - `web/components/gsd/diagnostics-panels.tsx` — new file: 3 panel components (~250-350 lines)
 - `web/components/gsd/command-surface.tsx` — modified: 3 new case branches + imports + useEffect for auto-fetch (~15-25 new lines)
+
+## Observability Impact
+
+- **Browser-side phase tracking**: Each diagnostics panel now exposes a `phase` field (`idle` | `loading` | `loaded` | `error`) in `commandSurface.diagnostics.{forensics,doctor,skillHealth}` — inspectable via React DevTools or `useGSDWorkspaceState()`.
+- **Error surfacing**: API errors from `/api/forensics`, `/api/doctor`, `/api/skill-health` are captured in `state.error` and rendered inline in each panel. Errors include status codes and server-side stderr messages.
+- **Doctor fix lifecycle**: `fixPending`, `lastFixResult`, and `lastFixError` fields on the doctor state track the POST /api/doctor flow end-to-end. The panel renders fix results and errors explicitly.
+- **Auto-fetch trigger**: A `useEffect` triggers data loading when a diagnostics section opens and phase is `idle`. This is observable via the loading spinner in each panel.
+- **Failure inspection**: `data-testid` attributes on each panel (`diagnostics-forensics`, `diagnostics-doctor`, `diagnostics-skill-health`) and the fix button (`doctor-apply-fixes`) enable automated UI testing.

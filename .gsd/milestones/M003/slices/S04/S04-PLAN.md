@@ -50,7 +50,7 @@
   - Verify: `npm run build` succeeds. Each route file is syntactically valid TypeScript that imports from its service.
   - Done when: All 8 files exist with correct imports, types, and patterns. Build passes.
 
-- [ ] **T02: Store wiring, contract state, and diagnostics panel components** `est:40m`
+- [x] **T02: Store wiring, contract state, and diagnostics panel components** `est:40m`
   - Why: Connects the backend services to the UI — adds diagnostics state tracking to the command surface contract, fetch methods to the workspace store, and replaces the generic placeholder rendering with real panel components.
   - Files: `web/lib/command-surface-contract.ts`, `web/lib/gsd-workspace-store.tsx`, `web/components/gsd/diagnostics-panels.tsx`, `web/components/gsd/command-surface.tsx`
   - Do: Add diagnostics state types to contract (phase/data/error for each of forensics, doctor, skill-health — follow CommandSurfaceRecoveryState pattern). Add fetch methods to store (loadForensicsDiagnostics, loadDoctorDiagnostics, applyDoctorFixes, loadSkillHealthDiagnostics — follow loadRecoveryDiagnostics pattern). Create diagnostics-panels.tsx with ForensicsPanel, DoctorPanel, SkillHealthPanel components. Wire panels into command-surface.tsx renderSection() replacing the gsd-* placeholder case for these three surfaces. Forensics panel: anomaly list with severity badges, recent units table, crash lock status. Doctor panel: issue list with severity/scope filtering, fixable count, "Apply Fixes" button. Skill-health panel: skill table with pass rates, token trends, stale/declining flags, suggestions.

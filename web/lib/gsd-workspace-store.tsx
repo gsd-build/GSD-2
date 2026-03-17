@@ -19,11 +19,15 @@ import {
   applyCommandSurfaceActionResult,
   closeCommandSurfaceState,
   createInitialCommandSurfaceState,
+  createInitialDiagnosticsPhaseState,
+  createInitialDoctorState,
   openCommandSurfaceState,
   selectCommandSurfaceStateTarget,
   setCommandSurfacePending,
   setCommandSurfaceSection,
   type CommandSurfaceCompactionResult,
+  type CommandSurfaceDiagnosticsPhaseState,
+  type CommandSurfaceDoctorState,
   type CommandSurfaceForkMessage,
   type CommandSurfaceGitSummaryState,
   type CommandSurfaceModelOption,
@@ -37,6 +41,7 @@ import {
   type WorkspaceRecoveryDiagnostics,
   type WorkspaceRecoverySummary,
 } from "./command-surface-contract"
+import type { DoctorFixResult, DoctorReport, ForensicReport, SkillHealthReport } from "./diagnostics-types"
 import { isGitSummaryResponse, type GitSummaryResponse } from "./git-summary-contract"
 import type {
   SessionBrowserNameFilter,
@@ -2164,6 +2169,120 @@ export class GSDWorkspaceStore {
           },
         ),
       })
+      return null
+    }
+  }
+
+  // ─── Diagnostics panel fetch methods ────────────────────────────────────────
+
+  private patchDiagnosticsPhaseState<K extends "forensics" | "skillHealth">(
+    key: K,
+    patch: Partial<CommandSurfaceDiagnosticsPhaseState<K extends "forensics" ? ForensicReport : SkillHealthReport>>,
+  ): void {
+    this.patchState({
+      commandSurface: {
+        ...this.state.commandSurface,
+        diagnostics: {
+          ...this.state.commandSurface.diagnostics,
+          [key]: { ...this.state.commandSurface.diagnostics[key], ...patch },
+        },
+      },
+    })
+  }
+
+  private patchDoctorState(patch: Partial<CommandSurfaceDoctorState>): void {
+    this.patchState({
+      commandSurface: {
+        ...this.state.commandSurface,
+        diagnostics: {
+          ...this.state.commandSurface.diagnostics,
+          doctor: { ...this.state.commandSurface.diagnostics.doctor, ...patch },
+        },
+      },
+    })
+  }
+
+  loadForensicsDiagnostics = async (): Promise<ForensicReport | null> => {
+    this.patchDiagnosticsPhaseState("forensics", { phase: "loading", error: null })
+    try {
+      const response = await fetch("/api/forensics", { method: "GET", cache: "no-store", headers: { Accept: "application/json" } })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok || !payload) {
+        const message = payload?.error ?? `Forensics request failed with ${response.status}`
+        this.patchDiagnosticsPhaseState("forensics", { phase: "error", error: message })
+        return null
+      }
+      this.patchDiagnosticsPhaseState("forensics", { phase: "loaded", data: payload as ForensicReport, lastLoadedAt: new Date().toISOString() })
+      return payload as ForensicReport
+    } catch (error) {
+      const message = normalizeClientError(error)
+      this.patchDiagnosticsPhaseState("forensics", { phase: "error", error: message })
+      return null
+    }
+  }
+
+  loadDoctorDiagnostics = async (scope?: string): Promise<DoctorReport | null> => {
+    this.patchDoctorState({ phase: "loading", error: null })
+    try {
+      const url = scope ? `/api/doctor?scope=${encodeURIComponent(scope)}` : "/api/doctor"
+      const response = await fetch(url, { method: "GET", cache: "no-store", headers: { Accept: "application/json" } })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok || !payload) {
+        const message = payload?.error ?? `Doctor request failed with ${response.status}`
+        this.patchDoctorState({ phase: "error", error: message })
+        return null
+      }
+      this.patchDoctorState({ phase: "loaded", data: payload as DoctorReport, lastLoadedAt: new Date().toISOString() })
+      return payload as DoctorReport
+    } catch (error) {
+      const message = normalizeClientError(error)
+      this.patchDoctorState({ phase: "error", error: message })
+      return null
+    }
+  }
+
+  applyDoctorFixes = async (scope?: string): Promise<DoctorFixResult | null> => {
+    this.patchDoctorState({ fixPending: true, lastFixError: null, lastFixResult: null })
+    try {
+      const response = await fetch("/api/doctor", {
+        method: "POST",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(scope ? { scope } : {}),
+      })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok || !payload) {
+        const message = payload?.error ?? `Doctor fix request failed with ${response.status}`
+        this.patchDoctorState({ fixPending: false, lastFixError: message })
+        return null
+      }
+      const fixResult = payload as DoctorFixResult
+      this.patchDoctorState({ fixPending: false, lastFixResult: fixResult })
+      // Reload doctor data after applying fixes so the issue list refreshes
+      void this.loadDoctorDiagnostics(scope)
+      return fixResult
+    } catch (error) {
+      const message = normalizeClientError(error)
+      this.patchDoctorState({ fixPending: false, lastFixError: message })
+      return null
+    }
+  }
+
+  loadSkillHealthDiagnostics = async (): Promise<SkillHealthReport | null> => {
+    this.patchDiagnosticsPhaseState("skillHealth", { phase: "loading", error: null })
+    try {
+      const response = await fetch("/api/skill-health", { method: "GET", cache: "no-store", headers: { Accept: "application/json" } })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok || !payload) {
+        const message = payload?.error ?? `Skill health request failed with ${response.status}`
+        this.patchDiagnosticsPhaseState("skillHealth", { phase: "error", error: message })
+        return null
+      }
+      this.patchDiagnosticsPhaseState("skillHealth", { phase: "loaded", data: payload as SkillHealthReport, lastLoadedAt: new Date().toISOString() })
+      return payload as SkillHealthReport
+    } catch (error) {
+      const message = normalizeClientError(error)
+      this.patchDiagnosticsPhaseState("skillHealth", { phase: "error", error: message })
       return null
     }
   }
@@ -4545,6 +4664,10 @@ export function useGSDWorkspaceActions(): Pick<
   | "selectCommandSurfaceTarget"
   | "loadGitSummary"
   | "loadRecoveryDiagnostics"
+  | "loadForensicsDiagnostics"
+  | "loadDoctorDiagnostics"
+  | "applyDoctorFixes"
+  | "loadSkillHealthDiagnostics"
   | "updateSessionBrowserState"
   | "loadSessionBrowser"
   | "renameSessionFromSurface"
@@ -4591,6 +4714,10 @@ export function useGSDWorkspaceActions(): Pick<
     selectCommandSurfaceTarget: store.selectCommandSurfaceTarget,
     loadGitSummary: store.loadGitSummary,
     loadRecoveryDiagnostics: store.loadRecoveryDiagnostics,
+    loadForensicsDiagnostics: store.loadForensicsDiagnostics,
+    loadDoctorDiagnostics: store.loadDoctorDiagnostics,
+    applyDoctorFixes: store.applyDoctorFixes,
+    loadSkillHealthDiagnostics: store.loadSkillHealthDiagnostics,
     updateSessionBrowserState: store.updateSessionBrowserState,
     loadSessionBrowser: store.loadSessionBrowser,
     renameSessionFromSurface: store.renameSessionFromSurface,
