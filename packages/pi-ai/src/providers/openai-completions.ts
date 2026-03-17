@@ -747,10 +747,13 @@ function mapStopReason(reason: ChatCompletionChunk.Choice["finish_reason"]): Sto
 			return "toolUse";
 		case "content_filter":
 			return "error";
-		default: {
-			const _exhaustive: never = reason;
-			throw new Error(`Unhandled stop reason: ${_exhaustive}`);
-		}
+		default:
+			// Third-party and community models (e.g. Qwen GGUF quants) may emit
+			// non-standard finish_reason values like "eos_token", "eos", or
+			// "end_of_turn". The OpenAI spec defines finish_reason as a string,
+			// so we treat unrecognized values as a normal stop rather than
+			// throwing — which would abort in-flight tool calls (#863).
+			return "stop";
 	}
 }
 
