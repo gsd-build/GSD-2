@@ -995,6 +995,26 @@ export async function startAuto(
   // after a discussion that wrote new artifacts) may cause deriveState to
   // return pre-planning when the roadmap already exists (#800).
   invalidateAllCaches();
+
+  // ── Clean stale runtime unit files for completed milestones (#887) ───────
+  // After resource-update restart, stale runtime/units/*.json files from
+  // previously completed milestones can cause deriveState to resume the wrong
+  // milestone. If a milestone has a SUMMARY file, its unit files are stale.
+  try {
+    const runtimeUnitsDir = join(gsdRoot(base), "runtime", "units");
+    if (existsSync(runtimeUnitsDir)) {
+      for (const file of readdirSync(runtimeUnitsDir)) {
+        if (!file.endsWith(".json")) continue;
+        const midMatch = file.match(/(M\d+(?:-[a-z0-9]{6})?)/);
+        if (!midMatch) continue;
+        const mid = midMatch[1];
+        if (resolveMilestoneFile(base, mid, "SUMMARY")) {
+          try { unlinkSync(join(runtimeUnitsDir, file)); } catch { /* non-fatal */ }
+        }
+      }
+    }
+  } catch { /* non-fatal — don't block startup */ }
+
   let state = await deriveState(base);
 
   // ── Stale worktree state recovery (#654) ─────────────────────────────────
