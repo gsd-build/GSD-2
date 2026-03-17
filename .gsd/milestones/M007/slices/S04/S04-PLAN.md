@@ -47,7 +47,7 @@
 
 ## Tasks
 
-- [ ] **T01: Action toolbar** `est:1h`
+- [x] **T01: Action toolbar** `est:1h`
   - Why: Without the toolbar, Chat Mode has no way to drive GSD workflow actions
   - Files: `web/components/gsd/chat-mode.tsx`, `web/components/gsd/new-milestone-dialog.tsx` (import only)
   - Do: (1) Read `web/components/gsd/dual-terminal.tsx` header section — copy the workflow action bar logic exactly. (2) Build `ChatModeHeader` with props `{ onPrimaryAction: (cmd: string) => void; onSecondaryAction: (cmd: string) => void; onNewMilestone: () => void; onOpenPanel: (cfg: ActionPanelConfig) => void }`. (3) Inside: call `useGSDWorkspaceState()`, derive `workflowAction` via `deriveWorkflowAction({...})`, render primary button (Loader2 when in-flight, Milestone for new-milestone, Play otherwise) and secondary buttons. (4) Wire `isNewMilestone ? onNewMilestone() : onPrimaryAction(cmd)` for primary; `onSecondaryAction(cmd)` for secondaries. (5) Add a second row of "phase action" buttons below the workflow row — these open panels: `{ label: "Discuss", command: "/gsd", accentColor: "sky" }`, `{ label: "Plan", command: "/gsd", accentColor: "amber" }`. Render only when workspace is ready and auto is not active. (6) Replace the placeholder header in `ChatMode` with `ChatModeHeader`; add `NewMilestoneDialog` state; wire all callbacks through `sendCommand(buildPromptCommand(cmd, bridge))`.

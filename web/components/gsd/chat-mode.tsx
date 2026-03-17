@@ -1,15 +1,22 @@
 "use client"
 
 import { useEffect, useRef, useCallback, useState, KeyboardEvent } from "react"
-import { MessagesSquare, SendHorizonal, Check, Eye, EyeOff } from "lucide-react"
+import { MessagesSquare, SendHorizonal, Check, Eye, EyeOff, Play, Loader2, Milestone } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Input } from "@/components/ui/input"
 import { PtyChatParser, ChatMessage, TuiPrompt } from "@/lib/pty-chat-parser"
+import {
+  useGSDWorkspaceState,
+  useGSDWorkspaceActions,
+  buildPromptCommand,
+} from "@/lib/gsd-workspace-store"
+import { deriveWorkflowAction } from "@/lib/workflow-actions"
+import { NewMilestoneDialog } from "@/components/gsd/new-milestone-dialog"
 
 /**
  * ChatMode — main view for the Chat tab.
  *
- * T01 scaffold: header bar + left pane with placeholder content.
+ * T01: Header with live GSD workflow action bar (mirrors Power Mode toolbar).
  * T02 wires in the live ChatPane (SSE + PtyChatParser).
  * T03 adds fully-styled ChatBubble rendering (markdown + syntax highlight)
  *     and the fully-wired ChatInputBar.
@@ -19,31 +26,164 @@ import { PtyChatParser, ChatMessage, TuiPrompt } from "@/lib/pty-chat-parser"
  *   - sessionStorage key "gsd-active-view:<cwd>" equals "chat" when this view is active.
  *   - ChatPane logs SSE lifecycle to console under [ChatPane] prefix.
  *   - In dev mode, window.__chatParser exposes the PtyChatParser instance.
+ *   - Header toolbar: data-testid="chat-mode-action-bar" confirms toolbar rendered.
+ *   - Primary button: data-testid="chat-primary-action" reflects current workflowAction label.
+ *   - Secondary buttons: data-testid="chat-secondary-action-{command}".
  */
 export function ChatMode({ className }: { className?: string }) {
+  const [milestoneDialogOpen, setMilestoneDialogOpen] = useState(false)
+  const state = useGSDWorkspaceState()
+  const { sendCommand } = useGSDWorkspaceActions()
+
+  const bridge = state.boot?.bridge ?? null
+
+  const handlePrimaryAction = useCallback(
+    (command: string) => {
+      void sendCommand(buildPromptCommand(command, bridge))
+    },
+    [sendCommand, bridge],
+  )
+
+  const handleSecondaryAction = useCallback(
+    (command: string) => {
+      void sendCommand(buildPromptCommand(command, bridge))
+    },
+    [sendCommand, bridge],
+  )
+
   return (
     <div className={cn("flex h-full flex-col overflow-hidden bg-background", className)}>
       {/* ── Header bar ── */}
-      <ChatModeHeader />
+      <ChatModeHeader
+        onPrimaryAction={handlePrimaryAction}
+        onSecondaryAction={handleSecondaryAction}
+        onNewMilestone={() => setMilestoneDialogOpen(true)}
+      />
 
       {/* ── Main pane ── */}
       <div className="flex flex-1 overflow-hidden">
         <ChatPane sessionId="gsd-main" command="pi" className="flex-1" />
       </div>
+
+      <NewMilestoneDialog open={milestoneDialogOpen} onOpenChange={setMilestoneDialogOpen} />
     </div>
   )
 }
 
 /* ─── Header ─── */
 
-function ChatModeHeader() {
+interface ChatModeHeaderProps {
+  onPrimaryAction: (command: string) => void
+  onSecondaryAction: (command: string) => void
+  onNewMilestone: () => void
+}
+
+/**
+ * ChatModeHeader — action toolbar for Chat Mode.
+ *
+ * Mirrors the Power Mode toolbar (dual-terminal.tsx) but is prop-driven:
+ * callers provide action handlers rather than inline logic.
+ *
+ * Observability:
+ *   - data-testid="chat-mode-action-bar" on the button row
+ *   - data-testid="chat-primary-action" on the primary button
+ *   - data-testid="chat-secondary-action-{command}" on each secondary button
+ */
+function ChatModeHeader({ onPrimaryAction, onSecondaryAction, onNewMilestone }: ChatModeHeaderProps) {
+  const state = useGSDWorkspaceState()
+
+  const boot = state.boot
+  const workspace = boot?.workspace ?? null
+  const auto = boot?.auto ?? null
+
+  const workflowAction = deriveWorkflowAction({
+    phase: workspace?.active.phase ?? "pre-planning",
+    autoActive: auto?.active ?? false,
+    autoPaused: auto?.paused ?? false,
+    onboardingLocked: boot?.onboarding.locked ?? false,
+    commandInFlight: state.commandInFlight,
+    bootStatus: state.bootStatus,
+    hasMilestones: (workspace?.milestones.length ?? 0) > 0,
+    projectDetectionKind: boot?.projectDetection?.kind ?? null,
+  })
+
+  const handlePrimary = () => {
+    if (!workflowAction.primary) return
+    if (workflowAction.isNewMilestone) {
+      onNewMilestone()
+    } else {
+      onPrimaryAction(workflowAction.primary.command)
+    }
+  }
+
+  // Derive a short GSD state badge label
+  const stateBadge = (() => {
+    if (state.bootStatus !== "ready") return state.bootStatus
+    const phase = workspace?.active.phase
+    if (!phase) return "idle"
+    if (auto?.active && !auto?.paused) return "auto"
+    if (auto?.paused) return "paused"
+    return phase
+  })()
+
   return (
-    <div className="flex h-10 flex-shrink-0 items-center gap-2 border-b border-border bg-card px-4">
-      <MessagesSquare className="h-4 w-4 text-muted-foreground" />
-      <span className="text-sm font-medium text-foreground">Chat</span>
-      <span className="ml-1 rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
-        gsd-main
-      </span>
+    <div className="flex h-11 flex-shrink-0 items-center justify-between border-b border-border bg-card px-4">
+      {/* Left: title + state badge */}
+      <div className="flex items-center gap-2">
+        <MessagesSquare className="h-4 w-4 text-muted-foreground" />
+        <span className="text-sm font-medium text-foreground">Chat Mode</span>
+        <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+          {stateBadge}
+        </span>
+      </div>
+
+      {/* Right: workflow action bar */}
+      <div className="flex items-center gap-2" data-testid="chat-mode-action-bar">
+        {workflowAction.primary && (
+          <button
+            data-testid="chat-primary-action"
+            onClick={handlePrimary}
+            disabled={workflowAction.disabled}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium transition-colors",
+              workflowAction.primary.variant === "destructive"
+                ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                : "bg-primary text-primary-foreground hover:bg-primary/90",
+              workflowAction.disabled && "cursor-not-allowed opacity-50",
+            )}
+            title={workflowAction.disabledReason}
+          >
+            {state.commandInFlight ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : workflowAction.isNewMilestone ? (
+              <Milestone className="h-3 w-3" />
+            ) : (
+              <Play className="h-3 w-3" />
+            )}
+            {workflowAction.primary.label}
+          </button>
+        )}
+        {workflowAction.secondaries.map((action) => (
+          <button
+            key={action.command}
+            data-testid={`chat-secondary-action-${action.command}`}
+            onClick={() => onSecondaryAction(action.command)}
+            disabled={workflowAction.disabled}
+            className={cn(
+              "inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-xs font-medium transition-colors hover:bg-accent",
+              workflowAction.disabled && "cursor-not-allowed opacity-50",
+            )}
+            title={workflowAction.disabledReason}
+          >
+            {action.label}
+          </button>
+        ))}
+        {state.commandInFlight && (
+          <span className="flex items-center gap-1 text-xs text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin" />
+          </span>
+        )}
+      </div>
     </div>
   )
 }
