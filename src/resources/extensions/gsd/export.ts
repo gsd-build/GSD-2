@@ -98,43 +98,106 @@ export function writeExportFile(
 export async function handleExport(args: string, ctx: ExtensionCommandContext, basePath: string): Promise<void> {
   // HTML report — delegates to the full visualizer-data pipeline
   if (args.includes("--html")) {
+    const generateAll = args.includes("--all");
     try {
       const { loadVisualizerData } = await import("./visualizer-data.js");
       const { generateHtmlReport } = await import("./export-html.js");
-      const { writeReportSnapshot, reportsDir } = await import("./reports.js");
+      const { writeReportSnapshot, loadReportsIndex } = await import("./reports.js");
       const { basename: bn } = await import("node:path");
       const data = await loadVisualizerData(basePath);
       const projName = basename(basePath);
       const gsdVersion = process.env.GSD_VERSION ?? "0.0.0";
-      const doneSlices = data.milestones.reduce((s, m) => s + m.slices.filter(sl => sl.done).length, 0);
-      const totalSlices = data.milestones.reduce((s, m) => s + m.slices.length, 0);
-      const outPath = writeReportSnapshot({
-        basePath,
-        html: generateHtmlReport(data, {
-          projectName: projName,
-          projectPath: basePath,
-          gsdVersion,
-          indexRelPath: "index.html",
-        }),
-        milestoneId: data.milestones.find(m => m.status === "active")?.id ?? "manual",
-        milestoneTitle: data.milestones.find(m => m.status === "active")?.title ?? "",
-        kind: "manual",
+      const doneMilestones = data.milestones.filter(m => m.status === "complete").length;
+
+      const htmlOpts = {
         projectName: projName,
         projectPath: basePath,
         gsdVersion,
-        totalCost: data.totals?.cost ?? 0,
-        totalTokens: data.totals?.tokens.total ?? 0,
-        totalDuration: data.totals?.duration ?? 0,
-        doneSlices,
-        totalSlices,
-        doneMilestones: data.milestones.filter(m => m.status === "complete").length,
-        totalMilestones: data.milestones.length,
-        phase: data.phase,
-      });
-      ctx.ui.notify(
-        `HTML report saved: .gsd/reports/${bn(outPath)}\nBrowse all reports: .gsd/reports/index.html`,
-        "success",
-      );
+        indexRelPath: "index.html",
+      };
+
+      if (generateAll) {
+        // Generate a report snapshot for every milestone
+        const existing = loadReportsIndex(basePath);
+        const existingIds = new Set(existing?.entries.map(e => e.milestoneId) ?? []);
+
+        const targets = data.milestones.filter(m => !existingIds.has(m.id));
+        if (targets.length === 0) {
+          ctx.ui.notify(
+            "All milestones already have report snapshots. Run without --all to create a new snapshot for the active milestone.",
+            "info",
+          );
+          return;
+        }
+
+        const html = generateHtmlReport(data, htmlOpts);
+        const paths: string[] = [];
+
+        for (const ms of targets) {
+          const msSlicesDone = ms.slices.filter(sl => sl.done).length;
+          const msSlicesTotal = ms.slices.length;
+
+          // Accumulate project-wide progress up to and including this milestone
+          const msIdx = data.milestones.indexOf(ms);
+          let cumulativeDone = 0;
+          let cumulativeTotal = 0;
+          for (let i = 0; i <= msIdx; i++) {
+            cumulativeDone += data.milestones[i].slices.filter(sl => sl.done).length;
+            cumulativeTotal += data.milestones[i].slices.length;
+          }
+
+          const outPath = writeReportSnapshot({
+            basePath,
+            html,
+            milestoneId: ms.id,
+            milestoneTitle: ms.title,
+            kind: ms.status === "complete" ? "milestone" : "manual",
+            projectName: projName,
+            projectPath: basePath,
+            gsdVersion,
+            totalCost: data.totals?.cost ?? 0,
+            totalTokens: data.totals?.tokens.total ?? 0,
+            totalDuration: data.totals?.duration ?? 0,
+            doneSlices: cumulativeDone,
+            totalSlices: cumulativeTotal,
+            doneMilestones: data.milestones.slice(0, msIdx + 1).filter(m => m.status === "complete").length,
+            totalMilestones: data.milestones.length,
+            phase: ms.status === "complete" ? "complete" : data.phase,
+          });
+          paths.push(bn(outPath));
+        }
+
+        ctx.ui.notify(
+          `Generated ${paths.length} report snapshot${paths.length !== 1 ? "s" : ""}:\n${paths.map(p => `  ${p}`).join("\n")}\nBrowse all reports: .gsd/reports/index.html`,
+          "success",
+        );
+      } else {
+        // Single report for the active milestone (existing behavior)
+        const doneSlices = data.milestones.reduce((s, m) => s + m.slices.filter(sl => sl.done).length, 0);
+        const totalSlices = data.milestones.reduce((s, m) => s + m.slices.length, 0);
+        const outPath = writeReportSnapshot({
+          basePath,
+          html: generateHtmlReport(data, htmlOpts),
+          milestoneId: data.milestones.find(m => m.status === "active")?.id ?? "manual",
+          milestoneTitle: data.milestones.find(m => m.status === "active")?.title ?? "",
+          kind: "manual",
+          projectName: projName,
+          projectPath: basePath,
+          gsdVersion,
+          totalCost: data.totals?.cost ?? 0,
+          totalTokens: data.totals?.tokens.total ?? 0,
+          totalDuration: data.totals?.duration ?? 0,
+          doneSlices,
+          totalSlices,
+          doneMilestones,
+          totalMilestones: data.milestones.length,
+          phase: data.phase,
+        });
+        ctx.ui.notify(
+          `HTML report saved: .gsd/reports/${bn(outPath)}\nBrowse all reports: .gsd/reports/index.html`,
+          "success",
+        );
+      }
     } catch (err) {
       ctx.ui.notify(
         `HTML export failed: ${err instanceof Error ? err.message : String(err)}`,

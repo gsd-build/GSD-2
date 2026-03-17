@@ -182,7 +182,7 @@ export function registerGSDCommand(pi: ExtensionAPI): void {
 
       if (parts[0] === "export" && parts.length <= 2) {
         const flagPrefix = parts[1] ?? "";
-        return ["--json", "--markdown"]
+        return ["--json", "--markdown", "--html", "--html --all"]
           .filter((f) => f.startsWith(flagPrefix))
           .map((f) => ({ value: `export ${f}`, label: f }));
       }
@@ -631,7 +631,7 @@ function showHelp(ctx: ExtensionCommandContext): void {
     "",
     "MAINTENANCE",
     "  /gsd doctor         Diagnose and repair .gsd/ state  [audit|fix|heal] [scope]",
-    "  /gsd export         Export milestone/slice results  [--json|--markdown|--html]",
+    "  /gsd export         Export milestone/slice results  [--json|--markdown|--html] [--all]",
     "  /gsd cleanup        Remove merged branches or snapshots  [branches|snapshots]",
     "  /gsd migrate        Upgrade .gsd/ structures to new format",
     "  /gsd remote         Control remote auto-mode  [slack|discord|status|disconnect]",
