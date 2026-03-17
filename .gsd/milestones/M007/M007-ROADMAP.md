@@ -62,7 +62,7 @@ This milestone is complete only when all are true:
 - [x] **S03: TUI prompt intercept UI** `risk:medium` `depends:[S02]`
   > After this: When GSD presents an arrow-key select list or a text/password input prompt, the chat view renders native UI components instead of raw escape sequences. Submitting via the native UI sends correct keystrokes to the PTY and GSD visibly advances.
 
-- [ ] **S04: Action toolbar and right panel lifecycle** `risk:low` `depends:[S02,S03]`
+- [x] **S04: Action toolbar and right panel lifecycle** `risk:low` `depends:[S02,S03]`
   > After this: Chat Mode header has state-aware workflow buttons. Clicking an action button spawns a right-panel chat with distinct styling. The panel auto-closes ~1.5s after GSD signals completion. Panel open/close animates with the motion library. No session leaks.
 
 ## Boundary Map
