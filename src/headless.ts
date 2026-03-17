@@ -190,6 +190,10 @@ function formatProgress(event: Record<string, unknown>, verbose: boolean): strin
 
 const TERMINAL_KEYWORDS = ['complete', 'stopped', 'blocked']
 const IDLE_TIMEOUT_MS = 15_000
+// new-milestone is a long-running creative task where the LLM may pause
+// between tool calls (e.g. after mkdir, before writing files). Use a
+// longer idle timeout to avoid killing the session prematurely (#808).
+const NEW_MILESTONE_IDLE_TIMEOUT_MS = 120_000
 
 function isTerminalNotification(event: Record<string, unknown>): boolean {
   if (event.type !== 'extension_ui_request' || event.method !== 'notify') return false
@@ -359,6 +363,7 @@ export async function runHeadless(options: HeadlessOptions): Promise<void> {
 
   // Idle timeout — fallback completion detection
   let idleTimer: ReturnType<typeof setTimeout> | null = null
+  const effectiveIdleTimeout = isNewMilestone ? NEW_MILESTONE_IDLE_TIMEOUT_MS : IDLE_TIMEOUT_MS
 
   function resetIdleTimer(): void {
     if (idleTimer) clearTimeout(idleTimer)
@@ -366,7 +371,7 @@ export async function runHeadless(options: HeadlessOptions): Promise<void> {
       idleTimer = setTimeout(() => {
         completed = true
         resolveCompletion()
-      }, IDLE_TIMEOUT_MS)
+      }, effectiveIdleTimeout)
     }
   }
 
