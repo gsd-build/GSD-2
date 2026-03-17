@@ -18,7 +18,9 @@ function isPidAlive(pid: number | undefined): boolean {
 	}
 }
 
-const sleeperCommand = `${process.execPath} -e "process.on('SIGTERM',()=>process.exit(0)); setInterval(()=>{},1000)"`;
+// Use a shell-native sleeper so the test exercises bg_shell's real spawn path
+// without relying on platform-specific quoting for `node -e "..."`
+const sleeperCommand = "sleep 30";
 
 test("cleanupSessionProcesses reaps only session-scoped processes from the previous session", async () => {
 	const owned = startProcess({
