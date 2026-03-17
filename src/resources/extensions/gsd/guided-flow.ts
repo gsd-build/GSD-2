@@ -959,12 +959,22 @@ export async function showDiscuss(
 
   // Loop: show picker, dispatch discuss, repeat until "not_yet"
   while (true) {
-    const actions = pendingSlices.map((s, i) => ({
-      id: s.id,
-      label: `${s.id}: ${s.title}`,
-      description: state.activeSlice?.id === s.id ? "active slice" : "upcoming",
-      recommended: i === 0,
-    }));
+    const actions = pendingSlices.map((s, i) => {
+      // Check if this slice has already been discussed (CONTEXT file exists)
+      const contextFile = resolveSliceFile(basePath, mid, s.id, "CONTEXT");
+      const discussed = !!contextFile;
+      const statusParts: string[] = [];
+      if (state.activeSlice?.id === s.id) statusParts.push("active");
+      else statusParts.push("upcoming");
+      statusParts.push(discussed ? "discussed ✓" : "not discussed");
+
+      return {
+        id: s.id,
+        label: `${s.id}: ${s.title}`,
+        description: statusParts.join(" · "),
+        recommended: i === 0,
+      };
+    });
 
     const choice = await showNextAction(ctx, {
       title: "GSD — Discuss a slice",
