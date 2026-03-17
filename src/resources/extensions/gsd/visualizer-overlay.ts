@@ -19,15 +19,15 @@ import { writeExportFile } from "./export.js";
 const TAB_COUNT = 10;
 const TAB_LABELS = [
   "1 Progress",
-  "2 Deps",
-  "3 Metrics",
-  "4 Timeline",
-  "5 Agent",
-  "6 Changes",
-  "7 Export",
+  "2 Timeline",
+  "3 Deps",
+  "4 Metrics",
+  "5 Health",
+  "6 Agent",
+  "7 Changes",
   "8 Knowledge",
   "9 Captures",
-  "0 Health",
+  "0 Export",
 ];
 
 function stripAnsi(s: string): string {
@@ -262,7 +262,7 @@ export class GSDVisualizerOverlay {
     }
 
     // Export tab key handling
-    if (this.activeTab === 6 && this.data) {
+    if (this.activeTab === 9 && this.data) {
       if (data === "m" || data === "j" || data === "s") {
         this.handleExportKey(data);
         return;
@@ -372,23 +372,23 @@ export class GSDVisualizerOverlay {
         return renderProgressView(this.data, th, width, filter, this.collapsedMilestones);
       }
       case 1:
-        return renderDepsView(this.data, th, width);
-      case 2:
-        return renderMetricsView(this.data, th, width);
-      case 3:
         return renderTimelineView(this.data, th, width);
+      case 2:
+        return renderDepsView(this.data, th, width);
+      case 3:
+        return renderMetricsView(this.data, th, width);
       case 4:
-        return renderAgentView(this.data, th, width);
+        return renderHealthView(this.data, th, width);
       case 5:
-        return renderChangelogView(this.data, th, width);
+        return renderAgentView(this.data, th, width);
       case 6:
-        return renderExportView(this.data, th, width, this.lastExportPath);
+        return renderChangelogView(this.data, th, width);
       case 7:
         return renderKnowledgeView(this.data, th, width);
       case 8:
         return renderCapturesView(this.data, th, width);
       case 9:
-        return renderHealthView(this.data, th, width);
+        return renderExportView(this.data, th, width, this.lastExportPath);
       default:
         return [];
     }
@@ -470,7 +470,7 @@ export class GSDVisualizerOverlay {
       let viewLines = this.renderTabContent(this.activeTab, innerWidth);
 
       // Show export status message if present
-      if (this.exportStatus && this.activeTab === 6) {
+      if (this.exportStatus && this.activeTab === 9) {
         content.push(th.fg("success", this.exportStatus));
         content.push("");
         this.exportStatus = undefined;

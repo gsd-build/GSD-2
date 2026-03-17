@@ -418,7 +418,7 @@ assertTrue(
 );
 
 assertTrue(
-  overlaySrc.includes("0 Health"),
+  overlaySrc.includes("0 Export"),
   "overlay has 10 tab labels",
 );
 

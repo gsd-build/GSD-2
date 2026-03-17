@@ -24,18 +24,28 @@ assertTrue(
 );
 
 assertTrue(
-  overlaySrc.includes('"5 Agent"'),
+  overlaySrc.includes('"2 Timeline"'),
+  "has Timeline tab label",
+);
+
+assertTrue(
+  overlaySrc.includes('"3 Deps"'),
+  "has Deps tab label",
+);
+
+assertTrue(
+  overlaySrc.includes('"5 Health"'),
+  "has Health tab label",
+);
+
+assertTrue(
+  overlaySrc.includes('"6 Agent"'),
   "has Agent tab label",
 );
 
 assertTrue(
-  overlaySrc.includes('"6 Changes"'),
+  overlaySrc.includes('"7 Changes"'),
   "has Changes tab label",
-);
-
-assertTrue(
-  overlaySrc.includes('"7 Export"'),
-  "has Export tab label",
 );
 
 assertTrue(
@@ -49,8 +59,8 @@ assertTrue(
 );
 
 assertTrue(
-  overlaySrc.includes('"0 Health"'),
-  "has Health tab label",
+  overlaySrc.includes('"0 Export"'),
+  "has Export tab label",
 );
 
 console.log("\n=== Overlay: Filter Mode ===");
@@ -162,8 +172,8 @@ assertTrue(
 console.log("\n=== Overlay: Export Key Interception ===");
 
 assertTrue(
-  overlaySrc.includes("activeTab === 6"),
-  "export key handling checks for tab 7 (index 6)",
+  overlaySrc.includes("activeTab === 9"),
+  "export key handling checks for tab 0 (index 9)",
 );
 
 assertTrue(
