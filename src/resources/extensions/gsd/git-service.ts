@@ -53,6 +53,11 @@ export interface GitPreferences {
    *  Default: true (planning docs are tracked in git).
    */
   commit_docs?: boolean;
+  /** When false, GSD only adds its own runtime patterns to .gitignore
+   *  and skips opinionated baseline patterns (IDE, language, OS junk).
+   *  Default: true (full baseline patterns are added).
+   */
+  manage_gitignore?: boolean;
   /** Script to run after a worktree is created (#597).
    *  Receives SOURCE_DIR and WORKTREE_DIR as environment variables.
    *  Can be an absolute path or relative to the project root.

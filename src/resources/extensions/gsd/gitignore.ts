@@ -85,9 +85,10 @@ const BASELINE_PATTERNS = [
  * .gitignore instead of individual runtime patterns, keeping all GSD
  * artifacts local-only.
  */
-export function ensureGitignore(basePath: string, options?: { commitDocs?: boolean }): boolean {
+export function ensureGitignore(basePath: string, options?: { commitDocs?: boolean; manageGitignore?: boolean }): boolean {
   const gitignorePath = join(basePath, ".gitignore");
   const commitDocs = options?.commitDocs !== false; // default true
+  const manageGitignore = options?.manageGitignore !== false; // default true
 
   let existing = "";
   if (existsSync(gitignorePath)) {
@@ -130,15 +131,23 @@ export function ensureGitignore(basePath: string, options?: { commitDocs?: boole
       .filter((l) => l && !l.startsWith("#")),
   );
 
+  // When manage_gitignore is false, only add GSD runtime patterns — skip
+  // opinionated baseline patterns (IDE, language, OS junk) so the user's
+  // .gitignore is left alone.
+  const patterns = manageGitignore ? BASELINE_PATTERNS : GSD_RUNTIME_PATTERNS;
+
   // Find patterns not yet present
-  const missing = BASELINE_PATTERNS.filter((p) => !existingLines.has(p));
+  const missing = patterns.filter((p) => !existingLines.has(p));
 
   if (missing.length === 0) return modified;
 
   // Build the block to append
+  const label = manageGitignore
+    ? "# ── GSD baseline (auto-generated) ──"
+    : "# ── GSD runtime (auto-generated) ──";
   const block = [
     "",
-    "# ── GSD baseline (auto-generated) ──",
+    label,
     ...missing,
     "",
   ].join("\n");
@@ -216,7 +225,7 @@ See \`~/.gsd/agent/extensions/gsd/docs/preferences-reference.md\` for full field
 - \`models\`: Model preferences for specific task types
 - \`skill_discovery\`: Automatic skill detection preferences
 - \`auto_supervisor\`: Supervision and gating rules for autonomous modes
-- \`git\`: Git preferences — \`main_branch\` (default branch name for new repos, e.g., "main", "master", "trunk"), \`auto_push\`, \`snapshots\`, \`commit_docs\` (set to \`false\` to keep .gsd/ local-only), etc.
+- \`git\`: Git preferences — \`main_branch\` (default branch name for new repos, e.g., "main", "master", "trunk"), \`auto_push\`, \`snapshots\`, \`commit_docs\` (set to \`false\` to keep .gsd/ local-only), \`manage_gitignore\` (set to \`false\` to prevent GSD from adding opinionated patterns like IDE/language/OS entries — GSD runtime patterns are still added), etc.
 
 ## Examples
 

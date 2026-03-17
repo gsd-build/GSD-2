@@ -1218,6 +1218,65 @@ async function main(): Promise<void> {
     rmSync(repo, { recursive: true, force: true });
   }
 
+  // ─── ensureGitignore: manage_gitignore false skips baseline patterns ─
+
+  console.log("\n=== ensureGitignore: manage_gitignore false ===");
+
+  {
+    const { ensureGitignore } = await import("../gitignore.ts");
+    const repo = mkdtempSync(join(tmpdir(), "gsd-gitignore-manage-false-"));
+
+    // When manage_gitignore is false, should only add GSD runtime patterns
+    const modified = ensureGitignore(repo, { manageGitignore: false });
+    assertTrue(modified, "manage_gitignore=false: gitignore was modified");
+
+    const { readFileSync } = await import("node:fs");
+    const content = readFileSync(join(repo, ".gitignore"), "utf-8");
+
+    // Should contain GSD runtime patterns
+    assertTrue(content.includes(".gsd/forensics/"), "manage_gitignore=false: has GSD runtime pattern");
+    assertTrue(content.includes(".gsd/runtime/"), "manage_gitignore=false: has .gsd/runtime/");
+    assertTrue(content.includes("GSD runtime (auto-generated)"), "manage_gitignore=false: has runtime label");
+
+    // Should NOT contain opinionated baseline patterns
+    assertTrue(!content.includes("node_modules/"), "manage_gitignore=false: no node_modules");
+    assertTrue(!content.includes(".idea/"), "manage_gitignore=false: no .idea/");
+    assertTrue(!content.includes("__pycache__/"), "manage_gitignore=false: no __pycache__");
+    assertTrue(!content.includes("Thumbs.db"), "manage_gitignore=false: no Thumbs.db");
+    assertTrue(!content.includes("*.swp"), "manage_gitignore=false: no *.swp");
+    assertTrue(!content.includes("target/"), "manage_gitignore=false: no target/");
+
+    // Idempotent
+    const modified2 = ensureGitignore(repo, { manageGitignore: false });
+    assertTrue(!modified2, "manage_gitignore=false: second call is idempotent");
+
+    rmSync(repo, { recursive: true, force: true });
+  }
+
+  // ─── ensureGitignore: manage_gitignore true (default) adds everything ─
+
+  console.log("\n=== ensureGitignore: manage_gitignore true (default) ===");
+
+  {
+    const { ensureGitignore } = await import("../gitignore.ts");
+    const repo = mkdtempSync(join(tmpdir(), "gsd-gitignore-manage-true-"));
+
+    // Default (manage_gitignore not set) should add full baseline patterns
+    const modified = ensureGitignore(repo);
+    assertTrue(modified, "manage_gitignore=default: gitignore was modified");
+
+    const { readFileSync } = await import("node:fs");
+    const content = readFileSync(join(repo, ".gitignore"), "utf-8");
+
+    // Should contain both GSD runtime and baseline patterns
+    assertTrue(content.includes(".gsd/forensics/"), "manage_gitignore=default: has GSD runtime pattern");
+    assertTrue(content.includes("node_modules/"), "manage_gitignore=default: has node_modules");
+    assertTrue(content.includes(".idea/"), "manage_gitignore=default: has .idea/");
+    assertTrue(content.includes("GSD baseline (auto-generated)"), "manage_gitignore=default: has baseline label");
+
+    rmSync(repo, { recursive: true, force: true });
+  }
+
   report();
 }
 

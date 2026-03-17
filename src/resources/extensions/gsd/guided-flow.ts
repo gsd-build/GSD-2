@@ -252,8 +252,8 @@ function bootstrapGsdProject(basePath: string): void {
   mkdirSync(join(root, "milestones"), { recursive: true });
   mkdirSync(join(root, "runtime"), { recursive: true });
 
-  const commitDocs = loadEffectiveGSDPreferences()?.preferences?.git?.commit_docs;
-  ensureGitignore(basePath, { commitDocs });
+  const gitPrefs = loadEffectiveGSDPreferences()?.preferences?.git;
+  ensureGitignore(basePath, { commitDocs: gitPrefs?.commit_docs, manageGitignore: gitPrefs?.manage_gitignore });
   ensurePreferences(basePath);
   untrackRuntimeFiles(basePath);
 }
@@ -1074,8 +1074,8 @@ export async function showSmartEntry(
   }
 
   // ── Ensure .gitignore has baseline patterns ──────────────────────────
-  const commitDocs = loadEffectiveGSDPreferences()?.preferences?.git?.commit_docs;
-  ensureGitignore(basePath, { commitDocs });
+  const gitPrefs = loadEffectiveGSDPreferences()?.preferences?.git;
+  ensureGitignore(basePath, { commitDocs: gitPrefs?.commit_docs, manageGitignore: gitPrefs?.manage_gitignore });
   untrackRuntimeFiles(basePath);
 
   // ── No GSD project OR no milestone → Create first/next milestone ────

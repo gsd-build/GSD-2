@@ -1317,6 +1317,10 @@ export function validatePreferences(preferences: GSDPreferences): {
       if (typeof g.commit_docs === "boolean") git.commit_docs = g.commit_docs;
       else errors.push("git.commit_docs must be a boolean");
     }
+    if (g.manage_gitignore !== undefined) {
+      if (typeof g.manage_gitignore === "boolean") git.manage_gitignore = g.manage_gitignore;
+      else errors.push("git.manage_gitignore must be a boolean");
+    }
     if (g.worktree_post_create !== undefined) {
       if (typeof g.worktree_post_create === "string" && g.worktree_post_create.trim()) {
         git.worktree_post_create = g.worktree_post_create.trim();

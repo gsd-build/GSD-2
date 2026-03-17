@@ -960,7 +960,8 @@ async function checkRuntimeHealth(
           });
 
           if (shouldFix("gitignore_missing_patterns")) {
-            ensureGitignore(basePath);
+            const docGitPrefs = loadEffectiveGSDPreferences()?.preferences?.git;
+            ensureGitignore(basePath, { commitDocs: docGitPrefs?.commit_docs, manageGitignore: docGitPrefs?.manage_gitignore });
             fixesApplied.push("added missing GSD runtime patterns to .gitignore");
           }
         }
