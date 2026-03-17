@@ -42,6 +42,7 @@ export interface SettingsConfig {
 	showHardwareCursor: boolean;
 	editorPaddingX: number;
 	autocompleteMaxVisible: number;
+	respectGitignoreInPicker: boolean;
 	quietStartup: boolean;
 	clearOnShrink: boolean;
 }
@@ -65,6 +66,7 @@ export interface SettingsCallbacks {
 	onShowHardwareCursorChange: (enabled: boolean) => void;
 	onEditorPaddingXChange: (padding: number) => void;
 	onAutocompleteMaxVisibleChange: (maxVisible: number) => void;
+	onRespectGitignoreInPickerChange: (enabled: boolean) => void;
 	onQuietStartupChange: (enabled: boolean) => void;
 	onClearOnShrinkChange: (enabled: boolean) => void;
 	onCancel: () => void;
@@ -343,6 +345,16 @@ export class SettingsSelectorComponent extends Container {
 			values: ["true", "false"],
 		});
 
+		// Respect .gitignore in file picker toggle (insert after clear-on-shrink)
+		const clearOnShrinkIndex = items.findIndex((item) => item.id === "clear-on-shrink");
+		items.splice(clearOnShrinkIndex + 1, 0, {
+			id: "respect-gitignore-in-picker",
+			label: "Respect .gitignore in file picker",
+			description: "When false, @ file picker shows gitignored files too",
+			currentValue: config.respectGitignoreInPicker ? "true" : "false",
+			values: ["true", "false"],
+		});
+
 		// Add borders
 		this.addChild(new DynamicBorder());
 
@@ -404,6 +416,9 @@ export class SettingsSelectorComponent extends Container {
 						break;
 					case "clear-on-shrink":
 						callbacks.onClearOnShrinkChange(newValue === "true");
+						break;
+					case "respect-gitignore-in-picker":
+						callbacks.onRespectGitignoreInPickerChange(newValue === "true");
 						break;
 				}
 			},

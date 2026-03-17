@@ -130,13 +130,20 @@ export interface AutocompleteProvider {
 export class CombinedAutocompleteProvider implements AutocompleteProvider {
 	private commands: (SlashCommand | AutocompleteItem)[];
 	private basePath: string;
+	private respectGitignore: boolean;
 
 	constructor(
 		commands: (SlashCommand | AutocompleteItem)[] = [],
 		basePath: string = process.cwd(),
+		options?: { respectGitignore?: boolean },
 	) {
 		this.commands = commands;
 		this.basePath = basePath;
+		this.respectGitignore = options?.respectGitignore ?? true;
+	}
+
+	setRespectGitignore(value: boolean): void {
+		this.respectGitignore = value;
 	}
 
 	getSuggestions(
@@ -562,7 +569,7 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 				query: searchQuery,
 				path: searchPath,
 				hidden: true,
-				gitignore: true,
+				gitignore: this.respectGitignore,
 				maxResults: FUZZY_FILE_MAX_RESULTS,
 			});
 
