@@ -274,6 +274,68 @@ test("removePersistedKey is safe when file doesn't exist", () => {
   }
 });
 
+// ─── Dual-load across worktree boundary (#769) ───────────────────────────
+
+test("loadPersistedKeys unions keys from project root and worktree", () => {
+  // Simulate two separate .gsd directories (project root + worktree)
+  // each with a different set of completed keys. Loading from both
+  // into the same Set should produce the union.
+  const projectRoot = makeTmpBase();
+  const worktree = makeTmpBase();
+  try {
+    // Persist different keys in each location
+    persistCompletedKey(projectRoot, "execute-task/M001/S01/T01");
+    persistCompletedKey(projectRoot, "plan-slice/M001/S02");
+
+    persistCompletedKey(worktree, "execute-task/M001/S01/T02");
+    persistCompletedKey(worktree, "plan-slice/M001/S02"); // overlap
+
+    // Load from both into the same set (mimicking startup dual-load)
+    const keys = new Set<string>();
+    loadPersistedKeys(projectRoot, keys);
+    loadPersistedKeys(worktree, keys);
+
+    assert.ok(keys.has("execute-task/M001/S01/T01"), "key from project root");
+    assert.ok(keys.has("plan-slice/M001/S02"), "shared key");
+    assert.ok(keys.has("execute-task/M001/S01/T02"), "key from worktree");
+    assert.equal(keys.size, 3, "union should deduplicate overlapping keys");
+  } finally {
+    cleanup(projectRoot);
+    cleanup(worktree);
+  }
+});
+
+test("completed-units.json set-union merge produces correct result", () => {
+  // Verify that a manual set-union merge (as done in syncStateToProjectRoot)
+  // correctly merges two JSON arrays of keys.
+  const projectRoot = makeTmpBase();
+  const worktree = makeTmpBase();
+  try {
+    // Write keys to both locations
+    const prKeysFile = join(projectRoot, ".gsd", "completed-units.json");
+    const wtKeysFile = join(worktree, ".gsd", "completed-units.json");
+
+    writeFileSync(prKeysFile, JSON.stringify(["a", "b"]));
+    writeFileSync(wtKeysFile, JSON.stringify(["b", "c", "d"]));
+
+    // Perform the same merge logic used in syncStateToProjectRoot
+    const srcKeys: string[] = JSON.parse(readFileSync(wtKeysFile, "utf8"));
+    let dstKeys: string[] = [];
+    if (existsSync(prKeysFile)) {
+      dstKeys = JSON.parse(readFileSync(prKeysFile, "utf8"));
+    }
+    const merged = [...new Set([...dstKeys, ...srcKeys])];
+    writeFileSync(prKeysFile, JSON.stringify(merged, null, 2));
+
+    // Verify the merged result
+    const result: string[] = JSON.parse(readFileSync(prKeysFile, "utf8"));
+    assert.deepStrictEqual(result.sort(), ["a", "b", "c", "d"]);
+  } finally {
+    cleanup(projectRoot);
+    cleanup(worktree);
+  }
+});
+
 // ─── verifyExpectedArtifact: parse cache collision regression ─────────────
 
 test("verifyExpectedArtifact detects roadmap [x] change despite parse cache", () => {
