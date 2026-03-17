@@ -1,15 +1,16 @@
 /**
- * Layout component tests for the sidebar + tab navigation rewrite.
+ * Layout component tests for the sidebar + single-column navigation.
  *
- * Tests verify the Sidebar, TabLayout, and AppShell components
- * that replaced the old 5-panel PanelShell layout.
+ * Tests verify Sidebar and AppShell components.
+ * TabLayout was removed in Phase 20.1-02; tests updated accordingly.
  *
  * Pattern: Direct function call on components + JSON.stringify inspection,
  * matching the approach used in panel-states.test.tsx.
  */
 import { describe, expect, it } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { Sidebar } from "../src/components/layout/Sidebar";
-import { TabLayout } from "../src/components/layout/TabLayout";
 import { AppShell } from "../src/components/layout/AppShell";
 import { LAYOUT_DEFAULTS } from "../src/styles/design-tokens";
 
@@ -24,17 +25,6 @@ describe("Sidebar", () => {
   });
 });
 
-describe("TabLayout", () => {
-  it("exports as a function component", () => {
-    expect(typeof TabLayout).toBe("function");
-  });
-
-  it("module can be imported without error", async () => {
-    const mod = await import("../src/components/layout/TabLayout");
-    expect(typeof mod.TabLayout).toBe("function");
-  });
-});
-
 describe("AppShell", () => {
   it("exports as a function component", () => {
     expect(typeof AppShell).toBe("function");
@@ -44,13 +34,46 @@ describe("AppShell", () => {
     const mod = await import("../src/components/layout/AppShell");
     expect(typeof mod.AppShell).toBe("function");
   });
+});
 
-  it("module imports Sidebar and TabLayout", async () => {
-    // Verify AppShell composes both layout components
-    const sidebarMod = await import("../src/components/layout/Sidebar");
-    const tabMod = await import("../src/components/layout/TabLayout");
-    expect(typeof sidebarMod.Sidebar).toBe("function");
-    expect(typeof tabMod.TabLayout).toBe("function");
+describe("SingleColumnView project name header (source-text)", () => {
+  it("accepts projectName prop in interface", () => {
+    const src = readFileSync(join(import.meta.dir, "../src/components/layout/SingleColumnView.tsx"), "utf8");
+    expect(src).toContain("projectName?: string");
+  });
+
+  it("renders FolderOpen icon in header bar", () => {
+    const src = readFileSync(join(import.meta.dir, "../src/components/layout/SingleColumnView.tsx"), "utf8");
+    expect(src).toContain("FolderOpen");
+  });
+
+  it("header bar uses font-mono text styling", () => {
+    const src = readFileSync(join(import.meta.dir, "../src/components/layout/SingleColumnView.tsx"), "utf8");
+    expect(src).toContain("text-xs font-mono text-slate-400");
+  });
+});
+
+describe("AppShell projectName derivation (source-text)", () => {
+  it("derives projectName as a const before return", () => {
+    const src = readFileSync(join(import.meta.dir, "../src/components/layout/AppShell.tsx"), "utf8");
+    expect(src).toContain("const projectName =");
+  });
+
+  it("passes projectName to SingleColumnView", () => {
+    const src = readFileSync(join(import.meta.dir, "../src/components/layout/AppShell.tsx"), "utf8");
+    expect(src).toContain("projectName={projectName}");
+  });
+});
+
+describe("globals.css scrollbar-thin (source-text)", () => {
+  it("contains Firefox scrollbar-width: thin inside .scrollbar-thin", () => {
+    const src = readFileSync(join(import.meta.dir, "../src/styles/globals.css"), "utf8");
+    expect(src).toContain("scrollbar-width: thin");
+  });
+
+  it("contains scrollbar-color property", () => {
+    const src = readFileSync(join(import.meta.dir, "../src/styles/globals.css"), "utf8");
+    expect(src).toContain("scrollbar-color");
   });
 });
 
