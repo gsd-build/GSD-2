@@ -292,6 +292,8 @@ All milestones are either complete or blocked by dependencies. Check `/gsd queue
 
 ### Worker crashed — how to recover
 
+Workers now persist their state to disk automatically. If a worker process dies, the coordinator detects the dead PID via heartbeat expiry and marks the worker as crashed. On restart, the worker picks up from disk state — crash recovery, worktree re-entry, and completed-unit tracking carry over from the crashed session.
+
 1. Run `/gsd doctor --fix` to clean up stale sessions
 2. Run `/gsd parallel status` to see current state
 3. Re-run `/gsd parallel start` to spawn new workers for remaining milestones
