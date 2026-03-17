@@ -39,7 +39,7 @@ export function registerExtractTools(pi: ExtensionAPI, deps: ToolDeps): void {
 				const { page: p } = await deps.ensureBrowser();
 
 				// Wait for network idle before extraction
-				await p.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {});
+				await p.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => { /* networkidle timeout — non-fatal, page may still be usable */ });
 
 				const schema = params.schema as any;
 				const scopeSelector = params.selector;

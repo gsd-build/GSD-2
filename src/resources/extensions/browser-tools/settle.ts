@@ -126,7 +126,7 @@ export async function settleAfterActionAdaptive(
 	// Install mutation counter + read initial state in one evaluate sequence.
 	// ensureMutationCounter must run first (installs the observer), then we
 	// read the baseline via the combined reader.
-	await ensureMutationCounter(p).catch(() => {});
+	await ensureMutationCounter(p).catch((e) => { if (process.env.GSD_DEBUG) console.error("[browser-tools] ensureMutationCounter failed:", e.message); });
 	const initial = await readSettleState(p, checkFocus);
 	let previousMutationCount = initial.mutationCount;
 	let previousFocus = initial.focusDescriptor;

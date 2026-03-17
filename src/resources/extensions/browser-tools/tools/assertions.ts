@@ -175,7 +175,7 @@ export function registerAssertionTools(pi: ExtensionAPI, deps: ToolDeps): void {
 						switch (step.action) {
 							case "navigate": {
 								await p.goto(step.url, { waitUntil: "domcontentloaded", timeout: 30000 });
-								await p.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {});
+								await p.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => { /* networkidle timeout — non-fatal, page may still be usable */ });
 								return { ok: true, action: step.action, url: p.url() };
 							}
 							case "click": {
