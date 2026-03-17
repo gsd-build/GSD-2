@@ -450,7 +450,7 @@ export class GSDDashboardOverlay {
         const hadPressure = ledgerEntry?.continueHereFired === true;
         const hadTruncation = (ledgerEntry?.truncationSections ?? 0) > 0;
         const unitGlyph = hadPressure
-          ? th.fg(STATUS_COLOR.warning, STATUS_GLYPH.statusWarning)
+          ? th.fg(STATUS_COLOR.warning, STATUS_GLYPH.warning)
           : th.fg(STATUS_COLOR.done, STATUS_GLYPH.done);
         const left = `  ${unitGlyph} ${th.fg("muted", unitLabel(u.type))} ${th.fg("muted", u.id)}`;
 
