@@ -442,7 +442,7 @@ export async function stopAuto(ctx?: ExtensionContext, pi?: ExtensionAPI, reason
   if (s.currentMilestoneId && isInAutoWorktree(s.basePath)) {
     try {
       // Auto-commit any dirty state before leaving so work isn't lost
-      try { autoCommitCurrentBranch(s.basePath, "stop", s.currentMilestoneId); } catch { /* non-fatal */ }
+      try { autoCommitCurrentBranch(s.basePath, "stop", s.currentMilestoneId); } catch (e) { debugLog("stop-auto-commit-failed", { error: e instanceof Error ? e.message : String(e) }); }
       teardownAutoWorktree(s.originalBasePath, s.currentMilestoneId, { preserveBranch: true });
       s.basePath = s.originalBasePath;
       s.gitService = new GitServiceImpl(s.basePath, loadEffectiveGSDPreferences()?.preferences?.git ?? {});
@@ -460,7 +460,7 @@ export async function stopAuto(ctx?: ExtensionContext, pi?: ExtensionAPI, reason
     try {
       const { closeDatabase } = await import("./gsd-db.js");
       closeDatabase();
-    } catch { /* non-fatal */ }
+    } catch (e) { debugLog("db-close-failed", { error: e instanceof Error ? e.message : String(e) }); }
   }
 
   // Always restore cwd to project root on stop (#608).
@@ -485,7 +485,7 @@ export async function stopAuto(ctx?: ExtensionContext, pi?: ExtensionAPI, reason
 
   // Sync disk state so next resume starts from accurate state
   if (s.basePath) {
-    try { await rebuildState(s.basePath); } catch { /* non-fatal */ }
+    try { await rebuildState(s.basePath); } catch (e) { debugLog("stop-rebuild-state-failed", { error: e instanceof Error ? e.message : String(e) }); }
   }
 
   // Write debug summary before resetting state
@@ -643,13 +643,13 @@ export async function startAuto(
     // Restore hook state from disk in case session was interrupted
     restoreHookState(s.basePath);
     // Rebuild disk state before resuming — user interaction during pause may have changed files
-    try { await rebuildState(s.basePath); } catch { /* non-fatal */ }
+    try { await rebuildState(s.basePath); } catch (e) { debugLog("resume-rebuild-state-failed", { error: e instanceof Error ? e.message : String(e) }); }
     try {
       const report = await runGSDDoctor(s.basePath, { fix: true });
       if (report.fixesApplied.length > 0) {
         ctx.ui.notify(`Resume: applied ${report.fixesApplied.length} fix(es) to state.`, "info");
       }
-    } catch { /* non-fatal */ }
+    } catch (e) { debugLog("resume-doctor-failed", { error: e instanceof Error ? e.message : String(e) }); }
     // Self-heal: clear stale runtime records where artifacts already exist
     await selfHealRuntimeRecords(s.basePath, ctx, s.completedKeySet);
     invalidateAllCaches();
@@ -794,11 +794,11 @@ export async function startAuto(
         if (!midMatch) continue;
         const mid = midMatch[1];
         if (resolveMilestoneFile(base, mid, "SUMMARY")) {
-          try { unlinkSync(join(runtimeUnitsDir, file)); } catch { /* non-fatal */ }
+          try { unlinkSync(join(runtimeUnitsDir, file)); } catch (e) { debugLog("stale-unit-cleanup-failed", { file, error: e instanceof Error ? e.message : String(e) }); }
         }
       }
     }
-  } catch { /* non-fatal — don't block startup */ }
+  } catch (e) { debugLog("stale-unit-dir-cleanup-failed", { error: e instanceof Error ? e.message : String(e) }); }
 
   let state = await deriveState(base);
 
@@ -1106,7 +1106,7 @@ export async function startAuto(
         ctx.ui.notify("Removed stale .git/index.lock from prior crash.", "info");
       }
     }
-  } catch { /* non-fatal */ }
+  } catch (e) { debugLog("git-lock-cleanup-failed", { error: e instanceof Error ? e.message : String(e) }); }
 
   // Pre-flight: validate milestone queue for multi-milestone runs.
   // Warn about issues that will cause auto-mode to pause or block.
@@ -2144,7 +2144,7 @@ async function dispatchNextUnit(
         renameSync(tmpFile, file);
       }
       s.completedKeySet.clear();
-    } catch { /* non-fatal */ }
+    } catch (e) { debugLog("completed-keys-reset-failed", { error: e instanceof Error ? e.message : String(e) }); }
 
     // ── Worktree lifecycle on milestone transition (#616) ──────────────
     // When transitioning from M_old to M_new inside a worktree, we must:
@@ -2296,7 +2296,7 @@ async function dispatchNextUnit(
         renameSync(tmpFile, file);
       }
       s.completedKeySet.clear();
-    } catch { /* non-fatal */ }
+    } catch (e) { debugLog("completed-keys-reset-failed", { error: e instanceof Error ? e.message : String(e) }); }
     // ── Milestone merge: squash-merge milestone branch to main before stopping ──
     if (s.currentMilestoneId && isInAutoWorktree(s.basePath) && s.originalBasePath) {
       try {
