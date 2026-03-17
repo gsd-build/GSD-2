@@ -16,7 +16,7 @@ import type {
   ExtensionCommandContext,
 } from "@gsd/pi-coding-agent";
 
-import { deriveState, invalidateStateCache } from "./state.js";
+import { deriveState } from "./state.js";
 import type { BudgetEnforcementMode, GSDState } from "./types.js";
 import { loadFile, parseRoadmap, getManifestStatus, resolveAllOverrides } from "./files.js";
 import { loadPrompt } from "./prompt-loader.js";
@@ -1465,7 +1465,7 @@ export async function handleAgentEnd(
             persistCompletedKey(basePath, completionKey);
             completedKeySet.add(completionKey);
           }
-          invalidateStateCache();
+          invalidateAllCaches();
         }
       } catch {
         // Non-fatal — worst case we fall through to normal dispatch which has its own checks
@@ -2421,7 +2421,7 @@ async function dispatchNextUnit(
         unitConsecutiveSkips.delete(idempotencyKey);
         completedKeySet.delete(idempotencyKey);
         removePersistedKey(basePath, idempotencyKey);
-        invalidateStateCache();
+        invalidateAllCaches();
         ctx.ui.notify(
           `Skip loop detected: ${unitType} ${unitId} skipped ${skipCount} times without advancing. Evicting completion record and forcing reconciliation.`,
           "warning",
@@ -2460,7 +2460,7 @@ async function dispatchNextUnit(
   if (verifyExpectedArtifact(unitType, unitId, basePath)) {
     persistCompletedKey(basePath, idempotencyKey);
     completedKeySet.add(idempotencyKey);
-    invalidateStateCache();
+    invalidateAllCaches();
     // Same consecutive-skip guard as the idempotency path above.
     const skipCount2 = (unitConsecutiveSkips.get(idempotencyKey) ?? 0) + 1;
     unitConsecutiveSkips.set(idempotencyKey, skipCount2);
@@ -2468,7 +2468,7 @@ async function dispatchNextUnit(
       unitConsecutiveSkips.delete(idempotencyKey);
       completedKeySet.delete(idempotencyKey);
       removePersistedKey(basePath, idempotencyKey);
-      invalidateStateCache();
+      invalidateAllCaches();
       ctx.ui.notify(
         `Skip loop detected: ${unitType} ${unitId} skipped ${skipCount2} times without advancing. Evicting completion record and forcing reconciliation.`,
         "warning",
@@ -2554,7 +2554,7 @@ async function dispatchNextUnit(
             persistCompletedKey(basePath, reconciledKey);
             completedKeySet.add(reconciledKey);
             unitDispatchCount.delete(dispatchKey);
-            invalidateStateCache();
+            invalidateAllCaches();
             await new Promise(r => setImmediate(r));
             await dispatchNextUnit(ctx, pi);
             return;
@@ -2581,7 +2581,7 @@ async function dispatchNextUnit(
       persistCompletedKey(basePath, dispatchKey);
       completedKeySet.add(dispatchKey);
       unitDispatchCount.delete(dispatchKey);
-      invalidateStateCache();
+      invalidateAllCaches();
       await new Promise(r => setImmediate(r));
       await dispatchNextUnit(ctx, pi);
       return;
@@ -2601,7 +2601,7 @@ async function dispatchNextUnit(
             persistCompletedKey(basePath, dispatchKey);
             completedKeySet.add(dispatchKey);
             unitDispatchCount.delete(dispatchKey);
-            invalidateStateCache();
+            invalidateAllCaches();
             await new Promise(r => setImmediate(r));
             await dispatchNextUnit(ctx, pi);
             return;
@@ -2642,7 +2642,7 @@ async function dispatchNextUnit(
             persistCompletedKey(basePath, repairedKey);
             completedKeySet.add(repairedKey);
             unitDispatchCount.delete(dispatchKey);
-            invalidateStateCache();
+            invalidateAllCaches();
             await new Promise(r => setImmediate(r));
             await dispatchNextUnit(ctx, pi);
             return;
