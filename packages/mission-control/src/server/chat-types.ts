@@ -183,4 +183,6 @@ export interface BrowserStateUpdate {
   url: string;
   title?: string;
   toolName?: string;   // which browser_* tool produced this
+  viewportWidth?: number;
+  viewportHeight?: number;
 }

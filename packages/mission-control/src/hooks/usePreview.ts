@@ -29,7 +29,8 @@ export interface UsePreviewReturn {
   activeBackendPort: number | null;
   viewport: Viewport;
   scanning: boolean;
-  browserScreenshot: { screenshot: string; url: string; title: string } | null;
+  browserScreenshot: { screenshot: string; url: string; title: string; viewportWidth?: number } | null;
+  browserViewportWidth: number | null;
   setOpen: (open: boolean) => void;
   setActiveFrontendPort: (port: number | null) => void;
   setActiveBackendPort: (port: number | null) => void;
@@ -123,7 +124,7 @@ export function usePreview(): UsePreviewReturn {
   const [activeBackendPort, setActiveBackendPort] = useState<number | null>(null);
   const [viewport, setViewport] = useState<Viewport>("desktop");
   const [scanning, setScanning] = useState(false);
-  const [browserScreenshot, setBrowserScreenshot] = useState<{ screenshot: string; url: string; title: string } | null>(null);
+  const [browserScreenshot, setBrowserScreenshot] = useState<{ screenshot: string; url: string; title: string; viewportWidth?: number } | null>(null);
 
   const clearBrowserScreenshot = () => setBrowserScreenshot(null);
 
@@ -188,6 +189,7 @@ export function usePreview(): UsePreviewReturn {
               screenshot: data.screenshot,
               url: data.url ?? "",
               title: data.title ?? "",
+              viewportWidth: data.viewportWidth,
             });
             setOpen(true);
           }
@@ -228,6 +230,7 @@ export function usePreview(): UsePreviewReturn {
     viewport,
     scanning,
     browserScreenshot,
+    browserViewportWidth: browserScreenshot?.viewportWidth ?? null,
     setOpen,
     setActiveFrontendPort,
     setActiveBackendPort,

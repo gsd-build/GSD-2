@@ -47,6 +47,8 @@ const PLANNING_DIR = ".planning";
 export function AppShell() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
+  const [chatWidth, setChatWidth] = useState(380);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // Restore last project path on mount so the user doesn't have to reselect after
   // hot reload or server restart
@@ -165,7 +167,7 @@ export function AppShell() {
   );
 
   // Live preview state — Cmd+P keyboard binding handled inside usePreview
-  const { open: previewOpen, viewport, setOpen: setPreviewOpen, setViewport } = usePreview();
+  const { open: previewOpen, viewport, setOpen: setPreviewOpen, setViewport, browserViewportWidth } = usePreview();
 
   // Session ref — tracks last read session data for partial viewport writes
   const sessionRef = useRef<MissionControlSession | null>(null);
@@ -275,7 +277,7 @@ export function AppShell() {
         <FolderPickerModal
           open={folderPickerOpen}
           onClose={() => setFolderPickerOpen(false)}
-          onSelect={(path) => { try { localStorage.setItem("gsd-mc-last-path", path); } catch {} dismiss(); }}
+          onSelect={(path) => { try { localStorage.setItem("gsd-mc-last-path", path); } catch {} setActiveProjectPath(path); dismiss(); }}
         />
       </>
     );
@@ -322,11 +324,40 @@ export function AppShell() {
         <FolderPickerModal
           open={folderPickerOpen}
           onClose={() => setFolderPickerOpen(false)}
-          onSelect={(path) => { try { localStorage.setItem("gsd-mc-last-path", path); } catch {} dismiss(); }}
+          onSelect={(path) => { try { localStorage.setItem("gsd-mc-last-path", path); } catch {} setActiveProjectPath(path); dismiss(); }}
         />
       </>
     );
   }
+
+  // Drag-to-resize: mouse handler for the panel divider
+  const handleResizeMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = chatWidth;
+    const MIN_CHAT = 280;
+    const MAX_CHAT = 600;
+    const onMove = (ev: MouseEvent) => {
+      const delta = ev.clientX - startX;
+      setChatWidth(Math.min(MAX_CHAT, Math.max(MIN_CHAT, startWidth + delta)));
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  };
+
+  // Viewport-driven width: when browser agent reports a viewport size, resize chat column accordingly
+  useEffect(() => {
+    if (!browserViewportWidth || !containerRef.current) return;
+    const MIN_CHAT = 280;
+    const MAX_CHAT = 600;
+    const available = containerRef.current.clientWidth;
+    const targetChat = available - browserViewportWidth - 6; // 6px for drag handle
+    setChatWidth(Math.min(MAX_CHAT, Math.max(MIN_CHAT, targetChat)));
+  }, [browserViewportWidth]);
 
   // Phase 20.1: derive projectName once, share with Sidebar and SingleColumnView
   const projectName = activeProjectPath
@@ -401,8 +432,11 @@ export function AppShell() {
         projectName={projectName}
         onOpenCodeExplorer={openExplorer}
       />
-      <div className="flex flex-1 min-w-0 overflow-hidden">
-        <div className={previewOpen ? "flex flex-col w-[380px] min-w-[320px] shrink-0" : "flex flex-col flex-1 min-w-0"}>
+      <div className="flex flex-1 min-w-0 overflow-hidden" ref={containerRef}>
+        <div
+          className={previewOpen ? "flex flex-col shrink-0" : "flex flex-col flex-1 min-w-0"}
+          style={previewOpen ? { width: chatWidth } : undefined}
+        >
           <SingleColumnView
             activeView={activeView}
             planningState={state}
@@ -455,13 +489,21 @@ export function AppShell() {
           )}
         </div>
         {previewOpen && (
-          <div className="flex-1 min-w-0 h-full border-l border-navy-600">
-            <PreviewPanelWithState
-              initialViewport={viewport}
-              onClose={() => setPreviewOpen(false)}
-              onViewportChange={setViewport}
+          <>
+            {/* Drag handle */}
+            <div
+              className="w-1.5 flex-shrink-0 cursor-col-resize select-none bg-navy-600 hover:bg-cyan-accent/40 active:bg-cyan-accent/60 transition-colors"
+              onMouseDown={handleResizeMouseDown}
             />
-          </div>
+            {/* Preview panel */}
+            <div className="flex-1 min-w-0 h-full">
+              <PreviewPanelWithState
+                initialViewport={viewport}
+                onClose={() => setPreviewOpen(false)}
+                onViewportChange={setViewport}
+              />
+            </div>
+          </>
         )}
       </div>
       <PermissionModal
@@ -471,7 +513,7 @@ export function AppShell() {
       <FolderPickerModal
         open={folderPickerOpen}
         onClose={() => setFolderPickerOpen(false)}
-        onSelect={() => dismiss()}
+        onSelect={(path) => { try { localStorage.setItem("gsd-mc-last-path", path); } catch {} setActiveProjectPath(path); dismiss(); }}
       />
       {/* Code Explorer modal — full-screen file browser (POLISH-09) */}
       <CodeExplorer

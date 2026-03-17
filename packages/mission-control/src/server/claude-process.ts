@@ -255,12 +255,19 @@ export class ClaudeProcessManager {
               const textItem = contentItems.find((item) => item.type === "text" && item.text);
               const urlMatch = textItem?.text?.match(/(?:Navigated to|Current URL|URL):\s*(\S+)/);
               const titleMatch = textItem?.text?.match(/Title:\s*(.+)/);
+              const viewportMatch = textItem?.text?.match(
+                /(?:Viewport|Window size|Resized to|Size):\s*(\d+)\s*[x×]\s*(\d+)/i
+              );
+              const viewportWidth  = viewportMatch ? parseInt(viewportMatch[1], 10) : undefined;
+              const viewportHeight = viewportMatch ? parseInt(viewportMatch[2], 10) : undefined;
               emit({
                 type: "browser_state_update",
                 screenshot: imageItem.data,
                 url: urlMatch?.[1] ?? "",
                 title: titleMatch?.[1]?.trim() ?? "",
                 toolName: currentToolName,
+                viewportWidth,
+                viewportHeight,
               } as unknown as StreamEvent);
             }
           }
