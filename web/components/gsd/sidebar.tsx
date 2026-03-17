@@ -313,7 +313,7 @@ function ExitDialog({
 
 /* ─── Milestone Explorer (right sidebar) ─── */
 
-export function MilestoneExplorer({ isConnecting = false }: { isConnecting?: boolean }) {
+export function MilestoneExplorer({ isConnecting = false, width }: { isConnecting?: boolean; width?: number }) {
   const workspace = useGSDWorkspaceState()
   const { sendCommand, openCommandSurface, setCommandSurfaceSection } = useGSDWorkspaceActions()
   const [expandedMilestones, setExpandedMilestones] = useState<string[]>([])
@@ -395,7 +395,7 @@ export function MilestoneExplorer({ isConnecting = false }: { isConnecting?: boo
   }
 
   return (
-    <div className="flex w-64 flex-col border-l border-border bg-sidebar">
+    <div className="flex flex-col bg-sidebar" style={{ width: width ?? 256, flexShrink: 0 }}>
       {isConnecting && (
         <div className="flex-1 overflow-y-auto px-1.5 py-1">
           <div className="px-2 py-1.5">

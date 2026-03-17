@@ -76,6 +76,10 @@ function WorkspaceChrome() {
   const didDragTerminal = useRef(false)
   const dragStartY = useRef(0)
   const dragStartHeight = useRef(0)
+  const [sidebarWidth, setSidebarWidth] = useState(256)
+  const isDraggingSidebar = useRef(false)
+  const dragStartX = useRef(0)
+  const dragStartWidth = useRef(0)
   const [viewRestored, setViewRestored] = useState(false)
   const workspace = useGSDWorkspaceState()
   const { refreshBoot } = useGSDWorkspaceActions()
@@ -121,7 +125,7 @@ function WorkspaceChrome() {
 
   useEffect(() => {
     if (typeof document === "undefined") return
-    document.title = titleOverride ? `${titleOverride} · GSD 2` : `${projectLabel} · GSD 2`
+    document.title = titleOverride ? `${titleOverride} · GSD` : `${projectLabel} · GSD`
   }, [projectLabel, titleOverride])
 
   const handleViewChange = useCallback((view: string) => {
@@ -148,17 +152,24 @@ function WorkspaceChrome() {
     return () => window.removeEventListener("gsd:navigate-view", handler as EventListener)
   }, [handleViewChange])
 
-  // Terminal panel drag-to-resize
+  // Terminal + sidebar panel drag-to-resize
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
-      if (!isDraggingTerminal.current) return
-      didDragTerminal.current = true
-      const delta = dragStartY.current - e.clientY
-      const newHeight = Math.max(150, Math.min(600, dragStartHeight.current + delta))
-      setTerminalHeight(newHeight)
+      if (isDraggingTerminal.current) {
+        didDragTerminal.current = true
+        const delta = dragStartY.current - e.clientY
+        const newHeight = Math.max(150, Math.min(600, dragStartHeight.current + delta))
+        setTerminalHeight(newHeight)
+      }
+      if (isDraggingSidebar.current) {
+        const delta = dragStartX.current - e.clientX
+        const newWidth = Math.max(180, Math.min(480, dragStartWidth.current + delta))
+        setSidebarWidth(newWidth)
+      }
     }
     const handleMouseUp = () => {
       isDraggingTerminal.current = false
+      isDraggingSidebar.current = false
       document.body.style.cursor = ""
       document.body.style.userSelect = ""
     }
@@ -179,6 +190,17 @@ function WorkspaceChrome() {
       document.body.style.userSelect = "none"
     },
     [terminalHeight],
+  )
+
+  const handleSidebarDragStart = useCallback(
+    (e: React.MouseEvent) => {
+      isDraggingSidebar.current = true
+      dragStartX.current = e.clientX
+      dragStartWidth.current = sidebarWidth
+      document.body.style.cursor = "col-resize"
+      document.body.style.userSelect = "none"
+    },
+    [sidebarWidth],
   )
 
   const retryDisabled = !!workspace.commandInFlight || workspace.onboardingRequestState !== "idle"
@@ -343,7 +365,14 @@ function WorkspaceChrome() {
           )}
         </div>
 
-        <MilestoneExplorer isConnecting={isConnecting} />
+        {/* Resizable milestone sidebar */}
+        <div
+          className="flex h-full cursor-col-resize items-center justify-center w-1 bg-border hover:bg-muted-foreground/30 transition-colors"
+          onMouseDown={handleSidebarDragStart}
+        >
+          <div className="h-8 w-1 rounded-full" />
+        </div>
+        <MilestoneExplorer isConnecting={isConnecting} width={sidebarWidth} />
       </div>
 
       <StatusBar />
