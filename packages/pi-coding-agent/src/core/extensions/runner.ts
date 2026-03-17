@@ -211,11 +211,21 @@ export class ExtensionRunner {
 	private getContextUsageFn: () => ContextUsage | undefined = () => undefined;
 	private compactFn: (options?: CompactOptions) => void = () => {};
 	private getSystemPromptFn: () => string = () => "";
-	private newSessionHandler: NewSessionHandler = async () => ({ cancelled: false });
-	private forkHandler: ForkHandler = async () => ({ cancelled: false });
-	private navigateTreeHandler: NavigateTreeHandler = async () => ({ cancelled: false });
-	private switchSessionHandler: SwitchSessionHandler = async () => ({ cancelled: false });
-	private reloadHandler: ReloadHandler = async () => {};
+	private newSessionHandler: NewSessionHandler = async () => {
+		throw new Error("Command context not yet bound: newSession is unavailable during early lifecycle");
+	};
+	private forkHandler: ForkHandler = async () => {
+		throw new Error("Command context not yet bound: fork is unavailable during early lifecycle");
+	};
+	private navigateTreeHandler: NavigateTreeHandler = async () => {
+		throw new Error("Command context not yet bound: navigateTree is unavailable during early lifecycle");
+	};
+	private switchSessionHandler: SwitchSessionHandler = async () => {
+		throw new Error("Command context not yet bound: switchSession is unavailable during early lifecycle");
+	};
+	private reloadHandler: ReloadHandler = async () => {
+		throw new Error("Command context not yet bound: reload is unavailable during early lifecycle");
+	};
 	private shutdownHandler: ShutdownHandler = () => {};
 	private shortcutDiagnostics: ResourceDiagnostic[] = [];
 	private commandDiagnostics: ResourceDiagnostic[] = [];
@@ -637,13 +647,24 @@ export class ExtensionRunner {
 			if (!handlers || handlers.length === 0) continue;
 
 			for (const handler of handlers) {
-				const handlerResult = await handler(event, ctx);
+				try {
+					const handlerResult = await handler(event, ctx);
 
-				if (handlerResult) {
-					result = handlerResult as ToolCallEventResult;
-					if (result.block) {
-						return result;
+					if (handlerResult) {
+						result = handlerResult as ToolCallEventResult;
+						if (result.block) {
+							return result;
+						}
 					}
+				} catch (err) {
+					const message = err instanceof Error ? err.message : String(err);
+					const stack = err instanceof Error ? err.stack : undefined;
+					this.emitError({
+						extensionPath: ext.path,
+						event: "tool_call",
+						error: message,
+						stack,
+					});
 				}
 			}
 		}

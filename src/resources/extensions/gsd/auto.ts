@@ -103,7 +103,7 @@ import {
 import { computeBudgets, resolveExecutorContextWindow } from "./context-budget.js";
 import { join } from "node:path";
 import { sep as pathSep } from "node:path";
-import { readdirSync, readFileSync, existsSync, mkdirSync, writeFileSync, unlinkSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, existsSync, mkdirSync, writeFileSync, renameSync, unlinkSync, statSync } from "node:fs";
 import { nativeIsRepo, nativeInit, nativeAddPaths, nativeCommit } from "./native-git-bridge.js";
 import {
   autoCommitCurrentBranch,
@@ -2138,7 +2138,11 @@ async function dispatchNextUnit(
     // Clear completed-units.json for the finished milestone
     try {
       const file = completedKeysPath(s.basePath);
-      if (existsSync(file)) writeFileSync(file, JSON.stringify([]), "utf-8");
+      if (existsSync(file)) {
+        const tmpFile = file + ".tmp";
+        writeFileSync(tmpFile, JSON.stringify([]), "utf-8");
+        renameSync(tmpFile, file);
+      }
       s.completedKeySet.clear();
     } catch { /* non-fatal */ }
 
@@ -2286,7 +2290,11 @@ async function dispatchNextUnit(
     // Clear completed-units.json for the finished milestone so it doesn't grow unbounded.
     try {
       const file = completedKeysPath(s.basePath);
-      if (existsSync(file)) writeFileSync(file, JSON.stringify([]), "utf-8");
+      if (existsSync(file)) {
+        const tmpFile = file + ".tmp";
+        writeFileSync(tmpFile, JSON.stringify([]), "utf-8");
+        renameSync(tmpFile, file);
+      }
       s.completedKeySet.clear();
     } catch { /* non-fatal */ }
     // ── Milestone merge: squash-merge milestone branch to main before stopping ──

@@ -2764,6 +2764,9 @@ export class InteractiveMode {
 		if (this.isShuttingDown) return;
 		this.isShuttingDown = true;
 
+		// Flush any queued settings writes before shutdown
+		await this.settingsManager.flush();
+
 		// Emit shutdown event to extensions
 		const extensionRunner = this.session.extensionRunner;
 		if (extensionRunner?.hasHandlers("session_shutdown")) {
@@ -3860,7 +3863,12 @@ export class InteractiveMode {
 		// Clear and re-render the chat
 		this.chatContainer.clear();
 		this.renderInitialMessages();
-		this.showStatus("Resumed session");
+
+		if (this.session.sessionManager.wasInterrupted()) {
+			this.showStatus("Resumed session (previous session ended unexpectedly — last action may be incomplete)");
+		} else {
+			this.showStatus("Resumed session");
+		}
 	}
 
 	private showProviderManager(): void {

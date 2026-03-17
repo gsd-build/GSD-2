@@ -6,7 +6,7 @@
  * provides automatic deduplication across sessions.
  */
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync, existsSync, accessSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, writeFileSync, existsSync, accessSync, unlinkSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 const BLOB_PREFIX = "blob:sha256:";
@@ -62,6 +62,51 @@ export class BlobStore {
 			return true;
 		} catch {
 			return false;
+		}
+	}
+
+	/**
+	 * Remove blobs not referenced by any session file.
+	 * @param referencedHashes Set of SHA-256 hashes still referenced in session files.
+	 * @returns Number of orphaned blobs removed.
+	 */
+	gc(referencedHashes: Set<string>): number {
+		let removed = 0;
+		try {
+			const entries = readdirSync(this.dir);
+			for (const entry of entries) {
+				if (!SHA256_HEX_RE.test(entry)) continue;
+				if (!referencedHashes.has(entry)) {
+					try {
+						unlinkSync(join(this.dir, entry));
+						removed++;
+					} catch {
+						// Best-effort removal
+					}
+				}
+			}
+		} catch {
+			// Blob dir may not exist or be unreadable
+		}
+		return removed;
+	}
+
+	/** Get total size of all blobs in bytes, or 0 if the directory is empty/unreadable. */
+	totalSize(): number {
+		try {
+			const entries = readdirSync(this.dir);
+			let total = 0;
+			for (const entry of entries) {
+				if (!SHA256_HEX_RE.test(entry)) continue;
+				try {
+					total += statSync(join(this.dir, entry)).size;
+				} catch {
+					// Skip unreadable files
+				}
+			}
+			return total;
+		} catch {
+			return 0;
 		}
 	}
 }

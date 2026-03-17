@@ -197,8 +197,12 @@ function parseMessage(
 	let message: LspJsonRpcResponse | LspJsonRpcNotification;
 	try {
 		message = JSON.parse(messageText);
-	} catch {
-		// Malformed JSON from LSP server — skip this message and advance past it
+	} catch (err) {
+		// Malformed JSON from LSP server — log and skip this message
+		if (process.env.DEBUG) {
+			const preview = messageText.length > 200 ? messageText.slice(0, 200) + "..." : messageText;
+			console.error(`[lsp] Dropped malformed JSON message: ${err instanceof Error ? err.message : err} — ${preview}`);
+		}
 		return { message: null, remaining };
 	}
 
@@ -409,6 +413,22 @@ export const WARMUP_TIMEOUT_MS = 5000;
  * Get or create an LSP client for the given server configuration and working directory.
  */
 export async function getOrCreateClient(config: ServerConfig, cwd: string, initTimeoutMs?: number): Promise<LspClient> {
+	const maxRetries = 2;
+	let lastErr: unknown;
+	for (let attempt = 0; attempt <= maxRetries; attempt++) {
+		try {
+			return await getOrCreateClientOnce(config, cwd, initTimeoutMs);
+		} catch (err) {
+			lastErr = err;
+			if (attempt < maxRetries) {
+				await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
+			}
+		}
+	}
+	throw lastErr;
+}
+
+async function getOrCreateClientOnce(config: ServerConfig, cwd: string, initTimeoutMs?: number): Promise<LspClient> {
 	const key = `${config.command}:${cwd}`;
 
 	const existingClient = clients.get(key);
