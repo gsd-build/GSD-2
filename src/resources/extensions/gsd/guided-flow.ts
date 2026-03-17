@@ -636,9 +636,11 @@ async function showQueueAdd(
   const existingContext = await buildExistingMilestonesContext(basePath, milestoneIds, state);
 
   // ── Determine next milestone ID ─────────────────────────────────────
+  // Note: the LLM will use the gsd_generate_milestone_id tool to get IDs
+  // at creation time, but we still mention the next ID in the preamble
+  // for context about where the sequence is.
   const uniqueEnabled = !!loadEffectiveGSDPreferences()?.preferences?.unique_milestone_ids;
   const nextId = nextMilestoneId(milestoneIds, uniqueEnabled);
-  const nextIdPlus1 = nextMilestoneId([...milestoneIds, nextId], uniqueEnabled);
 
   // ── Build preamble ──────────────────────────────────────────────────
   const activePart = state.activeMilestone
@@ -659,8 +661,6 @@ async function showQueueAdd(
   const queueInlinedTemplates = inlineTemplate("context", "Context");
   const prompt = loadPrompt("queue", {
     preamble,
-    nextId,
-    nextIdPlus1,
     existingMilestonesContext: existingContext,
     inlinedTemplates: queueInlinedTemplates,
     commitInstruction: buildDocsCommitInstruction("docs: queue <milestone list>"),

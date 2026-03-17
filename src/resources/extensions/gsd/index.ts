@@ -36,7 +36,7 @@ import { loadPrompt } from "./prompt-loader.js";
 import { deriveState } from "./state.js";
 import { isAutoActive, isAutoPaused, handleAgentEnd, pauseAuto, getAutoDashboardData, markToolStart, markToolEnd } from "./auto.js";
 import { saveActivityLog } from "./activity-log.js";
-import { checkAutoStartAfterDiscuss, getDiscussionMilestoneId } from "./guided-flow.js";
+import { checkAutoStartAfterDiscuss, getDiscussionMilestoneId, findMilestoneIds, nextMilestoneId } from "./guided-flow.js";
 import { GSDDashboardOverlay } from "./dashboard-overlay.js";
 import {
   loadEffectiveGSDPreferences,
@@ -462,6 +462,46 @@ export default function (pi: ExtensionAPI) {
           content: [{ type: "text" as const, text: `Error saving artifact: ${msg}` }],
           isError: true,
           details: { operation: "save_summary", error: msg },
+        };
+      }
+    },
+  });
+
+  // ── gsd_generate_milestone_id — canonical milestone ID generation ──────
+  // The LLM cannot generate random suffixes for unique_milestone_ids on its
+  // own. This tool calls back into the TS code that owns ID generation,
+  // ensuring the preference is always respected and IDs are always valid.
+  pi.registerTool({
+    name: "gsd_generate_milestone_id",
+    label: "Generate Milestone ID",
+    description:
+      "Generate the next milestone ID for a new GSD milestone. " +
+      "Scans existing milestones on disk and respects the unique_milestone_ids preference. " +
+      "Always use this tool when creating a new milestone — never invent milestone IDs manually.",
+    promptSnippet: "Generate a valid milestone ID (respects unique_milestone_ids preference)",
+    promptGuidelines: [
+      "ALWAYS call gsd_generate_milestone_id before creating a new milestone directory or writing milestone files.",
+      "Never invent or hardcode milestone IDs like M001, M002 — always use this tool.",
+      "Call it once per milestone you need to create. For multi-milestone projects, call it once for each milestone in sequence.",
+      "The tool returns the correct format based on project preferences (e.g. M001 or M001-r5jzab).",
+    ],
+    parameters: Type.Object({}),
+    async execute(_toolCallId, _params, _signal, _onUpdate, _ctx) {
+      try {
+        const basePath = process.cwd();
+        const existingIds = findMilestoneIds(basePath);
+        const uniqueEnabled = !!loadEffectiveGSDPreferences()?.preferences?.unique_milestone_ids;
+        const newId = nextMilestoneId(existingIds, uniqueEnabled);
+        return {
+          content: [{ type: "text" as const, text: newId }],
+          details: { operation: "generate_milestone_id", id: newId, existingCount: existingIds.length, uniqueEnabled },
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return {
+          content: [{ type: "text" as const, text: `Error generating milestone ID: ${msg}` }],
+          isError: true,
+          details: { operation: "generate_milestone_id", error: msg },
         };
       }
     },
