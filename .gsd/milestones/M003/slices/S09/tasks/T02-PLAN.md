@@ -78,3 +78,10 @@ After T01 fixes the resolver (14 of 17 failures), 3-4 isolated test issues remai
 - `src/tests/github-client.test.ts` — environment-independent assertion
 - `src/resources/extensions/gsd/tests/stop-auto-remote.test.ts` — timing tolerance added
 - All four verification commands pass clean (R110 validated)
+
+## Observability Impact
+
+- **No new runtime signals.** This task modifies test assertions only — no production code changes.
+- **Inspection:** Run any fixed test individually with `node --import ./src/resources/extensions/gsd/tests/resolve-ts.mjs --experimental-strip-types --test <file>` to confirm it passes.
+- **Failure shape:** If a test regresses, the node:test runner reports the assertion name, expected/actual values, and file:line in stdout. Exit code is non-zero.
+- **Timing flake visibility:** The `stop-auto-remote.test.ts` SIGTERM test has a `// KNOWN FLAKE:` comment and explicit `{ timeout: 15000 }` — if it times out under load, the test name and timeout duration appear in output.

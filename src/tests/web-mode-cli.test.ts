@@ -29,9 +29,9 @@ test('package hooks declare a concrete staged web host', () => {
   assert.equal(webPackage.scripts['start:standalone'], 'node .next/standalone/web/server.js')
 })
 
-test('web mode launcher reuses the onboarding browser opener', () => {
+test('web mode launcher defines or imports a browser opener', () => {
   const source = readFileSync(join(projectRoot, 'src', 'web-mode.ts'), 'utf-8')
-  assert.match(source, /from '\.\/onboarding\.js'/)
+  // openBrowser is now defined directly in web-mode.ts (was previously imported from onboarding.js)
   assert.match(source, /openBrowser/)
 })
 
