@@ -662,7 +662,7 @@ function buildCapturesSection(data: VisualizerData): string {
 
   const rows = c.entries.map(e => `
     <tr class="cap-${e.status}">
-      <td class="td-date">${formatDateShort(new Date(e.capturedAt).toISOString())}</td>
+      <td class="td-date">${formatDateShort(new Date(e.timestamp).toISOString())}</td>
       <td><span class="cap-badge cap-${e.status}">${esc(e.status)}</span></td>
       <td>${e.resolution ? esc(e.resolution) : '<span class="na">—</span>'}</td>
       <td class="cap-text">${esc(e.text)}</td>
