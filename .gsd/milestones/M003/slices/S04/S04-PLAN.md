@@ -43,7 +43,7 @@
 
 ## Tasks
 
-- [ ] **T01: Backend services, API routes, and browser-safe types** `est:35m`
+- [x] **T01: Backend services, API routes, and browser-safe types** `est:35m`
   - Why: Foundation for all three panels — child-process services that call upstream modules, API routes that serve JSON, and browser-safe types. This is the riskiest work (child-process wiring) and unblocks all frontend work.
   - Files: `src/resources/extensions/gsd/forensics.ts`, `src/web/forensics-service.ts`, `src/web/doctor-service.ts`, `src/web/skill-health-service.ts`, `web/app/api/forensics/route.ts`, `web/app/api/doctor/route.ts`, `web/app/api/skill-health/route.ts`, `web/lib/diagnostics-types.ts`
   - Do: Export `buildForensicReport` from forensics.ts. Create three service files following the visualizer-service.ts pattern (execFile + resolve-ts.mjs + --experimental-strip-types). Create three API route files following the visualizer route pattern (GET → service call → JSON response). Doctor route also needs a POST handler for fix actions. Create diagnostics-types.ts with browser-safe interfaces mirroring ForensicReport, DoctorReport, DoctorIssue, DoctorSummary, SkillHealthReport, SkillHealthEntry, SkillHealSuggestion. ForensicReport has no Maps — straight JSON.stringify works. Doctor service passes scope param from query string and fix flag from POST. Skill-health is simplest — no params needed.

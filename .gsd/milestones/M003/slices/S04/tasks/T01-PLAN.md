@@ -98,6 +98,13 @@ The one prerequisite change is exporting `buildForensicReport()` from `forensics
 - `src/resources/extensions/gsd/skill-health.ts` — upstream module, `generateSkillHealthReport()`, exported types
 - `web/lib/visualizer-types.ts` — reference pattern for browser-safe type definitions
 
+## Observability Impact
+
+- **New API surfaces:** `GET /api/forensics`, `GET /api/doctor`, `POST /api/doctor`, `GET /api/skill-health` — each returns JSON payload or `{ error: string }` with 500 on child-process failure
+- **Inspection:** `curl http://localhost:3000/api/forensics` (anomalies, recentUnits, crashLock), `/api/doctor` (issues array + summary), `/api/skill-health` (skills array + suggestions)
+- **Failure signals:** child-process stderr is captured in the error message returned to the caller; each service rejects its Promise with a descriptive Error including stderr content
+- **Doctor fix action:** `POST /api/doctor` returns `{ ok, fixesApplied }` on success — `fixesApplied` is an inspectable string array of what was changed
+
 ## Expected Output
 
 - `src/resources/extensions/gsd/forensics.ts` — 1-line change: `export` added to `buildForensicReport`
