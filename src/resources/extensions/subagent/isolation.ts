@@ -273,13 +273,16 @@ export async function createWorktreeIsolation(
 		async cleanup(): Promise<void> {
 			activeIsolations.delete(worktreeDir);
 			try {
-				await git(
-					["worktree", "remove", "--force", worktreeDir],
-					repoRoot,
-				);
+				await Promise.race([
+					git(["worktree", "remove", "--force", worktreeDir], repoRoot),
+					new Promise<never>((_, reject) =>
+						setTimeout(() => reject(new Error("Worktree cleanup timed out")), 10_000),
+					),
+				]);
 			} catch {
-				// Force remove directory if git worktree remove fails
-				fs.rmSync(worktreeDir, { recursive: true, force: true });
+				try {
+					fs.rmSync(worktreeDir, { recursive: true, force: true });
+				} catch { /* best effort */ }
 			}
 		},
 	};
