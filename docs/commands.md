@@ -1,24 +1,46 @@
 # Commands Reference
 
-## Session Commands
+## Execution Commands (`/run`)
 
 | Command | Description |
 |---------|-------------|
 | `/gsd` | Step mode — execute one unit at a time, pause between each |
-| `/gsd next` | Explicit step mode (same as `/gsd`) |
-| `/gsd auto` | Autonomous mode — research, plan, execute, commit, repeat |
-| `/gsd quick` | Execute a quick task with GSD guarantees (atomic commits, state tracking) without full planning overhead |
-| `/gsd stop` | Stop auto mode gracefully |
-| `/gsd steer` | Hard-steer plan documents during execution |
-| `/gsd discuss` | Discuss architecture and decisions (works alongside auto mode) |
+| `/run next` | Explicit step mode (same as `/gsd`) |
+| `/run` | Autonomous mode — research, plan, execute, commit, repeat |
+| `/run stop` | Stop auto mode gracefully |
+| `/run pause` | Pause auto mode (same as Escape) |
+| `/run dispatch` | Force dispatch a specific pipeline phase |
+| `/run undo` | Undo the last completed unit |
+| `/run skip` | Skip the current unit and advance |
+| `/run parallel start` | Analyze eligibility, confirm, and start workers |
+| `/run parallel status` | Show all workers with state, progress, and cost |
+| `/run parallel stop [MID]` | Stop all workers or a specific milestone's worker |
+| `/run parallel pause [MID]` | Pause all workers or a specific one |
+| `/run parallel resume [MID]` | Resume paused workers |
+| `/run parallel merge [MID]` | Merge completed milestones back to main |
+
+## Planning Commands (`/plan`)
+
+| Command | Description |
+|---------|-------------|
+| `/plan` | Start or resume a discussion flow |
+| `/plan discuss` | Discuss architecture and decisions (works alongside auto mode) |
+| `/plan queue` | Queue and reorder future milestones (safe during auto mode) |
+| `/plan quick` | Execute a quick task with GSD guarantees (atomic commits, state tracking) without full planning overhead |
+| `/plan capture` | Fire-and-forget thought capture (works during auto mode) |
+| `/plan triage` | Manually trigger triage of pending captures |
+| `/plan steer` | Hard-steer plan documents during execution |
+| `/plan milestone` | Create a new milestone |
+| `/plan knowledge` | Add persistent project knowledge (rule, pattern, or lesson) |
+
+## Project Commands (`/gsd`)
+
+| Command | Description |
+|---------|-------------|
 | `/gsd status` | Progress dashboard |
-| `/gsd queue` | Queue and reorder future milestones (safe during auto mode) |
-| `/gsd capture` | Fire-and-forget thought capture (works during auto mode) |
-| `/gsd triage` | Manually trigger triage of pending captures |
 | `/gsd forensics` | Post-mortem investigation of auto-mode failures — structured root-cause analysis with log inspection |
 | `/gsd cleanup` | Clean up GSD state files and stale worktrees |
 | `/gsd visualize` | Open workflow visualizer (progress, deps, metrics, timeline) |
-| `/gsd knowledge` | Add persistent project knowledge (rule, pattern, or lesson) |
 | `/gsd help` | Categorized command reference with descriptions for all GSD subcommands |
 
 ## Configuration & Diagnostics
@@ -36,18 +58,18 @@
 | `/gsd run-hook` | Manually trigger a specific hook |
 | `/gsd migrate` | Migrate a v1 `.planning` directory to `.gsd` format |
 
-## Parallel Orchestration
+See [Parallel Orchestration](./parallel-orchestration.md) for full documentation.
+
+## Remote Questions
 
 | Command | Description |
 |---------|-------------|
-| `/gsd parallel start` | Analyze eligibility, confirm, and start workers |
-| `/gsd parallel status` | Show all workers with state, progress, and cost |
-| `/gsd parallel stop [MID]` | Stop all workers or a specific milestone's worker |
-| `/gsd parallel pause [MID]` | Pause all workers or a specific one |
-| `/gsd parallel resume [MID]` | Resume paused workers |
-| `/gsd parallel merge [MID]` | Merge completed milestones back to main |
-
-See [Parallel Orchestration](./parallel-orchestration.md) for full documentation.
+| `/gsd remote` | Show remote questions menu and current status |
+| `/gsd remote slack` | Set up Slack integration |
+| `/gsd remote discord` | Set up Discord integration |
+| `/gsd remote telegram` | Set up Telegram integration |
+| `/gsd remote status` | Show current configuration and last prompt status |
+| `/gsd remote disconnect` | Remove remote questions configuration |
 
 ## Git Commands
 
@@ -138,7 +160,7 @@ echo "Build a CLI tool" | gsd headless new-milestone --context -
 
 **Exit codes:** `0` = complete, `1` = error or timeout, `2` = blocked.
 
-Any `/gsd` subcommand works as a positional argument — `gsd headless status`, `gsd headless doctor`, `gsd headless dispatch execute`, etc.
+Any subcommand works as a positional argument — `gsd headless status`, `gsd headless doctor`, `gsd headless dispatch execute`, etc.
 
 ## MCP Server Mode
 

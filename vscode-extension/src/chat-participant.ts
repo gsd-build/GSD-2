@@ -169,12 +169,12 @@ export function registerChatParticipant(
 					title: "Check project status",
 				},
 				{
-					prompt: "/gsd auto",
+					prompt: "/run",
 					label: "$(rocket) Run auto mode",
 					title: "Run autonomous mode",
 				},
 				{
-					prompt: "/gsd capture",
+					prompt: "/plan capture",
 					label: "$(note) Capture a thought",
 					title: "Capture a thought mid-session",
 				},

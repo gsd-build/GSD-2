@@ -429,7 +429,7 @@ export async function showQueue(
           description: "Queue new milestones via discussion.",
         },
       ],
-      notYetMessage: "Run /gsd queue when ready.",
+      notYetMessage: "Run /plan queue when ready.",
     });
 
     if (choice === "reorder") {
@@ -855,7 +855,7 @@ async function buildDiscussSlicePrompt(
 }
 
 /**
- * /gsd discuss — show a picker of non-done slices and run a slice interview.
+ * /plan discuss — show a picker of non-done slices and run a slice interview.
  * Loops back to the picker after each discussion so the user can chain
  * multiple slice interviews in one session.
  */
@@ -908,7 +908,7 @@ export async function showDiscuss(
           description: "Leave this milestone as-is and start something new.",
         },
       ],
-      notYetMessage: "Run /gsd discuss when ready to discuss this milestone.",
+      notYetMessage: "Run /plan discuss when ready to discuss this milestone.",
     });
 
     if (choice === "discuss_draft") {
@@ -983,7 +983,7 @@ export async function showDiscuss(
         "Pick a slice to interview. Context file will be written when done.",
       ],
       actions,
-      notYetMessage: "Run /gsd discuss when ready.",
+      notYetMessage: "Run /plan discuss when ready.",
     });
 
     if (choice === "not_yet") return;
@@ -1008,7 +1008,7 @@ export async function showDiscuss(
  * Self-heal: scan runtime records and clear stale ones left behind when
  * auto-mode crashed mid-unit. auto.ts has its own selfHealRuntimeRecords()
  * but guided-flow (manual /gsd mode) never called it — meaning stale records
- * persisted until the next /gsd auto run.  This ensures the wizard always
+ * persisted until the next /run auto run.  This ensures the wizard always
  * starts from a clean state regardless of how the previous session ended.
  */
 function selfHealRuntimeRecords(basePath: string, ctx: ExtensionContext): { cleared: number } {
@@ -1089,7 +1089,7 @@ export async function showSmartEntry(
       title: "GSD — Interrupted Session Detected",
       summary: [formatCrashInfo(crashLock)],
       actions: [
-        { id: "resume", label: "Resume with /gsd auto", description: "Pick up where it left off", recommended: true },
+        { id: "resume", label: "Resume with /run", description: "Pick up where it left off", recommended: true },
         { id: "continue", label: "Continue manually", description: "Open the wizard as normal" },
       ],
     });
@@ -1103,7 +1103,7 @@ export async function showSmartEntry(
 
   if (!state.activeMilestone) {
     // Guard: if a discuss session is already in flight, don't re-inject the prompt.
-    // Both /gsd and /gsd auto reach this branch when no milestone exists yet.
+    // Both /gsd and /run reach this branch when no milestone exists yet.
     // Without this guard, every subsequent /gsd call overwrites pendingAutoStart
     // and fires another dispatchWorkflow, resetting the conversation mid-interview.
     if (pendingAutoStart) {

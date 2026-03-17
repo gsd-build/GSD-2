@@ -19,7 +19,7 @@ parallel:
 2. Start parallel execution:
 
 ```
-/gsd parallel start
+/run parallel start
 ```
 
 GSD scans your milestones, checks dependencies and file overlap, shows an eligibility report, and spawns workers for eligible milestones.
@@ -27,13 +27,13 @@ GSD scans your milestones, checks dependencies and file overlap, shows an eligib
 3. Monitor progress:
 
 ```
-/gsd parallel status
+/run parallel status
 ```
 
 4. Stop when done:
 
 ```
-/gsd parallel stop
+/run parallel stop
 ```
 
 ## How It Works
@@ -143,26 +143,26 @@ parallel:
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `enabled` | boolean | `false` | Master toggle. Must be `true` for `/gsd parallel` commands to work. |
+| `enabled` | boolean | `false` | Master toggle. Must be `true` for `/run parallel` commands to work. |
 | `max_workers` | number (1-4) | `2` | Maximum concurrent worker processes. Higher values use more memory and API budget. |
 | `budget_ceiling` | number | none | Aggregate cost ceiling in USD across all workers. When reached, no new units are dispatched. |
 | `merge_strategy` | `"per-slice"` or `"per-milestone"` | `"per-milestone"` | When worktree changes merge back to main. Per-milestone waits for the full milestone to complete. |
-| `auto_merge` | `"auto"`, `"confirm"`, `"manual"` | `"confirm"` | How merge-back is handled. `confirm` prompts before merging. `manual` requires explicit `/gsd parallel merge`. |
+| `auto_merge` | `"auto"`, `"confirm"`, `"manual"` | `"confirm"` | How merge-back is handled. `confirm` prompts before merging. `manual` requires explicit `/run parallel merge`. |
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `/gsd parallel start` | Analyze eligibility, confirm, and start workers |
-| `/gsd parallel status` | Show all workers with state, units completed, and cost |
-| `/gsd parallel stop` | Stop all workers (sends SIGTERM) |
-| `/gsd parallel stop M002` | Stop a specific milestone's worker |
-| `/gsd parallel pause` | Pause all workers (finish current unit, then wait) |
-| `/gsd parallel pause M002` | Pause a specific worker |
-| `/gsd parallel resume` | Resume all paused workers |
-| `/gsd parallel resume M002` | Resume a specific worker |
-| `/gsd parallel merge` | Merge all completed milestones back to main |
-| `/gsd parallel merge M002` | Merge a specific milestone back to main |
+| `/run parallel start` | Analyze eligibility, confirm, and start workers |
+| `/run parallel status` | Show all workers with state, units completed, and cost |
+| `/run parallel stop` | Stop all workers (sends SIGTERM) |
+| `/run parallel stop M002` | Stop a specific milestone's worker |
+| `/run parallel pause` | Pause all workers (finish current unit, then wait) |
+| `/run parallel pause M002` | Pause a specific worker |
+| `/run parallel resume` | Resume all paused workers |
+| `/run parallel resume M002` | Resume a specific worker |
+| `/run parallel merge` | Merge all completed milestones back to main |
+| `/run parallel merge M002` | Merge a specific milestone back to main |
 
 ## Signal Lifecycle
 
@@ -201,12 +201,12 @@ When milestones complete, their worktree changes need to merge back to main.
 ### Conflict Handling
 
 1. `.gsd/` state files (STATE.md, metrics.json, etc.) — **auto-resolved** by accepting the milestone branch version
-2. Code conflicts — **stop and report**. The merge halts, showing which files conflict. Resolve manually and retry with `/gsd parallel merge <MID>`.
+2. Code conflicts — **stop and report**. The merge halts, showing which files conflict. Resolve manually and retry with `/run parallel merge <MID>`.
 
 ### Example
 
 ```
-/gsd parallel merge
+/run parallel merge
 
 # Merge Results
 
@@ -214,7 +214,7 @@ When milestones complete, their worktree changes need to merge back to main.
 - **M003** — CONFLICT (2 file(s)):
   - `src/types.ts`
   - `src/middleware.ts`
-  Resolve conflicts manually and run `/gsd parallel merge M003` to retry.
+  Resolve conflicts manually and run `/run parallel merge M003` to retry.
 ```
 
 ## Budget Management
@@ -288,20 +288,20 @@ Set `parallel.enabled: true` in your preferences file.
 
 ### "No milestones are eligible for parallel execution"
 
-All milestones are either complete or blocked by dependencies. Check `/gsd queue` to see milestone status and dependency chains.
+All milestones are either complete or blocked by dependencies. Check `/plan queue` to see milestone status and dependency chains.
 
 ### Worker crashed — how to recover
 
 1. Run `/gsd doctor --fix` to clean up stale sessions
-2. Run `/gsd parallel status` to see current state
-3. Re-run `/gsd parallel start` to spawn new workers for remaining milestones
+2. Run `/run parallel status` to see current state
+3. Re-run `/run parallel start` to spawn new workers for remaining milestones
 
 ### Merge conflicts after parallel completion
 
-1. Run `/gsd parallel merge` to see which milestones have conflicts
+1. Run `/run parallel merge` to see which milestones have conflicts
 2. Resolve conflicts in the worktree at `.gsd/worktrees/<MID>/`
-3. Retry with `/gsd parallel merge <MID>`
+3. Retry with `/run parallel merge <MID>`
 
 ### Workers seem stuck
 
-Check if budget ceiling was reached: `/gsd parallel status` shows per-worker costs. Increase `parallel.budget_ceiling` or remove it to continue.
+Check if budget ceiling was reached: `/run parallel status` shows per-worker costs. Increase `parallel.budget_ceiling` or remove it to continue.

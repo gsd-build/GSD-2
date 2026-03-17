@@ -64,12 +64,12 @@ Type `/gsd` inside a session. GSD executes one unit of work at a time, pausing b
 
 Step mode is the on-ramp. You stay in the loop, reviewing output between each step.
 
-### Auto Mode — `/gsd auto`
+### Auto Mode — `/run`
 
-Type `/gsd auto` and walk away. GSD autonomously researches, plans, executes, verifies, commits, and advances through every slice until the milestone is complete.
+Type `/run` and walk away. GSD autonomously researches, plans, executes, verifies, commits, and advances through every slice until the milestone is complete.
 
 ```
-/gsd auto
+/run
 ```
 
 See [Auto Mode](./auto-mode.md) for full details.
@@ -82,16 +82,16 @@ The recommended workflow: auto mode in one terminal, steering from another.
 
 ```bash
 gsd
-/gsd auto
+/run
 ```
 
 **Terminal 2 — steer while it works:**
 
 ```bash
 gsd
-/gsd discuss    # talk through architecture decisions
+/plan discuss   # talk through architecture decisions
 /gsd status     # check progress
-/gsd queue      # queue the next milestone
+/plan queue     # queue the next milestone
 ```
 
 Both terminals read and write the same `.gsd/` files. Decisions in terminal 2 are picked up at the next phase boundary automatically.

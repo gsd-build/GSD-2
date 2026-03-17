@@ -255,7 +255,7 @@ Rebuttal: In the branchless model, there is no integration step to crash between
 
 **Concern 2: "Concurrent edits to shared root docs (PROJECT.md, DECISIONS.md) from two terminals."**
 
-Rebuttal: Valid edge case. If `/gsd queue` edits `DECISIONS.md` on `main` while auto-mode edits it in a worktree, there's a content conflict at squash-merge time. This is a standard git content conflict — no different from two developers editing the same file. Handled by normal merge resolution. Not caused by or solved by slice branches.
+Rebuttal: Valid edge case. If `/plan queue` edits `DECISIONS.md` on `main` while auto-mode edits it in a worktree, there's a content conflict at squash-merge time. This is a standard git content conflict — no different from two developers editing the same file. Handled by normal merge resolution. Not caused by or solved by slice branches.
 
 **Concern 3: "Slice→milestone merges provide continuous integration. Removing them pushes conflict discovery to the end."**
 

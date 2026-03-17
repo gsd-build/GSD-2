@@ -350,7 +350,7 @@ export class GSDDashboardOverlay {
       )));
       lines.push(blank());
     } else if (this.dashData.paused) {
-      lines.push(row(th.fg("dim", "/gsd auto to resume")));
+      lines.push(row(th.fg("dim", "/run to resume")));
       lines.push(blank());
     } else if (isRemote) {
       const rs = this.dashData.remoteSession!;
@@ -360,7 +360,7 @@ export class GSDDashboardOverlay {
       lines.push(row(th.fg("text", `Remote session: ${unitDisplay}`)));
       lines.push(blank());
     } else {
-      lines.push(row(th.fg("dim", "No unit running · /gsd auto to start")));
+      lines.push(row(th.fg("dim", "No unit running · /run to start")));
       lines.push(blank());
     }
 

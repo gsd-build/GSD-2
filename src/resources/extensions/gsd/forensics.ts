@@ -91,7 +91,7 @@ export async function handleForensics(
   const basePath = process.cwd();
   const root = gsdRoot(basePath);
   if (!existsSync(root)) {
-    ctx.ui.notify("No GSD state found. Run /gsd auto first.", "warning");
+    ctx.ui.notify("No GSD state found. Run /run first.", "warning");
     return;
   }
 

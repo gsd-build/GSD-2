@@ -119,12 +119,12 @@ Research → Plan → Execute (per task) → Complete → Reassess Roadmap → N
 
 **Research** scouts the codebase and relevant docs. **Plan** decomposes the slice into tasks with must-haves (mechanically verifiable outcomes). **Execute** runs each task in a fresh context window with only the relevant files pre-loaded. **Complete** writes the summary, UAT script, marks the roadmap, and commits. **Reassess** checks if the roadmap still makes sense given what was learned. **Validate Milestone** runs a reconciliation gate after all slices complete — comparing roadmap success criteria against actual results before sealing the milestone.
 
-### `/gsd auto` — The Main Event
+### `/run` — The Main Event
 
 This is what makes GSD different. Run it, walk away, come back to built software.
 
 ```
-/gsd auto
+/run
 ```
 
 Auto mode is a state machine driven by files on disk. It reads `.gsd/STATE.md`, determines the next unit of work, creates a fresh agent session, injects a focused prompt with all relevant context pre-inlined, and lets the LLM execute. When the LLM finishes, auto mode reads disk state again and dispatches the next unit.
@@ -137,7 +137,7 @@ Auto mode is a state machine driven by files on disk. It reads `.gsd/STATE.md`, 
 
 3. **Git worktree isolation** — Each milestone runs in its own git worktree with a `milestone/<MID>` branch. All slice work commits sequentially — no branch switching, no merge conflicts. When the milestone completes, it's squash-merged to main as one clean commit.
 
-4. **Crash recovery** — A lock file tracks the current unit. If the session dies, the next `/gsd auto` reads the surviving session file, synthesizes a recovery briefing from every tool call that made it to disk, and resumes with full context.
+4. **Crash recovery** — A lock file tracks the current unit. If the session dies, the next `/run` reads the surviving session file, synthesizes a recovery briefing from every tool call that made it to disk, and resumes with full context.
 
 5. **Stuck detection** — If the same unit dispatches twice (the LLM didn't produce the expected artifact), it retries once with a deep diagnostic. If it fails again, auto mode stops with the exact file it expected.
 
@@ -147,9 +147,9 @@ Auto mode is a state machine driven by files on disk. It reads `.gsd/STATE.md`, 
 
 8. **Adaptive replanning** — After each slice completes, the roadmap is reassessed. If the work revealed new information that changes the plan, slices are reordered, added, or removed before continuing.
 
-9. **Escape hatch** — Press Escape to pause. The conversation is preserved. Interact with the agent, inspect what happened, or just `/gsd auto` to resume from disk state.
+9. **Escape hatch** — Press Escape to pause. The conversation is preserved. Interact with the agent, inspect what happened, or just `/run` to resume from disk state.
 
-### `/gsd` and `/gsd next` — Step Mode
+### `/gsd` and `/run next` — Step Mode
 
 By default, `/gsd` runs in **step mode**: the same state machine as auto mode, but it pauses between units with a wizard showing what completed and what's next. You advance one step at a time, review the output, and continue when ready.
 
@@ -158,7 +158,7 @@ By default, `/gsd` runs in **step mode**: the same state machine as auto mode, b
 - **Roadmap exists, slices pending** → Plan the next slice, execute one task, or switch to auto.
 - **Mid-task** → Resume from where you left off.
 
-`/gsd next` is an explicit alias for step mode. You can switch from step → auto mid-session via the wizard.
+`/run next` is an explicit alias for step mode. You can switch from step → auto mid-session via the wizard.
 
 Step mode is the on-ramp. Auto mode is the highway.
 
@@ -201,7 +201,7 @@ GSD opens an interactive agent session. From there, you have two ways to work:
 
 **`/gsd` — step mode.** Type `/gsd` and GSD executes one unit of work at a time, pausing between each with a wizard showing what completed and what's next. Same state machine as auto mode, but you stay in the loop. No project yet? It starts the discussion flow. Roadmap exists? It plans or executes the next step.
 
-**`/gsd auto` — autonomous mode.** Type `/gsd auto` and walk away. GSD researches, plans, executes, verifies, commits, and advances through every slice until the milestone is complete. Fresh context window per task. No babysitting.
+**`/run` — autonomous mode.** Type `/run` and walk away. GSD researches, plans, executes, verifies, commits, and advances through every slice until the milestone is complete. Fresh context window per task. No babysitting.
 
 ### Two terminals, one project
 
@@ -211,16 +211,16 @@ The real workflow: run auto mode in one terminal, steer from another.
 
 ```bash
 gsd
-/gsd auto
+/run
 ```
 
 **Terminal 2 — steer while it works**
 
 ```bash
 gsd
-/gsd discuss    # talk through architecture decisions
+/plan discuss   # talk through architecture decisions
 /gsd status     # check progress
-/gsd queue      # queue the next milestone
+/plan queue     # queue the next milestone
 ```
 
 Both terminals read and write the same `.gsd/` files on disk. Your decisions in terminal 2 are picked up automatically at the next phase boundary — no need to stop auto mode.
@@ -254,14 +254,14 @@ On first run, GSD launches a branded setup wizard that walks you through LLM pro
 | Command                 | What it does                                                    |
 | ----------------------- | --------------------------------------------------------------- |
 | `/gsd`                  | Step mode — executes one unit at a time, pauses between each    |
-| `/gsd next`             | Explicit step mode (same as bare `/gsd`)                        |
-| `/gsd auto`             | Autonomous mode — researches, plans, executes, commits, repeats |
-| `/gsd quick`            | Execute a quick task with GSD guarantees, skip planning overhead |
-| `/gsd stop`             | Stop auto mode gracefully                                       |
-| `/gsd steer`            | Hard-steer plan documents during execution                      |
-| `/gsd discuss`          | Discuss architecture and decisions (works alongside auto mode)  |
+| `/run next`             | Explicit step mode (same as bare `/gsd`)                        |
+| `/run`                  | Autonomous mode — researches, plans, executes, commits, repeats |
+| `/plan quick`           | Execute a quick task with GSD guarantees, skip planning overhead |
+| `/run stop`             | Stop auto mode gracefully                                       |
+| `/plan steer`           | Hard-steer plan documents during execution                      |
+| `/plan discuss`         | Discuss architecture and decisions (works alongside auto mode)  |
 | `/gsd status`           | Progress dashboard                                              |
-| `/gsd queue`            | Queue future milestones (safe during auto mode)                 |
+| `/plan queue`           | Queue future milestones (safe during auto mode)                 |
 | `/gsd prefs`            | Model selection, timeouts, budget ceiling                       |
 | `/gsd migrate`          | Migrate a v1 `.planning` directory to `.gsd` format             |
 | `/gsd help`             | Categorized command reference for all GSD subcommands           |

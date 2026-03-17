@@ -35,7 +35,7 @@ const SUBCOMMAND_HELP: Record<string, string> = {
   headless: [
     'Usage: gsd headless [flags] [command] [args...]',
     '',
-    'Run /gsd commands without the TUI. Default command: auto',
+    'Run GSD commands without the TUI. Default command: auto',
     '',
     'Flags:',
     '  --timeout N          Overall timeout in ms (default: 300000)',
@@ -57,7 +57,7 @@ const SUBCOMMAND_HELP: Record<string, string> = {
     '  --verbose            Show tool calls in progress output',
     '',
     'Examples:',
-    '  gsd headless                                    Run /gsd auto',
+    '  gsd headless                                    Run /run (auto-mode)',
     '  gsd headless next                               Run one unit',
     '  gsd headless --json status                      Machine-readable status',
     '  gsd headless --timeout 60000                    With 1-minute timeout',
@@ -88,7 +88,7 @@ export function printHelp(version: string): void {
   process.stdout.write('  config                   Re-run the setup wizard\n')
   process.stdout.write('  update                   Update GSD to the latest version\n')
   process.stdout.write('  sessions                 List and resume a past session\n')
-  process.stdout.write('  headless [cmd] [args]    Run /gsd commands without TUI (default: auto)\n')
+  process.stdout.write('  headless [cmd] [args]    Run GSD commands without TUI (default: auto)\n')
   process.stdout.write('\nRun gsd <subcommand> --help for subcommand-specific help.\n')
 }
 

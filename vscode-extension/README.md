@@ -30,7 +30,7 @@ Use `@gsd` in VS Code Chat (`Ctrl+Shift+I`) to send messages to the agent:
 
 ```
 @gsd refactor the auth module to use JWT
-@gsd /gsd auto
+@gsd /run
 @gsd what's the current milestone status?
 ```
 

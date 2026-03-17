@@ -147,7 +147,7 @@ describe("parallel-worker-monitoring", () => {
   it("worker spawn args include --mode json", () => {
     // Verify the spawn command includes JSON mode for NDJSON output.
     // We can't easily test the actual spawn, but we verify the args pattern.
-    const expectedArgs = ["--mode", "json", "--print", "/gsd auto"];
+    const expectedArgs = ["--mode", "json", "--print", "/run"];
     assertTrue(expectedArgs.includes("--mode"), "args include --mode");
     assertTrue(expectedArgs.includes("json"), "args include json");
     assertTrue(expectedArgs.indexOf("--mode") < expectedArgs.indexOf("json"),

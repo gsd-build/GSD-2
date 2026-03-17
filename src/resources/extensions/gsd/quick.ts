@@ -1,5 +1,5 @@
 /**
- * GSD Quick Mode — /gsd quick <task>
+ * GSD Quick Mode — /plan quick <task>
  * Copyright (c) 2026 Jeremy McSpadden <jeremy@fluxlabs.net>
  *
  * Lightweight task execution with GSD guarantees (atomic commits, state
@@ -88,7 +88,7 @@ export async function handleQuick(
   let description = args.trim();
   if (!description) {
     ctx.ui.notify(
-      "Usage: /gsd quick <task description>\n\nExample: /gsd quick fix login button not responding on mobile",
+      "Usage: /plan quick <task description>\n\nExample: /plan quick fix login button not responding on mobile",
       "info",
     );
     return;

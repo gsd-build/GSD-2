@@ -4,12 +4,12 @@
  * One command, one wizard. Reads state from disk, shows contextual options,
  * dispatches through GSD-WORKFLOW.md. The LLM does the rest.
  *
- * Auto-mode: /gsd auto loops fresh sessions until milestone complete.
+ * Auto-mode: /run loops fresh sessions until milestone complete.
  *
  * Commands:
  *   /gsd        — contextual wizard (smart entry point)
- *   /gsd auto   — start auto-mode (fresh session per unit)
- *   /gsd stop   — stop auto-mode gracefully
+ *   /run        — start auto-mode (fresh session per unit)
+ *   /run stop   — stop auto-mode gracefully
  *   /gsd status — progress dashboard
  *
  * Hooks:
@@ -27,7 +27,7 @@ import { createBashTool, createWriteTool, createReadTool, createEditTool, isTool
 import { Type } from "@sinclair/typebox";
 
 import { debugLog, debugTime } from "./debug-logger.js";
-import { registerGSDCommand, loadToolApiKeys } from "./commands.js";
+import { registerAllCommands, loadToolApiKeys } from "./commands.js";
 import { registerExitCommand } from "./exit-command.js";
 import { registerWorktreeCommand, getWorktreeOriginalCwd, getActiveWorktreeName } from "./worktree-command.js";
 import { getActiveAutoWorktreeContext } from "./auto-worktree.js";
@@ -127,7 +127,7 @@ const GSD_LOGO_LINES = [
 ];
 
 export default function (pi: ExtensionAPI) {
-  registerGSDCommand(pi);
+  registerAllCommands(pi);
   registerWorktreeCommand(pi);
   registerExitCommand(pi);
 
@@ -866,7 +866,7 @@ export default function (pi: ExtensionAPI) {
     if (!isAutoActive() && !isAutoPaused()) return;
 
     // Save the current session — the lock file stays on disk
-    // so the next /gsd auto knows it was interrupted
+    // so the next /run knows it was interrupted
     const dash = getAutoDashboardData();
     if (dash.currentUnit) {
       saveActivityLog(ctx, dash.basePath, dash.currentUnit.type, dash.currentUnit.id);

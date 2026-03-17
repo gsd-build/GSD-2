@@ -103,7 +103,7 @@ Review `{{uatPath}}`, perform the described UAT steps, then update this file wit
 - Results for each check
 - Date completed
 
-Once updated, run `/gsd auto` to resume auto-mode.
+Once updated, run `/run` to resume auto-mode.
 ```
 
 ---

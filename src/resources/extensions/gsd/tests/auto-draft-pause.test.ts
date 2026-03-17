@@ -103,10 +103,10 @@ assert(
   "needs-discussion dispatch rule should return stop action",
 );
 
-// Check notification includes /gsd guidance
+// Check notification includes command guidance (/plan discuss or /gsd)
 assert(
-  nextChunk.includes("/gsd"),
-  "needs-discussion notification should tell user to run /gsd",
+  nextChunk.includes("/plan") || nextChunk.includes("/gsd"),
+  "needs-discussion notification should tell user to run /plan discuss",
 );
 
 // ─── Results ──────────────────────────────────────────────────────────────

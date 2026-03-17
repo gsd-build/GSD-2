@@ -69,7 +69,7 @@ Coordinator writes to `.gsd/parallel/<milestoneId>.signal.json`. Worker consumes
 GSD_MILESTONE_LOCK=M001 \
 GSD_PARALLEL_WORKER=1 \
 GSD_BIN_PATH=$(which gsd) \
-  gsd --mode json --print "/gsd auto" \
+  gsd --mode json --print "/run" \
   2>logs/M001.log &
 WORKER_PID=$!
 ```
@@ -77,7 +77,7 @@ WORKER_PID=$!
 Workers emit NDJSON on stdout. Parse `message_end` events for cost tracking:
 ```bash
 # Extract cost from worker output
-gsd --mode json --print "/gsd auto" | while read -r line; do
+gsd --mode json --print "/run" | while read -r line; do
   COST=$(echo "$line" | jq -r 'select(.type=="message_end") | .message.usage.cost.total // empty')
   [ -n "$COST" ] && echo "Cost update: $COST"
 done
@@ -177,9 +177,9 @@ Inside an interactive GSD session, these commands manage the parallel orchestrat
 
 | Command | Description |
 |---------|-------------|
-| `/gsd parallel start` | Analyze eligibility, spawn workers |
-| `/gsd parallel status` | Show all workers, costs, progress |
-| `/gsd parallel stop [MID]` | Stop one or all workers |
-| `/gsd parallel pause [MID]` | Pause without killing |
-| `/gsd parallel resume [MID]` | Resume paused worker |
-| `/gsd parallel merge [MID]` | Merge completed milestone branch |
+| `/run parallel start` | Analyze eligibility, spawn workers |
+| `/run parallel status` | Show all workers, costs, progress |
+| `/run parallel stop [MID]` | Stop one or all workers |
+| `/run parallel pause [MID]` | Pause without killing |
+| `/run parallel resume [MID]` | Resume paused worker |
+| `/run parallel merge [MID]` | Merge completed milestone branch |

@@ -208,7 +208,7 @@ export async function getSuggestedNextCommands(basePath: string): Promise<string
 
   const commands = new Set<string>();
   if (index.active.phase === "planning") commands.add("/gsd");
-  if (index.active.phase === "executing" || index.active.phase === "summarizing") commands.add("/gsd auto");
+  if (index.active.phase === "executing" || index.active.phase === "summarizing") commands.add("/run");
   if (scope) commands.add(`/gsd doctor ${scope}`);
   if (scope) commands.add(`/gsd doctor fix ${scope}`);
   if (index.validationIssues.length > 0 && scope) commands.add(`/gsd doctor audit ${scope}`);

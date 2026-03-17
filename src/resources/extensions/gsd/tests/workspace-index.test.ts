@@ -60,7 +60,7 @@ async function main(): Promise<void> {
   console.log("\n=== next command suggestions ===");
   {
     const commands = await getSuggestedNextCommands(base);
-    assertTrue(commands.includes("/gsd auto"), "suggests auto during execution");
+    assertTrue(commands.includes("/run"), "suggests auto during execution");
     assertTrue(commands.includes("/gsd doctor M001/S01"), "suggests scoped doctor");
     assertTrue(commands.includes("/gsd status"), "suggests status");
   }

@@ -411,7 +411,7 @@ function createMilestoneWorktree(basePath: string, milestoneId: string): string 
 
 /**
  * Spawn a worker process for a milestone.
- * The worker runs `gsd --print "/gsd auto"` in the milestone's worktree
+ * The worker runs `gsd --print "/run"` in the milestone's worktree
  * with GSD_MILESTONE_LOCK set to isolate state derivation.
  */
 export function spawnWorker(
@@ -429,7 +429,7 @@ export function spawnWorker(
 
   let child: ChildProcess;
   try {
-    child = spawn(process.execPath, [binPath, "--mode", "json", "--print", "/gsd auto"], {
+    child = spawn(process.execPath, [binPath, "--mode", "json", "--print", "/run"], {
       cwd: worker.worktreePath,
       env: {
         ...process.env,

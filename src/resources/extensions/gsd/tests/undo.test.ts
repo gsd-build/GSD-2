@@ -38,7 +38,7 @@ test("handleUndo without --force only warns and leaves completed units intact", 
 
     assert.equal(notifications.length, 1);
     assert.equal(notifications[0]?.level, "warning");
-    assert.match(notifications[0]?.message ?? "", /Run \/gsd undo --force to confirm\./);
+    assert.match(notifications[0]?.message ?? "", /Run \/run undo --force to confirm\./);
     assert.deepEqual(
       JSON.parse(readFileSync(join(base, ".gsd", "completed-units.json"), "utf-8")),
       ["execute-task/M001/S01/T01"],

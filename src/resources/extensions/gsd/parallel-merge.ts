@@ -146,7 +146,7 @@ export function formatMergeResults(results: MergeResult[]): string {
       for (const f of r.conflictFiles) {
         lines.push(`  - \`${f}\``);
       }
-      lines.push(`  Resolve conflicts manually and run \`/gsd parallel merge ${r.milestoneId}\` to retry.`);
+      lines.push(`  Resolve conflicts manually and run \`/run parallel merge ${r.milestoneId}\` to retry.`);
     } else {
       lines.push(`- **${r.milestoneId}** — failed: ${r.error}`);
     }

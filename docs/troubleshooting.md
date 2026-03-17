@@ -25,13 +25,13 @@ It checks:
 - Stale cache after a crash — the in-memory file listing doesn't reflect new artifacts
 - The LLM didn't produce the expected artifact file
 
-**Fix:** Run `/gsd doctor` to repair state, then resume with `/gsd auto`. If the issue persists, check that the expected artifact file exists on disk.
+**Fix:** Run `/gsd doctor` to repair state, then resume with `/run`. If the issue persists, check that the expected artifact file exists on disk.
 
 ### Auto mode stops with "Loop detected"
 
 **Cause:** A unit failed to produce its expected artifact twice in a row.
 
-**Fix:** Check the task plan for clarity. If the plan is ambiguous, refine it manually, then `/gsd auto` to resume.
+**Fix:** Check the task plan for clarity. If the plan is ambiguous, refine it manually, then `/run` to resume.
 
 ### Wrong files in worktree
 
@@ -66,7 +66,7 @@ models:
 
 **Symptoms:** Auto mode pauses with "Budget ceiling reached."
 
-**Fix:** Increase `budget_ceiling` in preferences, or switch to `budget` token profile to reduce per-unit cost, then resume with `/gsd auto`.
+**Fix:** Increase `budget_ceiling` in preferences, or switch to `budget` token profile to reduce per-unit cost, then resume with `/run`.
 
 ### Stale lock file
 
@@ -89,7 +89,7 @@ rm .gsd/auto.lock
 rm .gsd/completed-units.json
 ```
 
-Then `/gsd auto` to restart from current disk state.
+Then `/run` to restart from current disk state.
 
 ### Reset routing history
 

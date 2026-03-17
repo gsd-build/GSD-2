@@ -1,7 +1,7 @@
 /**
  * Headless Orchestrator — `gsd headless`
  *
- * Runs any /gsd subcommand without a TUI by spawning a child process in
+ * Runs any GSD subcommand without a TUI by spawning a child process in
  * RPC mode, auto-responding to extension UI requests, and streaming
  * progress to stderr.
  *
@@ -631,12 +631,24 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
     }
   })
 
+  // Map headless commands to the grouped top-level command syntax
+  const EXECUTION_COMMANDS = new Set(['auto', 'next', 'stop', 'pause', 'dispatch', 'undo', 'skip', 'parallel'])
+  const PLANNING_COMMANDS = new Set(['discuss', 'queue', 'quick', 'capture', 'triage', 'steer', 'new-milestone', 'knowledge'])
+
+  function mapCommand(cmd: string, args: string[]): string {
+    const argStr = args.length > 0 ? ' ' + args.join(' ') : ''
+    if (EXECUTION_COMMANDS.has(cmd)) return `/run ${cmd}${argStr}`
+    if (PLANNING_COMMANDS.has(cmd)) return `/plan ${cmd}${argStr}`
+    return `/gsd ${cmd}${argStr}`
+  }
+
+  const command = mapCommand(options.command, options.commandArgs)
+
   if (!options.json) {
-    process.stderr.write(`[headless] Running /gsd ${options.command}${options.commandArgs.length > 0 ? ' ' + options.commandArgs.join(' ') : ''}...\n`)
+    process.stderr.write(`[headless] Running ${command}...\n`)
   }
 
   // Send the command
-  const command = `/gsd ${options.command}${options.commandArgs.length > 0 ? ' ' + options.commandArgs.join(' ') : ''}`
   try {
     await client.prompt(command)
   } catch (err) {
@@ -649,7 +661,7 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
     await completionPromise
   }
 
-  // Auto-mode chaining: if --auto and milestone creation succeeded, send /gsd auto
+  // Auto-mode chaining: if --auto and milestone creation succeeded, send /run
   if (isNewMilestone && options.auto && milestoneReady && !blocked && exitCode === 0) {
     if (!options.json) {
       process.stderr.write('[headless] Milestone ready — chaining into auto-mode...\n')
@@ -664,7 +676,7 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
     })
 
     try {
-      await client.prompt('/gsd auto')
+      await client.prompt('/run')
     } catch (err) {
       process.stderr.write(`[headless] Error: Failed to start auto-mode: ${err instanceof Error ? err.message : String(err)}\n`)
       exitCode = 1

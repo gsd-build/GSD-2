@@ -93,7 +93,7 @@ test("detects blocked notification with 'Blocked:' prefix", () => {
 })
 
 test("detects inline 'Blocked:' message", () => {
-  assert.ok(isBlockedNotification(makeNotify("Blocked: no active milestone. Fix and run /gsd auto.")))
+  assert.ok(isBlockedNotification(makeNotify("Blocked: no active milestone. Fix and run /run.")))
 })
 
 test("does NOT match 'blocked' without colon (avoids false positives)", () => {

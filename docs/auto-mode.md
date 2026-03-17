@@ -1,6 +1,6 @@
 # Auto Mode
 
-Auto mode is GSD's autonomous execution engine. Run `/gsd auto`, walk away, come back to built software with clean git history.
+Auto mode is GSD's autonomous execution engine. Run `/run`, walk away, come back to built software with clean git history.
 
 ## How It Works
 
@@ -60,7 +60,7 @@ When your project has independent milestones, you can run them simultaneously. E
 
 ### Crash Recovery
 
-A lock file tracks the current unit. If the session dies, the next `/gsd auto` reads the surviving session file, synthesizes a recovery briefing from every tool call that made it to disk, and resumes with full context.
+A lock file tracks the current unit. If the session dies, the next `/run` reads the surviving session file, synthesizes a recovery briefing from every tool call that made it to disk, and resumes with full context.
 
 ### Rate Limit Recovery
 
@@ -108,7 +108,7 @@ After each slice completes, the roadmap is reassessed. If the work revealed new 
 ### Start
 
 ```
-/gsd auto
+/run
 ```
 
 ### Pause
@@ -118,7 +118,7 @@ Press **Escape**. The conversation is preserved. You can interact with the agent
 ### Resume
 
 ```
-/gsd auto
+/run
 ```
 
 Auto mode reads disk state and picks up where it left off.
@@ -126,7 +126,7 @@ Auto mode reads disk state and picks up where it left off.
 ### Stop
 
 ```
-/gsd stop
+/run stop
 ```
 
 Stops auto mode gracefully. Can be run from a different terminal.
@@ -134,7 +134,7 @@ Stops auto mode gracefully. Can be run from a different terminal.
 ### Steer
 
 ```
-/gsd steer
+/plan steer
 ```
 
 Hard-steer plan documents during execution without stopping the pipeline. Changes are picked up at the next phase boundary.
@@ -142,7 +142,7 @@ Hard-steer plan documents during execution without stopping the pipeline. Change
 ### Capture
 
 ```
-/gsd capture "add rate limiting to API endpoints"
+/plan capture "add rate limiting to API endpoints"
 ```
 
 Fire-and-forget thought capture. Captures are triaged automatically between tasks. See [Captures & Triage](./captures-triage.md).

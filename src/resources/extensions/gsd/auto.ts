@@ -477,7 +477,7 @@ export async function stopAuto(ctx?: ExtensionContext, pi?: ExtensionAPI, reason
   deregisterSigtermHandler();
 
   // ── Auto-worktree: exit worktree and reset basePath on stop ──
-  // Preserve the milestone branch so the next /gsd auto can re-enter
+  // Preserve the milestone branch so the next /run can re-enter
   // where it left off. The branch is only deleted during milestone
   // completion (mergeMilestoneToMain) after the work has been squash-merged.
   if (currentMilestoneId && isInAutoWorktree(basePath)) {
@@ -581,7 +581,7 @@ export async function stopAuto(ctx?: ExtensionContext, pi?: ExtensionAPI, reason
 
 /**
  * Pause auto-mode without destroying state. Context is preserved.
- * The user can interact with the agent, then `/gsd auto` resumes
+ * The user can interact with the agent, then `/run` resumes
  * from disk state. Called when the user presses Escape during auto-mode.
  */
 export async function pauseAuto(ctx?: ExtensionContext, _pi?: ExtensionAPI): Promise<void> {
@@ -607,7 +607,7 @@ export async function pauseAuto(ctx?: ExtensionContext, _pi?: ExtensionAPI): Pro
   ctx?.ui.setStatus("gsd-auto", "paused");
   ctx?.ui.setWidget("gsd-progress", undefined);
   ctx?.ui.setFooter(undefined);
-  const resumeCmd = stepMode ? "/gsd next" : "/gsd auto";
+  const resumeCmd = stepMode ? "/run next" : "/run";
   ctx?.ui.notify(
     `${stepMode ? "Step" : "Auto"}-mode paused (Escape). Type to interact, or ${resumeCmd} to resume.`,
     "info",
@@ -907,7 +907,7 @@ export async function startAuto(
           state = postState;
         } else {
           ctx.ui.notify(
-            "Discussion completed but no milestone context was written. Run /gsd to try the discussion again, or /gsd auto after creating the milestone manually.",
+            "Discussion completed but no milestone context was written. Run /gsd to try the discussion again, or /run after creating the milestone manually.",
             "warning",
           );
           return;
@@ -1953,7 +1953,7 @@ async function showStepWizard(
         description: "Open the dashboard.",
       },
     ],
-    notYetMessage: "Run /gsd next when ready to continue.",
+    notYetMessage: "Run /run next when ready to continue.",
   });
 
   if (choice === "continue") {
@@ -2018,7 +2018,7 @@ async function dispatchNextUnit(
   if (!active || !cmdCtx) {
     debugLog(`dispatchNextUnit early return — active=${active}, cmdCtx=${!!cmdCtx}`);
     if (active && !cmdCtx) {
-      ctx.ui.notify("Auto-mode session expired. Run /gsd auto to restart.", "info");
+      ctx.ui.notify("Auto-mode session expired. Run /run to restart.", "info");
     }
     return;
   }
@@ -2104,7 +2104,7 @@ async function dispatchNextUnit(
     // Hint: visualizer available after milestone transition
     const vizPrefs = loadEffectiveGSDPreferences()?.preferences;
     if (vizPrefs?.auto_visualize) {
-      ctx.ui.notify("Run /gsd visualize to see progress overview.", "info");
+      ctx.ui.notify("Run /gsd visualize to see progress overview.", "info");  // visualize stays under /gsd
     }
     // Auto-generate HTML report snapshot on milestone completion (default: on, disable with auto_report: false)
     if (vizPrefs?.auto_report !== false) {
@@ -2259,7 +2259,7 @@ async function dispatchNextUnit(
       // Milestones exist but are dependency-blocked
       const blockerMsg = `Blocked: ${state.blockers.join(", ")}`;
       await stopAuto(ctx, pi, blockerMsg);
-      ctx.ui.notify(`${blockerMsg}. Fix and run /gsd auto.`, "warning");
+      ctx.ui.notify(`${blockerMsg}. Fix and run /run.`, "warning");
       sendDesktopNotification("GSD", blockerMsg, "error", "attention");
     } else {
       // Milestones with remaining work exist but none became active — unexpected
@@ -2378,7 +2378,7 @@ async function dispatchNextUnit(
     }
     const blockerMsg = `Blocked: ${state.blockers.join(", ")}`;
     await stopAuto(ctx, pi, blockerMsg);
-    ctx.ui.notify(`${blockerMsg}. Fix and run /gsd auto.`, "warning");
+    ctx.ui.notify(`${blockerMsg}. Fix and run /run.`, "warning");
     sendDesktopNotification("GSD", blockerMsg, "error", "attention");
     return;
   }
@@ -2408,7 +2408,7 @@ async function dispatchNextUnit(
         return;
       }
       if (budgetEnforcementAction === "pause") {
-        ctx.ui.notify(`${msg} Pausing auto-mode — /gsd auto to override and continue.`, "warning");
+        ctx.ui.notify(`${msg} Pausing auto-mode — /run to override and continue.`, "warning");
         sendDesktopNotification("GSD", msg, "warning", "budget");
         await pauseAuto(ctx, pi);
         return;
@@ -2440,7 +2440,7 @@ async function dispatchNextUnit(
     const contextUsage = cmdCtx.getContextUsage();
     if (contextUsage && contextUsage.percent !== null && contextUsage.percent >= contextThreshold) {
       const msg = `Context window at ${contextUsage.percent}% (threshold: ${contextThreshold}%). Pausing to prevent truncated output.`;
-      ctx.ui.notify(`${msg} Run /gsd auto to continue (will start fresh session).`, "warning");
+      ctx.ui.notify(`${msg} Run /run to continue (will start fresh session).`, "warning");
       sendDesktopNotification("GSD", `Context ${contextUsage.percent}% — paused`, "warning", "attention");
       await pauseAuto(ctx, pi);
       return;

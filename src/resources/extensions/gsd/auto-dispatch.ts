@@ -144,7 +144,7 @@ const DISPATCH_RULES: DispatchRule[] = [
       if (state.phase !== "needs-discussion") return null;
       return {
         action: "stop",
-        reason: `${mid}: ${midTitle} has draft context from a prior discussion — needs its own discussion before planning.\nRun /gsd to discuss.`,
+        reason: `${mid}: ${midTitle} has draft context from a prior discussion — needs its own discussion before planning.\nRun /plan discuss to discuss.`,
         level: "warning",
       };
     },
@@ -158,7 +158,7 @@ const DISPATCH_RULES: DispatchRule[] = [
       if (hasContext) return null; // fall through to next rule
       return {
         action: "stop",
-        reason: "No context or roadmap yet. Run /gsd to discuss first.",
+        reason: "No context or roadmap yet. Run /plan discuss to discuss first.",
         level: "warning",
       };
     },

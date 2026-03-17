@@ -75,29 +75,25 @@ function projectRoot(): string {
   return resolveProjectRoot(process.cwd());
 }
 
-export function registerGSDCommand(pi: ExtensionAPI): void {
+export function registerAllCommands(pi: ExtensionAPI): void {
+  // ─── Subcommands that moved to /run (backward compat with deprecation hint) ──
+  const movedToRun = new Set(["auto", "next", "stop", "pause", "dispatch", "undo", "skip", "parallel"]);
+  // ─── Subcommands that moved to /plan (backward compat with deprecation hint) ──
+  const movedToPlan = new Set(["discuss", "queue", "quick", "capture", "triage", "steer", "knowledge", "new-milestone"]);
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // /gsd — visibility, system, config, maintenance
+  // ═══════════════════════════════════════════════════════════════════════════════
   pi.registerCommand("gsd", {
-    description: "GSD — Get Shit Done: /gsd help|next|auto|stop|pause|status|visualize|queue|quick|capture|triage|dispatch|history|undo|skip|export|cleanup|mode|prefs|config|hooks|run-hook|skill-health|doctor|forensics|migrate|remote|steer|knowledge|new-milestone|parallel",
+    description: "GSD — visibility & system: /gsd status|history|visualize|doctor|prefs|config|export|...",
     getArgumentCompletions: (prefix: string) => {
       const subcommands = [
         { cmd: "help", desc: "Categorized command reference with descriptions" },
-        { cmd: "next", desc: "Explicit step mode (same as /gsd)" },
-        { cmd: "auto", desc: "Autonomous mode — research, plan, execute, commit, repeat" },
-        { cmd: "stop", desc: "Stop auto mode gracefully" },
-        { cmd: "pause", desc: "Pause auto-mode (preserves state, /gsd auto to resume)" },
         { cmd: "status", desc: "Progress dashboard" },
         { cmd: "visualize", desc: "Open workflow visualizer (progress, deps, metrics, timeline)" },
-        { cmd: "queue", desc: "Queue and reorder future milestones" },
-        { cmd: "quick", desc: "Execute a quick task without full planning overhead" },
-        { cmd: "discuss", desc: "Discuss architecture and decisions" },
-        { cmd: "capture", desc: "Fire-and-forget thought capture" },
-        { cmd: "triage", desc: "Manually trigger triage of pending captures" },
-        { cmd: "dispatch", desc: "Dispatch a specific phase directly" },
         { cmd: "history", desc: "View execution history" },
-        { cmd: "undo", desc: "Revert last completed unit" },
-        { cmd: "skip", desc: "Prevent a unit from auto-mode dispatch" },
+        { cmd: "forensics", desc: "Examine execution logs" },
         { cmd: "export", desc: "Export milestone/slice results" },
-        { cmd: "cleanup", desc: "Remove merged branches or snapshots" },
         { cmd: "mode", desc: "Switch workflow mode (solo/team)" },
         { cmd: "prefs", desc: "Manage preferences (model selection, timeouts, etc.)" },
         { cmd: "config", desc: "Set API keys for external tools" },
@@ -105,32 +101,21 @@ export function registerGSDCommand(pi: ExtensionAPI): void {
         { cmd: "run-hook", desc: "Manually trigger a specific hook" },
         { cmd: "skill-health", desc: "Skill lifecycle dashboard" },
         { cmd: "doctor", desc: "Runtime health checks with auto-fix" },
-        { cmd: "forensics", desc: "Examine execution logs" },
+        { cmd: "cleanup", desc: "Remove merged branches or snapshots" },
         { cmd: "migrate", desc: "Migrate a v1 .planning directory to .gsd format" },
         { cmd: "remote", desc: "Control remote auto-mode" },
-        { cmd: "steer", desc: "Hard-steer plan documents during execution" },
         { cmd: "inspect", desc: "Show SQLite DB diagnostics" },
-        { cmd: "knowledge", desc: "Add persistent project knowledge (rule, pattern, or lesson)" },
-        { cmd: "new-milestone", desc: "Create a milestone from a specification document (headless)" },
-        { cmd: "parallel", desc: "Parallel milestone orchestration (start, status, stop, merge)" },
       ];
       const parts = prefix.trim().split(/\s+/);
 
       if (parts.length <= 1) {
         return subcommands
           .filter((item) => item.cmd.startsWith(parts[0] ?? ""))
-          .map((item) => ({ 
-            value: item.cmd, 
-            label: item.cmd, 
-            description: item.desc 
+          .map((item) => ({
+            value: item.cmd,
+            label: item.cmd,
+            description: item.desc
           }));
-      }
-
-      if (parts[0] === "auto" && parts.length <= 2) {
-        const flagPrefix = parts[1] ?? "";
-        return ["--verbose", "--debug"]
-          .filter((f) => f.startsWith(flagPrefix))
-          .map((f) => ({ value: `auto ${f}`, label: f }));
       }
 
       if (parts[0] === "mode" && parts.length <= 2) {
@@ -138,13 +123,6 @@ export function registerGSDCommand(pi: ExtensionAPI): void {
         return ["global", "project"]
           .filter((cmd) => cmd.startsWith(subPrefix))
           .map((cmd) => ({ value: `mode ${cmd}`, label: cmd }));
-      }
-
-      if (parts[0] === "parallel" && parts.length <= 2) {
-        const subPrefix = parts[1] ?? "";
-        return ["start", "status", "stop", "pause", "resume", "merge"]
-          .filter((cmd) => cmd.startsWith(subPrefix))
-          .map((cmd) => ({ value: `parallel ${cmd}`, label: cmd }));
       }
 
       if (parts[0] === "prefs" && parts.length <= 2) {
@@ -161,22 +139,11 @@ export function registerGSDCommand(pi: ExtensionAPI): void {
           .map((cmd) => ({ value: `remote ${cmd}`, label: cmd }));
       }
 
-      if (parts[0] === "next" && parts.length <= 2) {
-        const flagPrefix = parts[1] ?? "";
-        return ["--verbose", "--dry-run"]
-          .filter((f) => f.startsWith(flagPrefix))
-          .map((f) => ({ value: `next ${f}`, label: f }));
-      }
-
       if (parts[0] === "history" && parts.length <= 2) {
         const flagPrefix = parts[1] ?? "";
         return ["--cost", "--phase", "--model", "10", "20", "50"]
           .filter((f) => f.startsWith(flagPrefix))
           .map((f) => ({ value: `history ${f}`, label: f }));
-      }
-
-      if (parts[0] === "undo" && parts.length <= 2) {
-        return [{ value: "undo --force", label: "--force" }];
       }
 
       if (parts[0] === "export" && parts.length <= 2) {
@@ -193,13 +160,6 @@ export function registerGSDCommand(pi: ExtensionAPI): void {
           .map((cmd) => ({ value: `cleanup ${cmd}`, label: cmd }));
       }
 
-      if (parts[0] === "knowledge" && parts.length <= 2) {
-        const subPrefix = parts[1] ?? "";
-        return ["rule", "pattern", "lesson"]
-          .filter((cmd) => cmd.startsWith(subPrefix))
-          .map((cmd) => ({ value: `knowledge ${cmd}`, label: cmd }));
-      }
-
       if (parts[0] === "doctor") {
         const modePrefix = parts[1] ?? "";
         const modes = ["fix", "heal", "audit"];
@@ -213,18 +173,30 @@ export function registerGSDCommand(pi: ExtensionAPI): void {
         return [];
       }
 
-      if (parts[0] === "dispatch" && parts.length <= 2) {
-        const phasePrefix = parts[1] ?? "";
-        return ["research", "plan", "execute", "complete", "reassess", "uat", "replan"]
-          .filter((cmd) => cmd.startsWith(phasePrefix))
-          .map((cmd) => ({ value: `dispatch ${cmd}`, label: cmd }));
-      }
-
       return [];
     },
 
     async handler(args: string, ctx: ExtensionCommandContext) {
       const trimmed = (typeof args === "string" ? args : "").trim();
+      const firstWord = trimmed.split(/\s+/)[0] ?? "";
+
+      // ── Deprecation shims: commands that moved to /run ──────────────
+      if (movedToRun.has(firstWord)) {
+        ctx.ui.notify(`Hint: /gsd ${firstWord} is now /run ${firstWord} (or just /run)`, "info");
+        // Fall through — dispatch via the /run handler for backward compat
+        await runHandler(trimmed, ctx, pi);
+        return;
+      }
+
+      // ── Deprecation shims: commands that moved to /plan ─────────────
+      if (movedToPlan.has(firstWord)) {
+        const planCmd = firstWord === "new-milestone" ? "milestone" : firstWord;
+        ctx.ui.notify(`Hint: /gsd ${firstWord} is now /plan ${planCmd}`, "info");
+        // Map new-milestone → milestone for /plan handler
+        const planArgs = firstWord === "new-milestone" ? trimmed.replace(/^new-milestone/, "milestone") : trimmed;
+        await planHandler(planArgs, ctx, pi);
+        return;
+      }
 
       if (trimmed === "help" || trimmed === "h" || trimmed === "?") {
         showHelp(ctx);
@@ -266,175 +238,13 @@ export function registerGSDCommand(pi: ExtensionAPI): void {
         return;
       }
 
-      if (trimmed === "next" || trimmed.startsWith("next ")) {
-        if (trimmed.includes("--dry-run")) {
-          await handleDryRun(ctx, projectRoot());
-          return;
-        }
-        const verboseMode = trimmed.includes("--verbose");
-        const debugMode = trimmed.includes("--debug");
-        if (debugMode) enableDebug(projectRoot());
-        await startAuto(ctx, pi, projectRoot(), verboseMode, { step: true });
-        return;
-      }
-
-      if (trimmed === "auto" || trimmed.startsWith("auto ")) {
-        const verboseMode = trimmed.includes("--verbose");
-        const debugMode = trimmed.includes("--debug");
-        if (debugMode) enableDebug(projectRoot());
-        await startAuto(ctx, pi, projectRoot(), verboseMode);
-        return;
-      }
-
-      if (trimmed === "stop") {
-        if (!isAutoActive() && !isAutoPaused()) {
-          // Not running in this process — check for a remote auto-mode session
-          const result = stopAutoRemote(projectRoot());
-          if (result.found) {
-            ctx.ui.notify(`Sent stop signal to auto-mode session (PID ${result.pid}). It will shut down gracefully.`, "info");
-          } else if (result.error) {
-            ctx.ui.notify(`Failed to stop remote auto-mode: ${result.error}`, "error");
-          } else {
-            ctx.ui.notify("Auto-mode is not running.", "info");
-          }
-          return;
-        }
-        await stopAuto(ctx, pi, "User requested stop");
-        return;
-      }
-
-      if (trimmed === "pause") {
-        if (!isAutoActive()) {
-          if (isAutoPaused()) {
-            ctx.ui.notify("Auto-mode is already paused. /gsd auto to resume.", "info");
-          } else {
-            ctx.ui.notify("Auto-mode is not running.", "info");
-          }
-          return;
-        }
-        await pauseAuto(ctx, pi);
-        return;
-      }
-
       if (trimmed === "history" || trimmed.startsWith("history ")) {
         await handleHistory(trimmed.replace(/^history\s*/, "").trim(), ctx, projectRoot());
         return;
       }
 
-      if (trimmed === "undo" || trimmed.startsWith("undo ")) {
-        await handleUndo(trimmed.replace(/^undo\s*/, "").trim(), ctx, pi, projectRoot());
-        return;
-      }
-
-      if (trimmed.startsWith("skip ")) {
-        await handleSkip(trimmed.replace(/^skip\s*/, "").trim(), ctx, projectRoot());
-        return;
-      }
-
       if (trimmed === "export" || trimmed.startsWith("export ")) {
         await handleExport(trimmed.replace(/^export\s*/, "").trim(), ctx, projectRoot());
-        return;
-      }
-
-      // ─── Parallel Orchestration ────────────────────────────────────────
-      if (trimmed.startsWith("parallel")) {
-        const parallelArgs = trimmed.slice("parallel".length).trim();
-        const [subCmd = "", ...restParts] = parallelArgs.split(/\s+/);
-        const rest = restParts.join(" ");
-
-        if (subCmd === "start" || subCmd === "") {
-          const loaded = loadEffectiveGSDPreferences();
-          const config = resolveParallelConfig(loaded?.preferences);
-          if (!config.enabled) {
-            pi.sendMessage({
-              customType: "gsd-parallel",
-              content: "Parallel mode is not enabled. Set `parallel.enabled: true` in your preferences.",
-              display: false,
-            });
-            return;
-          }
-          const candidates = await prepareParallelStart(projectRoot(), loaded?.preferences);
-          const report = formatEligibilityReport(candidates);
-          if (candidates.eligible.length === 0) {
-            pi.sendMessage({ customType: "gsd-parallel", content: report + "\n\nNo milestones are eligible for parallel execution.", display: false });
-            return;
-          }
-          const result = await startParallel(
-            projectRoot(),
-            candidates.eligible.map(e => e.milestoneId),
-            loaded?.preferences,
-          );
-          const lines = [`Parallel orchestration started.`, `Workers: ${result.started.join(", ")}`];
-          if (result.errors.length > 0) {
-            lines.push(`Errors: ${result.errors.map(e => `${e.mid}: ${e.error}`).join("; ")}`);
-          }
-          pi.sendMessage({ customType: "gsd-parallel", content: report + "\n\n" + lines.join("\n"), display: false });
-          return;
-        }
-
-        if (subCmd === "status") {
-          if (!isParallelActive()) {
-            pi.sendMessage({ customType: "gsd-parallel", content: "No parallel orchestration is currently active.", display: false });
-            return;
-          }
-          const workers = getWorkerStatuses();
-          const lines = ["# Parallel Workers\n"];
-          for (const w of workers) {
-            lines.push(`- **${w.milestoneId}** (${w.title}) — ${w.state} — ${w.completedUnits} units — $${w.cost.toFixed(2)}`);
-          }
-          const orchState = getOrchestratorState();
-          if (orchState) {
-            lines.push(`\nTotal cost: $${orchState.totalCost.toFixed(2)}`);
-          }
-          pi.sendMessage({ customType: "gsd-parallel", content: lines.join("\n"), display: false });
-          return;
-        }
-
-        if (subCmd === "stop") {
-          const mid = rest.trim() || undefined;
-          await stopParallel(projectRoot(), mid);
-          pi.sendMessage({ customType: "gsd-parallel", content: mid ? `Stopped worker for ${mid}.` : "All parallel workers stopped.", display: false });
-          return;
-        }
-
-        if (subCmd === "pause") {
-          const mid = rest.trim() || undefined;
-          pauseWorker(projectRoot(), mid);
-          pi.sendMessage({ customType: "gsd-parallel", content: mid ? `Paused worker for ${mid}.` : "All parallel workers paused.", display: false });
-          return;
-        }
-
-        if (subCmd === "resume") {
-          const mid = rest.trim() || undefined;
-          resumeWorker(projectRoot(), mid);
-          pi.sendMessage({ customType: "gsd-parallel", content: mid ? `Resumed worker for ${mid}.` : "All parallel workers resumed.", display: false });
-          return;
-        }
-
-        if (subCmd === "merge") {
-          const mid = rest.trim() || undefined;
-          if (mid) {
-            // Merge a specific milestone
-            const result = await mergeCompletedMilestone(projectRoot(), mid);
-            pi.sendMessage({ customType: "gsd-parallel", content: formatMergeResults([result]), display: false });
-            return;
-          }
-          // Merge all completed milestones
-          const workers = getWorkerStatuses();
-          if (workers.length === 0) {
-            pi.sendMessage({ customType: "gsd-parallel", content: "No parallel workers to merge.", display: false });
-            return;
-          }
-          const results = await mergeAllCompleted(projectRoot(), workers);
-          pi.sendMessage({ customType: "gsd-parallel", content: formatMergeResults(results), display: false });
-          return;
-        }
-
-        pi.sendMessage({
-          customType: "gsd-parallel",
-          content: `Unknown parallel subcommand "${subCmd}". Usage: /gsd parallel [start|status|stop|pause|resume|merge]`,
-          display: false,
-        });
         return;
       }
 
@@ -451,46 +261,6 @@ export function registerGSDCommand(pi: ExtensionAPI): void {
 
       if (trimmed === "cleanup snapshots") {
         await handleCleanupSnapshots(ctx, projectRoot());
-        return;
-      }
-
-      if (trimmed === "queue") {
-        await showQueue(ctx, pi, projectRoot());
-        return;
-      }
-
-      if (trimmed === "discuss") {
-        await showDiscuss(ctx, pi, projectRoot());
-        return;
-      }
-
-      if (trimmed === "new-milestone") {
-        const basePath = projectRoot();
-        const headlessContextPath = join(basePath, ".gsd", "runtime", "headless-context.md");
-        if (existsSync(headlessContextPath)) {
-          const seedContext = readFileSync(headlessContextPath, "utf-8");
-          try { unlinkSync(headlessContextPath); } catch { /* non-fatal */ }
-          await showHeadlessMilestoneCreation(ctx, pi, basePath, seedContext);
-        } else {
-          // No headless context — fall back to interactive smart entry
-          const { showSmartEntry } = await import("./guided-flow.js");
-          await showSmartEntry(ctx, pi, basePath);
-        }
-        return;
-      }
-
-      if (trimmed.startsWith("capture ") || trimmed === "capture") {
-        await handleCapture(trimmed.replace(/^capture\s*/, "").trim(), ctx);
-        return;
-      }
-
-      if (trimmed === "triage") {
-        await handleTriage(ctx, pi, process.cwd());
-        return;
-      }
-
-      if (trimmed === "quick" || trimmed.startsWith("quick ")) {
-        await handleQuick(trimmed.replace(/^quick\s*/, "").trim(), ctx, pi);
         return;
       }
 
@@ -531,24 +301,6 @@ Examples:
         return;
       }
 
-      if (trimmed.startsWith("steer ")) {
-        await handleSteer(trimmed.replace(/^steer\s+/, "").trim(), ctx, pi);
-        return;
-      }
-      if (trimmed === "steer") {
-        ctx.ui.notify("Usage: /gsd steer <description of change>. Example: /gsd steer Use Postgres instead of SQLite", "warning");
-        return;
-      }
-
-      if (trimmed.startsWith("knowledge ")) {
-        await handleKnowledge(trimmed.replace(/^knowledge\s+/, "").trim(), ctx);
-        return;
-      }
-      if (trimmed === "knowledge") {
-        ctx.ui.notify("Usage: /gsd knowledge <rule|pattern|lesson> <description>. Example: /gsd knowledge rule Use real DB for integration tests", "warning");
-        return;
-      }
-
       if (trimmed === "migrate" || trimmed.startsWith("migrate ")) {
         const { handleMigrate } = await import("./migrate/command.js");
         await handleMigrate(trimmed.replace(/^migrate\s*/, "").trim(), ctx, pi);
@@ -557,16 +309,6 @@ Examples:
 
       if (trimmed === "remote" || trimmed.startsWith("remote ")) {
         await handleRemote(trimmed.replace(/^remote\s*/, "").trim(), ctx, pi);
-        return;
-      }
-
-      if (trimmed === "dispatch" || trimmed.startsWith("dispatch ")) {
-        const phase = trimmed.replace(/^dispatch\s*/, "").trim();
-        if (!phase) {
-          ctx.ui.notify("Usage: /gsd dispatch <phase>  (research|plan|execute|complete|reassess|uat|replan)", "warning");
-          return;
-        }
-        await dispatchDirectPhase(ctx, pi, phase, projectRoot());
         return;
       }
 
@@ -587,49 +329,392 @@ Examples:
       );
     },
   });
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // /run — execution hot path
+  // ═══════════════════════════════════════════════════════════════════════════════
+  pi.registerCommand("run", {
+    description: "Execute — /run [auto|next|stop|pause|dispatch|undo|skip|parallel]",
+    getArgumentCompletions: (prefix: string) => {
+      const subcommands = [
+        { cmd: "auto", desc: "Run all queued units continuously [--verbose] [--debug]" },
+        { cmd: "next", desc: "Execute next task, then pause [--verbose] [--dry-run]" },
+        { cmd: "stop", desc: "Stop auto-mode gracefully" },
+        { cmd: "pause", desc: "Pause auto-mode (preserves state)" },
+        { cmd: "dispatch", desc: "Dispatch a specific phase directly" },
+        { cmd: "undo", desc: "Revert last completed unit [--force]" },
+        { cmd: "skip", desc: "Prevent a unit from auto-mode dispatch" },
+        { cmd: "parallel", desc: "Parallel milestone orchestration (start|status|stop|pause|resume|merge)" },
+      ];
+      const parts = prefix.trim().split(/\s+/);
+
+      if (parts.length <= 1) {
+        return subcommands
+          .filter(item => item.cmd.startsWith(parts[0] ?? ""))
+          .map(item => ({ value: item.cmd, label: item.cmd, description: item.desc }));
+      }
+
+      if (parts[0] === "auto" && parts.length <= 2) {
+        return ["--verbose", "--debug"]
+          .filter(f => f.startsWith(parts[1] ?? ""))
+          .map(f => ({ value: `auto ${f}`, label: f }));
+      }
+      if (parts[0] === "next" && parts.length <= 2) {
+        return ["--verbose", "--dry-run"]
+          .filter(f => f.startsWith(parts[1] ?? ""))
+          .map(f => ({ value: `next ${f}`, label: f }));
+      }
+      if (parts[0] === "undo" && parts.length <= 2) {
+        return [{ value: "undo --force", label: "--force" }];
+      }
+      if (parts[0] === "dispatch" && parts.length <= 2) {
+        return ["research", "plan", "execute", "complete", "reassess", "uat", "replan"]
+          .filter(cmd => cmd.startsWith(parts[1] ?? ""))
+          .map(cmd => ({ value: `dispatch ${cmd}`, label: cmd }));
+      }
+      if (parts[0] === "parallel" && parts.length <= 2) {
+        return ["start", "status", "stop", "pause", "resume", "merge"]
+          .filter(cmd => cmd.startsWith(parts[1] ?? ""))
+          .map(cmd => ({ value: `parallel ${cmd}`, label: cmd }));
+      }
+
+      return [];
+    },
+    async handler(args: string, ctx: ExtensionCommandContext) {
+      await runHandler((typeof args === "string" ? args : "").trim(), ctx, pi);
+    },
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // /plan — work structuring and planning
+  // ═══════════════════════════════════════════════════════════════════════════════
+  pi.registerCommand("plan", {
+    description: "Plan — /plan [discuss|queue|quick|capture|triage|steer|milestone|knowledge]",
+    getArgumentCompletions: (prefix: string) => {
+      const subcommands = [
+        { cmd: "discuss", desc: "Start guided milestone/slice discussion" },
+        { cmd: "queue", desc: "Queue and reorder future milestones" },
+        { cmd: "quick", desc: "Execute a quick task without full planning overhead" },
+        { cmd: "capture", desc: "Fire-and-forget thought capture" },
+        { cmd: "triage", desc: "Manually trigger triage of pending captures" },
+        { cmd: "steer", desc: "Hard-steer plan documents during execution" },
+        { cmd: "milestone", desc: "Create a milestone from a specification document" },
+        { cmd: "knowledge", desc: "Add persistent project knowledge (rule, pattern, or lesson)" },
+      ];
+      const parts = prefix.trim().split(/\s+/);
+
+      if (parts.length <= 1) {
+        return subcommands
+          .filter(item => item.cmd.startsWith(parts[0] ?? ""))
+          .map(item => ({ value: item.cmd, label: item.cmd, description: item.desc }));
+      }
+
+      if (parts[0] === "knowledge" && parts.length <= 2) {
+        return ["rule", "pattern", "lesson"]
+          .filter(cmd => cmd.startsWith(parts[1] ?? ""))
+          .map(cmd => ({ value: `knowledge ${cmd}`, label: cmd }));
+      }
+
+      return [];
+    },
+    async handler(args: string, ctx: ExtensionCommandContext) {
+      await planHandler((typeof args === "string" ? args : "").trim(), ctx, pi);
+    },
+  });
+}
+
+// ─── /run handler (shared by /run command and /gsd backward compat) ───────────
+
+async function runHandler(trimmed: string, ctx: ExtensionCommandContext, pi: ExtensionAPI): Promise<void> {
+  // Bare /run → auto mode (the most common action)
+  if (trimmed === "" || trimmed === "auto" || trimmed.startsWith("auto ")) {
+    const verboseMode = trimmed.includes("--verbose");
+    const debugMode = trimmed.includes("--debug");
+    if (debugMode) enableDebug(projectRoot());
+    await startAuto(ctx, pi, projectRoot(), verboseMode);
+    return;
+  }
+
+  if (trimmed === "next" || trimmed.startsWith("next ")) {
+    if (trimmed.includes("--dry-run")) {
+      await handleDryRun(ctx, projectRoot());
+      return;
+    }
+    const verboseMode = trimmed.includes("--verbose");
+    const debugMode = trimmed.includes("--debug");
+    if (debugMode) enableDebug(projectRoot());
+    await startAuto(ctx, pi, projectRoot(), verboseMode, { step: true });
+    return;
+  }
+
+  if (trimmed === "stop") {
+    if (!isAutoActive() && !isAutoPaused()) {
+      const result = stopAutoRemote(projectRoot());
+      if (result.found) {
+        ctx.ui.notify(`Sent stop signal to auto-mode session (PID ${result.pid}). It will shut down gracefully.`, "info");
+      } else if (result.error) {
+        ctx.ui.notify(`Failed to stop remote auto-mode: ${result.error}`, "error");
+      } else {
+        ctx.ui.notify("Auto-mode is not running.", "info");
+      }
+      return;
+    }
+    await stopAuto(ctx, pi, "User requested stop");
+    return;
+  }
+
+  if (trimmed === "pause") {
+    if (!isAutoActive()) {
+      if (isAutoPaused()) {
+        ctx.ui.notify("Auto-mode is already paused. /run to resume.", "info");
+      } else {
+        ctx.ui.notify("Auto-mode is not running.", "info");
+      }
+      return;
+    }
+    await pauseAuto(ctx, pi);
+    return;
+  }
+
+  if (trimmed === "dispatch" || trimmed.startsWith("dispatch ")) {
+    const phase = trimmed.replace(/^dispatch\s*/, "").trim();
+    if (!phase) {
+      ctx.ui.notify("Usage: /run dispatch <phase>  (research|plan|execute|complete|reassess|uat|replan)", "warning");
+      return;
+    }
+    await dispatchDirectPhase(ctx, pi, phase, projectRoot());
+    return;
+  }
+
+  if (trimmed === "undo" || trimmed.startsWith("undo ")) {
+    await handleUndo(trimmed.replace(/^undo\s*/, "").trim(), ctx, pi, projectRoot());
+    return;
+  }
+
+  if (trimmed.startsWith("skip ")) {
+    await handleSkip(trimmed.replace(/^skip\s*/, "").trim(), ctx, projectRoot());
+    return;
+  }
+  if (trimmed === "skip") {
+    ctx.ui.notify("Usage: /run skip <unit-id>  (e.g., /run skip T03)", "info");
+    return;
+  }
+
+  // ─── Parallel Orchestration ────────────────────────────────────────
+  if (trimmed.startsWith("parallel")) {
+    const parallelArgs = trimmed.slice("parallel".length).trim();
+    const [subCmd = "", ...restParts] = parallelArgs.split(/\s+/);
+    const rest = restParts.join(" ");
+
+    if (subCmd === "start" || subCmd === "") {
+      const loaded = loadEffectiveGSDPreferences();
+      const config = resolveParallelConfig(loaded?.preferences);
+      if (!config.enabled) {
+        pi.sendMessage({
+          customType: "gsd-parallel",
+          content: "Parallel mode is not enabled. Set `parallel.enabled: true` in your preferences.",
+          display: false,
+        });
+        return;
+      }
+      const candidates = await prepareParallelStart(projectRoot(), loaded?.preferences);
+      const report = formatEligibilityReport(candidates);
+      if (candidates.eligible.length === 0) {
+        pi.sendMessage({ customType: "gsd-parallel", content: report + "\n\nNo milestones are eligible for parallel execution.", display: false });
+        return;
+      }
+      const result = await startParallel(
+        projectRoot(),
+        candidates.eligible.map(e => e.milestoneId),
+        loaded?.preferences,
+      );
+      const lines = [`Parallel orchestration started.`, `Workers: ${result.started.join(", ")}`];
+      if (result.errors.length > 0) {
+        lines.push(`Errors: ${result.errors.map(e => `${e.mid}: ${e.error}`).join("; ")}`);
+      }
+      pi.sendMessage({ customType: "gsd-parallel", content: report + "\n\n" + lines.join("\n"), display: false });
+      return;
+    }
+
+    if (subCmd === "status") {
+      if (!isParallelActive()) {
+        pi.sendMessage({ customType: "gsd-parallel", content: "No parallel orchestration is currently active.", display: false });
+        return;
+      }
+      const workers = getWorkerStatuses();
+      const lines = ["# Parallel Workers\n"];
+      for (const w of workers) {
+        lines.push(`- **${w.milestoneId}** (${w.title}) — ${w.state} — ${w.completedUnits} units — $${w.cost.toFixed(2)}`);
+      }
+      const orchState = getOrchestratorState();
+      if (orchState) {
+        lines.push(`\nTotal cost: $${orchState.totalCost.toFixed(2)}`);
+      }
+      pi.sendMessage({ customType: "gsd-parallel", content: lines.join("\n"), display: false });
+      return;
+    }
+
+    if (subCmd === "stop") {
+      const mid = rest.trim() || undefined;
+      await stopParallel(projectRoot(), mid);
+      pi.sendMessage({ customType: "gsd-parallel", content: mid ? `Stopped worker for ${mid}.` : "All parallel workers stopped.", display: false });
+      return;
+    }
+
+    if (subCmd === "pause") {
+      const mid = rest.trim() || undefined;
+      pauseWorker(projectRoot(), mid);
+      pi.sendMessage({ customType: "gsd-parallel", content: mid ? `Paused worker for ${mid}.` : "All parallel workers paused.", display: false });
+      return;
+    }
+
+    if (subCmd === "resume") {
+      const mid = rest.trim() || undefined;
+      resumeWorker(projectRoot(), mid);
+      pi.sendMessage({ customType: "gsd-parallel", content: mid ? `Resumed worker for ${mid}.` : "All parallel workers resumed.", display: false });
+      return;
+    }
+
+    if (subCmd === "merge") {
+      const mid = rest.trim() || undefined;
+      if (mid) {
+        const result = await mergeCompletedMilestone(projectRoot(), mid);
+        pi.sendMessage({ customType: "gsd-parallel", content: formatMergeResults([result]), display: false });
+        return;
+      }
+      const workers = getWorkerStatuses();
+      if (workers.length === 0) {
+        pi.sendMessage({ customType: "gsd-parallel", content: "No parallel workers to merge.", display: false });
+        return;
+      }
+      const results = await mergeAllCompleted(projectRoot(), workers);
+      pi.sendMessage({ customType: "gsd-parallel", content: formatMergeResults(results), display: false });
+      return;
+    }
+
+    pi.sendMessage({
+      customType: "gsd-parallel",
+      content: `Unknown parallel subcommand "${subCmd}". Usage: /run parallel [start|status|stop|pause|resume|merge]`,
+      display: false,
+    });
+    return;
+  }
+
+  ctx.ui.notify(
+    `Unknown: /run ${trimmed}. Run /gsd help for available commands.`,
+    "warning",
+  );
+}
+
+// ─── /plan handler (shared by /plan command and /gsd backward compat) ─────────
+
+async function planHandler(trimmed: string, ctx: ExtensionCommandContext, pi: ExtensionAPI): Promise<void> {
+  // Bare /plan → discuss (the most common planning action)
+  if (trimmed === "" || trimmed === "discuss") {
+    await showDiscuss(ctx, pi, projectRoot());
+    return;
+  }
+
+  if (trimmed === "queue") {
+    await showQueue(ctx, pi, projectRoot());
+    return;
+  }
+
+  if (trimmed === "quick" || trimmed.startsWith("quick ")) {
+    await handleQuick(trimmed.replace(/^quick\s*/, "").trim(), ctx, pi);
+    return;
+  }
+
+  if (trimmed.startsWith("capture ") || trimmed === "capture") {
+    await handleCapture(trimmed.replace(/^capture\s*/, "").trim(), ctx);
+    return;
+  }
+
+  if (trimmed === "triage") {
+    await handleTriage(ctx, pi, process.cwd());
+    return;
+  }
+
+  if (trimmed.startsWith("steer ")) {
+    await handleSteer(trimmed.replace(/^steer\s+/, "").trim(), ctx, pi);
+    return;
+  }
+  if (trimmed === "steer") {
+    ctx.ui.notify("Usage: /plan steer <description of change>. Example: /plan steer Use Postgres instead of SQLite", "warning");
+    return;
+  }
+
+  if (trimmed === "milestone") {
+    const basePath = projectRoot();
+    const headlessContextPath = join(basePath, ".gsd", "runtime", "headless-context.md");
+    if (existsSync(headlessContextPath)) {
+      const seedContext = readFileSync(headlessContextPath, "utf-8");
+      try { unlinkSync(headlessContextPath); } catch { /* non-fatal */ }
+      await showHeadlessMilestoneCreation(ctx, pi, basePath, seedContext);
+    } else {
+      const { showSmartEntry } = await import("./guided-flow.js");
+      await showSmartEntry(ctx, pi, basePath);
+    }
+    return;
+  }
+
+  if (trimmed.startsWith("knowledge ")) {
+    await handleKnowledge(trimmed.replace(/^knowledge\s+/, "").trim(), ctx);
+    return;
+  }
+  if (trimmed === "knowledge") {
+    ctx.ui.notify("Usage: /plan knowledge <rule|pattern|lesson> <description>. Example: /plan knowledge rule Use real DB for integration tests", "warning");
+    return;
+  }
+
+  ctx.ui.notify(
+    `Unknown: /plan ${trimmed}. Run /gsd help for available commands.`,
+    "warning",
+  );
 }
 
 function showHelp(ctx: ExtensionCommandContext): void {
   const lines = [
     "GSD — Get Shit Done\n",
-    "WORKFLOW",
-    "  /gsd               Run next unit in step mode (same as /gsd next)",
-    "  /gsd next           Execute next task, then pause  [--dry-run] [--verbose]",
-    "  /gsd auto           Run all queued units continuously  [--verbose]",
-    "  /gsd stop           Stop auto-mode gracefully",
-    "  /gsd pause          Pause auto-mode (preserves state, /gsd auto to resume)",
-    "  /gsd discuss        Start guided milestone/slice discussion",
-    "  /gsd new-milestone  Create milestone from headless context (used by gsd headless)",
+    "EXECUTION (/run)",
+    "  /run               Start auto-mode (same as /run auto)",
+    "  /run auto          Run all queued units continuously  [--verbose]",
+    "  /run next          Execute next task, then pause  [--dry-run] [--verbose]",
+    "  /run stop          Stop auto-mode gracefully",
+    "  /run pause         Pause auto-mode (preserves state, /run to resume)",
+    "  /run dispatch      Dispatch a specific phase directly  [research|plan|execute|complete|reassess|uat|replan]",
+    "  /run undo          Revert last completed unit  [--force]",
+    "  /run skip          Prevent a unit from auto-mode dispatch",
+    "  /run parallel      Parallel milestone orchestration  [start|status|stop|pause|resume|merge]",
     "",
-    "VISIBILITY",
-    "  /gsd status         Show progress dashboard  (Ctrl+Alt+G)",
-    "  /gsd visualize      Interactive 7-tab TUI (progress, deps, metrics, timeline, agent, changes, export)",
-    "  /gsd queue          Show queued/dispatched units and execution order",
-    "  /gsd history        View execution history  [--cost] [--phase] [--model] [N]",
+    "PLANNING (/plan)",
+    "  /plan              Start guided discussion (same as /plan discuss)",
+    "  /plan discuss      Start guided milestone/slice discussion",
+    "  /plan queue        Show queued/dispatched units and execution order",
+    "  /plan quick        Execute a quick task without full planning overhead",
+    "  /plan capture      Fire-and-forget thought capture",
+    "  /plan triage       Classify and route pending captures",
+    "  /plan steer        Apply user override to active work",
+    "  /plan milestone    Create a milestone from headless context",
+    "  /plan knowledge    Add rule, pattern, or lesson to KNOWLEDGE.md",
     "",
-    "COURSE CORRECTION",
-    "  /gsd steer <desc>   Apply user override to active work",
-    "  /gsd capture <text> Quick-capture a thought to CAPTURES.md",
-    "  /gsd triage         Classify and route pending captures",
-    "  /gsd skip <unit>    Prevent a unit from auto-mode dispatch",
-    "  /gsd undo           Revert last completed unit  [--force]",
+    "VISIBILITY (/gsd)",
+    "  /gsd               Run next unit in step mode",
+    "  /gsd status        Show progress dashboard  (Ctrl+Alt+G)",
+    "  /gsd visualize     Interactive TUI (progress, deps, metrics, timeline)",
+    "  /gsd history       View execution history  [--cost] [--phase] [--model] [N]",
+    "  /gsd export        Export milestone/slice results  [--json|--markdown|--html]",
     "",
-    "PROJECT KNOWLEDGE",
-    "  /gsd knowledge <type> <text>   Add rule, pattern, or lesson to KNOWLEDGE.md",
-    "",
-    "CONFIGURATION",
-    "  /gsd mode           Set workflow mode (solo/team)  [global|project]",
-    "  /gsd prefs          Manage preferences  [global|project|status|wizard|setup]",
-    "  /gsd config         Set API keys for external tools",
-    "  /gsd hooks          Show post-unit hook configuration",
-    "",
-    "MAINTENANCE",
-    "  /gsd doctor         Diagnose and repair .gsd/ state  [audit|fix|heal] [scope]",
-    "  /gsd export         Export milestone/slice results  [--json|--markdown|--html]",
-    "  /gsd cleanup        Remove merged branches or snapshots  [branches|snapshots]",
-    "  /gsd migrate        Upgrade .gsd/ structures to new format",
-    "  /gsd remote         Control remote auto-mode  [slack|discord|status|disconnect]",
-    "  /gsd inspect        Show SQLite DB diagnostics (schema, row counts, recent entries)",
+    "SYSTEM (/gsd)",
+    "  /gsd mode          Set workflow mode (solo/team)  [global|project]",
+    "  /gsd prefs         Manage preferences  [global|project|status|wizard|setup]",
+    "  /gsd config        Set API keys for external tools",
+    "  /gsd hooks         Show post-unit hook configuration",
+    "  /gsd doctor        Diagnose and repair .gsd/ state  [audit|fix|heal] [scope]",
+    "  /gsd cleanup       Remove merged branches or snapshots  [branches|snapshots]",
+    "  /gsd migrate       Upgrade .gsd/ structures to new format",
+    "  /gsd remote        Control remote auto-mode  [slack|discord|status|disconnect]",
+    "  /gsd inspect       Show SQLite DB diagnostics",
   ];
   ctx.ui.notify(lines.join("\n"), "info");
 }
@@ -639,7 +724,7 @@ async function handleStatus(ctx: ExtensionCommandContext): Promise<void> {
   const state = await deriveState(basePath);
 
   if (state.registry.length === 0) {
-    ctx.ui.notify("No GSD milestones found. Run /gsd to start.", "info");
+    ctx.ui.notify("No GSD milestones found. Run /plan to start.", "info");
     return;
   }
 
@@ -886,13 +971,13 @@ async function handleInspect(ctx: ExtensionCommandContext): Promise<void> {
     const { isDbAvailable, _getAdapter } = await import("./gsd-db.js");
 
     if (!isDbAvailable()) {
-      ctx.ui.notify("No GSD database available. Run /gsd auto to create one.", "info");
+      ctx.ui.notify("No GSD database available. Run /run to create one.", "info");
       return;
     }
 
     const adapter = _getAdapter();
     if (!adapter) {
-      ctx.ui.notify("No GSD database available. Run /gsd auto to create one.", "info");
+      ctx.ui.notify("No GSD database available. Run /run to create one.", "info");
       return;
     }
 
@@ -1657,7 +1742,7 @@ async function ensurePreferencesFile(
 
 async function handleSkip(unitArg: string, ctx: ExtensionCommandContext, basePath: string): Promise<void> {
   if (!unitArg) {
-    ctx.ui.notify("Usage: /gsd skip <unit-id>  (e.g., /gsd skip execute-task/M001/S01/T03 or /gsd skip T03)", "info");
+    ctx.ui.notify("Usage: /run skip <unit-id>  (e.g., /run skip execute-task/M001/S01/T03 or /run skip T03)", "info");
     return;
   }
 
@@ -1864,7 +1949,7 @@ async function handleKnowledge(args: string, ctx: ExtensionCommandContext): Prom
 
   if (!typeArg || !["rule", "pattern", "lesson"].includes(typeArg)) {
     ctx.ui.notify(
-      "Usage: /gsd knowledge <rule|pattern|lesson> <description>\nExample: /gsd knowledge rule Use real DB for integration tests",
+      "Usage: /plan knowledge <rule|pattern|lesson> <description>\nExample: /plan knowledge rule Use real DB for integration tests",
       "warning",
     );
     return;
@@ -1872,7 +1957,7 @@ async function handleKnowledge(args: string, ctx: ExtensionCommandContext): Prom
 
   const entryText = parts.slice(1).join(" ").trim();
   if (!entryText) {
-    ctx.ui.notify(`Usage: /gsd knowledge ${typeArg} <description>`, "warning");
+    ctx.ui.notify(`Usage: /plan knowledge ${typeArg} <description>`, "warning");
     return;
   }
 
@@ -1890,7 +1975,7 @@ async function handleKnowledge(args: string, ctx: ExtensionCommandContext): Prom
 // ─── Capture Command ──────────────────────────────────────────────────────────
 
 /**
- * Handle `/gsd capture "..."` — fire-and-forget thought capture.
+ * Handle `/plan capture "..."` — fire-and-forget thought capture.
  * Appends to `.gsd/CAPTURES.md` without interrupting auto-mode.
  * Works in all modes: auto running, paused, stopped, no project.
  */
@@ -1898,7 +1983,7 @@ async function handleCapture(args: string, ctx: ExtensionCommandContext): Promis
   // Strip surrounding quotes from the argument
   let text = args.trim();
   if (!text) {
-    ctx.ui.notify('Usage: /gsd capture "your thought here"', "warning");
+    ctx.ui.notify('Usage: /plan capture "your thought here"', "warning");
     return;
   }
   // Remove wrapping quotes (single or double)
@@ -1906,7 +1991,7 @@ async function handleCapture(args: string, ctx: ExtensionCommandContext): Promis
     text = text.slice(1, -1);
   }
   if (!text) {
-    ctx.ui.notify('Usage: /gsd capture "your thought here"', "warning");
+    ctx.ui.notify('Usage: /plan capture "your thought here"', "warning");
     return;
   }
 
@@ -1925,7 +2010,7 @@ async function handleCapture(args: string, ctx: ExtensionCommandContext): Promis
 // ─── Triage Command ───────────────────────────────────────────────────────────
 
 /**
- * Handle `/gsd triage` — manually trigger triage of pending captures.
+ * Handle `/plan triage` — manually trigger triage of pending captures.
  * Dispatches the triage prompt to the LLM for classification.
  * Triage result handling (confirmation UI) is wired in T03.
  */

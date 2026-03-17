@@ -51,7 +51,7 @@ export async function handleUndo(args: string, ctx: ExtensionCommandContext, _pi
       `  - Delete summary artifacts\n` +
       `  - Uncheck task in PLAN (if execute-task)\n` +
       `  - Attempt to revert associated git commits\n\n` +
-      `Run /gsd undo --force to confirm.`,
+      `Run /run undo --force to confirm.`,
       "warning",
     );
     return;

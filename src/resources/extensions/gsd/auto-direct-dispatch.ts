@@ -1,5 +1,5 @@
 /**
- * Direct phase dispatch — handles manual /gsd dispatch commands.
+ * Direct phase dispatch — handles manual /run dispatch commands.
  * Resolves phase name → unit type + prompt, creates a session, and sends the message.
  */
 
@@ -67,7 +67,7 @@ export async function dispatchDirectPhase(
         const requireDiscussion = loadEffectiveGSDPreferences()?.preferences?.phases?.require_slice_discussion;
         if (requireDiscussion && !sliceContextFile) {
           ctx.ui.notify(
-            `Slice ${sid} requires discussion before planning. Run /gsd discuss to discuss this slice, then /gsd auto to resume.`,
+            `Slice ${sid} requires discussion before planning. Run /plan discuss to discuss this slice, then /run to resume.`,
             "info",
           );
           await pauseAuto(ctx, pi);

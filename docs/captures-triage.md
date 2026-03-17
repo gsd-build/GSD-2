@@ -9,8 +9,8 @@ Captures let you fire-and-forget thoughts during auto-mode execution. Instead of
 While auto-mode is running (or any time):
 
 ```
-/gsd capture "add rate limiting to the API endpoints"
-/gsd capture "the auth flow should support OAuth, not just JWT"
+/plan capture "add rate limiting to the API endpoints"
+/plan capture "the auth flow should support OAuth, not just JWT"
 ```
 
 Captures are appended to `.gsd/CAPTURES.md` and triaged automatically between tasks.
@@ -23,7 +23,7 @@ Captures are appended to `.gsd/CAPTURES.md` and triaged automatically between ta
 capture → triage → confirm → resolve → resume
 ```
 
-1. **Capture** — `/gsd capture "thought"` appends to `.gsd/CAPTURES.md` with a timestamp and unique ID
+1. **Capture** — `/plan capture "thought"` appends to `.gsd/CAPTURES.md` with a timestamp and unique ID
 2. **Triage** — at natural seams between tasks (in `handleAgentEnd`), GSD detects pending captures and classifies them
 3. **Confirm** — the user is shown the proposed resolution and confirms or adjusts
 4. **Resolve** — the resolution is applied (task injection, replan trigger, deferral, etc.)
@@ -55,7 +55,7 @@ The LLM classifies each capture and proposes a resolution. Plan-modifying resolu
 Trigger triage manually at any time:
 
 ```
-/gsd triage
+/plan triage
 ```
 
 This is useful when you've accumulated several captures and want to process them before the next natural seam.
@@ -78,5 +78,5 @@ Captures always resolve to the **original project root's** `.gsd/CAPTURES.md`, n
 
 | Command | Description |
 |---------|-------------|
-| `/gsd capture "text"` | Capture a thought (quotes optional for single words) |
-| `/gsd triage` | Manually trigger triage of pending captures |
+| `/plan capture "text"` | Capture a thought (quotes optional for single words) |
+| `/plan triage` | Manually trigger triage of pending captures |

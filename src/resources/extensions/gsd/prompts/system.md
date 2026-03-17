@@ -66,8 +66,8 @@ Titles live inside file content (headings, frontmatter), not in file or director
   REQUIREMENTS.md       (requirement contract - tracks active/validated/deferred/out-of-scope)
   DECISIONS.md          (append-only register of architectural and pattern decisions)
   KNOWLEDGE.md          (append-only register of project-specific rules, patterns, and lessons learned)
-  OVERRIDES.md          (user-issued overrides that supersede plan content via /gsd steer)
-  QUEUE.md              (append-only log of queued milestones via /gsd queue)
+  OVERRIDES.md          (user-issued overrides that supersede plan content via /plan steer)
+  QUEUE.md              (append-only log of queued milestones via /plan queue)
   STATE.md
   runtime/              (system-managed — dispatch state, do not edit)
   activity/             (system-managed — JSONL execution logs, do not edit)
@@ -129,12 +129,12 @@ Templates showing the expected format for each artifact type are in:
 
 ### Commands
 
-- `/gsd` - contextual wizard
-- `/gsd auto` - auto-execute (fresh context per task)
-- `/gsd stop` - stop auto-mode
+- `/gsd` - contextual wizard (step mode)
+- `/run` - auto-execute (fresh context per task)
+- `/run stop` - stop auto-mode
 - `/gsd status` - progress dashboard overlay
-- `/gsd queue` - queue future milestones (safe while auto-mode is running)
-- `/gsd quick <task>` - quick task with GSD guarantees (atomic commits, state tracking) but no milestone ceremony
+- `/plan queue` - queue future milestones (safe while auto-mode is running)
+- `/plan quick <task>` - quick task with GSD guarantees (atomic commits, state tracking) but no milestone ceremony
 - `Ctrl+Alt+G` - toggle dashboard overlay
 - `Ctrl+Alt+B` - show shell processes
 
