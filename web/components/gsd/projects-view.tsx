@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback, useSyncExternalStore } from "react"
+import { useEffect, useState, useCallback, useRef, useSyncExternalStore } from "react"
 import { FolderOpen, Loader2, AlertCircle, Layers, Sparkles, ArrowUpCircle, GitBranch, FolderKanban, CheckCircle2, FolderRoot } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useProjectStoreManager } from "@/lib/project-store-manager"
@@ -137,21 +137,75 @@ export function ProjectsView() {
     }
   }, [loadProjects])
 
+  const [switchingTo, setSwitchingTo] = useState<string | null>(null)
+  const switchPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Clean up poll on unmount
+  useEffect(() => {
+    return () => {
+      if (switchPollRef.current) clearInterval(switchPollRef.current)
+    }
+  }, [])
+
   function handleSelectProject(project: ProjectMetadata) {
-    manager.switchProject(project.path)
-    // Navigate to dashboard for the switched project
-    window.dispatchEvent(
-      new CustomEvent("gsd:navigate-view", { detail: { view: "dashboard" } })
-    )
+    // Already active — just navigate
+    if (activeProjectCwd === project.path) {
+      window.dispatchEvent(
+        new CustomEvent("gsd:navigate-view", { detail: { view: "dashboard" } })
+      )
+      return
+    }
+
+    setSwitchingTo(project.name)
+    const store = manager.switchProject(project.path)
+
+    // Poll the store's boot status until ready (or error/timeout)
+    if (switchPollRef.current) clearInterval(switchPollRef.current)
+    const startTime = Date.now()
+    switchPollRef.current = setInterval(() => {
+      const state = store.getSnapshot()
+      const elapsed = Date.now() - startTime
+      if (state.bootStatus === "ready" || state.bootStatus === "error" || elapsed > 30000) {
+        if (switchPollRef.current) clearInterval(switchPollRef.current)
+        switchPollRef.current = null
+        setSwitchingTo(null)
+        window.dispatchEvent(
+          new CustomEvent("gsd:navigate-view", { detail: { view: "dashboard" } })
+        )
+      }
+    }, 150)
   }
+
+  // ─── Switching dialog ────────────────────────────────────────────────
+
+  const switchingDialog = (
+    <Dialog open={!!switchingTo} onOpenChange={() => {}}>
+      <DialogContent className="sm:max-w-sm" onPointerDownOutside={(e) => e.preventDefault()}>
+        <div className="flex flex-col items-center gap-4 py-4 text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <div className="space-y-1.5">
+            <h3 className="text-base font-semibold text-foreground">
+              Opening {switchingTo}
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              Starting project bridge and loading workspace…
+            </p>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
 
   // ─── Loading state ─────────────────────────────────────────────────────
 
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
+      <>
+        {switchingDialog}
+        <div className="flex h-full items-center justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      </>
     )
   }
 
@@ -159,12 +213,15 @@ export function ProjectsView() {
 
   if (error) {
     return (
-      <div className="flex h-full items-center justify-center px-6">
-        <div className="flex max-w-md flex-col items-center gap-3 text-center">
-          <AlertCircle className="h-8 w-8 text-destructive" />
-          <p className="text-sm text-destructive">{error}</p>
+      <>
+        {switchingDialog}
+        <div className="flex h-full items-center justify-center px-6">
+          <div className="flex max-w-md flex-col items-center gap-3 text-center">
+            <AlertCircle className="h-8 w-8 text-destructive" />
+            <p className="text-sm text-destructive">{error}</p>
+          </div>
         </div>
-      </div>
+      </>
     )
   }
 
@@ -198,9 +255,11 @@ export function ProjectsView() {
   // ─── Project grid ──────────────────────────────────────────────────────
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-4xl px-6 py-6 space-y-6">
-        {/* Header */}
+    <>
+      {switchingDialog}
+      <div className="h-full overflow-y-auto">
+        <div className="mx-auto max-w-4xl px-6 py-6 space-y-6">
+          {/* Header */}
         <div className="space-y-1">
           <h1 className="text-xl font-semibold text-foreground tracking-tight">Projects</h1>
           <p className="text-sm text-muted-foreground">
@@ -262,6 +321,7 @@ export function ProjectsView() {
         </div>
       </div>
     </div>
+    </>
   )
 }
 
