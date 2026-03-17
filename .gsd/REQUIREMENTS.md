@@ -59,17 +59,6 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: Pipeline verified by `src/tests/web-diagnostics-contract.test.ts` (28/28 pass). API route GET `/api/skill-health` returns SkillHealthReport JSON. Panel renders skill table with pass rates, token trends, staleness warnings, declining flags, and suggestions. Both builds pass. Awaits live browser UAT for full validation.
 - Notes: S04 implemented full skill-health pipeline: generateSkillHealthReport via child-process → API route → store fetch → SkillHealthPanel with skill table, pass rates, token trends, stale/declining flags, and heal suggestions. Live runtime UAT needed before marking validated.
 
-### R106 — A dedicated browser page showing KNOWLEDGE.md entries and CAPTURES.md with pending/triaged/resolved status, classification labels, and triage action controls.
-- Class: core-capability
-- Status: active
-- Description: A dedicated browser page showing KNOWLEDGE.md entries and CAPTURES.md with pending/triaged/resolved status, classification labels, and triage action controls.
-- Why it matters: Knowledge and captures are persistent project-context artifacts that need browser visibility and interaction.
-- Source: user
-- Primary owning slice: M003/S05
-- Supporting slices: M003/S02
-- Validation: unmapped
-- Notes: Upstream captures.ts provides loadAllCaptures/loadPendingCaptures/markCaptureResolved. KNOWLEDGE.md is an append-only register.
-
 ### R107 — The browser settings command surface shows dynamic model routing configuration, provider fallback chain management, budget allocation visibility, and all preference fields from the upstream preferences wizard.
 - Class: core-capability
 - Status: active
@@ -270,6 +259,17 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: `npm run build` exits 0, `npm run build:web-host` exits 0, `rg "^<<<<<<<|^>>>>>>>|^=======$" src/ web/ packages/ .github/` returns empty, `git log --oneline HEAD..upstream/main | wc -l` returns 0. All verified on 2026-03-16 after merging 415 upstream commits (v2.12→v2.22.0) and resolving all 50 file conflicts.
 - Notes: Upstream advanced to v2.22.0 during execution (415 commits vs estimated 398). Web code has zero import dependencies on GSD extension core modules — only imports from native-git-bridge.ts. All 12 extension modules took upstream with no fork re-additions needed.
 
+### R106 — A dedicated browser page showing KNOWLEDGE.md entries and CAPTURES.md with pending/triaged/resolved status, classification labels, and triage action controls.
+- Class: core-capability
+- Status: validated
+- Description: A dedicated browser page showing KNOWLEDGE.md entries and CAPTURES.md with pending/triaged/resolved status, classification labels, and triage action controls.
+- Why it matters: Knowledge and captures are persistent project-context artifacts that need browser visibility and interaction.
+- Source: user
+- Primary owning slice: M003/S05
+- Supporting slices: M003/S02
+- Validation: Verified by S05: `/api/knowledge` GET returns parsed KNOWLEDGE.md entries with type classification; `/api/captures` GET returns capture entries with status/counts; POST validates and resolves captures with field-level 400 errors; KnowledgeCapturesPanel renders Knowledge tab (type badges) and Captures tab (status badges, classification labels, triage action buttons); `/gsd knowledge`, `/gsd capture`, `/gsd triage` dispatch to real panel. `npm run build` and `npm run build:web-host` pass.
+- Notes: S05 complete. Knowledge service reads KNOWLEDGE.md directly (freeform headings + table rows). Captures service uses child-process pattern for upstream captures.ts calls. Panel has duplicated helpers (PanelHeader/PanelError/PanelLoading/PanelEmpty) — could be extracted to shared module in S08.
+
 ## Deferred
 
 ### R020 — Support broader project/session switching beyond the current-project launch contract.
@@ -367,7 +367,7 @@ This file is the explicit capability and coverage contract for the project.
 | R103 | failure-visibility | active | M003/S04 | M003/S02 | Pipeline verified by `src/tests/web-diagnostics-contract.test.ts` (28/28 pass — type exports, contract state, dispatch→surface, surface→section, store methods). API route `/api/forensics` returns ForensicReport JSON via child-process service. Panel component (ForensicsPanel) renders anomaly list, recent units, crash lock, metrics summary. Both builds pass. Awaits live browser UAT for full validation. |
 | R104 | failure-visibility | active | M003/S04 | M003/S02 | Pipeline verified by `src/tests/web-diagnostics-contract.test.ts` (28/28 pass). API routes: GET `/api/doctor?scope=X` returns DoctorReport JSON; POST `/api/doctor` applies fixes and returns DoctorFixResult. Panel renders issue list with severity/scope badges, fixable count, and Apply Fixes button. Both builds pass. Awaits live browser UAT for full validation. |
 | R105 | operability | active | M003/S04 | M003/S02 | Pipeline verified by `src/tests/web-diagnostics-contract.test.ts` (28/28 pass). API route GET `/api/skill-health` returns SkillHealthReport JSON. Panel renders skill table with pass rates, token trends, staleness warnings, declining flags, and suggestions. Both builds pass. Awaits live browser UAT for full validation. |
-| R106 | core-capability | active | M003/S05 | M003/S02 | unmapped |
+| R106 | core-capability | validated | M003/S05 | M003/S02 | Verified by S05: `/api/knowledge` GET returns parsed KNOWLEDGE.md entries with type classification; `/api/captures` GET returns capture entries with status/counts; POST validates and resolves captures with field-level 400 errors; KnowledgeCapturesPanel renders Knowledge tab (type badges) and Captures tab (status badges, classification labels, triage action buttons); `/gsd knowledge`, `/gsd capture`, `/gsd triage` dispatch to real panel. `npm run build` and `npm run build:web-host` pass. |
 | R107 | core-capability | active | M003/S06 | M003/S02 | unmapped |
 | R108 | core-capability | active | M003/S07 | M003/S02 | unmapped |
 | R109 | quality-attribute | active | M003/S08 | M003/S03, M003/S04, M003/S05, M003/S06, M003/S07 | unmapped |
@@ -377,7 +377,7 @@ This file is the explicit capability and coverage contract for the project.
 
 ## Coverage Summary
 
-- Active requirements: 12
-- Mapped to slices: 12
-- Validated: 12 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R100)
+- Active requirements: 11
+- Mapped to slices: 11
+- Validated: 13 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R100, R106)
 - Unmapped active requirements: 0

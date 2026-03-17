@@ -67,7 +67,7 @@ This milestone is complete only when all are true:
 - [x] **S04: Diagnostics panels — forensics, doctor, skill-health** `risk:medium` `depends:[S02]`
   > After this: three separate browser panels accessible via `/gsd forensics`, `/gsd doctor`, `/gsd skill-health` showing real diagnostic data with actions.
 
-- [ ] **S05: Knowledge and captures/triage page** `risk:medium` `depends:[S02]`
+- [x] **S05: Knowledge and captures/triage page** `risk:medium` `depends:[S02]`
   > After this: dedicated page showing KNOWLEDGE.md entries and CAPTURES.md with pending/triaged/resolved status and action controls.
 
 - [ ] **S06: Extended settings and model management surface** `risk:medium` `depends:[S02]`
