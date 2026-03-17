@@ -20,6 +20,10 @@ If a `GSD Skill Preferences` block is present in system context, use it to decid
 **UAT type:** `{{uatType}}`
 **Result file to write:** `{{uatResultPath}}`
 
+Follow the **first matching** branch below based on the UAT type.
+
+---
+
 ### If UAT type is `artifact-driven`
 
 You are the test runner. Execute every check defined in `{{uatPath}}` directly:
@@ -68,7 +72,178 @@ date: <ISO 8601 timestamp>
 <any additional context, errors encountered, or follow-up items>
 ```
 
-### If UAT type is NOT `artifact-driven` (type is `{{uatType}}`)
+---
+
+### If UAT type is `browser-executable`
+
+You are the autonomous test runner for a browser-based UAT. You will boot the application, run browser verification flows, capture evidence, and tear down all processes.
+
+> **Graceful degradation (D027):** If no RUNTIME.md content appears in the Inlined Context section above (look for a `### RUNTIME.md Stack Contract` heading), you cannot boot the application autonomously. Skip the lifecycle steps below and instead fall back to the **human review path** at the bottom of this document — write a UAT-RESULT file with verdict `surfaced-for-human-review` and note: "RUNTIME.md must be created in .gsd/ before this browser-executable UAT can run autonomously."
+
+#### Lifecycle Steps
+
+1. **Parse RUNTIME.md** from the inlined context above. Identify:
+   - Each service's `command` (the boot command)
+   - Each service's readiness probe: `port`, `http`, `file`, or `command` — and the associated value
+   - Any `seed` commands that must run after services are ready
+   - The `previewUrl` (the base URL for browser verification)
+
+2. **Boot each service** using `bg_shell start` with:
+   - `command`: the service's boot command from RUNTIME.md
+   - `group`: `"uat-{{sliceId}}"` (e.g., `"uat-S01"`)
+   - `type`: `"server"`
+   - `ready_port`: the port from the readiness probe (if probe type is `port` or `http`)
+   - `ready_pattern`: a pattern from the readiness probe (if probe type is `command` or `file`)
+   - `label`: a descriptive label like `"uat-{{sliceId}}-<service-name>"`
+
+3. **Wait for all services** to be ready using `bg_shell wait_for_ready` for each started process ID.
+
+4. **Run seed commands** (if any) from RUNTIME.md using `bash`. These typically set up test data.
+
+5. **Read the `## Executable Checks` section** from `{{uatPath}}`. This section contains structured browser flow steps.
+
+6. **Run browser verification** by calling `browser_verify_flow` with:
+   - The flow steps parsed from `## Executable Checks`
+   - `baseUrl` set to the `previewUrl` from RUNTIME.md
+
+7. **Record flow results** — capture the PASS/FAIL status and details for each step.
+
+8. **Capture evidence** — take screenshots or record key browser state at verification points.
+
+9. **Tear down all UAT processes:**
+   - Use `bg_shell list` to find all processes whose `group` matches `"uat-{{sliceId}}"`
+   - Use `bg_shell kill` for each process ID in the group
+   - Confirm all processes in the group are terminated
+
+10. **Write the UAT-RESULT file** at `{{uatResultPath}}` with:
+
+```markdown
+---
+sliceId: {{sliceId}}
+uatType: browser-executable
+verdict: PASS | FAIL | PARTIAL
+date: <ISO 8601 timestamp>
+---
+
+# UAT Result — {{sliceId}}
+
+## Execution Mode
+
+Autonomous browser-executable UAT — services booted via `bg_shell`, verified via `browser_verify_flow`.
+
+## Flow Results
+
+| Step | Action | Expected | Actual | Result |
+|------|--------|----------|--------|--------|
+| 1 | <action from Executable Checks> | <expected outcome> | <observed outcome> | PASS / FAIL |
+
+## Evidence
+
+- <screenshot paths, browser state observations, or key output captured during verification>
+
+## Process Teardown
+
+- Group: `uat-{{sliceId}}`
+- Processes killed: <list of process IDs and labels>
+- Teardown confirmed: yes / no
+
+## Overall Verdict
+
+<PASS / FAIL / PARTIAL> — <one sentence summary>
+
+## Notes
+
+<any additional context, errors encountered, or follow-up items>
+```
+
+---
+
+### If UAT type is `runtime-executable`
+
+You are the autonomous test runner for a CLI/runtime-based UAT. You will boot the application, run CLI verification commands, capture evidence, and tear down all processes.
+
+> **Graceful degradation (D027):** If no RUNTIME.md content appears in the Inlined Context section above (look for a `### RUNTIME.md Stack Contract` heading), you cannot boot the application autonomously. Skip the lifecycle steps below and instead fall back to the **human review path** at the bottom of this document — write a UAT-RESULT file with verdict `surfaced-for-human-review` and note: "RUNTIME.md must be created in .gsd/ before this runtime-executable UAT can run autonomously."
+
+#### Lifecycle Steps
+
+1. **Parse RUNTIME.md** from the inlined context above. Identify:
+   - Each service's `command` (the boot command)
+   - Each service's readiness probe: `port`, `http`, `file`, or `command` — and the associated value
+   - Any `seed` commands that must run after services are ready
+   - The `previewUrl` (if applicable for HTTP-based runtime checks)
+
+2. **Boot each service** using `bg_shell start` with:
+   - `command`: the service's boot command from RUNTIME.md
+   - `group`: `"uat-{{sliceId}}"` (e.g., `"uat-S01"`)
+   - `type`: `"server"`
+   - `ready_port`: the port from the readiness probe (if probe type is `port` or `http`)
+   - `ready_pattern`: a pattern from the readiness probe (if probe type is `command` or `file`)
+   - `label`: a descriptive label like `"uat-{{sliceId}}-<service-name>"`
+
+3. **Wait for all services** to be ready using `bg_shell wait_for_ready` for each started process ID.
+
+4. **Run seed commands** (if any) from RUNTIME.md using `bash`. These typically set up test data.
+
+5. **Read the `## Executable Checks` section** from `{{uatPath}}`. This section contains structured CLI commands to execute.
+
+6. **Run each CLI command** from `## Executable Checks` using `bash`:
+   - Execute each command and capture both stdout and stderr
+   - Compare actual output against expected outcomes defined in the checks
+   - Record PASS or FAIL for each command
+
+7. **Record command results** — capture the exit code, stdout, and stderr for each check.
+
+8. **Tear down all UAT processes:**
+   - Use `bg_shell list` to find all processes whose `group` matches `"uat-{{sliceId}}"`
+   - Use `bg_shell kill` for each process ID in the group
+   - Confirm all processes in the group are terminated
+
+9. **Write the UAT-RESULT file** at `{{uatResultPath}}` with:
+
+```markdown
+---
+sliceId: {{sliceId}}
+uatType: runtime-executable
+verdict: PASS | FAIL | PARTIAL
+date: <ISO 8601 timestamp>
+---
+
+# UAT Result — {{sliceId}}
+
+## Execution Mode
+
+Autonomous runtime-executable UAT — services booted via `bg_shell`, verified via CLI commands.
+
+## Command Results
+
+| Check | Command | Expected | Actual (stdout) | Exit Code | Result |
+|-------|---------|----------|-----------------|-----------|--------|
+| 1 | <command from Executable Checks> | <expected outcome> | <actual output> | 0 | PASS / FAIL |
+
+## Evidence
+
+- <stdout/stderr captures, file artifacts produced, or key output observed during verification>
+
+## Process Teardown
+
+- Group: `uat-{{sliceId}}`
+- Processes killed: <list of process IDs and labels>
+- Teardown confirmed: yes / no
+
+## Overall Verdict
+
+<PASS / FAIL / PARTIAL> — <one sentence summary>
+
+## Notes
+
+<any additional context, errors encountered, or follow-up items>
+```
+
+---
+
+### If UAT type requires human review (type is `{{uatType}}`)
+
+This section applies to UAT types: `human-judgment`, `mixed`, `live-runtime`, `human-experience`, or any type not matched above.
 
 This UAT type requires human execution or live-runtime observation that you cannot perform mechanically. Your role is to surface it clearly for review.
 

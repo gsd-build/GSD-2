@@ -84,6 +84,29 @@ If this milestone requires any external API keys or secrets:
 
 If this milestone does not require any external API keys or secrets, skip this step entirely — do not create an empty manifest.
 
+## Runtime Stack Detection
+
+After writing the roadmap and any secrets manifest, detect whether the project has a runnable application:
+
+- Look for: `package.json` with `start`, `dev`, or `serve` scripts; `docker-compose.yml` or `docker-compose.yaml`; `Makefile` with `run` or `start` targets; Python `manage.py` or `app.py`; Go `main.go`; Rust `Cargo.toml` with `[[bin]]`; or similar entry points
+- If the project has **no runnable application** (e.g., a library, a documentation-only project, a pure CLI with no long-running process), skip this step entirely — do not create an empty RUNTIME.md
+
+If a runnable application is detected:
+
+1. Use the **Runtime Stack Contract** output template from the inlined context above for the expected format
+2. Write `{{runtimeOutputPath}}` with:
+   - **Environment** — list variables from `.env.example`, `.env.sample`, or similar if present (key=value, not secrets)
+   - **Services** — one H3 section per service. For each service:
+     - **Command** — the startup command (e.g., `npm run dev`, `docker compose up`, `python manage.py runserver`)
+     - **Ready when** — a readiness probe: `port <N> is open` for web apps, `HTTP 200 at <url>` for health-checked services, `command "<cmd>" exits 0` for CLI tools, `file "<path>" exists` for file-producing daemons
+     - **Port** — the port the service listens on (if applicable)
+     - **Health URL** — the health check URL (if applicable)
+     - **Readiness delay** — estimated startup time in milliseconds (e.g., `3000ms`)
+   - **Seed** — numbered steps to populate initial data (if applicable)
+   - **Preview URLs** — URLs to access the running application (e.g., `- App: http://localhost:3000`)
+   - **Teardown** — steps to clean up after the app stops (if applicable)
+3. Populate services by examining project configuration — infer startup commands from scripts/config, match readiness probe types to service kinds (port for web servers, HTTP for health-checked APIs, command for workers)
+
 **You MUST write the file `{{outputPath}}` before finishing.**
 
 When done, say: "Milestone {{milestoneId}} planned."

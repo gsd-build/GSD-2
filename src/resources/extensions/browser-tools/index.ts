@@ -27,6 +27,7 @@ import { registerZoomTools } from "./tools/zoom.js";
 import { registerCodegenTools } from "./tools/codegen.js";
 import { registerActionCacheTools } from "./tools/action-cache.js";
 import { registerInjectionDetectionTools } from "./tools/injection-detect.js";
+import { registerFlowTools } from "./tools/verify-flow.js";
 
 export default function (pi: ExtensionAPI) {
 	pi.on("session_shutdown", async () => { await closeBrowser(); });
@@ -68,4 +69,5 @@ export default function (pi: ExtensionAPI) {
 	registerCodegenTools(pi, deps);
 	registerActionCacheTools(pi, deps);
 	registerInjectionDetectionTools(pi, deps);
+	registerFlowTools(pi, deps);
 }

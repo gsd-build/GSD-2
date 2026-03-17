@@ -16,6 +16,7 @@ import type {
   RequirementCounts,
   SecretsManifest, SecretsManifestEntry, SecretsManifestEntryStatus,
   ManifestStatus,
+  RuntimeConfig, ServiceConfig, ReadinessProbe,
 } from './types.js';
 
 import { checkExistingEnvKeys } from '../get-secrets-from-user.js';
@@ -370,6 +371,245 @@ export function formatSecretsManifest(manifest: SecretsManifest): string {
     lines.push('');
     for (let i = 0; i < entry.guidance.length; i++) {
       lines.push(`${i + 1}. ${entry.guidance[i]}`);
+    }
+  }
+
+  return lines.join('\n') + '\n';
+}
+
+// ─── Runtime Config Parser ─────────────────────────────────────────────────
+
+/**
+ * Parse readiness probe from a "Ready when:" field value.
+ * Prefix matching: "port 3000" → port, "HTTP 200 http://..." → http,
+ * "file exists /tmp/ready" → file, "command ..." → command.
+ * Unrecognised formats fall back to command type.
+ */
+function parseReadinessProbe(raw: string): ReadinessProbe {
+  const trimmed = raw.trim();
+  const lower = trimmed.toLowerCase();
+
+  if (lower.startsWith('port')) {
+    const value = trimmed.slice(4).trim();
+    return { type: 'port', value };
+  }
+  if (lower.startsWith('http')) {
+    // "HTTP 200 http://..." or "http://..."
+    // Extract the URL part — skip "HTTP" and optional status code
+    const rest = trimmed.replace(/^https?/i, '');
+    const urlMatch = trimmed.match(/(https?:\/\/\S+)/i);
+    if (urlMatch) {
+      return { type: 'http', value: urlMatch[1] };
+    }
+    // Just "HTTP 200" with no URL — use the whole value
+    return { type: 'http', value: trimmed.slice(4).trim() };
+  }
+  if (lower.startsWith('file exists')) {
+    const value = trimmed.slice('file exists'.length).trim();
+    return { type: 'file', value };
+  }
+  if (lower.startsWith('command')) {
+    const value = trimmed.slice('command'.length).trim();
+    return { type: 'command', value };
+  }
+
+  // Fallback: treat entire string as a command probe
+  return { type: 'command', value: trimmed };
+}
+
+/**
+ * Parse a RUNTIME.md file into a typed RuntimeConfig.
+ * Returns undefined for empty/falsy content or content with no Services section.
+ * Scopes H3 extraction to within ## Services only.
+ */
+export function parseRuntimeConfig(content: string): RuntimeConfig | undefined {
+  if (!content || !content.trim()) return undefined;
+
+  const servicesSection = extractSection(content, 'Services', 2);
+  if (servicesSection === null) return undefined;
+
+  const project = extractBoldField(content, 'Project') || undefined;
+
+  // Parse environment section
+  const envSection = extractSection(content, 'Environment', 2);
+  const environment: string[] = [];
+  if (envSection) {
+    for (const line of envSection.split('\n')) {
+      const bullet = line.replace(/^\s*[-*]\s+/, '').trim();
+      if (bullet && bullet.includes('=') && !bullet.startsWith('#')) {
+        environment.push(bullet);
+      }
+    }
+  }
+
+  // Parse services — H3 sections within the ## Services block only
+  const serviceSections = extractAllSections(servicesSection, 3);
+  const services: ServiceConfig[] = [];
+
+  for (const [name, sectionContent] of serviceSections) {
+    const command = extractBoldField(sectionContent, 'Command') || '';
+    const portStr = extractBoldField(sectionContent, 'Port');
+    const healthUrl = extractBoldField(sectionContent, 'Health URL') || undefined;
+    const delayStr = extractBoldField(sectionContent, 'Readiness delay');
+    const readyWhen = extractBoldField(sectionContent, 'Ready when');
+
+    const service: ServiceConfig = { name, command };
+
+    if (readyWhen) {
+      service.readiness = parseReadinessProbe(readyWhen);
+    }
+    if (portStr) {
+      const port = parseInt(portStr, 10);
+      if (!isNaN(port)) service.port = port;
+    }
+    if (healthUrl) {
+      service.healthUrl = healthUrl;
+    }
+    if (delayStr) {
+      const delay = parseInt(delayStr, 10);
+      if (!isNaN(delay)) service.readinessDelay = delay;
+    }
+
+    services.push(service);
+  }
+
+  // Parse seed section (numbered items)
+  const seedSection = extractSection(content, 'Seed', 2);
+  const seed: string[] = [];
+  if (seedSection) {
+    for (const line of seedSection.split('\n')) {
+      const numMatch = line.match(/^\s*\d+\.\s+(.+)/);
+      if (numMatch) {
+        seed.push(numMatch[1].trim());
+      }
+    }
+  }
+
+  // Parse preview URLs (bullet items as "name: url")
+  const previewSection = extractSection(content, 'Preview URLs', 2);
+  const previewUrls: Array<{ name: string; url: string }> = [];
+  if (previewSection) {
+    for (const line of previewSection.split('\n')) {
+      const bullet = line.replace(/^\s*[-*]\s+/, '').trim();
+      if (bullet && !bullet.startsWith('#')) {
+        const colonIdx = bullet.indexOf(': ');
+        if (colonIdx !== -1) {
+          previewUrls.push({
+            name: bullet.slice(0, colonIdx).trim(),
+            url: bullet.slice(colonIdx + 2).trim(),
+          });
+        }
+      }
+    }
+  }
+
+  // Parse teardown section (numbered items)
+  const teardownSection = extractSection(content, 'Teardown', 2);
+  const teardown: string[] = [];
+  if (teardownSection) {
+    for (const line of teardownSection.split('\n')) {
+      const numMatch = line.match(/^\s*\d+\.\s+(.+)/);
+      if (numMatch) {
+        teardown.push(numMatch[1].trim());
+      }
+    }
+  }
+
+  return { project, services, environment, seed, previewUrls, teardown };
+}
+
+// ─── Runtime Config Formatter ──────────────────────────────────────────────
+
+/**
+ * Format a readiness probe back to the "Ready when:" field value.
+ */
+function formatReadinessProbe(probe: ReadinessProbe): string {
+  switch (probe.type) {
+    case 'port':
+      return `port ${probe.value}`;
+    case 'http':
+      return `HTTP 200 ${probe.value}`;
+    case 'file':
+      return `file exists ${probe.value}`;
+    case 'command':
+      return `command ${probe.value}`;
+  }
+}
+
+/**
+ * Format a RuntimeConfig into a RUNTIME.md markdown string.
+ * Produces valid markdown consumable by parseRuntimeConfig().
+ */
+export function formatRuntimeConfig(config: RuntimeConfig): string {
+  const lines: string[] = [];
+
+  lines.push('# Runtime Stack Contract');
+  lines.push('');
+
+  if (config.project) {
+    lines.push(`**Project:** ${config.project}`);
+    lines.push('');
+  }
+
+  // Environment
+  lines.push('## Environment');
+  lines.push('');
+  if (config.environment.length > 0) {
+    for (const env of config.environment) {
+      lines.push(`- ${env}`);
+    }
+  }
+
+  // Services
+  lines.push('');
+  lines.push('## Services');
+
+  for (const service of config.services) {
+    lines.push('');
+    lines.push(`### ${service.name}`);
+    lines.push('');
+    lines.push(`**Command:** ${service.command}`);
+    if (service.readiness) {
+      lines.push(`**Ready when:** ${formatReadinessProbe(service.readiness)}`);
+    }
+    if (service.port !== undefined) {
+      lines.push(`**Port:** ${service.port}`);
+    }
+    if (service.healthUrl) {
+      lines.push(`**Health URL:** ${service.healthUrl}`);
+    }
+    if (service.readinessDelay !== undefined) {
+      lines.push(`**Readiness delay:** ${service.readinessDelay}ms`);
+    }
+  }
+
+  // Seed
+  lines.push('');
+  lines.push('## Seed');
+  lines.push('');
+  if (config.seed.length > 0) {
+    for (let i = 0; i < config.seed.length; i++) {
+      lines.push(`${i + 1}. ${config.seed[i]}`);
+    }
+  }
+
+  // Preview URLs
+  lines.push('');
+  lines.push('## Preview URLs');
+  lines.push('');
+  if (config.previewUrls.length > 0) {
+    for (const pu of config.previewUrls) {
+      lines.push(`- ${pu.name}: ${pu.url}`);
+    }
+  }
+
+  // Teardown
+  lines.push('');
+  lines.push('## Teardown');
+  lines.push('');
+  if (config.teardown.length > 0) {
+    for (let i = 0; i < config.teardown.length; i++) {
+      lines.push(`${i + 1}. ${config.teardown[i]}`);
     }
   }
 
@@ -836,7 +1076,7 @@ export function countMustHavesMentionedInSummary(
  * The four UAT classification types recognised by GSD auto-mode.
  * `undefined` is returned (not this union) when no type can be determined.
  */
-export type UatType = 'artifact-driven' | 'live-runtime' | 'human-experience' | 'mixed';
+export type UatType = 'artifact-driven' | 'browser-executable' | 'runtime-executable' | 'human-judgment' | 'live-runtime' | 'human-experience' | 'mixed';
 
 /**
  * Extract the UAT type from a UAT file's raw content.
@@ -859,12 +1099,23 @@ export function extractUatType(content: string): UatType | undefined {
 
   const rawValue = modeBullet.slice('UAT mode:'.length).trim().toLowerCase();
 
+  if (rawValue.startsWith('browser-executable')) return 'browser-executable';
+  if (rawValue.startsWith('runtime-executable')) return 'runtime-executable';
+  if (rawValue.startsWith('human-judgment'))     return 'human-judgment';
   if (rawValue.startsWith('artifact-driven')) return 'artifact-driven';
   if (rawValue.startsWith('live-runtime')) return 'live-runtime';
   if (rawValue.startsWith('human-experience')) return 'human-experience';
   if (rawValue.startsWith('mixed')) return 'mixed';
 
   return undefined;
+}
+
+/**
+ * Returns true for UAT types that can run autonomously without human pause.
+ * Consumed by auto-dispatch (this milestone) and buildRunUatPrompt (S04).
+ */
+export function isExecutableUat(type: UatType): boolean {
+  return type === 'artifact-driven' || type === 'browser-executable' || type === 'runtime-executable';
 }
 
 /**

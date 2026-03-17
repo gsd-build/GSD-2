@@ -6,7 +6,7 @@
  * utility.
  */
 
-import { loadFile, parseContinue, parsePlan, parseRoadmap, parseSummary, extractUatType, loadActiveOverrides, formatOverridesSection } from "./files.js";
+import { loadFile, parseContinue, parsePlan, parseRoadmap, parseSummary, extractUatType, isExecutableUat, loadActiveOverrides, formatOverridesSection } from "./files.js";
 import type { Override, UatType } from "./files.js";
 import { loadPrompt, inlineTemplate } from "./prompt-loader.js";
 import {
@@ -532,16 +532,19 @@ export async function buildPlanMilestonePrompt(mid: string, midTitle: string, ba
     inlined.push(inlineTemplate("plan", "Slice Plan"));
     inlined.push(inlineTemplate("task-plan", "Task Plan"));
     inlined.push(inlineTemplate("secrets-manifest", "Secrets Manifest"));
+    inlined.push(inlineTemplate("runtime", "Runtime Stack Contract"));
   } else if (inlineLevel === "standard") {
     inlined.push(inlineTemplate("decisions", "Decisions"));
     inlined.push(inlineTemplate("plan", "Slice Plan"));
     inlined.push(inlineTemplate("task-plan", "Task Plan"));
+    inlined.push(inlineTemplate("runtime", "Runtime Stack Contract"));
   }
 
   const inlinedContext = `## Inlined Context (preloaded — do not re-read these files)\n\n${inlined.join("\n\n---\n\n")}`;
 
   const outputRelPath = relMilestoneFile(base, mid, "ROADMAP");
   const secretsOutputPath = join(base, relMilestoneFile(base, mid, "SECRETS"));
+  const runtimeOutputPath = join(base, ".gsd/RUNTIME.md");
   return loadPrompt("plan-milestone", {
     workingDirectory: base,
     milestoneId: mid, milestoneTitle: midTitle,
@@ -550,6 +553,7 @@ export async function buildPlanMilestonePrompt(mid: string, midTitle: string, ba
     researchPath: researchRel,
     outputPath: join(base, outputRelPath),
     secretsOutputPath,
+    runtimeOutputPath,
     inlinedContext,
   });
 }
@@ -1014,10 +1018,20 @@ export async function buildRunUatPrompt(
   const projectInline = await inlineProjectFromDb(base);
   if (projectInline) inlined.push(projectInline);
 
+  const uatType = extractUatType(uatContent) ?? "human-experience";
+
+  // Inline RUNTIME.md for executable UAT types (provides boot/seed/observe instructions)
+  if (isExecutableUat(uatType)) {
+    const runtimePath = join(base, ".gsd/RUNTIME.md");
+    const runtimeContent = await loadFile(runtimePath);
+    if (runtimeContent) {
+      inlined.push(`### RUNTIME.md Stack Contract\nSource: \`.gsd/RUNTIME.md\`\n\n${runtimeContent.trim()}`);
+    }
+  }
+
   const inlinedContext = `## Inlined Context (preloaded — do not re-read these files)\n\n${inlined.join("\n\n---\n\n")}`;
 
   const uatResultPath = join(base, relSliceFile(base, mid, sliceId, "UAT-RESULT"));
-  const uatType = extractUatType(uatContent) ?? "human-experience";
 
   return loadPrompt("run-uat", {
     workingDirectory: base,

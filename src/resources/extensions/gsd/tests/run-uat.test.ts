@@ -3,16 +3,20 @@
 // resolveSliceFile / extractUatType on real fixture files).
 //
 // Sections:
-//   (a)–(j)  extractUatType classification (17 assertions from T01)
-//   (k)      run-uat prompt template loading and content integrity (8 assertions)
-//   (l)      dispatch precondition assertions via resolveSliceFile (4 assertions)
+//   (a)–(j)   extractUatType classification (17 assertions from T01)
+//   (j2)–(j4) expanded type parsing, case-insensitivity, backward compat (8 assertions)
+//   (j5)      isExecutableUat() truth table (7 assertions)
+//   (k)       run-uat prompt template loading and content integrity (8 assertions)
+//   (l)       dispatch precondition assertions via resolveSliceFile (4 assertions)
+//   (m)       prompt template integrity for new branches (8 assertions)
+//   (n)       buildRunUatPrompt RUNTIME.md inlining (5 assertions)
 
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
-import { extractUatType } from '../files.ts';
+import { extractUatType, isExecutableUat } from '../files.ts';
 import { resolveSliceFile } from '../paths.ts';
 import { createTestContext } from './test-helpers.ts';
 
@@ -200,6 +204,108 @@ async function main(): Promise<void> {
     'MIXED (upper case) → mixed (function lowercases before matching)',
   );
 
+  // ─── (j2) new type parsing ────────────────────────────────────────────────
+  console.log('\n── (j2) new type parsing');
+
+  assertEq(
+    extractUatType(makeUatContent('browser-executable')),
+    'browser-executable',
+    'plain browser-executable → browser-executable',
+  );
+
+  assertEq(
+    extractUatType(makeUatContent('runtime-executable')),
+    'runtime-executable',
+    'plain runtime-executable → runtime-executable',
+  );
+
+  assertEq(
+    extractUatType(makeUatContent('human-judgment')),
+    'human-judgment',
+    'plain human-judgment → human-judgment',
+  );
+
+  // ─── (j3) case-insensitivity for new types ────────────────────────────────
+  console.log('\n── (j3) case-insensitivity for new types');
+
+  assertEq(
+    extractUatType(makeUatContent('Browser-Executable')),
+    'browser-executable',
+    'Browser-Executable (title case) → browser-executable',
+  );
+
+  assertEq(
+    extractUatType(makeUatContent('Runtime-Executable')),
+    'runtime-executable',
+    'Runtime-Executable (title case) → runtime-executable',
+  );
+
+  assertEq(
+    extractUatType(makeUatContent('Human-Judgment')),
+    'human-judgment',
+    'Human-Judgment (title case) → human-judgment',
+  );
+
+  // ─── (j4) backward-compat confirmation ────────────────────────────────────
+  console.log('\n── (j4) backward-compat confirmation');
+
+  assertEq(
+    extractUatType(makeUatContent('live-runtime')),
+    'live-runtime',
+    'live-runtime still parses correctly (backward compat)',
+  );
+
+  assertEq(
+    extractUatType(makeUatContent('human-experience')),
+    'human-experience',
+    'human-experience still parses correctly (backward compat)',
+  );
+
+  // ─── (j5) isExecutableUat() truth table ───────────────────────────────────
+  console.log('\n── (j5) isExecutableUat() truth table');
+
+  assertEq(
+    isExecutableUat('artifact-driven'),
+    true,
+    'isExecutableUat(artifact-driven) → true',
+  );
+
+  assertEq(
+    isExecutableUat('browser-executable'),
+    true,
+    'isExecutableUat(browser-executable) → true',
+  );
+
+  assertEq(
+    isExecutableUat('runtime-executable'),
+    true,
+    'isExecutableUat(runtime-executable) → true',
+  );
+
+  assertEq(
+    isExecutableUat('human-judgment'),
+    false,
+    'isExecutableUat(human-judgment) → false',
+  );
+
+  assertEq(
+    isExecutableUat('mixed'),
+    false,
+    'isExecutableUat(mixed) → false',
+  );
+
+  assertEq(
+    isExecutableUat('live-runtime'),
+    false,
+    'isExecutableUat(live-runtime) → false',
+  );
+
+  assertEq(
+    isExecutableUat('human-experience'),
+    false,
+    'isExecutableUat(human-experience) → false',
+  );
+
   // ─── (k) prompt template loading and content integrity ────────────────────
   console.log('\n── (k) run-uat prompt template');
 
@@ -306,6 +412,173 @@ async function main(): Promise<void> {
     } finally {
       cleanup(base);
     }
+  }
+
+  // ─── (m) prompt template integrity for new branches ────────────────────
+  console.log('\n── (m) prompt template integrity for new branches');
+
+  const mPrompt = loadPromptFromWorktree('run-uat', {
+    workingDirectory: '/tmp/test-project',
+    milestoneId: 'M001',
+    sliceId: 'S01',
+    uatPath: '.gsd/milestones/M001/slices/S01/S01-UAT.md',
+    uatResultPath: '.gsd/milestones/M001/slices/S01/S01-UAT-RESULT.md',
+    uatType: 'browser-executable',
+    inlinedContext: '<!-- no context -->',
+  });
+
+  // (m1) no unreplaced {{...}} tokens
+  assertTrue(
+    !/\{\{[^}]+\}\}/.test(mPrompt),
+    '(m1) no unreplaced {{...}} tokens remain after full variable substitution',
+  );
+
+  // (m2) browser-executable branch exists
+  assertTrue(
+    mPrompt.includes('browser-executable'),
+    '(m2) prompt contains "browser-executable" branch text',
+  );
+
+  // (m3) runtime-executable branch exists
+  assertTrue(
+    mPrompt.includes('runtime-executable'),
+    '(m3) prompt contains "runtime-executable" branch text',
+  );
+
+  // (m4) browser_verify_flow tool reference
+  assertTrue(
+    mPrompt.includes('browser_verify_flow'),
+    '(m4) prompt contains "browser_verify_flow" tool reference in browser-executable branch',
+  );
+
+  // (m5) bg_shell tool reference
+  assertTrue(
+    mPrompt.includes('bg_shell'),
+    '(m5) prompt contains "bg_shell" tool reference in executable branches',
+  );
+
+  // (m6) uat- group naming convention (D026)
+  assertTrue(
+    mPrompt.includes('uat-'),
+    '(m6) prompt contains "uat-" group naming convention (D026)',
+  );
+
+  // (m7) teardown/kill language
+  assertTrue(
+    /tear\s*down|kill/i.test(mPrompt),
+    '(m7) prompt contains teardown/kill language for process cleanup',
+  );
+
+  // (m8) graceful degradation for missing RUNTIME.md
+  assertTrue(
+    /RUNTIME\.md/.test(mPrompt) && /fall\s*back|graceful|cannot boot/i.test(mPrompt),
+    '(m8) prompt contains graceful degradation language referencing RUNTIME.md fallback',
+  );
+
+  // ─── (n) buildRunUatPrompt RUNTIME.md inlining ───────────────────────────
+  console.log('\n── (n) buildRunUatPrompt RUNTIME.md inlining');
+
+  const { buildRunUatPrompt } = await import('../auto-prompts.ts');
+
+  const runtimeFixture = [
+    '## Services',
+    '',
+    '### web',
+    '',
+    '- **Command:** npm start',
+    '- **Ready when:** port open at 3000',
+    '- **Port:** 3000',
+  ].join('\n');
+
+  // (n1) Executable type with RUNTIME.md present → inlines RUNTIME.md content
+  {
+    const base = createFixtureBase();
+    try {
+      const uatContent = makeUatContent('browser-executable');
+      writeSliceFile(base, 'M001', 'S01', 'UAT', uatContent);
+      // Write .gsd/RUNTIME.md
+      writeFileSync(join(base, '.gsd', 'RUNTIME.md'), runtimeFixture);
+
+      const result = await buildRunUatPrompt(
+        'M001', 'S01',
+        '.gsd/milestones/M001/slices/S01/S01-UAT.md',
+        uatContent,
+        base,
+      );
+
+      assertTrue(
+        result.includes('npm start') && result.includes('port open at 3000'),
+        '(n1) executable UAT with RUNTIME.md → prompt contains RUNTIME.md fixture content ("npm start", "port open at 3000")',
+      );
+    } finally {
+      cleanup(base);
+    }
+  }
+
+  // (n2) Executable type WITHOUT RUNTIME.md → no error, no Stack Contract heading
+  {
+    const base = createFixtureBase();
+    try {
+      const uatContent = makeUatContent('browser-executable');
+      writeSliceFile(base, 'M001', 'S01', 'UAT', uatContent);
+      // Do NOT create .gsd/RUNTIME.md
+
+      let threw = false;
+      let result = '';
+      try {
+        result = await buildRunUatPrompt(
+          'M001', 'S01',
+          '.gsd/milestones/M001/slices/S01/S01-UAT.md',
+          uatContent,
+          base,
+        );
+      } catch {
+        threw = true;
+      }
+
+      assertTrue(!threw, '(n2a) buildRunUatPrompt does not throw when RUNTIME.md is missing');
+      assertTrue(
+        !result.includes('### RUNTIME.md Stack Contract\nSource:'),
+        '(n2b) prompt without RUNTIME.md does NOT contain inlined "### RUNTIME.md Stack Contract" content block',
+      );
+    } finally {
+      cleanup(base);
+    }
+  }
+
+  // (n3) Non-executable type WITH RUNTIME.md → RUNTIME.md NOT inlined
+  {
+    const base = createFixtureBase();
+    try {
+      const uatContent = makeUatContent('human-judgment');
+      writeSliceFile(base, 'M001', 'S01', 'UAT', uatContent);
+      // Write .gsd/RUNTIME.md (should NOT be inlined for non-executable type)
+      writeFileSync(join(base, '.gsd', 'RUNTIME.md'), runtimeFixture);
+
+      const result = await buildRunUatPrompt(
+        'M001', 'S01',
+        '.gsd/milestones/M001/slices/S01/S01-UAT.md',
+        uatContent,
+        base,
+      );
+
+      assertTrue(
+        !result.includes('npm start') && !result.includes('port open at 3000'),
+        '(n3) non-executable UAT type does NOT inline RUNTIME.md content',
+      );
+    } finally {
+      cleanup(base);
+    }
+  }
+
+  // (n4) UAT template contains Executable Checks section
+  {
+    const templatePath = join(__dirname, '..', 'templates', 'uat.md');
+    const templateContent = readFileSync(templatePath, 'utf-8');
+    assertTrue(
+      templateContent.includes('## Executable Checks'),
+      '(n4) templates/uat.md contains "## Executable Checks" section',
+    );
   }
 
   report();

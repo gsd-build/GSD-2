@@ -16,6 +16,12 @@ Pay particular attention to **Forward Intelligence** sections — they contain h
 
 {{dependencySummaries}}
 
+## Runtime Stack Context
+
+- If `.gsd/RUNTIME.md` exists, reference it in the slice plan for boot commands, seed steps, readiness probes, and preview URLs. Tasks that start or verify a running application should use the services defined there rather than re-discovering startup commands.
+- If the slice changes the runtime stack — adds a new service, changes ports, adds a database seed step, modifies environment variables — include a task (or a step within an existing task) that updates `.gsd/RUNTIME.md` to reflect the new state.
+- If `.gsd/RUNTIME.md` does not exist, ignore this section.
+
 ## Your Role in the Pipeline
 
 A **researcher agent** already explored the codebase and documented findings in the slice research doc (inlined above, if present). It identified key files, build order, constraints, and verification approach. **Trust the research.** Your job is decomposition — turning findings into executable tasks — not re-exploration. Don't read code files the research already summarized unless something is ambiguous or missing from its findings.

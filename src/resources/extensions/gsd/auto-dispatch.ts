@@ -119,7 +119,7 @@ const DISPATCH_RULES: DispatchRule[] = [
         prompt: await buildRunUatPrompt(
           mid, sliceId, relSliceFile(basePath, mid, sliceId, "UAT"), uatContent ?? "", basePath,
         ),
-        pauseAfterDispatch: uatType !== "artifact-driven",
+        pauseAfterDispatch: !isExecutableUat(uatType),
       };
     },
   },

@@ -181,6 +181,36 @@ export interface ManifestStatus {
   existing: string[];   // key present in .env or process.env (regardless of manifest status)
 }
 
+// ─── Runtime Stack Contract ───────────────────────────────────────────────
+
+export type ReadinessProbeType = 'port' | 'http' | 'file' | 'command';
+
+export interface ReadinessProbe {
+  type: ReadinessProbeType;
+  /** The port number, URL, file path, or shell command depending on type. */
+  value: string;
+}
+
+export interface ServiceConfig {
+  name: string;
+  command: string;
+  readiness?: ReadinessProbe;
+  /** Port the service listens on (distinct from readiness probe port — e.g. a service may listen on 3000 but probe health on 3001). */
+  port?: number;
+  healthUrl?: string;
+  /** Delay in milliseconds before probing readiness after starting the service. */
+  readinessDelay?: number;
+}
+
+export interface RuntimeConfig {
+  project?: string;
+  services: ServiceConfig[];
+  environment: string[];
+  seed: string[];
+  previewUrls: Array<{ name: string; url: string }>;
+  teardown: string[];
+}
+
 // ─── GSD State (Derived Dashboard) ────────────────────────────────────────
 
 export interface ActiveRef {

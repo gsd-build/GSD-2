@@ -51,7 +51,7 @@
     "test:coverage": "c8 --reporter=text --reporter=lcov --exclude='src/resources/extensions/gsd/tests/**' --exclude='src/tests/**' --exclude='scripts/**' --exclude='native/**' --exclude='node_modules/**' --check-coverage --statements=40 --lines=40 --branches=0 --functions=0 node --import ./src/resources/extensions/gsd/tests/resolve-ts.mjs --experimental-strip-types --test src/resources/extensions/gsd/tests/*.test.ts src/resources/extensions/gsd/tests/*.test.mjs src/tests/*.test.ts",
     "test:integration": "node --import ./src/resources/extensions/gsd/tests/resolve-ts.mjs --experimental-strip-types --test src/resources/extensions/gsd/tests/*integration*.test.ts src/tests/integration/*.test.ts",
     "test": "npm run test:unit && npm run test:integration",
-    "test:browser-tools": "node --test src/resources/extensions/browser-tools/tests/browser-tools-unit.test.cjs src/resources/extensions/browser-tools/tests/browser-tools-integration.test.mjs",
+    "test:browser-tools": "node --test src/resources/extensions/browser-tools/tests/browser-tools-unit.test.cjs src/resources/extensions/browser-tools/tests/browser-tools-integration.test.mjs src/resources/extensions/browser-tools/tests/verify-flow-unit.test.cjs src/resources/extensions/browser-tools/tests/verify-flow-integration.test.mjs",
     "test:native": "node --test packages/native/src/__tests__/grep.test.mjs",
     "build:native": "node native/scripts/build.js",
     "build:native:dev": "node native/scripts/build.js --dev",
