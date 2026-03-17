@@ -248,6 +248,10 @@ let autoModeStartModel: { provider: string; id: string } | null = null;
 let currentMilestoneId: string | null = null;
 let lastBudgetAlertLevel: BudgetAlertLevel = 0;
 
+/** Throttle STATE.md rebuilds — at most once per 30 seconds */
+let lastStateRebuildAt = 0;
+const STATE_REBUILD_MIN_INTERVAL_MS = 30_000;
+
 /** Model the user had selected before auto-mode started */
 let originalModelId: string | null = null;
 let originalModelProvider: string | null = null;
@@ -549,6 +553,7 @@ export async function stopAuto(ctx?: ExtensionContext, pi?: ExtensionAPI, reason
   unitConsecutiveSkips.clear();
   clearInFlightTools();
   lastBudgetAlertLevel = 0;
+  lastStateRebuildAt = 0;
   unitLifetimeDispatches.clear();
   currentUnit = null;
   autoModeStartModel = null;
@@ -1312,12 +1317,29 @@ export async function handleAgentEnd(
     } catch {
       // Non-fatal — doctor failure should never block dispatch
     }
+    // Throttle STATE.md rebuilds to reduce I/O spikes on long sessions.
+    // STATE.md is a derived diagnostic artifact — skipping a rebuild is safe;
+    // the next unit or stop/pause will rebuild it.
+    const now = Date.now();
+    if (now - lastStateRebuildAt >= STATE_REBUILD_MIN_INTERVAL_MS) {
+      try {
+        await rebuildState(basePath);
+        lastStateRebuildAt = now;
+        // State rebuild commit is bookkeeping — generic message is appropriate
+        autoCommitCurrentBranch(basePath, "state-rebuild", currentUnit.id);
+      } catch {
+        // Non-fatal
+      }
+    }
+
+    // ── Prune dead bg-shell processes ──────────────────────────────────────
+    // Dead processes retain ~500KB-1MB of output buffers each. Without pruning,
+    // they accumulate during long auto-mode sessions causing memory pressure.
     try {
-      await rebuildState(basePath);
-      // State rebuild commit is bookkeeping — generic message is appropriate
-      autoCommitCurrentBranch(basePath, "state-rebuild", currentUnit.id);
+      const { pruneDeadProcesses } = await import("../bg-shell/process-manager.js");
+      pruneDeadProcesses();
     } catch {
-      // Non-fatal
+      // Non-fatal — bg-shell may not be available
     }
 
     // ── Sync worktree state back to project root ──────────────────────────
@@ -3054,6 +3076,7 @@ async function dispatchNextUnit(
   }, softTimeoutMs);
 
   idleWatchdogHandle = setInterval(async () => {
+    try {
     if (!active || !currentUnit) return;
     const runtime = readUnitRuntimeRecord(basePath, unitType, unitId);
     if (!runtime) return;
@@ -3111,9 +3134,20 @@ async function dispatchNextUnit(
       "warning",
     );
     await pauseAuto(ctx, pi);
+    } catch (err) {
+      // Guard against unhandled rejections in the async interval callback.
+      // Without this, a thrown error leaves the interval running forever
+      // while the auto-mode state becomes inconsistent.
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[idle-watchdog] Unhandled error: ${message}`);
+      try {
+        ctx.ui.notify(`Idle watchdog error: ${message}`, "warning");
+      } catch { /* best effort */ }
+    }
   }, 15000);
 
   unitTimeoutHandle = setTimeout(async () => {
+    try {
     unitTimeoutHandle = null;
     if (!active) return;
     if (currentUnit) {
@@ -3134,6 +3168,13 @@ async function dispatchNextUnit(
       "warning",
     );
     await pauseAuto(ctx, pi);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[hard-timeout] Unhandled error: ${message}`);
+      try {
+        ctx.ui.notify(`Hard timeout error: ${message}`, "warning");
+      } catch { /* best effort */ }
+    }
   }, hardTimeoutMs);
 
   // ── Continue-here context-pressure monitor ────────────────────────────

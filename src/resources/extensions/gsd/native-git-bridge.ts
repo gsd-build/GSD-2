@@ -249,18 +249,46 @@ export function nativeWorkingTreeStatus(basePath: string): string {
   return gitExec(basePath, ["status", "--porcelain"], true);
 }
 
+// ─── nativeHasChanges fallback cache (10s TTL) ─────────────────────────
+let _hasChangesCachedResult: boolean = false;
+let _hasChangesCachedAt: number = 0;
+let _hasChangesCachedPath: string = "";
+const HAS_CHANGES_CACHE_TTL_MS = 10_000; // 10 seconds
+
 /**
  * Quick check: any staged or unstaged changes?
  * Native: libgit2 status check (single syscall).
- * Fallback: `git status --short`.
+ * Fallback: `git status --short` (cached for 10s per basePath).
  */
 export function nativeHasChanges(basePath: string): boolean {
   const native = loadNative();
   if (native) {
     return native.gitHasChanges(basePath);
   }
+
+  const now = Date.now();
+  if (
+    basePath === _hasChangesCachedPath &&
+    now - _hasChangesCachedAt < HAS_CHANGES_CACHE_TTL_MS
+  ) {
+    return _hasChangesCachedResult;
+  }
+
   const result = gitExec(basePath, ["status", "--short"], true);
-  return result !== "";
+  const hasChanges = result !== "";
+
+  _hasChangesCachedResult = hasChanges;
+  _hasChangesCachedAt = now;
+  _hasChangesCachedPath = basePath;
+
+  return hasChanges;
+}
+
+/** Reset the nativeHasChanges fallback cache (exported for testing). */
+export function _resetHasChangesCache(): void {
+  _hasChangesCachedResult = false;
+  _hasChangesCachedAt = 0;
+  _hasChangesCachedPath = "";
 }
 
 /**
