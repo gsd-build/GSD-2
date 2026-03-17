@@ -39,3 +39,11 @@ Fork-only files in `packages/pi-ai/src/` (like `web-runtime-oauth.ts`) that impo
 ## Turbopack Cannot Resolve .js→.ts Extension Imports
 
 Extension modules under `src/resources/extensions/gsd/` use Node ESM `.js` import extensions (e.g. `import { deriveState } from './state.js'`) which work at runtime with `--experimental-strip-types` but fail in Turbopack bundling because the actual files are `.ts`. Any web service that needs to call extension code must use the child-process pattern (`execFile` + `resolve-ts.mjs` loader) instead of direct imports. See `auto-dashboard-service.ts`, `recovery-diagnostics-service.ts`, and `visualizer-service.ts` for examples.
+
+## Node --experimental-strip-types Cannot Handle .tsx Files
+
+Node v25's `--experimental-strip-types` handles `.ts` but NOT `.tsx`. Even `module-typescript` format fails because `.tsx` files may contain actual JSX syntax (not just TypeScript types). The test resolver's load hook must use TypeScript's `transpileModule` with `jsx: ReactJSX` to fully transpile `.tsx` → JS before serving to the runtime. Additionally, transpiled `.tsx` files emit extensionless imports (Next.js convention) which need a resolve guard to try `.ts`/`.tsx` extensions.
+
+## dist-redirect.mjs /dist/ Guard
+
+The test resolver's `.js→.ts` rewrite must NOT apply to imports containing `/dist/` — those `.js` files are real compiled artifacts from package builds. The guard `!specifier.includes('/dist/')` in the else-if condition is the minimal fix. Don't over-restrict by blocking all `../` paths since many legitimate `.js→.ts` rewrites use `../` prefixes.

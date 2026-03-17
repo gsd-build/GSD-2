@@ -35,9 +35,17 @@
 - New wiring introduced in this slice: none — test infrastructure fixes only
 - What remains before the milestone is truly usable end-to-end: nothing — this is the terminal slice
 
+## Observability / Diagnostics
+
+- **Primary signal:** `npm run test:unit` and `npm run test:integration` exit code — 0 = green, non-zero = regressions or remaining failures.
+- **Inspection:** Run any individual test file with `node --import ./src/resources/extensions/gsd/tests/resolve-ts.mjs --experimental-strip-types --test <file>` to see pass/fail and error details.
+- **Resolver debugging:** To trace what `dist-redirect.mjs` resolves, add `console.log` in the resolve/load hooks — they run in the loader thread and output to stderr.
+- **Failure shape:** Import resolution failures appear as `ERR_MODULE_NOT_FOUND` with the specifier and parent URL. Type-strip failures appear as `ERR_INVALID_TYPESCRIPT_SYNTAX`.
+- **No secrets or credentials involved in this slice.**
+
 ## Tasks
 
-- [ ] **T01: Fix dist-redirect.mjs resolver to handle dist/ paths and .tsx extensions** `est:30m`
+- [x] **T01: Fix dist-redirect.mjs resolver to handle dist/ paths and .tsx extensions** `est:30m`
   - Why: The resolver's blanket `.js→.ts` rewrite breaks 13 tests by rewriting `../../packages/pi-ai/dist/oauth.js` to `dist/oauth.ts` (which doesn't exist). A second issue — Node's `--experimental-strip-types` doesn't handle `.tsx` — breaks 1 additional test after the oauth fix is applied.
   - Files: `src/resources/extensions/gsd/tests/dist-redirect.mjs`
   - Do: (1) Add a guard in the resolve hook: if the specifier contains `/dist/`, skip the `.js→.ts` rewrite — the `.js` file actually exists in dist. (2) Add `.tsx→.ts` support in the load hook for Node's strip-types limitation: when the resolved URL ends in `.tsx`, read the file and set format to `module` so it's handled like `.ts`. Constraint: must not break the 1130 tests that already pass — the guard must only skip rewrites for actual dist/ paths.

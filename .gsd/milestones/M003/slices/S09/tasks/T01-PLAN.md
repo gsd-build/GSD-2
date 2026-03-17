@@ -54,3 +54,9 @@ This single file fix resolves 14 of the 17 total failures.
 ## Expected Output
 
 - `src/resources/extensions/gsd/tests/dist-redirect.mjs` — updated with `/dist/` guard in resolve hook and `.tsx` handling in load hook
+
+## Observability Impact
+
+- **What changes:** The resolver no longer produces `ERR_MODULE_NOT_FOUND` for `dist/oauth.js` imports, and no longer produces `ERR_INVALID_TYPESCRIPT_SYNTAX` for `.tsx` files.
+- **How to inspect:** Run any of the 7 affected test files individually — they should pass. If they fail, the error message in stderr identifies the exact import that broke.
+- **Failure visibility:** Resolver bugs surface immediately as `ERR_MODULE_NOT_FOUND` (wrong rewrite) or `ERR_INVALID_TYPESCRIPT_SYNTAX` (unhandled extension) in test output.
