@@ -1720,7 +1720,7 @@ async function handleDryRun(ctx: ExtensionCommandContext, basePath: string): Pro
 
   const { getLedger, getProjectTotals, formatCost, formatTokenCount, loadLedgerFromDisk } = await import("./metrics.js");
   const { loadEffectiveGSDPreferences: loadPrefs } = await import("./preferences.js");
-  const { formatDuration } = await import("./history.js");
+  const { formatDuration } = await import("../shared/format-utils.js");
 
   const ledger = getLedger();
   const units = ledger?.units ?? loadLedgerFromDisk(basePath)?.units ?? [];

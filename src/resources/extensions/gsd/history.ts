@@ -2,6 +2,7 @@
 // Human-readable display of past auto-mode unit executions.
 
 import type { ExtensionCommandContext } from "@gsd/pi-coding-agent";
+import { formatDuration } from "../shared/format-utils.js";
 import {
   getLedger, getProjectTotals, formatCost, formatTokenCount,
   aggregateBySlice, aggregateByPhase, aggregateByModel, loadLedgerFromDisk,
@@ -127,18 +128,6 @@ function showModelBreakdown(units: UnitMetrics[], ctx: ExtensionCommandContext):
 }
 
 // ─── Formatting helpers ──────────────────────────────────────────────────────
-
-export function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  const secs = Math.floor(ms / 1000);
-  if (secs < 60) return `${secs}s`;
-  const mins = Math.floor(secs / 60);
-  const remSecs = secs % 60;
-  if (mins < 60) return `${mins}m ${remSecs}s`;
-  const hours = Math.floor(mins / 60);
-  const remMins = mins % 60;
-  return `${hours}h ${remMins}m`;
-}
 
 function formatRelativeTime(timestamp: number): string {
   const diff = Date.now() - timestamp;

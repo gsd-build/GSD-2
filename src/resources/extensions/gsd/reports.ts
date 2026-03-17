@@ -18,7 +18,7 @@ import { writeFileSync, readFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { gsdRoot } from './paths.js';
 import { formatCost, formatTokenCount } from './metrics.js';
-import { formatDuration } from './history.js';
+import { formatDuration } from '../shared/format-utils.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

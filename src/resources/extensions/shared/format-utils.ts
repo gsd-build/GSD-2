@@ -11,6 +11,7 @@ import { truncateToWidth, visibleWidth } from "@gsd/pi-tui";
 
 /** Format a millisecond duration as a compact human-readable string. */
 export function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
   const s = Math.floor(ms / 1000);
   if (s < 60) return `${s}s`;
   const m = Math.floor(s / 60);

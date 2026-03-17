@@ -25,7 +25,7 @@ import type {
   VisualizerMilestone,
   VisualizerSlice,
 } from './visualizer-data.js';
-import { formatDuration } from './history.js';
+import { formatDuration } from '../shared/format-utils.js';
 import { formatCost, formatTokenCount } from './metrics.js';
 
 // ─── Public API ────────────────────────────────────────────────────────────────
