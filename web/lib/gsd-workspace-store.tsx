@@ -45,6 +45,17 @@ import {
 import type { DoctorFixResult, DoctorReport, ForensicReport, SkillHealthReport } from "./diagnostics-types"
 import type { KnowledgeData, CapturesData, CaptureResolveRequest, CaptureResolveResult } from "./knowledge-captures-types"
 import type { SettingsData } from "./settings-types"
+import type {
+  HistoryData,
+  InspectData,
+  HooksData,
+  ExportResult,
+  UndoInfo,
+  UndoResult,
+  CleanupData,
+  CleanupResult,
+  SteerData,
+} from "./remaining-command-types"
 import { isGitSummaryResponse, type GitSummaryResponse } from "./git-summary-contract"
 import type {
   SessionBrowserNameFilter,
@@ -2238,6 +2249,23 @@ export class GSDWorkspaceStore {
     })
   }
 
+  private patchRemainingCommandsPhaseState<
+    K extends keyof import("./command-surface-contract").CommandSurfaceRemainingState,
+  >(
+    key: K,
+    patch: Partial<CommandSurfaceDiagnosticsPhaseState<import("./command-surface-contract").CommandSurfaceRemainingState[K] extends CommandSurfaceDiagnosticsPhaseState<infer T> ? T : never>>,
+  ): void {
+    this.patchState({
+      commandSurface: {
+        ...this.state.commandSurface,
+        remainingCommands: {
+          ...this.state.commandSurface.remainingCommands,
+          [key]: { ...this.state.commandSurface.remainingCommands[key], ...patch },
+        },
+      },
+    })
+  }
+
   loadForensicsDiagnostics = async (): Promise<ForensicReport | null> => {
     this.patchDiagnosticsPhaseState("forensics", { phase: "loading", error: null })
     try {
@@ -2377,6 +2405,185 @@ export class GSDWorkspaceStore {
       const message = normalizeClientError(error)
       this.patchSettingsPhaseState({ phase: "error", error: message })
       return null
+    }
+  }
+
+  // ─── Remaining command surface load/mutation methods ──────────────────────────
+
+  loadHistoryData = async (): Promise<HistoryData | null> => {
+    this.patchRemainingCommandsPhaseState("history", { phase: "loading", error: null })
+    try {
+      const response = await fetch("/api/history", { method: "GET", cache: "no-store", headers: { Accept: "application/json" } })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok || !payload) {
+        const message = payload?.error ?? `History request failed with ${response.status}`
+        this.patchRemainingCommandsPhaseState("history", { phase: "error", error: message })
+        return null
+      }
+      this.patchRemainingCommandsPhaseState("history", { phase: "loaded", data: payload as HistoryData, lastLoadedAt: new Date().toISOString() })
+      return payload as HistoryData
+    } catch (error) {
+      const message = normalizeClientError(error)
+      this.patchRemainingCommandsPhaseState("history", { phase: "error", error: message })
+      return null
+    }
+  }
+
+  loadInspectData = async (): Promise<InspectData | null> => {
+    this.patchRemainingCommandsPhaseState("inspect", { phase: "loading", error: null })
+    try {
+      const response = await fetch("/api/inspect", { method: "GET", cache: "no-store", headers: { Accept: "application/json" } })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok || !payload) {
+        const message = payload?.error ?? `Inspect request failed with ${response.status}`
+        this.patchRemainingCommandsPhaseState("inspect", { phase: "error", error: message })
+        return null
+      }
+      this.patchRemainingCommandsPhaseState("inspect", { phase: "loaded", data: payload as InspectData, lastLoadedAt: new Date().toISOString() })
+      return payload as InspectData
+    } catch (error) {
+      const message = normalizeClientError(error)
+      this.patchRemainingCommandsPhaseState("inspect", { phase: "error", error: message })
+      return null
+    }
+  }
+
+  loadHooksData = async (): Promise<HooksData | null> => {
+    this.patchRemainingCommandsPhaseState("hooks", { phase: "loading", error: null })
+    try {
+      const response = await fetch("/api/hooks", { method: "GET", cache: "no-store", headers: { Accept: "application/json" } })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok || !payload) {
+        const message = payload?.error ?? `Hooks request failed with ${response.status}`
+        this.patchRemainingCommandsPhaseState("hooks", { phase: "error", error: message })
+        return null
+      }
+      this.patchRemainingCommandsPhaseState("hooks", { phase: "loaded", data: payload as HooksData, lastLoadedAt: new Date().toISOString() })
+      return payload as HooksData
+    } catch (error) {
+      const message = normalizeClientError(error)
+      this.patchRemainingCommandsPhaseState("hooks", { phase: "error", error: message })
+      return null
+    }
+  }
+
+  loadExportData = async (format?: "markdown" | "json"): Promise<ExportResult | null> => {
+    this.patchRemainingCommandsPhaseState("exportData", { phase: "loading", error: null })
+    try {
+      const url = format ? `/api/export-data?format=${encodeURIComponent(format)}` : "/api/export-data"
+      const response = await fetch(url, { method: "GET", cache: "no-store", headers: { Accept: "application/json" } })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok || !payload) {
+        const message = payload?.error ?? `Export request failed with ${response.status}`
+        this.patchRemainingCommandsPhaseState("exportData", { phase: "error", error: message })
+        return null
+      }
+      this.patchRemainingCommandsPhaseState("exportData", { phase: "loaded", data: payload as ExportResult, lastLoadedAt: new Date().toISOString() })
+      return payload as ExportResult
+    } catch (error) {
+      const message = normalizeClientError(error)
+      this.patchRemainingCommandsPhaseState("exportData", { phase: "error", error: message })
+      return null
+    }
+  }
+
+  loadUndoInfo = async (): Promise<UndoInfo | null> => {
+    this.patchRemainingCommandsPhaseState("undo", { phase: "loading", error: null })
+    try {
+      const response = await fetch("/api/undo", { method: "GET", cache: "no-store", headers: { Accept: "application/json" } })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok || !payload) {
+        const message = payload?.error ?? `Undo info request failed with ${response.status}`
+        this.patchRemainingCommandsPhaseState("undo", { phase: "error", error: message })
+        return null
+      }
+      this.patchRemainingCommandsPhaseState("undo", { phase: "loaded", data: payload as UndoInfo, lastLoadedAt: new Date().toISOString() })
+      return payload as UndoInfo
+    } catch (error) {
+      const message = normalizeClientError(error)
+      this.patchRemainingCommandsPhaseState("undo", { phase: "error", error: message })
+      return null
+    }
+  }
+
+  loadCleanupData = async (): Promise<CleanupData | null> => {
+    this.patchRemainingCommandsPhaseState("cleanup", { phase: "loading", error: null })
+    try {
+      const response = await fetch("/api/cleanup", { method: "GET", cache: "no-store", headers: { Accept: "application/json" } })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok || !payload) {
+        const message = payload?.error ?? `Cleanup data request failed with ${response.status}`
+        this.patchRemainingCommandsPhaseState("cleanup", { phase: "error", error: message })
+        return null
+      }
+      this.patchRemainingCommandsPhaseState("cleanup", { phase: "loaded", data: payload as CleanupData, lastLoadedAt: new Date().toISOString() })
+      return payload as CleanupData
+    } catch (error) {
+      const message = normalizeClientError(error)
+      this.patchRemainingCommandsPhaseState("cleanup", { phase: "error", error: message })
+      return null
+    }
+  }
+
+  loadSteerData = async (): Promise<SteerData | null> => {
+    this.patchRemainingCommandsPhaseState("steer", { phase: "loading", error: null })
+    try {
+      const response = await fetch("/api/steer", { method: "GET", cache: "no-store", headers: { Accept: "application/json" } })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok || !payload) {
+        const message = payload?.error ?? `Steer data request failed with ${response.status}`
+        this.patchRemainingCommandsPhaseState("steer", { phase: "error", error: message })
+        return null
+      }
+      this.patchRemainingCommandsPhaseState("steer", { phase: "loaded", data: payload as SteerData, lastLoadedAt: new Date().toISOString() })
+      return payload as SteerData
+    } catch (error) {
+      const message = normalizeClientError(error)
+      this.patchRemainingCommandsPhaseState("steer", { phase: "error", error: message })
+      return null
+    }
+  }
+
+  executeUndoAction = async (): Promise<UndoResult | null> => {
+    try {
+      const response = await fetch("/api/undo", {
+        method: "POST",
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+      })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok || !payload) {
+        const message = payload?.error ?? `Undo action failed with ${response.status}`
+        return { success: false, message }
+      }
+      // Reload undo info after executing
+      void this.loadUndoInfo()
+      return payload as UndoResult
+    } catch (error) {
+      const message = normalizeClientError(error)
+      return { success: false, message }
+    }
+  }
+
+  executeCleanupAction = async (branches: string[], snapshots: string[]): Promise<CleanupResult | null> => {
+    try {
+      const response = await fetch("/api/cleanup", {
+        method: "POST",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ branches, snapshots }),
+      })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok || !payload) {
+        const message = payload?.error ?? `Cleanup action failed with ${response.status}`
+        return { deletedBranches: 0, prunedSnapshots: 0, message }
+      }
+      // Reload cleanup data after executing
+      void this.loadCleanupData()
+      return payload as CleanupResult
+    } catch (error) {
+      const message = normalizeClientError(error)
+      return { deletedBranches: 0, prunedSnapshots: 0, message }
     }
   }
 
@@ -4791,6 +4998,15 @@ export function useGSDWorkspaceActions(): Pick<
   | "loadKnowledgeData"
   | "loadCapturesData"
   | "loadSettingsData"
+  | "loadHistoryData"
+  | "loadInspectData"
+  | "loadHooksData"
+  | "loadExportData"
+  | "loadUndoInfo"
+  | "loadCleanupData"
+  | "loadSteerData"
+  | "executeUndoAction"
+  | "executeCleanupAction"
   | "resolveCaptureAction"
   | "updateSessionBrowserState"
   | "loadSessionBrowser"
@@ -4845,6 +5061,15 @@ export function useGSDWorkspaceActions(): Pick<
     loadKnowledgeData: store.loadKnowledgeData,
     loadCapturesData: store.loadCapturesData,
     loadSettingsData: store.loadSettingsData,
+    loadHistoryData: store.loadHistoryData,
+    loadInspectData: store.loadInspectData,
+    loadHooksData: store.loadHooksData,
+    loadExportData: store.loadExportData,
+    loadUndoInfo: store.loadUndoInfo,
+    loadCleanupData: store.loadCleanupData,
+    loadSteerData: store.loadSteerData,
+    executeUndoAction: store.executeUndoAction,
+    executeCleanupAction: store.executeCleanupAction,
     resolveCaptureAction: store.resolveCaptureAction,
     updateSessionBrowserState: store.updateSessionBrowserState,
     loadSessionBrowser: store.loadSessionBrowser,

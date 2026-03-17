@@ -62,7 +62,7 @@
   - Verify: `npm run build` succeeds; each route file exports GET function
   - Done when: All 4 services + 4 routes exist, follow the child-process pattern, and compile cleanly
 
-- [ ] **T03: Build mutation services, steer API route, and wire all store load actions** `est:50m`
+- [x] **T03: Build mutation services, steer API route, and wire all store load actions** `est:50m`
   - Why: Undo and cleanup need GET+POST routes (read state, then mutate). Steer needs a GET route for OVERRIDES.md content. The store needs load functions for all 7 API-backed surfaces so the auto-loader and panels can fetch data.
   - Files: `src/web/undo-service.ts` (NEW), `src/web/cleanup-service.ts` (NEW), `web/app/api/undo/route.ts` (NEW), `web/app/api/cleanup/route.ts` (NEW), `web/app/api/steer/route.ts` (NEW), `web/lib/gsd-workspace-store.tsx` (EDIT)
   - Do: Build undo-service (GET: read last completed unit from completed-units.json; POST: execute undo via child process). Build cleanup-service (GET: list branches/snapshots via child process calling native-git-bridge; POST: delete specified branches/snapshots). Build steer route (GET: read OVERRIDES.md via readFileSync — no child process needed). Add 7 store load functions following loadForensicsDiagnostics pattern, each fetching from its API route and patching the remaining-state slice.
