@@ -48,7 +48,7 @@
   - Verify: `npx --yes tsx src/resources/extensions/gsd/verification-gate.ts` compiles without errors; `npm run test:unit -- --test-name-pattern "preferences-schema"` still passes
   - Done when: `verification-gate.ts` exports `runVerificationGate`, types compile, preferences validate — all without breaking existing tests
 
-- [ ] **T02: Add unit tests for verification gate** `est:45m`
+- [x] **T02: Add unit tests for verification gate** `est:45m`
   - Why: The gate is the riskiest piece (process spawning, command discovery, exit code handling). Tests prove contract correctness before integration.
   - Files: `src/resources/extensions/gsd/tests/verification-gate.test.ts`
   - Do: Write tests covering: (1) discovery from explicit `verification_commands` preference, (2) discovery from task plan verify field, (3) discovery from package.json typecheck/lint/test scripts, (4) first-non-empty-wins precedence, (5) all commands pass → gate passes, (6) one command fails → gate fails with exit code + stderr, (7) missing package.json → 0 checks → pass, (8) empty scripts → 0 checks → pass, (9) preference validation for new keys. Use temp dirs with mock package.json files and real `spawnSync` of `echo` / `exit 1` commands.

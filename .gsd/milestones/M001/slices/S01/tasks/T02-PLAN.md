@@ -66,6 +66,12 @@ Write comprehensive unit tests for the verification gate's command discovery and
 - `src/resources/extensions/gsd/tests/test-helpers.ts` — existing test helpers (optional, can use node:assert instead)
 - `src/resources/extensions/gsd/tests/preferences-schema-validation.test.ts` — reference for preference test patterns
 
+## Observability Impact
+
+- **Test output**: `npm run test:unit -- --test-name-pattern "verification-gate"` shows per-test pass/fail with names prefixed `verification-gate:`. A future agent can run this command to confirm the gate contract holds after any change to `verification-gate.ts` or `preferences.ts`.
+- **Failure diagnostics**: Each test uses temp dirs with deterministic setup; failure messages include the actual vs expected values for commands, sources, exit codes, and stderr content. This makes root-cause visible in CI logs without re-running locally.
+- **Regression signal**: The full suite (`npm run test:unit`) includes these tests, so any break to discovery order, spawnSync behavior, or preference validation surfaces as a named test failure in CI.
+
 ## Expected Output
 
 - `src/resources/extensions/gsd/tests/verification-gate.test.ts` — new test file with 12+ test cases covering discovery, execution, and preference validation
