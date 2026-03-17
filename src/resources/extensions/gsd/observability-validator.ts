@@ -298,6 +298,27 @@ export function validateTaskSummaryContent(file: string, content: string): Valid
     });
   }
 
+  const evidence = getSection(content, "Verification Evidence", 2);
+  if (!evidence) {
+    issues.push({
+      severity: "warning",
+      scope: "task-summary",
+      file,
+      ruleId: "evidence_block_missing",
+      message: "Task summary is missing `## Verification Evidence`.",
+      suggestion: "Add a verification evidence table showing gate check results (command, exit code, verdict, duration).",
+    });
+  } else if (sectionLooksPlaceholderOnly(evidence)) {
+    issues.push({
+      severity: "warning",
+      scope: "task-summary",
+      file,
+      ruleId: "evidence_block_placeholder",
+      message: "Task summary verification evidence section still looks like placeholder text.",
+      suggestion: "Replace placeholders with actual gate results or note that no verification commands were discovered.",
+    });
+  }
+
   return issues;
 }
 

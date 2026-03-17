@@ -18,8 +18,10 @@ import type {
 
 import { deriveState, invalidateStateCache } from "./state.js";
 import type { BudgetEnforcementMode, GSDState } from "./types.js";
-import { loadFile, parseRoadmap, getManifestStatus, resolveAllOverrides } from "./files.js";
+import { loadFile, parseRoadmap, getManifestStatus, resolveAllOverrides, parsePlan } from "./files.js";
 import { loadPrompt } from "./prompt-loader.js";
+import { runVerificationGate, formatFailureContext, captureRuntimeErrors, runDependencyAudit } from "./verification-gate.js";
+import { writeVerificationJSON } from "./verification-evidence.js";
 export { inlinePriorMilestoneSummary } from "./files.js";
 import { collectSecretsFromManifest } from "../get-secrets-from-user.js";
 import {
@@ -332,6 +334,11 @@ function escapeStaleWorktree(base: string): string {
 
 /** Crash recovery prompt — set by startAuto, consumed by first dispatchNextUnit */
 let pendingCrashRecovery: string | null = null;
+
+/** Pending verification retry — set when gate fails with retries remaining, consumed by dispatchNextUnit */
+let pendingVerificationRetry: { unitId: string; failureContext: string; attempt: number } | null = null;
+/** Verification retry count per unitId — separate from unitDispatchCount which tracks artifact-missing retries */
+const verificationRetryCount = new Map<string, number>();
 
 /** Session file path captured at pause — used to synthesize recovery briefing on resume */
 let pausedSessionFile: string | null = null;
@@ -693,6 +700,8 @@ export async function stopAuto(ctx?: ExtensionContext, pi?: ExtensionAPI, reason
   clearActivityLogState();
   resetProactiveHealing();
   pendingCrashRecovery = null;
+  pendingVerificationRetry = null;
+  verificationRetryCount.clear();
   pausedSessionFile = null;
   _handlingAgentEnd = false;
   ctx?.ui.setStatus("gsd-auto", undefined);
@@ -730,6 +739,7 @@ export async function pauseAuto(ctx?: ExtensionContext, _pi?: ExtensionAPI): Pro
 
   active = false;
   paused = true;
+  pendingVerificationRetry = null;
   // Preserve: unitDispatchCount, currentUnit, basePath, verbose, cmdCtx,
   // completedUnits, autoStartTime, currentMilestoneId, originalModelId
   // — all needed for resume and dashboard display
@@ -1482,6 +1492,145 @@ export async function handleAgentEnd(
       } catch {
         // Non-fatal
       }
+    }
+  }
+
+  // ── Verification gate: run typecheck/lint/test after execute-task ──
+  if (currentUnit && currentUnit.type === "execute-task") {
+    try {
+      const effectivePrefs = loadEffectiveGSDPreferences();
+      const prefs = effectivePrefs?.preferences;
+
+      // Read task plan verify field from the current task's slice plan
+      // unitId format is "M001/S01/T03" — extract mid, sid, tid
+      const parts = currentUnit.id.split("/");
+      let taskPlanVerify: string | undefined;
+      if (parts.length >= 3) {
+        const [mid, sid, tid] = parts;
+        const planFile = resolveSliceFile(basePath, mid, sid, "PLAN");
+        if (planFile) {
+          const planContent = await loadFile(planFile);
+          if (planContent) {
+            const slicePlan = parsePlan(planContent);
+            const taskEntry = slicePlan?.tasks?.find(t => t.id === tid);
+            taskPlanVerify = taskEntry?.verify;
+          }
+        }
+      }
+
+      const result = runVerificationGate({
+        basePath,
+        unitId: currentUnit.id,
+        cwd: basePath,
+        preferenceCommands: prefs?.verification_commands,
+        taskPlanVerify,
+      });
+
+      // Capture runtime errors from bg-shell and browser console
+      const runtimeErrors = await captureRuntimeErrors();
+      if (runtimeErrors.length > 0) {
+        result.runtimeErrors = runtimeErrors;
+        // Blocking runtime errors override gate pass
+        if (runtimeErrors.some(e => e.blocking)) {
+          result.passed = false;
+        }
+      }
+
+      // Conditional dependency audit (R008)
+      const auditWarnings = runDependencyAudit(basePath);
+      if (auditWarnings.length > 0) {
+        result.auditWarnings = auditWarnings;
+        process.stderr.write(`verification-gate: ${auditWarnings.length} audit warning(s)\n`);
+        for (const w of auditWarnings) {
+          process.stderr.write(`  [${w.severity}] ${w.name}: ${w.title}\n`);
+        }
+      }
+
+      // Auto-fix retry preferences (R005 / D005)
+      const autoFixEnabled = prefs?.verification_auto_fix !== false; // default true
+      const maxRetries = typeof prefs?.verification_max_retries === "number" ? prefs.verification_max_retries : 2;
+      const completionKey = `${currentUnit.type}/${currentUnit.id}`;
+
+      if (result.checks.length > 0) {
+        const passCount = result.checks.filter(c => c.exitCode === 0).length;
+        const total = result.checks.length;
+        if (result.passed) {
+          ctx.ui.notify(`Verification gate: ${passCount}/${total} checks passed`);
+        } else {
+          const failures = result.checks.filter(c => c.exitCode !== 0);
+          const failNames = failures.map(f => f.command).join(", ");
+          ctx.ui.notify(`Verification gate: FAILED — ${failNames}`);
+          process.stderr.write(`verification-gate: ${total - passCount}/${total} checks failed\n`);
+          for (const f of failures) {
+            process.stderr.write(`  ${f.command} exited ${f.exitCode}\n`);
+            if (f.stderr) process.stderr.write(`  stderr: ${f.stderr.slice(0, 500)}\n`);
+          }
+        }
+      }
+
+      // Log blocking runtime errors to stderr
+      if (result.runtimeErrors?.some(e => e.blocking)) {
+        const blockingErrors = result.runtimeErrors.filter(e => e.blocking);
+        process.stderr.write(`verification-gate: ${blockingErrors.length} blocking runtime error(s) detected\n`);
+        for (const err of blockingErrors) {
+          process.stderr.write(`  [${err.source}] ${err.severity}: ${err.message.slice(0, 200)}\n`);
+        }
+      }
+
+      // Write verification evidence JSON artifact
+      const attempt = verificationRetryCount.get(currentUnit.id) ?? 0;
+      if (parts.length >= 3) {
+        try {
+          const [mid, sid, tid] = parts;
+          const sDir = resolveSlicePath(basePath, mid, sid);
+          if (sDir) {
+            const tasksDir = join(sDir, "tasks");
+            if (result.passed) {
+              writeVerificationJSON(result, tasksDir, tid, currentUnit.id);
+            } else {
+              const nextAttempt = attempt + 1;
+              writeVerificationJSON(result, tasksDir, tid, currentUnit.id, nextAttempt, maxRetries);
+            }
+          }
+        } catch (evidenceErr) {
+          process.stderr.write(`verification-evidence: write error — ${(evidenceErr as Error).message}\n`);
+        }
+      }
+
+      // ── Auto-fix retry logic ──
+      if (result.passed) {
+        // Gate passed — clear retry state and continue normal flow
+        verificationRetryCount.delete(currentUnit.id);
+        pendingVerificationRetry = null;
+      } else if (autoFixEnabled && attempt + 1 <= maxRetries) {
+        // Gate failed, retries remaining — set up retry and return early
+        const nextAttempt = attempt + 1;
+        verificationRetryCount.set(currentUnit.id, nextAttempt);
+        pendingVerificationRetry = {
+          unitId: currentUnit.id,
+          failureContext: formatFailureContext(result),
+          attempt: nextAttempt,
+        };
+        ctx.ui.notify(`Verification failed — auto-fix attempt ${nextAttempt}/${maxRetries}`, "warning");
+        // Remove completion key so dispatchNextUnit re-dispatches this unit
+        completedKeySet.delete(completionKey);
+        removePersistedKey(basePath, completionKey);
+        return; // ← Critical: exit before DB dual-write and post-unit hooks
+      } else {
+        // Gate failed, retries exhausted (or auto-fix disabled) — pause for human review
+        const exhaustedAttempt = attempt + 1;
+        verificationRetryCount.delete(currentUnit.id);
+        pendingVerificationRetry = null;
+        ctx.ui.notify(
+          `Verification gate FAILED after ${exhaustedAttempt > maxRetries ? exhaustedAttempt - 1 : exhaustedAttempt} retries — pausing for human review`,
+          "error",
+        );
+        await pauseAuto(ctx, pi);
+        return;
+      }
+    } catch (err) {
+      // Gate errors are non-fatal — log and continue
+      process.stderr.write(`verification-gate: error — ${(err as Error).message}\n`);
     }
   }
 
@@ -2772,6 +2921,17 @@ async function dispatchNextUnit(
   // Cap injected content to prevent unbounded prompt growth → OOM
   const MAX_RECOVERY_CHARS = 50_000;
   let finalPrompt = prompt;
+
+  // Verification retry — inject failure context so the agent can auto-fix
+  if (pendingVerificationRetry) {
+    const retryCtx = pendingVerificationRetry;
+    pendingVerificationRetry = null;
+    const capped = retryCtx.failureContext.length > MAX_RECOVERY_CHARS
+      ? retryCtx.failureContext.slice(0, MAX_RECOVERY_CHARS) + "\n\n[...failure context truncated]"
+      : retryCtx.failureContext;
+    finalPrompt = `**VERIFICATION FAILED — AUTO-FIX ATTEMPT ${retryCtx.attempt}**\n\nThe verification gate ran after your previous attempt and found failures. Fix these issues before completing the task.\n\n${capped}\n\n---\n\n${finalPrompt}`;
+  }
+
   if (pendingCrashRecovery) {
     const capped = pendingCrashRecovery.length > MAX_RECOVERY_CHARS
       ? pendingCrashRecovery.slice(0, MAX_RECOVERY_CHARS) + "\n\n[...recovery briefing truncated to prevent memory exhaustion]"
