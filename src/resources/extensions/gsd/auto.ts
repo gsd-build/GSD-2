@@ -2227,7 +2227,31 @@ async function dispatchNextUnit(
 
     const incomplete = state.registry.filter(m => m.status !== "complete");
     if (incomplete.length === 0) {
-      // Genuinely all complete
+      // Genuinely all complete — merge worktree to main before stopping (#962)
+      if (s.currentMilestoneId && isInAutoWorktree(s.basePath) && s.originalBasePath) {
+        try {
+          autoCommitCurrentBranch(s.basePath, "complete-milestone", s.currentMilestoneId);
+        } catch { /* non-fatal */ }
+        try {
+          const roadmapPath = resolveMilestoneFile(s.originalBasePath, s.currentMilestoneId, "ROADMAP");
+          if (roadmapPath) {
+            const roadmapContent = readFileSync(roadmapPath, "utf-8");
+            const mergeResult = mergeMilestoneToMain(s.originalBasePath, s.currentMilestoneId, roadmapContent);
+            ctx.ui.notify(
+              `Milestone ${s.currentMilestoneId} merged to main.${mergeResult.pushed ? " Pushed to remote." : ""}`,
+              "info",
+            );
+          } else {
+            teardownAutoWorktree(s.originalBasePath, s.currentMilestoneId);
+            ctx.ui.notify(`Exited worktree for ${s.currentMilestoneId} (no roadmap for merge).`, "info");
+          }
+        } catch (err) {
+          ctx.ui.notify(
+            `Milestone merge failed on completion: ${err instanceof Error ? err.message : String(err)}`,
+            "warning",
+          );
+        }
+      }
       sendDesktopNotification("GSD", "All milestones complete!", "success", "milestone");
       await stopAuto(ctx, pi, "All milestones complete");
     } else if (state.phase === "blocked") {
