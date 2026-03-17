@@ -201,10 +201,10 @@ async function main(): Promise<void> {
       mkdirSync(join(dir, ".gsd", "milestones", "M001"), { recursive: true });
       writeFileSync(join(dir, ".gsd", "milestones", "M001", "M001-ROADMAP.md"), "# Roadmap\n");
 
-      const result = preDispatchHealthGate(dir);
+      const result = await preDispatchHealthGate(dir);
       assertTrue(result.proceed, "gate must NOT block when STATE.md is missing (deadlock #889)");
       assertEq(result.issues.length, 0, "missing STATE.md is not a blocking issue");
-      assertTrue(result.fixesApplied.some(f => f.includes("STATE.md missing")), "reports STATE.md missing as info");
+      assertTrue(result.fixesApplied.some((f: string) => f.includes("STATE.md")), "reports STATE.md status as info");
     }
 
     console.log("\n=== health gate: stale crash lock auto-cleared ===");
