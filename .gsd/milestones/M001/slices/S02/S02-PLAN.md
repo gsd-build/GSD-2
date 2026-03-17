@@ -35,7 +35,7 @@
 
 ## Tasks
 
-- [ ] **T01: Create evidence writer module with JSON and markdown formatters** `est:25m`
+- [x] **T01: Create evidence writer module with JSON and markdown formatters** `est:25m`
   - Why: Foundation module — all other tasks depend on these pure functions existing. Covers R003 (structured evidence format).
   - Files: `src/resources/extensions/gsd/verification-evidence.ts`, `src/resources/extensions/gsd/tests/verification-evidence.test.ts`
   - Do: Create `verification-evidence.ts` with `writeVerificationJSON(result, tasksDir, taskId)` and `formatEvidenceTable(result)`. JSON output uses `schemaVersion: 1` and includes taskId, unitId, timestamp, passed, discoverySource, and checks array (command, exitCode, durationMs, verdict — no stdout/stderr to avoid unbounded size). Markdown table has columns: Check, Command, Exit Code, Verdict, Duration. Write comprehensive tests: JSON schema shape, all-pass case, mixed pass/fail, empty checks, directory creation when missing.
@@ -55,6 +55,14 @@
   - Do: Add `evidence_block_missing` and `evidence_block_placeholder` rules to `validateTaskSummaryContent()` following the exact pattern of the existing `missing_diagnostics_section` / `diagnostics_placeholder_only` rules — use `getSection(content, "Verification Evidence", 2)` and `sectionLooksPlaceholderOnly()`. Severity: `"warning"` (matching existing rules). Add tests to the existing evidence test file verifying: summary with evidence section passes, summary without it triggers warning, summary with placeholder-only triggers warning.
   - Verify: `npm run test:unit -- --test-name-pattern "verification-evidence"`, `npm run test:unit` (no regressions)
   - Done when: Validator warns on missing/placeholder evidence sections, all existing tests pass
+
+## Observability / Diagnostics
+
+- **T##-VERIFY.json artifacts:** After a gate run, `ls .gsd/milestones/M001/slices/S##/tasks/T##-VERIFY.json` shows the persisted evidence file. `cat` it to inspect `schemaVersion`, `passed`, and per-check `verdict` fields.
+- **Evidence table in summaries:** `grep "## Verification Evidence" .gsd/milestones/M001/slices/S##/tasks/T##-SUMMARY.md` confirms the section exists. The table renders in any markdown viewer.
+- **Validator warnings:** Running the observability validator on a summary missing `## Verification Evidence` produces a `evidence_block_missing` or `evidence_block_placeholder` warning — visible in gate stderr output.
+- **Failure visibility:** If `writeVerificationJSON` fails (e.g., disk full, permission error), it throws synchronously — the error propagates to the gate caller and is logged to stderr. The JSON file will be absent, which downstream agents can detect.
+- **Redaction:** No secrets are present in evidence artifacts. stdout/stderr are excluded from JSON to avoid leaking environment variables or API keys that might appear in command output.
 
 ## Files Likely Touched
 

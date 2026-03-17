@@ -83,6 +83,13 @@ The JSON schema uses `schemaVersion: 1` for forward-compatibility (S04 will add 
 - `src/resources/extensions/gsd/tests/verification-gate.test.ts` — test pattern reference (temp dir isolation, node:test, node:assert/strict)
 - S01 summary's Forward Intelligence: `VerificationResult` shape is `{ passed, checks[], discoverySource, timestamp }`. Each `VerificationCheck` has `{ command, exitCode, stdout, stderr, durationMs }`.
 
+## Observability Impact
+
+- **New artifact:** `T##-VERIFY.json` files written to `tasksDir` — inspect with `cat` to see `schemaVersion`, `passed`, `checks[].verdict`. Absence of the file after a gate run indicates `writeVerificationJSON` was not called or threw.
+- **New diagnostic surface:** `formatEvidenceTable()` output can be piped to stderr or embedded in summaries. An empty-checks case returns `_No verification checks discovered._` rather than an empty table, making the state unambiguous.
+- **Failure state:** `writeVerificationJSON` throws on fs errors (EACCES, ENOSPC). The error message includes the target path for diagnosis. No silent failures — the gate caller sees the exception.
+- **What future agents inspect:** Check `T##-VERIFY.json` exists and has `schemaVersion: 1`. Verify `checks` array length matches expected command count. Confirm no `stdout`/`stderr` keys in the JSON (they are intentionally excluded).
+
 ## Expected Output
 
 - `src/resources/extensions/gsd/verification-evidence.ts` — new module with `writeVerificationJSON` and `formatEvidenceTable` exports
