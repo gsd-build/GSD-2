@@ -60,6 +60,18 @@ import { DoctorPanel, ForensicsPanel, SkillHealthPanel } from "./diagnostics-pan
 import { KnowledgeCapturesPanel } from "./knowledge-captures-panel"
 import { PrefsPanel, ModelRoutingPanel, BudgetPanel } from "./settings-panels"
 import {
+  QuickPanel,
+  HistoryPanel,
+  UndoPanel,
+  SteerPanel,
+  HooksPanel,
+  InspectPanel,
+  ExportPanel,
+  CleanupPanel,
+  QueuePanel,
+  StatusPanel,
+} from "./remaining-command-panels"
+import {
   formatCost,
   formatTokens,
   getModelLabel,
@@ -333,6 +345,16 @@ export function CommandSurface() {
     submitProviderFlowInputFromSurface,
     cancelProviderFlowFromSurface,
     logoutProviderFromSurface,
+    loadHistoryData,
+    loadInspectData,
+    loadHooksData,
+    loadExportData,
+    loadUndoInfo,
+    loadCleanupData,
+    loadSteerData,
+    executeUndoAction,
+    executeCleanupAction,
+    sendSteer,
   } = useGSDWorkspaceActions()
 
   const { commandSurface } = workspace
@@ -387,6 +409,7 @@ export function CommandSurface() {
   const diagnostics = commandSurface.diagnostics
   const knowledgeCaptures = commandSurface.knowledgeCaptures
   const settingsData = commandSurface.settingsData
+  const remainingCommands = commandSurface.remainingCommands
   useEffect(() => {
     if (!commandSurface.open) return
     if (commandSurface.section === "gsd-forensics" && diagnostics.forensics.phase === "idle") {
@@ -414,6 +437,18 @@ export function CommandSurface() {
       settingsData.phase === "idle"
     ) {
       void loadSettingsData()
+    } else if (commandSurface.section === "gsd-history" && remainingCommands.history.phase === "idle") {
+      void loadHistoryData()
+    } else if (commandSurface.section === "gsd-inspect" && remainingCommands.inspect.phase === "idle") {
+      void loadInspectData()
+    } else if (commandSurface.section === "gsd-hooks" && remainingCommands.hooks.phase === "idle") {
+      void loadHooksData()
+    } else if (commandSurface.section === "gsd-undo" && remainingCommands.undo.phase === "idle") {
+      void loadUndoInfo()
+    } else if (commandSurface.section === "gsd-cleanup" && remainingCommands.cleanup.phase === "idle") {
+      void loadCleanupData()
+    } else if (commandSurface.section === "gsd-steer" && remainingCommands.steer.phase === "idle") {
+      void loadSteerData()
     }
   }, [
     commandSurface.open,
@@ -424,12 +459,24 @@ export function CommandSurface() {
     knowledgeCaptures.knowledge.phase,
     knowledgeCaptures.captures.phase,
     settingsData.phase,
+    remainingCommands.history.phase,
+    remainingCommands.inspect.phase,
+    remainingCommands.hooks.phase,
+    remainingCommands.undo.phase,
+    remainingCommands.cleanup.phase,
+    remainingCommands.steer.phase,
     loadForensicsDiagnostics,
     loadDoctorDiagnostics,
     loadSkillHealthDiagnostics,
     loadKnowledgeData,
     loadCapturesData,
     loadSettingsData,
+    loadHistoryData,
+    loadInspectData,
+    loadHooksData,
+    loadUndoInfo,
+    loadCleanupData,
+    loadSteerData,
   ])
 
   useEffect(() => {
@@ -1983,13 +2030,23 @@ export function CommandSurface() {
       )
       case "gsd-mode": return <ModelRoutingPanel />
       case "gsd-config": return <BudgetPanel />
+      case "gsd-quick": return <QuickPanel />
+      case "gsd-history": return <HistoryPanel />
+      case "gsd-undo": return <UndoPanel />
+      case "gsd-steer": return <SteerPanel />
+      case "gsd-hooks": return <HooksPanel />
+      case "gsd-inspect": return <InspectPanel />
+      case "gsd-export": return <ExportPanel />
+      case "gsd-cleanup": return <CleanupPanel />
+      case "gsd-queue": return <QueuePanel />
+      case "gsd-status": return <StatusPanel />
       default:
-        // GSD subcommand surfaces — generic placeholder (S02)
+        // Safety net for any unknown GSD surface
         if (commandSurface.section?.startsWith("gsd-")) {
           return (
             <div className="p-4 text-sm text-muted-foreground" data-testid={`gsd-surface-${commandSurface.section}`}>
               <p className="font-medium text-foreground">/gsd {commandSurface.section.slice(4)}</p>
-              <p className="mt-1">This surface will be implemented in a future update.</p>
+              <p className="mt-1">Unknown GSD surface.</p>
             </div>
           )
         }

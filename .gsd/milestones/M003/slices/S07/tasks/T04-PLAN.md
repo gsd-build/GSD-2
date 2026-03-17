@@ -121,6 +121,14 @@ Relevant skill: `frontend-design` — load this skill for panel component stylin
 - `web/lib/remaining-command-types.ts` — T01 output, type shapes for rendering
 - `web/lib/command-surface-contract.ts` — T01 output, `remainingCommands` state for phase checks
 
+## Observability Impact
+
+- **Panel phase transitions:** Each of the 7 data-fetching panels (history, inspect, hooks, undo, cleanup, steer, export) transitions `commandSurface.remainingCommands.<name>.phase` through `idle → loading → loaded/error`. Observable in React DevTools on the Zustand store.
+- **Auto-loader triggers:** Opening a panel section in the command surface auto-fires the corresponding load function when phase is `idle`. Visible in browser network tab as GET requests to `/api/{history,inspect,hooks,undo,cleanup,steer}`.
+- **Error visibility:** API failures surface as `phase: "error"` with `error` string in the panel's phase state. Each panel renders error inline via `<PanelError>`.
+- **Mutation feedback:** UndoPanel and CleanupPanel show result banners after mutations (success/failure). ExportPanel triggers client-side blob download on success.
+- **Static panels:** QuickPanel, QueuePanel, StatusPanel use existing workspace data — no additional API calls. QueuePanel reads `workspace.milestones`, StatusPanel reads `workspace.active`.
+
 ## Expected Output
 
 - `web/components/gsd/remaining-command-panels.tsx` — ~600-800 lines with 10 panel components

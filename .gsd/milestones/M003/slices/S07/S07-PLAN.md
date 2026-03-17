@@ -69,7 +69,7 @@
   - Verify: `npm run build` succeeds; store load functions are exported in the hook return value
   - Done when: 2 mutation services + 3 routes + 7 store load functions exist and compile; store exposes all load functions via useGSDWorkspace hook
 
-- [ ] **T04: Build all 10 panel components, wire into command-surface.tsx, and verify builds** `est:1h`
+- [x] **T04: Build all 10 panel components, wire into command-surface.tsx, and verify builds** `est:1h`
   - Why: This is the visible output — replacing every placeholder with a real panel. Each panel renders data from the store (loaded via T03's actions) or static content. The auto-loader useEffect chain needs extension for surfaces that fetch on open.
   - Files: `web/components/gsd/remaining-command-panels.tsx` (NEW), `web/components/gsd/command-surface.tsx` (EDIT)
   - Do: Create `remaining-command-panels.tsx` with 10 exported panel components following diagnostics-panels.tsx patterns: QuickPanel (static usage), HistoryPanel (metrics table + breakdowns), UndoPanel (last unit info + confirm button), SteerPanel (OVERRIDES display + message form), HooksPanel (hook status table), InspectPanel (DB overview + recent entries), ExportPanel (format selector + download button), CleanupPanel (branch/snapshot lists + delete buttons), QueuePanel (milestone registry from workspace data), StatusPanel (active state summary from workspace data). Wire into command-surface.tsx: add 10 switch cases replacing the startsWith("gsd-") placeholder, extend the auto-loader useEffect for surfaces that need data fetching. Remove the placeholder fallback text.
