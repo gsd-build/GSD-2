@@ -1,9 +1,9 @@
 "use client"
 
 import { useEffect, useRef, useCallback, useState, KeyboardEvent } from "react"
-import { MessagesSquare, SendHorizonal } from "lucide-react"
+import { MessagesSquare, SendHorizonal, Check } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { PtyChatParser, ChatMessage } from "@/lib/pty-chat-parser"
+import { PtyChatParser, ChatMessage, TuiPrompt } from "@/lib/pty-chat-parser"
 
 /**
  * ChatMode — main view for the Chat tab.
@@ -252,6 +252,141 @@ function MarkdownContent({ content }: { content: string }) {
   return <div className="chat-markdown min-w-0">{rendered}</div>
 }
 
+/* ─── TuiSelectPrompt ─── */
+
+/**
+ * Renders a GSD arrow-key select prompt as a native clickable list.
+ *
+ * Clicking an option calculates the arrow-key delta from the current
+ * PTY-tracked selection, sends that many \x1b[A/\x1b[B + \r to the PTY,
+ * and transitions to a static post-submission state.
+ *
+ * Observability:
+ *   - Logs "[TuiSelectPrompt] mounted kind=select label=%s" on mount
+ *   - Logs "[TuiSelectPrompt] submit delta=%d keystrokes=%j" on submit
+ *   - data-testid="tui-select-prompt" on container
+ *   - data-testid="tui-select-option-{i}" on each option button
+ *   - data-testid="tui-prompt-submitted" on post-submission element
+ */
+function TuiSelectPrompt({
+  prompt,
+  onSubmit,
+}: {
+  prompt: TuiPrompt
+  onSubmit: (data: string) => void
+}) {
+  const [localIndex, setLocalIndex] = useState(prompt.selectedIndex ?? 0)
+  const [submitted, setSubmitted] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    console.log("[TuiSelectPrompt] mounted kind=select label=%s", prompt.label)
+    // Auto-focus the container so keyboard events are captured immediately
+    containerRef.current?.focus()
+  }, [prompt.label])
+
+  const submitIndex = useCallback(
+    (clickedIndex: number) => {
+      const delta = clickedIndex - localIndex
+      let keystrokes = ""
+      if (delta > 0) {
+        keystrokes = "\x1b[B".repeat(delta)
+      } else if (delta < 0) {
+        keystrokes = "\x1b[A".repeat(Math.abs(delta))
+      }
+      keystrokes += "\r"
+
+      console.log(
+        "[TuiSelectPrompt] submit delta=%d keystrokes=%j",
+        delta,
+        keystrokes,
+      )
+
+      setLocalIndex(clickedIndex)
+      setSubmitted(true)
+      onSubmit(keystrokes)
+    },
+    [localIndex, onSubmit],
+  )
+
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent<HTMLDivElement>) => {
+      if (submitted) return
+      if (e.key === "ArrowUp") {
+        e.preventDefault()
+        setLocalIndex((i) => Math.max(0, i - 1))
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault()
+        setLocalIndex((i) => Math.min(prompt.options.length - 1, i + 1))
+      } else if (e.key === "Enter") {
+        e.preventDefault()
+        submitIndex(localIndex)
+      }
+    },
+    [submitted, localIndex, prompt.options.length, submitIndex],
+  )
+
+  if (submitted) {
+    const selectedLabel = prompt.options[localIndex] ?? ""
+    return (
+      <div
+        data-testid="tui-prompt-submitted"
+        className="mt-2 flex items-center gap-1.5 rounded-lg bg-primary/10 px-3 py-2 text-sm text-primary"
+      >
+        <Check className="h-3.5 w-3.5 flex-shrink-0" />
+        <span className="font-medium">{selectedLabel}</span>
+      </div>
+    )
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      data-testid="tui-select-prompt"
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
+      className="mt-2 rounded-xl border border-border/60 bg-background/60 p-1.5 shadow-sm outline-none focus-visible:ring-1 focus-visible:ring-border"
+      aria-label={`Select: ${prompt.label}`}
+      role="listbox"
+      aria-activedescendant={`tui-select-option-${localIndex}`}
+    >
+      {prompt.label && (
+        <p className="mb-1.5 px-2 text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
+          {prompt.label}
+        </p>
+      )}
+      {prompt.options.map((option, i) => {
+        const isSelected = i === localIndex
+        return (
+          <button
+            key={i}
+            id={`tui-select-option-${i}`}
+            data-testid={`tui-select-option-${i}`}
+            role="option"
+            aria-selected={isSelected}
+            onClick={() => submitIndex(i)}
+            className={cn(
+              "flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left text-sm transition-colors",
+              isSelected
+                ? "bg-primary/15 text-primary font-medium"
+                : "text-foreground hover:bg-muted/60",
+            )}
+          >
+            <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center">
+              {isSelected ? (
+                <Check className="h-3 w-3 text-primary" />
+              ) : (
+                <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30" />
+              )}
+            </span>
+            {option}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 /* ─── StreamingCursor ─── */
 
 function StreamingCursor() {
@@ -273,8 +408,15 @@ function StreamingCursor() {
  * - user: right-aligned outgoing bubble with plain text
  * - system: small centered muted line (no bubble chrome)
  * - incomplete messages show an animated streaming cursor
+ * - when message.prompt.kind === 'select', TuiSelectPrompt renders below content
  */
-function ChatBubble({ message }: { message: ChatMessage }) {
+function ChatBubble({
+  message,
+  onSubmitPrompt,
+}: {
+  message: ChatMessage
+  onSubmitPrompt?: (data: string) => void
+}) {
   if (message.role === "system") {
     return (
       <div className="flex items-center justify-center py-1">
@@ -297,6 +439,11 @@ function ChatBubble({ message }: { message: ChatMessage }) {
   }
 
   // assistant
+  const hasSelectPrompt =
+    message.prompt?.kind === "select" &&
+    !message.complete &&
+    onSubmitPrompt != null
+
   return (
     <div className="flex justify-start gap-3">
       <div className="mt-1 flex-shrink-0 flex h-7 w-7 items-center justify-center rounded-full bg-card border border-border">
@@ -304,7 +451,13 @@ function ChatBubble({ message }: { message: ChatMessage }) {
       </div>
       <div className="max-w-[82%] min-w-0 rounded-2xl rounded-tl-md border border-border/60 bg-card px-4 py-3 shadow-sm">
         <MarkdownContent content={message.content} />
-        {!message.complete && <StreamingCursor />}
+        {!message.complete && !hasSelectPrompt && <StreamingCursor />}
+        {hasSelectPrompt && (
+          <TuiSelectPrompt
+            prompt={message.prompt!}
+            onSubmit={onSubmitPrompt!}
+          />
+        )}
       </div>
     </div>
   )
@@ -319,7 +472,13 @@ function ChatBubble({ message }: { message: ChatMessage }) {
  *   - Auto-scrolls to bottom on new messages ONLY when the user is within 100px of bottom
  *   - If the user has scrolled up to read history, auto-scroll is suppressed
  */
-function ChatMessageList({ messages }: { messages: ChatMessage[] }) {
+function ChatMessageList({
+  messages,
+  onSubmitPrompt,
+}: {
+  messages: ChatMessage[]
+  onSubmitPrompt: (data: string) => void
+}) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const isNearBottomRef = useRef(true)
   const prevMessageCountRef = useRef(messages.length)
@@ -354,7 +513,7 @@ function ChatMessageList({ messages }: { messages: ChatMessage[] }) {
       className="flex-1 overflow-y-auto px-4 py-4 space-y-4"
     >
       {messages.map((msg) => (
-        <ChatBubble key={msg.id} message={msg} />
+        <ChatBubble key={msg.id} message={msg} onSubmitPrompt={onSubmitPrompt} />
       ))}
       {/* Bottom spacer for scroll anchor */}
       <div className="h-2" />
@@ -608,7 +767,7 @@ export function ChatPane({ sessionId, command, className }: ChatPaneProps) {
         {messages.length === 0 ? (
           <PlaceholderState connected={connected} />
         ) : (
-          <ChatMessageList messages={messages} />
+          <ChatMessageList messages={messages} onSubmitPrompt={sendInput} />
         )}
       </div>
 

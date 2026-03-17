@@ -20,11 +20,33 @@
 - Real runtime required: yes — must verify against a running GSD instance that presents actual prompts
 - Human/UAT required: yes — visual inspection that prompt UI looks clean and session advances
 
+## Observability / Diagnostics
+
+### Runtime Signals
+- **Keystroke forwarding**: `TuiSelectPrompt` logs `[TuiSelectPrompt] submit delta=%d keystrokes=%s` to console on click — confirms correct delta calculation.
+- **Component mount**: Each prompt component logs `[TuiSelectPrompt|TuiTextPrompt|TuiPasswordPrompt] mounted kind=%s label=%s` so agent can confirm render without visual inspection.
+- **Submission state**: After `onSubmit` fires, each component sets `submitted=true` and renders a static confirmation — DOM now contains `data-testid="tui-prompt-submitted"`.
+- **Parser-level**: `PtyChatParser` already logs `[pty-chat-parser] tui prompt detected kind=...` when a prompt is extracted from PTY output.
+
+### Inspection Surfaces
+- `window.__chatParser.getMessages()` in browser console shows all `ChatMessage[]` including `prompt` field — useful for confirming prompt is being parsed.
+- Chrome DevTools → Network → `/api/terminal/input` POST bodies confirm keystrokes were sent to the PTY API.
+- Power Mode terminal (if active) shows the raw PTY response after keystrokes are sent — confirms GSD advanced.
+
+### Failure Visibility
+- If `TuiSelectPrompt` does not render: `window.__chatParser.getMessages()` will show messages with `prompt.kind === 'select'` — confirms parse succeeded, failure is in the render layer.
+- If PTY does not advance: the `/api/terminal/input` POST body in DevTools shows what was actually sent — confirms or rules out keystroke calculation error.
+- If `submitted` never flips: `data-testid="tui-prompt-submitted"` absent from DOM — component is stuck pre-submission.
+
+### Redaction Constraints
+- `TuiPasswordPrompt` values MUST NOT appear in console logs, chat history, or submission confirmations. Post-submission text is `"{label} — entered ✓"` with no value echo.
+
 ## Verification
 
 - `npm run build:web-host` exits 0
 - Manual: trigger a GSD flow with a select prompt (e.g., provider selection during onboarding); verify `TuiSelectPrompt` renders; click an option; verify GSD session advances in the underlying PTY (visible in Power Mode side-by-side if needed)
 - Manual: trigger a password/API key prompt; verify masked input renders; submit; verify GSD accepts the key and continues
+- **Failure-path check**: if GSD does not advance after clicking an option, open DevTools → Network → filter `/api/terminal/input` → inspect POST body to confirm delta keystrokes were sent; then check `window.__chatParser.getMessages()` to confirm `prompt` was parsed correctly
 
 ## Integration Closure
 
@@ -34,7 +56,7 @@
 
 ## Tasks
 
-- [ ] **T01: TuiSelectPrompt component** `est:1h`
+- [x] **T01: TuiSelectPrompt component** `est:1h`
   - Why: Arrow-key select menus are GSD's most common interactive prompt; without this, users see raw escape codes
   - Files: `web/components/gsd/chat-mode.tsx`
   - Do: (1) Build `TuiSelectPrompt` with props `{ prompt: TuiPrompt; onSubmit: (data: string) => void }`. (2) Local state: `localIndex = prompt.selectedIndex ?? 0`; `submitted = false`. (3) Render options as styled clickable items; `localIndex` item gets accent background + checkmark or arrow indicator. (4) On option click: `delta = clickedIndex - localIndex`; build keystrokes: `delta > 0 ? '\x1b[B'.repeat(delta) : '\x1b[A'.repeat(-delta)` + `'\r'`; call `onSubmit(keystrokes)`; set `submitted = true`. (5) Keyboard: ArrowUp decrements `localIndex`, ArrowDown increments, Enter submits current index. (6) After submission: render static `"✓ {selectedOption}"`, no longer interactive. (7) Wire into `ChatBubble`: when `message.prompt?.kind === 'select'` and not yet submitted, render `TuiSelectPrompt` below message content; thread `onSubmit` through to `ChatPane.sendInput`.

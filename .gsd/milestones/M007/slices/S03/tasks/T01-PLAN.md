@@ -41,9 +41,23 @@ Build `TuiSelectPrompt` — renders a GSD arrow-key select list as a native clic
 4. Wire `onSubmit` prop through `ChatPane`'s `sendInput` callback chain
 5. Test: navigate to a GSD flow that shows a select prompt; verify clicking options sends correct keystrokes and GSD responds
 
-## Context
+## Observability Impact
 
-- ink's select component internally tracks a cursor position. The PTY sees up/down arrow keypresses and moves its cursor. By sending the exact delta in arrows + Enter, we replicate what the user would do in the raw terminal.
-- The `prompt.selectedIndex` from the parser reflects the currently highlighted option in the PTY's state. The local `localIndex` starts there so we don't send unnecessary arrows.
-- After submission, `submitted` state prevents re-interaction. The parser will eventually emit a new message (GSD's response to the selection) which takes over the chat naturally.
-- Keyboard focus is important for accessibility and for users who prefer keyboard navigation. The component should capture ArrowUp/Down/Enter when focused.
+### Signals Added by This Task
+- **`[TuiSelectPrompt] mounted kind=select label=%s`** — logged on component mount; confirms prompt rendered.
+- **`[TuiSelectPrompt] submit delta=%d keystrokes=%j`** — logged on option click; confirms delta calculation and keystroke string before sending.
+- **`data-testid="tui-select-prompt"`** — DOM attribute on the select list container; allows agent to verify render via `browser_find`.
+- **`data-testid="tui-prompt-submitted"`** — DOM attribute on the post-submission confirmation element; confirms component entered submitted state.
+- **`data-testid="tui-select-option-{i}"`** — per-option attributes enabling targeted clicking in automated flows.
+
+### How a Future Agent Inspects This Task
+1. `window.__chatParser.getMessages()` — check if any message has `prompt.kind === 'select'`; confirms parser emitted the prompt.
+2. `browser_find` with `selector="[data-testid='tui-select-prompt']"` — confirms component is in the DOM.
+3. DevTools → Network → filter `/api/terminal/input` → inspect `data` field of POST body — confirms keystroke sequence sent.
+4. Power Mode terminal or `window.__chatParser.getMessages()` after click — confirms GSD session advanced (new message or prompt change).
+
+### Failure State Visibility
+- Component absent from DOM despite prompt in parser → wiring gap in `ChatBubble` dispatch block.
+- POST body missing or wrong — keystroke delta calculation or `onSubmit` wiring is broken.
+- Component renders but `submitted` never appears → `onSubmit` is not being called through the prop chain.
+
