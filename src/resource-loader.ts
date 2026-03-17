@@ -1,6 +1,6 @@
 import { DefaultResourceLoader } from '@gsd/pi-coding-agent'
 import { homedir } from 'node:os'
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { compareSemver } from './update-check.js'
@@ -134,6 +134,26 @@ export function getNewerManagedResourceVersion(agentDir: string, currentVersion:
 }
 
 /**
+ * Recursively makes all files and directories under dirPath owner-writable.
+ *
+ * Files copied from the Nix store inherit read-only modes (0444/0555).
+ * Calling this before cpSync prevents overwrite failures on subsequent upgrades,
+ * and calling it after ensures the next run can overwrite the copies too.
+ */
+function makeTreeWritable(dirPath: string): void {
+  if (!existsSync(dirPath)) return
+  chmodSync(dirPath, 0o755)
+  for (const entry of readdirSync(dirPath, { withFileTypes: true })) {
+    const entryPath = join(dirPath, entry.name)
+    if (entry.isDirectory()) {
+      makeTreeWritable(entryPath)
+    } else {
+      chmodSync(entryPath, 0o644)
+    }
+  }
+}
+
+/**
  * Syncs all bundled resources to agentDir (~/.gsd/agent/) on every launch.
  *
  * - extensions/ → ~/.gsd/agent/extensions/   (overwrite when version changes)
@@ -160,20 +180,26 @@ export function initResources(agentDir: string): void {
 
   // Sync extensions — overwrite so updates land on next launch
   const destExtensions = join(agentDir, 'extensions')
+  makeTreeWritable(destExtensions)
   cpSync(bundledExtensionsDir, destExtensions, { recursive: true, force: true })
+  makeTreeWritable(destExtensions)
 
   // Sync agents
   const destAgents = join(agentDir, 'agents')
   const srcAgents = join(resourcesDir, 'agents')
   if (existsSync(srcAgents)) {
+    makeTreeWritable(destAgents)
     cpSync(srcAgents, destAgents, { recursive: true, force: true })
+    makeTreeWritable(destAgents)
   }
 
   // Sync skills — overwrite so updates land on next launch
   const destSkills = join(agentDir, 'skills')
   const srcSkills = join(resourcesDir, 'skills')
   if (existsSync(srcSkills)) {
+    makeTreeWritable(destSkills)
     cpSync(srcSkills, destSkills, { recursive: true, force: true })
+    makeTreeWritable(destSkills)
   }
 
   writeManagedResourceManifest(agentDir)
