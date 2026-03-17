@@ -2,152 +2,15 @@
 
 import { useState, useRef, useEffect } from "react"
 import { cn } from "@/lib/utils"
-import { GripVertical, Wrench, Play, Loader2, Milestone } from "lucide-react"
+import { GripVertical, Play, Loader2, Milestone } from "lucide-react"
 import {
   useGSDWorkspaceState,
   useGSDWorkspaceActions,
   buildPromptCommand,
-  formatDuration,
-  formatCost,
-  formatTokens,
-  getCurrentScopeLabel,
-  getModelLabel,
 } from "@/lib/gsd-workspace-store"
 import { deriveWorkflowAction } from "@/lib/workflow-actions"
-import { ScopeBadge } from "@/components/gsd/scope-badge"
 import { NewMilestoneDialog } from "@/components/gsd/new-milestone-dialog"
 import { ShellTerminal } from "@/components/gsd/shell-terminal"
-
-function AutoTerminal() {
-  const state = useGSDWorkspaceState()
-  const boot = state.boot
-  const auto = boot?.auto ?? null
-  const workspace = boot?.workspace ?? null
-  const bridge = boot?.bridge ?? null
-  const terminalLines = state.terminalLines ?? []
-
-  const activeToolExecution = state.activeToolExecution
-
-  const isActive = auto?.active ?? false
-  const isPaused = auto?.paused ?? false
-  const elapsed = auto?.elapsed ?? 0
-  const totalCost = auto?.totalCost ?? 0
-  const totalTokens = auto?.totalTokens ?? 0
-  const currentUnit = auto?.currentUnit ?? null
-
-  const scopeLabel = getCurrentScopeLabel(workspace)
-  const model = getModelLabel(bridge)
-
-  const statusLabel = isActive
-    ? isPaused
-      ? "PAUSED"
-      : "RUNNING"
-    : "INACTIVE"
-
-  const statusColor = isActive
-    ? isPaused
-      ? "text-warning"
-      : "text-success"
-    : "text-muted-foreground"
-
-  return (
-    <div className="flex h-full flex-col bg-terminal font-mono text-sm">
-      {/* Terminal header */}
-      <div className="flex items-center justify-between border-b border-border/50 bg-card/50 px-3 py-1.5">
-        <span className="text-xs text-muted-foreground">gsd auto</span>
-        <span className={cn("text-xs font-medium", statusColor)}>{statusLabel}</span>
-      </div>
-
-      {/* Terminal content */}
-      <div className="flex-1 overflow-y-auto p-3">
-        {/* Terminal lines */}
-        <div className="mb-4 text-xs space-y-0.5">
-          {terminalLines.map((line) => (
-            <div
-              key={line.id}
-              className={cn(
-                "truncate",
-                line.type === "error" && "text-destructive",
-                line.type === "success" && "text-success",
-                line.type === "system" && "text-muted-foreground/70",
-                line.type === "output" && "text-terminal-foreground",
-                line.type === "input" && "text-foreground",
-              )}
-            >
-              <span className="mr-2 text-muted-foreground/50">{line.timestamp}</span>
-              {line.content}
-            </div>
-          ))}
-        </div>
-
-        {/* Status bar */}
-        <div className="mb-4 flex items-center justify-between border-t border-b border-border/30 py-2">
-          <div className="flex items-center gap-2">
-            <span
-              className={cn(
-                "h-2 w-2 rounded-full",
-                isActive && !isPaused ? "bg-success" : "bg-muted-foreground/50",
-              )}
-            />
-            <span className="font-bold text-foreground">GSD</span>
-            <span className={cn("font-semibold", statusColor)}>
-              {isActive ? "AUTO" : "IDLE"}
-            </span>
-          </div>
-          <span className="text-muted-foreground">{formatDuration(elapsed)}</span>
-        </div>
-
-        {/* Current workflow */}
-        {currentUnit && (
-          <div className="mb-4">
-            <div className="text-muted-foreground text-xs mb-1">Current Unit</div>
-            <div className="mt-1">
-              <ScopeBadge label={currentUnit.id} size="sm" />
-            </div>
-          </div>
-        )}
-
-        {/* Active tool execution */}
-        {activeToolExecution && (
-          <div className="mb-4" data-testid="auto-terminal-active-tool">
-            <div className="text-muted-foreground text-xs mb-1">Tool</div>
-            <div className="flex items-center gap-2 text-foreground">
-              <Wrench className="h-3 w-3 text-muted-foreground" />
-              <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
-              <span>{activeToolExecution.name}</span>
-            </div>
-          </div>
-        )}
-
-        {/* Scope */}
-        <div className="mb-4">
-          <div className="text-muted-foreground text-xs mb-1">Scope</div>
-          <div className="text-foreground">{scopeLabel}</div>
-        </div>
-      </div>
-
-      {/* Bottom status */}
-      <div className="border-t border-border/50 bg-card/30 px-3 py-2 text-xs">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <span className={cn("font-medium", isActive ? "text-success" : "text-muted-foreground")}>
-              {formatCost(totalCost)}
-            </span>
-            <span className="text-muted-foreground">
-              {formatTokens(totalTokens)}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-muted-foreground">{model}</span>
-          </div>
-        </div>
-        <div className="mt-1 text-muted-foreground/70">
-          esc pause | Ctrl+Alt+G dashboard
-        </div>
-      </div>
-    </div>
-  )
-}
 
 export function DualTerminal() {
   const [splitPosition, setSplitPosition] = useState(50)
@@ -264,7 +127,7 @@ export function DualTerminal() {
           </div>
         </div>
         <div className="flex items-center gap-4 text-xs text-muted-foreground">
-          <span>Left: Auto Mode</span>
+          <span>Left: Primary GSD</span>
           <span className="text-border">|</span>
           <span>Right: Interactive GSD</span>
         </div>
@@ -272,9 +135,9 @@ export function DualTerminal() {
 
       {/* Split terminals */}
       <div ref={containerRef} className="flex flex-1 overflow-hidden">
-        {/* Left terminal - Auto mode */}
+        {/* Left terminal - Primary GSD instance */}
         <div style={{ width: `${splitPosition}%` }} className="h-full overflow-hidden">
-          <AutoTerminal />
+          <ShellTerminal className="h-full" command="pi" sessionPrefix="gsd-main" />
         </div>
 
         {/* Divider */}
@@ -287,7 +150,7 @@ export function DualTerminal() {
 
         {/* Right terminal - Interactive GSD instance */}
         <div style={{ width: `${100 - splitPosition}%` }} className="h-full overflow-hidden">
-          <ShellTerminal className="h-full" command="pi" />
+          <ShellTerminal className="h-full" command="pi" sessionPrefix="gsd-interactive" />
         </div>
       </div>
 

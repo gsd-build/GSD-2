@@ -20,6 +20,7 @@ interface TerminalTab {
 interface ShellTerminalProps {
   className?: string
   command?: string
+  sessionPrefix?: string
 }
 
 // ─── xterm themes ─────────────────────────────────────────────────────────────
@@ -317,10 +318,10 @@ function TerminalInstance({
 
 // ─── Multi-instance terminal panel ────────────────────────────────────────────
 
-export function ShellTerminal({ className, command }: ShellTerminalProps) {
+export function ShellTerminal({ className, command, sessionPrefix }: ShellTerminalProps) {
   const { resolvedTheme } = useTheme()
   const isDark = resolvedTheme !== "light"
-  const defaultId = command ? `gsd-default` : "default"
+  const defaultId = sessionPrefix ?? (command ? "gsd-default" : "default")
   const [tabs, setTabs] = useState<TerminalTab[]>([
     { id: defaultId, label: command ? "pi" : "zsh", connected: false },
   ])
