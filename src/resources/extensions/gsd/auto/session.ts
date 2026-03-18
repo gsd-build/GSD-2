@@ -20,6 +20,7 @@ import type { ExtensionCommandContext } from "@gsd/pi-coding-agent";
 import type { GitServiceImpl } from "../git-service.js";
 import type { CaptureEntry } from "../captures.js";
 import type { BudgetAlertLevel } from "../auto-budget.js";
+import type { WorkflowDefinition } from "../workflow-definition.js";
 
 // ─── Exported Types ──────────────────────────────────────────────────────────
 
@@ -126,6 +127,9 @@ export class AutoSession {
   lastBaselineCharCount: number | undefined;
   pendingQuickTasks: CaptureEntry[] = [];
 
+  // ── Custom workflow ─────────────────────────────────────────────────────
+  workflow: WorkflowDefinition | null = null;
+
   // ── Signal handler ───────────────────────────────────────────────────────
   sigtermHandler: (() => void) | null = null;
 
@@ -214,6 +218,9 @@ export class AutoSession {
     this.lastBaselineCharCount = undefined;
     this.pendingQuickTasks = [];
 
+    // Custom workflow
+    this.workflow = null;
+
     // Signal handler
     this.sigtermHandler = null;
   }
@@ -231,6 +238,7 @@ export class AutoSession {
       unitDispatchCount: Object.fromEntries(this.unitDispatchCount),
       dispatching: this.dispatching,
       skipDepth: this.skipDepth,
+      workflow: this.workflow?.name ?? null,
     };
   }
 }

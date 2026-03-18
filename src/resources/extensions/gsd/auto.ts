@@ -179,6 +179,8 @@ import { checkStuckAndRecover, type StuckContext } from "./auto-stuck-detection.
 import { runPostUnitVerification, type VerificationContext } from "./auto-verification.js";
 import { postUnitPreVerification, postUnitPostVerification, type PostUnitContext } from "./auto-post-unit.js";
 import { bootstrapAutoSession, type BootstrapDeps } from "./auto-start.js";
+import { resolveWorkflowDispatch, resolveWorkflowModelCategory, workflowCategoryToUnitType } from "./workflow-dispatch.js";
+import { resolveWorkflow } from "./workflow-loader.js";
 
 // Worktree sync, resource staleness, stale worktree escape → auto-worktree-sync.ts
 
@@ -590,9 +592,19 @@ export async function startAuto(
   pi: ExtensionAPI,
   base: string,
   verboseMode: boolean,
-  options?: { step?: boolean },
+  options?: { step?: boolean; workflow?: string },
 ): Promise<void> {
   const requestedStepMode = options?.step ?? false;
+
+  // ── Custom workflow resolution ──
+  if (options?.workflow) {
+    const workflow = resolveWorkflow(options.workflow, base);
+    if (!workflow) {
+      ctx.ui.notify(`Workflow "${options.workflow}" not found. Check .gsd/workflows/ or ~/.gsd/workflows/.`, "error");
+      return;
+    }
+    s.workflow = workflow;
+  }
 
   // Escape stale worktree cwd from a previous milestone (#608).
   base = escapeStaleWorktree(base);
@@ -1021,6 +1033,22 @@ async function dispatchNextUnit(
   // ── Sync project root artifacts into worktree ──
   if (s.originalBasePath && s.basePath !== s.originalBasePath && s.currentMilestoneId) {
     syncProjectRootToWorktree(s.originalBasePath, s.basePath, s.currentMilestoneId);
+  }
+
+  // ── Custom workflow path: skip deriveState, use workflow dispatch ──
+  if (s.workflow) {
+    const wfDispatch = await resolveWorkflowDispatch(s.workflow, s.basePath);
+    if (wfDispatch.action === "stop") {
+      if (s.currentUnit) {
+        await closeoutUnit(ctx, s.basePath, s.currentUnit.type, s.currentUnit.id, s.currentUnit.startedAt, buildSnapshotOpts(s.currentUnit.type, s.currentUnit.id));
+      }
+      await stopAuto(ctx, pi, wfDispatch.reason);
+      return;
+    }
+    if (wfDispatch.action === "dispatch") {
+      await dispatchWorkflowUnit(ctx, pi, wfDispatch.unitType, wfDispatch.unitId, wfDispatch.prompt);
+    }
+    return;
   }
 
   const stopDeriveTimer = debugTime("derive-state");
@@ -1729,6 +1757,140 @@ async function dispatchNextUnit(
   } finally {
     s.dispatching = false;
   }
+}
+
+// ─── Workflow Dispatch Helper ──────────────────────────────────────────────────
+
+/**
+ * Dispatch a single unit for a custom workflow.
+ * Handles session creation, model selection, prompt injection, and supervision —
+ * the same pipeline as the standard dispatch, but without milestone/state logic.
+ */
+async function dispatchWorkflowUnit(
+  ctx: ExtensionContext,
+  pi: ExtensionAPI,
+  unitType: string,
+  unitId: string,
+  prompt: string,
+): Promise<void> {
+  const prefs = loadEffectiveGSDPreferences()?.preferences;
+
+  // Idempotency check
+  const idempotencyResult = checkIdempotency({
+    s,
+    unitType,
+    unitId,
+    basePath: s.basePath,
+    notify: (msg, level) => ctx.ui.notify(msg, level),
+  });
+
+  if (idempotencyResult.action === "skip") {
+    if (idempotencyResult.reason === "completed" || idempotencyResult.reason === "fallback-persisted" || idempotencyResult.reason === "phantom-loop-cleared" || idempotencyResult.reason === "evicted") {
+      if (!s.active) return;
+      s.skipDepth++;
+      await new Promise(r => setTimeout(r, 150));
+      await dispatchNextUnit(ctx, pi);
+      s.skipDepth = Math.max(0, s.skipDepth - 1);
+      return;
+    }
+  } else if (idempotencyResult.action === "stop") {
+    await stopAuto(ctx, pi, idempotencyResult.reason);
+    return;
+  }
+
+  // Closeout previous unit
+  if (s.currentUnit) {
+    await closeoutUnit(ctx, s.basePath, s.currentUnit.type, s.currentUnit.id, s.currentUnit.startedAt, buildSnapshotOpts(s.currentUnit.type, s.currentUnit.id));
+
+    const closeoutKey = `${s.currentUnit.type}/${s.currentUnit.id}`;
+    const incomingKey = `${unitType}/${unitId}`;
+    if (closeoutKey !== incomingKey) {
+      persistCompletedKey(s.basePath, closeoutKey);
+      s.completedKeySet.add(closeoutKey);
+      s.completedUnits.push({
+        type: s.currentUnit.type,
+        id: s.currentUnit.id,
+        startedAt: s.currentUnit.startedAt,
+        finishedAt: Date.now(),
+      });
+      clearUnitRuntimeRecord(s.basePath, s.currentUnit.type, s.currentUnit.id);
+      s.unitDispatchCount.delete(closeoutKey);
+    }
+  }
+
+  s.currentUnit = { type: unitType, id: unitId, startedAt: Date.now() };
+  writeUnitRuntimeRecord(s.basePath, unitType, unitId, s.currentUnit.startedAt, {
+    phase: "dispatched",
+    wrapupWarningSent: false,
+    timeoutAt: null,
+    lastProgressAt: s.currentUnit.startedAt,
+    progressCount: 0,
+    lastProgressKind: "dispatch",
+  });
+
+  // Ensure artifact directory exists
+  if (s.workflow) {
+    const { mkdirSync: mkdirSyncFs } = await import("node:fs");
+    const { join: joinPath } = await import("node:path");
+    const artDir = joinPath(s.basePath, s.workflow.artifactDir);
+    mkdirSyncFs(artDir, { recursive: true });
+  }
+
+  // Status bar (no GSDState for custom workflows, use a minimal stub)
+  ctx.ui.setStatus("gsd-auto", "auto");
+
+  // Fresh session
+  let result: { cancelled: boolean };
+  try {
+    const sessionPromise = s.cmdCtx!.newSession();
+    const timeoutPromise = new Promise<{ cancelled: true }>((resolve) =>
+      setTimeout(() => resolve({ cancelled: true }), NEW_SESSION_TIMEOUT_MS),
+    );
+    result = await Promise.race([sessionPromise, timeoutPromise]);
+  } catch (sessionErr) {
+    const msg = sessionErr instanceof Error ? sessionErr.message : String(sessionErr);
+    ctx.ui.notify(`Session creation failed: ${msg}. Retrying via watchdog.`, "error");
+    throw new Error(`newSession() failed: ${msg}`);
+  }
+  if (result.cancelled) {
+    ctx.ui.notify(`Session creation timed out for ${unitType} ${unitId}.`, "warning");
+    await stopAuto(ctx, pi, "Session creation failed");
+    return;
+  }
+
+  const sessionFile = ctx.sessionManager.getSessionFile();
+  updateSessionLock(lockBase(), unitType, unitId, s.completedUnits.length, sessionFile);
+  writeLock(lockBase(), unitType, unitId, s.completedUnits.length, sessionFile);
+
+  // Model selection: map workflow model_category to a known unit type for resolution
+  let overrideUnitType: string | undefined;
+  if (s.workflow) {
+    const category = resolveWorkflowModelCategory(s.workflow, unitType);
+    if (category) overrideUnitType = workflowCategoryToUnitType(category);
+  }
+  const modelResult = await selectAndApplyModel(ctx, pi, unitType, unitId, s.basePath, prefs, s.verbose, s.autoModeStartModel, overrideUnitType);
+  s.currentUnitRouting = modelResult.routing;
+
+  // Supervision
+  clearUnitTimeout();
+  startUnitSupervision({
+    s,
+    ctx,
+    pi,
+    unitType,
+    unitId,
+    prefs,
+    buildSnapshotOpts: () => buildSnapshotOpts(unitType, unitId),
+    buildRecoveryContext: () => buildRecoveryContext(),
+    pauseAuto,
+  });
+
+  // Inject prompt
+  if (!s.active) return;
+  pi.sendMessage(
+    { customType: "gsd-auto", content: prompt, display: s.verbose },
+    { triggerTurn: true },
+  );
 }
 
 // ─── Preconditions ────────────────────────────────────────────────────────────

@@ -100,6 +100,8 @@ export function registerGSDCommand(pi: ExtensionAPI): void {
         { cmd: "update", desc: "Update GSD to the latest version" },
         { cmd: "start", desc: "Start a workflow template (bugfix, spike, feature, etc.)" },
         { cmd: "templates", desc: "List available workflow templates" },
+        { cmd: "workflows", desc: "List available custom workflows" },
+        { cmd: "workflow install", desc: "Install a workflow file globally" },
       ];
       const parts = prefix.trim().split(/\s+/);
 
@@ -447,7 +449,34 @@ export function registerGSDCommand(pi: ExtensionAPI): void {
         const verboseMode = trimmed.includes("--verbose");
         const debugMode = trimmed.includes("--debug");
         if (debugMode) enableDebug(projectRoot());
-        await startAuto(ctx, pi, projectRoot(), verboseMode);
+        // Parse --workflow flag
+        const workflowMatch = trimmed.match(/--workflow\s+(\S+)/);
+        const workflowName = workflowMatch?.[1];
+        await startAuto(ctx, pi, projectRoot(), verboseMode, workflowName ? { workflow: workflowName } : undefined);
+        return;
+      }
+
+      if (trimmed === "workflows" || trimmed === "workflow list") {
+        const { listWorkflows } = await import("./workflow-loader.js");
+        const entries = listWorkflows(projectRoot());
+        if (entries.length === 0) {
+          ctx.ui.notify("No workflows found. Place .md files in .gsd/workflows/ or ~/.gsd/workflows/.", "info");
+        } else {
+          const lines = entries.map(e => `  ${e.name} (${e.source}) — ${e.description}`);
+          ctx.ui.notify(`Available workflows:\n${lines.join("\n")}`, "info");
+        }
+        return;
+      }
+
+      if (trimmed.startsWith("workflow install ")) {
+        const sourcePath = trimmed.replace(/^workflow install\s+/, "").trim();
+        const { installWorkflow } = await import("./workflow-loader.js");
+        const result = installWorkflow(sourcePath);
+        if (result.installed) {
+          ctx.ui.notify(`Workflow installed to ${result.destPath}`, "info");
+        } else {
+          ctx.ui.notify(`Install failed: ${result.error}`, "error");
+        }
         return;
       }
 

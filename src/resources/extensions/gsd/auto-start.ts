@@ -202,6 +202,58 @@ export async function bootstrapAutoSession(
     }
   } catch (e) { debugLog("stale-unit-dir-cleanup-failed", { error: e instanceof Error ? e.message : String(e) }); }
 
+  // ── Custom workflow bootstrap: skip milestone state derivation ──
+  if (s.workflow) {
+    // Ensure artifact directory exists
+    const artDir = join(base, s.workflow.artifactDir);
+    if (!existsSync(artDir)) mkdirSync(artDir, { recursive: true });
+
+    // Initialize session state (subset of the full milestone bootstrap)
+    s.active = true;
+    s.stepMode = requestedStepMode;
+    s.verbose = verboseMode;
+    s.cmdCtx = ctx;
+    s.basePath = base;
+    s.originalBasePath = base;
+    s.unitDispatchCount.clear();
+    s.unitRecoveryCount.clear();
+    s.unitConsecutiveSkips.clear();
+    s.lastBudgetAlertLevel = 0;
+    s.unitLifetimeDispatches.clear();
+    s.completedKeySet.clear();
+    loadPersistedKeys(base, s.completedKeySet);
+    resetHookState();
+    resetProactiveHealing();
+    s.autoStartTime = Date.now();
+    s.resourceVersionOnStart = readResourceVersion();
+    s.completedUnits = [];
+    s.pendingQuickTasks = [];
+    s.currentUnit = null;
+    s.originalModelId = ctx.model?.id ?? null;
+    s.originalModelProvider = ctx.model?.provider ?? null;
+
+    registerSigtermHandler(base);
+    initMetrics(s.basePath);
+    initRoutingHistory(s.basePath);
+
+    const currentModel = ctx.model;
+    if (currentModel) {
+      s.autoModeStartModel = { provider: currentModel.provider, id: currentModel.id };
+    }
+
+    ctx.ui.setStatus("gsd-auto", s.stepMode ? "next" : "auto");
+    ctx.ui.setFooter(hideFooter);
+    ctx.ui.notify(
+      `${s.stepMode ? "Step-mode" : "Auto-mode"} started with workflow "${s.workflow.name}" (${s.workflow.steps.length} steps).`,
+      "info",
+    );
+
+    updateSessionLock(lockBase(), "starting", s.workflow.name, 0);
+    writeLock(lockBase(), "starting", s.workflow.name, 0);
+
+    return true;
+  }
+
   let state = await deriveState(base);
 
   // Stale worktree state recovery (#654)

@@ -33,8 +33,9 @@ export async function selectAndApplyModel(
   prefs: GSDPreferences | undefined,
   verbose: boolean,
   autoModeStartModel: { provider: string; id: string } | null,
+  overrideUnitType?: string,
 ): Promise<ModelSelectionResult> {
-  const modelConfig = resolveModelWithFallbacksForUnit(unitType);
+  const modelConfig = resolveModelWithFallbacksForUnit(overrideUnitType ?? unitType);
   let routing: { tier: string; modelDowngraded: boolean } | null = null;
 
   if (modelConfig) {

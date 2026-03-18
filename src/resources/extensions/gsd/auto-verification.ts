@@ -48,7 +48,15 @@ export async function runPostUnitVerification(
 ): Promise<VerificationResult> {
   const { s, ctx, pi } = vctx;
 
-  if (!s.currentUnit || s.currentUnit.type !== "execute-task") {
+  if (!s.currentUnit) return "continue";
+
+  // Custom workflows: check workflow-level verification mode
+  if (s.workflow && s.currentUnit.type.startsWith("wf/")) {
+    const { resolveWorkflowVerification } = await import("./workflow-dispatch.js");
+    const verifyMode = resolveWorkflowVerification(s.workflow, s.currentUnit.type);
+    if (verifyMode === "none") return "continue";
+    // "inherit" falls through to the standard verification logic below
+  } else if (s.currentUnit.type !== "execute-task") {
     return "continue";
   }
 

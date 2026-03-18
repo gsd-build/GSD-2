@@ -50,6 +50,10 @@ export interface AutoDashboardData {
 
 export function unitVerb(unitType: string): string {
   if (unitType.startsWith("hook/")) return `hook: ${unitType.slice(5)}`;
+  if (unitType.startsWith("wf/")) {
+    const parts = unitType.split("/");
+    return parts[2] ?? parts[1] ?? unitType;
+  }
   switch (unitType) {
     case "research-milestone":
     case "research-slice": return "researching";
@@ -67,6 +71,10 @@ export function unitVerb(unitType: string): string {
 
 export function unitPhaseLabel(unitType: string): string {
   if (unitType.startsWith("hook/")) return "HOOK";
+  if (unitType.startsWith("wf/")) {
+    const parts = unitType.split("/");
+    return (parts[2] ?? parts[1] ?? unitType).toUpperCase();
+  }
   switch (unitType) {
     case "research-milestone": return "RESEARCH";
     case "research-slice": return "RESEARCH";
