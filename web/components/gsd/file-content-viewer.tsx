@@ -413,6 +413,18 @@ export function FileContentViewer({
     }
   }, [onSave, isDirty, isSaving, editContent])
 
+  // ── Ctrl+S / Cmd+S keyboard shortcut ──
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "s") {
+        e.preventDefault()
+        handleSave()
+      }
+    }
+    document.addEventListener("keydown", handler)
+    return () => document.removeEventListener("keydown", handler)
+  }, [handleSave])
+
   // ── Read-only mode (backward compatible) ──
   if (!canEdit) {
     return (
@@ -422,26 +434,75 @@ export function FileContentViewer({
     )
   }
 
-  // ── Editable mode with View/Edit tabs ──
-  return (
-    <Tabs defaultValue="view" className={cn("flex flex-1 flex-col overflow-hidden", className)}>
-      <div className="flex items-center gap-2 border-b border-border px-4">
-        <TabsList className="h-8 bg-transparent p-0">
-          <TabsTrigger
-            value="view"
-            className="h-7 rounded-md px-2.5 text-xs data-[state=active]:bg-muted"
-          >
-            View
-          </TabsTrigger>
-          <TabsTrigger
-            value="edit"
-            className="h-7 rounded-md px-2.5 text-xs data-[state=active]:bg-muted"
-          >
-            Edit
-          </TabsTrigger>
-        </TabsList>
+  // ── Editable mode: markdown keeps View/Edit tabs ──
+  if (isMarkdown(filepath)) {
+    return (
+      <Tabs defaultValue="view" className={cn("flex flex-1 flex-col overflow-hidden", className)}>
+        <div className="flex items-center gap-2 border-b border-border px-4">
+          <TabsList className="h-8 bg-transparent p-0">
+            <TabsTrigger
+              value="view"
+              className="h-7 rounded-md px-2.5 text-xs data-[state=active]:bg-muted"
+            >
+              View
+            </TabsTrigger>
+            <TabsTrigger
+              value="edit"
+              className="h-7 rounded-md px-2.5 text-xs data-[state=active]:bg-muted"
+            >
+              Edit
+            </TabsTrigger>
+          </TabsList>
 
-        {/* Save button — visible when editing */}
+          {/* Save button — visible when editing */}
+          <div className="ml-auto flex items-center gap-2">
+            {saveError && (
+              <span className="text-xs text-destructive max-w-[200px] truncate" title={saveError}>
+                {saveError}
+              </span>
+            )}
+            <button
+              onClick={handleSave}
+              disabled={!isDirty || isSaving}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+                isDirty && !isSaving
+                  ? "bg-foreground text-background hover:bg-foreground/90"
+                  : "bg-muted text-muted-foreground cursor-not-allowed opacity-50",
+              )}
+            >
+              {isSaving ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Save className="h-3 w-3" />
+              )}
+              Save
+            </button>
+          </div>
+        </div>
+
+        <TabsContent value="view" className="flex-1 overflow-y-auto p-4 mt-0" style={{ fontSize }}>
+          <ReadOnlyContent content={content} filepath={filepath} fontSize={fontSize} shikiTheme={shikiTheme} />
+        </TabsContent>
+
+        <TabsContent value="edit" className="flex-1 overflow-hidden mt-0">
+          <CodeEditor
+            value={editContent}
+            onChange={setEditContent}
+            language={language}
+            fontSize={fontSize}
+            className="h-full border-0 rounded-none"
+          />
+        </TabsContent>
+      </Tabs>
+    )
+  }
+
+  // ── Editable mode: non-markdown gets single CodeEditor view ──
+  return (
+    <div className={cn("flex flex-1 flex-col overflow-hidden", className)}>
+      {/* Header bar with save button */}
+      <div className="flex items-center gap-2 border-b border-border px-4 py-1.5">
         <div className="ml-auto flex items-center gap-2">
           {saveError && (
             <span className="text-xs text-destructive max-w-[200px] truncate" title={saveError}>
@@ -467,20 +528,14 @@ export function FileContentViewer({
           </button>
         </div>
       </div>
-
-      <TabsContent value="view" className="flex-1 overflow-y-auto p-4 mt-0" style={{ fontSize }}>
-        <ReadOnlyContent content={content} filepath={filepath} fontSize={fontSize} shikiTheme={shikiTheme} />
-      </TabsContent>
-
-      <TabsContent value="edit" className="flex-1 overflow-hidden mt-0">
-        <CodeEditor
-          value={editContent}
-          onChange={setEditContent}
-          language={language}
-          fontSize={fontSize}
-          className="h-full border-0 rounded-none"
-        />
-      </TabsContent>
-    </Tabs>
+      {/* CodeEditor fills remaining space */}
+      <CodeEditor
+        value={editContent}
+        onChange={setEditContent}
+        language={language}
+        fontSize={fontSize}
+        className="flex-1 border-0 rounded-none"
+      />
+    </div>
   )
 }
