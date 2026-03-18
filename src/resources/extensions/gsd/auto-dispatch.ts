@@ -11,8 +11,7 @@
 
 import type { GSDState } from "./types.js";
 import type { GSDPreferences } from "./preferences.js";
-import type { UatType } from "./files.js";
-import { loadFile, extractUatType, loadActiveOverrides, parseRoadmap } from "./files.js";
+import { loadFile, loadActiveOverrides, parseRoadmap } from "./files.js";
 import {
   resolveMilestoneFile, resolveMilestonePath, resolveSliceFile, resolveTaskFile,
   relSliceFile, buildMilestoneFileName,
@@ -39,7 +38,7 @@ import {
 // ─── Types ────────────────────────────────────────────────────────────────
 
 export type DispatchAction =
-  | { action: "dispatch"; unitType: string; unitId: string; prompt: string; pauseAfterDispatch?: boolean }
+  | { action: "dispatch"; unitType: string; unitId: string; prompt: string }
   | { action: "stop"; reason: string; level: "info" | "warning" | "error" }
   | { action: "skip" };
 
@@ -138,17 +137,14 @@ const DISPATCH_RULES: DispatchRule[] = [
     match: async ({ state, mid, basePath, prefs }) => {
       const needsRunUat = await checkNeedsRunUat(basePath, mid, state, prefs);
       if (!needsRunUat) return null;
-      const { sliceId, uatType } = needsRunUat;
-      const uatFile = resolveSliceFile(basePath, mid, sliceId, "UAT")!;
-      const uatContent = await loadFile(uatFile);
+      const { sliceId } = needsRunUat;
       return {
         action: "dispatch",
         unitType: "run-uat",
         unitId: `${mid}/${sliceId}`,
         prompt: await buildRunUatPrompt(
-          mid, sliceId, relSliceFile(basePath, mid, sliceId, "UAT"), uatContent ?? "", basePath,
+          mid, sliceId, relSliceFile(basePath, mid, sliceId, "UAT"), basePath,
         ),
-        pauseAfterDispatch: uatType !== "artifact-driven",
       };
     },
   },

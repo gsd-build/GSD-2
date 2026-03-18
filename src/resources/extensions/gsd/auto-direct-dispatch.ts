@@ -182,15 +182,10 @@ export async function dispatchDirectPhase(
         ctx.ui.notify("Cannot dispatch run-uat: no UAT file found.", "warning");
         return;
       }
-      const uatContent = await loadFile(uatFile);
-      if (!uatContent) {
-        ctx.ui.notify("Cannot dispatch run-uat: UAT file is empty.", "warning");
-        return;
-      }
       const uatPath = relSliceFile(base, mid, sid, "UAT");
       unitType = "run-uat";
       unitId = `${mid}/${sid}`;
-      prompt = await buildRunUatPrompt(mid, sid, uatPath, uatContent, base);
+      prompt = await buildRunUatPrompt(mid, sid, uatPath, base);
       break;
     }
 
