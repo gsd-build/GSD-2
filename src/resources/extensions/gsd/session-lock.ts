@@ -17,7 +17,7 @@
  */
 
 import { createRequire } from "node:module";
-import { existsSync, readFileSync, mkdirSync, unlinkSync } from "node:fs";
+import { existsSync, readFileSync, mkdirSync, unlinkSync, rmSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { gsdRoot } from "./paths.js";
 import { atomicWriteSync } from "./atomic-write.js";
@@ -109,16 +109,53 @@ export function acquireSessionLock(basePath: string): SessionLockResult {
     _lockedPath = basePath;
     _lockPid = process.pid;
 
+    // Safety net: clean up lock dir on process exit if _releaseFunction
+    // wasn't called (e.g., normal exit after clean completion) (#1245).
+    const lockDirForCleanup = join(gsdDir + ".lock");
+    process.once("exit", () => {
+      try {
+        if (_releaseFunction) { _releaseFunction(); _releaseFunction = null; }
+      } catch { /* best-effort */ }
+      try {
+        if (existsSync(lockDirForCleanup)) rmSync(lockDirForCleanup, { recursive: true, force: true });
+      } catch { /* best-effort */ }
+    });
+
     // Write the informational lock data
     atomicWriteSync(lp, JSON.stringify(lockData, null, 2));
 
     return { acquired: true };
   } catch (err) {
-    // Lock is held by another process
+    // Lock is held by another process — or the .gsd.lock/ directory is stranded.
+    // Check: if auto.lock is gone and no process is alive, the lock dir is stale.
     const existingData = readExistingLockData(lp);
     const existingPid = existingData?.pid;
+
+    // If no lock file or no alive process, try to clean up and re-acquire (#1245)
+    if (!existingData || (existingPid && !isPidAlive(existingPid))) {
+      try {
+        const lockDir = join(gsdDir + ".lock");
+        if (existsSync(lockDir)) rmSync(lockDir, { recursive: true, force: true });
+        if (existsSync(lp)) unlinkSync(lp);
+
+        // Retry acquisition after cleanup
+        const release = lockfile.lockSync(gsdDir, {
+          realpath: false,
+          stale: 300_000,
+          update: 10_000,
+        });
+        _releaseFunction = release;
+        _lockedPath = basePath;
+        _lockPid = process.pid;
+        atomicWriteSync(lp, JSON.stringify(lockData, null, 2));
+        return { acquired: true };
+      } catch {
+        // Retry also failed — fall through to the error path
+      }
+    }
+
     const reason = existingPid
-      ? `Another auto-mode session (PID ${existingPid}) is already running on this project.`
+      ? `Another auto-mode session (PID ${existingPid}) appears to be running.\nStop it with \`kill ${existingPid}\` before starting a new session.`
       : `Another auto-mode session is already running on this project.`;
 
     return { acquired: false, reason, existingPid };
@@ -229,6 +266,17 @@ export function releaseSessionLock(basePath: string): void {
   const lp = lockPath(basePath);
   try {
     if (existsSync(lp)) unlinkSync(lp);
+  } catch {
+    // Non-fatal
+  }
+
+  // Remove the proper-lockfile directory (.gsd.lock/) if it exists.
+  // proper-lockfile creates this directory as the OS-level lock mechanism.
+  // If the process exits without calling _releaseFunction (SIGKILL, crash),
+  // this directory is stranded and blocks the next session (#1245).
+  try {
+    const lockDir = join(gsdRoot(basePath) + ".lock");
+    if (existsSync(lockDir)) rmSync(lockDir, { recursive: true, force: true });
   } catch {
     // Non-fatal
   }
