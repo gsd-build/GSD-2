@@ -60,3 +60,10 @@ The workflow validates the full chain: workspace build → web host build (Next.
 ## Expected Output
 
 - `.github/workflows/web.yml` — new GitHub Actions workflow file with the full web host CI pipeline
+
+## Observability Impact
+
+- **New CI signal:** A `Web` workflow now appears in the GitHub Actions tab for pushes to `main`/`feat/**` and PRs to `main`. Each step (install, build, validate-pack, test) fails independently with inline logs.
+- **Inspection:** View workflow runs at `Actions > Web` in the GitHub repo. Locally, validate the file with `python3 -c "import yaml; yaml.safe_load(open('.github/workflows/web.yml'))"`.
+- **Failure visibility:** `npm run build:web-host` failures show Next.js/Serwist build errors. `npm run validate-pack` failures list missing tarball entries with `MISSING:` prefix. Test failures show standard Jest/Vitest output.
+- **No secrets or env vars:** The workflow uses no secrets — all steps run against public npm registry.
