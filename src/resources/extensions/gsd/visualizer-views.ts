@@ -1113,5 +1113,59 @@ export function renderHealthView(
   lines.push(`  Tool calls: ${th.fg("text", String(health.toolCalls))}`);
   lines.push(`  Messages: ${th.fg("text", String(health.assistantMessages))} sent / ${th.fg("text", String(health.userMessages))} received`);
 
+  // Environment section — issues only (from doctor-environment.ts, #1221)
+  if (health.environmentIssues?.length > 0) {
+    lines.push("");
+    lines.push(th.fg("accent", th.bold("Environment")));
+    lines.push("");
+    for (const r of health.environmentIssues) {
+      const icon = r.status === "error" ? th.fg("error", "✗") : th.fg("warning", "⚠");
+      lines.push(`  ${icon} ${th.fg("text", r.message)}`);
+      if (r.detail) lines.push(`    ${th.fg("dim", r.detail)}`);
+    }
+  }
+
+  // Providers section
+  if (health.providers?.length > 0) {
+    lines.push("");
+    lines.push(th.fg("accent", th.bold("Providers")));
+    lines.push("");
+    const categoryOrder = ["llm", "remote", "search", "tool"];
+    const categoryLabels: Record<string, string> = { llm: "LLM", remote: "Notifications", search: "Search", tool: "Tools" };
+    const grouped = new Map<string, typeof health.providers>();
+    for (const p of health.providers) {
+      const cat = p.category;
+      if (!grouped.has(cat)) grouped.set(cat, []);
+      grouped.get(cat)!.push(p);
+    }
+    for (const cat of categoryOrder) {
+      const items = grouped.get(cat);
+      if (!items || items.length === 0) continue;
+      lines.push(`  ${th.fg("dim", categoryLabels[cat] ?? cat)}`);
+      for (const p of items) {
+        const icon = p.ok ? th.fg("success", "✓") : th.fg("error", "✗");
+        const msg = p.ok ? th.fg("dim", p.message) : th.fg("text", p.message);
+        lines.push(`    ${icon} ${msg}`);
+      }
+    }
+  }
+
+  // Skills section
+  if (health.skillSummary?.total > 0) {
+    lines.push("");
+    lines.push(th.fg("accent", th.bold("Skills")));
+    lines.push("");
+    const { total, warningCount, criticalCount, topIssue } = health.skillSummary;
+    const issueColor = criticalCount > 0 ? "error" : warningCount > 0 ? "warning" : "success";
+    const issueTag = criticalCount > 0
+      ? `${criticalCount} critical`
+      : warningCount > 0
+        ? `${warningCount} warning${warningCount > 1 ? "s" : ""}`
+        : "all healthy";
+    lines.push(`  ${th.fg("text", String(total))} skills tracked  ·  ${th.fg(issueColor, issueTag)}`);
+    if (topIssue) lines.push(`  ${th.fg("warning", "⚠")} ${th.fg("dim", topIssue)}`);
+    lines.push(`  ${th.fg("dim", "→ /gsd skill-health for full report")}`);
+  }
+
   return lines;
 }

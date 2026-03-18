@@ -18,6 +18,9 @@ import {
 } from './metrics.js';
 import { loadAllCaptures, countPendingCaptures } from './captures.js';
 import { loadEffectiveGSDPreferences } from './preferences.js';
+import { runProviderChecks, type ProviderCheckResult } from './doctor-providers.js';
+import { generateSkillHealthReport } from './skill-health.js';
+import { runEnvironmentChecks, type EnvironmentCheckResult } from './doctor-environment.js';
 
 import type { Phase } from './types.js';
 import type { CaptureEntry } from './captures.js';
@@ -142,6 +145,22 @@ export interface CapturesInfo {
   totalCount: number;
 }
 
+export interface ProviderStatusSummary {
+  name: string;
+  label: string;
+  category: string;
+  ok: boolean;
+  required: boolean;
+  message: string;
+}
+
+export interface SkillSummaryInfo {
+  total: number;
+  warningCount: number;
+  criticalCount: number;
+  topIssue: string | null;
+}
+
 export interface HealthInfo {
   budgetCeiling: number | undefined;
   tokenProfile: string;
@@ -152,6 +171,9 @@ export interface HealthInfo {
   toolCalls: number;
   assistantMessages: number;
   userMessages: number;
+  providers: ProviderStatusSummary[];
+  skillSummary: SkillSummaryInfo;
+  environmentIssues: import("./doctor-environment.js").EnvironmentCheckResult[];
 }
 
 export interface VisualizerData {
@@ -538,7 +560,7 @@ function loadKnowledge(basePath: string): KnowledgeInfo {
 
 // ─── Health Loader ────────────────────────────────────────────────────────────
 
-function loadHealth(units: UnitMetrics[], totals: ProjectTotals | null): HealthInfo {
+function loadHealth(units: UnitMetrics[], totals: ProjectTotals | null, basePath: string): HealthInfo {
   const prefs = loadEffectiveGSDPreferences();
   const budgetCeiling = prefs?.preferences?.budget_ceiling;
   const tokenProfile = prefs?.preferences?.token_profile ?? 'standard';
@@ -553,6 +575,39 @@ function loadHealth(units: UnitMetrics[], totals: ProjectTotals | null): HealthI
   const tierBreakdown = aggregateByTier(units);
   const tierSavingsLine = formatTierSavings(units);
 
+  // Provider checks — fast (auth.json + env vars only, no network)
+  let providers: ProviderStatusSummary[] = [];
+  try {
+    providers = runProviderChecks().map((r: ProviderCheckResult) => ({
+      name: r.name,
+      label: r.label,
+      category: r.category,
+      ok: r.status === "ok" || r.status === "unconfigured",
+      required: r.required,
+      message: r.message,
+    }));
+  } catch { /* non-fatal */ }
+
+  // Skill health summary
+  let skillSummary: SkillSummaryInfo = { total: 0, warningCount: 0, criticalCount: 0, topIssue: null };
+  try {
+    const report = generateSkillHealthReport(basePath);
+    const warnings = report.suggestions.filter(s => s.severity === "warning");
+    const criticals = report.suggestions.filter(s => s.severity === "critical");
+    skillSummary = {
+      total: report.skills.length,
+      warningCount: warnings.length,
+      criticalCount: criticals.length,
+      topIssue: report.suggestions[0]?.message ?? null,
+    };
+  } catch { /* non-fatal */ }
+
+  // Environment issues (from doctor-environment.ts, #1221)
+  let environmentIssues: EnvironmentCheckResult[] = [];
+  try {
+    environmentIssues = runEnvironmentChecks(basePath).filter(r => r.status !== "ok");
+  } catch { /* non-fatal */ }
+
   return {
     budgetCeiling,
     tokenProfile,
@@ -563,6 +618,9 @@ function loadHealth(units: UnitMetrics[], totals: ProjectTotals | null): HealthI
     toolCalls: totals?.toolCalls ?? 0,
     assistantMessages: totals?.assistantMessages ?? 0,
     userMessages: totals?.userMessages ?? 0,
+    providers,
+    skillSummary,
+    environmentIssues,
   };
 }
 
@@ -780,7 +838,7 @@ export async function loadVisualizerData(basePath: string): Promise<VisualizerDa
     totalCount: allCaptures.length,
   };
 
-  const health = loadHealth(units, totals);
+  const health = loadHealth(units, totals, basePath);
   const stats = buildVisualizerStats(milestones, changelog.entries);
   const discussion = loadDiscussionState(basePath, milestones);
 
