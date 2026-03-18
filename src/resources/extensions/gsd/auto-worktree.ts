@@ -6,7 +6,7 @@
  * manages create, enter, detect, and teardown for auto-mode worktrees.
  */
 
-import { existsSync, readFileSync, realpathSync, unlinkSync, statSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, unlinkSync, statSync, rmSync } from "node:fs";
 import { isAbsolute, join, sep } from "node:path";
 import { GSDError, GSD_IO_ERROR, GSD_GIT_ERROR } from "./errors.js";
 import { execSync, execFileSync } from "node:child_process";
@@ -370,14 +370,18 @@ export function mergeMilestoneToMain(
   // squash merge can fail with "Your local changes would be overwritten" (#1127).
   autoCommitDirtyState(originalBasePath_);
 
-  // 3b. Remove untracked .gsd/ files that syncStateToProjectRoot copied.
-  // autoCommitDirtyState stages and commits everything (git add -A), but if
-  // the project root branch has no .gsd/ tracking (e.g., .gsd/ is gitignored),
-  // these files remain untracked and cause "untracked working tree files would
-  // be overwritten by merge" during squash-merge (#1237).
+  // 3b. Remove untracked .gsd/ runtime files that syncStateToProjectRoot copied.
+  // Only clean specific runtime files — NEVER touch milestones/, decisions, or
+  // other planning artifacts that represent user work (#1250).
+  const runtimeFilesToClean = ["STATE.md", "completed-units.json", "auto.lock", "gsd.db"];
+  for (const f of runtimeFilesToClean) {
+    const p = join(originalBasePath_, ".gsd", f);
+    try { if (existsSync(p)) unlinkSync(p); } catch { /* non-fatal */ }
+  }
   try {
-    execFileSync("git", ["clean", "-fd", ".gsd/"], { cwd: originalBasePath_, stdio: "pipe" });
-  } catch { /* non-fatal — clean failure shouldn't block merge attempt */ }
+    const runtimeDir = join(originalBasePath_, ".gsd", "runtime");
+    if (existsSync(runtimeDir)) rmSync(runtimeDir, { recursive: true, force: true });
+  } catch { /* non-fatal */ }
 
   // 4. Resolve integration branch — prefer milestone metadata, fall back to preferences / "main"
   const prefs = loadEffectiveGSDPreferences()?.preferences?.git ?? {};
