@@ -16,7 +16,10 @@
     "types": ["bun-types"],
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@codemirror/state": ["./node_modules/@codemirror/state"],
+      "@codemirror/view": ["./node_modules/@codemirror/view"],
+      "@codemirror/language": ["./node_modules/@codemirror/language"]
     }
   },
   "include": ["src"]
