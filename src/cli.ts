@@ -94,6 +94,19 @@ function parseCliArgs(argv: string[]): CliFlags {
 const cliFlags = parseCliArgs(process.argv)
 const isPrintMode = cliFlags.print || cliFlags.mode !== undefined
 
+// Early TTY check — must come before heavy initialization to avoid dangling
+// handles that prevent process.exit() from completing promptly.
+const hasSubcommand = cliFlags.messages.length > 0
+if (!process.stdin.isTTY && !isPrintMode && !hasSubcommand && !cliFlags.listModels) {
+  process.stderr.write('[gsd] Error: Interactive mode requires a terminal (TTY).\n')
+  process.stderr.write('[gsd] Non-interactive alternatives:\n')
+  process.stderr.write('[gsd]   gsd --print "your message"     Single-shot prompt\n')
+  process.stderr.write('[gsd]   gsd --mode rpc                 JSON-RPC over stdin/stdout\n')
+  process.stderr.write('[gsd]   gsd --mode mcp                 MCP server over stdin/stdout\n')
+  process.stderr.write('[gsd]   gsd --mode text "message"      Text output mode\n')
+  process.exit(1)
+}
+
 // `gsd <subcommand> --help` — show subcommand-specific help
 const subcommand = cliFlags.messages[0]
 if (subcommand && process.argv.includes('--help')) {
@@ -490,16 +503,6 @@ if (enabledModelPatterns && enabledModelPatterns.length > 0) {
   if (scopedModels.length > 0 && scopedModels.length < availableModels.length) {
     session.setScopedModels(scopedModels)
   }
-}
-
-if (!process.stdin.isTTY) {
-  process.stderr.write('[gsd] Error: Interactive mode requires a terminal (TTY).\n')
-  process.stderr.write('[gsd] Non-interactive alternatives:\n')
-  process.stderr.write('[gsd]   gsd --print "your message"     Single-shot prompt\n')
-  process.stderr.write('[gsd]   gsd --mode rpc                 JSON-RPC over stdin/stdout\n')
-  process.stderr.write('[gsd]   gsd --mode mcp                 MCP server over stdin/stdout\n')
-  process.stderr.write('[gsd]   gsd --mode text "message"      Text output mode\n')
-  process.exit(1)
 }
 
 const interactiveMode = new InteractiveMode(session)
