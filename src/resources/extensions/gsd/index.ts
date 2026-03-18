@@ -64,6 +64,25 @@ import { toPosixPath } from "../shared/mod.js";
 import { isParallelActive, shutdownParallel } from "./parallel-orchestrator.js";
 import { DEFAULT_BASH_TIMEOUT_SECS } from "./constants.js";
 
+/**
+ * Ensure the GSD database is available, auto-initializing if needed.
+ * Returns true if the DB is ready, false if initialization failed.
+ */
+async function ensureDbAvailable(): Promise<boolean> {
+  try {
+    const db = await import("./gsd-db.js");
+    if (db.isDbAvailable()) return true;
+
+    // Auto-initialize: open (and create if needed) the DB at the standard path
+    const gsdDir = join(process.cwd(), ".gsd");
+    if (!existsSync(gsdDir)) return false; // No GSD project — can't create DB
+    const dbPath = join(gsdDir, "gsd.db");
+    return db.openDatabase(dbPath);
+  } catch {
+    return false;
+  }
+}
+
 // ── Agent Instructions ────────────────────────────────────────────────────
 // Lightweight "always follow" files injected into every GSD agent session.
 // Global: ~/.gsd/agent-instructions.md   Project: .gsd/agent-instructions.md
@@ -277,14 +296,8 @@ export default function (pi: ExtensionAPI) {
       when_context: Type.Optional(Type.String({ description: "When/context for the decision (e.g. milestone ID)" })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
-      // Check DB availability
-      let dbAvailable = false;
-      try {
-        const db = await import("./gsd-db.js");
-        dbAvailable = db.isDbAvailable();
-      } catch { /* dynamic import failed */ }
-
-      if (!dbAvailable) {
+      // Ensure DB is available (auto-initialize if needed)
+      if (!await ensureDbAvailable()) {
         return {
           content: [{ type: "text" as const, text: "Error: GSD database is not available. Cannot save decision." }],
           isError: true,
@@ -344,13 +357,8 @@ export default function (pi: ExtensionAPI) {
       supporting_slices: Type.Optional(Type.String({ description: "Supporting slices" })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
-      let dbAvailable = false;
-      try {
-        const db = await import("./gsd-db.js");
-        dbAvailable = db.isDbAvailable();
-      } catch { /* dynamic import failed */ }
-
-      if (!dbAvailable) {
+      // Ensure DB is available (auto-initialize if needed)
+      if (!await ensureDbAvailable()) {
         return {
           content: [{ type: "text" as const, text: "Error: GSD database is not available. Cannot update requirement." }],
           isError: true,
@@ -418,13 +426,8 @@ export default function (pi: ExtensionAPI) {
       content: Type.String({ description: "The full markdown content of the artifact" }),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
-      let dbAvailable = false;
-      try {
-        const db = await import("./gsd-db.js");
-        dbAvailable = db.isDbAvailable();
-      } catch { /* dynamic import failed */ }
-
-      if (!dbAvailable) {
+      // Ensure DB is available (auto-initialize if needed)
+      if (!await ensureDbAvailable()) {
         return {
           content: [{ type: "text" as const, text: "Error: GSD database is not available. Cannot save artifact." }],
           isError: true,
