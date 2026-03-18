@@ -20,7 +20,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { discoverCommands, runVerificationGate, formatFailureContext, captureRuntimeErrors, runDependencyAudit } from "../verification-gate.ts";
+import { discoverCommands, runVerificationGate, formatFailureContext, captureRuntimeErrors, runDependencyAudit, isLikelyCommand } from "../verification-gate.ts";
 import type { CaptureRuntimeErrorsOptions, DependencyAuditOptions } from "../verification-gate.ts";
 import { validatePreferences } from "../preferences.ts";
 
@@ -369,6 +369,120 @@ test("verification-gate: whitespace-only preference commands fall through", () =
     // Whitespace-only strings are trimmed to empty and filtered out
     assert.equal(result.source, "package-json");
     assert.deepStrictEqual(result.commands, ["npm run lint"]);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+// ─── isLikelyCommand Tests (issue #1066) ────────────────────────────────────
+
+test("isLikelyCommand: known command prefixes are accepted", () => {
+  assert.equal(isLikelyCommand("npm run lint"), true);
+  assert.equal(isLikelyCommand("npx vitest"), true);
+  assert.equal(isLikelyCommand("yarn test"), true);
+  assert.equal(isLikelyCommand("pnpm run typecheck"), true);
+  assert.equal(isLikelyCommand("node script.js"), true);
+  assert.equal(isLikelyCommand("tsc --noEmit"), true);
+  assert.equal(isLikelyCommand("eslint ."), true);
+  assert.equal(isLikelyCommand("jest --ci"), true);
+  assert.equal(isLikelyCommand("python3 -m pytest"), true);
+  assert.equal(isLikelyCommand("cargo test"), true);
+  assert.equal(isLikelyCommand("go test ./..."), true);
+  assert.equal(isLikelyCommand("make test"), true);
+});
+
+test("isLikelyCommand: path-like first tokens are accepted", () => {
+  assert.equal(isLikelyCommand("./scripts/verify.sh"), true);
+  assert.equal(isLikelyCommand("/usr/local/bin/check"), true);
+  assert.equal(isLikelyCommand("../tools/lint.sh"), true);
+});
+
+test("isLikelyCommand: flag-like tokens indicate a command", () => {
+  assert.equal(isLikelyCommand("custom-tool --check"), true);
+  assert.equal(isLikelyCommand("mycheck -v"), true);
+});
+
+test("isLikelyCommand: prose descriptions are rejected", () => {
+  // The exact string from issue #1066
+  assert.equal(
+    isLikelyCommand("Document exists, contains all 5 scale names, all 14 semantic tokens, Inter assessment, philosophy and competitive citations present"),
+    false,
+  );
+  assert.equal(isLikelyCommand("Check that the file has been created with the correct content"), false);
+  assert.equal(isLikelyCommand("Verify the output matches expected format"), false);
+  assert.equal(isLikelyCommand("All tests pass and coverage is above 80%"), false);
+  assert.equal(isLikelyCommand("File should exist in the output directory"), false);
+  assert.equal(isLikelyCommand("Build succeeds without errors or warnings"), false);
+});
+
+test("isLikelyCommand: empty or whitespace-only strings are rejected", () => {
+  assert.equal(isLikelyCommand(""), false);
+  assert.equal(isLikelyCommand("   "), false);
+});
+
+test("isLikelyCommand: short lowercase tokens without flags are accepted (could be custom scripts)", () => {
+  assert.equal(isLikelyCommand("custom-verify"), true);
+  assert.equal(isLikelyCommand("mycheck"), true);
+});
+
+test("verification-gate: prose taskPlanVerify is rejected, falls through to package.json", () => {
+  const tmp = makeTempDir("vg-prose-reject");
+  try {
+    writeFileSync(
+      join(tmp, "package.json"),
+      JSON.stringify({ scripts: { test: "vitest" } }),
+    );
+    const result = discoverCommands({
+      taskPlanVerify: "Document exists, contains all 5 scale names, all 14 semantic tokens",
+      cwd: tmp,
+    });
+    // Prose should be rejected, so it falls through to package.json
+    assert.equal(result.source, "package-json");
+    assert.deepStrictEqual(result.commands, ["npm run test"]);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("verification-gate: prose taskPlanVerify with no package.json → source none", () => {
+  const tmp = makeTempDir("vg-prose-none");
+  try {
+    const result = discoverCommands({
+      taskPlanVerify: "Verify the output matches expected format and all fields are present",
+      cwd: tmp,
+    });
+    assert.equal(result.source, "none");
+    assert.deepStrictEqual(result.commands, []);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("verification-gate: valid command in taskPlanVerify still works", () => {
+  const tmp = makeTempDir("vg-valid-cmd");
+  try {
+    const result = discoverCommands({
+      taskPlanVerify: "npm run lint && npm run test",
+      cwd: tmp,
+    });
+    assert.equal(result.source, "task-plan");
+    assert.deepStrictEqual(result.commands, ["npm run lint", "npm run test"]);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("verification-gate: mixed prose and commands in taskPlanVerify — only commands kept", () => {
+  const tmp = makeTempDir("vg-mixed");
+  try {
+    const result = discoverCommands({
+      taskPlanVerify: "Check that everything works && npm run test",
+      cwd: tmp,
+    });
+    // "Check that everything works" is prose (starts with capital, 4+ words)
+    // "npm run test" is a valid command
+    assert.equal(result.source, "task-plan");
+    assert.deepStrictEqual(result.commands, ["npm run test"]);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
