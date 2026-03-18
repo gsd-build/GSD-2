@@ -1,6 +1,14 @@
 // Shared frontmatter parsing utilities
 // Canonical implementation for splitting and parsing YAML-like frontmatter.
 
+/** Strip matching single or double quotes from a string value (standard YAML scalar behavior). */
+function stripQuotes(s: string): string {
+  if (s.length >= 2 && ((s[0] === '"' && s[s.length - 1] === '"') || (s[0] === "'" && s[s.length - 1] === "'"))) {
+    return s.slice(1, -1);
+  }
+  return s;
+}
+
 /**
  * Split markdown content into frontmatter (YAML-like) and body.
  * Returns [frontmatterLines, body] where frontmatterLines is null if no frontmatter.
@@ -58,7 +66,7 @@ export function parseFrontmatterMap(lines: string[]): Record<string, unknown> {
       if (nestedStart) {
         currentObj = { [nestedStart[1]]: nestedStart[2].trim() };
       } else {
-        currentArray.push(val);
+        currentArray.push(stripQuotes(val));
       }
       continue;
     }
@@ -88,7 +96,7 @@ export function parseFrontmatterMap(lines: string[]): Record<string, unknown> {
         result[currentKey] = inner ? inner.split(',').map(s => s.trim()) : [];
         currentKey = null;
       } else {
-        result[currentKey] = val;
+        result[currentKey] = stripQuotes(val);
         currentKey = null;
       }
     }
