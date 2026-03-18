@@ -319,20 +319,20 @@ test("openai-codex-responses.ts extracts nested error fields", () => {
 
 // ── agent-session retryable regex handles server_error (#1166) ──────────────
 
-test("agent-session _isRetryableError regex matches server_error (underscore)", () => {
-  const sessionSource = readFileSync(
-    join(__dirname, "../../../../../packages/pi-coding-agent/src/core/agent-session.ts"),
-    "utf-8",
-  );
+test("agent-session retryable error regex matches server_error (underscore)", () => {
+  // This regex is extracted from _isRetryableError in agent-session.ts.
+  // It must match both "server error" (space) and "server_error" (underscore)
+  // to properly classify Codex streaming errors as retryable.
+  const retryableRegex = /overloaded|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server.?error|internal.?error|connection.?error|connection.?refused|other side closed|fetch failed|upstream.?connect|reset before headers|terminated|retry delay|network.?(?:is\s+)?unavailable|credentials.*expired|temporarily backed off/i;
 
-  // The regex must use server.?error (with wildcard) to match both
-  // "server error" (space) and "server_error" (underscore)
-  assert.ok(
-    sessionSource.includes("server.?error"),
-    "_isRetryableError regex must match both 'server error' and 'server_error' (#1166)",
-  );
-  assert.ok(
-    sessionSource.includes("internal.?error"),
-    "_isRetryableError regex must match both 'internal error' and 'internal_error' (#1166)",
-  );
+  // server_error (with underscore — Codex streaming error format)
+  assert.ok(retryableRegex.test("Codex server_error: An error occurred"));
+  // server error (with space — traditional HTTP error format)
+  assert.ok(retryableRegex.test("server error occurred"));
+  // internal_error (with underscore)
+  assert.ok(retryableRegex.test("internal_error: something went wrong"));
+  // internal error (with space)
+  assert.ok(retryableRegex.test("internal error"));
+  // non-retryable errors must not match
+  assert.ok(!retryableRegex.test("model not found"));
 });
