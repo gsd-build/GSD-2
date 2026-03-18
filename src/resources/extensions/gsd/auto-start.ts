@@ -131,9 +131,11 @@ export async function bootstrapAutoSession(
   // Initialize GitServiceImpl
   s.gitService = createGitService(s.basePath);
 
-  // Check for crash from previous session (use both old and new lock data)
+  // Check for crash from previous session (use both old and new lock data).
+  // Skip if the lock PID matches this process — acquireSessionLock() writes
+  // to the same auto.lock file before this check, so we'd always false-positive.
   const crashLock = readCrashLock(base);
-  if (crashLock) {
+  if (crashLock && crashLock.pid !== process.pid) {
     // We already hold the session lock, so no concurrent session is running.
     // The crash lock is from a dead process — recover context from it.
     const recoveredMid = crashLock.unitId.split("/")[0];
