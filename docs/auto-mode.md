@@ -157,7 +157,11 @@ After a milestone completes, GSD auto-generates a self-contained HTML report in 
 auto_report: true    # enabled by default
 ```
 
-Generate manually anytime with `/gsd export --html`.
+Generate manually anytime with `/gsd export --html`, or generate reports for all milestones at once with `/gsd export --html --all` (v2.28).
+
+### Failure Recovery (v2.28)
+
+v2.28 hardens auto-mode reliability with multiple safeguards: atomic file writes prevent corruption on crash, OAuth fetch timeouts (30s) prevent indefinite hangs, RPC subprocess exit is detected and reported, and blob garbage collection prevents unbounded disk growth. Combined with the existing crash recovery and headless auto-restart, auto-mode is designed for true "fire and forget" overnight execution.
 
 ## Controlling Auto Mode
 

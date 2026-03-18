@@ -8,7 +8,7 @@ npm install -g gsd-pi
 
 Requires Node.js ≥ 20.6.0 (22+ recommended) and Git.
 
-GSD checks for updates once every 24 hours. When a new version is available, you'll see an interactive prompt at startup with the option to update immediately or skip.
+GSD checks for updates once every 24 hours. When a new version is available, you'll see an interactive prompt at startup with the option to update immediately or skip. You can also update from within a session with `/gsd update`.
 
 ### VS Code Extension
 

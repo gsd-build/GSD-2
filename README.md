@@ -24,6 +24,19 @@ One command. Walk away. Come back to a built project with clean git history.
 
 ---
 
+## What's New in v2.28
+
+- **`gsd headless query`** — instant JSON snapshot of project state (~50ms, no LLM session)
+- **`/gsd update`** — update GSD to the latest version without leaving your session
+- **`/gsd export --html --all`** — generate retrospective HTML reports for all milestones at once
+- **Reliability hardening** — atomic file writes, OAuth fetch timeouts, RPC exit detection, blob GC, LSP init retry with backoff
+- **RPC utilities** now part of the public API for headless/scripted integrations
+- **npm** established as the canonical package manager
+
+See the full [Changelog](./CHANGELOG.md) for details.
+
+---
+
 ## Documentation
 
 Full documentation is available in the [`docs/`](./docs/) directory:
