@@ -126,6 +126,8 @@ export interface GSD2State {
   needsMigration: boolean;
   /** All slices from M{NNN}-ROADMAP.md */
   slices: GSD2SliceInfo[];
+  /** All milestones scanned from .gsd/milestones/ — used by MilestoneView for stacked display */
+  allMilestones: GSD2RoadmapState[];
   /** Parsed S{NN}-UAT.md for active slice (null if missing) */
   uatFile: GSD2UatFile | null;
   /** Commit count on active slice branch (0 when branch not found) */

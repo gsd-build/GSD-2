@@ -1,21 +1,18 @@
 /**
- * MilestoneView — standalone milestone overview with optional split view.
+ * MilestoneView — milestone overview with stacked per-milestone sections.
  *
- * Renders SliceAccordion (replacing v1 PhaseList + CommittedHistory).
- * Uses GSD2State fields (slices, projectState) — no more PhaseState[] props.
- *
- * When multiple sessions have active worktrees, shows a stacked view
- * with one section per worktree session. Each section displays the session
- * name + branch badge and standard milestone content.
- *
- * When only one session or no worktrees: renders standard single milestone view.
+ * Shows ALL milestones scanned from .gsd/milestones/ (via gsd2State.allMilestones),
+ * each with its own SliceAccordion. Active milestone is highlighted.
+ * Metric stat cards aggregate across all milestones.
  */
 import { useState } from "react";
 import { PanelWrapper } from "@/components/layout/PanelWrapper";
 import { MilestoneHeader } from "@/components/milestone/MilestoneHeader";
+import { MilestoneMetrics } from "@/components/milestone/MilestoneMetrics";
 import { SliceAccordion } from "@/components/milestone/SliceAccordion";
 import { InlineReadPanel } from "@/components/milestone/InlineReadPanel";
-import type { GSD2State, SliceAction } from "@/server/types";
+import type { GSD2State, GSD2RoadmapState, SliceAction } from "@/server/types";
+import { cn } from "@/lib/utils";
 
 export interface WorktreeSessionInfo {
   id: string;
@@ -31,17 +28,52 @@ export type MilestoneAction =
 
 interface MilestoneViewProps {
   gsd2State: GSD2State | null;
-  /** Optional sessions list — when provided, enables split view for worktree sessions. */
   sessions?: WorktreeSessionInfo[];
-  /** Optional action handler — forwards translated MilestoneActions to AppShell. */
   onAction?: (action: MilestoneAction) => void;
 }
 
-/** Standard milestone content (reused in both single and split views). */
-function MilestoneContent({ gsd2State, onAction }: { gsd2State: GSD2State | null; onAction?: (action: MilestoneAction) => void }) {
-  const slices = gsd2State?.slices ?? [];
+/** Section header for a single milestone group. */
+function MilestoneSectionHeader({
+  milestone,
+  isActive,
+}: {
+  milestone: GSD2RoadmapState;
+  isActive: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-2 px-4 py-2 border-b border-[#1E2D3D]",
+        isActive ? "bg-[#0F1C2B] border-l-2 border-l-[#5BC8F0]" : "bg-[#0F1419]"
+      )}
+    >
+      <span className="inline-flex items-center rounded bg-navy-700 px-2 py-0.5 font-mono text-xs text-slate-400">
+        {milestone.milestoneId}
+      </span>
+      <span className="font-display text-sm font-semibold text-slate-200">
+        {milestone.milestoneName}
+      </span>
+      {isActive && (
+        <span className="ml-auto text-[10px] font-mono text-[#5BC8F0] uppercase tracking-wider">
+          Active
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** All milestone sections stacked with shared panel state. */
+function MilestoneContent({
+  gsd2State,
+  onAction,
+}: {
+  gsd2State: GSD2State | null;
+  onAction?: (action: MilestoneAction) => void;
+}) {
   const activeSliceId = gsd2State?.projectState.active_slice ?? "";
+  const activeMilestoneId = gsd2State?.projectState.active_milestone ?? "";
   const isAutoMode = gsd2State?.projectState.auto_mode ?? false;
+  const allMilestones = gsd2State?.allMilestones ?? [];
 
   const [panelState, setPanelState] = useState<{
     isOpen: boolean;
@@ -53,18 +85,15 @@ function MilestoneContent({ gsd2State, onAction }: { gsd2State: GSD2State | null
   async function handleSliceAction(action: SliceAction) {
     switch (action.type) {
       case 'start_slice':
-        // "/gsd auto" starts the slice gsd workflow
         onAction?.({ type: 'send_message', message: '/gsd auto' });
         break;
       case 'pause':
         onAction?.({ type: 'interrupt' });
         break;
       case 'steer':
-        // Sends direction to active session without stopping auto mode
         onAction?.({ type: 'send_message', message: action.message });
         break;
       case 'merge':
-        // Git squash merge on active slice branch
         onAction?.({ type: 'send_message', message: `/gsd merge ${gsd2State?.projectState.active_slice}` });
         break;
       case 'view_plan': {
@@ -82,14 +111,14 @@ function MilestoneContent({ gsd2State, onAction }: { gsd2State: GSD2State | null
         break;
       }
       case 'view_diff': {
-        setPanelState({ isOpen: true, title: 'Slice Diff', content: '', isLoading: true });
+        setPanelState({ isOpen: true, title: `${action.sliceId} Diff`, content: '', isLoading: true });
         const res = await fetch(`/api/gsd-file?sliceId=${action.sliceId}&type=diff`);
         const data = await res.json() as { content: string };
         setPanelState(prev => ({ ...prev, content: data.content, isLoading: false }));
         break;
       }
       case 'view_uat_results': {
-        setPanelState({ isOpen: true, title: 'UAT Results', content: '', isLoading: true });
+        setPanelState({ isOpen: true, title: `${action.sliceId} UAT Results`, content: '', isLoading: true });
         const res = await fetch(`/api/gsd-file?sliceId=${action.sliceId}&type=uat_results`);
         const data = await res.json() as { content: string };
         setPanelState(prev => ({ ...prev, content: data.content, isLoading: false }));
@@ -110,7 +139,9 @@ function MilestoneContent({ gsd2State, onAction }: { gsd2State: GSD2State | null
   }
 
   function handleStartNext() {
-    const nextPlanned = slices.find((s) => s.status === "planned");
+    const nextPlanned = allMilestones
+      .flatMap((m) => m.slices)
+      .find((s) => s.status === "planned");
     if (nextPlanned) {
       handleSliceAction({ type: "start_slice", sliceId: nextPlanned.id });
     }
@@ -118,18 +149,34 @@ function MilestoneContent({ gsd2State, onAction }: { gsd2State: GSD2State | null
 
   return (
     <div className="flex flex-col">
-      <MilestoneHeader
-        gsd2State={gsd2State}
-        onStartNext={handleStartNext}
-      />
-      <SliceAccordion
-        slices={slices}
-        activeSliceId={activeSliceId}
-        isAutoMode={isAutoMode}
-        gsd2State={gsd2State}
-        onAction={handleSliceAction}
-        onUatItemToggle={handleUatItemToggle}
-      />
+      {/* Aggregate metric cards */}
+      <MilestoneMetrics gsd2State={gsd2State} />
+
+      {/* MilestoneHeader for active milestone */}
+      <MilestoneHeader gsd2State={gsd2State} onStartNext={handleStartNext} />
+
+      {/* Stacked milestone sections */}
+      {allMilestones.map((milestone) => {
+        const isActive = milestone.milestoneId === activeMilestoneId;
+        return (
+          <div
+            key={milestone.milestoneId}
+            className={cn("border-b border-[#1E2D3D]", !isActive && "opacity-80")}
+          >
+            <MilestoneSectionHeader milestone={milestone} isActive={isActive} />
+            <SliceAccordion
+              slices={milestone.slices}
+              activeSliceId={isActive ? activeSliceId : ""}
+              isAutoMode={isActive ? isAutoMode : false}
+              gsd2State={isActive ? gsd2State : null}
+              onAction={handleSliceAction}
+              onUatItemToggle={handleUatItemToggle}
+            />
+          </div>
+        );
+      })}
+
+      {/* Modal for view_plan / view_task / view_diff / view_uat_results */}
       <InlineReadPanel
         isOpen={panelState.isOpen}
         title={panelState.title}
@@ -141,7 +188,7 @@ function MilestoneContent({ gsd2State, onAction }: { gsd2State: GSD2State | null
   );
 }
 
-/** Session section header with name and branch badge. */
+/** Session section header (for split worktree view). */
 function SessionSectionHeader({ session }: { session: WorktreeSessionInfo }) {
   return (
     <div className="flex items-center gap-2 px-4 py-2 bg-navy-800/50 border-b border-navy-600">
@@ -160,23 +207,26 @@ function SessionSectionHeader({ session }: { session: WorktreeSessionInfo }) {
 }
 
 export function MilestoneView({ gsd2State, sessions, onAction }: MilestoneViewProps) {
-  const slices = gsd2State?.slices ?? [];
+  const allMilestones = gsd2State?.allMilestones ?? [];
   const worktreeSessions = sessions?.filter((s) => s.worktreePath) ?? [];
 
   // Split view: when 2+ sessions have worktrees — stacked vertically
   if (worktreeSessions.length >= 2) {
     return (
       <>
-        {/* Screen-reader h1 for this view — PanelWrapper renders an h2 label, not h1 */}
         <h1 className="sr-only">Milestone</h1>
         <PanelWrapper
           title="Milestone"
           isLoading={gsd2State === null}
-          isEmpty={gsd2State !== null && slices.length === 0}
+          isEmpty={gsd2State !== null && allMilestones.length === 0}
         >
           <div className="space-y-4">
             {worktreeSessions.map((session, index) => (
-              <div key={session.id} className="animate-in fade-in duration-200 rounded-lg border border-navy-600 overflow-hidden" style={{ animationDelay: `${index * 40}ms` }}>
+              <div
+                key={session.id}
+                className="animate-in fade-in duration-200 rounded-lg border border-navy-600 overflow-hidden"
+                style={{ animationDelay: `${index * 40}ms` }}
+              >
                 <SessionSectionHeader session={session} />
                 <div className="overflow-auto max-h-[50vh]">
                   <MilestoneContent gsd2State={gsd2State} onAction={onAction} />
@@ -192,12 +242,11 @@ export function MilestoneView({ gsd2State, sessions, onAction }: MilestoneViewPr
   // Standard single view
   return (
     <>
-      {/* Screen-reader h1 for this view — PanelWrapper renders an h2 label, not h1 */}
       <h1 className="sr-only">Milestone</h1>
       <PanelWrapper
         title="Milestone"
         isLoading={gsd2State === null}
-        isEmpty={gsd2State !== null && slices.length === 0}
+        isEmpty={gsd2State !== null && allMilestones.length === 0}
       >
         <MilestoneContent gsd2State={gsd2State} onAction={onAction} />
       </PanelWrapper>

@@ -36,18 +36,6 @@ export function SliceInProgress({
       {/* Amber pulse accent strip — only the left border animates */}
       <div className="animate-pulse absolute left-0 top-0 h-full w-0.5 bg-[#F59E0B] rounded-l-lg" />
 
-      {/* Header row */}
-      <div className="flex items-center justify-between">
-        <span className="font-mono text-sm text-[#5BC8F0] font-bold">{slice.id}</span>
-        <span className="font-mono text-sm text-slate-200 flex-1 ml-3">{slice.name}</span>
-        <span className="text-xs font-mono text-[#F59E0B] uppercase tracking-wider">
-          {builderMode ? 'Building now' : '● EXECUTING'}
-        </span>
-      </div>
-
-      {/* Divider */}
-      <div className="border-t border-[#1E2D3D] my-2" />
-
       {/* Task progress line */}
       <p className="font-mono text-xs text-slate-400">
         Task {completedTaskCount + 1} of {totalTaskCount}

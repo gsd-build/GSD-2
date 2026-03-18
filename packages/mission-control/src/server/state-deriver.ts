@@ -593,6 +593,33 @@ export async function buildFullState(gsdDir: string): Promise<GSD2State> {
   const { commits: gitBranchCommits, lastMessage: lastCommitMessage } =
     await readGitBranchData(repoRoot, activeSliceBranch);
 
+  // Phase 6: Scan all milestones from .gsd/milestones/ for stacked view
+  const allMilestones: GSD2RoadmapState[] = [];
+  try {
+    const milestonesDir = join(gsdDir, "milestones");
+    const milestoneEntries = await readdir(milestonesDir, { withFileTypes: true });
+    const milestoneDirs = milestoneEntries
+      .filter((e) => e.isDirectory() && /^M\d+$/i.test(e.name))
+      .map((e) => e.name)
+      .sort();
+
+    for (const milestoneId of milestoneDirs) {
+      const roadmapPath = join(milestonesDir, milestoneId, `${milestoneId}-ROADMAP.md`);
+      const raw = await readFileText(roadmapPath);
+      if (raw) {
+        const parsed = parseRoadmap(raw);
+        allMilestones.push(parsed);
+      }
+    }
+  } catch {
+    // milestones/ dir not present — fall back to active milestone only
+  }
+
+  // If scan found nothing, use the active roadmap as the single milestone
+  if (allMilestones.length === 0 && roadmap) {
+    allMilestones.push(roadmap);
+  }
+
   return {
     projectState,
     roadmap,
@@ -604,6 +631,7 @@ export async function buildFullState(gsdDir: string): Promise<GSD2State> {
     milestoneContext: contextRaw,
     needsMigration,
     slices,
+    allMilestones,
     uatFile,
     gitBranchCommits,
     lastCommitMessage,

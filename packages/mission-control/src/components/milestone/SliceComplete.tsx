@@ -24,17 +24,6 @@ export function SliceComplete({
 
   return (
     <div data-testid="slice-complete" className="flex flex-col gap-2 py-2">
-      {/* Header row */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <span className="font-mono text-sm text-[#5BC8F0] font-bold">{slice.id}</span>
-          <span className="font-mono text-sm text-slate-300">{slice.name}</span>
-        </div>
-        <span className="text-xs font-mono text-[#22C55E] uppercase tracking-wider">
-          {builderMode ? 'Done' : '✓ COMPLETE'}
-        </span>
-      </div>
-
       {/* Meta line */}
       <div className="font-mono text-xs text-slate-400">
         Merged · {commitCount} commit{commitCount !== 1 ? "s" : ""} on main · ${totalCost.toFixed(2)} total
