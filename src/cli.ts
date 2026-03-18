@@ -94,6 +94,10 @@ function parseCliArgs(argv: string[]): CliFlags {
 const cliFlags = parseCliArgs(process.argv)
 const isPrintMode = cliFlags.print || cliFlags.mode !== undefined
 
+// Version skew check — fast file read, no TTY needed, must run before TTY gate
+// so non-interactive environments (CI, scripts) get the right error message.
+exitIfManagedResourcesAreNewer(agentDir)
+
 // Early TTY check — bail before expensive initialization if we're heading
 // for interactive mode but have no terminal. Subcommands (config, sessions,
 // headless, update) and print/RPC modes handle non-TTY on their own.
