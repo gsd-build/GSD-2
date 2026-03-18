@@ -1,0 +1,59 @@
+export type DoctorSeverity = "info" | "warning" | "error";
+export type DoctorIssueCode =
+  | "invalid_preferences"
+  | "missing_tasks_dir"
+  | "missing_slice_plan"
+  | "task_done_missing_summary"
+  | "task_summary_without_done_checkbox"
+  | "all_tasks_done_missing_slice_summary"
+  | "all_tasks_done_missing_slice_uat"
+  | "all_tasks_done_roadmap_not_checked"
+  | "slice_checked_missing_summary"
+  | "slice_checked_missing_uat"
+  | "all_slices_done_missing_milestone_validation"
+  | "all_slices_done_missing_milestone_summary"
+  | "task_done_must_haves_not_verified"
+  | "active_requirement_missing_owner"
+  | "blocked_requirement_missing_reason"
+  | "blocker_discovered_no_replan"
+  | "delimiter_in_title"
+  | "orphaned_auto_worktree"
+  | "stale_milestone_branch"
+  | "corrupt_merge_state"
+  | "tracked_runtime_files"
+  | "legacy_slice_branches"
+  | "stale_crash_lock"
+  | "stale_parallel_session"
+  | "orphaned_completed_units"
+  | "stale_hook_state"
+  | "activity_log_bloat"
+  | "state_file_stale"
+  | "state_file_missing"
+  | "gitignore_missing_patterns"
+  | "unresolvable_dependency";
+
+export interface DoctorIssue {
+  severity: DoctorSeverity;
+  code: DoctorIssueCode;
+  scope: "project" | "milestone" | "slice" | "task";
+  unitId: string;
+  message: string;
+  file?: string;
+  fixable: boolean;
+}
+
+export interface DoctorReport {
+  ok: boolean;
+  basePath: string;
+  issues: DoctorIssue[];
+  fixesApplied: string[];
+}
+
+export interface DoctorSummary {
+  total: number;
+  errors: number;
+  warnings: number;
+  infos: number;
+  fixable: number;
+  byCode: Array<{ code: DoctorIssueCode; count: number }>;
+}
