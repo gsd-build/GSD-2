@@ -10,10 +10,11 @@
  * Also contains resource staleness detection and stale worktree escape.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync, cpSync, unlinkSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, cpSync, unlinkSync, readdirSync } from "node:fs";
 import { join, sep as pathSep } from "node:path";
 import { homedir } from "node:os";
 import { safeCopy, safeCopyRecursive } from "./safe-fs.js";
+import { atomicWriteSync } from "./atomic-write.js";
 
 // ─── Project Root → Worktree Sync ─────────────────────────────────────────
 
@@ -79,7 +80,7 @@ export function syncStateToProjectRoot(worktreePath: string, projectRoot: string
         try { dstKeys = JSON.parse(readFileSync(dstKeysFile, "utf8")); } catch { /* ignore corrupt dst */ }
       }
       const merged = [...new Set([...dstKeys, ...srcKeys])];
-      writeFileSync(dstKeysFile, JSON.stringify(merged, null, 2));
+      atomicWriteSync(dstKeysFile, JSON.stringify(merged, null, 2));
     } catch { /* non-fatal */ }
   }
 

@@ -6,10 +6,11 @@
  * manages create, enter, detect, and teardown for auto-mode worktrees.
  */
 
-import { existsSync, cpSync, readFileSync, writeFileSync, readdirSync, mkdirSync, realpathSync, unlinkSync } from "node:fs";
+import { existsSync, cpSync, readFileSync, readdirSync, mkdirSync, realpathSync, unlinkSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { GSDError, GSD_IO_ERROR, GSD_GIT_ERROR } from "./errors.js";
 import { copyWorktreeDb, reconcileWorktreeDb, isDbAvailable } from "./gsd-db.js";
+import { atomicWriteSync } from "./atomic-write.js";
 import { execSync, execFileSync } from "node:child_process";
 import { safeCopy, safeCopyRecursive } from "./safe-fs.js";
 import {
@@ -183,7 +184,7 @@ function reconcilePlanCheckboxes(projectRoot: string, wtPath: string, milestoneI
 
     if (changed) {
       try {
-        writeFileSync(dstFile, updated, "utf-8");
+        atomicWriteSync(dstFile, updated, "utf-8");
       } catch { /* non-fatal */ }
     }
   }
@@ -201,7 +202,7 @@ function reconcilePlanCheckboxes(projectRoot: string, wtPath: string, milestoneI
       const merged = [...new Set([...dst, ...src])];
       if (merged.length > dst.length) {
         mkdirSync(join(wtPath, ".gsd"), { recursive: true });
-        writeFileSync(dstKeys, JSON.stringify(merged), "utf-8");
+        atomicWriteSync(dstKeys, JSON.stringify(merged), "utf-8");
       }
     } catch { /* non-fatal */ }
   }

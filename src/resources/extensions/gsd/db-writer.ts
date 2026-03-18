@@ -13,6 +13,9 @@ import type { Decision, Requirement } from './types.js';
 import { resolveGsdRootFile } from './paths.js';
 import { saveFile } from './files.js';
 import { GSDError, GSD_STALE_STATE, GSD_IO_ERROR } from './errors.js';
+import { invalidateStateCache } from './state.js';
+import { clearPathCache } from './paths.js';
+import { clearParseCache } from './files.js';
 
 // ─── Markdown Generators ──────────────────────────────────────────────────
 
@@ -226,6 +229,11 @@ export async function saveDecisionToDb(
     const md = generateDecisionsMd(allDecisions);
     const filePath = resolveGsdRootFile(basePath, 'DECISIONS');
     await saveFile(filePath, md);
+    // Invalidate file-read caches so deriveState() sees the updated markdown.
+    // Do NOT clear the artifacts table — we just wrote to it intentionally.
+    invalidateStateCache();
+    clearPathCache();
+    clearParseCache();
 
     return { id };
   } catch (err) {
@@ -290,6 +298,11 @@ export async function updateRequirementInDb(
     const md = generateRequirementsMd(nonSuperseded);
     const filePath = resolveGsdRootFile(basePath, 'REQUIREMENTS');
     await saveFile(filePath, md);
+    // Invalidate file-read caches so deriveState() sees the updated markdown.
+    // Do NOT clear the artifacts table — we just wrote to it intentionally.
+    invalidateStateCache();
+    clearPathCache();
+    clearParseCache();
   } catch (err) {
     process.stderr.write(`gsd-db: updateRequirementInDb failed: ${(err as Error).message}\n`);
     throw err;
@@ -335,6 +348,11 @@ export async function saveArtifactToDb(
       throw new GSDError(GSD_IO_ERROR, `saveArtifactToDb: path escapes .gsd/ directory: ${opts.path}`);
     }
     await saveFile(fullPath, opts.content);
+    // Invalidate file-read caches so deriveState() sees the updated markdown.
+    // Do NOT clear the artifacts table — we just wrote to it intentionally.
+    invalidateStateCache();
+    clearPathCache();
+    clearParseCache();
   } catch (err) {
     process.stderr.write(`gsd-db: saveArtifactToDb failed: ${(err as Error).message}\n`);
     throw err;
