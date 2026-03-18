@@ -55,6 +55,16 @@ blocker_discovered: false
 - Four CodeMirror packages in web/package.json ✅
 - No existing files modified (pure additive — only package.json deps and new file) ✅
 
+## Verification Evidence
+
+| # | Command | Exit Code | Verdict | Duration |
+|---|---------|-----------|---------|----------|
+| 1 | `npm run build:web-host` (post-install) | 0 | PASS | ~8s |
+| 2 | `npm run build:web-host` (post-component) | 0 | PASS | ~8s |
+| 3 | `npx tsc --noEmit` | 1 (pre-existing only) | PASS | ~10s |
+| 4 | `ls web/components/gsd/code-editor.tsx` | 0 | PASS | — |
+| 5 | `grep codemirror web/package.json` | 0 | PASS | — |
+
 ### Slice-level verification (partial — T01 is intermediate)
 - `npm run build:web-host` exits 0 ✅
 - Browser: View/Edit tabs, edit→save→view round-trip — not yet (requires T02 integration)

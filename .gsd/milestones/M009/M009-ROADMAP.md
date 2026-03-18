@@ -35,7 +35,7 @@
 
 This milestone is complete only when all are true:
 
-- All 4 slice deliverables are complete
+- All 3 slice deliverables are complete
 - POST /api/files writes files with path validation, rejects traversal
 - View tab renders identically to current file viewer (shiki for code, react-markdown for markdown)
 - Edit tab uses CodeMirror with theme derived from existing design tokens
@@ -55,14 +55,13 @@ This milestone is complete only when all are true:
 - [x] **S01: File Write API & Editor Font Size** `risk:low` `depends:[]`
   > After this: POST /api/files saves file content to disk with path validation; editor font size is configurable in settings and persists in localStorage.
 
-- [ ] **S02: CodeMirror Integration & Code Editing** `risk:medium` `depends:[S01]`
+- [x] **S02: CodeMirror Integration & Code Editing** `risk:medium` `depends:[S01]`
   > After this: File content viewer has View/Edit tabs; Edit tab uses CodeMirror 6 with custom theme from design tokens; Save button writes via POST /api/files.
 
-- [ ] **S03: Markdown View/Edit Split** `risk:low` `depends:[S02]`
-  > After this: Markdown files show rendered react-markdown in View tab and raw CodeMirror editing in Edit tab; Save updates the rendered view.
+- [x] ~~**S03: Markdown View/Edit Split**~~ `merged into S02` — S02's `ReadOnlyContent` already branches on `isMarkdown()` for View tab, CodeEditor handles markdown via `CM_LANG_MAP`, and save→re-fetch updates the rendered view. All S03 deliverables were built in S02.
 
-- [ ] **S04: Final Polish & Verification** `risk:low` `depends:[S01,S02,S03]`
-  > After this: All editor features verified end-to-end in browser; font size applies to all tabs; both dark and light themes look correct; build passes.
+- [ ] **S04: Final Polish & Verification** `risk:low` `depends:[S01,S02]`
+  > After this: All editor features verified end-to-end in browser; markdown View/Edit round-trip confirmed; font size applies to both tabs including shiki View tab; both dark and light themes look correct; build passes.
 
 ## Boundary Map
 
@@ -90,23 +89,18 @@ Consumes from S01:
 - POST `/api/files` for Save action
 - `useEditorFontSize()` hook for font size
 
-### S03 (Markdown View/Edit Split)
+### S03
 
-Produces:
-- Markdown-specific View tab using react-markdown (existing rendering, unchanged)
-- Markdown Edit tab using CodeMirror with `@codemirror/lang-markdown` extension
-- Content refresh on save — after POST succeeds, View tab re-fetches and re-renders the markdown
-
-Consumes from S02:
-- CodeEditor component with language and theme support
-- Tab UI and save infrastructure from file-content-viewer.tsx
+Merged into S02. No separate deliverables.
 
 ### S04 (Final Polish & Verification)
 
 Produces:
-- End-to-end browser verification of all editor features
+- End-to-end browser verification of all editor features (code files and markdown files)
+- Editor font size applied to shiki View tab (currently only CodeMirror Edit tab)
+- Visual verification of dark/light theme alignment
 - Any fixes for visual issues found during theme comparison
 - Build verification
 
-Consumes from S01, S02, S03:
+Consumes from S01, S02:
 - All editor components and API endpoints
