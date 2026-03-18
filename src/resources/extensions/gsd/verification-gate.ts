@@ -145,11 +145,77 @@ export function formatFailureContext(result: VerificationResult): string {
 const SHELL_INJECTION_PATTERN = /[;|`]|\$\(/;
 
 /**
+ * Known executable first-tokens that are safe to run.
+ * Lowercase commands, common build/test tools, and npm/yarn/pnpm invocations.
+ */
+const KNOWN_COMMAND_PREFIXES = new Set([
+  "npm", "npx", "yarn", "pnpm", "bun", "bunx", "deno",
+  "node", "ts-node", "tsx", "tsc",
+  "sh", "bash", "zsh",
+  "echo", "cat", "ls", "test", "true", "false", "pwd", "env",
+  "make", "cargo", "go", "python", "python3", "pip", "pip3",
+  "ruby", "gem", "bundle", "rake",
+  "java", "javac", "mvn", "gradle",
+  "docker", "docker-compose",
+  "git", "gh",
+  "eslint", "prettier", "vitest", "jest", "mocha", "pytest", "phpunit",
+  "curl", "wget",
+  "grep", "find", "diff", "wc", "sort", "head", "tail",
+]);
+
+/**
+ * Heuristic check: does this string look like an executable shell command
+ * rather than a prose description?
+ *
+ * Returns true when the string appears to be a command. Returns false
+ * for English prose (e.g. "Document exists, contains all 5 scale names").
+ *
+ * Heuristics (any true → command-like):
+ *   1. First token is a known command prefix
+ *   2. First token starts with `.` or `/` (path-like)
+ *   3. Any token starts with `-` (flag-like)
+ *   4. First token contains no uppercase letters (commands are lowercase)
+ *      AND first token does not end with a comma or colon (prose punctuation)
+ *
+ * Heuristics (any true → prose-like):
+ *   1. First token starts with an uppercase letter and the string has 4+ words
+ *   2. String contains commas followed by spaces (prose clause structure)
+ */
+export function isLikelyCommand(cmd: string): boolean {
+  const trimmed = cmd.trim();
+  if (!trimmed) return false;
+
+  const tokens = trimmed.split(/\s+/);
+  const firstToken = tokens[0];
+
+  // Known command prefix → definitely a command
+  if (KNOWN_COMMAND_PREFIXES.has(firstToken)) return true;
+
+  // Path-like first token → command
+  if (firstToken.startsWith("/") || firstToken.startsWith("./") || firstToken.startsWith("../")) return true;
+
+  // Has flag-like tokens → command
+  if (tokens.some(t => t.startsWith("-"))) return true;
+
+  // First token starts with uppercase + 4 or more words → prose
+  if (/^[A-Z]/.test(firstToken) && tokens.length >= 4) return false;
+
+  // Contains comma-space patterns (prose clause separators) → prose
+  if (/,\s/.test(trimmed) && tokens.length >= 4) return false;
+
+  // First token has uppercase letters and no path separators → prose
+  if (/[A-Z]/.test(firstToken) && !firstToken.includes("/")) return false;
+
+  return true;
+}
+
+/**
  * Validate a command string for obvious shell injection patterns.
  * Returns the command unchanged if safe, or null if suspicious.
  */
 function sanitizeCommand(cmd: string): string | null {
   if (SHELL_INJECTION_PATTERN.test(cmd)) return null;
+  if (!isLikelyCommand(cmd)) return null;
   return cmd;
 }
 
