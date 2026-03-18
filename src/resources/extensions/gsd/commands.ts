@@ -80,7 +80,7 @@ function projectRoot(): string {
 
 export function registerGSDCommand(pi: ExtensionAPI): void {
   pi.registerCommand("gsd", {
-    description: "GSD — Get Shit Done: /gsd help|next|auto|stop|pause|status|visualize|queue|quick|capture|triage|dispatch|history|undo|skip|export|cleanup|mode|prefs|config|hooks|run-hook|skill-health|doctor|forensics|migrate|remote|steer|knowledge|new-milestone|parallel|update",
+    description: "GSD — Get Shit Done: /gsd help|next|auto|stop|pause|status|visualize|queue|quick|capture|triage|dispatch|history|undo|skip|export|cleanup|mode|prefs|config|keys|hooks|run-hook|skill-health|doctor|forensics|migrate|remote|steer|knowledge|new-milestone|parallel|update",
     getArgumentCompletions: (prefix: string) => {
       const subcommands = [
         { cmd: "help", desc: "Categorized command reference with descriptions" },
@@ -104,6 +104,7 @@ export function registerGSDCommand(pi: ExtensionAPI): void {
         { cmd: "mode", desc: "Switch workflow mode (solo/team)" },
         { cmd: "prefs", desc: "Manage preferences (model selection, timeouts, etc.)" },
         { cmd: "config", desc: "Set API keys for external tools" },
+        { cmd: "keys", desc: "API key manager — list, add, remove, test, rotate, doctor" },
         { cmd: "hooks", desc: "Show configured post-unit and pre-dispatch hooks" },
         { cmd: "run-hook", desc: "Manually trigger a specific hook" },
         { cmd: "skill-health", desc: "Skill lifecycle dashboard" },
@@ -181,6 +182,21 @@ export function registerGSDCommand(pi: ExtensionAPI): void {
         return subs
           .filter((s) => s.cmd.startsWith(subPrefix))
           .map((s) => ({ value: `setup ${s.cmd}`, label: s.cmd, description: s.desc }));
+      }
+
+      if (parts[0] === "keys" && parts.length <= 2) {
+        const subPrefix = parts[1] ?? "";
+        const subs = [
+          { cmd: "list", desc: "Show key status dashboard" },
+          { cmd: "add", desc: "Add a key for a provider" },
+          { cmd: "remove", desc: "Remove a key" },
+          { cmd: "test", desc: "Validate key(s) with API call" },
+          { cmd: "rotate", desc: "Replace an existing key" },
+          { cmd: "doctor", desc: "Health check all keys" },
+        ];
+        return subs
+          .filter((s) => s.cmd.startsWith(subPrefix))
+          .map((s) => ({ value: `keys ${s.cmd}`, label: s.cmd, description: s.desc }));
       }
 
       if (parts[0] === "prefs" && parts.length <= 2) {
@@ -355,6 +371,13 @@ export function registerGSDCommand(pi: ExtensionAPI): void {
         } else {
           await showProjectInit(ctx, pi, basePath, detection);
         }
+        return;
+      }
+
+      if (trimmed === "keys" || trimmed.startsWith("keys ")) {
+        const { handleKeys } = await import("./key-manager.js");
+        const keysArgs = trimmed.replace(/^keys\s*/, "").trim();
+        await handleKeys(keysArgs, ctx);
         return;
       }
 
@@ -737,6 +760,7 @@ function showHelp(ctx: ExtensionCommandContext): void {
     "  /gsd mode           Set workflow mode (solo/team)  [global|project]",
     "  /gsd prefs          Manage preferences  [global|project|status|wizard|setup]",
     "  /gsd config         Set API keys for external tools",
+    "  /gsd keys           API key manager  [list|add|remove|test|rotate|doctor]",
     "  /gsd hooks          Show post-unit hook configuration",
     "",
     "MAINTENANCE",
@@ -834,7 +858,8 @@ async function handleSetup(args: string, ctx: ExtensionCommandContext): Promise<
   }
 
   if (args === "keys") {
-    await handleConfig(ctx);
+    const { handleKeys } = await import("./key-manager.js");
+    await handleKeys("", ctx);
     return;
   }
 
