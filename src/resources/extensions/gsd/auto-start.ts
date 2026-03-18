@@ -16,6 +16,8 @@ import type {
 import { deriveState } from "./state.js";
 import { loadFile, getManifestStatus } from "./files.js";
 import { loadEffectiveGSDPreferences, resolveSkillDiscoveryMode, getIsolationMode } from "./preferences.js";
+import { isInsideWorktree, ensureGsdSymlink } from "./repo-identity.js";
+import { migrateToExternalState, recoverFailedMigration } from "./migrate-external.js";
 import { sendDesktopNotification } from "./notifications.js";
 import { sendRemoteNotification } from "../remote-questions/notify.js";
 import {
@@ -48,7 +50,7 @@ import {
   getAutoWorktreePath,
   isInAutoWorktree,
 } from "./auto-worktree.js";
-import { readResourceVersion } from "./auto-worktree-sync.js";
+import { readResourceVersion } from "./resource-version.js";
 import { initMetrics, getLedger } from "./metrics.js";
 import { initRoutingHistory } from "./routing-history.js";
 import { restoreHookState, resetHookState, clearPersistedHookState } from "./post-unit-hooks.js";
@@ -61,7 +63,6 @@ import { debugLog, enableDebug, isDebugEnabled, getDebugLogPath } from "./debug-
 import type { AutoSession } from "./auto/session.js";
 import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
-import { sep as pathSep } from "node:path";
 
 export interface BootstrapDeps {
   shouldUseWorktreeIsolation: () => boolean;
@@ -113,8 +114,17 @@ export async function bootstrapAutoSession(
   ensureGitignore(base, { commitDocs, manageGitignore });
   if (manageGitignore !== false) untrackRuntimeFiles(base);
 
+  // Migrate legacy in-project .gsd/ to external state directory
+  recoverFailedMigration(base);
+  const migration = migrateToExternalState(base);
+  if (migration.error) {
+    ctx.ui.notify(`External state migration warning: ${migration.error}`, "warning");
+  }
+  // Ensure symlink exists (handles fresh projects and post-migration)
+  ensureGsdSymlink(base);
+
   // Bootstrap .gsd/ if it doesn't exist
-  const gsdDir = join(base, ".gsd");
+  const gsdDir = gsdRoot(base);
   if (!existsSync(gsdDir)) {
     mkdirSync(join(gsdDir, "milestones"), { recursive: true });
     if (commitDocs !== false) {
@@ -204,18 +214,6 @@ export async function bootstrapAutoSession(
 
   let state = await deriveState(base);
 
-  // Stale worktree state recovery (#654)
-  if (
-    state.activeMilestone &&
-    shouldUseWorktreeIsolation() &&
-    !detectWorktreeName(base)
-  ) {
-    const wtPath = getAutoWorktreePath(base, state.activeMilestone.id);
-    if (wtPath) {
-      state = await deriveState(wtPath);
-    }
-  }
-
   // Milestone branch recovery (#601)
   let hasSurvivorBranch = false;
   if (
@@ -223,7 +221,7 @@ export async function bootstrapAutoSession(
     (state.phase === "pre-planning" || state.phase === "needs-discussion") &&
     shouldUseWorktreeIsolation() &&
     !detectWorktreeName(base) &&
-    !base.includes(`${pathSep}.gsd${pathSep}worktrees${pathSep}`)
+    !isInsideWorktree(base)
   ) {
     const milestoneBranch = `milestone/${state.activeMilestone.id}`;
     const { nativeBranchExists } = await import("./native-git-bridge.js");
@@ -333,14 +331,7 @@ export async function bootstrapAutoSession(
   // ── Auto-worktree setup ──
   s.originalBasePath = base;
 
-  const isUnderGsdWorktrees = (p: string): boolean => {
-    const marker = `${pathSep}.gsd${pathSep}worktrees${pathSep}`;
-    if (p.includes(marker)) return true;
-    const worktreesSuffix = `${pathSep}.gsd${pathSep}worktrees`;
-    return p.endsWith(worktreesSuffix);
-  };
-
-  if (s.currentMilestoneId && shouldUseWorktreeIsolation() && !detectWorktreeName(base) && !isUnderGsdWorktrees(base)) {
+  if (s.currentMilestoneId && shouldUseWorktreeIsolation() && !detectWorktreeName(base) && !isInsideWorktree(base)) {
     try {
       const existingWtPath = getAutoWorktreePath(base, s.currentMilestoneId);
       if (existingWtPath) {
@@ -355,11 +346,6 @@ export async function bootstrapAutoSession(
         ctx.ui.notify(`Created auto-worktree at ${wtPath}`, "info");
       }
       registerSigtermHandler(s.originalBasePath);
-
-      // Load completed keys from BOTH locations
-      if (s.basePath !== s.originalBasePath) {
-        loadPersistedKeys(s.basePath, s.completedKeySet);
-      }
     } catch (err) {
       ctx.ui.notify(
         `Auto-worktree setup failed: ${err instanceof Error ? err.message : String(err)}. Continuing in project root.`,
@@ -369,8 +355,8 @@ export async function bootstrapAutoSession(
   }
 
   // ── DB lifecycle ──
-  const gsdDbPath = join(s.basePath, ".gsd", "gsd.db");
-  const gsdDirPath = join(s.basePath, ".gsd");
+  const gsdDbPath = join(gsdRoot(s.basePath), "gsd.db");
+  const gsdDirPath = gsdRoot(s.basePath);
   if (existsSync(gsdDirPath) && !existsSync(gsdDbPath)) {
     const hasDecisions = existsSync(join(gsdDirPath, "DECISIONS.md"));
     const hasRequirements = existsSync(join(gsdDirPath, "REQUIREMENTS.md"));
@@ -476,7 +462,7 @@ export async function bootstrapAutoSession(
 
   // Pre-flight: validate milestone queue
   try {
-    const msDir = join(base, ".gsd", "milestones");
+    const msDir = join(gsdRoot(base), "milestones");
     if (existsSync(msDir)) {
       const milestoneIds = readdirSync(msDir, { withFileTypes: true })
         .filter(d => d.isDirectory() && /^M\d{3}/.test(d.name))

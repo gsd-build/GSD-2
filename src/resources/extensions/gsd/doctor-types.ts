@@ -30,7 +30,9 @@ export type DoctorIssueCode =
   | "state_file_stale"
   | "state_file_missing"
   | "gitignore_missing_patterns"
-  | "unresolvable_dependency";
+  | "unresolvable_dependency"
+  | "failed_migration"
+  | "broken_symlink";
 
 /**
  * Issue codes that represent expected completion-transition states.

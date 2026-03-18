@@ -37,7 +37,6 @@ import { resolveAutoSupervisorConfig, loadEffectiveGSDPreferences } from "./pref
 import { runGSDDoctor, rebuildState, summarizeDoctorIssues } from "./doctor.js";
 import { COMPLETION_TRANSITION_CODES } from "./doctor-types.js";
 import { recordHealthSnapshot, checkHealEscalation } from "./doctor-proactive.js";
-import { syncStateToProjectRoot } from "./auto-worktree-sync.js";
 import { resetRewriteCircuitBreaker } from "./auto-dispatch.js";
 import { isDbAvailable } from "./gsd-db.js";
 import { consumeSignal } from "./session-status-io.js";
@@ -211,15 +210,6 @@ export async function postUnitPreVerification(pctx: PostUnitContext): Promise<"d
       killSessionProcesses();
     } catch {
       // Non-fatal
-    }
-
-    // Sync worktree state back to project root
-    if (s.originalBasePath && s.originalBasePath !== s.basePath) {
-      try {
-        syncStateToProjectRoot(s.basePath, s.originalBasePath, s.currentMilestoneId);
-      } catch {
-        // Non-fatal
-      }
     }
 
     // Rewrite-docs completion

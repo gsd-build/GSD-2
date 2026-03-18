@@ -8,6 +8,7 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@gsd/pi-coding-agent
 import type { GSDState } from "./types.js";
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
+import { gsdRoot } from "./paths.js";
 import { enableDebug } from "./debug-logger.js";
 import { deriveState } from "./state.js";
 import { GSDDashboardOverlay } from "./dashboard-overlay.js";
@@ -698,7 +699,7 @@ export function registerGSDCommand(pi: ExtensionAPI): void {
 
       if (trimmed === "new-milestone") {
         const basePath = projectRoot();
-        const headlessContextPath = join(basePath, ".gsd", "runtime", "headless-context.md");
+        const headlessContextPath = join(gsdRoot(basePath), "runtime", "headless-context.md");
         if (existsSync(headlessContextPath)) {
           const seedContext = readFileSync(headlessContextPath, "utf-8");
           try { unlinkSync(headlessContextPath); } catch { /* non-fatal */ }

@@ -69,12 +69,10 @@ import { closeoutUnit } from "./auto-unit-closeout.js";
 import { recoverTimedOutUnit } from "./auto-timeout-recovery.js";
 import { selectAndApplyModel } from "./auto-model-selection.js";
 import {
-  syncProjectRootToWorktree,
-  syncStateToProjectRoot,
   readResourceVersion,
   checkResourcesStale,
   escapeStaleWorktree,
-} from "./auto-worktree-sync.js";
+} from "./resource-version.js";
 import { initRoutingHistory, resetRoutingHistory, recordOutcome } from "./routing-history.js";
 import {
   checkPostUnitHooks,
@@ -180,7 +178,7 @@ import { runPostUnitVerification, type VerificationContext } from "./auto-verifi
 import { postUnitPreVerification, postUnitPostVerification, type PostUnitContext } from "./auto-post-unit.js";
 import { bootstrapAutoSession, type BootstrapDeps } from "./auto-start.js";
 
-// Worktree sync, resource staleness, stale worktree escape → auto-worktree-sync.ts
+// Resource staleness, stale worktree escape → resource-version.ts
 
 // ─── Session State ─────────────────────────────────────────────────────────
 
@@ -1016,11 +1014,6 @@ async function dispatchNextUnit(
     }
   } catch {
     // Non-fatal
-  }
-
-  // ── Sync project root artifacts into worktree ──
-  if (s.originalBasePath && s.basePath !== s.originalBasePath && s.currentMilestoneId) {
-    syncProjectRootToWorktree(s.originalBasePath, s.basePath, s.currentMilestoneId);
   }
 
   const stopDeriveTimer = debugTime("derive-state");
