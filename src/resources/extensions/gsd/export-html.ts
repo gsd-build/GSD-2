@@ -241,7 +241,7 @@ function buildBlockersSection(data: VisualizerData): string {
     </div>`).join('');
 
   const riskCards = highRisk
-    .filter(hr => !blockers.some(b => b.sliceId === hr.slId))
+    .filter(hr => !blockers.some(b => b.milestoneId === hr.msId && b.sliceId === hr.slId))
     .map(hr => `
     <div class="blocker-card">
       <div class="blocker-id">${esc(hr.msId)}/${esc(hr.slId)}</div>

@@ -216,11 +216,9 @@ export function scoreChunks(chunks: Chunk[], query: string): Chunk[] {
 
 	// Pre-compute IDF for each query term
 	const termChunkCounts = new Map<string, number>();
-	const chunkTokenSets: Set<string>[] = [];
 
 	for (const chunk of chunks) {
 		const tokens = new Set(tokenize(chunk.content));
-		chunkTokenSets.push(tokens);
 		for (const term of queryTerms) {
 			if (tokens.has(term)) {
 				termChunkCounts.set(term, (termChunkCounts.get(term) ?? 0) + 1);
@@ -235,7 +233,7 @@ export function scoreChunks(chunks: Chunk[], query: string): Chunk[] {
 	}
 
 	// Score each chunk
-	const scored = chunks.map((chunk, idx) => {
+	const scored = chunks.map((chunk) => {
 		const chunkTokens = tokenize(chunk.content);
 		const totalTerms = chunkTokens.length;
 		if (totalTerms === 0) return { ...chunk, score: 0 };

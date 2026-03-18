@@ -801,10 +801,15 @@ export async function buildExecuteTaskPrompt(
   const verificationBudget = `~${Math.round(budgets.verificationBudgetChars / 1000)}K chars`;
 
   // Compress carry-forward section when it exceeds 40% of inline context budget
+  // Only compress when compression_strategy is "compress" (budget/balanced profiles)
   const carryForwardBudget = Math.floor(budgets.inlineContextBudgetChars * 0.4);
-  const finalCarryForward = carryForwardSection.length > carryForwardBudget
-    ? compressToTarget(carryForwardSection, carryForwardBudget).content
-    : carryForwardSection;
+  let finalCarryForward = carryForwardSection;
+  if (carryForwardSection.length > carryForwardBudget) {
+    const { resolveCompressionStrategy } = await import("./preferences.js");
+    if (resolveCompressionStrategy() === "compress") {
+      finalCarryForward = compressToTarget(carryForwardSection, carryForwardBudget).content;
+    }
+  }
 
   return loadPrompt("execute-task", {
     overridesSection,

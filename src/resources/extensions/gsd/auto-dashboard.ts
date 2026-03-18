@@ -449,7 +449,7 @@ export function updateProgressWidget(
           if (totalCacheRead) sp.push(`R${formatWidgetTokens(totalCacheRead)}`);
           if (totalCacheWrite) sp.push(`W${formatWidgetTokens(totalCacheWrite)}`);
           // Cache hit rate for current unit
-          if (totalCacheRead > 0 && totalInput > 0) {
+          if (totalCacheRead + totalInput > 0) {
             const hitRate = Math.round((totalCacheRead / (totalCacheRead + totalInput)) * 100);
             sp.push(`\u26A1${hitRate}%`);
           }

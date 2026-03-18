@@ -302,7 +302,6 @@ function deduplicateStructuralPatterns(content: string): string {
 
 function applyAggressiveTransformations(
 	content: string,
-	preserveHeadings: boolean,
 ): { content: string; count: number } {
 	let count = 0;
 	let result = content;
@@ -426,7 +425,7 @@ export function compressPrompt(content: string, options?: CompressionOptions): C
 
 	// Apply aggressive transformations
 	if (level === "aggressive") {
-		const aggResult = applyAggressiveTransformations(working, preserveHeadings);
+		const aggResult = applyAggressiveTransformations(working);
 		working = aggResult.content;
 		totalTransformations += aggResult.count;
 	}

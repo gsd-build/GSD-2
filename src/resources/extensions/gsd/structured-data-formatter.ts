@@ -134,8 +134,8 @@ export function formatTaskPlanCompact(tasks: TaskPlanInput[]): string {
 
 /**
  * Measure the token savings of compact format vs markdown format.
- * Returns savings as a percentage (0-100).
- * A positive number means compact is smaller (saves tokens).
+ * Returns savings as a percentage. A positive number means compact is
+ * smaller (saves tokens). Can be negative if compact is longer than markdown.
  */
 export function measureSavings(compactContent: string, markdownContent: string): number {
   if (markdownContent.length === 0) return 0;
