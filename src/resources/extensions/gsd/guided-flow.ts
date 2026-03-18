@@ -322,6 +322,7 @@ async function buildDiscussSlicePrompt(
   sid: string,
   sTitle: string,
   base: string,
+  options?: { rediscuss?: boolean },
 ): Promise<string> {
   const inlined: string[] = [];
 
@@ -379,12 +380,17 @@ async function buildDiscussSlicePrompt(
   const sliceDirPath = `.gsd/milestones/${mid}/slices/${sid}`;
   const sliceContextPath = `${sliceDirPath}/${sid}-CONTEXT.md`;
 
+  // When re-discussing, inject a preamble so the agent treats this as an update interview
+  const rediscussPreamble = options?.rediscuss
+    ? `\n\n## Re-discuss Mode\n\nThis slice already has an existing context file (\`${sliceContextPath}\`) from a prior discussion. The user has chosen to re-discuss it. Read the existing context file, interview for any updates, changes, or new decisions, and rewrite the file with merged findings. Do NOT skip the interview — the user explicitly asked to revisit this slice.\n`
+    : "";
+
   const inlinedTemplates = inlineTemplate("slice-context", "Slice Context");
   return loadPrompt("guided-discuss-slice", {
     milestoneId: mid,
     sliceId: sid,
     sliceTitle: sTitle,
-    inlinedContext,
+    inlinedContext: inlinedContext + rediscussPreamble,
     sliceDirPath,
     contextPath: sliceContextPath,
     projectRoot: base,
@@ -548,7 +554,24 @@ export async function showDiscuss(
     const chosen = pendingSlices.find(s => s.id === choice);
     if (!chosen) return;
 
-    const prompt = await buildDiscussSlicePrompt(mid, chosen.id, chosen.title, basePath);
+    // If the slice already has a CONTEXT file, confirm re-discuss intent
+    const isRediscuss = discussedMap.get(chosen.id) ?? false;
+    if (isRediscuss) {
+      const confirm = await showNextAction(ctx, {
+        title: `Re-discuss ${chosen.id}?`,
+        summary: [
+          `${chosen.id} already has a context file from a prior discussion.`,
+          "Re-discussing will interview for updates and rewrite the context file.",
+        ],
+        actions: [
+          { id: "rediscuss", label: "Re-discuss to update context", description: "Interview for changes and rewrite", recommended: true },
+          { id: "cancel", label: "Cancel", description: "Go back to slice picker" },
+        ],
+      });
+      if (confirm !== "rediscuss") continue;
+    }
+
+    const prompt = await buildDiscussSlicePrompt(mid, chosen.id, chosen.title, basePath, { rediscuss: isRediscuss });
     dispatchWorkflow(pi, prompt, "gsd-discuss");
 
     // Wait for the discuss session to finish, then loop back to the picker
@@ -1142,7 +1165,7 @@ export async function showSmartEntry(
         milestoneId, sliceId, sliceTitle, inlinedTemplates: planSliceTemplates,
       }));
     } else if (choice === "discuss") {
-      dispatchWorkflow(pi, await buildDiscussSlicePrompt(milestoneId, sliceId, sliceTitle, basePath));
+      dispatchWorkflow(pi, await buildDiscussSlicePrompt(milestoneId, sliceId, sliceTitle, basePath, { rediscuss: hasContext }));
     } else if (choice === "research") {
       const researchTemplates = inlineTemplate("research", "Research");
       dispatchWorkflow(pi, loadPrompt("guided-research-slice", {

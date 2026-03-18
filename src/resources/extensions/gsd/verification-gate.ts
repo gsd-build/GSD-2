@@ -45,11 +45,12 @@ const PACKAGE_SCRIPT_KEYS = ["typecheck", "lint", "test"] as const;
  *   4. None found
  */
 export function discoverCommands(options: DiscoverCommandsOptions): DiscoveredCommands {
-  // 1. Preference commands
+  // 1. Preference commands (still sanitize — may contain prose from misconfiguration)
   if (options.preferenceCommands && options.preferenceCommands.length > 0) {
     const filtered = options.preferenceCommands
       .map(c => c.trim())
-      .filter(Boolean);
+      .filter(Boolean)
+      .filter(c => isLikelyCommand(c));
     if (filtered.length > 0) {
       return { commands: filtered, source: "preference" };
     }

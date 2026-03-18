@@ -30,6 +30,8 @@
 |---------|-------------|
 | `/gsd prefs` | Model selection, timeouts, budget ceiling |
 | `/gsd mode` | Switch workflow mode (solo/team) with coordinated defaults for milestone IDs, git commit behavior, and documentation |
+| `/gsd config` | Re-run the provider setup wizard (LLM provider + tool keys) |
+| `/gsd keys` | API key manager — list, add, remove, test, rotate, doctor |
 | `/gsd doctor` | Runtime health checks (7 checks) with auto-fix for common state corruption issues |
 | `/gsd skill-health` | Skill lifecycle dashboard — usage stats, success rates, token trends, staleness warnings |
 | `/gsd skill-health <name>` | Detailed view for a single skill |
@@ -38,6 +40,17 @@
 | `/gsd hooks` | Show configured post-unit and pre-dispatch hooks |
 | `/gsd run-hook` | Manually trigger a specific hook |
 | `/gsd migrate` | Migrate a v1 `.planning` directory to `.gsd` format |
+
+## Milestone Management
+
+| Command | Description |
+|---------|-------------|
+| `/gsd new-milestone` | Create a new milestone |
+| `/gsd skip` | Prevent a unit from auto-mode dispatch |
+| `/gsd undo` | Revert last completed unit |
+| Park milestone | Available via `/gsd` wizard → "Milestone actions" → "Park" |
+| Unpark milestone | Available via `/gsd` wizard → "Milestone actions" → "Unpark" |
+| Discard milestone | Available via `/gsd` wizard → "Milestone actions" → "Discard" |
 
 ## Parallel Orchestration
 

@@ -69,6 +69,7 @@ export class AutoSession {
   // ── Lifecycle ────────────────────────────────────────────────────────────
   active = false;
   paused = false;
+  pausedForSecrets = false;
   stepMode = false;
   verbose = false;
   cmdCtx: ExtensionCommandContext | null = null;
@@ -162,6 +163,7 @@ export class AutoSession {
     // Lifecycle
     this.active = false;
     this.paused = false;
+    this.pausedForSecrets = false;
     this.stepMode = false;
     this.verbose = false;
     this.cmdCtx = null;

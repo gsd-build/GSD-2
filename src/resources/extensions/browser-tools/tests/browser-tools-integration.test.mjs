@@ -92,7 +92,7 @@ let page;
 
 before(async () => {
   browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2 });
   page = await context.newPage();
 });
 

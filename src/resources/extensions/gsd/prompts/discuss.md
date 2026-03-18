@@ -242,6 +242,16 @@ For each remaining milestone **one at a time, in sequence**, use `ask_user_quest
 - **"Write draft for later"** — This milestone has seed material from the current conversation but needs its own dedicated discussion in a future session. Write a `CONTEXT-DRAFT.md` capturing the seed material (what was discussed, key ideas, provisional scope, open questions). Mark it clearly as a draft, not a finalized context. **What happens downstream:** When auto-mode reaches this milestone, it pauses and notifies the user: "M00x has draft context — needs discussion. Run /gsd." The `/gsd` wizard shows a "Discuss from draft" option that seeds the new discussion with this draft, so nothing from the current conversation is lost. After the dedicated discussion produces a full CONTEXT.md, the draft file is automatically deleted.
 - **"Just queue it"** — This milestone is identified but intentionally left without context. No context file is written — the directory already exists from Phase 1. **What happens downstream:** When auto-mode reaches this milestone, it pauses and notifies the user to run /gsd. The wizard starts a full discussion from scratch.
 
+**When "Discuss now" is chosen — Technical Assumption Verification is MANDATORY:**
+
+Before writing each milestone's CONTEXT.md (whether primary or secondary), you MUST verify technical assumptions:
+
+1. **Read the actual code** for every file or module you reference. Confirm APIs exist, check what functions actually do, identify phantom capabilities (code that exists but isn't wired up).
+2. **Check for stale assumptions** — the codebase changes. Verify referenced modules still work as described.
+3. **Present findings** — use `ask_user_questions` with a question ID containing BOTH `depth_verification` AND the milestone ID (e.g., `depth_verification_M002`). Present: what you're about to write, key technical findings from investigation, risks the code review surfaced.
+
+**The system mechanically blocks CONTEXT.md writes until the per-milestone depth verification passes.** Each milestone needs its own verification — one global verification does not unlock all milestones.
+
 **Why sequential, not batch:** After writing the primary milestone's context and roadmap, the agent still has context window capacity. Asking one milestone at a time lets the user decide per-milestone whether to invest that remaining capacity in a focused discussion now, or defer to a future session. A batch question ("Ready/Draft/Queue for M002, M003, M004?") forces the user to decide everything upfront without knowing how much session capacity remains.
 
 Each context file (full or draft) should be rich enough that a future agent encountering it fresh — with no memory of this conversation — can understand the intent, constraints, dependencies, what this milestone unlocks, and what "done" looks like.

@@ -6,8 +6,8 @@
  * manages create, enter, detect, and teardown for auto-mode worktrees.
  */
 
-import { existsSync, cpSync, readFileSync, readdirSync, mkdirSync, realpathSync, unlinkSync } from "node:fs";
-import { isAbsolute, join } from "node:path";
+import { existsSync, cpSync, readFileSync, readdirSync, mkdirSync, realpathSync, unlinkSync, statSync } from "node:fs";
+import { isAbsolute, join, sep } from "node:path";
 import { GSDError, GSD_IO_ERROR, GSD_GIT_ERROR } from "./errors.js";
 import { copyWorktreeDb, reconcileWorktreeDb, isDbAvailable } from "./gsd-db.js";
 import { atomicWriteSync } from "./atomic-write.js";
@@ -341,13 +341,36 @@ export function teardownAutoWorktree(
  * Checks both module state and git branch prefix.
  */
 export function isInAutoWorktree(basePath: string): boolean {
-  if (!originalBase) return false;
   const cwd = process.cwd();
-  const resolvedBase = existsSync(basePath) ? realpathSync(basePath) : basePath;
-  const wtDir = join(resolvedBase, ".gsd", "worktrees");
-  if (!cwd.startsWith(wtDir)) return false;
-  const branch = nativeGetCurrentBranch(cwd);
-  return branch.startsWith("milestone/");
+
+  // Primary check: use originalBase if available (fast path)
+  if (originalBase) {
+    const resolvedBase = existsSync(basePath) ? realpathSync(basePath) : basePath;
+    const wtDir = join(resolvedBase, ".gsd", "worktrees");
+    if (!cwd.startsWith(wtDir)) return false;
+    const branch = nativeGetCurrentBranch(cwd);
+    return branch.startsWith("milestone/");
+  }
+
+  // Fallback: infer worktree status structurally when originalBase is null
+  // (happens after session restart where module-level state is lost, #1120).
+  // Check if cwd is inside a .gsd/worktrees/ directory and has a .git file
+  // (worktree marker) pointing to the main repo.
+  const worktreeMarker = join(cwd, ".git");
+  if (!existsSync(worktreeMarker)) return false;
+  try {
+    const stat = statSync(worktreeMarker);
+    if (stat.isDirectory()) return false; // Main repo has .git dir, not file
+    // Worktrees have a .git file with "gitdir: ..." pointing to the main repo
+    const gitContent = readFileSync(worktreeMarker, "utf-8").trim();
+    if (!gitContent.startsWith("gitdir:")) return false;
+    // Verify cwd path contains .gsd/worktrees/
+    if (!cwd.includes(`${sep}.gsd${sep}worktrees${sep}`) && !cwd.includes("/.gsd/worktrees/")) return false;
+    const branch = nativeGetCurrentBranch(cwd);
+    return branch.startsWith("milestone/");
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -511,6 +534,11 @@ export function mergeMilestoneToMain(
   // 3. chdir to original base
   const previousCwd = process.cwd();
   process.chdir(originalBasePath_);
+
+  // 3a. Auto-commit any dirty state in the project root that syncStateToProjectRoot
+  // wrote during execution. Without this, the squash merge can fail with
+  // "Your local changes to the following files would be overwritten by merge" (#1127).
+  autoCommitDirtyState(originalBasePath_);
 
   // 4. Resolve integration branch — prefer milestone metadata, fall back to preferences / "main"
   const prefs = loadEffectiveGSDPreferences()?.preferences?.git ?? {};

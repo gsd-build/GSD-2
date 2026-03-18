@@ -10,7 +10,7 @@ import {
 } from "./metrics.js";
 import type { UnitMetrics } from "./metrics.js";
 import { gsdRoot } from "./paths.js";
-import { formatDuration } from "../shared/mod.js";
+import { formatDuration, fileLink } from "../shared/mod.js";
 
 /**
  * Write an export file directly, without requiring an ExtensionCommandContext.
@@ -241,7 +241,7 @@ export async function handleExport(args: string, ctx: ExtensionCommandContext, b
     };
     const outPath = join(exportDir, `export-${timestamp}.json`);
     writeFileSync(outPath, JSON.stringify(report, null, 2) + "\n", "utf-8");
-    ctx.ui.notify(`Exported to ${outPath}`, "success");
+    ctx.ui.notify(`Exported to ${fileLink(outPath)}`, "success");
   } else {
     const totals = getProjectTotals(units);
     const phases = aggregateByPhase(units);
@@ -285,6 +285,6 @@ export async function handleExport(args: string, ctx: ExtensionCommandContext, b
 
     const outPath = join(exportDir, `export-${timestamp}.md`);
     writeFileSync(outPath, md, "utf-8");
-    ctx.ui.notify(`Exported to ${outPath}`, "success");
+    ctx.ui.notify(`Exported to ${fileLink(outPath)}`, "success");
   }
 }

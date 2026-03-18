@@ -32,6 +32,9 @@ function createTempRepo(): string {
   run("git config user.email test@test.com", dir);
   run("git config user.name Test", dir);
   writeFileSync(join(dir, "README.md"), "# test\n");
+  // Mirror production: GSD runtime dirs are gitignored so autoCommitDirtyState
+  // doesn't pick up the worktrees directory as dirty state (#1127 fix).
+  writeFileSync(join(dir, ".gitignore"), ".gsd/worktrees/\n");
   mkdirSync(join(dir, ".gsd"), { recursive: true });
   writeFileSync(join(dir, ".gsd", "STATE.md"), "# State\n");
   run("git add .", dir);

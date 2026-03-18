@@ -32,6 +32,12 @@ One command. Walk away. Come back to a built project with clean git history.
 - **Reliability hardening** — atomic file writes, OAuth fetch timeouts, RPC exit detection, blob GC, LSP init retry with backoff
 - **RPC utilities** now part of the public API for headless/scripted integrations
 - **npm** established as the canonical package manager
+- **CI/CD Pipeline** — three-stage promotion (Dev → Test → Prod) with automated versioning
+- **Docker support** — containerized builds with multi-stage Dockerfile
+- **`/gsd keys`** — full API key lifecycle management (list, add, remove, test, rotate, doctor)
+- **Milestone parking** — park in-progress milestones to work on something else, unpark to resume
+- **Studio** — experimental Electron desktop app (early preview)
+- **Per-project MCP config** — `.gsd/mcp.json` for project-scoped MCP server definitions
 
 See the full [Changelog](./CHANGELOG.md) for details.
 
@@ -53,6 +59,7 @@ Full documentation is available in the [`docs/`](./docs/) directory:
 - **[Commands Reference](./docs/commands.md)** — all commands and keyboard shortcuts
 - **[Architecture](./docs/architecture.md)** — system design and dispatch pipeline
 - **[Troubleshooting](./docs/troubleshooting.md)** — common issues, doctor, forensics, recovery
+- **[CI/CD Pipeline](./docs/ci-cd-pipeline.md)** — three-stage promotion pipeline (Dev → Test → Prod)
 - **[VS Code Extension](./vscode-extension/README.md)** — chat participant, sidebar dashboard, RPC integration
 - **[Visualizer](./docs/visualizer.md)** — workflow visualizer with stats and discussion status
 - **[Migration from v1](./docs/migration.md)** — `.planning` → `.gsd` migration
@@ -299,6 +306,7 @@ On first run, GSD launches a branded setup wizard that walks you through LLM pro
 | `/gsd forensics`        | Post-mortem investigation of auto-mode failures                 |
 | `/gsd cleanup`          | Archive phase directories from completed milestones             |
 | `/gsd doctor`           | Runtime health checks with auto-fix for common issues           |
+| `/gsd keys`             | API key manager — list, add, remove, test, rotate, doctor       |
 | `/gsd export --html`    | Generate HTML report for current or completed milestone         |
 | `/worktree` (`/wt`)     | Git worktree lifecycle — create, switch, merge, remove          |
 | `/voice`                | Toggle real-time speech-to-text (macOS, Linux)                  |

@@ -387,6 +387,7 @@ console.log("\n=== renderMetricsView ===");
       userMessages: 5,
       totalTruncationSections: 0,
       continueHereFiredCount: 0,
+      apiRequests: 5,
     },
     byPhase: [
       {
@@ -653,7 +654,7 @@ console.log("\n=== renderHealthView ===");
       units: 10, tokens: { input: 5000, output: 2000, cacheRead: 1000, cacheWrite: 500, total: 8500 },
       cost: 5.00, duration: 120000, toolCalls: 50,
       assistantMessages: 30, userMessages: 15,
-      totalTruncationSections: 3, continueHereFiredCount: 1,
+      totalTruncationSections: 3, continueHereFiredCount: 1, apiRequests: 30,
     },
     health: {
       budgetCeiling: 20.00,

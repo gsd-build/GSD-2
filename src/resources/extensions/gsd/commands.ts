@@ -5,6 +5,7 @@
  */
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@gsd/pi-coding-agent";
+import type { GSDState } from "./types.js";
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { enableDebug } from "./debug-logger.js";
@@ -852,7 +853,7 @@ async function handleStatus(ctx: ExtensionCommandContext): Promise<void> {
     return;
   }
 
-  await ctx.ui.custom<void>(
+  const result = await ctx.ui.custom<void>(
     (tui, theme, _kb, done) => {
       return new GSDDashboardOverlay(tui, theme, () => done());
     },
@@ -866,6 +867,12 @@ async function handleStatus(ctx: ExtensionCommandContext): Promise<void> {
       },
     },
   );
+
+  // Fallback for RPC mode where ctx.ui.custom() returns undefined.
+  // Produce a text-based status summary so the turn is not empty.
+  if (result === undefined) {
+    ctx.ui.notify(formatTextStatus(state), "info");
+  }
 }
 
 export async function fireStatusViaCommand(
@@ -880,7 +887,7 @@ async function handleVisualize(ctx: ExtensionCommandContext): Promise<void> {
     return;
   }
 
-  await ctx.ui.custom<void>(
+  const result = await ctx.ui.custom<void>(
     (tui, theme, _kb, done) => {
       return new GSDVisualizerOverlay(tui, theme, () => done());
     },
@@ -894,6 +901,11 @@ async function handleVisualize(ctx: ExtensionCommandContext): Promise<void> {
       },
     },
   );
+
+  // Fallback for RPC mode where ctx.ui.custom() returns undefined.
+  if (result === undefined) {
+    ctx.ui.notify("Visualizer requires an interactive terminal. Use /gsd status for a text-based overview.", "warning");
+  }
 }
 
 async function handleSetup(args: string, ctx: ExtensionCommandContext): Promise<void> {
@@ -948,4 +960,62 @@ async function handleSetup(args: string, ctx: ExtensionCommandContext): Promise<
     "  /gsd setup prefs   — Global preferences wizard",
     "info",
   );
+}
+
+// ─── Text-based status for RPC mode ────────────────────────────────────────
+
+/**
+ * Generate a text-based status summary for non-TUI environments (RPC mode).
+ * Used as a fallback when the interactive dashboard overlay is unavailable.
+ */
+function formatTextStatus(state: GSDState): string {
+  const lines: string[] = ["GSD Status\n"];
+
+  // Phase
+  lines.push(`Phase: ${state.phase}`);
+
+  // Active milestone
+  if (state.activeMilestone) {
+    lines.push(`Active milestone: ${state.activeMilestone.id} — ${state.activeMilestone.title}`);
+  }
+
+  // Active slice / task
+  if (state.activeSlice) {
+    lines.push(`Active slice: ${state.activeSlice.id} — ${state.activeSlice.title}`);
+  }
+  if (state.activeTask) {
+    lines.push(`Active task: ${state.activeTask.id} — ${state.activeTask.title}`);
+  }
+
+  // Progress
+  if (state.progress) {
+    const { milestones, slices, tasks } = state.progress;
+    const parts: string[] = [];
+    parts.push(`milestones ${milestones.done}/${milestones.total}`);
+    if (slices) parts.push(`slices ${slices.done}/${slices.total}`);
+    if (tasks) parts.push(`tasks ${tasks.done}/${tasks.total}`);
+    lines.push(`Progress: ${parts.join(", ")}`);
+  }
+
+  // Next action
+  if (state.nextAction) {
+    lines.push(`Next: ${state.nextAction}`);
+  }
+
+  // Blockers
+  if (state.blockers.length > 0) {
+    lines.push(`Blockers: ${state.blockers.join("; ")}`);
+  }
+
+  // Milestone registry summary
+  if (state.registry.length > 0) {
+    lines.push("");
+    lines.push("Milestones:");
+    for (const m of state.registry) {
+      const statusIcon = m.status === "complete" ? "✓" : m.status === "active" ? "▶" : m.status === "parked" ? "⏸" : "○";
+      lines.push(`  ${statusIcon} ${m.id}: ${m.title} (${m.status})`);
+    }
+  }
+
+  return lines.join("\n");
 }

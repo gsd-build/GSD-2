@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@gsd/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import type { ToolDeps } from "../state.js";
+import { getScreenshotFormatOverride, getScreenshotQualityDefault } from "../capture.js";
 
 export function registerScreenshotTools(pi: ExtensionAPI, deps: ToolDeps): void {
 	pi.registerTool({
@@ -32,20 +33,37 @@ export function registerScreenshotTools(pi: ExtensionAPI, deps: ToolDeps): void 
 
 				let screenshotBuffer: Buffer;
 				let mimeType: string;
-				const quality = params.quality ?? 80;
+				const formatOverride = getScreenshotFormatOverride();
+				const quality = params.quality ?? getScreenshotQualityDefault(80);
 
 				if (params.selector) {
+					const fmt = formatOverride ?? "png";
 					const locator = p.locator(params.selector).first();
-					screenshotBuffer = await locator.screenshot({ type: "png", scale: "css" });
-					mimeType = "image/png";
+					if (fmt === "jpeg") {
+						screenshotBuffer = await locator.screenshot({ type: "jpeg", quality, scale: "css" });
+						mimeType = "image/jpeg";
+					} else {
+						screenshotBuffer = await locator.screenshot({ type: "png", scale: "css" });
+						mimeType = "image/png";
+					}
 				} else {
-					screenshotBuffer = await p.screenshot({
-						fullPage: params.fullPage ?? false,
-						type: "jpeg",
-						quality,
-						scale: "css",
-					});
-					mimeType = "image/jpeg";
+					const fmt = formatOverride ?? "jpeg";
+					if (fmt === "png") {
+						screenshotBuffer = await p.screenshot({
+							fullPage: params.fullPage ?? false,
+							type: "png",
+							scale: "css",
+						});
+						mimeType = "image/png";
+					} else {
+						screenshotBuffer = await p.screenshot({
+							fullPage: params.fullPage ?? false,
+							type: "jpeg",
+							quality,
+							scale: "css",
+						});
+						mimeType = "image/jpeg";
+					}
 				}
 
 				screenshotBuffer = await deps.constrainScreenshot(p, screenshotBuffer, mimeType, quality);

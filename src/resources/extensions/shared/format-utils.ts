@@ -105,6 +105,15 @@ export function formatDateShort(iso: string): string {
   } catch { return iso; }
 }
 
+// ─── Hyperlinks ──────────────────────────────────────────────────────────────
+
+/** Wrap text in an OSC 8 hyperlink for terminals that support clickable links. */
+export function fileLink(filePath: string, displayText?: string): string {
+  const uri = `file://${filePath}`;
+  const label = displayText ?? filePath;
+  return `\x1b]8;;${uri}\x07${label}\x1b]8;;\x07`;
+}
+
 // ─── ANSI Stripping ───────────────────────────────────────────────────────────
 
 /** Strip ANSI escape sequences from a string. */

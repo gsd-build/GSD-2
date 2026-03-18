@@ -19,6 +19,7 @@ export {
 	fitColumns,
 	sparkline,
 	normalizeStringArray,
+	fileLink,
 } from "./format-utils.js";
 
 export { shortcutDesc } from "./terminal.js";

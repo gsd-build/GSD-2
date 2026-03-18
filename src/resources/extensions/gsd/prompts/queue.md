@@ -77,6 +77,36 @@ If multi-milestone: propose the split to the user before writing artifacts.
 
 Determine where the new milestones should go in the overall sequence. Consider dependencies, prerequisites, and independence.
 
+## Pre-Write Verification — MANDATORY
+
+Before writing ANY CONTEXT.md file, you MUST complete these verification steps. The system mechanically blocks CONTEXT.md writes until depth verification passes.
+
+### Step 1: Technical Assumption Verification
+
+For EACH milestone you are about to write context for, investigate the codebase to verify your technical assumptions:
+
+1. **Read the actual code** — for every file or module you reference in "Existing Codebase / Prior Art", read enough to confirm your assumptions about what exists, what it does, and what it doesn't do. Do not guess from memory or training data.
+2. **Check for stale assumptions** — the codebase may have changed since the user's spec was written. Verify: do the APIs you reference still exist? Have modules been refactored? Has upstream merged features that change the landscape?
+3. **Identify phantom capabilities** — for every capability you list as "existing," confirm it actually works as described. Look for: functions that exist but are never called, fields that are set but never read, features that are piped but never connected.
+4. **Note what you found** — include verified findings in the context file's "Existing Codebase / Prior Art" section with "verified against v{version}" annotations.
+
+### Step 2: Per-Milestone Depth Verification
+
+For each milestone, use `ask_user_questions` with a question ID containing BOTH `depth_verification` AND the milestone ID. Example:
+
+```
+id: "depth_verification_M010-3ym37m"
+```
+
+This triggers the per-milestone write-gate. The question should present:
+- What you're about to capture as the scope
+- Key technical assumptions you verified (or couldn't verify)
+- Any risks or unknowns the investigation surfaced
+
+The user confirms or corrects before you write. One depth verification per milestone — not one for all milestones combined.
+
+**If you skip this step, the system will block the CONTEXT.md write and return an error telling you to complete verification first.**
+
 ## Output Phase
 
 Once the user is satisfied, in a single pass for **each** new milestone:

@@ -7,6 +7,15 @@ on:
     branches: [main]
 
 jobs:
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Scan for hardcoded secrets
+        run: bash scripts/secret-scan.sh --diff origin/main
+
   no-gsd-dir:
     runs-on: ubuntu-latest
     steps:

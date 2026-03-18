@@ -504,6 +504,20 @@ export async function findInitialModel(options: {
 	if (defaultProvider && defaultModelId) {
 		const found = modelRegistry.find(defaultProvider, defaultModelId);
 		if (found) {
+			// Check if the provider's recommended default is a higher-capability variant
+			// of the saved model (e.g. saved "claude-opus-4-6" vs recommended "claude-opus-4-6[1m]").
+			// If so, prefer the recommended variant to avoid using a smaller context window (#1125).
+			const recommendedId = defaultModelPerProvider[defaultProvider as KnownProvider];
+			if (recommendedId && recommendedId !== defaultModelId && recommendedId.startsWith(defaultModelId)) {
+				const recommended = modelRegistry.find(defaultProvider, recommendedId);
+				if (recommended) {
+					model = recommended;
+					if (defaultThinkingLevel) {
+						thinkingLevel = defaultThinkingLevel;
+					}
+					return { model, thinkingLevel, fallbackMessage: undefined };
+				}
+			}
 			model = found;
 			if (defaultThinkingLevel) {
 				thinkingLevel = defaultThinkingLevel;

@@ -8,6 +8,7 @@
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@gsd/pi-coding-agent";
 import { showNextAction } from "../shared/mod.js";
+import { setQueuePhaseActive } from "./index.js";
 import { loadFile } from "./files.js";
 import { loadPrompt, inlineTemplate } from "./prompt-loader.js";
 import { deriveState } from "./state.js";
@@ -202,6 +203,9 @@ export async function showQueueAdd(
   ].join(" ");
 
   // ── Dispatch the queue prompt ───────────────────────────────────────
+  // Activate the queue phase so the write-gate applies to CONTEXT.md writes
+  setQueuePhaseActive(true);
+
   const queueInlinedTemplates = inlineTemplate("context", "Context");
   const prompt = loadPrompt("queue", {
     preamble,

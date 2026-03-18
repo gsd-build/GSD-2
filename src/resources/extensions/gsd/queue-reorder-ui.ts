@@ -38,7 +38,7 @@ export async function showQueueReorder(
   if (!ctx.hasUI) return null;
   if (pending.length < 2) return null;
 
-  return ctx.ui.custom<ReorderResult | null>((tui: TUI, theme: Theme, _kb, done) => {
+  const result = await ctx.ui.custom<ReorderResult | null>((tui: TUI, theme: Theme, _kb, done) => {
     const items = [...pending];
     let cursor = 0;
     let grabbed = false;
@@ -260,4 +260,17 @@ export async function showQueueReorder(
     overlay: true,
     overlayOptions: { width: "70%", minWidth: 50, maxHeight: "80%", anchor: "center" },
   });
+
+  // Fallback for RPC mode where ctx.ui.custom() returns undefined.
+  // Reorder requires interactive input — notify and return null.
+  if (result === undefined) {
+    ctx.ui.notify(
+      "Queue reorder requires an interactive terminal. Current order: " +
+        pending.map(p => p.id).join(" → "),
+      "warning",
+    );
+    return null;
+  }
+
+  return result;
 }

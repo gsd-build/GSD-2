@@ -102,22 +102,34 @@ async function runMcporter(
 }
 
 /**
- * Read .mcp.json from the project root (cwd) and return servers not already
- * discovered by mcporter. This bridges the gap where mcporter doesn't scan
- * the standard .mcp.json config used by Claude Code, Cursor, etc.
+ * Read MCP server configs from project-level files (.mcp.json and .gsd/mcp.json)
+ * and return servers not already discovered by mcporter.
+ *
+ * Search order:
+ *   1. .mcp.json (Claude Code / Cursor standard)
+ *   2. .gsd/mcp.json (GSD-specific per-project config, #716)
+ *
+ * Project config overrides global — servers found here take precedence over
+ * identically-named servers from mcporter's global discovery.
  */
 function readProjectMcpJson(knownNames: Set<string>): McpServer[] {
 	const servers: McpServer[] = [];
-	try {
-		const mcpJsonPath = join(process.cwd(), ".mcp.json");
-		if (!existsSync(mcpJsonPath)) return servers;
-		const raw = readFileSync(mcpJsonPath, "utf-8");
-		const data = JSON.parse(raw) as Record<string, unknown>;
-		const mcpServers = (data.mcpServers ?? data.servers) as Record<string, Record<string, unknown>> | undefined;
-		if (!mcpServers || typeof mcpServers !== "object") return servers;
+	const configPaths = [
+		join(process.cwd(), ".mcp.json"),
+		join(process.cwd(), ".gsd", "mcp.json"),
+	];
 
-		for (const [name, config] of Object.entries(mcpServers)) {
-			if (knownNames.has(name)) continue; // Already discovered by mcporter
+	for (const mcpJsonPath of configPaths) {
+		try {
+			if (!existsSync(mcpJsonPath)) continue;
+			const raw = readFileSync(mcpJsonPath, "utf-8");
+			const data = JSON.parse(raw) as Record<string, unknown>;
+			const mcpServers = (data.mcpServers ?? data.servers) as Record<string, Record<string, unknown>> | undefined;
+			if (!mcpServers || typeof mcpServers !== "object") continue;
+
+			for (const [name, config] of Object.entries(mcpServers)) {
+				if (knownNames.has(name)) continue; // Already discovered
+				knownNames.add(name); // Prevent duplicates across config files
 			const transport = (config.type as string) ?? (config.command ? "stdio" : config.url ? "http" : "unknown");
 			servers.push({
 				name,
@@ -126,8 +138,9 @@ function readProjectMcpJson(knownNames: Set<string>): McpServer[] {
 				tools: [], // Tools unknown until mcp_discover is called
 			});
 		}
-	} catch {
-		// Non-fatal — .mcp.json may not exist or be malformed
+		} catch {
+			// Non-fatal — config file may not exist or be malformed
+		}
 	}
 	return servers;
 }

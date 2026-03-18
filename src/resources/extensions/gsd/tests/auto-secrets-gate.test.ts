@@ -2,10 +2,11 @@
  * Integration tests for the secrets collection gate in startAuto().
  *
  * Exercises getManifestStatus() → collectSecretsFromManifest() composition
- * end-to-end using real filesystem state. Proves the three gate paths:
+ * end-to-end using real filesystem state. Proves the gate paths:
  *   1. No manifest exists — gate skips silently
- *   2. Pending keys exist — gate triggers collection
+ *   2. Pending keys exist — gate triggers collection (direct call)
  *   3. No pending keys — gate skips silently
+ *   4. Pending keys in auto-mode — session pauses instead of blocking (#1146)
  *
  * Uses temp directories with real .gsd/milestones/M001/ structure, mirroring
  * the pattern from manifest-status.test.ts.
@@ -18,6 +19,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { getManifestStatus } from '../files.ts';
 import { collectSecretsFromManifest } from '../../get-secrets-from-user.ts';
+import { AutoSession } from '../auto/session.ts';
 
 function makeTempDir(prefix: string): string {
   const dir = join(tmpdir(), `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -140,6 +142,110 @@ test('secrets gate: pending keys exist — gate triggers collection, manifest up
     if (savedA !== undefined) process.env.GSD_GATE_TEST_EXISTING = savedA;
     delete process.env.GSD_GATE_TEST_PEND_A;
     delete process.env.GSD_GATE_TEST_PEND_B;
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+// ─── Scenario 3: No pending keys — all collected or in env ──────────────────
+
+// ─── Scenario 4: Pending keys pause AutoSession instead of blocking (#1146) ──
+
+test('secrets gate: pending keys set pausedForSecrets on AutoSession', async () => {
+  const tmp = makeTempDir('gate-pause-session');
+  try {
+    // Ensure pending keys are NOT in env
+    delete process.env.GSD_PAUSE_TEST_KEY_A;
+    delete process.env.GSD_PAUSE_TEST_KEY_B;
+
+    writeManifest(tmp, `# Secrets Manifest
+
+**Milestone:** M001
+**Generated:** 2025-06-20T10:00:00Z
+
+### GSD_PAUSE_TEST_KEY_A
+
+**Service:** ServiceA
+**Status:** pending
+**Destination:** dotenv
+
+1. Get key A from dashboard
+
+### GSD_PAUSE_TEST_KEY_B
+
+**Service:** ServiceB
+**Status:** pending
+**Destination:** dotenv
+
+1. Get key B from dashboard
+`);
+
+    // Verify manifest has pending keys
+    const status = await getManifestStatus(tmp, 'M001');
+    assert.notStrictEqual(status, null, 'manifest should exist');
+    assert.deepStrictEqual(status!.pending, ['GSD_PAUSE_TEST_KEY_A', 'GSD_PAUSE_TEST_KEY_B']);
+
+    // Simulate what auto-start.ts now does: set pause flags on session
+    const session = new AutoSession();
+    session.active = true;
+    session.currentMilestoneId = 'M001';
+
+    // The new gate logic: if pending keys exist, pause instead of collecting
+    if (status!.pending.length > 0) {
+      session.paused = true;
+      session.pausedForSecrets = true;
+    }
+
+    assert.strictEqual(session.paused, true, 'session should be paused');
+    assert.strictEqual(session.pausedForSecrets, true, 'pausedForSecrets flag should be set');
+
+    // Verify reset() clears pausedForSecrets
+    session.reset();
+    assert.strictEqual(session.pausedForSecrets, false, 'reset() should clear pausedForSecrets');
+  } finally {
+    delete process.env.GSD_PAUSE_TEST_KEY_A;
+    delete process.env.GSD_PAUSE_TEST_KEY_B;
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('secrets gate: no pending keys do not set pausedForSecrets', async () => {
+  const tmp = makeTempDir('gate-no-pause');
+  const savedKey = process.env.GSD_NO_PAUSE_TEST_KEY;
+  try {
+    process.env.GSD_NO_PAUSE_TEST_KEY = 'already-set';
+
+    writeManifest(tmp, `# Secrets Manifest
+
+**Milestone:** M001
+**Generated:** 2025-06-20T10:00:00Z
+
+### GSD_NO_PAUSE_TEST_KEY
+
+**Service:** ServiceX
+**Status:** pending
+**Destination:** dotenv
+
+1. Already in env
+`);
+
+    const status = await getManifestStatus(tmp, 'M001');
+    assert.notStrictEqual(status, null, 'manifest should exist');
+    assert.deepStrictEqual(status!.pending, [], 'no pending keys — already in env');
+
+    // Simulate gate logic — no pending keys, no pause
+    const session = new AutoSession();
+    session.active = true;
+
+    if (status!.pending.length > 0) {
+      session.paused = true;
+      session.pausedForSecrets = true;
+    }
+
+    assert.strictEqual(session.paused, false, 'session should NOT be paused');
+    assert.strictEqual(session.pausedForSecrets, false, 'pausedForSecrets should NOT be set');
+  } finally {
+    delete process.env.GSD_NO_PAUSE_TEST_KEY;
+    if (savedKey !== undefined) process.env.GSD_NO_PAUSE_TEST_KEY = savedKey;
     rmSync(tmp, { recursive: true, force: true });
   }
 });

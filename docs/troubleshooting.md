@@ -124,6 +124,44 @@ Doctor rebuilds `STATE.md` from plan and roadmap files on disk and fixes detecte
 - **Forensics:** `/gsd forensics` for structured post-mortem analysis of auto-mode failures
 - **Session logs:** `.gsd/activity/` contains JSONL session dumps for crash forensics
 
+## Windows-Specific Issues
+
+### LSP returns ENOENT on Windows (MSYS2/Git Bash)
+
+**Symptoms:** LSP initialization fails with `ENOENT` or resolves POSIX-style paths like `/c/Users/...` instead of `C:\Users\...`.
+
+**Cause:** The `which` command in MSYS2/Git Bash returns POSIX paths that Node.js `spawn()` can't resolve.
+
+**Fix:** Updated in v2.29+ to use `where.exe` on Windows. Upgrade to the latest version.
+
+### EBUSY errors during WXT/extension builds
+
+**Symptoms:** `EBUSY: resource busy or locked, rmdir .output/chrome-mv3` when building browser extensions.
+
+**Cause:** A Chromium browser has the extension loaded from the build output directory, preventing deletion.
+
+**Fix:** Close the browser extension, or set a different `outDirTemplate` in your WXT config to avoid the locked directory.
+
+## Database Issues
+
+### "GSD database is not available"
+
+**Symptoms:** `gsd_save_decision`, `gsd_update_requirement`, or `gsd_save_summary` fail with this error.
+
+**Cause:** The SQLite database wasn't initialized. This happens in manual `/gsd` sessions (non-auto mode) on versions before v2.29.
+
+**Fix:** Updated in v2.29+ to auto-initialize the database on first tool call. Upgrade to the latest version.
+
+## Verification Issues
+
+### Verification gate fails with shell syntax error
+
+**Symptoms:** `stderr: /bin/sh: 1: Syntax error: "(" unexpected` during verification checks.
+
+**Cause:** A description-like string (e.g., `All 10 checks pass (build, lint)`) was treated as a shell command. This can happen when task plans have `verify:` fields with prose instead of actual commands.
+
+**Fix:** Updated in v2.29+ to filter preference commands through `isLikelyCommand()`. Ensure `verification_commands` in preferences contains only valid shell commands, not descriptions.
+
 ## LSP (Language Server Protocol)
 
 ### "LSP isn't available in this workspace"

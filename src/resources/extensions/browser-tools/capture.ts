@@ -13,8 +13,40 @@ import { formatCompactStateSummary } from "./utils.js";
 // Anthropic vision: 1568px is the recommended optimal width. Height is capped
 // generously at 8000px so tall full-page screenshots remain readable rather
 // than being squished into a square constraint.
-const MAX_SCREENSHOT_WIDTH = 1568;
-const MAX_SCREENSHOT_HEIGHT = 8000;
+//
+// Override via environment variables:
+//   SCREENSHOT_MAX_WIDTH=0   → uncap width (use raw resolution)
+//   SCREENSHOT_MAX_HEIGHT=0  → uncap height
+//   SCREENSHOT_FORMAT=png    → lossless PNG for all viewport/fullpage screenshots
+//   SCREENSHOT_QUALITY=100   → max JPEG quality (1-100, default 80)
+const MAX_SCREENSHOT_WIDTH = parseScreenshotDimension(process.env.SCREENSHOT_MAX_WIDTH, 1568);
+const MAX_SCREENSHOT_HEIGHT = parseScreenshotDimension(process.env.SCREENSHOT_MAX_HEIGHT, 8000);
+
+/** Parse a dimension env var: positive int = that value, 0 = Infinity (uncapped), absent/invalid = default. */
+function parseScreenshotDimension(value: string | undefined, fallback: number): number {
+	if (value === undefined || value === "") return fallback;
+	const n = parseInt(value, 10);
+	if (isNaN(n) || n < 0) return fallback;
+	if (n === 0) return Infinity;
+	return n;
+}
+
+/** Return the user-configured screenshot format override, or null for default behavior. */
+export function getScreenshotFormatOverride(): "png" | "jpeg" | null {
+	const fmt = process.env.SCREENSHOT_FORMAT?.toLowerCase();
+	if (fmt === "png") return "png";
+	if (fmt === "jpeg" || fmt === "jpg") return "jpeg";
+	return null;
+}
+
+/** Return the user-configured default JPEG quality, or the provided fallback. */
+export function getScreenshotQualityDefault(fallback: number): number {
+	const q = process.env.SCREENSHOT_QUALITY;
+	if (q === undefined || q === "") return fallback;
+	const n = parseInt(q, 10);
+	if (isNaN(n) || n < 1 || n > 100) return fallback;
+	return n;
+}
 
 // ---------------------------------------------------------------------------
 // Compact page state capture
