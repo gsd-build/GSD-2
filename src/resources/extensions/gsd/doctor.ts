@@ -17,6 +17,22 @@ export type { DoctorSeverity, DoctorIssueCode, DoctorIssue, DoctorReport, Doctor
 export { summarizeDoctorIssues, filterDoctorIssues, formatDoctorReport, formatDoctorIssuesForPrompt } from "./doctor-format.js";
 
 /**
+ * Issue codes that represent completion state transitions — creating summary
+ * stubs, marking slices/milestones done in the roadmap. These belong to the
+ * dispatch lifecycle (complete-slice, complete-milestone units), not to
+ * mechanical post-hook bookkeeping. When fixLevel is "task", these are
+ * detected and reported but never auto-fixed.
+ *
+ * Exported so that callers (e.g. auto-post-unit.ts health escalation) can
+ * exclude these from error counts when running at task fixLevel.
+ */
+export const COMPLETION_TRANSITION_CODES: ReadonlySet<DoctorIssueCode> = new Set([
+  "all_tasks_done_missing_slice_summary",
+  "all_tasks_done_missing_slice_uat",
+  "all_tasks_done_roadmap_not_checked",
+]);
+
+/**
  * Characters that are used as delimiters in GSD state management documents
  * and should not appear in milestone or slice titles.
  *
@@ -351,21 +367,10 @@ export async function runGSDDoctor(basePath: string, options?: { fix?: boolean; 
   const fix = options?.fix === true;
   const fixLevel = options?.fixLevel ?? "all";
 
-  // Issue codes that represent completion state transitions — creating summary
-  // stubs, marking slices/milestones done in the roadmap. These belong to the
-  // dispatch lifecycle (complete-slice, complete-milestone units), not to
-  // mechanical post-hook bookkeeping. When fixLevel is "task", these are
-  // detected and reported but never auto-fixed.
-  const completionTransitionCodes = new Set<DoctorIssueCode>([
-    "all_tasks_done_missing_slice_summary",
-    "all_tasks_done_missing_slice_uat",
-    "all_tasks_done_roadmap_not_checked",
-  ]);
-
   /** Whether a given issue code should be auto-fixed at the current fixLevel. */
   const shouldFix = (code: DoctorIssueCode): boolean => {
     if (!fix) return false;
-    if (fixLevel === "task" && completionTransitionCodes.has(code)) return false;
+    if (fixLevel === "task" && COMPLETION_TRANSITION_CODES.has(code)) return false;
     return true;
   };
 

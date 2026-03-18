@@ -265,6 +265,52 @@ async function main(): Promise<void> {
       assertTrue(result.issues.length === 0, "no blocking issues after heal");
     }
 
+    // ─── Completion Transition Code Filtering (#1155) ──────────────────
+    console.log("\n=== completion transition codes: excluded from health snapshot at task level ===");
+    {
+      resetProactiveHealing();
+      // Import the constant and summarize helper
+      const { COMPLETION_TRANSITION_CODES, summarizeDoctorIssues } = await import("../doctor.ts");
+
+      // Simulate doctor report with only completion transition errors
+      const fakeIssues = [
+        { severity: "error" as const, code: "all_tasks_done_missing_slice_summary" as const, scope: "slice", unitId: "M001/S01", message: "missing summary", fixable: true },
+        { severity: "error" as const, code: "all_tasks_done_roadmap_not_checked" as const, scope: "slice", unitId: "M001/S01", message: "roadmap not checked", fixable: true },
+      ];
+
+      // Without filtering (old behavior) — would count 2 errors
+      const rawSummary = summarizeDoctorIssues(fakeIssues as any);
+      assertEq(rawSummary.errors, 2, "raw count includes completion transition errors");
+
+      // With filtering (new behavior) — should count 0 errors
+      const filteredIssues = fakeIssues.filter(i => !COMPLETION_TRANSITION_CODES.has(i.code));
+      const filteredSummary = summarizeDoctorIssues(filteredIssues as any);
+      assertEq(filteredSummary.errors, 0, "filtered count excludes completion transition errors");
+
+      // Verify that recording filtered snapshot does NOT increment consecutive error counter
+      recordHealthSnapshot(filteredSummary.errors, filteredSummary.warnings, 0);
+      assertEq(getConsecutiveErrorUnits(), 0, "completion transition errors should not increment consecutive error streak");
+    }
+
+    console.log("\n=== completion transition codes: real errors still counted at task level ===");
+    {
+      resetProactiveHealing();
+      const { COMPLETION_TRANSITION_CODES, summarizeDoctorIssues } = await import("../doctor.ts");
+
+      // Mix of completion transition errors and a real error
+      const fakeIssues = [
+        { severity: "error" as const, code: "all_tasks_done_missing_slice_summary" as const, scope: "slice", unitId: "M001/S01", message: "missing summary", fixable: true },
+        { severity: "error" as const, code: "task_plan_missing" as const, scope: "task", unitId: "M001/S01/T01", message: "plan missing", fixable: false },
+      ];
+
+      const filteredIssues = fakeIssues.filter(i => !COMPLETION_TRANSITION_CODES.has(i.code));
+      const filteredSummary = summarizeDoctorIssues(filteredIssues as any);
+      assertEq(filteredSummary.errors, 1, "real errors still counted after filtering");
+
+      recordHealthSnapshot(filteredSummary.errors, 0, 0);
+      assertEq(getConsecutiveErrorUnits(), 1, "real errors still increment consecutive error streak");
+    }
+
   } finally {
     resetProactiveHealing();
     for (const dir of cleanups) {
