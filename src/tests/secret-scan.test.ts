@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { writeFileSync, mkdtempSync, rmSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
+import { tmpdir, platform } from "node:os";
+
+// Secret scanner requires bash + POSIX grep — skip on Windows
+const isWindows = platform() === "win32";
 
 const projectRoot = join(
   new URL(".", import.meta.url).pathname,
@@ -54,13 +57,13 @@ function scanContent(
 
 // ── Detection tests ──────────────────────────────────────────────────
 
-test("detects AWS access key", () => {
+test("detects AWS access key", { skip: isWindows }, () => {
   const result = scanContent('const key = "AKIAIOSFODNN7EXAMPLE";');
   assert.equal(result.status, 1, `should fail: ${result.stdout}`);
   assert.match(result.stdout, /AWS Access Key/);
 });
 
-test("detects generic API key assignment", () => {
+test("detects generic API key assignment", { skip: isWindows }, () => {
   const result = scanContent(
     'const api_key = "sk-abc123def456ghi789jkl012mno345pqr678";',
   );
@@ -68,19 +71,19 @@ test("detects generic API key assignment", () => {
   assert.match(result.stdout, /Generic API Key/i);
 });
 
-test("detects generic secret/password assignment", () => {
+test("detects generic secret/password assignment", { skip: isWindows }, () => {
   const result = scanContent('password = "SuperSecretP@ssw0rd!2024"');
   assert.equal(result.status, 1, `should fail: ${result.stdout}`);
   assert.match(result.stdout, /SECRET DETECTED/);
 });
 
-test("detects private key header", () => {
+test("detects private key header", { skip: isWindows }, () => {
   const result = scanContent("-----BEGIN RSA PRIVATE KEY-----\nMIIE...");
   assert.equal(result.status, 1, `should fail: ${result.stdout}`);
   assert.match(result.stdout, /Private Key/);
 });
 
-test("detects GitHub personal access token", () => {
+test("detects GitHub personal access token", { skip: isWindows }, () => {
   const result = scanContent(
     'const token = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklm";',
   );
@@ -88,7 +91,7 @@ test("detects GitHub personal access token", () => {
   assert.match(result.stdout, /GitHub Token/);
 });
 
-test("detects Stripe test key", () => {
+test("detects Stripe test key", { skip: isWindows }, () => {
   // Use sk_test_ prefix to avoid GitHub push protection on sk_live_
   const stripeKey = ["sk", "test", "aAbBcCdDeFgHiJkLmNoPqRsT"].join("_");
   const result = scanContent(`const stripe = "${stripeKey}";`);
@@ -96,7 +99,7 @@ test("detects Stripe test key", () => {
   assert.match(result.stdout, /Stripe Key/);
 });
 
-test("detects database connection string", () => {
+test("detects database connection string", { skip: isWindows }, () => {
   const result = scanContent(
     'const db = "postgres://user:pass@host:5432/mydb";',
   );
@@ -104,7 +107,7 @@ test("detects database connection string", () => {
   assert.match(result.stdout, /Database URL/);
 });
 
-test("detects Slack token", () => {
+test("detects Slack token", { skip: isWindows }, () => {
   // Build token dynamically to avoid GitHub push protection
   const slackToken = ["xoxb", "000000000000", "0000000000000", "testfakevalue000"].join("-");
   const result = scanContent(`const token = "${slackToken}";`);
@@ -112,7 +115,7 @@ test("detects Slack token", () => {
   assert.match(result.stdout, /Slack Token/);
 });
 
-test("detects Google API key", () => {
+test("detects Google API key", { skip: isWindows }, () => {
   const result = scanContent(
     'const key = "AIzaSyA1234567890abcdefghijklmnopqrstuvwx";',
   );
@@ -122,27 +125,27 @@ test("detects Google API key", () => {
 
 // ── Non-detection tests (should pass clean) ──────────────────────────
 
-test("allows environment variable references", () => {
+test("allows environment variable references", { skip: isWindows }, () => {
   const result = scanContent("const key = process.env.API_KEY;");
   assert.equal(result.status, 0, `should pass: ${result.stdout}`);
 });
 
-test("allows empty strings", () => {
+test("allows empty strings", { skip: isWindows }, () => {
   const result = scanContent('const password = "";');
   assert.equal(result.status, 0, `should pass: ${result.stdout}`);
 });
 
-test("allows placeholder values", () => {
+test("allows placeholder values", { skip: isWindows }, () => {
   const result = scanContent('const api_key = "your-api-key-here";');
   assert.equal(result.status, 0, `should pass: ${result.stdout}`);
 });
 
-test("skips binary file extensions", () => {
+test("skips binary file extensions", { skip: isWindows }, () => {
   const result = scanContent("AKIAIOSFODNN7EXAMPLE", "image.png");
   assert.equal(result.status, 0, `should pass (binary skip): ${result.stdout}`);
 });
 
-test("skips package-lock.json", () => {
+test("skips package-lock.json", { skip: isWindows }, () => {
   const result = scanContent(
     '{"integrity": "sha512-AKIAIOSFODNN7EXAMPLE"}',
     "package-lock.json",
@@ -150,7 +153,7 @@ test("skips package-lock.json", () => {
   assert.equal(result.status, 0, `should pass (lockfile skip): ${result.stdout}`);
 });
 
-test("reports no files cleanly", () => {
+test("reports no files cleanly", { skip: isWindows }, () => {
   const dir = mkdtempSync(join(tmpdir(), "secret-scan-empty-"));
   try {
     spawnSync("git", ["init"], { cwd: dir });
@@ -167,7 +170,7 @@ test("reports no files cleanly", () => {
 
 // ── Multiple findings ────────────────────────────────────────────────
 
-test("reports multiple secrets in one file", () => {
+test("reports multiple secrets in one file", { skip: isWindows }, () => {
   const stripeKey = ["sk", "test", "aAbBcCdDeFgHiJkLmNoPqRsT"].join("_");
   const content = [
     'const aws = "AKIAIOSFODNN7EXAMPLE";',
@@ -183,7 +186,7 @@ test("reports multiple secrets in one file", () => {
 
 // ── CI mode (--diff) ─────────────────────────────────────────────────
 
-test("CI mode scans diff against ref", () => {
+test("CI mode scans diff against ref", { skip: isWindows }, () => {
   const dir = mkdtempSync(join(tmpdir(), "secret-scan-ci-"));
   try {
     spawnSync("git", ["init"], { cwd: dir });
