@@ -36,6 +36,12 @@ export function syncProjectRootToWorktree(projectRoot: string, worktreePath: str
   // has newer artifacts (e.g. slices that don't exist in the worktree yet)
   safeCopyRecursive(join(prGsd, "milestones", milestoneId), join(wtGsd, "milestones", milestoneId))
 
+  // Copy living documents from project root to worktree so agents have the
+  // latest decisions, requirements, project state, and knowledge.
+  for (const doc of ["DECISIONS.md", "REQUIREMENTS.md", "PROJECT.md", "KNOWLEDGE.md"]) {
+    safeCopy(join(prGsd, doc), join(wtGsd, doc), { force: true });
+  }
+
   // Delete worktree gsd.db so it rebuilds from the freshly synced files.
   // Stale DB rows are the root cause of the infinite skip loop (#853).
   try {
@@ -89,6 +95,14 @@ export function syncStateToProjectRoot(worktreePath: string, projectRoot: string
   // worktree. If the next session resolves basePath before worktree re-entry,
   // selfHeal can't find or clear the stale record (#769).
   safeCopyRecursive(join(wtGsd, "runtime", "units"), join(prGsd, "runtime", "units"), { force: true })
+
+  // 5. Living documents — decisions, requirements, project description, knowledge.
+  // Agents update these during slice execution. Without syncing, a new session
+  // reads stale copies from the project root, losing architectural decisions,
+  // requirement status updates, and accumulated knowledge (#1168).
+  for (const doc of ["DECISIONS.md", "REQUIREMENTS.md", "PROJECT.md", "KNOWLEDGE.md"]) {
+    safeCopy(join(wtGsd, doc), join(prGsd, doc), { force: true });
+  }
 }
 
 // ─── Resource Staleness ───────────────────────────────────────────────────
