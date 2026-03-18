@@ -638,3 +638,90 @@ test("#793: invalidateAllCaches clears all caches so deriveState sees fresh disk
     cleanup(base);
   }
 });
+
+test("syncStateToProjectRoot copies root-level living docs to project root", () => {
+  // Verifies fix for: DECISIONS.md, REQUIREMENTS.md, PROJECT.md, KNOWLEDGE.md
+  // are updated by agents during worktree execution but never synced back to
+  // the project root. On session restart, stale root copies cause the next
+  // agent to work with wrong context (missing decisions, unvalidated reqs, etc.).
+  const { syncStateToProjectRoot } = require("../auto-worktree-sync.js");
+
+  const projectRoot = makeTmpBase();
+  const worktree = makeTmpBase();
+  try {
+    const prGsd = join(projectRoot, ".gsd");
+    const wtGsd = join(worktree, ".gsd");
+
+    // Write stale docs in project root
+    writeFileSync(join(prGsd, "DECISIONS.md"), "# Decisions\n\n| ID |\n| D001 |\n");
+    writeFileSync(join(prGsd, "REQUIREMENTS.md"), "# Requirements\n\nR001 active\n");
+    writeFileSync(join(prGsd, "PROJECT.md"), "# Project\n\nInitialized.\n");
+    // KNOWLEDGE.md intentionally missing in root — common case
+
+    // Write updated docs in worktree (as agent would during slice execution)
+    writeFileSync(join(wtGsd, "DECISIONS.md"), "# Decisions\n\n| ID |\n| D001 |\n| D002 |\n| D003 |\n");
+    writeFileSync(join(wtGsd, "REQUIREMENTS.md"), "# Requirements\n\nR001 validated\nR002 active\n");
+    writeFileSync(join(wtGsd, "PROJECT.md"), "# Project\n\nS01-S04 complete.\n");
+    writeFileSync(join(wtGsd, "KNOWLEDGE.md"), "# Knowledge\n\n## SQLite bool gotcha\n");
+
+    // Sync worktree → project root
+    syncStateToProjectRoot(worktree, projectRoot, "M001");
+
+    // Verify all four docs were synced
+    assert.equal(
+      readFileSync(join(prGsd, "DECISIONS.md"), "utf8"),
+      "# Decisions\n\n| ID |\n| D001 |\n| D002 |\n| D003 |\n",
+      "DECISIONS.md should be overwritten with worktree version"
+    );
+    assert.equal(
+      readFileSync(join(prGsd, "REQUIREMENTS.md"), "utf8"),
+      "# Requirements\n\nR001 validated\nR002 active\n",
+      "REQUIREMENTS.md should be overwritten with worktree version"
+    );
+    assert.equal(
+      readFileSync(join(prGsd, "PROJECT.md"), "utf8"),
+      "# Project\n\nS01-S04 complete.\n",
+      "PROJECT.md should be overwritten with worktree version"
+    );
+    assert.ok(
+      existsSync(join(prGsd, "KNOWLEDGE.md")),
+      "KNOWLEDGE.md should be created in project root even if it didn't exist before"
+    );
+    assert.equal(
+      readFileSync(join(prGsd, "KNOWLEDGE.md"), "utf8"),
+      "# Knowledge\n\n## SQLite bool gotcha\n",
+      "KNOWLEDGE.md content should match worktree"
+    );
+  } finally {
+    cleanup(projectRoot);
+    cleanup(worktree);
+  }
+});
+
+test("syncStateToProjectRoot skips missing living docs without error", () => {
+  // If the worktree has no KNOWLEDGE.md (e.g. no knowledge entries yet),
+  // sync should not crash or create an empty file in the project root.
+  const { syncStateToProjectRoot } = require("../auto-worktree-sync.js");
+
+  const projectRoot = makeTmpBase();
+  const worktree = makeTmpBase();
+  try {
+    // Only STATE.md exists in worktree — no living docs
+    writeFileSync(join(worktree, ".gsd", "STATE.md"), "# State\n");
+
+    syncStateToProjectRoot(worktree, projectRoot, "M001");
+
+    // Should not create docs that don't exist in worktree
+    assert.ok(
+      !existsSync(join(projectRoot, ".gsd", "KNOWLEDGE.md")),
+      "KNOWLEDGE.md should not be created if it doesn't exist in worktree"
+    );
+    assert.ok(
+      !existsSync(join(projectRoot, ".gsd", "DECISIONS.md")),
+      "DECISIONS.md should not be created if it doesn't exist in worktree"
+    );
+  } finally {
+    cleanup(projectRoot);
+    cleanup(worktree);
+  }
+});

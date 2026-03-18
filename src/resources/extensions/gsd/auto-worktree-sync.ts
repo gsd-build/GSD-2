@@ -51,7 +51,9 @@ export function syncProjectRootToWorktree(projectRoot: string, worktreePath: str
 /**
  * Sync dispatch-critical .gsd/ state files from worktree to project root.
  * Only runs when inside an auto-worktree (worktreePath differs from projectRoot).
- * Copies: STATE.md + active milestone directory (roadmap, slice plans, task summaries).
+ * Copies: STATE.md, root-level living docs (DECISIONS/REQUIREMENTS/PROJECT/KNOWLEDGE),
+ * active milestone directory (roadmap, slice plans, task summaries), completed-units,
+ * and runtime unit records.
  * Non-fatal — sync failure should never block dispatch.
  */
 export function syncStateToProjectRoot(worktreePath: string, projectRoot: string, milestoneId: string | null): void {
@@ -63,6 +65,16 @@ export function syncStateToProjectRoot(worktreePath: string, projectRoot: string
 
   // 1. STATE.md — the quick-glance status used by initial deriveState()
   safeCopy(join(wtGsd, "STATE.md"), join(prGsd, "STATE.md"), { force: true })
+
+  // 1b. Root-level living documents — DECISIONS.md, REQUIREMENTS.md, PROJECT.md, KNOWLEDGE.md
+  // Agents update these during slice execution in the worktree. Without syncing,
+  // the project root retains stale versions: missing decisions, unvalidated
+  // requirements, outdated project description, and no accumulated knowledge.
+  // On session restart, deriveState and context inlining read these from the
+  // project root — stale copies cause the next agent to work with wrong context.
+  for (const doc of ["DECISIONS.md", "REQUIREMENTS.md", "PROJECT.md", "KNOWLEDGE.md"]) {
+    safeCopy(join(wtGsd, doc), join(prGsd, doc), { force: true })
+  }
 
   // 2. Milestone directory — ROADMAP, slice PLANs, task summaries
   // Copy the entire milestone .gsd subtree so deriveState reads current checkboxes
