@@ -86,6 +86,9 @@ export class GSDVisualizerOverlay {
       this.data = d;
       this.loading = false;
       this.tui.requestRender();
+    }).catch(() => {
+      this.loading = false;
+      this.tui.requestRender();
     });
 
     this.refreshTimer = setInterval(() => {
@@ -94,7 +97,7 @@ export class GSDVisualizerOverlay {
         this.data = d;
         this.invalidate();
         this.tui.requestRender();
-      });
+      }).catch(() => {}); // retry on next interval
     }, 5000);
   }
 
