@@ -57,7 +57,7 @@ function mockData(overrides: Partial<VisualizerData> = {}): VisualizerData {
         ],
       },
     ],
-    phase: "execution",
+    phase: "executing",
     totals: {
       units: 4,
       tokens: mockTokens(),
