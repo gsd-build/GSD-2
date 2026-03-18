@@ -344,9 +344,9 @@ export function scanComponentDir(
 		return { components, diagnostics };
 	}
 
-	let entries: ReturnType<typeof readdirSync>;
+	let entries: import('node:fs').Dirent[];
 	try {
-		entries = readdirSync(dir, { withFileTypes: true });
+		entries = readdirSync(dir, { withFileTypes: true, encoding: 'utf-8' });
 	} catch {
 		return { components, diagnostics };
 	}
@@ -408,9 +408,9 @@ export function scanAgentDir(
 		return { components, diagnostics };
 	}
 
-	let entries: ReturnType<typeof readdirSync>;
+	let entries: import('node:fs').Dirent[];
 	try {
-		entries = readdirSync(dir, { withFileTypes: true });
+		entries = readdirSync(dir, { withFileTypes: true, encoding: 'utf-8' });
 	} catch {
 		return { components, diagnostics };
 	}

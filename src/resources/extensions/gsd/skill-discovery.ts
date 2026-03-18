@@ -108,7 +108,7 @@ function listSkillDirs(): string[] {
     if (registry.size > 0) {
       const skills = registry.skills();
       if (skills.length > 0) {
-        return skills.map(s => s.metadata.name);
+        return skills.map((s: { metadata: { name: string } }) => s.metadata.name);
       }
     }
   } catch {
