@@ -45,7 +45,7 @@
 
 ## Tasks
 
-- [ ] **T01: Enhance message model, install diff, build ToolCard shell and language utility** `est:45m`
+- [x] **T01: Enhance message model, install diff, build ToolCard shell and language utility** `est:45m`
   - Why: Foundation — all card components depend on richer ToolUseBlock data, the shared ToolCard shell with expand/collapse, and the language detection utility. The `diff` library is needed for EditCard's intra-line highlighting.
   - Files: `studio/src/renderer/src/lib/message-model.ts`, `studio/test/message-model.test.mjs`, `studio/src/renderer/src/components/tool-cards/ToolCard.tsx`, `studio/src/renderer/src/lib/lang-map.ts`, `studio/src/renderer/src/styles/index.css`, `studio/package.json`
   - Do: Install `diff` + `@types/diff`. Enhance ToolUseBlock type with `content`, `details`, `isError`, `partialResult`. Add `tool_execution_update` case in buildMessageBlocks (accumulate partialResult keyed by toolCallId). Add `isError` extraction from tool_execution_end. Build ToolCard shell with `grid-template-rows: 0fr → 1fr` expand animation, status icon (reuse Phosphor pattern from ToolStub), `data-tool-name`/`data-tool-status` DOM attrs. Build getLanguageFromPath (20-line map: `.ts`→`typescript`, `.js`→`javascript`, `.py`→`python`, etc. using Shiki language IDs). Add CSS for diff lines (`.diff-added`/`.diff-removed`/`.diff-context` backgrounds). Update replicated test function (K001) and add 4+ new tests covering tool_execution_update, structured result, isError, backward compat.
