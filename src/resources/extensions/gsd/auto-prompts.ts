@@ -540,8 +540,11 @@ export async function checkNeedsRunUat(
     if (resultContent) return null;
   }
 
-  // Classify UAT type; unknown type → treat as human-experience (human review)
+  // Classify UAT type; skip non-artifact-driven types — auto-mode can only
+  // execute mechanical checks. Non-artifact UATs are tracked in the dashboard
+  // but don't block auto-mode progression.
   const uatType = extractUatType(uatContent) ?? "human-experience";
+  if (uatType !== "artifact-driven") return null;
 
   return { sliceId: sid, uatType };
 }
@@ -1111,7 +1114,7 @@ export async function buildReplanSlicePrompt(
 }
 
 export async function buildRunUatPrompt(
-  mid: string, sliceId: string, uatPath: string, uatContent: string, base: string,
+  mid: string, sliceId: string, uatPath: string, base: string,
 ): Promise<string> {
   const inlined: string[] = [];
   inlined.push(await inlineFile(resolveSliceFile(base, mid, sliceId, "UAT"), uatPath, `${sliceId} UAT`));
@@ -1129,7 +1132,6 @@ export async function buildRunUatPrompt(
   const inlinedContext = `## Inlined Context (preloaded — do not re-read these files)\n\n${inlined.join("\n\n---\n\n")}`;
 
   const uatResultPath = join(base, relSliceFile(base, mid, sliceId, "UAT-RESULT"));
-  const uatType = extractUatType(uatContent) ?? "human-experience";
 
   return loadPrompt("run-uat", {
     workingDirectory: base,
@@ -1137,7 +1139,6 @@ export async function buildRunUatPrompt(
     sliceId,
     uatPath,
     uatResultPath,
-    uatType,
     inlinedContext,
   });
 }

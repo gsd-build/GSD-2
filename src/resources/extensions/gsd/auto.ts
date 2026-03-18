@@ -1457,7 +1457,6 @@ async function dispatchNextUnit(
   unitType = dispatchResult.unitType;
   unitId = dispatchResult.unitId;
   prompt = dispatchResult.prompt;
-  let pauseAfterUatDispatch = dispatchResult.pauseAfterDispatch ?? false;
 
   // ── Pre-dispatch hooks ──
   const preDispatchResult = runPreDispatchHooks(unitType, unitId, prompt, s.basePath);
@@ -1712,13 +1711,6 @@ async function dispatchNextUnit(
     { triggerTurn: true },
   );
 
-  if (pauseAfterUatDispatch) {
-    ctx.ui.notify(
-      "UAT requires human execution. Auto-mode will pause after this unit writes the result file.",
-      "info",
-    );
-    await pauseAuto(ctx, pi);
-  }
   } finally {
     s.dispatching = false;
   }

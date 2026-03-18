@@ -17,10 +17,7 @@ If a `GSD Skill Preferences` block is present in system context, use it to decid
 ## UAT Instructions
 
 **UAT file:** `{{uatPath}}`
-**UAT type:** `{{uatType}}`
 **Result file to write:** `{{uatResultPath}}`
-
-### If UAT type is `artifact-driven`
 
 You are the test runner. Execute every check defined in `{{uatPath}}` directly:
 
@@ -46,7 +43,7 @@ Write `{{uatResultPath}}` with:
 ```markdown
 ---
 sliceId: {{sliceId}}
-uatType: {{uatType}}
+uatType: artifact-driven
 verdict: PASS | FAIL | PARTIAL
 date: <ISO 8601 timestamp>
 ---
@@ -66,44 +63,6 @@ date: <ISO 8601 timestamp>
 ## Notes
 
 <any additional context, errors encountered, or follow-up items>
-```
-
-### If UAT type is NOT `artifact-driven` (type is `{{uatType}}`)
-
-This UAT type requires human execution or live-runtime observation that you cannot perform mechanically. Your role is to surface it clearly for review.
-
-Write `{{uatResultPath}}` with:
-
-```markdown
----
-sliceId: {{sliceId}}
-uatType: {{uatType}}
-verdict: surfaced-for-human-review
-date: <ISO 8601 timestamp>
----
-
-# UAT Result — {{sliceId}}
-
-## UAT Type
-
-`{{uatType}}` — requires human execution or live-runtime verification.
-
-## Status
-
-Surfaced for human review. Auto-mode will pause after this unit so the UAT can be performed manually.
-
-## UAT File
-
-See `{{uatPath}}` for the full UAT specification and acceptance criteria.
-
-## Instructions for Human Reviewer
-
-Review `{{uatPath}}`, perform the described UAT steps, then update this file with:
-- The actual verdict (PASS / FAIL / PARTIAL)
-- Results for each check
-- Date completed
-
-Once updated, run `/gsd auto` to resume auto-mode.
 ```
 
 ---
