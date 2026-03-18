@@ -138,11 +138,12 @@ export function verifyExpectedArtifact(unitType: string, unitId: string, base: s
   if (!absPath) return false;
   if (!existsSync(absPath)) return false;
 
-  // validate-milestone must have a VALIDATION file with a terminal verdict.
-  // Without this check, a VALIDATION file with missing/malformed frontmatter or an
-  // unrecognized verdict is treated as "complete" by the artifact check but deriveState
-  // still returns phase:"validating-milestone" (because isValidationTerminal returns
-  // false), creating an infinite skip loop that hits the lifetime cap.
+  // validate-milestone must have a VALIDATION file with a terminal verdict
+  // (pass, needs-attention, or needs-remediation). Without this check, a
+  // VALIDATION file with missing/malformed frontmatter or an unrecognized
+  // verdict is treated as "complete" by the artifact check but deriveState
+  // still returns phase:"validating-milestone" (because isValidationTerminal
+  // returns false), creating an infinite skip loop that hits the lifetime cap.
   if (unitType === "validate-milestone") {
     try {
       const validationContent = readFileSync(absPath, "utf-8");

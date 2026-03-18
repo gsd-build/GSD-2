@@ -290,18 +290,17 @@ test("verifyExpectedArtifact fails when VALIDATION.md is missing", () => {
   }
 });
 
-test("verifyExpectedArtifact rejects VALIDATION with non-terminal verdict", () => {
+test("verifyExpectedArtifact rejects VALIDATION with missing frontmatter", () => {
   const base = makeTmpBase();
   try {
-    // A VALIDATION file with missing frontmatter / unrecognized verdict should
-    // be treated as incomplete — matching what deriveState expects. Without this,
-    // the artifact check passes but deriveState still returns validating-milestone,
-    // causing the hard skip loop described in the issue.
+    // A VALIDATION file without frontmatter should be treated as incomplete —
+    // matching what deriveState expects. Without this, the artifact check passes
+    // but deriveState still returns validating-milestone, causing the hard skip loop.
     writeValidation(base, "M001", "# Validation\nNo frontmatter here.");
     clearPathCache();
     clearParseCache();
     const result = verifyExpectedArtifact("validate-milestone", "M001", base);
-    assert.equal(result, false, "VALIDATION without terminal verdict should fail verification");
+    assert.equal(result, false, "VALIDATION without frontmatter should fail verification");
   } finally {
     cleanup(base);
   }
@@ -315,6 +314,19 @@ test("verifyExpectedArtifact rejects VALIDATION with missing verdict field", () 
     clearParseCache();
     const result = verifyExpectedArtifact("validate-milestone", "M001", base);
     assert.equal(result, false, "VALIDATION without verdict field should fail verification");
+  } finally {
+    cleanup(base);
+  }
+});
+
+test("verifyExpectedArtifact rejects VALIDATION with unrecognized verdict", () => {
+  const base = makeTmpBase();
+  try {
+    writeValidation(base, "M001", "---\nverdict: unknown-value\nremediation_round: 0\n---\n\n# Validation");
+    clearPathCache();
+    clearParseCache();
+    const result = verifyExpectedArtifact("validate-milestone", "M001", base);
+    assert.equal(result, false, "VALIDATION with unrecognized verdict should fail verification");
   } finally {
     cleanup(base);
   }
