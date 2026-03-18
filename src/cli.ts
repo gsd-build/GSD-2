@@ -425,13 +425,13 @@ if (cliFlags.messages[0] === 'worktree' || cliFlags.messages[0] === 'wt') {
   const subArgs = cliFlags.messages.slice(2)
 
   if (!sub || sub === 'list') {
-    handleList(process.cwd())
+    await handleList(process.cwd())
   } else if (sub === 'merge') {
     await handleMerge(process.cwd(), subArgs)
   } else if (sub === 'clean') {
-    handleClean(process.cwd())
+    await handleClean(process.cwd())
   } else if (sub === 'remove' || sub === 'rm') {
-    handleRemove(process.cwd(), subArgs)
+    await handleRemove(process.cwd(), subArgs)
   } else {
     process.stderr.write(`Unknown worktree command: ${sub}\n`)
     process.stderr.write('Commands: list, merge [name], clean, remove <name>\n')
@@ -444,7 +444,7 @@ if (cliFlags.messages[0] === 'worktree' || cliFlags.messages[0] === 'wt') {
 // ---------------------------------------------------------------------------
 if (cliFlags.worktree) {
   const { handleWorktreeFlag } = await import('./worktree-cli.js')
-  handleWorktreeFlag(cliFlags.worktree)
+  await handleWorktreeFlag(cliFlags.worktree)
 }
 
 // ---------------------------------------------------------------------------
@@ -453,7 +453,7 @@ if (cliFlags.worktree) {
 if (!cliFlags.worktree && !isPrintMode) {
   try {
     const { handleStatusBanner } = await import('./worktree-cli.js')
-    handleStatusBanner(process.cwd())
+    await handleStatusBanner(process.cwd())
   } catch { /* non-fatal */ }
 }
 
