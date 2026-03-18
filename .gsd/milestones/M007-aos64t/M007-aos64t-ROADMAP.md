@@ -47,7 +47,7 @@ This milestone is complete only when all are true:
 
 ## Slices
 
-- [ ] **S01: Deterministic Runtime Fixture** `risk:high` `depends:[]`
+- [x] **S01: Deterministic Runtime Fixture** `risk:high` `depends:[]`
   > After this: A controlled proof fixture can drive the real fact-check runtime path with known refutation inputs and stable expected outputs.
 - [ ] **S02: Live Reroute Proof Run** `risk:high` `depends:[S01]`
   > After this: The assembled runtime path proves coordinator artifact writing, planner reroute, and corrected evidence injection in one live scenario.

@@ -172,3 +172,23 @@ TypeScript compilation errors in `headless.ts` and missing `packages/pi-ai/dist/
 - `.gsd/milestones/M007-aos64t/slices/S01/tasks/T02-PLAN.md` — Added Observability Impact section
 - `.gsd/milestones/M007-aos64t/slices/S01/tasks/T02-SUMMARY.md` — Task summary
 - `.gsd/milestones/M007-aos64t/slices/S01/tasks/T03-PLAN.md` — Handoff contract for S02
+
+## Forward Intelligence
+
+### What the next slice should know
+- The fixture uses synthetic data (`@synthetic/lib`) that never requires network calls — this ensures deterministic behavior for the live proof
+- The harness validates source-level module exports (post-unit-hooks, auto-recovery, auto-prompts) but does NOT execute them live — S02 must wire the live execution path
+- All expected outputs (fixtureId, rerouteTarget, correctedValue, planImpacting) are exposed through the harness test for S02 to consume
+
+### What's fragile
+- ESM module resolution chain — the harness uses source-level verification because `.ts` files importing other `.ts` files with `.js` extensions fails at runtime. Don't attempt full ESM import chains without fixing the extension mismatch.
+- TypeScript compilation errors in `headless.ts` are pre-existing and unrelated to this slice
+
+### Authoritative diagnostics
+- Run `node --test src/resources/extensions/gsd/tests/factcheck-runtime-fixture.test.ts` — all 30 tests must pass
+- Test output shows `=== Runtime Harness Sequence ===` with 5 stages: fixture-load, hook-execution, artifact-write, reroute-detection, prompt-capture
+- `[s02-ready]` output confirms downstream inputs are available
+- `FIXTURE-MANIFEST.json` is the source of truth for expected outcomes (claim count, refutation ID, corrected value)
+
+### What assumptions changed
+- Initially planned to use live ESM imports — changed to source-level verification after encountering extension mismatch issues in the import chain
