@@ -2280,9 +2280,20 @@ Examples:
 
 // ─── Self-update handler ────────────────────────────────────────────────────
 
+function compareSemverLocal(a: string, b: string): number {
+  const pa = a.split('.').map(Number)
+  const pb = b.split('.').map(Number)
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const va = pa[i] || 0
+    const vb = pb[i] || 0
+    if (va > vb) return 1
+    if (va < vb) return -1
+  }
+  return 0
+}
+
 async function handleUpdate(ctx: ExtensionCommandContext): Promise<void> {
   const { execSync } = await import("node:child_process");
-  const { compareSemver } = await import("../../../update-check.js");
 
   const NPM_PACKAGE = "gsd-pi";
   const current = process.env.GSD_VERSION || "0.0.0";
@@ -2300,7 +2311,7 @@ async function handleUpdate(ctx: ExtensionCommandContext): Promise<void> {
     return;
   }
 
-  if (compareSemver(latest, current) <= 0) {
+  if (compareSemverLocal(latest, current) <= 0) {
     ctx.ui.notify(`Already up to date (v${current}).`, "info");
     return;
   }
