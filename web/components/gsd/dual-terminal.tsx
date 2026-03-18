@@ -11,6 +11,7 @@ import {
 import { deriveWorkflowAction } from "@/lib/workflow-actions"
 import { NewMilestoneDialog } from "@/components/gsd/new-milestone-dialog"
 import { ShellTerminal } from "@/components/gsd/shell-terminal"
+import { useTerminalFontSize } from "@/lib/use-terminal-font-size"
 
 export function DualTerminal() {
   const [splitPosition, setSplitPosition] = useState(50)
@@ -19,6 +20,7 @@ export function DualTerminal() {
   const isDragging = useRef(false)
   const state = useGSDWorkspaceState()
   const { sendCommand } = useGSDWorkspaceActions()
+  const [terminalFontSize] = useTerminalFontSize()
 
   const boot = state.boot
   const workspace = boot?.workspace ?? null
@@ -137,7 +139,7 @@ export function DualTerminal() {
       <div ref={containerRef} className="flex flex-1 overflow-hidden">
         {/* Left terminal - Primary GSD instance */}
         <div style={{ width: `${splitPosition}%` }} className="h-full overflow-hidden">
-          <ShellTerminal className="h-full" command="gsd" sessionPrefix="gsd-main" />
+          <ShellTerminal className="h-full" command="gsd" sessionPrefix="gsd-main" fontSize={terminalFontSize} />
         </div>
 
         {/* Divider */}
@@ -150,7 +152,7 @@ export function DualTerminal() {
 
         {/* Right terminal - Interactive GSD instance */}
         <div style={{ width: `${100 - splitPosition}%` }} className="h-full overflow-hidden">
-          <ShellTerminal className="h-full" command="gsd" sessionPrefix="gsd-interactive" />
+          <ShellTerminal className="h-full" command="gsd" sessionPrefix="gsd-interactive" fontSize={terminalFontSize} />
         </div>
       </div>
 

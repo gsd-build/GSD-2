@@ -89,3 +89,11 @@ Terminal font size is hardcoded to 13px in `shell-terminal.tsx` with no user con
 - `web/components/gsd/command-surface.tsx` — TerminalSizePanel wired into settings section
 - `web/components/gsd/chat-mode.tsx` — font size setting applied to chat content area
 - `web/components/gsd/app-shell.tsx` — footer terminal unchanged (no fontSize prop)
+
+## Observability Impact
+
+- **localStorage key:** `localStorage.getItem('gsd-terminal-font-size')` returns the persisted numeric value (or null if default 13). This is the single source of truth.
+- **Custom event:** `terminal-font-size-changed` fires on the window object whenever the font size changes within a tab. Other hook instances auto-sync.
+- **Storage event:** Cross-tab sync via the native `storage` event on the `gsd-terminal-font-size` key.
+- **xterm options:** When the font size changes, `termRef.current.options.fontSize` is updated and the fit addon is re-triggered — the terminal visibly resizes. If terminals don't update, inspect whether the `fontSize` prop is threaded through `DualTerminal` → `ShellTerminal` → `TerminalInstance`.
+- **Failure visibility:** If `useTerminalFontSize` receives a non-numeric or out-of-range value from localStorage, it falls back to 13. An invalid stored value is silently corrected on next write.

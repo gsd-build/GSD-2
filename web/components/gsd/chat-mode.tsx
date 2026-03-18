@@ -16,6 +16,7 @@ import {
 } from "@/lib/gsd-workspace-store"
 import { deriveWorkflowAction } from "@/lib/workflow-actions"
 import { NewMilestoneDialog } from "@/components/gsd/new-milestone-dialog"
+import { useTerminalFontSize } from "@/lib/use-terminal-font-size"
 
 type HeadlessTerminal = import("@xterm/xterm").Terminal
 
@@ -1410,9 +1411,11 @@ function ChatBubble({
 function ChatMessageList({
   messages,
   onSubmitPrompt,
+  fontSize,
 }: {
   messages: ChatMessage[]
   onSubmitPrompt: (data: string) => void
+  fontSize?: number
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const isNearBottomRef = useRef(true)
@@ -1446,6 +1449,7 @@ function ChatMessageList({
       ref={scrollRef}
       onScroll={handleScroll}
       className="flex-1 overflow-y-auto px-4 py-4 space-y-4"
+      style={fontSize ? { fontSize: `${fontSize}px` } : undefined}
     >
       {messages.map((msg) => (
         <ChatBubble key={msg.id} message={msg} onSubmitPrompt={onSubmitPrompt} />
@@ -1738,6 +1742,7 @@ function StructuredTerminalActionPane({
   const screenUpdateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const messageIdRef = useRef(createLocalMessageId())
   const commandArgsKey = (commandArgs ?? []).join("\u0000")
+  const [terminalFontSize] = useTerminalFontSize()
 
   const [connected, setConnected] = useState(false)
   const [commandInProgress, setCommandInProgress] = useState(true)
@@ -1950,7 +1955,7 @@ function StructuredTerminalActionPane({
     )
   }
 
-  return <ChatMessageList messages={messages} onSubmitPrompt={sendInput} />
+  return <ChatMessageList messages={messages} onSubmitPrompt={sendInput} fontSize={terminalFontSize} />
 }
 
 /* ─── Chat Pane ─── */
@@ -2178,6 +2183,7 @@ export function ChatPane({ className, onOpenAction }: ChatPaneProps) {
   const state = useGSDWorkspaceState()
   const { submitInput, sendCommand } = useGSDWorkspaceActions()
   const [userMessages, setUserMessages] = useState<ChatMessage[]>([])
+  const [terminalFontSize] = useTerminalFontSize()
 
   const connected = state.connectionState === "connected"
   const isStreaming = state.boot?.bridge.sessionState?.isStreaming ?? false
@@ -2316,7 +2322,10 @@ export function ChatPane({ className, onOpenAction }: ChatPaneProps) {
             onPrimaryAction={handlePlaceholderCTA}
           />
         ) : (
-          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+          <div
+            className="flex-1 overflow-y-auto px-4 py-4 space-y-4"
+            style={terminalFontSize !== 13 ? { fontSize: `${terminalFontSize}px` } : undefined}
+          >
             {messages.map((msg) => (
               <ChatBubble key={msg.id} message={msg} onSubmitPrompt={handlePromptSubmit} />
             ))}

@@ -12,6 +12,7 @@ import {
   Radio,
   RefreshCw,
   Settings,
+  Type,
   Zap,
 } from "lucide-react"
 
@@ -33,6 +34,7 @@ import {
   useGSDWorkspaceActions,
   useGSDWorkspaceState,
 } from "@/lib/gsd-workspace-store"
+import { useTerminalFontSize } from "@/lib/use-terminal-font-size"
 
 // ═══════════════════════════════════════════════════════════════════════
 // SHARED INFRASTRUCTURE
@@ -830,6 +832,62 @@ export function RemoteQuestionsPanel() {
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TERMINAL SIZE PANEL
+// ═══════════════════════════════════════════════════════════════════════
+
+const TERMINAL_SIZE_PRESETS = [11, 12, 13, 14, 15, 16] as const
+
+export function TerminalSizePanel() {
+  const [fontSize, setFontSize] = useTerminalFontSize()
+
+  return (
+    <div className="space-y-4" data-testid="settings-terminal-size">
+      <SettingsHeader
+        title="Terminal Text Size"
+        icon={<Type className="h-3.5 w-3.5" />}
+        subtitle="Applies to expert & chat terminals"
+        onRefresh={() => {}}
+        refreshing={false}
+      />
+
+      <div className="rounded-lg border border-border/30 bg-card/30 px-3 py-3 space-y-3">
+        <div className="text-[11px] text-muted-foreground">
+          Choose a font size for terminal content. The footer terminal always uses the default (13px).
+        </div>
+
+        <div className="flex flex-wrap gap-1.5">
+          {TERMINAL_SIZE_PRESETS.map((size) => (
+            <button
+              key={size}
+              type="button"
+              onClick={() => setFontSize(size)}
+              className={cn(
+                "rounded-md border px-3 py-1.5 text-xs font-medium tabular-nums transition-colors",
+                fontSize === size
+                  ? "border-foreground/30 bg-foreground/10 text-foreground shadow-sm"
+                  : "border-border/40 bg-card/50 text-muted-foreground hover:border-foreground/20 hover:text-foreground",
+              )}
+            >
+              {size}px
+              {size === 13 && (
+                <span className="ml-1 text-[10px] text-muted-foreground/60">(default)</span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        <div
+          className="mt-2 rounded-md border border-border/20 bg-terminal px-3 py-2 font-mono text-foreground/80"
+          style={{ fontSize: `${fontSize}px`, lineHeight: 1.35 }}
+        >
+          The quick brown fox jumps over the lazy dog
+        </div>
+      </div>
     </div>
   )
 }

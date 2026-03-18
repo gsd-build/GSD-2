@@ -59,7 +59,7 @@ import {
 } from "@/lib/dev-overrides"
 import { DoctorPanel, ForensicsPanel, SkillHealthPanel } from "./diagnostics-panels"
 import { KnowledgeCapturesPanel } from "./knowledge-captures-panel"
-import { PrefsPanel, ModelRoutingPanel, BudgetPanel, RemoteQuestionsPanel } from "./settings-panels"
+import { PrefsPanel, ModelRoutingPanel, BudgetPanel, RemoteQuestionsPanel, TerminalSizePanel } from "./settings-panels"
 import { DevRootSettingsSection } from "./projects-view"
 import {
   QuickPanel,
@@ -2033,6 +2033,7 @@ export function CommandSurface() {
           <ModelRoutingPanel />
           <BudgetPanel />
           <RemoteQuestionsPanel />
+          <TerminalSizePanel />
         </div>
       )
       case "gsd-mode": return <ModelRoutingPanel />

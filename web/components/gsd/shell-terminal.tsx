@@ -23,6 +23,7 @@ interface ShellTerminalProps {
   commandArgs?: string[]
   sessionPrefix?: string
   hideSidebar?: boolean
+  fontSize?: number
 }
 
 // ─── xterm themes ─────────────────────────────────────────────────────────────
@@ -81,11 +82,11 @@ function getXtermTheme(isDark: boolean) {
   return isDark ? XTERM_DARK_THEME : XTERM_LIGHT_THEME
 }
 
-function getXtermOptions(isDark: boolean) {
+function getXtermOptions(isDark: boolean, fontSize?: number) {
   return {
     cursorBlink: true,
     cursorStyle: "bar" as const,
-    fontSize: 13,
+    fontSize: fontSize ?? 13,
     fontFamily:
       "'SF Mono', 'Cascadia Code', 'Fira Code', Menlo, Monaco, 'Courier New', monospace",
     lineHeight: 1.35,
@@ -113,6 +114,7 @@ interface TerminalInstanceProps {
   command?: string
   commandArgs?: string[]
   isDark: boolean
+  fontSize?: number
   onConnectionChange: (connected: boolean) => void
 }
 
@@ -122,6 +124,7 @@ function TerminalInstance({
   command,
   commandArgs,
   isDark,
+  fontSize,
   onConnectionChange,
 }: TerminalInstanceProps) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -187,6 +190,21 @@ function TerminalInstance({
     }
   }, [isDark])
 
+  // Update xterm font size when fontSize changes
+  useEffect(() => {
+    if (termRef.current) {
+      termRef.current.options.fontSize = fontSize ?? 13
+      try {
+        fitAddonRef.current?.fit()
+        if (termRef.current) {
+          sendResize(termRef.current.cols, termRef.current.rows)
+        }
+      } catch {
+        /* not visible yet */
+      }
+    }
+  }, [fontSize, sendResize])
+
   // Re-fit when visibility changes
   useEffect(() => {
     if (visible && fitAddonRef.current && termRef.current) {
@@ -221,7 +239,7 @@ function TerminalInstance({
 
       if (disposed) return
 
-      terminal = new Terminal(getXtermOptions(isDark))
+      terminal = new Terminal(getXtermOptions(isDark, fontSize))
       fitAddon = new FitAddon()
       terminal.loadAddon(fitAddon)
       terminal.open(containerRef.current!)
@@ -334,7 +352,7 @@ function TerminalInstance({
 
 // ─── Multi-instance terminal panel ────────────────────────────────────────────
 
-export function ShellTerminal({ className, command, commandArgs, sessionPrefix, hideSidebar = false }: ShellTerminalProps) {
+export function ShellTerminal({ className, command, commandArgs, sessionPrefix, hideSidebar = false, fontSize }: ShellTerminalProps) {
   const { resolvedTheme } = useTheme()
   const isDark = resolvedTheme !== "light"
   const defaultId = sessionPrefix ?? (command ? "gsd-default" : "default")
@@ -404,6 +422,7 @@ export function ShellTerminal({ className, command, commandArgs, sessionPrefix, 
             command={command}
             commandArgs={tab.id === defaultId ? commandArgs : undefined}
             isDark={isDark}
+            fontSize={fontSize}
             onConnectionChange={(c) => updateConnection(tab.id, c)}
           />
         ))}
