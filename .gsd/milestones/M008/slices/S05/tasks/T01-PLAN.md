@@ -1,57 +1,53 @@
 ---
-estimated_steps: 3
-estimated_files: 1
+estimated_steps: 8
+estimated_files: 5
 ---
 
-# T01: Add progress bar color interpolation to dashboard
+# T01: Dynamic progress bar + terminal text size setting
 
 **Slice:** S05 — Progress Bar Dynamics & Terminal Text Size
 **Milestone:** M008
 
 ## Description
 
-The dashboard progress bar currently uses `bg-foreground` (monochrome) for all completion percentages. This task adds an oklch color interpolation function that transitions the bar from red (0%) through yellow (~50%) to green (100%), making progress visually intuitive at a glance. This directly satisfies R116.
+Replace the static monochrome progress bar color with dynamic red→yellow→green interpolation based on completion percentage. Add a terminal text size preference that applies to chat mode and expert split terminals but not the footer terminal.
 
 ## Steps
 
-1. Open `web/components/gsd/dashboard.tsx`. The progress bar is around line 387–392 — a `div` with `className="h-full rounded-full bg-foreground transition-all duration-500"` and `style={{ width: '${progressPercent}%' }}`. The `progressPercent` variable is computed around line 142.
-
-2. Write a `getProgressColor(percent: number): string` function (can be defined at the top of the file or just above the progress bar JSX) that:
-   - Takes a 0–100 percentage value
-   - Returns an `oklch(L C H)` color string
-   - Interpolates **hue** linearly: 25 (red/destructive) at 0% → 85 (yellow/warning) at 50% → 145 (green/success) at 100%
-   - Uses lightness ~0.65 and chroma ~0.18 as reasonable defaults that work in both light and dark themes (check `web/app/globals.css` for reference — the existing `--destructive`, `--warning`, `--success` tokens use oklch with similar ranges)
-   - Clamps percent to 0–100
-
-3. Update the progress bar div:
-   - Remove `bg-foreground` from the className
-   - Add `backgroundColor: getProgressColor(progressPercent)` to the existing inline style object (merge with the existing width style)
-   - Keep `transition-all duration-500` in className for smooth color transitions
+1. Read `web/components/gsd/dashboard.tsx` — find the progress bar (currently `bg-foreground`)
+2. Create a `getProgressColor(percent: number): string` helper that returns an oklch color interpolating: 0% = red (oklch ~0.55 0.2 25), 50% = yellow/amber (oklch ~0.75 0.15 85), 100% = green (oklch ~0.65 0.17 145). Use linear interpolation between the three stops.
+3. Replace the progress bar's `className="bg-foreground"` with `style={{ backgroundColor: getProgressColor(progressPercent) }}`
+4. Add terminal font size preference: create a small React context or localStorage hook (`useTerminalFontSize`) that reads/writes `gsd-terminal-font-size` from localStorage with a default of `13`
+5. Add a "Terminal Text Size" section to settings-panels.tsx with 4 radio options: Small (11px), Medium (13px, default), Large (15px), Extra Large (17px)
+6. In `shell-terminal.tsx`, replace hardcoded `fontSize: 13` with the preference value from the hook
+7. In `chat-mode.tsx`, apply the font size to terminal/code content if applicable (check if it uses a separate terminal instance or just styled divs)
+8. Run `npm run build:web-host` to verify
 
 ## Must-Haves
 
-- [ ] `getProgressColor()` returns oklch color string interpolating hue 25→85→145 across 0→50→100%
-- [ ] `bg-foreground` removed from progress bar div className
-- [ ] Progress bar uses inline `backgroundColor` from interpolation function
-- [ ] Existing `transition-all duration-500` preserved for smooth transitions
+- [ ] Progress bar color interpolates red→yellow→green based on percentage
+- [ ] Terminal text size preference stored in localStorage
+- [ ] Settings panel shows 4 size options
+- [ ] shell-terminal.tsx uses the preference value
+- [ ] chat-mode.tsx respects the preference
+- [ ] Footer terminal (terminal.tsx) unchanged
+- [ ] `npm run build:web-host` exits 0
 
 ## Verification
 
 - `npm run build:web-host` exits 0
-- `rg "bg-foreground" web/components/gsd/dashboard.tsx` does not match the progress bar element (may still match other elements in the file — that's fine, just not the progress bar div)
-- Visual: progress bar shows red at low %, yellow at ~50%, green at ~100%
+- `rg "fontSize: 13" web/components/gsd/shell-terminal.tsx` returns zero (no longer hardcoded)
 
 ## Inputs
 
-- `web/components/gsd/dashboard.tsx` — existing progress bar at ~line 387, `progressPercent` computed at ~line 142
-- `web/app/globals.css` — oklch token values for reference (hue 25 destructive, 85 warning, 145 success)
+- `web/components/gsd/dashboard.tsx` — progress bar with `bg-foreground`
+- `web/components/gsd/shell-terminal.tsx` — hardcoded `fontSize: 13`
+- `web/components/gsd/settings-panels.tsx` — existing settings panel patterns
 
 ## Expected Output
 
-- `web/components/gsd/dashboard.tsx` — progress bar div uses dynamic `backgroundColor` from `getProgressColor(progressPercent)` instead of `bg-foreground`
-
-## Observability Impact
-
-- **New signal:** Progress bar `backgroundColor` is now a dynamic oklch string visible in browser DevTools. The hue value directly encodes completion percentage (25=0%, 85=50%, 145=100%).
-- **Inspection:** Inspect the `.h-full.rounded-full` div inside the progress container — its inline `style.backgroundColor` should be `oklch(0.65 0.16 H)` where H varies by percent.
-- **Failure state:** If `progressPercent` is NaN/undefined, the oklch string will be malformed and the bar will render transparent (no background color applied). This is visually obvious — a missing bar fill against the accent track.
+- `web/components/gsd/dashboard.tsx` — dynamic progress bar color
+- `web/components/gsd/shell-terminal.tsx` — reads font size preference
+- `web/components/gsd/chat-mode.tsx` — respects font size preference
+- `web/components/gsd/settings-panels.tsx` — terminal text size section added
+- `web/lib/use-terminal-font-size.ts` — new hook for font size preference (or inline)

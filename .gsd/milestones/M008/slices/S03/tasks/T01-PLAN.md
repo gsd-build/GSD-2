@@ -1,42 +1,47 @@
 ---
-estimated_steps: 2
-estimated_files: 1
+estimated_steps: 8
+estimated_files: 6
 ---
 
-# T01: Set default theme to dark
+# T01: Default theme + high-traffic component audit
 
 **Slice:** S03 — Theme Defaults & Light Mode Color Audit
 **Milestone:** M008
 
 ## Description
 
-Change the GSD web mode default theme from `"system"` to `"dark"` so that users with no stored theme preference get dark mode. This delivers requirement R114. The change is in the ThemeProvider component in `layout.tsx`.
+Change the default theme to dark and migrate the four heaviest components from raw Tailwind accent colors to semantic CSS custom property tokens.
 
 ## Steps
 
-1. Open `web/app/layout.tsx` and find the `<ThemeProvider>` element (line ~40). Change `defaultTheme="system"` to `defaultTheme="dark"`. Remove the `enableSystem` prop from the same element — it's no longer needed since we're hardcoding dark as the default rather than detecting the OS preference.
-2. Verify: run `grep 'defaultTheme="dark"' web/app/layout.tsx` — must match. Run `grep 'enableSystem' web/app/layout.tsx` — must return nothing.
+1. Read `web/app/layout.tsx` — change `defaultTheme="system"` to `defaultTheme="dark"`
+2. Read `web/app/globals.css` — review existing `:root` and `.dark` semantic tokens. Add any missing variant tokens needed for the migration (e.g. opacity variants for backgrounds/borders)
+3. Establish the mapping: `emerald-*` → success, `amber-*` → warning, `red-*` → destructive, `sky-*`/`blue-*` → info. Create Tailwind utility classes that reference the CSS custom properties.
+4. Migrate `web/components/gsd/visualizer-view.tsx` (53 hits) — replace raw accent classes with semantic tokens. Preserve non-semantic uses (data viz bars, decorative accents)
+5. Migrate `web/components/gsd/command-surface.tsx` (42 hits) — replace semantic-state colors. Git diff indicators (`M`/`A`/`D`/`R`/`C`/`U`) are non-semantic and can stay
+6. Migrate `web/components/gsd/remaining-command-panels.tsx` (25 hits)
+7. Migrate `web/components/gsd/diagnostics-panels.tsx` (25 hits)
+8. Run `npm run build:web-host` and `rg` to verify progress
 
 ## Must-Haves
 
-- [ ] `defaultTheme="dark"` is set on ThemeProvider
-- [ ] `enableSystem` prop is removed from ThemeProvider
+- [ ] `defaultTheme="dark"` in layout.tsx
+- [ ] Semantic CSS tokens expanded if needed in globals.css
+- [ ] 4 heaviest components migrated from raw Tailwind to semantic tokens
+- [ ] `npm run build:web-host` exits 0
 
 ## Verification
 
-- `grep -c 'defaultTheme="dark"' web/app/layout.tsx` returns `1`
-- `grep -c 'enableSystem' web/app/layout.tsx` returns `0`
+- `npm run build:web-host` exits 0
+- `rg` count of raw accent colors in the 4 migrated files drops to near-zero (non-semantic uses excepted)
 
 ## Inputs
 
-- `web/app/layout.tsx` — current file has `defaultTheme="system"` and `enableSystem` on line ~40
-
-## Observability Impact
-
-- **Changed signal:** The `<html>` element's `class` attribute defaults to `dark` instead of matching the OS preference. With no stored `theme` key in localStorage, the page renders in dark mode unconditionally.
-- **Inspection:** DevTools → Elements → `<html class="dark">`. DevTools → Application → Local Storage → absence of `theme` key confirms default is in effect.
-- **Failure state:** If the change is missing or reverted, the `<html>` element will have `class="light"` (or system-detected value) for users with light OS preference and no stored theme. `grep 'enableSystem' web/app/layout.tsx` returning a match indicates reversion.
+- `web/app/globals.css` — existing `:root` and `.dark` tokens
+- `web/app/layout.tsx` — ThemeProvider defaultTheme prop
 
 ## Expected Output
 
-- `web/app/layout.tsx` — ThemeProvider now uses `defaultTheme="dark"` with no `enableSystem` prop
+- `web/app/layout.tsx` — default theme changed to dark
+- `web/app/globals.css` — possibly expanded with semantic token variants
+- 4 component files migrated to semantic tokens

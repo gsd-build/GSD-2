@@ -1,91 +1,50 @@
 ---
-estimated_steps: 5
-estimated_files: 3
+estimated_steps: 7
+estimated_files: 4
 ---
 
-# T01: Add remote questions types, child script field, and API route
+# T01: Remote questions settings panel + preferences wiring
 
 **Slice:** S04 — Remote Questions Settings
 **Milestone:** M008
 
 ## Description
 
-Establishes the data contract and read/write API for remote questions configuration. Extends `SettingsPreferencesData` with a `remoteQuestions` field, adds that field to the child script in `settings-service.ts` so the existing `loadSettingsData()` flow carries it to the frontend, and creates a new `/api/remote-questions` API route with GET/POST/DELETE for direct YAML frontmatter manipulation on `~/.gsd/preferences.md`.
-
-The API route cannot import from extension modules (`src/resources/extensions/`) due to the Turbopack `.js→.ts` resolution constraint (see KNOWLEDGE). Instead, it replicates the necessary constants (`CHANNEL_ID_PATTERNS`, `ENV_KEYS`, clamp ranges) and does direct `fs` + regex-based YAML frontmatter parsing — the same pattern used by `parsePreferencesMarkdown()` in `preferences.ts`.
+Add a RemoteQuestionsPanel to the web settings surface with channel type, channel ID, timeout, and poll interval fields, wired to read/write the `remote_questions` block in preferences.md.
 
 ## Steps
 
-1. **Extend `SettingsPreferencesData` in `web/lib/settings-types.ts`:**
-   - Add an optional `remoteQuestions` field with type: `{ channel?: "slack" | "discord" | "telegram"; channelId?: string; timeoutMinutes?: number; pollIntervalSeconds?: number }`
-   - This is the browser-safe mirror of `RemoteQuestionsConfig` from `src/resources/extensions/gsd/preferences.ts` (line 141), with snake_case → camelCase
-
-2. **Add `remoteQuestions` to the child script in `src/web/settings-service.ts`:**
-   - In the preferences mapping block (after `autoVisualize: p.auto_visualize,`), add:
-     ```
-     remoteQuestions: p.remote_questions ? {
-       channel: p.remote_questions.channel,
-       channelId: String(p.remote_questions.channel_id),
-       timeoutMinutes: p.remote_questions.timeout_minutes,
-       pollIntervalSeconds: p.remote_questions.poll_interval_seconds,
-     } : undefined,
-     ```
-   - Note: `channel_id` can be `string | number` upstream, so `String()` wrapping is needed
-
-3. **Create `web/app/api/remote-questions/route.ts`:**
-   - Set `export const runtime = "nodejs"` and `export const dynamic = "force-dynamic"`
-   - Import `homedir` from `node:os`, `readFileSync`, `writeFileSync`, `existsSync` from `node:fs`, `join` from `node:path`
-   - Define constants locally (cannot import from extensions):
-     - `CHANNEL_ID_PATTERNS`: `{ slack: /^[A-Z0-9]{9,12}$/, discord: /^\d{17,20}$/, telegram: /^-?\d{5,20}$/ }`
-     - `ENV_KEYS`: `{ slack: "SLACK_BOT_TOKEN", discord: "DISCORD_BOT_TOKEN", telegram: "TELEGRAM_BOT_TOKEN" }`
-     - Clamp ranges: timeout 1-30 (default 5), poll 2-30 (default 5)
-   - Helper: `getPreferencesPath()` → `join(homedir(), ".gsd", "preferences.md")`
-   - Helper: `parseYamlFrontmatter(content: string)` → parse YAML frontmatter block using the same indexOf-based approach as `parsePreferencesMarkdown()` in preferences.ts. Use a simple YAML parser — since the frontmatter is flat enough, use Node's built-in capabilities or a regex-based key extraction. For writing, use string manipulation to add/update/remove the `remote_questions` block within the frontmatter.
-   - **GET handler:** Read preferences file → parse frontmatter → extract `remote_questions` → check if env var is set (`!!process.env[ENV_KEYS[channel]]`) → return `{ config: { channel, channelId, timeoutMinutes, pollIntervalSeconds } | null, envVarSet: boolean, envVarName: string | null, status: string }`
-   - **POST handler:** Parse request body → validate channel (must be slack/discord/telegram) → validate channelId against pattern → clamp timeout/poll → read current preferences → update `remote_questions` block in frontmatter → write file → return `{ success: true, config: { ... } }`
-   - **DELETE handler:** Read preferences → remove `remote_questions` block from frontmatter → write file → return `{ success: true }`
-   - For YAML writing: use a simple approach — if file doesn't exist, create with frontmatter. If frontmatter exists, find and replace/add the `remote_questions` block. Consider using `yaml` package if available, otherwise string manipulation with careful indentation.
-
-4. **Check for YAML package availability:**
-   - Run `rg "\"yaml\"" package.json` to see if `yaml` package is already a dependency
-   - If available, use it for parse/stringify. If not, use string-based YAML manipulation (simpler, no new dep needed for this small use case)
-
-5. **Verify types compile:**
-   - Run `npx tsc --noEmit -p web/tsconfig.json` or check for errors in touched files
+1. Read `src/resources/extensions/gsd/preferences.ts` to understand `RemoteQuestionsConfig` shape and validation
+2. Read `src/resources/extensions/remote-questions/config.ts` to understand channel ID format patterns and validation
+3. Add `RemoteQuestionsConfig` to `web/lib/settings-types.ts`
+4. Read `src/web/settings-data-service.ts` and extend it to include `remote_questions` from loaded preferences
+5. Build `RemoteQuestionsPanel` component in `settings-panels.tsx`: channel type dropdown (Slack/Discord/Telegram), channel ID text input with format hint per channel type, timeout minutes (1-30, default 5), poll interval (2-30, default 5). Show env var requirement hint (e.g. "Requires SLACK_BOT_TOKEN env var")
+6. Wire save: POST/PUT to a preferences endpoint that writes the `remote_questions` block. Use the existing `web/app/api/settings-data/route.ts` or create a dedicated write route.
+7. Run `npm run build:web-host` to verify
 
 ## Must-Haves
 
-- [ ] `remoteQuestions` field added to `SettingsPreferencesData` type
-- [ ] Child script in `settings-service.ts` passes through `remote_questions` data as `remoteQuestions`
-- [ ] `GET /api/remote-questions` returns current config + env var status
-- [ ] `POST /api/remote-questions` validates and saves config to YAML frontmatter
-- [ ] `DELETE /api/remote-questions` removes config from YAML frontmatter
-- [ ] Server-side validation: channel type, channel ID pattern, timeout/poll clamping
-- [ ] Env var value never exposed — only boolean `envVarSet` returned
+- [ ] `RemoteQuestionsConfig` type in settings-types.ts
+- [ ] `RemoteQuestionsPanel` renders with all 4 fields
+- [ ] Panel reads current config from settings-data route
+- [ ] Panel writes config to preferences
+- [ ] Channel ID format hints match upstream validation patterns
+- [ ] `npm run build:web-host` exits 0
 
 ## Verification
 
-- `npx tsc --noEmit -p web/tsconfig.json` passes (no errors in touched files)
-- Manually test API route: `curl http://localhost:3000/api/remote-questions` returns valid JSON
-- Types are consistent between `SettingsPreferencesData` and the child script output
-
-## Observability Impact
-
-- **New signal:** `GET /api/remote-questions` returns `{ config, envVarSet, envVarName, status }` — agents/users can inspect current remote questions state and env var availability without reading raw YAML.
-- **Inspection:** `curl /api/remote-questions` at any time shows whether config exists and whether the bot token env var is set.
-- **Failure visibility:** POST with invalid data returns 400 with `{ error: "<descriptive message>" }`. File-system errors return 500 with `{ error }`. GET with no config returns `{ config: null, status: "not_configured" }`.
-- **Redaction:** env var values are never exposed — only `envVarSet: boolean`.
+- `npm run build:web-host` exits 0
 
 ## Inputs
 
-- `web/lib/settings-types.ts` — existing `SettingsPreferencesData` interface to extend
-- `src/web/settings-service.ts` — existing child script to add one field mapping
-- `src/resources/extensions/gsd/preferences.ts` (reference only) — `RemoteQuestionsConfig` type (line 141), `parsePreferencesMarkdown()` pattern (line 486)
-- `src/resources/extensions/remote-questions/config.ts` (reference only) — `CHANNEL_ID_PATTERNS` (line 23), `ENV_KEYS` (line 18), clamp constants (lines 30-37)
-- `web/app/api/settings-data/route.ts` (reference only) — existing API route pattern to follow
+- `src/resources/extensions/gsd/preferences.ts` — `RemoteQuestionsConfig` interface
+- `src/resources/extensions/remote-questions/config.ts` — `CHANNEL_ID_PATTERNS` validation
+- `web/components/gsd/settings-panels.tsx` — existing settings panel patterns
+- `web/app/api/settings-data/route.ts` — existing settings data aggregation
 
 ## Expected Output
 
-- `web/lib/settings-types.ts` — `SettingsPreferencesData` has `remoteQuestions` field
-- `src/web/settings-service.ts` — child script maps `p.remote_questions` to `remoteQuestions`
-- `web/app/api/remote-questions/route.ts` — new file with GET/POST/DELETE handlers
+- `web/lib/settings-types.ts` — extended with RemoteQuestionsConfig
+- `web/components/gsd/settings-panels.tsx` — new RemoteQuestionsPanel
+- `web/app/api/settings-data/route.ts` — extended to include remote_questions
+- `src/web/settings-data-service.ts` — extended to return remote_questions

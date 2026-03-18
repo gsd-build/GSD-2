@@ -1,60 +1,55 @@
 # S02 (Browser Update UI) — Research
 
 **Date:** 2026-03-18
+**Depth:** Targeted — known technology (API routes, child-process services, React components) applied to a well-established codebase pattern, with one non-trivial async concern (D082).
 
 ## Summary
 
-This slice adds browser-visible update notification and an in-app update trigger for GSD. The existing `src/update-check.ts` provides `compareSemver()` and the npm registry fetch logic. The existing `src/update-cmd.ts` uses synchronous `execSync` which cannot be used in the browser context (D082). The web server process inherits `GSD_VERSION` from the loader (set in `src/loader.ts:93`), so the current version is available via `process.env.GSD_VERSION` in API routes.
+This slice adds browser-visible update notification and in-app update triggering (R117). The TUI already has `src/update-check.ts` (npm registry check with cache) and `src/update-cmd.ts` (synchronous `execSync('npm install -g gsd-pi@latest')`). The browser needs: (1) an API route to check for updates, (2) an API route to trigger an async update, and (3) a banner component in the app-shell.
 
-The implementation needs four artifacts: a server-side update service, a GET/POST API route pair, an `UpdateBanner` component, and a one-line integration into `app-shell.tsx`. The version check is a simple npm registry fetch; the update trigger spawns `npm install -g gsd-pi@latest` as a child process with in-memory status tracking. No SSE streaming is needed — the banner can poll the GET endpoint during an active update.
+The version check is simple — the API route can directly `fetch` the npm registry and compare versions. No child-process needed for the GET path since the comparison logic (`compareSemver`) is trivial to inline. The update trigger (POST) must be async per D082 — spawn `npm install -g gsd-pi@latest` as a child process and track its lifecycle. The banner slots into `app-shell.tsx` which already uses `toast` from `sonner` for notifications. The `Toaster` is already mounted in `layout.tsx`.
 
 ## Recommendation
 
-Build a thin `src/web/update-service.ts` that re-implements the version check inline rather than importing from `src/update-check.ts`. The update-check module uses `.js` extension imports (`import { appRoot } from './app-paths.js'`) which may cause Turbopack resolution issues per the project knowledge base. The version check is ~20 lines (fetch npm registry, compare semver) and avoids any import chain risk. For `compareSemver()`, it's a pure function — copy it or import it directly since it has no transitive imports.
-
-Track update status with a module-level singleton object in the update service (`idle | running | success | error`). The GET endpoint returns version info + update status; the POST endpoint spawns the child process and returns 202 immediately. The banner polls GET while status is `running`.
+Build a new `src/web/update-service.ts` for the server-side logic and a new `/api/update/route.ts` for the HTTP surface, following the established service+route pattern used by `doctor-service.ts`, `forensics-service.ts`, etc. The GET handler fetches the npm registry directly (no child process needed — it's just a network call plus semver comparison). The POST handler spawns `npm install -g gsd-pi@latest` via `execFile`/`spawn` and tracks state in a module-level variable (the update is a singleton process — only one can run at a time). An `UpdateBanner` component renders conditionally in `app-shell.tsx` when an update is available.
 
 ## Implementation Landscape
 
 ### Key Files
 
-- `src/update-check.ts` — Has `compareSemver()` (pure, no deps — safe to import) and `checkForUpdates()` with npm registry fetch pattern. Cache logic (`~/.gsd/.update-check`) is useful but not required for the web UI since the banner checks on page load, not every 24h.
-- `src/update-cmd.ts` — Has `runUpdate()` using `execSync('npm install -g gsd-pi@latest')`. This is the **anti-pattern** for web — shows what NOT to do. The web version must use `spawn()` async.
-- `src/web/bridge-service.ts` — `resolveBridgeRuntimeConfig()` provides `packageRoot` for reading `package.json`. API route pattern: import from `../../../../src/web/<service>.ts`, use `resolveProjectCwd(request)`.
-- `web/app/api/doctor/route.ts` — Clean GET/POST API route pattern to follow. Uses `runtime = "nodejs"`, `dynamic = "force-dynamic"`, try/catch with 500 error responses.
-- `web/components/gsd/app-shell.tsx` — `WorkspaceChrome()` is the main layout. The error banner (`workspace-error-banner`) at line ~210 shows the exact insertion point — the update banner goes between the header and the error banner (or just below the header). The component already imports from `@/lib/gsd-workspace-store` and uses `toast` from sonner.
-- `web/lib/settings-types.ts` — Browser-safe type pattern. Update types are simple enough to colocate in the service or a small type file.
-- `src/loader.ts:90-94` — Sets `process.env.GSD_VERSION` from `package.json`. This env var is inherited by the web server process via `src/web-mode.ts:577` (`...(deps.env ?? process.env)`).
-- `src/web-mode.ts:576-590` — Shows env propagation to web server. `GSD_VERSION` flows through because the web server inherits the parent process env.
+- `src/update-check.ts` — Has `checkForUpdates()`, `compareSemver()`, `readUpdateCache()`, `writeUpdateCache()`. Uses `.js` import extensions (`import { appRoot } from './app-paths.js'`). The comparison logic is simple enough to reimplement in the service; the npm registry URL pattern is `https://registry.npmjs.org/gsd-pi/latest`.
+- `src/update-cmd.ts` — Has `runUpdate()` using `execSync('npm install -g gsd-pi@latest')`. Uses `.js` extensions. This is the synchronous TUI path — the browser needs an async adaptation.
+- `src/web/bridge-service.ts` — `resolveBridgeRuntimeConfig()` returns `{ packageRoot, projectCwd, projectSessionsDir }`. `collectBootPayload()` at line 1970 assembles the boot response. Current `BridgeBootPayload` (line 552) has no version/update fields.
+- `src/web/doctor-service.ts` — Reference implementation for the child-process service pattern: `execFile` with `resolveTsLoaderPath`, `validateModulePaths`, `Promise<string>` wrapper.
+- `web/app/api/doctor/route.ts` — Reference implementation for API route pattern: GET + POST, `resolveProjectCwd(request)`, `Response.json()`, error handling.
+- `web/components/gsd/app-shell.tsx` — Main app shell. Already imports `toast` from `sonner`. The `UpdateBanner` renders here, above the main content area.
+- `web/app/layout.tsx` — Already has `<Toaster position="bottom-right" />` from sonner.
+- `web/lib/gsd-workspace-store.tsx` — Workspace store. Update state could be tracked here or locally in the banner component. Local is simpler since update state doesn't need to be shared across surfaces.
+- `src/loader.ts` — Sets `process.env.GSD_VERSION` from package.json at line 90-95. This env var is available in the web host process.
 
 ### Build Order
 
-1. **`src/web/update-service.ts`** — Core logic: `checkForUpdate()` (fetch npm registry, return `{ currentVersion, latestVersion, updateAvailable }`), `triggerUpdate()` (spawn child process, track status), `getUpdateStatus()` (return current state). Import `compareSemver` from `../update-check.ts` (it's a pure function with zero transitive deps). Module-level state for the in-flight update process. This unblocks both the route and the component.
-
-2. **`web/app/api/update/route.ts`** — GET returns version check + update status JSON. POST triggers update, returns 202. Follow the doctor route pattern. This unblocks the component.
-
-3. **`web/components/gsd/update-banner.tsx`** — Client component. Fetches `GET /api/update` on mount. Conditionally renders a banner when `updateAvailable=true`. "Update" button fires `POST /api/update`, then polls GET every 2-3s until status leaves `running`. Shows success/error feedback inline.
-
-4. **Wire into `app-shell.tsx`** — Import `UpdateBanner`, render it between the `<header>` and the error banner div. One-line addition.
+1. **Update service** (`src/web/update-service.ts`) — The server-side logic. GET: fetch npm registry, compare with `process.env.GSD_VERSION`, return `{ currentVersion, latestVersion, updateAvailable }`. POST: spawn `npm install -g gsd-pi@latest` as async child process, track state in module-level singleton (`idle | running | success | error`), return current status. GET also returns update-in-progress status so the banner can poll.
+2. **API route** (`web/app/api/update/route.ts`) — Thin HTTP layer calling the service. GET returns version check + update status. POST triggers the update. Standard error handling pattern.
+3. **UpdateBanner component** — Renders in `app-shell.tsx`. On mount, calls GET `/api/update`. If `updateAvailable`, shows a dismissible banner with version info and "Update" button. Clicking the button calls POST, then polls GET for status. Uses `toast` for success/error feedback.
 
 ### Verification Approach
 
-- `npm run build:web-host` exits 0 — confirms no type errors or import issues
-- Manual browser verification: navigate to running web mode, confirm banner appears (or doesn't if on latest)
-- To force-test: temporarily hardcode a lower `currentVersion` in the service and confirm banner renders
-- POST trigger: click Update, confirm status transitions through `running → success` or `running → error`
-- Check that the GET endpoint returns correct JSON shape: `{ currentVersion: string, latestVersion: string, updateAvailable: boolean, updateStatus: string, error?: string }`
+- `npm run build:web-host` exits 0 — proves the new route and component compile
+- Manual: launch `gsd --web`, observe banner if a newer version exists on npm registry
+- Manual: click Update, observe async progress, verify success toast on completion
+- Route-level: GET `/api/update` returns well-formed JSON with `currentVersion`, `latestVersion`, `updateAvailable` fields
 
 ## Constraints
 
-- `compareSemver` from `src/update-check.ts` is safe to import directly — it's a pure function with no transitive dependencies. But `checkForUpdates()` imports `appRoot` from `./app-paths.js` (`.js` extension) — don't import the full module in components, only in the Node.js API route service.
-- The update service (`src/web/update-service.ts`) runs only in API routes (`runtime = "nodejs"`) — it must NOT be imported by any client component. The component fetches via `fetch('/api/update')`.
-- `npm install -g` may require elevated permissions on some systems. The service should capture stderr and surface meaningful error messages rather than generic "update failed".
-- The update process singleton must be module-level (not per-request) so status persists across GET polls while the child process runs.
+- `src/update-check.ts` and `src/update-cmd.ts` use `.js` import extensions — Turbopack cannot resolve these (per KNOWLEDGE.md). The service cannot import them directly. Either reimplement the needed logic (preferred for the simple comparison/fetch) or use the child-process pattern.
+- The npm registry fetch in the GET handler needs a timeout (5s is what `update-check.ts` uses) to avoid blocking the route.
+- `process.env.GSD_VERSION` is set by `src/loader.ts` — it's available in the web host process. If missing, fall back to reading `package.json` from `packageRoot`.
+- The POST update (`npm install -g gsd-pi@latest`) runs as the current user — it needs write permissions to the global npm prefix. This is the same constraint as the TUI's `runUpdate()`.
+- Only one update can run at a time — the service needs a singleton guard.
 
 ## Common Pitfalls
 
-- **Importing update-check.ts into client components** — The module uses Node.js `fs` and `path`. Only the API route service should touch it. The banner component must use `fetch()` exclusively.
-- **Blocking on child process** — `execSync` would freeze the Next.js server. Must use `spawn()` from `child_process` with event listeners on `close`/`error`. The POST handler returns 202 immediately; status is tracked in-memory.
-- **Multiple concurrent update triggers** — If the user clicks "Update" twice, the service should reject the second POST with a 409 if an update is already `running`.
-- **Version after update** — After `npm install -g` completes, `process.env.GSD_VERSION` still holds the old version (it was set at process startup). The service should note that a restart is needed to pick up the new version. The banner should show "Update complete — restart GSD to use vX.Y.Z" rather than re-checking the registry.
+- **Don't import from `src/update-check.ts` directly** — the `.js` extension imports will break Turbopack. Reimplement `compareSemver` (it's 8 lines) and inline the registry fetch.
+- **Don't use `execSync` for the POST handler** — per D082, the browser cannot block on synchronous shell commands. Use `spawn` or `execFile` with event-based completion tracking.
+- **Module-level state for update progress** — Since the Next.js server is long-lived, module-level variables persist across requests. This is the right place for the singleton update state (same pattern as bridge service's singleton map). But it also means the state survives across hot-module reloads in dev — handle the `running` → orphan case gracefully.
