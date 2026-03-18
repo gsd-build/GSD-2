@@ -18,7 +18,7 @@
 
 ## Tasks
 
-- [ ] **T01: Set default theme to dark** `est:10m`
+- [x] **T01: Set default theme to dark** `est:10m`
   - Why: R114 — dark mode should be the default when no user preference is stored, not system preference
   - Files: `web/app/layout.tsx`
   - Do: Change `defaultTheme="system"` to `defaultTheme="dark"` on line 40. Remove `enableSystem` prop from the same ThemeProvider element.
@@ -38,6 +38,19 @@
   - Do: Apply the same mechanical substitution rules as T02 to all 18 remaining files. After all files are migrated, run the full-repo grep scan to confirm zero remaining raw accent colors. Then run `npm run build:web-host` to confirm all semantic token classes resolve correctly in Tailwind v4.
   - Verify: `rg "emerald-|amber-|red-[0-9]|sky-|orange-|green-[0-9]|blue-[0-9]" web/components/ -g "*.tsx" -g "*.ts" | wc -l` returns `0`; `npm run build:web-host` exits 0
   - Done when: Zero raw accent colors in web/components/, production build passes
+
+## Observability / Diagnostics
+
+- **Theme default:** Inspect the rendered `<html>` element's `class` attribute in the browser — should contain `dark` when no stored preference exists. DevTools → Application → Local Storage → key `theme` shows the active preference (absent = default).
+- **Color token resolution:** If a semantic token like `bg-success` fails to resolve, Tailwind v4 build logs will report the missing utility. `npm run build:web-host` stderr surfaces these.
+- **Failure visibility:** A failed build from unresolved tokens produces a non-zero exit code and stderr output naming the offending class. Grep scan failures surface as non-zero match counts.
+
+## Verification
+
+- `grep -c 'defaultTheme="dark"' web/app/layout.tsx` returns `1`
+- `rg "emerald-|amber-|red-[0-9]|sky-|orange-|green-[0-9]|blue-[0-9]" web/components/ -g "*.tsx" -g "*.ts" | wc -l` returns `0`
+- `npm run build:web-host` exits 0
+- Open browser with cleared localStorage → `document.documentElement.classList.contains('dark')` returns `true` (failure-path: if `light` class is present instead, ThemeProvider default is wrong)
 
 ## Files Likely Touched
 

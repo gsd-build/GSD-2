@@ -31,6 +31,12 @@ Change the GSD web mode default theme from `"system"` to `"dark"` so that users 
 
 - `web/app/layout.tsx` — current file has `defaultTheme="system"` and `enableSystem` on line ~40
 
+## Observability Impact
+
+- **Changed signal:** The `<html>` element's `class` attribute defaults to `dark` instead of matching the OS preference. With no stored `theme` key in localStorage, the page renders in dark mode unconditionally.
+- **Inspection:** DevTools → Elements → `<html class="dark">`. DevTools → Application → Local Storage → absence of `theme` key confirms default is in effect.
+- **Failure state:** If the change is missing or reverted, the `<html>` element will have `class="light"` (or system-detected value) for users with light OS preference and no stored theme. `grep 'enableSystem' web/app/layout.tsx` returning a match indicates reversion.
+
 ## Expected Output
 
 - `web/app/layout.tsx` — ThemeProvider now uses `defaultTheme="dark"` with no `enableSystem` prop
