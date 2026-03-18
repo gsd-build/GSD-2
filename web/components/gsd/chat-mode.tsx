@@ -14,6 +14,8 @@ import {
 import { deriveWorkflowAction } from "@/lib/workflow-actions"
 import { NewMilestoneDialog } from "@/components/gsd/new-milestone-dialog"
 
+type HeadlessTerminal = import("@xterm/xterm").Terminal
+
 /* ─── ActionPanel types ─── */
 
 /**
@@ -25,6 +27,7 @@ export interface ActionPanelConfig {
   command: string
   sessionId: string
   accentColor: string
+  renderMode?: "chat" | "terminal"
 }
 
 /** Discuss action config — triggers a secondary PTY session panel. */
@@ -38,6 +41,7 @@ const NEXT_ACTION: Omit<ActionPanelConfig, "sessionId"> = {
   label: "Next",
   command: "/gsd next",
   accentColor: "amber",
+  renderMode: "terminal",
 }
 
 /** Map accentColor name → Tailwind top-border + header bg classes */
@@ -402,13 +406,24 @@ function ActionPanel({
       </div>
 
       {/* Secondary ChatPane connected to fresh session */}
-      <ChatPane
-        sessionId={config.sessionId}
-        command="gsd"
-        commandArgs={[config.command]}
-        onCompletionSignal={handleCompletionSignal}
-        className="flex-1 overflow-hidden"
-      />
+      {config.renderMode === "terminal" ? (
+        <StructuredTerminalActionPane
+          sessionId={config.sessionId}
+          command="gsd"
+          commandArgs={[config.command]}
+          activityLabel={config.label}
+        />
+      ) : (
+        <ChatPane
+          sessionId={config.sessionId}
+          command="gsd"
+          commandArgs={[config.command]}
+          activityLabel={config.label}
+          suppressTerminalChrome
+          onCompletionSignal={handleCompletionSignal}
+          className="flex-1 overflow-hidden"
+        />
+      )}
     </div>
   )
 }
@@ -723,6 +738,7 @@ function TuiSelectPrompt({
       )}
       {prompt.options.map((option, i) => {
         const isSelected = i === localIndex
+        const description = prompt.descriptions?.[i]
         return (
           <button
             key={i}
@@ -732,20 +748,27 @@ function TuiSelectPrompt({
             aria-selected={isSelected}
             onClick={() => submitIndex(i)}
             className={cn(
-              "flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left text-sm transition-colors",
+              "flex w-full items-start gap-2 rounded-lg px-3 py-1.5 text-left text-sm transition-colors",
               isSelected
                 ? "bg-primary/15 text-primary font-medium"
                 : "text-foreground hover:bg-muted/60",
             )}
           >
-            <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center">
+            <span className="mt-0.5 flex h-4 w-4 flex-shrink-0 items-center justify-center">
               {isSelected ? (
                 <Check className="h-3 w-3 text-primary" />
               ) : (
                 <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30" />
               )}
             </span>
-            {option}
+            <span className="min-w-0">
+              <span className="block">{option}</span>
+              {description && (
+                <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
+                  {description}
+                </span>
+              )}
+            </span>
           </button>
         )
       })}
@@ -991,6 +1014,204 @@ function stripInitialCommandEcho(content: string, initialCommand: string): strin
 
   const prefixPattern = new RegExp(`^${escapeRegExp(trimmedCommand)}(?:\n+)?`)
   return content.replace(prefixPattern, "").replace(/^\n+/, "")
+}
+
+function stripTerminalChrome(content: string): string {
+  return content
+    .split("\n")
+    .filter((line) => {
+      const trimmed = line.trim()
+      if (!trimmed) return true
+      if (trimmed.startsWith("Update available:")) return false
+      if (trimmed.startsWith("Run npm update -g gsd-pi")) return false
+      if (/^\$\d+(?:\.\d+)?\s+\(sub\)/.test(trimmed)) return false
+      return true
+    })
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+}
+
+const SCREEN_SELECTED_OPTION_RE = /^\s*›\s+(\d+)\.\s+(.+)$/
+const SCREEN_UNSELECTED_OPTION_RE = /^\s*(\d+)\.\s+(.+)$/
+const SCREEN_HINTS_RE = /↑\/↓ to choose|quick-select|enter to confirm|scroll · g\/G top\/end · esc close/i
+const SCREEN_BAR_RE = /^[─━\-]{6,}$/
+const SCREEN_FRAME_CHARS_RE = /[│┃╭╮╰╯┌┐└┘├┤┬┴┼╞╡╪╫╬]/g
+
+function createLocalMessageId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID()
+  }
+  return `msg-${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+function isScreenChromeLine(trimmed: string): boolean {
+  if (!trimmed) return false
+  if (trimmed.startsWith("Update available:")) return true
+  if (trimmed.startsWith("Run npm update -g gsd-pi")) return true
+  if (trimmed.startsWith("Get Shit Done v")) return true
+  if (trimmed.startsWith("Warning: Google") || trimmed.includes("Warning: Google")) return true
+  if (trimmed.includes("No authentication set")) return true
+  if (trimmed.startsWith("Log in via Google") || trimmed.includes("Log in via Google")) return true
+  if (trimmed.includes("google_search")) return true
+  if (trimmed.startsWith("Web search v4 loaded") || trimmed.includes("Web search v4")) return true
+  if (/^Brave\s+✓|^Answers\s+✓|^Jina\s+✓/i.test(trimmed)) return true
+  if (/^[█▇▆▅▄▃▂▁\s]+$/.test(trimmed)) return true
+  if (/^[█╔╗║╝╚]+/.test(trimmed)) return true
+  if (/^~\//.test(trimmed)) return true
+  if (/^\$\d+(?:\.\d+)?\s+\(sub\)/.test(trimmed)) return true
+  if (/^GSD Dashboard/i.test(trimmed)) return true
+  if (/No unit running/i.test(trimmed)) return true
+  if (/\/gsd auto to start/i.test(trimmed)) return true
+  return false
+}
+
+function normalizeScreenLine(line: string): string {
+  return line
+    .replace(SCREEN_FRAME_CHARS_RE, " ")
+    .replace(/[─━\-]{4,}/g, " ")
+    .replace(/[█▇▆▅▄▃▂▁]{2,}/g, " ")
+    .replace(/\s+/g, " ")
+    .trimEnd()
+}
+
+function beautifyParsedScreenContent(content: string): string {
+  const lines = content.split("\n").map((l) => l.trim()).filter(Boolean)
+  const output: string[] = []
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+
+    // Skip pure separator/hint lines
+    if (/^[─━\- ]+$/.test(line)) continue
+    if (SCREEN_HINTS_RE.test(line)) continue
+
+    // Dashboard header → chrome, skip
+    if (/^GSD Dashboard/i.test(line)) continue
+
+    // "No unit running" line → chrome, skip
+    if (/No unit running/i.test(line)) continue
+    if (/\/gsd auto to start/i.test(line)) continue
+
+    // Milestone title line: M007: ...
+    if (/^M\d{3}:/.test(line)) {
+      output.push(`\n### ${line}`)
+      continue
+    }
+
+    // Slices progress line
+    if (/^Slices\b/i.test(line)) {
+      const clean = line.replace(/\.\.\./g, "").trim()
+      output.push(`\n**${clean}**`)
+      continue
+    }
+
+    // Slice result line: ✓ S01: ...
+    if (/^✓\s*S\d{2}:/.test(line)) {
+      output.push(`- ${line}`)
+      continue
+    }
+
+    // "All milestones complete" or similar status
+    if (/all milestones complete/i.test(line)) {
+      output.push(`\n${line}`)
+      continue
+    }
+
+    // Checkmark status line: ✓ GSD — M007: ...
+    if (/^✓\s/.test(line)) {
+      output.push(`\n${line}`)
+      continue
+    }
+
+    // Default: keep as-is
+    output.push(line)
+  }
+
+  return output.join("\n").replace(/\n{3,}/g, "\n\n").trim()
+}
+
+function parseStructuredTerminalScreen(screenText: string, echoedCommand?: string): { content: string; prompt?: TuiPrompt } {
+  const sourceLines = screenText
+    .split("\n")
+    .map((line) => normalizeScreenLine(line.replace(/\r/g, "")))
+
+  const contentLines: string[] = []
+  const options: Array<{ label: string; description: string; selected: boolean }> = []
+
+  for (let i = 0; i < sourceLines.length; i++) {
+    const line = sourceLines[i]
+    const trimmed = line.trim()
+
+    if (!trimmed) {
+      if (contentLines[contentLines.length - 1] !== "") {
+        contentLines.push("")
+      }
+      continue
+    }
+
+    if (echoedCommand && trimmed === echoedCommand.trim()) continue
+    if (isScreenChromeLine(trimmed)) continue
+    if (SCREEN_BAR_RE.test(trimmed)) continue
+    if (SCREEN_HINTS_RE.test(trimmed)) continue
+
+    const selectedMatch = SCREEN_SELECTED_OPTION_RE.exec(line)
+    const unselectedMatch = SCREEN_UNSELECTED_OPTION_RE.exec(line)
+    const optionMatch = selectedMatch ?? unselectedMatch
+    if (optionMatch) {
+      const descriptionLines: string[] = []
+      while (i + 1 < sourceLines.length) {
+        const nextLine = sourceLines[i + 1]
+        const nextTrimmed = nextLine.trim()
+        if (!nextTrimmed) {
+          i += 1
+          break
+        }
+        if (isScreenChromeLine(nextTrimmed)) {
+          i += 1
+          continue
+        }
+        if (SCREEN_HINTS_RE.test(nextTrimmed) || SCREEN_BAR_RE.test(nextTrimmed)) {
+          break
+        }
+        if (SCREEN_SELECTED_OPTION_RE.test(nextLine) || SCREEN_UNSELECTED_OPTION_RE.test(nextLine)) {
+          break
+        }
+        descriptionLines.push(nextTrimmed)
+        i += 1
+        continue
+      }
+
+      options.push({
+        label: optionMatch[2].trim(),
+        description: descriptionLines.join(" "),
+        selected: Boolean(selectedMatch),
+      })
+      continue
+    }
+
+    contentLines.push(trimmed)
+  }
+
+  const content = beautifyParsedScreenContent(
+    contentLines.join("\n").replace(/\n{3,}/g, "\n\n").trim(),
+  )
+
+  if (options.length >= 2) {
+    const selectedIndex = Math.max(0, options.findIndex((option) => option.selected))
+    return {
+      content,
+      prompt: {
+        kind: "select",
+        label: "",
+        options: options.map((option) => option.label),
+        descriptions: options.map((option) => option.description),
+        selectedIndex,
+      },
+    }
+  }
+
+  return { content }
 }
 
 /* ─── ChatBubble ─── */
@@ -1278,22 +1499,248 @@ function ChatInputBar({
 
 /* ─── Placeholder state ─── */
 
-function PlaceholderState({ connected }: { connected: boolean }) {
+function PlaceholderState({
+  connected,
+  runningLabel,
+  notice,
+}: {
+  connected: boolean
+  runningLabel?: string
+  notice?: string | null
+}) {
+  const showSpinner = connected && Boolean(runningLabel)
+
   return (
     <div className="flex flex-1 flex-col items-center justify-center text-center py-16">
       <div className="flex h-12 w-12 items-center justify-center rounded-full border border-border bg-card">
-        <MessagesSquare className="h-6 w-6 text-muted-foreground/50" />
+        {showSpinner ? (
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground/70" />
+        ) : (
+          <MessagesSquare className="h-6 w-6 text-muted-foreground/50" />
+        )}
       </div>
       <div className="mt-3 space-y-1">
         <p className="text-sm font-medium text-foreground">Chat Mode</p>
         <p className="max-w-xs text-xs text-muted-foreground">
-          {connected
-            ? "Connected — waiting for GSD output…"
-            : "Connecting to GSD session…"}
+          {showSpinner
+            ? `Running ${runningLabel}…`
+            : notice ?? (
+              connected
+                ? "Connected — waiting for GSD output…"
+                : "Connecting to GSD session…"
+            )}
         </p>
       </div>
     </div>
   )
+}
+
+function StructuredTerminalActionPane({
+  sessionId,
+  command,
+  commandArgs,
+  activityLabel,
+}: {
+  sessionId: string
+  command?: string
+  commandArgs?: string[]
+  activityLabel: string
+}) {
+  const terminalRef = useRef<HeadlessTerminal | null>(null)
+  const hostElementRef = useRef<HTMLDivElement | null>(null)
+  const eventSourceRef = useRef<EventSource | null>(null)
+  const inputQueueRef = useRef<string[]>([])
+  const flushingRef = useRef(false)
+  const screenUpdateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const messageIdRef = useRef(createLocalMessageId())
+  const commandArgsKey = (commandArgs ?? []).join("\u0000")
+
+  const [connected, setConnected] = useState(false)
+  const [commandInProgress, setCommandInProgress] = useState(true)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const lastSnapshotRef = useRef<string>("")
+
+  const flushInputQueue = useCallback(async () => {
+    if (flushingRef.current) return
+    flushingRef.current = true
+    while (inputQueueRef.current.length > 0) {
+      const data = inputQueueRef.current.shift()!
+      try {
+        await fetch("/api/terminal/input", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: sessionId, data }),
+        })
+      } catch {
+        inputQueueRef.current.unshift(data)
+        break
+      }
+    }
+    flushingRef.current = false
+  }, [sessionId])
+
+  const sendInput = useCallback((data: string) => {
+    inputQueueRef.current.push(data)
+    void flushInputQueue()
+  }, [flushInputQueue])
+
+  const updateParsedScreen = useCallback(() => {
+    const terminal = terminalRef.current as HeadlessTerminal & {
+      buffer?: {
+        active?: {
+          length: number
+          getLine: (index: number) => { translateToString: (trimRight?: boolean) => string } | undefined
+        }
+      }
+      rows?: number
+    } | null
+    if (!terminal?.buffer?.active) return
+
+    const active = terminal.buffer.active
+    const rows = terminal.rows ?? 30
+    const start = Math.max(0, active.length - rows)
+    const lines: string[] = []
+    for (let index = start; index < active.length; index++) {
+      const line = active.getLine(index)
+      if (!line) continue
+      lines.push(line.translateToString(true))
+    }
+
+    const parsed = parseStructuredTerminalScreen(lines.join("\n"), commandArgs?.[0])
+    if (parsed.content.trim().length === 0 && !parsed.prompt) return
+
+    const snapshotKey = parsed.content + (parsed.prompt?.options.join("|") ?? "")
+    if (snapshotKey === lastSnapshotRef.current) return
+    lastSnapshotRef.current = snapshotKey
+
+    setCommandInProgress(false)
+    setNotice(null)
+
+    setMessages((prev) => {
+      const completed = prev.map((m) =>
+        m.complete ? m : { ...m, complete: true, prompt: undefined },
+      )
+      const newMsg: ChatMessage = {
+        id: createLocalMessageId(),
+        role: "assistant",
+        content: parsed.content,
+        complete: !parsed.prompt,
+        prompt: parsed.prompt,
+        timestamp: Date.now(),
+      }
+      return [...completed, newMsg]
+    })
+  }, [commandArgs])
+
+  useEffect(() => {
+    setCommandInProgress(true)
+    setNotice(null)
+    setMessages([])
+    lastSnapshotRef.current = ""
+
+    let disposed = false
+
+    const init = async () => {
+      const { Terminal } = await import("@xterm/xterm")
+      if (disposed) return
+
+      const terminal = new Terminal({
+        cols: 120,
+        rows: 30,
+        allowProposedApi: true,
+        convertEol: false,
+        scrollback: 10000,
+      })
+      terminalRef.current = terminal
+
+      const host = document.createElement("div")
+      host.style.position = "fixed"
+      host.style.left = "-10000px"
+      host.style.top = "0"
+      host.style.width = "1px"
+      host.style.height = "1px"
+      host.style.overflow = "hidden"
+      document.body.appendChild(host)
+      hostElementRef.current = host
+      terminal.open(host)
+
+      const streamUrl = new URL("/api/terminal/stream", window.location.origin)
+      streamUrl.searchParams.set("id", sessionId)
+      if (command) streamUrl.searchParams.set("command", command)
+      for (const arg of commandArgs ?? []) {
+        streamUrl.searchParams.append("arg", arg)
+      }
+
+      const es = new EventSource(streamUrl.toString())
+      eventSourceRef.current = es
+
+      es.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data) as { type: string; data?: string }
+          if (msg.type === "connected") {
+            setConnected(true)
+          } else if (msg.type === "output" && msg.data) {
+            terminal.write(msg.data, () => {
+              if (screenUpdateTimerRef.current) {
+                clearTimeout(screenUpdateTimerRef.current)
+              }
+              screenUpdateTimerRef.current = setTimeout(() => {
+                updateParsedScreen()
+                screenUpdateTimerRef.current = null
+              }, 120)
+            })
+          }
+        } catch {
+          // ignore malformed event payloads
+        }
+      }
+
+      es.onerror = () => {
+        setConnected(false)
+      }
+    }
+
+    void init()
+
+    return () => {
+      disposed = true
+      eventSourceRef.current?.close()
+      eventSourceRef.current = null
+      if (screenUpdateTimerRef.current) {
+        clearTimeout(screenUpdateTimerRef.current)
+        screenUpdateTimerRef.current = null
+      }
+      terminalRef.current?.dispose()
+      terminalRef.current = null
+      hostElementRef.current?.remove()
+      hostElementRef.current = null
+    }
+  }, [sessionId, command, commandArgsKey, updateParsedScreen])
+
+  useEffect(() => {
+    if (commandInProgress || messages.length > 0) return
+    const timeout = setTimeout(() => {
+      if (messages.length === 0) {
+        setNotice(
+          activityLabel ? `${activityLabel} completed with no chat-visible output.` : "Command completed with no chat-visible output.",
+        )
+      }
+    }, 1500)
+    return () => clearTimeout(timeout)
+  }, [activityLabel, commandInProgress, messages.length])
+
+  if (messages.length === 0) {
+    return (
+      <PlaceholderState
+        connected={connected}
+        runningLabel={commandInProgress ? activityLabel : undefined}
+        notice={!commandInProgress ? notice : null}
+      />
+    )
+  }
+
+  return <ChatMessageList messages={messages} onSubmitPrompt={sendInput} />
 }
 
 /* ─── Chat Pane ─── */
@@ -1314,6 +1761,10 @@ interface ChatPaneProps {
   onOpenDiscuss?: () => void
   /** Called when the Next button in the input bar is clicked. */
   onOpenNext?: () => void
+  /** Human-readable label for the currently running startup action. */
+  activityLabel?: string
+  /** When true, hide terminal update banners and footer chrome from rendered messages. */
+  suppressTerminalChrome?: boolean
   /**
    * When true, messages that exactly match initialCommand are hidden.
    * Used by ActionPanel to suppress the PTY echo of the dispatched slash command.
@@ -1334,7 +1785,7 @@ interface ChatPaneProps {
  *   - In dev mode: window.__chatParser exposes the parser for console inspection
  *   - ChatInputBar shows "Disconnected" badge when SSE is not connected
  */
-export function ChatPane({ sessionId, command, commandArgs, className, initialCommand, onCompletionSignal, onOpenDiscuss, onOpenNext, suppressInitialEcho }: ChatPaneProps) {
+export function ChatPane({ sessionId, command, commandArgs, className, initialCommand, onCompletionSignal, onOpenDiscuss, onOpenNext, activityLabel, suppressInitialEcho, suppressTerminalChrome }: ChatPaneProps) {
   const parserRef = useRef<PtyChatParser | null>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
   const inputQueueRef = useRef<string[]>([])
@@ -1346,7 +1797,15 @@ export function ChatPane({ sessionId, command, commandArgs, className, initialCo
 
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [connected, setConnected] = useState(false)
+  const hasBootstrapCommand = (commandArgs?.length ?? 0) > 0 || Boolean(initialCommand)
+  const [commandInProgress, setCommandInProgress] = useState(hasBootstrapCommand)
+  const [emptyResultNotice, setEmptyResultNotice] = useState<string | null>(null)
   const commandArgsKey = (commandArgs ?? []).join("\u0000")
+
+  useEffect(() => {
+    setCommandInProgress(hasBootstrapCommand)
+    setEmptyResultNotice(null)
+  }, [sessionId, hasBootstrapCommand])
 
   // ── Input queue flush — same pattern as shell-terminal.tsx ────────────────
 
@@ -1400,6 +1859,7 @@ export function ChatPane({ sessionId, command, commandArgs, className, initialCo
     if (onCompletionSignal) {
       unsubscribeCompletion = parser.onCompletionSignal(() => {
         if (hasSentInitialCommand.current || !initialCommand) {
+          setCommandInProgress(false)
           onCompletionSignal()
         }
       })
@@ -1430,6 +1890,27 @@ export function ChatPane({ sessionId, command, commandArgs, className, initialCo
           parserFlushTimerRef.current = setTimeout(() => {
             parser.flush()
             parserFlushTimerRef.current = null
+
+            const hasVisibleMessage = parser.getMessages().some((message) => {
+              let content = message.content
+              if (suppressInitialEcho && initialCommand) {
+                content = stripInitialCommandEcho(content, initialCommand)
+              }
+              if (suppressTerminalChrome) {
+                content = stripTerminalChrome(content)
+              }
+              return content.trim().length > 0
+            })
+
+            if (hasVisibleMessage) {
+              setEmptyResultNotice(null)
+              setCommandInProgress(false)
+            } else if (suppressTerminalChrome && parser.getMessages().length > 0) {
+              setCommandInProgress(false)
+              setEmptyResultNotice(
+                activityLabel ? `${activityLabel} completed with no chat-visible output.` : "Command completed with no chat-visible output.",
+              )
+            }
           }, 300)
 
           if (initialCommand && !hasSentInitialCommand.current) {
@@ -1473,31 +1954,60 @@ export function ChatPane({ sessionId, command, commandArgs, className, initialCo
         ;(window as any).__chatParser = undefined
       }
     }
-  }, [sessionId, command, commandArgsKey, initialCommand, onCompletionSignal, sendInput])
+  }, [
+    sessionId,
+    command,
+    commandArgsKey,
+    initialCommand,
+    onCompletionSignal,
+    sendInput,
+    suppressInitialEcho,
+    suppressTerminalChrome,
+    activityLabel,
+  ])
 
   // ── Render ────────────────────────────────────────────────────────────────
 
   // Filter messages: when suppressInitialEcho is set, hide or strip messages that
   // are just the PTY echo of the initialCommand (slash commands echo before being processed).
-  const visibleMessages = suppressInitialEcho && initialCommand
-    ? messages.flatMap((msg) => {
-        const strippedContent = stripInitialCommandEcho(msg.content, initialCommand)
-        if (strippedContent === msg.content) {
-          return [msg]
-        }
-        if (strippedContent.trim().length === 0) {
-          return []
-        }
-        return [{ ...msg, content: strippedContent }]
-      })
-    : messages
+  const visibleMessages = messages.flatMap((msg) => {
+    let content = msg.content
+
+    if (suppressInitialEcho && initialCommand) {
+      content = stripInitialCommandEcho(content, initialCommand)
+    }
+
+    if (suppressTerminalChrome) {
+      content = stripTerminalChrome(content)
+    }
+
+    if (content.trim().length === 0 && !msg.prompt) {
+      return []
+    }
+
+    if (content === msg.content) {
+      return [msg]
+    }
+
+    return [{ ...msg, content }]
+  })
 
   return (
     <div className={cn("flex flex-col overflow-hidden", className)}>
       {/* Message list */}
       <div className="flex flex-1 flex-col overflow-hidden">
+        {commandInProgress && activityLabel && visibleMessages.length > 0 && (
+          <div className="flex flex-shrink-0 items-center justify-center gap-2 border-b border-border/50 bg-card/60 px-4 py-2 text-xs text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Running {activityLabel}…
+          </div>
+        )}
         {visibleMessages.length === 0 ? (
-          <PlaceholderState connected={connected} />
+          <PlaceholderState
+            connected={connected}
+            runningLabel={commandInProgress ? activityLabel : undefined}
+            notice={commandInProgress ? null : emptyResultNotice}
+          />
         ) : (
           <ChatMessageList messages={visibleMessages} onSubmitPrompt={sendInput} />
         )}

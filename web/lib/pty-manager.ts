@@ -244,6 +244,9 @@ export function getOrCreateSession(sessionId: string, projectCwd?: string, comma
   cleanEnv.SAVEHIST = "0";
   cleanEnv.LESSHISTFILE = "/dev/null";
   cleanEnv.NODE_REPL_HISTORY = "/dev/null";
+  if (command) {
+    cleanEnv.GSD_WEB_PTY = "1";
+  }
 
   let ptyProcess: IPty;
   try {

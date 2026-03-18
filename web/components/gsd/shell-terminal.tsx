@@ -20,7 +20,9 @@ interface TerminalTab {
 interface ShellTerminalProps {
   className?: string
   command?: string
+  commandArgs?: string[]
   sessionPrefix?: string
+  hideSidebar?: boolean
 }
 
 // ─── xterm themes ─────────────────────────────────────────────────────────────
@@ -109,6 +111,7 @@ interface TerminalInstanceProps {
   sessionId: string
   visible: boolean
   command?: string
+  commandArgs?: string[]
   isDark: boolean
   onConnectionChange: (connected: boolean) => void
 }
@@ -117,6 +120,7 @@ function TerminalInstance({
   sessionId,
   visible,
   command,
+  commandArgs,
   isDark,
   onConnectionChange,
 }: TerminalInstanceProps) {
@@ -128,6 +132,7 @@ function TerminalInstance({
   const flushingRef = useRef(false)
   const resizeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const onConnectionChangeRef = useRef(onConnectionChange)
+  const commandArgsKey = (commandArgs ?? []).join("\u0000")
   const [hasOutput, setHasOutput] = useState(false)
 
   const sendResize = useCallback(
@@ -237,6 +242,9 @@ function TerminalInstance({
       const streamUrl = new URL(`/api/terminal/stream`, window.location.origin)
       streamUrl.searchParams.set("id", sessionId)
       if (command) streamUrl.searchParams.set("command", command)
+      for (const arg of commandArgs ?? []) {
+        streamUrl.searchParams.append("arg", arg)
+      }
       const es = new EventSource(streamUrl.toString())
       eventSourceRef.current = es
 
@@ -285,7 +293,7 @@ function TerminalInstance({
       termRef.current = null
       fitAddonRef.current = null
     }
-  }, [sessionId, command, sendInput, sendResize])
+  }, [sessionId, command, commandArgsKey, sendInput, sendResize])
 
   // Focus on click
   const handleClick = useCallback(() => {
@@ -326,7 +334,7 @@ function TerminalInstance({
 
 // ─── Multi-instance terminal panel ────────────────────────────────────────────
 
-export function ShellTerminal({ className, command, sessionPrefix }: ShellTerminalProps) {
+export function ShellTerminal({ className, command, commandArgs, sessionPrefix, hideSidebar = false }: ShellTerminalProps) {
   const { resolvedTheme } = useTheme()
   const isDark = resolvedTheme !== "light"
   const defaultId = sessionPrefix ?? (command ? "gsd-default" : "default")
@@ -394,72 +402,74 @@ export function ShellTerminal({ className, command, sessionPrefix }: ShellTermin
             sessionId={tab.id}
             visible={tab.id === activeTabId}
             command={command}
+            commandArgs={tab.id === defaultId ? commandArgs : undefined}
             isDark={isDark}
             onConnectionChange={(c) => updateConnection(tab.id, c)}
           />
         ))}
       </div>
 
-      {/* Sidebar — tab list */}
-      <div className="flex w-[34px] flex-shrink-0 flex-col border-l border-border/40 bg-terminal">
-        {/* New terminal button */}
-        <button
-          onClick={createTab}
-          className="flex h-[30px] w-full items-center justify-center text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-          title="New terminal"
-        >
-          <Plus className="h-3 w-3" />
-        </button>
+      {!hideSidebar && (
+        <div className="flex w-[34px] flex-shrink-0 flex-col border-l border-border/40 bg-terminal">
+          {/* New terminal button */}
+          <button
+            onClick={createTab}
+            className="flex h-[30px] w-full items-center justify-center text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+            title="New terminal"
+          >
+            <Plus className="h-3 w-3" />
+          </button>
 
-        <div className="h-px bg-border/40" />
+          <div className="h-px bg-border/40" />
 
-        {/* Tab list */}
-        <div className="flex-1 overflow-y-auto">
-          {tabs.map((tab, index) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTabId(tab.id)}
-              className={cn(
-                "group relative flex h-[30px] w-full items-center justify-center transition-colors",
-                tab.id === activeTabId
-                  ? "bg-accent text-accent-foreground"
-                  : "text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground",
-              )}
-              title={`${tab.label} ${index + 1}`}
-            >
-              {/* Active indicator bar */}
-              {tab.id === activeTabId && (
-                <div className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-full bg-muted-foreground" />
-              )}
+          {/* Tab list */}
+          <div className="flex-1 overflow-y-auto">
+            {tabs.map((tab, index) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTabId(tab.id)}
+                className={cn(
+                  "group relative flex h-[30px] w-full items-center justify-center transition-colors",
+                  tab.id === activeTabId
+                    ? "bg-accent text-accent-foreground"
+                    : "text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground",
+                )}
+                title={`${tab.label} ${index + 1}`}
+              >
+                {/* Active indicator bar */}
+                {tab.id === activeTabId && (
+                  <div className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-full bg-muted-foreground" />
+                )}
 
-              <div className="relative flex items-center">
-                <TerminalSquare className="h-3 w-3" />
-                {/* Connection dot */}
-                <span
-                  className={cn(
-                    "absolute -bottom-0.5 -right-0.5 h-1.5 w-1.5 rounded-full border border-terminal",
-                    tab.connected ? "bg-emerald-500" : "bg-muted-foreground/40",
-                  )}
-                />
-              </div>
+                <div className="relative flex items-center">
+                  <TerminalSquare className="h-3 w-3" />
+                  {/* Connection dot */}
+                  <span
+                    className={cn(
+                      "absolute -bottom-0.5 -right-0.5 h-1.5 w-1.5 rounded-full border border-terminal",
+                      tab.connected ? "bg-emerald-500" : "bg-muted-foreground/40",
+                    )}
+                  />
+                </div>
 
-              {/* Close button — shows on hover as small badge in corner */}
-              {tabs.length > 1 && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    closeTab(tab.id)
-                  }}
-                  className="absolute -right-0.5 -top-0.5 z-10 hidden h-3.5 w-3.5 items-center justify-center rounded-full bg-accent text-muted-foreground hover:bg-red-500/20 hover:text-red-400 group-hover:flex"
-                  title="Kill terminal"
-                >
-                  <X className="h-2 w-2" />
-                </button>
-              )}
-            </button>
-          ))}
+                {/* Close button — shows on hover as small badge in corner */}
+                {tabs.length > 1 && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      closeTab(tab.id)
+                    }}
+                    className="absolute -right-0.5 -top-0.5 z-10 hidden h-3.5 w-3.5 items-center justify-center rounded-full bg-accent text-muted-foreground hover:bg-red-500/20 hover:text-red-400 group-hover:flex"
+                    title="Kill terminal"
+                  >
+                    <X className="h-2 w-2" />
+                  </button>
+                )}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }

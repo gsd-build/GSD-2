@@ -30,6 +30,8 @@ export interface TuiPrompt {
   label: string
   /** For select prompts: the list of option labels */
   options: string[]
+  /** For select prompts: optional per-option descriptions */
+  descriptions?: string[]
   /** For select prompts: the currently highlighted option index (0-based) */
   selectedIndex: number
 }
