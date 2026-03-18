@@ -25,7 +25,7 @@ import type {
   VisualizerMilestone,
   VisualizerSlice,
 } from './visualizer-data.js';
-import { formatDuration } from '../shared/format-utils.js';
+import { formatDateShort, formatDuration } from '../shared/format-utils.js';
 import { formatCost, formatTokenCount } from './metrics.js';
 
 // ─── Public API ────────────────────────────────────────────────────────────────
@@ -767,12 +767,6 @@ function formatDateLong(iso: string): string {
   } catch { return iso; }
 }
 
-function formatDateShort(iso: string): string {
-  try {
-    const d = new Date(iso);
-    return d.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-  } catch { return iso; }
-}
 
 function esc(s: string | undefined | null): string {
   if (s == null) return '';

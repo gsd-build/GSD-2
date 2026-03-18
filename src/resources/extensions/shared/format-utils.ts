@@ -87,6 +87,16 @@ export function sparkline(values: number[]): string {
   return values.map(v => chars[Math.min(7, Math.floor((v / max) * 7))]).join("");
 }
 
+// ─── Date Formatting ─────────────────────────────────────────────────────────
+
+/** Format an ISO date string as a compact locale string (e.g. "Mar 17, 2025, 02:30 PM"). */
+export function formatDateShort(iso: string): string {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  } catch { return iso; }
+}
+
 // ─── ANSI Stripping ───────────────────────────────────────────────────────────
 
 /** Strip ANSI escape sequences from a string. */

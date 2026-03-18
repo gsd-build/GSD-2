@@ -18,7 +18,7 @@ import { writeFileSync, readFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { gsdRoot } from './paths.js';
 import { formatCost, formatTokenCount } from './metrics.js';
-import { formatDuration } from '../shared/format-utils.js';
+import { formatDateShort, formatDuration } from '../shared/format-utils.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -382,12 +382,6 @@ function buildCostSparkline(entries: ReportEntry[]): string {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function formatDateShort(iso: string): string {
-  try {
-    const d = new Date(iso);
-    return d.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-  } catch { return iso; }
-}
 
 function esc(s: string | number | undefined | null): string {
   if (s == null) return '';
