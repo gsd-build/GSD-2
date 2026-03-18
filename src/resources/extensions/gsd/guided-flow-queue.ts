@@ -75,14 +75,16 @@ export async function showQueue(
     m => m.status === "pending" || m.status === "active",
   );
   const completeCount = state.registry.filter(m => m.status === "complete").length;
+  const parkedCount = state.registry.filter(m => m.status === "parked").length;
 
   // ── If multiple pending milestones, show queue management hub ──────
   if (pendingMilestones.length > 1) {
+    const summaryParts = [`${completeCount} complete, ${pendingMilestones.length} pending.`];
+    if (parkedCount > 0) summaryParts.push(`${parkedCount} parked.`);
+
     const choice = await showNextAction(ctx, {
       title: "GSD — Queue Management",
-      summary: [
-        `${completeCount} complete, ${pendingMilestones.length} pending.`,
-      ],
+      summary: summaryParts,
       actions: [
         {
           id: "reorder",
@@ -287,9 +289,9 @@ export async function buildExistingMilestonesContext(
       }
     }
 
-    // For active/pending milestones, include the roadmap if it exists
+    // For active/pending/parked milestones, include the roadmap if it exists
     // (shows what's planned but not yet built)
-    if (status === "active" || status === "pending") {
+    if (status === "active" || status === "pending" || status === "parked") {
       const roadmapFile = resolveMilestoneFile(basePath, mid, "ROADMAP");
       if (roadmapFile) {
         const content = await loadFile(roadmapFile);

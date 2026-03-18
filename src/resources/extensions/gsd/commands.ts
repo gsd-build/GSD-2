@@ -116,6 +116,8 @@ export function registerGSDCommand(pi: ExtensionAPI): void {
         { cmd: "knowledge", desc: "Add persistent project knowledge (rule, pattern, or lesson)" },
         { cmd: "new-milestone", desc: "Create a milestone from a specification document (headless)" },
         { cmd: "parallel", desc: "Parallel milestone orchestration (start, status, stop, merge)" },
+        { cmd: "park", desc: "Park a milestone — skip without deleting" },
+        { cmd: "unpark", desc: "Reactivate a parked milestone" },
         { cmd: "update", desc: "Update GSD to the latest version" },
       ];
       const parts = prefix.trim().split(/\s+/);
@@ -593,6 +595,73 @@ export function registerGSDCommand(pi: ExtensionAPI): void {
         return;
       }
 
+      if (trimmed === "park" || trimmed.startsWith("park ")) {
+        const basePath = projectRoot();
+        const arg = trimmed.replace(/^park\s*/, "").trim();
+        const { parkMilestone, isParked } = await import("./milestone-actions.js");
+        const { deriveState } = await import("./state.js");
+
+        let targetId = arg;
+        if (!targetId) {
+          // Park the current active milestone
+          const state = await deriveState(basePath);
+          if (!state.activeMilestone) {
+            ctx.ui.notify("No active milestone to park.", "warning");
+            return;
+          }
+          targetId = state.activeMilestone.id;
+        }
+
+        if (isParked(basePath, targetId)) {
+          ctx.ui.notify(`${targetId} is already parked. Use /gsd unpark ${targetId} to reactivate.`, "info");
+          return;
+        }
+
+        // Extract reason from remaining args (e.g., /gsd park M002 "reason here")
+        const reasonParts = arg.replace(targetId, "").trim().replace(/^["']|["']$/g, "");
+        const reason = reasonParts || "Parked via /gsd park";
+
+        const success = parkMilestone(basePath, targetId, reason);
+        if (success) {
+          ctx.ui.notify(`Parked ${targetId}. Run /gsd unpark ${targetId} to reactivate.`, "info");
+        } else {
+          ctx.ui.notify(`Could not park ${targetId} — milestone not found.`, "warning");
+        }
+        return;
+      }
+
+      if (trimmed === "unpark" || trimmed.startsWith("unpark ")) {
+        const basePath = projectRoot();
+        const arg = trimmed.replace(/^unpark\s*/, "").trim();
+        const { unparkMilestone } = await import("./milestone-actions.js");
+        const { deriveState } = await import("./state.js");
+
+        let targetId = arg;
+        if (!targetId) {
+          // List parked milestones and let user pick
+          const state = await deriveState(basePath);
+          const parkedEntries = state.registry.filter(e => e.status === "parked");
+          if (parkedEntries.length === 0) {
+            ctx.ui.notify("No parked milestones.", "info");
+            return;
+          }
+          if (parkedEntries.length === 1) {
+            targetId = parkedEntries[0].id;
+          } else {
+            ctx.ui.notify(`Parked milestones: ${parkedEntries.map(e => e.id).join(", ")}. Specify which to unpark: /gsd unpark <id>`, "info");
+            return;
+          }
+        }
+
+        const success = unparkMilestone(basePath, targetId);
+        if (success) {
+          ctx.ui.notify(`Unparked ${targetId}. It will resume its normal position in the queue.`, "info");
+        } else {
+          ctx.ui.notify(`Could not unpark ${targetId} — milestone not found or not parked.`, "warning");
+        }
+        return;
+      }
+
       if (trimmed === "new-milestone") {
         const basePath = projectRoot();
         const headlessContextPath = join(basePath, ".gsd", "runtime", "headless-context.md");
@@ -747,6 +816,8 @@ function showHelp(ctx: ExtensionCommandContext): void {
     "  /gsd triage         Classify and route pending captures",
     "  /gsd skip <unit>    Prevent a unit from auto-mode dispatch",
     "  /gsd undo           Revert last completed unit  [--force]",
+    "  /gsd park [id]      Park a milestone — skip without deleting  [reason]",
+    "  /gsd unpark [id]    Reactivate a parked milestone",
     "",
     "PROJECT KNOWLEDGE",
     "  /gsd knowledge <type> <text>   Add rule, pattern, or lesson to KNOWLEDGE.md",

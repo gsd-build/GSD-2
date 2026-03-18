@@ -32,6 +32,7 @@ import { validateDirectory } from "./validate-directory.js";
 import { showConfirm } from "../shared/mod.js";
 import { debugLog } from "./debug-logger.js";
 import { findMilestoneIds, nextMilestoneId } from "./milestone-ids.js";
+import { parkMilestone, discardMilestone } from "./milestone-actions.js";
 
 // ─── Re-exports (preserve public API for existing importers) ────────────────
 export {
@@ -597,6 +598,107 @@ function selfHealRuntimeRecords(basePath: string, ctx: ExtensionContext): { clea
   }
 }
 
+// ─── Milestone Actions Submenu ──────────────────────────────────────────────
+
+/**
+ * Shows a submenu with Park / Discard / Skip / Back options for the active milestone.
+ * Returns true if an action was taken (caller should re-enter showSmartEntry or
+ * dispatch a new workflow). Returns false if the user chose "Back".
+ */
+async function handleMilestoneActions(
+  ctx: ExtensionCommandContext,
+  pi: ExtensionAPI,
+  basePath: string,
+  milestoneId: string,
+  milestoneTitle: string,
+  options?: { step?: boolean },
+): Promise<boolean> {
+  const stepMode = options?.step;
+  const choice = await showNextAction(ctx, {
+    title: `Milestone Actions — ${milestoneId}`,
+    summary: [`${milestoneId}: ${milestoneTitle}`],
+    actions: [
+      {
+        id: "park",
+        label: "Park milestone",
+        description: "Pause this milestone — it stays on disk but is skipped.",
+      },
+      {
+        id: "discard",
+        label: "Discard milestone",
+        description: "Permanently delete this milestone and all its contents.",
+      },
+      {
+        id: "skip",
+        label: "Skip — create new milestone",
+        description: "Leave this milestone and start a fresh one.",
+      },
+      {
+        id: "back",
+        label: "Back",
+        description: "Return to the previous menu.",
+      },
+    ],
+    notYetMessage: "Run /gsd when ready.",
+  });
+
+  if (choice === "park") {
+    const reason = await showNextAction(ctx, {
+      title: `Park ${milestoneId}`,
+      summary: ["Why is this milestone being parked?"],
+      actions: [
+        { id: "priority_shift", label: "Priority shift", description: "Other work is more important right now." },
+        { id: "blocked_external", label: "Blocked externally", description: "Waiting on an external dependency or decision." },
+        { id: "needs_rethink", label: "Needs rethinking", description: "The approach needs to be reconsidered." },
+      ],
+      notYetMessage: "Run /gsd when ready.",
+    });
+
+    const reasonText = reason === "priority_shift" ? "Priority shift — other work is more important"
+      : reason === "blocked_external" ? "Blocked externally — waiting on external dependency"
+      : reason === "needs_rethink" ? "Needs rethinking — approach needs reconsideration"
+      : reason ?? "Parked by user";
+
+    const success = parkMilestone(basePath, milestoneId, reasonText);
+    if (success) {
+      ctx.ui.notify(`Parked ${milestoneId}. Run /gsd unpark ${milestoneId} to reactivate.`, "info");
+    } else {
+      ctx.ui.notify(`Could not park ${milestoneId} — milestone not found or already parked.`, "warning");
+    }
+    return true;
+  }
+
+  if (choice === "discard") {
+    const confirmed = await showConfirm(ctx, {
+      title: "Discard milestone?",
+      message: `This will permanently delete ${milestoneId} and all its contents (roadmap, plans, task summaries).`,
+      confirmLabel: "Discard",
+      declineLabel: "Cancel",
+    });
+    if (confirmed) {
+      discardMilestone(basePath, milestoneId);
+      ctx.ui.notify(`Discarded ${milestoneId}.`, "info");
+      return true;
+    }
+    return false;
+  }
+
+  if (choice === "skip") {
+    const milestoneIds = findMilestoneIds(basePath);
+    const uniqueMilestoneIds = !!loadEffectiveGSDPreferences()?.preferences?.unique_milestone_ids;
+    const nextId = nextMilestoneId(milestoneIds, uniqueMilestoneIds);
+    pendingAutoStart = { ctx, pi, basePath, milestoneId: nextId, step: stepMode };
+    dispatchWorkflow(pi, buildDiscussPrompt(nextId,
+      `New milestone ${nextId}.`,
+      basePath
+    ));
+    return true;
+  }
+
+  // "back" or null
+  return false;
+}
+
 export async function showSmartEntry(
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI,
@@ -923,8 +1025,6 @@ export async function showSmartEntry(
           basePath
         ));
       } else if (choice === "discard_milestone") {
-        const mDir = resolveMilestonePath(basePath, milestoneId);
-        if (!mDir) return;
         const confirmed = await showConfirm(ctx, {
           title: "Discard milestone?",
           message: `This will permanently delete ${milestoneId} and all its contents.`,
@@ -932,7 +1032,7 @@ export async function showSmartEntry(
           declineLabel: "Cancel",
         });
         if (confirmed) {
-          rmSync(mDir, { recursive: true, force: true });
+          discardMilestone(basePath, milestoneId);
           return showSmartEntry(ctx, pi, basePath, options);
         }
       }
@@ -950,6 +1050,11 @@ export async function showSmartEntry(
           label: "View status",
           description: "See milestone progress and blockers.",
         },
+        {
+          id: "milestone_actions",
+          label: "Milestone actions",
+          description: "Park, discard, or skip this milestone.",
+        },
       ];
 
       const choice = await showNextAction(ctx, {
@@ -964,6 +1069,9 @@ export async function showSmartEntry(
       } else if (choice === "status") {
         const { fireStatusViaCommand } = await import("./commands.js");
         await fireStatusViaCommand(ctx);
+      } else if (choice === "milestone_actions") {
+        const acted = await handleMilestoneActions(ctx, pi, basePath, milestoneId, milestoneTitle, options);
+        if (acted) return showSmartEntry(ctx, pi, basePath, options);
       }
     }
     return;
@@ -1001,6 +1109,11 @@ export async function showSmartEntry(
         label: "View status",
         description: "See milestone progress.",
       },
+      {
+        id: "milestone_actions",
+        label: "Milestone actions",
+        description: "Park, discard, or skip this milestone.",
+      },
     ];
 
     const summaryParts = [];
@@ -1035,6 +1148,9 @@ export async function showSmartEntry(
     } else if (choice === "status") {
       const { fireStatusViaCommand } = await import("./commands.js");
       await fireStatusViaCommand(ctx);
+    } else if (choice === "milestone_actions") {
+      const acted = await handleMilestoneActions(ctx, pi, basePath, milestoneId, milestoneTitle, options);
+      if (acted) return showSmartEntry(ctx, pi, basePath, options);
     }
     return;
   }
@@ -1056,6 +1172,11 @@ export async function showSmartEntry(
           label: "View status",
           description: "Review tasks before completing.",
         },
+        {
+          id: "milestone_actions",
+          label: "Milestone actions",
+          description: "Park, discard, or skip this milestone.",
+        },
       ],
       notYetMessage: "Run /gsd when ready.",
     });
@@ -1071,6 +1192,9 @@ export async function showSmartEntry(
     } else if (choice === "status") {
       const { fireStatusViaCommand } = await import("./commands.js");
       await fireStatusViaCommand(ctx);
+    } else if (choice === "milestone_actions") {
+      const acted = await handleMilestoneActions(ctx, pi, basePath, milestoneId, milestoneTitle, options);
+      if (acted) return showSmartEntry(ctx, pi, basePath, options);
     }
     return;
   }
@@ -1111,6 +1235,11 @@ export async function showSmartEntry(
           label: "View status",
           description: "See slice progress before starting.",
         },
+        {
+          id: "milestone_actions",
+          label: "Milestone actions",
+          description: "Park, discard, or skip this milestone.",
+        },
       ],
       notYetMessage: "Run /gsd when ready.",
     });
@@ -1134,6 +1263,9 @@ export async function showSmartEntry(
     } else if (choice === "status") {
       const { fireStatusViaCommand } = await import("./commands.js");
       await fireStatusViaCommand(ctx);
+    } else if (choice === "milestone_actions") {
+      const acted = await handleMilestoneActions(ctx, pi, basePath, milestoneId, milestoneTitle, options);
+      if (acted) return showSmartEntry(ctx, pi, basePath, options);
     }
     return;
   }

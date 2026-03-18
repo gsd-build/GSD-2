@@ -35,7 +35,7 @@ import type {
 export interface VisualizerMilestone {
   id: string;
   title: string;
-  status: 'complete' | 'active' | 'pending';
+  status: 'complete' | 'active' | 'pending' | 'parked';
   dependsOn: string[];
   slices: VisualizerSlice[];
 }

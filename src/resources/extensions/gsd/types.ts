@@ -191,7 +191,7 @@ export interface ActiveRef {
 export interface MilestoneRegistryEntry {
   id: string;
   title: string;
-  status: 'complete' | 'active' | 'pending';
+  status: 'complete' | 'active' | 'pending' | 'parked';
   /** Milestone IDs that must be complete before this milestone becomes active. Populated from CONTEXT.md YAML frontmatter. */
   dependsOn?: string[];
 }
