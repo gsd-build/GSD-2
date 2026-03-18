@@ -58,6 +58,13 @@ All I/O must remain synchronous (`readFileSync`) to match the existing service p
   - 🔄 **M008:** Web Polish
   ```
 
+## Observability Impact
+
+- **New API surface:** `/api/projects?root=...&detail=true` now returns a `progress` field on each project object. Agents and humans can inspect project state by curling this endpoint.
+- **Inspection:** `readProjectProgress()` is exported and can be called directly for a single project path to check STATE.md parse results.
+- **Failure state:** When `.gsd/STATE.md` is missing or unparseable, `progress` is `null` — no error thrown. Individual field parse misses yield `null` for that field (activeMilestone, activeSlice, phase) while numeric counts default to 0.
+- **No new logs or metrics** — this is a synchronous read layer, not a long-running process.
+
 ## Expected Output
 
 - `src/web/project-discovery-service.ts` — extended with `ProjectProgressInfo` interface, `readProjectProgress()` function, and `includeProgress` param on `discoverProjects()`

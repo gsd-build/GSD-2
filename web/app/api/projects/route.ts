@@ -14,7 +14,9 @@ export async function GET(request: Request): Promise<Response> {
     );
   }
 
-  const projects = discoverProjects(root);
+  const detail = url.searchParams.get("detail") === "true";
+
+  const projects = discoverProjects(root, detail);
   return Response.json(projects, {
     headers: {
       "Cache-Control": "no-store",
