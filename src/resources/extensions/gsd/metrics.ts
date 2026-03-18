@@ -43,7 +43,7 @@ export interface UnitMetrics {
   toolCalls: number;
   assistantMessages: number;
   userMessages: number;
-  apiRequests: number;     // total API requests made (useful for copilot users where cost is always 0)
+  apiRequests?: number;    // total API requests made (useful for copilot users where cost is always 0)
   // Budget fields (optional — absent in pre-M009 metrics data)
   contextWindowTokens?: number;
   truncationSections?: number;

@@ -68,6 +68,7 @@ function mockData(overrides: Partial<VisualizerData> = {}): VisualizerData {
       userMessages: 12,
       totalTruncationSections: 2,
       continueHereFiredCount: 1,
+      apiRequests: 20,
     },
     byPhase: [
       { phase: "execution", units: 4, tokens: mockTokens(), cost: 2.50, duration: 3_600_000 },
