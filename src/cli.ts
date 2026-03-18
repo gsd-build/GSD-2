@@ -94,6 +94,22 @@ function parseCliArgs(argv: string[]): CliFlags {
 const cliFlags = parseCliArgs(process.argv)
 const isPrintMode = cliFlags.print || cliFlags.mode !== undefined
 
+// Early TTY check — bail before expensive initialization if we're heading
+// for interactive mode but have no terminal. Subcommands (config, sessions,
+// headless, update) and print/RPC modes handle non-TTY on their own.
+const knownSubcommands = new Set(['config', 'update', 'sessions', 'headless'])
+if (!isPrintMode && !process.stdin.isTTY
+    && !knownSubcommands.has(cliFlags.messages[0])
+    && cliFlags.listModels === undefined) {
+  process.stderr.write('[gsd] Error: Interactive mode requires a terminal (TTY).\n')
+  process.stderr.write('[gsd] Non-interactive alternatives:\n')
+  process.stderr.write('[gsd]   gsd --print "your message"     Single-shot prompt\n')
+  process.stderr.write('[gsd]   gsd --mode rpc                 JSON-RPC over stdin/stdout\n')
+  process.stderr.write('[gsd]   gsd --mode mcp                 MCP server over stdin/stdout\n')
+  process.stderr.write('[gsd]   gsd --mode text "message"      Text output mode\n')
+  process.exit(1)
+}
+
 // `gsd <subcommand> --help` — show subcommand-specific help
 const subcommand = cliFlags.messages[0]
 if (subcommand && process.argv.includes('--help')) {
@@ -492,13 +508,10 @@ if (enabledModelPatterns && enabledModelPatterns.length > 0) {
   }
 }
 
+// NOTE: The primary TTY check is above (early bail before initialization).
+// This is a safety net in case a future code path bypasses the early check.
 if (!process.stdin.isTTY) {
   process.stderr.write('[gsd] Error: Interactive mode requires a terminal (TTY).\n')
-  process.stderr.write('[gsd] Non-interactive alternatives:\n')
-  process.stderr.write('[gsd]   gsd --print "your message"     Single-shot prompt\n')
-  process.stderr.write('[gsd]   gsd --mode rpc                 JSON-RPC over stdin/stdout\n')
-  process.stderr.write('[gsd]   gsd --mode mcp                 MCP server over stdin/stdout\n')
-  process.stderr.write('[gsd]   gsd --mode text "message"      Text output mode\n')
   process.exit(1)
 }
 
