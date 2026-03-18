@@ -20,7 +20,7 @@
 
 ## Tasks
 
-- [ ] **T01: Dynamic progress bar + terminal text size setting** `est:1.5h`
+- [x] **T01: Dynamic progress bar + terminal text size setting** `est:1.5h`
   - Why: Both are small self-contained UI changes that fit in one task
   - Files: `web/components/gsd/dashboard.tsx`, `web/components/gsd/shell-terminal.tsx`, `web/components/gsd/chat-mode.tsx`, `web/components/gsd/settings-panels.tsx`, `web/app/api/preferences/route.ts`
   - Do: In `dashboard.tsx`, replace the static `bg-foreground` progress bar color with a dynamic `style={{ backgroundColor: ... }}` that interpolates between red (0%), yellow (50%), and green (100%) using oklch color space. Create a `getProgressColor(percent: number): string` helper. For terminal text size: add a `terminalFontSize` field to web preferences (localStorage via a React context or the existing `/api/preferences` route). Add a "Terminal Text Size" section to settings-panels.tsx with 4 options. In `shell-terminal.tsx`, read the preference and pass it to xterm `fontSize` option instead of hardcoded `13`. In `chat-mode.tsx`, apply the same font size to any terminal/code rendering. Do NOT change `terminal.tsx` (footer terminal).

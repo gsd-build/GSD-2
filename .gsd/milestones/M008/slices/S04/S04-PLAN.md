@@ -19,7 +19,7 @@
 
 ## Tasks
 
-- [ ] **T01: Remote questions settings panel + preferences wiring** `est:1.5h`
+- [x] **T01: Remote questions settings panel + preferences wiring** `est:1.5h`
   - Why: Need the full UI section and the API wiring to read/write remote_questions config
   - Files: `web/components/gsd/settings-panels.tsx`, `web/lib/settings-types.ts`, `web/app/api/settings-data/route.ts`
   - Do: Add `RemoteQuestionsConfig` type to `settings-types.ts`. Add a `RemoteQuestionsPanel` component to settings-panels.tsx with: channel type selector (Slack/Discord/Telegram), channel ID text input with format hint, timeout minutes input (1-30), poll interval seconds input (2-30). The panel reads initial values from the settings-data route (extend to include remote_questions from preferences). Saving writes via a new or extended preferences API endpoint that updates the `remote_questions` block in preferences.md. Use the child-process service pattern to call `loadEffectiveGSDPreferences()` for reading.

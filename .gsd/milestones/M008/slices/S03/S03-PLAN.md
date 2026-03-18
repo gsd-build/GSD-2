@@ -18,14 +18,14 @@
 
 ## Tasks
 
-- [ ] **T01: Default theme + high-traffic component audit** `est:2h`
+- [x] **T01: Default theme + high-traffic component audit** `est:2h`
   - Why: The default theme needs to change and the heaviest components (visualizer-view 53 hits, command-surface 42 hits, remaining-command-panels 25 hits, diagnostics-panels 25 hits) account for most of the raw color usage
   - Files: `web/app/layout.tsx`, `web/app/globals.css`, `web/components/gsd/visualizer-view.tsx`, `web/components/gsd/command-surface.tsx`, `web/components/gsd/remaining-command-panels.tsx`, `web/components/gsd/diagnostics-panels.tsx`
   - Do: Change `defaultTheme="system"` to `defaultTheme="dark"` in layout.tsx. Add new semantic CSS custom properties if needed (e.g. `--success-foreground`, `--warning-bg`, `--info-bg` variants with opacity). Then migrate the four heaviest components from raw Tailwind colors to semantic token classes. Map: `emerald-*` → success tokens, `amber-*` → warning tokens, `red-*` → destructive tokens, `sky-*`/`blue-*` → info tokens. Some colors are non-semantic (git diff indicators, data visualization, decorative accents) — those can remain as-is if they don't represent success/warning/error/info states.
   - Verify: `npm run build:web-host` exits 0, `rg` count decreases significantly
   - Done when: Default theme is dark, 4 heaviest components migrated
 
-- [ ] **T02: Remaining component audit + verification** `est:1.5h`
+- [x] **T02: Remaining component audit + verification** `est:1.5h`
   - Why: ~18 more components with raw accent colors need migration and a final verification scan
   - Files: `web/components/gsd/knowledge-captures-panel.tsx`, `web/components/gsd/settings-panels.tsx`, `web/components/gsd/chat-mode.tsx`, `web/components/gsd/projects-view.tsx`, `web/components/gsd/scope-badge.tsx`, `web/components/gsd/activity-view.tsx`, `web/components/gsd/sidebar.tsx`, `web/components/gsd/roadmap.tsx`, `web/components/gsd/shell-terminal.tsx`, `web/components/gsd/terminal.tsx`, `web/components/gsd/status-bar.tsx`, `web/components/gsd/app-shell.tsx`, `web/components/gsd/file-content-viewer.tsx`, `web/components/gsd/onboarding/step-ready.tsx`, `web/components/gsd/onboarding/step-optional.tsx`, `web/components/gsd/onboarding/step-authenticate.tsx`, `web/components/gsd/onboarding/step-dev-root.tsx`, `web/components/gsd/onboarding/step-provider.tsx`
   - Do: Continue the audit for all remaining components. Apply the same semantic token mapping. After all migrations, run `rg` to verify zero semantic-state raw colors remain. Legitimate non-semantic uses (like git diff `M`/`A`/`D` indicators, data visualization bars, decorative interactive hovers) can keep raw colors — document which are intentional. Check that the light mode `:root` tokens produce visually correct greens/ambers/reds/blues.
