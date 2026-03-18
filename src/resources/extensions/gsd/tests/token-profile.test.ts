@@ -20,7 +20,13 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // ─── Source files for structural checks ───────────────────────────────────
 
 const dispatchSrc = readFileSync(join(__dirname, "..", "auto-dispatch.ts"), "utf-8");
-const preferencesSrc = readFileSync(join(__dirname, "..", "preferences.ts"), "utf-8");
+// Preferences was split into multiple files — read all of them
+const preferencesSrc = [
+  readFileSync(join(__dirname, "..", "preferences.ts"), "utf-8"),
+  readFileSync(join(__dirname, "..", "preferences-types.ts"), "utf-8"),
+  readFileSync(join(__dirname, "..", "preferences-validation.ts"), "utf-8"),
+  readFileSync(join(__dirname, "..", "preferences-models.ts"), "utf-8"),
+].join("\n");
 const typesSrc = readFileSync(join(__dirname, "..", "types.ts"), "utf-8");
 
 // ═══════════════════════════════════════════════════════════════════════════
