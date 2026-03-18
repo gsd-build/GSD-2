@@ -4,6 +4,7 @@
 import type { ExtensionCommandContext } from "@gsd/pi-coding-agent";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join, basename } from "node:path";
+import { exec } from "node:child_process";
 import {
   getLedger, getProjectTotals, aggregateByPhase, aggregateBySlice,
   aggregateByModel, formatCost, formatTokenCount, loadLedgerFromDisk,
@@ -11,6 +12,28 @@ import {
 import type { UnitMetrics } from "./metrics.js";
 import { gsdRoot } from "./paths.js";
 import { formatDuration, fileLink } from "../shared/mod.js";
+
+/**
+ * Open a file in the user's default browser.
+ * Uses platform-specific commands: `open` (macOS), `xdg-open` (Linux), `start` (Windows).
+ * Non-blocking, non-fatal — failures are silently ignored.
+ */
+export function openInBrowser(filePath: string): void {
+  const cmd =
+    process.platform === "darwin" ? "open" :
+    process.platform === "win32" ? "start" :
+    "xdg-open";
+
+  // On Windows, `start` needs an empty title argument when the path has spaces
+  const args = process.platform === "win32"
+    ? `"" "${filePath}"`
+    : `"${filePath}"`;
+
+  exec(`${cmd} ${args}`, (err) => {
+    // Non-fatal — if the browser can't be opened, the file path is still shown
+    if (err) void err;
+  });
+}
 
 /**
  * Write an export file directly, without requiring an ExtensionCommandContext.
@@ -167,10 +190,12 @@ export async function handleExport(args: string, ctx: ExtensionCommandContext, b
           paths.push(bn(outPath));
         }
 
+        const indexPath = join(gsdRoot(basePath), "reports", "index.html");
         ctx.ui.notify(
-          `Generated ${paths.length} report snapshot${paths.length !== 1 ? "s" : ""}:\n${paths.map(p => `  ${p}`).join("\n")}\nBrowse all reports: .gsd/reports/index.html`,
+          `Generated ${paths.length} report snapshot${paths.length !== 1 ? "s" : ""}:\n${paths.map(p => `  ${p}`).join("\n")}\nOpening reports index in browser...`,
           "success",
         );
+        openInBrowser(indexPath);
       } else {
         // Single report for the active milestone (existing behavior)
         const doneSlices = data.milestones.reduce((s, m) => s + m.slices.filter(sl => sl.done).length, 0);
@@ -194,9 +219,10 @@ export async function handleExport(args: string, ctx: ExtensionCommandContext, b
           phase: data.phase,
         });
         ctx.ui.notify(
-          `HTML report saved: .gsd/reports/${bn(outPath)}\nBrowse all reports: .gsd/reports/index.html`,
+          `HTML report saved: .gsd/reports/${bn(outPath)}\nOpening in browser...`,
           "success",
         );
+        openInBrowser(outPath);
       }
     } catch (err) {
       ctx.ui.notify(
