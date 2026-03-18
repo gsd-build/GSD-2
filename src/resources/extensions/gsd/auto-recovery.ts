@@ -211,7 +211,7 @@ export function verifyExpectedArtifact(unitType: string, unitId: string, base: s
         try {
           const roadmapContent = readFileSync(roadmapFile, "utf-8");
           const roadmap = parseRoadmap(roadmapContent);
-          const slice = roadmap.slices.find(s => s.id === sid);
+          const slice = (roadmap.slices ?? []).find(s => s.id === sid);
           if (slice && !slice.done) return false;
         } catch {
           // Corrupt/unparseable roadmap — fail verification so the unit

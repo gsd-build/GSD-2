@@ -877,7 +877,7 @@ async function showStepWizard(
     : "previous unit";
 
   if (!mid || state.phase === "complete") {
-    const incomplete = state.registry.filter(m => m.status !== "complete" && m.status !== "parked");
+    const incomplete = (state.registry ?? []).filter(m => m.status !== "complete" && m.status !== "parked");
     if (incomplete.length > 0 && state.phase !== "complete" && state.phase !== "blocked" && state.phase !== "pre-planning") {
       const ids = incomplete.map(m => m.id).join(", ");
       const diag = `basePath=${s.basePath}, milestones=[${state.registry.map(m => `${m.id}:${m.status}`).join(", ")}], phase=${state.phase}`;
@@ -1171,7 +1171,7 @@ async function dispatchNextUnit(
       }
     }
 
-    const pendingIds = state.registry
+    const pendingIds = (state.registry ?? [])
       .filter(m => m.status !== "complete")
       .map(m => m.id);
     pruneQueueOrder(s.basePath, pendingIds);
@@ -1186,7 +1186,7 @@ async function dispatchNextUnit(
       await closeoutUnit(ctx, s.basePath, s.currentUnit.type, s.currentUnit.id, s.currentUnit.startedAt, buildSnapshotOpts(s.currentUnit.type, s.currentUnit.id));
     }
 
-    const incomplete = state.registry.filter(m => m.status !== "complete" && m.status !== "parked");
+    const incomplete = (state.registry ?? []).filter(m => m.status !== "complete" && m.status !== "parked");
     if (incomplete.length === 0) {
       // Genuinely all complete (parked milestones excluded) — merge milestone branch to main before stopping (#962)
       if (s.currentMilestoneId && isInAutoWorktree(s.basePath) && s.originalBasePath) {
