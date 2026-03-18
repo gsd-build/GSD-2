@@ -8,7 +8,7 @@ on:
 
 concurrency:
   group: pipeline-${{ github.sha }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -167,6 +167,23 @@ jobs:
           git tag "v${{ steps.release.outputs.version }}"
           git push origin main
           git push origin "v${{ steps.release.outputs.version }}"
+
+      - name: Build release
+        run: npm run build
+
+      - name: Publish release to npm @latest
+        run: |
+          OUTPUT=$(npm publish 2>&1) && echo "$OUTPUT" || {
+            if echo "$OUTPUT" | grep -q "cannot publish over the previously published"; then
+              echo "Version already published — promoting to latest"
+              npm dist-tag add gsd-pi@${{ steps.release.outputs.version }} latest
+            else
+              echo "$OUTPUT"
+              exit 1
+            fi
+          }
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create GitHub Release
         env:
