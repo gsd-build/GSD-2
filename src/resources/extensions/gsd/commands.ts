@@ -6,7 +6,8 @@
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@gsd/pi-coding-agent";
 import type { GSDState } from "./types.js";
-import { existsSync, readFileSync, unlinkSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { enableDebug } from "./debug-logger.js";
 import { deriveState } from "./state.js";
@@ -100,6 +101,7 @@ export function registerGSDCommand(pi: ExtensionAPI): void {
         { cmd: "update", desc: "Update GSD to the latest version" },
         { cmd: "start", desc: "Start a workflow template (bugfix, spike, feature, etc.)" },
         { cmd: "templates", desc: "List available workflow templates" },
+        { cmd: "extensions", desc: "Manage extensions (list, enable, disable, info)" },
       ];
       const parts = prefix.trim().split(/\s+/);
 
@@ -319,6 +321,47 @@ export function registerGSDCommand(pi: ExtensionAPI): void {
         const namePrefix = parts[2] ?? "";
         return getTemplateCompletions(namePrefix)
           .map((c) => ({ value: `templates ${c.value}`, label: c.label, description: c.description }));
+      }
+
+      if (parts[0] === "extensions") {
+        if (parts.length <= 2) {
+          const subPrefix = parts[1] ?? "";
+          const subs = [
+            { cmd: "list", desc: "List all extensions and their status" },
+            { cmd: "enable", desc: "Enable a disabled extension" },
+            { cmd: "disable", desc: "Disable an extension" },
+            { cmd: "info", desc: "Show extension details" },
+          ];
+          return subs
+            .filter((s) => s.cmd.startsWith(subPrefix))
+            .map((s) => ({ value: `extensions ${s.cmd}`, label: s.cmd, description: s.desc }));
+        }
+        if (parts.length === 3 && ["enable", "disable", "info"].includes(parts[1])) {
+          const idPrefix = parts[2] ?? "";
+          try {
+            const extDir = join(homedir(), ".gsd", "agent", "extensions");
+            const ids: { id: string; name: string }[] = [];
+            for (const entry of readdirSync(extDir, { withFileTypes: true })) {
+              if (!entry.isDirectory()) continue;
+              const mPath = join(extDir, entry.name, "extension-manifest.json");
+              if (!existsSync(mPath)) continue;
+              try {
+                const m = JSON.parse(readFileSync(mPath, "utf-8"));
+                if (typeof m?.id === "string") ids.push({ id: m.id, name: m.name ?? m.id });
+              } catch { /* skip malformed */ }
+            }
+            return ids
+              .filter((e) => e.id.startsWith(idPrefix))
+              .map((e) => ({
+                value: `extensions ${parts[1]} ${e.id}`,
+                label: e.id,
+                description: e.name,
+              }));
+          } catch {
+            return [];
+          }
+        }
+        return [];
       }
 
       if (parts[0] === "doctor") {
@@ -829,6 +872,12 @@ Examples:
         return;
       }
 
+      if (trimmed === "extensions" || trimmed.startsWith("extensions ")) {
+        const { handleExtensions } = await import("./commands-extensions.js");
+        await handleExtensions(trimmed.replace(/^extensions\s*/, "").trim(), ctx);
+        return;
+      }
+
       ctx.ui.notify(
         `Unknown: /gsd ${trimmed}. Run /gsd help for available commands.`,
         "warning",
@@ -877,6 +926,7 @@ function showHelp(ctx: ExtensionCommandContext): void {
     "  /gsd config         Set API keys for external tools",
     "  /gsd keys           API key manager  [list|add|remove|test|rotate|doctor]",
     "  /gsd hooks          Show post-unit hook configuration",
+    "  /gsd extensions     Manage extensions  [list|enable|disable|info]",
     "",
     "MAINTENANCE",
     "  /gsd doctor         Diagnose and repair .gsd/ state  [audit|fix|heal] [scope]",
