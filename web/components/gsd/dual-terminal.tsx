@@ -2,54 +2,16 @@
 
 import { useState, useRef, useEffect } from "react"
 import { cn } from "@/lib/utils"
-import { GripVertical, Play, Loader2, Milestone } from "lucide-react"
-import {
-  useGSDWorkspaceState,
-  useGSDWorkspaceActions,
-  buildPromptCommand,
-} from "@/lib/gsd-workspace-store"
-import { deriveWorkflowAction } from "@/lib/workflow-actions"
-import { NewMilestoneDialog } from "@/components/gsd/new-milestone-dialog"
+import { GripVertical } from "lucide-react"
+import { Terminal } from "@/components/gsd/terminal"
 import { ShellTerminal } from "@/components/gsd/shell-terminal"
 import { useTerminalFontSize } from "@/lib/use-terminal-font-size"
 
 export function DualTerminal() {
   const [splitPosition, setSplitPosition] = useState(50)
-  const [milestoneDialogOpen, setMilestoneDialogOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const isDragging = useRef(false)
-  const state = useGSDWorkspaceState()
-  const { sendCommand } = useGSDWorkspaceActions()
   const [terminalFontSize] = useTerminalFontSize()
-
-  const boot = state.boot
-  const workspace = boot?.workspace ?? null
-  const auto = boot?.auto ?? null
-  const bridge = boot?.bridge ?? null
-
-  const workflowAction = deriveWorkflowAction({
-    phase: workspace?.active.phase ?? "pre-planning",
-    autoActive: auto?.active ?? false,
-    autoPaused: auto?.paused ?? false,
-    onboardingLocked: boot?.onboarding.locked ?? false,
-    commandInFlight: state.commandInFlight,
-    bootStatus: state.bootStatus,
-    hasMilestones: (workspace?.milestones.length ?? 0) > 0,
-    projectDetectionKind: boot?.projectDetection?.kind ?? null,
-  })
-
-  const handleWorkflowAction = (command: string) => {
-    void sendCommand(buildPromptCommand(command, bridge))
-  }
-
-  const handlePrimaryAction = () => {
-    if (!workflowAction.primary) return
-    if (workflowAction.isNewMilestone) {
-      setMilestoneDialogOpen(true)
-    } else {
-      handleWorkflowAction(workflowAction.primary.command)
-    }
-  }
 
   const handleMouseDown = () => {
     isDragging.current = true
@@ -80,56 +42,9 @@ export function DualTerminal() {
     <div className="flex h-full flex-col">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border bg-card px-4 py-2">
-        <div className="flex items-center gap-3">
-          <span className="font-medium">Power User Mode</span>
-          {/* Compact workflow action bar */}
-          <div className="flex items-center gap-2" data-testid="power-mode-action-bar">
-            {workflowAction.primary && (
-              <button
-                onClick={handlePrimaryAction}
-                disabled={workflowAction.disabled}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium transition-colors",
-                  workflowAction.primary.variant === "destructive"
-                    ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                    : "bg-primary text-primary-foreground hover:bg-primary/90",
-                  workflowAction.disabled && "cursor-not-allowed opacity-50",
-                )}
-                title={workflowAction.disabledReason}
-              >
-                {state.commandInFlight ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : workflowAction.isNewMilestone ? (
-                  <Milestone className="h-3 w-3" />
-                ) : (
-                  <Play className="h-3 w-3" />
-                )}
-                {workflowAction.primary.label}
-              </button>
-            )}
-            {workflowAction.secondaries.map((action) => (
-              <button
-                key={action.command}
-                onClick={() => handleWorkflowAction(action.command)}
-                disabled={workflowAction.disabled}
-                className={cn(
-                  "inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-xs font-medium transition-colors hover:bg-accent",
-                  workflowAction.disabled && "cursor-not-allowed opacity-50",
-                )}
-                title={workflowAction.disabledReason}
-              >
-                {action.label}
-              </button>
-            ))}
-            {state.commandInFlight && (
-              <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                <Loader2 className="h-3 w-3 animate-spin" />
-              </span>
-            )}
-          </div>
-        </div>
+        <span className="font-medium">Power User Mode</span>
         <div className="flex items-center gap-4 text-xs text-muted-foreground">
-          <span>Left: Primary GSD</span>
+          <span>Left: Bridge Session</span>
           <span className="text-border">|</span>
           <span>Right: Interactive GSD</span>
         </div>
@@ -137,9 +52,9 @@ export function DualTerminal() {
 
       {/* Split terminals */}
       <div ref={containerRef} className="flex flex-1 overflow-hidden">
-        {/* Left terminal - Primary GSD instance */}
+        {/* Left terminal - Bridge session */}
         <div style={{ width: `${splitPosition}%` }} className="h-full overflow-hidden">
-          <ShellTerminal className="h-full" command="gsd" sessionPrefix="gsd-main" fontSize={terminalFontSize} />
+          <Terminal className="h-full" />
         </div>
 
         {/* Divider */}
@@ -155,8 +70,6 @@ export function DualTerminal() {
           <ShellTerminal className="h-full" command="gsd" sessionPrefix="gsd-interactive" fontSize={terminalFontSize} />
         </div>
       </div>
-
-      <NewMilestoneDialog open={milestoneDialogOpen} onOpenChange={setMilestoneDialogOpen} />
     </div>
   )
 }
