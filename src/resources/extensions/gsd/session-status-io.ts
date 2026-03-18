@@ -11,9 +11,6 @@
  */
 
 import {
-  writeFileSync,
-  readFileSync,
-  renameSync,
   unlinkSync,
   readdirSync,
   mkdirSync,
@@ -21,6 +18,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { gsdRoot } from "./paths.js";
+import { loadJsonFileOrNull, writeJsonFileAtomic } from "./json-persistence.js";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -49,8 +47,15 @@ export interface SignalMessage {
 const PARALLEL_DIR = "parallel";
 const STATUS_SUFFIX = ".status.json";
 const SIGNAL_SUFFIX = ".signal.json";
-const TMP_SUFFIX = ".tmp";
 const DEFAULT_STALE_TIMEOUT_MS = 30_000;
+
+function isSessionStatus(data: unknown): data is SessionStatus {
+  return data !== null && typeof data === "object" && "milestoneId" in data && "pid" in data;
+}
+
+function isSignalMessage(data: unknown): data is SignalMessage {
+  return data !== null && typeof data === "object" && "signal" in data && "sentAt" in data;
+}
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -86,25 +91,13 @@ function isPidAlive(pid: number): boolean {
 
 /** Write session status atomically (write to .tmp, then rename). */
 export function writeSessionStatus(basePath: string, status: SessionStatus): void {
-  try {
-    ensureParallelDir(basePath);
-    const dest = statusPath(basePath, status.milestoneId);
-    const tmp = dest + TMP_SUFFIX;
-    writeFileSync(tmp, JSON.stringify(status, null, 2), "utf-8");
-    renameSync(tmp, dest);
-  } catch { /* non-fatal */ }
+  ensureParallelDir(basePath);
+  writeJsonFileAtomic(statusPath(basePath, status.milestoneId), status);
 }
 
 /** Read a specific milestone's session status. */
 export function readSessionStatus(basePath: string, milestoneId: string): SessionStatus | null {
-  try {
-    const p = statusPath(basePath, milestoneId);
-    if (!existsSync(p)) return null;
-    const raw = readFileSync(p, "utf-8");
-    return JSON.parse(raw) as SessionStatus;
-  } catch {
-    return null;
-  }
+  return loadJsonFileOrNull(statusPath(basePath, milestoneId), isSessionStatus);
 }
 
 /** Read all session status files from .gsd/parallel/. */
@@ -114,13 +107,10 @@ export function readAllSessionStatuses(basePath: string): SessionStatus[] {
 
   const results: SessionStatus[] = [];
   try {
-    const entries = readdirSync(dir);
-    for (const entry of entries) {
+    for (const entry of readdirSync(dir)) {
       if (!entry.endsWith(STATUS_SUFFIX)) continue;
-      try {
-        const raw = readFileSync(join(dir, entry), "utf-8");
-        results.push(JSON.parse(raw) as SessionStatus);
-      } catch { /* skip corrupt files */ }
+      const status = loadJsonFileOrNull(join(dir, entry), isSessionStatus);
+      if (status) results.push(status);
     }
   } catch { /* non-fatal */ }
   return results;
@@ -138,27 +128,19 @@ export function removeSessionStatus(basePath: string, milestoneId: string): void
 
 /** Write a signal file for a worker to consume. */
 export function sendSignal(basePath: string, milestoneId: string, signal: SessionSignal): void {
-  try {
-    ensureParallelDir(basePath);
-    const dest = signalPath(basePath, milestoneId);
-    const tmp = dest + TMP_SUFFIX;
-    const msg: SignalMessage = { signal, sentAt: Date.now(), from: "coordinator" };
-    writeFileSync(tmp, JSON.stringify(msg, null, 2), "utf-8");
-    renameSync(tmp, dest);
-  } catch { /* non-fatal */ }
+  ensureParallelDir(basePath);
+  const msg: SignalMessage = { signal, sentAt: Date.now(), from: "coordinator" };
+  writeJsonFileAtomic(signalPath(basePath, milestoneId), msg);
 }
 
 /** Read and delete a signal file (atomic consume). Returns null if no signal pending. */
 export function consumeSignal(basePath: string, milestoneId: string): SignalMessage | null {
-  try {
-    const p = signalPath(basePath, milestoneId);
-    if (!existsSync(p)) return null;
-    const raw = readFileSync(p, "utf-8");
-    unlinkSync(p);
-    return JSON.parse(raw) as SignalMessage;
-  } catch {
-    return null;
+  const p = signalPath(basePath, milestoneId);
+  const msg = loadJsonFileOrNull(p, isSignalMessage);
+  if (msg) {
+    try { unlinkSync(p); } catch { /* non-fatal */ }
   }
+  return msg;
 }
 
 // ─── Stale Detection ───────────────────────────────────────────────────────

@@ -11,6 +11,7 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, cpSync, unlinkSync, readdirSync } from "node:fs";
+import { loadJsonFileOrNull } from "./json-persistence.js";
 import { join, sep as pathSep } from "node:path";
 import { homedir } from "node:os";
 import { safeCopy, safeCopyRecursive } from "./safe-fs.js";
@@ -112,15 +113,15 @@ export function syncStateToProjectRoot(worktreePath: string, projectRoot: string
  * Uses gsdVersion instead of syncedAt so that launching a second session
  * doesn't falsely trigger staleness (#804).
  */
+function isManifestWithVersion(data: unknown): data is { gsdVersion: string } {
+  return data !== null && typeof data === "object" && "gsdVersion" in data! && typeof (data as Record<string, unknown>).gsdVersion === "string";
+}
+
 export function readResourceVersion(): string | null {
   const agentDir = process.env.GSD_CODING_AGENT_DIR || join(homedir(), ".gsd", "agent");
   const manifestPath = join(agentDir, "managed-resources.json");
-  try {
-    const manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
-    return typeof manifest?.gsdVersion === "string" ? manifest.gsdVersion : null;
-  } catch {
-    return null;
-  }
+  const manifest = loadJsonFileOrNull(manifestPath, isManifestWithVersion);
+  return manifest?.gsdVersion ?? null;
 }
 
 /**

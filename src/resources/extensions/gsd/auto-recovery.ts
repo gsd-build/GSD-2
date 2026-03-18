@@ -39,6 +39,7 @@ import {
 import { isValidationTerminal } from "./state.js";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { atomicWriteSync } from "./atomic-write.js";
+import { loadJsonFileOrNull } from "./json-persistence.js";
 import { dirname, join } from "node:path";
 
 // ─── Artifact Resolution & Verification ───────────────────────────────────────
@@ -354,6 +355,10 @@ export function skipExecuteTask(
 
 // ─── Disk-backed completed-unit helpers ───────────────────────────────────────
 
+function isStringArray(data: unknown): data is string[] {
+  return Array.isArray(data) && data.every(item => typeof item === "string");
+}
+
 /** Path to the persisted completed-unit keys file. */
 export function completedKeysPath(base: string): string {
   return join(base, ".gsd", "completed-units.json");
@@ -362,12 +367,7 @@ export function completedKeysPath(base: string): string {
 /** Write a completed unit key to disk (read-modify-write append to set). */
 export function persistCompletedKey(base: string, key: string): void {
   const file = completedKeysPath(base);
-  let keys: string[] = [];
-  try {
-    if (existsSync(file)) {
-      keys = JSON.parse(readFileSync(file, "utf-8"));
-    }
-  } catch (e) { /* corrupt file — start fresh */ void e; }
+  const keys = loadJsonFileOrNull(file, isStringArray) ?? [];
   const keySet = new Set(keys);
   if (!keySet.has(key)) {
     keys.push(key);
@@ -378,27 +378,21 @@ export function persistCompletedKey(base: string, key: string): void {
 /** Remove a stale completed unit key from disk. */
 export function removePersistedKey(base: string, key: string): void {
   const file = completedKeysPath(base);
-  try {
-    if (existsSync(file)) {
-      const keys: string[] = JSON.parse(readFileSync(file, "utf-8"));
-      const filtered = keys.filter(k => k !== key);
-      // Only write if the key was actually present
-      if (filtered.length !== keys.length) {
-        atomicWriteSync(file, JSON.stringify(filtered));
-      }
-    }
-  } catch (e) { /* non-fatal: removePersistedKey failure */ void e; }
+  const keys = loadJsonFileOrNull(file, isStringArray);
+  if (!keys) return;
+  const filtered = keys.filter(k => k !== key);
+  if (filtered.length !== keys.length) {
+    atomicWriteSync(file, JSON.stringify(filtered));
+  }
 }
 
 /** Load all completed unit keys from disk into the in-memory set. */
 export function loadPersistedKeys(base: string, target: Set<string>): void {
   const file = completedKeysPath(base);
-  try {
-    if (existsSync(file)) {
-      const keys: string[] = JSON.parse(readFileSync(file, "utf-8"));
-      for (const k of keys) target.add(k);
-    }
-  } catch (e) { /* non-fatal: loadPersistedKeys failure */ void e; }
+  const keys = loadJsonFileOrNull(file, isStringArray);
+  if (keys) {
+    for (const k of keys) target.add(k);
+  }
 }
 
 // ─── Merge State Reconciliation ───────────────────────────────────────────────

@@ -14,6 +14,7 @@ import type { ExtensionCommandContext } from "@gsd/pi-coding-agent";
 import { existsSync, readdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { gsdRoot } from "./paths.js";
+import { loadJsonFileOrNull } from "./json-persistence.js";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -331,20 +332,18 @@ async function handleLogsList(basePath: string, ctx: ExtensionCommandContext): P
 
   // Metrics summary
   const metricsPath = join(gsdRoot(basePath), "metrics.json");
-  if (existsSync(metricsPath)) {
-    try {
-      const metrics = JSON.parse(readFileSync(metricsPath, "utf-8"));
-      const units = metrics?.units;
-      if (Array.isArray(units) && units.length > 0) {
-        const totalCost = units.reduce((sum: number, u: Record<string, unknown>) => sum + ((u.cost as number) ?? 0), 0);
-        const totalTokens = units.reduce((sum: number, u: Record<string, unknown>) => {
-          const t = u.tokens as Record<string, number> | undefined;
-          return sum + (t?.total ?? 0);
-        }, 0);
-        lines.push("");
-        lines.push(`Metrics: ${units.length} units tracked · $${totalCost.toFixed(2)} · ${(totalTokens / 1000).toFixed(0)}K tokens`);
-      }
-    } catch { /* ignore */ }
+  const isMetrics = (d: unknown): d is { units: Array<Record<string, unknown>> } =>
+    d !== null && typeof d === "object" && "units" in d! && Array.isArray((d as Record<string, unknown>).units);
+  const metrics = loadJsonFileOrNull(metricsPath, isMetrics);
+  if (metrics && metrics.units.length > 0) {
+    const units = metrics.units;
+    const totalCost = units.reduce((sum: number, u) => sum + ((u.cost as number) ?? 0), 0);
+    const totalTokens = units.reduce((sum: number, u) => {
+      const t = u.tokens as Record<string, number> | undefined;
+      return sum + (t?.total ?? 0);
+    }, 0);
+    lines.push("");
+    lines.push(`Metrics: ${units.length} units tracked · $${totalCost.toFixed(2)} · ${(totalTokens / 1000).toFixed(0)}K tokens`);
   }
 
   lines.push("");

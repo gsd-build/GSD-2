@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from "node:fs";
 import { dirname } from "node:path";
 
 /**
@@ -46,6 +46,21 @@ export function saveJsonFile<T>(filePath: string, data: T): void {
   try {
     mkdirSync(dirname(filePath), { recursive: true });
     writeFileSync(filePath, JSON.stringify(data, null, 2) + "\n", "utf-8");
+  } catch {
+    // Non-fatal — don't let persistence failures break operation
+  }
+}
+
+/**
+ * Write a JSON file atomically (write to .tmp, then rename).
+ * Creates parent directories as needed. Non-fatal on error.
+ */
+export function writeJsonFileAtomic<T>(filePath: string, data: T): void {
+  try {
+    mkdirSync(dirname(filePath), { recursive: true });
+    const tmp = filePath + ".tmp";
+    writeFileSync(tmp, JSON.stringify(data, null, 2), "utf-8");
+    renameSync(tmp, filePath);
   } catch {
     // Non-fatal — don't let persistence failures break operation
   }
