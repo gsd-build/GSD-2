@@ -9,8 +9,7 @@
 
 import { resolveRemoteConfig } from "./config.js";
 import type { ResolvedConfig } from "./config.js";
-
-const PER_REQUEST_TIMEOUT_MS = 15_000;
+import { PER_REQUEST_TIMEOUT_MS } from "./types.js";
 
 /**
  * Send a one-way notification to the configured remote channel.

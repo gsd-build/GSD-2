@@ -2,11 +2,10 @@
  * Remote Questions — Slack adapter
  */
 
-import type { ChannelAdapter, RemotePrompt, RemoteDispatchResult, RemoteAnswer, RemotePromptRef } from "./types.js";
+import { PER_REQUEST_TIMEOUT_MS, type ChannelAdapter, type RemotePrompt, type RemoteDispatchResult, type RemoteAnswer, type RemotePromptRef } from "./types.js";
 import { formatForSlack, parseSlackReply, parseSlackReactionResponse, SLACK_NUMBER_REACTION_NAMES } from "./format.js";
 
 const SLACK_API = "https://slack.com/api";
-const PER_REQUEST_TIMEOUT_MS = 15_000;
 const SLACK_ACK_REACTION = "white_check_mark";
 
 export class SlackAdapter implements ChannelAdapter {

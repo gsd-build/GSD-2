@@ -2,11 +2,10 @@
  * Remote Questions — Telegram adapter
  */
 
-import type { ChannelAdapter, RemotePrompt, RemoteDispatchResult, RemoteAnswer, RemotePromptRef } from "./types.js";
+import { PER_REQUEST_TIMEOUT_MS, type ChannelAdapter, type RemotePrompt, type RemoteDispatchResult, type RemoteAnswer, type RemotePromptRef } from "./types.js";
 import { formatForTelegram, parseTelegramResponse } from "./format.js";
 
 const TELEGRAM_API = "https://api.telegram.org";
-const PER_REQUEST_TIMEOUT_MS = 15_000;
 
 export class TelegramAdapter implements ChannelAdapter {
   readonly name = "telegram" as const;

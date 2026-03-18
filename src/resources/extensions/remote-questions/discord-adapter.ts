@@ -2,11 +2,11 @@
  * Remote Questions — Discord adapter
  */
 
-import type { ChannelAdapter, RemotePrompt, RemoteDispatchResult, RemoteAnswer, RemotePromptRef } from "./types.js";
+import { PER_REQUEST_TIMEOUT_MS, type ChannelAdapter, type RemotePrompt, type RemoteDispatchResult, type RemoteAnswer, type RemotePromptRef } from "./types.js";
 import { formatForDiscord, parseDiscordResponse, DISCORD_NUMBER_EMOJIS } from "./format.js";
 
 const DISCORD_API = "https://discord.com/api/v10";
-const PER_REQUEST_TIMEOUT_MS = 15_000;
+
 export class DiscordAdapter implements ChannelAdapter {
   readonly name = "discord" as const;
   private botUserId: string | null = null;
