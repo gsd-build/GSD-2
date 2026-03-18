@@ -375,6 +375,19 @@ export function cleanupAll(): void {
 	processes.clear();
 }
 
+/**
+ * Kill all alive, non-persistent bg processes.
+ * Called between auto-mode units to prevent orphaned servers from
+ * keeping ports bound across task boundaries (#1209).
+ */
+export function killSessionProcesses(): void {
+	for (const [id, bg] of processes) {
+		if (bg.alive && !bg.persistAcrossSessions) {
+			killProcess(id, "SIGTERM");
+		}
+	}
+}
+
 async function waitForProcessExit(bg: BgProcess, timeoutMs: number): Promise<boolean> {
 	if (!bg.alive) return true;
 	await new Promise<void>((resolve) => {

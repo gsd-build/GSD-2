@@ -202,10 +202,13 @@ export async function postUnitPreVerification(pctx: PostUnitContext): Promise<"d
       }
     }
 
-    // Prune dead bg-shell processes
+    // Prune dead bg-shell processes and kill non-persistent live ones.
+    // Without killing live processes between units, dev servers spawned during
+    // one task keep ports bound, causing conflicts in subsequent tasks (#1209).
     try {
-      const { pruneDeadProcesses } = await import("../bg-shell/process-manager.js");
+      const { pruneDeadProcesses, killSessionProcesses } = await import("../bg-shell/process-manager.js");
       pruneDeadProcesses();
+      killSessionProcesses();
     } catch {
       // Non-fatal
     }
