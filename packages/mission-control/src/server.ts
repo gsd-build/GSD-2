@@ -66,8 +66,11 @@ const server = Bun.serve({
     }
 
     // Route /api/fs/* to file system handler
+    // allowedRoot is the current project root so read/write are scoped to the open project.
+    // list and detect-project ignore allowedRoot (no root restriction on browsing).
     if (pathname.startsWith("/api/fs/")) {
-      const response = await handleFsRequest(req, url, repoRoot);
+      const projectRoot = resolve(pipeline.getPlanningDir(), "..");
+      const response = await handleFsRequest(req, url, projectRoot);
       if (response) return addCorsHeaders(response);
     }
 

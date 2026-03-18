@@ -290,8 +290,8 @@ export function parseRoadmap(raw: string): GSD2RoadmapState {
     // ignore
   }
 
-  // Fall back to `# M001 — Name` heading or `# M001 Name`
-  const milestoneHeading = raw.match(/^#\s+(M\d+)(?:\s+[—–-]\s+(.+)|(?:\s+(.+)))?$/m);
+  // Fall back to `# M001 — Name`, `# M001: Name`, or `# M001 Name` heading
+  const milestoneHeading = raw.match(/^#\s+(M\d+)(?:[:\s]+[—–-]\s+(.+)|[:\s]+(.+))?$/m);
   if (milestoneHeading) {
     if (!milestoneId || milestoneId === "M001") milestoneId = milestoneHeading[1];
     if (!milestoneName) {
@@ -299,7 +299,7 @@ export function parseRoadmap(raw: string): GSD2RoadmapState {
     }
   }
 
-  // Parse slice sections — match `## S01 — Name [STATUS]` or `## S01 — Name [STATUS]`
+  // Strategy 1: Heading-based slices — `## S01 — Name [STATUS]`
   const slices: GSD2SliceInfo[] = [];
   const sliceSectionRegex = /^##\s+(S\d+)\s+[—–-]\s+([^\[]+)\s*(?:\[([^\]]+)\])?/gm;
   let sliceMatch: RegExpExecArray | null;
@@ -339,12 +339,47 @@ export function parseRoadmap(raw: string): GSD2RoadmapState {
     for (const depMatch of depLines) {
       const depId = depMatch[1];
       const depName = depMatch[2].trim();
-      // A dependency is complete if the referenced slice is complete
-      // We determine this during post-processing below
       dependencies.push({ id: depId, name: depName, complete: false });
     }
 
     slices.push({ id, name, status, taskCount, costEstimate, branch, dependencies });
+  }
+
+  // Strategy 2: List-based slices from `## Slices` section (GSD2 checklist format)
+  // Format: `- [x] **S01: Name** \`risk:...\` \`depends:[S01,S02]\``
+  if (slices.length === 0) {
+    const listSliceRegex = /^-\s+\[([xX \-])\]\s+\*\*(S\d+):\s+([^*]+?)\*\*(.*?)$/gm;
+    let listMatch: RegExpExecArray | null;
+
+    while ((listMatch = listSliceRegex.exec(raw)) !== null) {
+      const checkChar = listMatch[1];
+      const id = listMatch[2];
+      const name = listMatch[3].trim();
+      const rest = listMatch[4] ?? "";
+
+      let status: SliceStatus = "planned";
+      if (checkChar.toLowerCase() === "x") status = "complete";
+      else if (checkChar === "-") status = "in_progress";
+
+      // Parse dependencies from `depends:[S01,S02]` inline code span
+      const depsMatch = rest.match(/`depends:\[([^\]]*)\]`/);
+      const dependencies: GSD2SliceInfo["dependencies"] = [];
+      if (depsMatch?.[1]) {
+        for (const depId of depsMatch[1].split(",").map((s) => s.trim()).filter(Boolean)) {
+          dependencies.push({ id: depId, name: "", complete: false });
+        }
+      }
+
+      slices.push({
+        id,
+        name,
+        status,
+        taskCount: 0,
+        costEstimate: null,
+        branch: `gsd/${milestoneId}/${id}`,
+        dependencies,
+      });
+    }
   }
 
   // Post-process: mark dependency complete based on referenced slice status

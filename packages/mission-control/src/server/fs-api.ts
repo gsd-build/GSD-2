@@ -32,7 +32,10 @@ export function validatePath(requestedPath: string, allowedRoot?: string): strin
 
   if (allowedRoot) {
     const resolvedRoot = resolve(allowedRoot);
-    if (!resolved.startsWith(resolvedRoot)) {
+    // Case-insensitive comparison on Windows (paths may differ in case)
+    const resolvedLower = resolved.toLowerCase();
+    const rootLower = resolvedRoot.toLowerCase();
+    if (!resolvedLower.startsWith(rootLower)) {
       throw new Error("Path traversal not allowed");
     }
   }
