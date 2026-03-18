@@ -540,6 +540,15 @@ export function mergeMilestoneToMain(
   // "Your local changes to the following files would be overwritten by merge" (#1127).
   autoCommitDirtyState(originalBasePath_);
 
+  // 3b. Remove untracked .gsd/ files that syncStateToProjectRoot copied.
+  // autoCommitDirtyState stages and commits everything (git add -A), but if
+  // the project root branch has no .gsd/ tracking (e.g., .gsd/ is gitignored),
+  // these files remain untracked and cause "untracked working tree files would
+  // be overwritten by merge" during squash-merge (#1237).
+  try {
+    execFileSync("git", ["clean", "-fd", ".gsd/"], { cwd: originalBasePath_, stdio: "pipe" });
+  } catch { /* non-fatal — clean failure shouldn't block merge attempt */ }
+
   // 4. Resolve integration branch — prefer milestone metadata, fall back to preferences / "main"
   const prefs = loadEffectiveGSDPreferences()?.preferences?.git ?? {};
   const integrationBranch = readIntegrationBranch(originalBasePath_, milestoneId);
