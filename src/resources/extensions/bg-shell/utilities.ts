@@ -34,26 +34,14 @@ export function restoreWindowsVTInput(): void {
 
 // ── Time Formatting ────────────────────────────────────────────────────────
 
-export function formatUptime(ms: number): string {
-	const seconds = Math.floor(ms / 1000);
-	if (seconds < 60) return `${seconds}s`;
-	const minutes = Math.floor(seconds / 60);
-	if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
-	const hours = Math.floor(minutes / 60);
-	return `${hours}h ${minutes % 60}m`;
-}
+import { formatDuration } from "../shared/mod.js";
+
+export const formatUptime = formatDuration;
 
 export function formatTimeAgo(timestamp: number): string {
-	return formatUptime(Date.now() - timestamp) + " ago";
+	return formatDuration(Date.now() - timestamp) + " ago";
 }
 
-export function formatTokenCount(count: number): string {
-	if (count < 1000) return count.toString();
-	if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
-	if (count < 1000000) return `${Math.round(count / 1000)}k`;
-	if (count < 10000000) return `${(count / 1000000).toFixed(1)}M`;
-	return `${Math.round(count / 1000000)}M`;
-}
 
 export function resolveBgShellPersistenceCwd(
 	cachedCwd: string,

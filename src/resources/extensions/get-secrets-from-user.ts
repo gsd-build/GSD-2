@@ -13,7 +13,7 @@ import { resolve } from "node:path";
 import type { ExtensionAPI, Theme } from "@gsd/pi-coding-agent";
 import { CURSOR_MARKER, Editor, type EditorTheme, Key, matchesKey, Text, truncateToWidth, wrapTextWithAnsi } from "@gsd/pi-tui";
 import { Type } from "@sinclair/typebox";
-import { makeUI, type ProgressStatus } from "./shared/ui.js";
+import { makeUI, type ProgressStatus } from "./shared/mod.js";
 import { checkExistingEnvKeys } from "./shared/env-key-utils.js";
 import { parseSecretsManifest, formatSecretsManifest } from "./gsd/files.js";
 import { resolveMilestoneFile } from "./gsd/paths.js";
@@ -347,32 +347,14 @@ async function applySecrets(
 		}
 	}
 
-	if (destination === "vercel" && opts.exec) {
+	if ((destination === "vercel" || destination === "convex") && opts.exec) {
 		const env = opts.environment ?? "development";
 		for (const { key, value } of provided) {
+			const cmd = destination === "vercel"
+				? `printf %s ${shellEscapeSingle(value)} | vercel env add ${key} ${env}`
+				: `npx convex env set ${key} ${shellEscapeSingle(value)}`;
 			try {
-				const result = await opts.exec("sh", [
-					"-c",
-					`printf %s ${shellEscapeSingle(value)} | vercel env add ${key} ${env}`,
-				]);
-				if (result.code !== 0) {
-					errors.push(`${key}: ${result.stderr.slice(0, 200)}`);
-				} else {
-					applied.push(key);
-				}
-			} catch (err: any) {
-				errors.push(`${key}: ${err.message}`);
-			}
-		}
-	}
-
-	if (destination === "convex" && opts.exec) {
-		for (const { key, value } of provided) {
-			try {
-				const result = await opts.exec("sh", [
-					"-c",
-					`npx convex env set ${key} ${shellEscapeSingle(value)}`,
-				]);
+				const result = await opts.exec("sh", ["-c", cmd]);
 				if (result.code !== 0) {
 					errors.push(`${key}: ${result.stderr.slice(0, 200)}`);
 				} else {

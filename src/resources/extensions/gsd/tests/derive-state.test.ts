@@ -22,8 +22,17 @@ function writeRoadmap(base: string, mid: string, content: string): void {
 
 function writePlan(base: string, mid: string, sid: string, content: string): void {
   const dir = join(base, '.gsd', 'milestones', mid, 'slices', sid);
-  mkdirSync(join(dir, 'tasks'), { recursive: true });
+  const tasksDir = join(dir, 'tasks');
+  mkdirSync(tasksDir, { recursive: true });
   writeFileSync(join(dir, `${sid}-PLAN.md`), content);
+  // Create stub task plan files for any tasks in the plan content (#909)
+  // so deriveState doesn't fall back to planning phase.
+  const taskMatches = content.matchAll(/\*\*(T\d+):/g);
+  for (const m of taskMatches) {
+    const tid = m[1];
+    const planPath = join(tasksDir, `${tid}-PLAN.md`);
+    writeFileSync(planPath, `# ${tid} Plan\n\nTask plan stub for testing.\n`);
+  }
 }
 
 function writeContinue(base: string, mid: string, sid: string, content: string): void {
@@ -36,6 +45,12 @@ function writeMilestoneSummary(base: string, mid: string, content: string): void
   const dir = join(base, '.gsd', 'milestones', mid);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, `${mid}-SUMMARY.md`), content);
+}
+
+function writeMilestoneValidation(base: string, mid: string, verdict: string = 'pass'): void {
+  const dir = join(base, '.gsd', 'milestones', mid);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `${mid}-VALIDATION.md`), `---\nverdict: ${verdict}\nremediation_round: 0\n---\n\n# Validation\nValidated.`);
 }
 
 function writeRequirements(base: string, content: string): void {
@@ -285,6 +300,7 @@ Continue from step 2.
   > After this: Done.
 `);
 
+      writeMilestoneValidation(base, 'M001');
       writeMilestoneSummary(base, 'M001', `# M001 Summary\n\nMilestone complete.`);
 
       const state = await deriveState(base);
@@ -381,6 +397,7 @@ Continue from step 2.
   > After this: Done.
 `);
 
+      writeMilestoneValidation(base, 'M001');
       writeMilestoneSummary(base, 'M001', `# M001 Summary\n\nFirst milestone complete.`);
 
       // M002: active (has incomplete slices)
@@ -486,6 +503,8 @@ Continue from step 2.
   > After this: S02 complete.
 `);
 
+      writeMilestoneValidation(base, 'M001');
+
       const state = await deriveState(base);
 
       assertEq(state.phase, 'completing-milestone', 'completing-ms: phase is completing-milestone');
@@ -521,6 +540,7 @@ Continue from step 2.
   > After this: Done.
 `);
 
+      writeMilestoneValidation(base, 'M001');
       writeMilestoneSummary(base, 'M001', `# M001 Summary\n\nMilestone is complete.`);
 
       const state = await deriveState(base);
@@ -550,6 +570,7 @@ Continue from step 2.
 - [x] **S01: Done** \`risk:low\` \`depends:[]\`
   > After this: Done.
 `);
+      writeMilestoneValidation(base, 'M001');
       writeMilestoneSummary(base, 'M001', `# M001 Summary\n\nFirst milestone complete.`);
 
       // M002: all slices done, no summary → completing-milestone
@@ -565,6 +586,8 @@ Continue from step 2.
 - [x] **S02: Also Done** \`risk:low\` \`depends:[S01]\`
   > After this: Done.
 `);
+
+      writeMilestoneValidation(base, 'M002');
 
       // M003: has incomplete slices → pending (M002 is active)
       writeRoadmap(base, 'M003', `# M003: Third Milestone
@@ -681,6 +704,76 @@ slice: S01
       assertEq(state.phase, 'planning', 'empty plan stays in planning');
       assertEq(state.activeSlice?.id, 'S01', 'active slice is S01');
       assertEq(state.activeTask, null, 'no active task');
+    } finally {
+      cleanup(base);
+    }
+  }
+
+  // ─── Test: completed M001 (summary, no validation) skipped for active M003 (#864) ────
+  console.log('\n=== completed milestone with summary but no validation is not active (#864) ===');
+  {
+    const base = createFixtureBase();
+    try {
+      // M001: all slices done, has summary, no validation
+      writeRoadmap(base, 'M001', `# M001: First Milestone\n\n**Vision:** Done.\n\n## Slices\n\n- [x] **S01: Done slice** \`risk:low\` \`depends:[]\`\n  > Completed.\n`);
+      writeMilestoneSummary(base, 'M001', '---\nid: M001\n---\n\n# M001: First Milestone\n\n**Completed.**');
+      // M003: incomplete, should be active
+      writeRoadmap(base, 'M003', `# M003: Active Milestone\n\n**Vision:** Do stuff.\n\n## Slices\n\n- [ ] **S01: Work slice** \`risk:low\` \`depends:[]\`\n  > Needs work.\n`);
+
+      const state = await deriveState(base);
+      assertEq(state.activeMilestone?.id, 'M003', 'active milestone is M003, not completed M001');
+      const m001Entry = state.registry.find(e => e.id === 'M001');
+      assertEq(m001Entry?.status, 'complete', 'M001 is marked complete despite no validation');
+    } finally {
+      cleanup(base);
+    }
+  }
+
+  // ─── Test: completed M001 with summary AND validation is complete (#864) ────
+  console.log('\n=== completed milestone with summary and validation is complete ===');
+  {
+    const base = createFixtureBase();
+    try {
+      writeRoadmap(base, 'M001', `# M001: First Milestone\n\n**Vision:** Done.\n\n## Slices\n\n- [x] **S01: Done slice** \`risk:low\` \`depends:[]\`\n  > Completed.\n`);
+      writeMilestoneSummary(base, 'M001', '---\nid: M001\n---\n\n# M001: First Milestone\n\n**Completed.**');
+      writeMilestoneValidation(base, 'M001', 'pass');
+      writeRoadmap(base, 'M003', `# M003: Active Milestone\n\n**Vision:** Do stuff.\n\n## Slices\n\n- [ ] **S01: Work slice** \`risk:low\` \`depends:[]\`\n  > Needs work.\n`);
+
+      const state = await deriveState(base);
+      assertEq(state.activeMilestone?.id, 'M003', 'active milestone is M003');
+      const m001Entry = state.registry.find(e => e.id === 'M001');
+      assertEq(m001Entry?.status, 'complete', 'M001 with both summary and validation is complete');
+    } finally {
+      cleanup(base);
+    }
+  }
+
+  // ─── Test: all slices done, no summary, no validation → needs validation (#864) ────
+  console.log('\n=== all slices done, no summary, no validation → validating-milestone ===');
+  {
+    const base = createFixtureBase();
+    try {
+      writeRoadmap(base, 'M001', `# M001: First Milestone\n\n**Vision:** Validate me.\n\n## Slices\n\n- [x] **S01: Done slice** \`risk:low\` \`depends:[]\`\n  > Completed.\n`);
+      // No summary, no validation — this should be active for validation
+
+      const state = await deriveState(base);
+      assertEq(state.activeMilestone?.id, 'M001', 'M001 is active for validation');
+    } finally {
+      cleanup(base);
+    }
+  }
+
+  // ─── Test: all slices done, validation pass, no summary → needs completion (#864) ────
+  console.log('\n=== all slices done, validation pass, no summary → completing-milestone ===');
+  {
+    const base = createFixtureBase();
+    try {
+      writeRoadmap(base, 'M001', `# M001: First Milestone\n\n**Vision:** Complete me.\n\n## Slices\n\n- [x] **S01: Done slice** \`risk:low\` \`depends:[]\`\n  > Completed.\n`);
+      writeMilestoneValidation(base, 'M001', 'pass');
+      // No summary — validated but not yet completed
+
+      const state = await deriveState(base);
+      assertEq(state.activeMilestone?.id, 'M001', 'M001 is active for completion');
     } finally {
       cleanup(base);
     }

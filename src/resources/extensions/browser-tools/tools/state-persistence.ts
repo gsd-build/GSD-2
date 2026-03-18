@@ -69,7 +69,7 @@ export function registerStatePersistenceTools(pi: ExtensionAPI, deps: ToolDeps):
 
 				// Ensure .gitignore covers the state dir
 				const gitignorePath = path.resolve(process.cwd(), STATE_DIR, ".gitignore");
-				await writeFile(gitignorePath, "*\n!.gitignore\n").catch(() => {});
+				await writeFile(gitignorePath, "*\n!.gitignore\n").catch(() => { /* best-effort — .gitignore may already exist or dir may be read-only */ });
 
 				const cookieCount = storageState.cookies?.length ?? 0;
 				const localStorageOrigins = storageState.origins?.length ?? 0;

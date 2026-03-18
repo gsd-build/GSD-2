@@ -9,10 +9,10 @@
  * survives branch switches and is shared across sessions.
  */
 
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { gsdRoot } from "./paths.js";
-import { milestoneIdSort } from "./guided-flow.js";
+import { milestoneIdSort } from "./milestone-ids.js";
+import { loadJsonFileOrNull, saveJsonFile } from "./json-persistence.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -45,6 +45,12 @@ function queueOrderPath(basePath: string): string {
   return join(gsdRoot(basePath), "QUEUE-ORDER.json");
 }
 
+// ─── Type Guards ─────────────────────────────────────────────────────────────
+
+function isQueueOrderFile(data: unknown): data is QueueOrderFile {
+  return data !== null && typeof data === "object" && "order" in data! && Array.isArray((data as QueueOrderFile).order);
+}
+
 // ─── Read / Write ────────────────────────────────────────────────────────────
 
 /**
@@ -52,15 +58,8 @@ function queueOrderPath(basePath: string): string {
  * the file is corrupt/unreadable.
  */
 export function loadQueueOrder(basePath: string): string[] | null {
-  const p = queueOrderPath(basePath);
-  if (!existsSync(p)) return null;
-  try {
-    const data: QueueOrderFile = JSON.parse(readFileSync(p, "utf-8"));
-    if (!Array.isArray(data.order)) return null;
-    return data.order;
-  } catch {
-    return null;
-  }
+  const data = loadJsonFileOrNull(queueOrderPath(basePath), isQueueOrderFile);
+  return data?.order ?? null;
 }
 
 /**
@@ -71,7 +70,7 @@ export function saveQueueOrder(basePath: string, order: string[]): void {
     order,
     updatedAt: new Date().toISOString(),
   };
-  writeFileSync(queueOrderPath(basePath), JSON.stringify(data, null, 2) + "\n", "utf-8");
+  saveJsonFile(queueOrderPath(basePath), data);
 }
 
 // ─── Sorting ─────────────────────────────────────────────────────────────────

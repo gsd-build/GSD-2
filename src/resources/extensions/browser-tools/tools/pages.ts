@@ -137,7 +137,7 @@ export function registerPageTools(pi: ExtensionAPI, deps: ToolDeps): void {
 					try {
 						remaining.title = await remaining.page.title();
 						remaining.url = remaining.page.url();
-					} catch {}
+					} catch { /* non-fatal — page may have been closed or navigated away */ }
 				}
 				const pages = registryListPages(pageRegistry);
 				const lines = pages.map((p: any) => {

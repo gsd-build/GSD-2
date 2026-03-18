@@ -212,6 +212,37 @@ describe('Marketplace Discovery Contract Tests', { skip: skipReason }, () => {
     });
   });
 
+  describe('resolvePluginRoot', () => {
+    it('should resolve relative paths correctly', () => {
+      const result = resolvePluginRoot(CLAUDE_SKILLS_PATH!, './plugins/python3-development');
+      assert.strictEqual(result, path.join(CLAUDE_SKILLS_PATH!, 'plugins/python3-development'));
+    });
+
+    it('should handle paths without ./ prefix', () => {
+      const result = resolvePluginRoot(CLAUDE_SKILLS_PATH!, 'plugins/python3-development');
+      assert.strictEqual(result, path.join(CLAUDE_SKILLS_PATH!, 'plugins/python3-development'));
+    });
+
+    it('should return null for external sources', () => {
+      const result = resolvePluginRoot(CLAUDE_SKILLS_PATH!, 'https://github.com/example/plugin');
+      assert.strictEqual(result, null);
+    });
+
+    it('should return null for git sources', () => {
+      const result = resolvePluginRoot(CLAUDE_SKILLS_PATH!, { source: 'github', repo: 'example/plugin' });
+      assert.strictEqual(result, null);
+    });
+  });
+
+  describe('inspectPlugin', () => {
+    it('should return error for non-existent plugin directory', () => {
+      const result = inspectPlugin('/tmp/nonexistent-plugin');
+      assert.strictEqual(result.status, 'error');
+      assert.ok(result.error !== undefined, 'error should be defined');
+      assert.ok(result.error.includes('not found'));
+    });
+  });
+
   describe('Error handling', () => {
     it('should return structured error for non-existent repo path', () => {
       const result = discoverMarketplace('/tmp/nonexistent-marketplace-' + Date.now());

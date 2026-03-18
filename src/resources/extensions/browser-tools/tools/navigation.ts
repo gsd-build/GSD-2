@@ -31,7 +31,7 @@ export function registerNavigationTools(pi: ExtensionAPI, deps: ToolDeps): void 
 				beforeState = await deps.captureCompactPageState(p, { includeBodyText: true });
 				actionId = deps.beginTrackedAction("browser_navigate", params, beforeState.url).id;
 				await p.goto(params.url, { waitUntil: "domcontentloaded", timeout: 30000 });
-				await p.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {});
+				await p.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => { /* networkidle timeout — non-fatal, page may still be usable */ });
 				await new Promise(resolve => setTimeout(resolve, 300));
 
 				const title = await p.title();
@@ -60,7 +60,7 @@ export function registerNavigationTools(pi: ExtensionAPI, deps: ToolDeps): void 
 						let buf = await p.screenshot({ type: "jpeg", quality: 80, scale: "css" });
 						buf = await deps.constrainScreenshot(p, buf, "image/jpeg", 80);
 						screenshotContent = [{ type: "image", data: buf.toString("base64"), mimeType: "image/jpeg" }];
-					} catch {}
+					} catch { /* non-fatal — screenshot is optional, navigation result is still valid */ }
 				}
 
 				return {
@@ -110,7 +110,7 @@ export function registerNavigationTools(pi: ExtensionAPI, deps: ToolDeps): void 
 					};
 				}
 
-				await p.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {});
+				await p.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => { /* networkidle timeout — non-fatal, page may still be usable */ });
 
 				const title = await p.title();
 				const url = p.url();
@@ -154,7 +154,7 @@ export function registerNavigationTools(pi: ExtensionAPI, deps: ToolDeps): void 
 					};
 				}
 
-				await p.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {});
+				await p.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => { /* networkidle timeout — non-fatal, page may still be usable */ });
 
 				const title = await p.title();
 				const url = p.url();
@@ -189,7 +189,7 @@ export function registerNavigationTools(pi: ExtensionAPI, deps: ToolDeps): void 
 			try {
 				const { page: p } = await deps.ensureBrowser();
 				await p.reload({ waitUntil: "domcontentloaded", timeout: 30000 });
-				await p.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {});
+				await p.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => { /* networkidle timeout — non-fatal, page may still be usable */ });
 
 				const title = await p.title();
 				const url = p.url();
@@ -207,7 +207,7 @@ export function registerNavigationTools(pi: ExtensionAPI, deps: ToolDeps): void 
 						data: buf.toString("base64"),
 						mimeType: "image/jpeg",
 					}];
-				} catch {}
+				} catch { /* non-fatal — screenshot is optional, reload result is still valid */ }
 
 				return {
 					content: [

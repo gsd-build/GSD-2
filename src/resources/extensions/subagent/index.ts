@@ -12,7 +12,7 @@
  * Uses JSON mode to capture structured output from subagents.
  */
 
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -23,7 +23,6 @@ import { StringEnum } from "@gsd/pi-ai";
 import { type ExtensionAPI, getMarkdownTheme } from "@gsd/pi-coding-agent";
 import { Container, Markdown, Spacer, Text } from "@gsd/pi-tui";
 import { Type } from "@sinclair/typebox";
-import { parseBundledExtensionPaths } from "../shared/bundled-extension-paths.js";
 import { type AgentConfig, type AgentScope, discoverAgents } from "./agents.js";
 import {
 	type IsolationEnvironment,
@@ -33,10 +32,49 @@ import {
 	mergeDeltaPatches,
 	readIsolationMode,
 } from "./isolation.js";
+import { registerWorker, updateWorker } from "./worker-registry.js";
 
 const MAX_PARALLEL_TASKS = 8;
 const MAX_CONCURRENCY = 4;
 const COLLAPSED_ITEM_COUNT = 10;
+const liveSubagentProcesses = new Set<ChildProcess>();
+
+async function stopLiveSubagents(): Promise<void> {
+	const active = Array.from(liveSubagentProcesses);
+	if (active.length === 0) return;
+
+	for (const proc of active) {
+		try {
+			proc.kill("SIGTERM");
+		} catch {
+			/* ignore */
+		}
+	}
+
+	await Promise.all(
+		active.map(
+			(proc) =>
+				new Promise<void>((resolve) => {
+					const done = () => resolve();
+					const timer = setTimeout(done, 500);
+					proc.once("exit", () => {
+						clearTimeout(timer);
+						resolve();
+					});
+				}),
+		),
+	);
+
+	for (const proc of active) {
+		if (proc.exitCode === null) {
+			try {
+				proc.kill("SIGKILL");
+			} catch {
+				/* ignore */
+			}
+		}
+	}
+}
 
 function formatTokens(count: number): string {
 	if (count < 1000) return count.toString();
@@ -294,13 +332,14 @@ async function runSingleAgent(
 		let wasAborted = false;
 
 		const exitCode = await new Promise<number>((resolve) => {
-			const bundledPaths = parseBundledExtensionPaths(process.env.GSD_BUNDLED_EXTENSION_PATHS);
+			const bundledPaths = (process.env.GSD_BUNDLED_EXTENSION_PATHS ?? "").split(path.delimiter).map(s => s.trim()).filter(Boolean);
 			const extensionArgs = bundledPaths.flatMap(p => ["--extension", p]);
 			const proc = spawn(
 				process.execPath,
 				[process.env.GSD_BIN_PATH!, ...extensionArgs, ...args],
 				{ cwd: cwd ?? defaultCwd, shell: false, stdio: ["ignore", "pipe", "pipe"] },
 			);
+			liveSubagentProcesses.add(proc);
 			let buffer = "";
 
 			const processLine = (line: string) => {
@@ -352,11 +391,13 @@ async function runSingleAgent(
 			});
 
 			proc.on("close", (code) => {
+				liveSubagentProcesses.delete(proc);
 				if (buffer.trim()) processLine(buffer);
 				resolve(code ?? 0);
 			});
 
 			proc.on("error", () => {
+				liveSubagentProcesses.delete(proc);
 				resolve(1);
 			});
 
@@ -431,6 +472,10 @@ const SubagentParams = Type.Object({
 });
 
 export default function (pi: ExtensionAPI) {
+	pi.on("session_shutdown", async () => {
+		await stopLiveSubagents();
+	});
+
 	// /subagent command - list available agents
 	pi.registerCommand("subagent", {
 		description: "List available subagents",
@@ -626,7 +671,10 @@ export default function (pi: ExtensionAPI) {
 				};
 
 				const MAX_RETRIES = 1; // Retry failed tasks once
+				const batchId = crypto.randomUUID();
+				const batchSize = params.tasks.length;
 				const results = await mapWithConcurrencyLimit(params.tasks, MAX_CONCURRENCY, async (t, index) => {
+					const workerId = registerWorker(t.agent, t.task, index, batchSize, batchId);
 					let result = await runSingleAgent(
 						ctx.cwd,
 						agents,
@@ -666,6 +714,7 @@ export default function (pi: ExtensionAPI) {
 						);
 					}
 
+					updateWorker(workerId, result.exitCode === 0 ? "completed" : "failed");
 					allResults[index] = result;
 					emitParallelUpdate();
 					return result;

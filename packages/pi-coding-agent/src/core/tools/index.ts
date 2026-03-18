@@ -7,6 +7,7 @@ export {
 	type BashToolOptions,
 	bashTool,
 	createBashTool,
+	rewriteBackgroundCommand,
 } from "./bash.js";
 export {
 	type BashInterceptorRule,
@@ -98,7 +99,7 @@ export {
 	formatLineTag,
 	type HashlineEdit,
 	HashlineMismatchError,
-	hashlineParseText,
+	parseHashlineText,
 	type HashMismatch,
 	parseTag,
 	stripNewLinePrefixes,

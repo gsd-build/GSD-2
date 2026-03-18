@@ -1,5 +1,5 @@
 // Tests for GSD visualizer overlay.
-// Verifies filter mode, tab switching, including reverse tab navigation, and export key handling.
+// Verifies filter mode, tab switching, mouse support, page scroll, help overlay, and 10-tab config.
 
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -14,8 +14,8 @@ const overlaySrc = readFileSync(join(__dirname, "..", "visualizer-overlay.ts"), 
 console.log("\n=== Overlay: Tab Configuration ===");
 
 assertTrue(
-  overlaySrc.includes("TAB_COUNT = 7"),
-  "TAB_COUNT is 7",
+  overlaySrc.includes("TAB_COUNT = 10"),
+  "TAB_COUNT is 10",
 );
 
 assertTrue(
@@ -24,17 +24,42 @@ assertTrue(
 );
 
 assertTrue(
-  overlaySrc.includes('"5 Agent"'),
+  overlaySrc.includes('"2 Timeline"'),
+  "has Timeline tab label",
+);
+
+assertTrue(
+  overlaySrc.includes('"3 Deps"'),
+  "has Deps tab label",
+);
+
+assertTrue(
+  overlaySrc.includes('"5 Health"'),
+  "has Health tab label",
+);
+
+assertTrue(
+  overlaySrc.includes('"6 Agent"'),
   "has Agent tab label",
 );
 
 assertTrue(
-  overlaySrc.includes('"6 Changes"'),
+  overlaySrc.includes('"7 Changes"'),
   "has Changes tab label",
 );
 
 assertTrue(
-  overlaySrc.includes('"7 Export"'),
+  overlaySrc.includes('"8 Knowledge"'),
+  "has Knowledge tab label",
+);
+
+assertTrue(
+  overlaySrc.includes('"9 Captures"'),
+  "has Captures tab label",
+);
+
+assertTrue(
+  overlaySrc.includes('"0 Export"'),
   "has Export tab label",
 );
 
@@ -69,10 +94,10 @@ assertTrue(
 
 console.log("\n=== Overlay: Tab Switching ===");
 
-// Supports 1-7 keys
+// Supports 1-9,0 keys
 assertTrue(
-  overlaySrc.includes('"1234567"'),
-  "supports keys 1-7 for tab switching",
+  overlaySrc.includes('"1234567890"'),
+  "supports keys 1-9,0 for tab switching",
 );
 
 // Tab wraps with TAB_COUNT
@@ -86,11 +111,69 @@ assertTrue(
   "supports Shift+Tab for reverse tab switching",
 );
 
+console.log("\n=== Overlay: Page/Half-Page Scroll ===");
+
+assertTrue(
+  overlaySrc.includes("Key.pageUp"),
+  "has Key.pageUp handler",
+);
+
+assertTrue(
+  overlaySrc.includes("Key.pageDown"),
+  "has Key.pageDown handler",
+);
+
+assertTrue(
+  overlaySrc.includes('Key.ctrl("u")'),
+  "has Ctrl+U half-page scroll",
+);
+
+assertTrue(
+  overlaySrc.includes('Key.ctrl("d")'),
+  "has Ctrl+D half-page scroll",
+);
+
+console.log("\n=== Overlay: Mouse Support ===");
+
+assertTrue(
+  overlaySrc.includes("parseSGRMouse"),
+  "has parseSGRMouse method",
+);
+
+assertTrue(
+  overlaySrc.includes("?1003h"),
+  "enables mouse tracking in constructor",
+);
+
+assertTrue(
+  overlaySrc.includes("?1003l"),
+  "disables mouse tracking in dispose",
+);
+
+console.log("\n=== Overlay: Collapsible Milestones ===");
+
+assertTrue(
+  overlaySrc.includes("collapsedMilestones"),
+  "has collapsedMilestones state",
+);
+
+console.log("\n=== Overlay: Help Overlay ===");
+
+assertTrue(
+  overlaySrc.includes("showHelp"),
+  "has showHelp state",
+);
+
+assertTrue(
+  overlaySrc.includes('data === "?"'),
+  "? key toggles help",
+);
+
 console.log("\n=== Overlay: Export Key Interception ===");
 
 assertTrue(
-  overlaySrc.includes("activeTab === 6"),
-  "export key handling checks for tab 7 (index 6)",
+  overlaySrc.includes("activeTab === 9"),
+  "export key handling checks for tab 0 (index 9)",
 );
 
 assertTrue(
@@ -106,13 +189,18 @@ assertTrue(
 console.log("\n=== Overlay: Footer ===");
 
 assertTrue(
-  overlaySrc.includes("Tab/Shift+Tab/1-7"),
-  "footer hint shows Tab, Shift+Tab, and 1-7 tab range",
+  overlaySrc.includes("1-9,0"),
+  "footer hint shows 1-9,0 tab range",
 );
 
 assertTrue(
-  overlaySrc.includes("/ filter"),
-  "footer hint mentions filter",
+  overlaySrc.includes("PgUp/PgDn"),
+  "footer hint mentions PgUp/PgDn",
+);
+
+assertTrue(
+  overlaySrc.includes("? help"),
+  "footer hint mentions ? for help",
 );
 
 console.log("\n=== Overlay: Scroll Offsets ===");
@@ -120,6 +208,30 @@ console.log("\n=== Overlay: Scroll Offsets ===");
 assertTrue(
   overlaySrc.includes(`new Array(TAB_COUNT).fill(0)`),
   "scroll offsets sized to TAB_COUNT",
+);
+
+console.log("\n=== Overlay: Terminal Resize Handling ===");
+
+assertTrue(
+  overlaySrc.includes('resizeHandler'),
+  "has resizeHandler property",
+);
+
+assertTrue(
+  overlaySrc.includes('"resize"'),
+  "listens for resize events",
+);
+
+assertTrue(
+  overlaySrc.includes('removeListener("resize"'),
+  "removes resize listener on dispose",
+);
+
+console.log("\n=== Overlay: Shared Imports ===");
+
+assertTrue(
+  overlaySrc.includes('from "../shared/mod.js"'),
+  "imports from shared barrel",
 );
 
 report();

@@ -103,6 +103,7 @@ async function main(): Promise<void> {
       writeFile(base, 'milestones/M001/M001-ROADMAP.md', ROADMAP_CONTENT);
       writeFile(base, 'milestones/M001/slices/S01/S01-PLAN.md', PLAN_CONTENT);
       writeFile(base, 'milestones/M001/slices/S01/tasks/.gitkeep', '');
+      writeFile(base, 'milestones/M001/slices/S01/tasks/T01-PLAN.md', '# T01 Plan');
       writeFile(base, 'REQUIREMENTS.md', REQUIREMENTS_CONTENT);
 
       // Derive state from files only (no DB)
@@ -166,6 +167,7 @@ async function main(): Promise<void> {
       writeFile(base, 'milestones/M001/M001-ROADMAP.md', ROADMAP_CONTENT);
       writeFile(base, 'milestones/M001/slices/S01/S01-PLAN.md', PLAN_CONTENT);
       writeFile(base, 'milestones/M001/slices/S01/tasks/.gitkeep', '');
+      writeFile(base, 'milestones/M001/slices/S01/tasks/T01-PLAN.md', '# T01 Plan');
 
       // No DB open — isDbAvailable() is false
       assertTrue(!isDbAvailable(), 'fallback: DB is not available');
@@ -189,6 +191,7 @@ async function main(): Promise<void> {
       writeFile(base, 'milestones/M001/M001-ROADMAP.md', ROADMAP_CONTENT);
       writeFile(base, 'milestones/M001/slices/S01/S01-PLAN.md', PLAN_CONTENT);
       writeFile(base, 'milestones/M001/slices/S01/tasks/.gitkeep', '');
+      writeFile(base, 'milestones/M001/slices/S01/tasks/T01-PLAN.md', '# T01 Plan');
 
       // Open DB but insert nothing — empty artifacts table
       openDatabase(':memory:');
@@ -219,6 +222,7 @@ async function main(): Promise<void> {
       writeFile(base, 'milestones/M001/M001-ROADMAP.md', ROADMAP_CONTENT);
       writeFile(base, 'milestones/M001/slices/S01/S01-PLAN.md', PLAN_CONTENT);
       writeFile(base, 'milestones/M001/slices/S01/tasks/.gitkeep', '');
+      writeFile(base, 'milestones/M001/slices/S01/tasks/T01-PLAN.md', '# T01 Plan');
       writeFile(base, 'REQUIREMENTS.md', REQUIREMENTS_CONTENT);
 
       // Open DB but only insert the roadmap — plan and requirements missing from DB
@@ -248,34 +252,24 @@ async function main(): Promise<void> {
     }
   }
 
-  // ─── Test 5: Requirements counting from DB content ────────────────────
-  console.log('\n=== derive-state-db: requirements from DB content ===');
+  // ─── Test 5: Requirements counting from disk (DB no longer used for content) ─
+  console.log('\n=== derive-state-db: requirements from disk content ===');
   {
     const base = createFixtureBase();
     try {
       // Write minimal milestone dir (needed for milestone discovery)
       mkdirSync(join(base, '.gsd', 'milestones', 'M001'), { recursive: true });
-      // Do NOT write REQUIREMENTS.md to disk — only in DB
-
-      openDatabase(':memory:');
-      insertArtifactRow('REQUIREMENTS.md', REQUIREMENTS_CONTENT, {
-        artifact_type: 'requirements',
-      });
+      // Write REQUIREMENTS.md to disk (DB content is no longer used by deriveState)
+      writeFile(base, 'REQUIREMENTS.md', REQUIREMENTS_CONTENT);
 
       invalidateStateCache();
       const state = await deriveState(base);
 
-      // deriveState reads requirements via loadFile() from disk, not from DB.
-      // Since REQUIREMENTS.md was only inserted into the in-memory DB (not written
-      // to disk), deriveState will see no requirements. This test verifies the
-      // current disk-only behavior — a future DB-aware loadFile would change these.
-      assertEq(state.requirements?.active, 0, 'req-from-db: requirements.active = 0 (disk-only)');
-      assertEq(state.requirements?.validated, 0, 'req-from-db: requirements.validated = 0 (disk-only)');
-      assertEq(state.requirements?.total, 0, 'req-from-db: requirements.total = 0 (disk-only)');
-
-      closeDatabase();
+      // Requirements should come from disk
+      assertEq(state.requirements?.active, 2, 'req-from-disk: requirements.active = 2');
+      assertEq(state.requirements?.validated, 1, 'req-from-disk: requirements.validated = 1');
+      assertEq(state.requirements?.total, 3, 'req-from-disk: requirements.total = 3');
     } finally {
-      closeDatabase();
       cleanup(base);
     }
   }
@@ -313,6 +307,7 @@ async function main(): Promise<void> {
       mkdirSync(join(base, '.gsd', 'milestones', 'M001'), { recursive: true });
       mkdirSync(join(base, '.gsd', 'milestones', 'M002'), { recursive: true });
       writeFile(base, 'milestones/M001/M001-ROADMAP.md', completedRoadmap);
+      writeFile(base, 'milestones/M001/M001-VALIDATION.md', `---\nverdict: pass\nremediation_round: 0\n---\n\n# Validation\nPassed.`);
       writeFile(base, 'milestones/M001/M001-SUMMARY.md', summaryContent);
       writeFile(base, 'milestones/M002/M002-ROADMAP.md', activeRoadmap);
 
@@ -357,6 +352,7 @@ async function main(): Promise<void> {
       writeFile(base, 'milestones/M001/M001-ROADMAP.md', ROADMAP_CONTENT);
       writeFile(base, 'milestones/M001/slices/S01/S01-PLAN.md', PLAN_CONTENT);
       writeFile(base, 'milestones/M001/slices/S01/tasks/.gitkeep', '');
+      writeFile(base, 'milestones/M001/slices/S01/tasks/T01-PLAN.md', '# T01 Plan');
 
       openDatabase(':memory:');
       insertArtifactRow('milestones/M001/M001-ROADMAP.md', ROADMAP_CONTENT, {

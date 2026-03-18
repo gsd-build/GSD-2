@@ -1,15 +1,15 @@
 # Browser-Tools Feature Additions — Implementation Requirements
 
 > Ref: [#698](https://github.com/gsd-build/gsd-2/issues/698)
-> Status: Proposal — open for contributor review
+> Status: **Shipped** — all 10 features implemented and merged to main
 
 ## Current State
 
-Browser-tools ships **47 tools** across 10 modules (~8,300 lines). The extension wraps Playwright's Chromium instance with intent resolution, semantic actions, assertions, state diffing, an action timeline, HAR/trace export, and a deterministic ref system. Context is managed via `lifecycle.ts` (browser/context/page lifecycle) and `state.ts` (session tracking).
+Browser-tools shipped **47 tools** across 10 modules (~8,300 lines) at the time this proposal was written. After implementation of these 10 features, the tool count expanded with 13 additional tools (some features map to multiple tools).
 
-Key existing capabilities: `browser_navigate`, `browser_click`, `browser_evaluate`, `browser_assert`, `browser_diff`, `browser_batch`, `browser_find_best`, `browser_act`, `browser_trace_start/stop`, `browser_export_har`, `browser_set_viewport`, `browser_screenshot`, `browser_snapshot_refs`.
+Key existing capabilities at proposal time: `browser_navigate`, `browser_click`, `browser_evaluate`, `browser_assert`, `browser_diff`, `browser_batch`, `browser_find_best`, `browser_act`, `browser_trace_start/stop`, `browser_export_har`, `browser_set_viewport`, `browser_screenshot`, `browser_snapshot_refs`.
 
-No existing support for: storage state persistence, route interception, PDF export, structured data extraction, device emulation profiles, visual diffing, or test code generation.
+**Implemented tools** (shipped in main): `browser_save_pdf`, `browser_save_state`, `browser_restore_state`, `browser_mock_route`, `browser_block_urls`, `browser_clear_routes`, `browser_emulate_device`, `browser_extract`, `browser_visual_diff`, `browser_zoom_region`, `browser_generate_test`, `browser_check_injection`, `browser_action_cache`.
 
 ---
 

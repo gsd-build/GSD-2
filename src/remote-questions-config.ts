@@ -9,11 +9,17 @@
  */
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
-import { getGlobalGSDPreferencesPath } from "./resources/extensions/gsd/preferences.js";
+import { dirname, join } from "node:path";
+import { homedir } from "node:os";
+
+// Inlined from preferences.ts to avoid crossing the compiled/uncompiled
+// boundary — this file is compiled by tsc, but preferences.ts is loaded
+// via jiti at runtime. Importing it as .js fails because no .js exists
+// in dist/. See #592, #1110.
+const GLOBAL_PREFERENCES_PATH = join(homedir(), ".gsd", "preferences.md");
 
 export function saveRemoteQuestionsConfig(channel: "slack" | "discord" | "telegram", channelId: string): void {
-  const prefsPath = getGlobalGSDPreferencesPath();
+  const prefsPath = GLOBAL_PREFERENCES_PATH;
   const block = [
     "remote_questions:",
     `  channel: ${channel}`,

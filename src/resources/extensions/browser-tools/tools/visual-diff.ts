@@ -55,7 +55,7 @@ export function registerVisualDiffTools(pi: ExtensionAPI, deps: ToolDeps): void 
 
 				// Ensure .gitignore
 				const gitignorePath = pathMod.join(baselineDir, ".gitignore");
-				await writeFile(gitignorePath, "*\n!.gitignore\n").catch(() => {});
+				await writeFile(gitignorePath, "*\n!.gitignore\n").catch(() => { /* best-effort — .gitignore may already exist or dir may be read-only */ });
 
 				// Generate baseline name
 				const url = p.url();

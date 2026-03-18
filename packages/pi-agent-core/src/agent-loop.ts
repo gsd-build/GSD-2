@@ -333,6 +333,8 @@ async function streamAssistantResponse(
 			case "toolcall_start":
 			case "toolcall_delta":
 			case "toolcall_end":
+			case "server_tool_use":
+			case "web_search_result":
 				if (partialMessage) {
 					partialMessage = event.partial;
 					context.messages[context.messages.length - 1] = partialMessage;

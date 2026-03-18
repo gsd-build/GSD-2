@@ -10,12 +10,19 @@ import {
 import type { BgProcess, OutputDigest, OutputLine, GetOutputOptions } from "./types.js";
 import {
 	ERROR_PATTERNS,
+	ERROR_PATTERN_UNION,
+	WARNING_PATTERN_UNION,
+	READINESS_PATTERN_UNION,
+	BUILD_COMPLETE_PATTERN_UNION,
+	TEST_RESULT_PATTERN_UNION,
 	WARNING_PATTERNS,
 	URL_PATTERN,
 	PORT_PATTERN,
+	PORT_PATTERN_SOURCE,
 	READINESS_PATTERNS,
 	BUILD_COMPLETE_PATTERNS,
 	TEST_RESULT_PATTERNS,
+	LINE_DEDUP_MAX,
 } from "./types.js";
 import { addEvent, pushAlert } from "./process-manager.js";
 import { transitionToReady } from "./readiness-detector.js";
@@ -24,8 +31,8 @@ import { formatUptime, formatTimeAgo } from "./utilities.js";
 // ── Output Analysis ────────────────────────────────────────────────────────
 
 export function analyzeLine(bg: BgProcess, line: string, stream: "stdout" | "stderr"): void {
-	// Error detection
-	if (ERROR_PATTERNS.some(p => p.test(line))) {
+	// Error detection — single union regex instead of .some(p => p.test(line))
+	if (ERROR_PATTERN_UNION.test(line)) {
 		bg.recentErrors.push(line.trim().slice(0, 200)); // Cap line length
 		if (bg.recentErrors.length > 50) bg.recentErrors.splice(0, bg.recentErrors.length - 50);
 
@@ -40,8 +47,8 @@ export function analyzeLine(bg: BgProcess, line: string, stream: "stdout" | "std
 		}
 	}
 
-	// Warning detection
-	if (WARNING_PATTERNS.some(p => p.test(line))) {
+	// Warning detection — single union regex
+	if (WARNING_PATTERN_UNION.test(line)) {
 		bg.recentWarnings.push(line.trim().slice(0, 200));
 		if (bg.recentWarnings.length > 50) bg.recentWarnings.splice(0, bg.recentWarnings.length - 50);
 	}
@@ -56,9 +63,10 @@ export function analyzeLine(bg: BgProcess, line: string, stream: "stdout" | "std
 		}
 	}
 
-	// Port extraction
+	// Port extraction — PORT_PATTERN has /g flag so must be re-created per call
+	// Use PORT_PATTERN_SOURCE (string) to avoid re-parsing the literal each time
+	const portRe = new RegExp(PORT_PATTERN_SOURCE, "gi");
 	let portMatch: RegExpExecArray | null;
-	const portRe = new RegExp(PORT_PATTERN.source, PORT_PATTERN.flags);
 	while ((portMatch = portRe.exec(line)) !== null) {
 		const port = parseInt(portMatch[1], 10);
 		if (port > 0 && port <= 65535 && !bg.ports.includes(port)) {
@@ -71,7 +79,7 @@ export function analyzeLine(bg: BgProcess, line: string, stream: "stdout" | "std
 		}
 	}
 
-	// Readiness detection
+	// Readiness detection — single union regex
 	if (bg.status === "starting") {
 		// Check custom ready pattern first
 		if (bg.readyPattern) {
@@ -83,14 +91,14 @@ export function analyzeLine(bg: BgProcess, line: string, stream: "stdout" | "std
 		}
 
 		// Check built-in readiness patterns
-		if (bg.status === "starting" && READINESS_PATTERNS.some(p => p.test(line))) {
+		if (bg.status === "starting" && READINESS_PATTERN_UNION.test(line)) {
 			transitionToReady(bg, `Readiness pattern matched: ${line.trim().slice(0, 100)}`);
 		}
 	}
 
 	// Recovery detection: if we were in error and see a success pattern
 	if (bg.status === "error") {
-		if (READINESS_PATTERNS.some(p => p.test(line)) || BUILD_COMPLETE_PATTERNS.some(p => p.test(line))) {
+		if (READINESS_PATTERN_UNION.test(line) || BUILD_COMPLETE_PATTERN_UNION.test(line)) {
 			bg.status = "ready";
 			bg.recentErrors = [];
 			addEvent(bg, { type: "recovered", detail: "Process recovered from error state" });
@@ -98,10 +106,22 @@ export function analyzeLine(bg: BgProcess, line: string, stream: "stdout" | "std
 		}
 	}
 
-	// Dedup tracking
+	// Dedup tracking — evict oldest entry when map exceeds LINE_DEDUP_MAX (LRU via Map insertion order)
 	bg.totalRawLines++;
 	const lineHash = line.trim().slice(0, 100);
-	bg.lineDedup.set(lineHash, (bg.lineDedup.get(lineHash) || 0) + 1);
+	const existing = bg.lineDedup.get(lineHash);
+	if (existing !== undefined) {
+		// Re-insert to update insertion order (move to tail = most recent)
+		bg.lineDedup.delete(lineHash);
+		bg.lineDedup.set(lineHash, existing + 1);
+	} else {
+		if (bg.lineDedup.size >= LINE_DEDUP_MAX) {
+			// Evict oldest entry (Map iteration order = insertion order = LRU at head)
+			const oldest = bg.lineDedup.keys().next().value;
+			if (oldest !== undefined) bg.lineDedup.delete(oldest);
+		}
+		bg.lineDedup.set(lineHash, 1);
+	}
 }
 
 // ── Digest Generation ──────────────────────────────────────────────────────
@@ -154,12 +174,12 @@ export function getHighlights(bg: BgProcess, maxLines: number = 15): string[] {
 	for (let i = 0; i < bg.output.length; i++) {
 		const entry = bg.output[i];
 		let score = 0;
-		if (ERROR_PATTERNS.some(p => p.test(entry.line))) score += 10;
-		if (WARNING_PATTERNS.some(p => p.test(entry.line))) score += 5;
+		if (ERROR_PATTERN_UNION.test(entry.line)) score += 10;
+		if (WARNING_PATTERN_UNION.test(entry.line)) score += 5;
 		if (URL_PATTERN.test(entry.line)) score += 3;
-		if (READINESS_PATTERNS.some(p => p.test(entry.line))) score += 8;
-		if (TEST_RESULT_PATTERNS.some(p => p.test(entry.line))) score += 7;
-		if (BUILD_COMPLETE_PATTERNS.some(p => p.test(entry.line))) score += 6;
+		if (READINESS_PATTERN_UNION.test(entry.line)) score += 8;
+		if (TEST_RESULT_PATTERN_UNION.test(entry.line)) score += 7;
+		if (BUILD_COMPLETE_PATTERN_UNION.test(entry.line)) score += 6;
 		// Boost recent lines so highlights favor fresh output over stale
 		if (i >= bg.output.length - 50) score += 2;
 		if (score > 0) {

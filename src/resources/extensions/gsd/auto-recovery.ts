@@ -11,7 +11,7 @@ import type { ExtensionContext } from "@gsd/pi-coding-agent";
 import {
   clearUnitRuntimeRecord,
 } from "./unit-runtime.js";
-import { clearParseCache } from "./files.js";
+import { clearParseCache, parseRoadmap, parsePlan } from "./files.js";
 import {
   nativeConflictFiles,
   nativeCommit,
@@ -35,9 +35,12 @@ import {
   resolveMilestoneFile,
   clearPathCache,
   resolveGsdRootFile,
+  gsdRoot,
 } from "./paths.js";
-import { parseRoadmap } from "./files.js";
-import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, renameSync } from "node:fs";
+import { isValidationTerminal } from "./state.js";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
+import { atomicWriteSync } from "./atomic-write.js";
+import { loadJsonFileOrNull } from "./json-persistence.js";
 import { dirname, join } from "node:path";
 
 // ─── Artifact Resolution & Verification ───────────────────────────────────────
@@ -83,9 +86,17 @@ export function resolveExpectedArtifactPath(unitType: string, unitId: string, ba
       const dir = resolveSlicePath(base, mid, sid!);
       return dir ? join(dir, buildSliceFileName(sid!, "SUMMARY")) : null;
     }
+    case "validate-milestone": {
+      const dir = resolveMilestonePath(base, mid);
+      return dir ? join(dir, buildMilestoneFileName(mid, "VALIDATION")) : null;
+    }
     case "complete-milestone": {
       const dir = resolveMilestonePath(base, mid);
       return dir ? join(dir, buildMilestoneFileName(mid, "SUMMARY")) : null;
+    }
+    case "replan-slice": {
+      const dir = resolveSlicePath(base, mid, sid!);
+      return dir ? join(dir, buildSliceFileName(sid!, "REPLAN")) : null;
     }
     case "rewrite-docs":
       return null;
@@ -124,11 +135,35 @@ export function verifyExpectedArtifact(unitType: string, unitId: string, base: s
   }
 
   const absPath = resolveExpectedArtifactPath(unitType, unitId, base);
-  // Unit types with no verifiable artifact always pass (e.g. replan-slice).
-  // For all other types, null means the parent directory is missing on disk
-  // — treat as stale completion state so the key gets evicted (#313).
-  if (!absPath) return unitType === "replan-slice";
+  // For unit types with no verifiable artifact (null path), the parent directory
+  // is missing on disk — treat as stale completion state so the key gets evicted (#313).
+  if (!absPath) return false;
   if (!existsSync(absPath)) return false;
+
+  // validate-milestone must have a VALIDATION file with a terminal verdict
+  // (pass, needs-attention, or needs-remediation). Without this check, a
+  // VALIDATION file with missing/malformed frontmatter or an unrecognized
+  // verdict is treated as "complete" by the artifact check but deriveState
+  // still returns phase:"validating-milestone" (because isValidationTerminal
+  // returns false), creating an infinite skip loop that hits the lifetime cap.
+  if (unitType === "validate-milestone") {
+    try {
+      const validationContent = readFileSync(absPath, "utf-8");
+      if (!isValidationTerminal(validationContent)) return false;
+    } catch {
+      return false;
+    }
+  }
+
+  // plan-slice must produce a plan with actual task entries, not just a scaffold.
+  // The plan file may exist from a prior discussion/context step with only headings
+  // but no tasks. Without this check the artifact is considered "complete" and the
+  // unit gets skipped — but deriveState still returns phase:"planning" because the
+  // plan has no tasks, creating an infinite skip loop (#699).
+  if (unitType === "plan-slice") {
+    const planContent = readFileSync(absPath, "utf-8");
+    if (!/^- \[[xX ]\] \*\*T\d+:/m.test(planContent)) return false;
+  }
 
   // execute-task must also have its checkbox marked [x] in the slice plan
   if (unitType === "execute-task") {
@@ -143,6 +178,31 @@ export function verifyExpectedArtifact(unitType: string, unitId: string, base: s
         const escapedTid = tid.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         const re = new RegExp(`^- \\[[xX]\\] \\*\\*${escapedTid}:`, "m");
         if (!re.test(planContent)) return false;
+      }
+    }
+  }
+
+  // plan-slice must also produce individual task plan files for every task listed
+  // in the slice plan. Without this check, a plan-slice that wrote S{sid}-PLAN.md
+  // but omitted T{tid}-PLAN.md files would be marked complete, causing execute-task
+  // to dispatch with a missing task plan (see issue #739).
+  if (unitType === "plan-slice") {
+    const parts = unitId.split("/");
+    const mid = parts[0];
+    const sid = parts[1];
+    if (mid && sid) {
+      try {
+        const planContent = readFileSync(absPath, "utf-8");
+        const plan = parsePlan(planContent);
+        const tasksDir = resolveTasksDir(base, mid, sid);
+        if (plan.tasks.length > 0 && tasksDir) {
+          for (const task of plan.tasks) {
+            const taskPlanFile = join(tasksDir, `${task.id}-PLAN.md`);
+            if (!existsSync(taskPlanFile)) return false;
+          }
+        }
+      } catch {
+        // Parse failure — don't block; slice plan may have non-standard format
       }
     }
   }
@@ -169,7 +229,7 @@ export function verifyExpectedArtifact(unitType: string, unitId: string, base: s
         try {
           const roadmapContent = readFileSync(roadmapFile, "utf-8");
           const roadmap = parseRoadmap(roadmapContent);
-          const slice = roadmap.slices.find(s => s.id === sid);
+          const slice = (roadmap.slices ?? []).find(s => s.id === sid);
           if (slice && !slice.done) return false;
         } catch {
           // Corrupt/unparseable roadmap — fail verification so the unit
@@ -234,6 +294,8 @@ export function diagnoseExpectedArtifact(unitType: string, unitId: string, base:
       return `${relSliceFile(base, mid!, sid!, "ASSESSMENT")} (roadmap reassessment)`;
     case "run-uat":
       return `${relSliceFile(base, mid!, sid!, "UAT-RESULT")} (UAT result)`;
+    case "validate-milestone":
+      return `${relMilestoneFile(base, mid!, "VALIDATION")} (milestone validation report)`;
     case "complete-milestone":
       return `${relMilestoneFile(base, mid!, "SUMMARY")} (milestone summary)`;
     default:
@@ -294,57 +356,44 @@ export function skipExecuteTask(
 
 // ─── Disk-backed completed-unit helpers ───────────────────────────────────────
 
+function isStringArray(data: unknown): data is string[] {
+  return Array.isArray(data) && data.every(item => typeof item === "string");
+}
+
 /** Path to the persisted completed-unit keys file. */
 export function completedKeysPath(base: string): string {
-  return join(base, ".gsd", "completed-units.json");
+  return join(gsdRoot(base), "completed-units.json");
 }
 
 /** Write a completed unit key to disk (read-modify-write append to set). */
 export function persistCompletedKey(base: string, key: string): void {
   const file = completedKeysPath(base);
-  let keys: string[] = [];
-  try {
-    if (existsSync(file)) {
-      keys = JSON.parse(readFileSync(file, "utf-8"));
-    }
-  } catch (e) { /* corrupt file — start fresh */ void e; }
+  const keys = loadJsonFileOrNull(file, isStringArray) ?? [];
   const keySet = new Set(keys);
   if (!keySet.has(key)) {
     keys.push(key);
-    // Atomic write: tmp file + rename prevents partial writes on crash
-    const tmpFile = file + ".tmp";
-    writeFileSync(tmpFile, JSON.stringify(keys), "utf-8");
-    renameSync(tmpFile, file);
+    atomicWriteSync(file, JSON.stringify(keys));
   }
 }
 
 /** Remove a stale completed unit key from disk. */
 export function removePersistedKey(base: string, key: string): void {
   const file = completedKeysPath(base);
-  try {
-    if (existsSync(file)) {
-      const keys: string[] = JSON.parse(readFileSync(file, "utf-8"));
-      const filtered = keys.filter(k => k !== key);
-      // Only write if the key was actually present
-      if (filtered.length !== keys.length) {
-        // Atomic write: tmp file + rename prevents partial writes on crash
-        const tmpFile = file + ".tmp";
-        writeFileSync(tmpFile, JSON.stringify(filtered), "utf-8");
-        renameSync(tmpFile, file);
-      }
-    }
-  } catch (e) { /* non-fatal: removePersistedKey failure */ void e; }
+  const keys = loadJsonFileOrNull(file, isStringArray);
+  if (!keys) return;
+  const filtered = keys.filter(k => k !== key);
+  if (filtered.length !== keys.length) {
+    atomicWriteSync(file, JSON.stringify(filtered));
+  }
 }
 
 /** Load all completed unit keys from disk into the in-memory set. */
 export function loadPersistedKeys(base: string, target: Set<string>): void {
   const file = completedKeysPath(base);
-  try {
-    if (existsSync(file)) {
-      const keys: string[] = JSON.parse(readFileSync(file, "utf-8"));
-      for (const k of keys) target.add(k);
-    }
-  } catch (e) { /* non-fatal: loadPersistedKeys failure */ void e; }
+  const keys = loadJsonFileOrNull(file, isStringArray);
+  if (keys) {
+    for (const k of keys) target.add(k);
+  }
 }
 
 // ─── Merge State Reconciliation ───────────────────────────────────────────────
@@ -525,6 +574,15 @@ export function buildLoopRemediationSteps(unitType: string, unitId: string, base
         `   2. Mark ${sid} [x] in ${relMilestoneFile(base, mid, "ROADMAP")}`,
         `   3. Run \`gsd doctor\` to reconcile .gsd/ state`,
         `   4. Resume auto-mode`,
+      ].join("\n");
+    }
+    case "validate-milestone": {
+      if (!mid) break;
+      const artifactRel = relMilestoneFile(base, mid, "VALIDATION");
+      return [
+        `   1. Write ${artifactRel} with verdict: pass`,
+        `   2. Run \`gsd doctor\``,
+        `   3. Resume auto-mode`,
       ].join("\n");
     }
     default:

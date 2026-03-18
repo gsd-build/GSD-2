@@ -18,7 +18,29 @@ One command. Walk away. Come back to a built project with clean git history.
 
 <pre><code>npm install -g gsd-pi</code></pre>
 
+> **📋 NOTICE: New to Node on Mac?** If you installed Node.js via Homebrew, you may be running a development release instead of LTS. **[Read this guide](./docs/node-lts-macos.md)** to pin Node 24 LTS and avoid compatibility issues.
+
 </div>
+
+---
+
+## What's New in v2.29
+
+- **Node.js 24 LTS** — CI, Docker, and package config all upgraded to Node 24 (Krypton)
+- **`searchExcludeDirs` setting** — blacklist directories from `@` file autocomplete (e.g., `node_modules`, `dist`)
+- **Automated releases** — prod-release now auto-generates changelogs, bumps versions, and publishes to npm
+- **`/gsd logs`** — browse activity, debug, and metrics logs from within a session
+- **Configurable screenshots** — browser-tools now support custom resolution, format, and quality
+- **Pre-commit secret scanning** — automatic detection of hardcoded secrets in CI and locally
+- **Per-project MCP config** — `.gsd/mcp.json` for project-scoped MCP server definitions
+- **API request metrics** — track request counts for Copilot/subscription users
+- **`/gsd keys`** — full API key lifecycle management (list, add, remove, test, rotate, doctor)
+- **Advisory verification gate** — auto-discovered checks (lint/test from package.json) no longer doom-loop on pre-existing errors
+- **Worktree living doc sync** — DECISIONS, REQUIREMENTS, PROJECT, and KNOWLEDGE now sync between worktree and project root
+- **Windows non-ASCII path support** — `cpSync` fallback for usernames with special characters
+- **`needs-discussion` routing** — milestones with draft context now route to the interactive discussion flow instead of stopping
+
+See the full [Changelog](./CHANGELOG.md) for details.
 
 ---
 
@@ -32,11 +54,17 @@ Full documentation is available in the [`docs/`](./docs/) directory:
 - **[Token Optimization](./docs/token-optimization.md)** — profiles, context compression, complexity routing (v2.17)
 - **[Cost Management](./docs/cost-management.md)** — budgets, tracking, projections
 - **[Git Strategy](./docs/git-strategy.md)** — worktree isolation, branching, merge behavior
+- **[Parallel Orchestration](./docs/parallel-orchestration.md)** — run multiple milestones simultaneously
 - **[Working in Teams](./docs/working-in-teams.md)** — unique IDs, shared artifacts
 - **[Skills](./docs/skills.md)** — bundled skills, discovery, custom authoring
 - **[Commands Reference](./docs/commands.md)** — all commands and keyboard shortcuts
 - **[Architecture](./docs/architecture.md)** — system design and dispatch pipeline
-- **[Troubleshooting](./docs/troubleshooting.md)** — common issues, doctor, recovery
+- **[Troubleshooting](./docs/troubleshooting.md)** — common issues, doctor, forensics, recovery
+- **[CI/CD Pipeline](./docs/ci-cd-pipeline.md)** — three-stage promotion pipeline (Dev → Test → Prod)
+- **[VS Code Extension](./vscode-extension/README.md)** — chat participant, sidebar dashboard, RPC integration
+- **[Visualizer](./docs/visualizer.md)** — workflow visualizer with stats and discussion status
+- **[Remote Questions](./docs/remote-questions.md)** — route decisions to Slack or Discord when human input is needed
+- **[Dynamic Model Routing](./docs/dynamic-model-routing.md)** — complexity-based model selection and budget pressure
 - **[Migration from v1](./docs/migration.md)** — `.planning` → `.gsd` migration
 
 ---
@@ -65,6 +93,9 @@ GSD v2 solves all of these because it's not a prompt framework anymore — it's 
 | Context injection    | "Read this file"             | Pre-inlined into dispatch prompt                        |
 | Roadmap reassessment | Manual                       | Automatic after each slice completes                    |
 | Skill discovery      | None                         | Auto-detect and install relevant skills during research |
+| Verification         | Manual                       | Automated verification commands with auto-fix retries   |
+| Reporting            | None                         | Self-contained HTML reports with metrics and dep graphs  |
+| Parallel execution   | None                         | Multi-worker parallel milestone orchestration            |
 
 ### Migrating from v1
 
@@ -111,9 +142,11 @@ Each slice flows through phases automatically:
 
 ```
 Research → Plan → Execute (per task) → Complete → Reassess Roadmap → Next Slice
+                                                                      ↓ (all slices done)
+                                                              Validate Milestone → Complete Milestone
 ```
 
-**Research** scouts the codebase and relevant docs. **Plan** decomposes the slice into tasks with must-haves (mechanically verifiable outcomes). **Execute** runs each task in a fresh context window with only the relevant files pre-loaded. **Complete** writes the summary, UAT script, marks the roadmap, and commits. **Reassess** checks if the roadmap still makes sense given what was learned.
+**Research** scouts the codebase and relevant docs. **Plan** decomposes the slice into tasks with must-haves (mechanically verifiable outcomes). **Execute** runs each task in a fresh context window with only the relevant files pre-loaded — then runs configured verification commands (lint, test, etc.) with auto-fix retries. **Complete** writes the summary, UAT script, marks the roadmap, and commits with meaningful messages derived from task summaries. **Reassess** checks if the roadmap still makes sense given what was learned. **Validate Milestone** runs a reconciliation gate after all slices complete — comparing roadmap success criteria against actual results before sealing the milestone.
 
 ### `/gsd auto` — The Main Event
 
@@ -133,17 +166,23 @@ Auto mode is a state machine driven by files on disk. It reads `.gsd/STATE.md`, 
 
 3. **Git worktree isolation** — Each milestone runs in its own git worktree with a `milestone/<MID>` branch. All slice work commits sequentially — no branch switching, no merge conflicts. When the milestone completes, it's squash-merged to main as one clean commit.
 
-4. **Crash recovery** — A lock file tracks the current unit. If the session dies, the next `/gsd auto` reads the surviving session file, synthesizes a recovery briefing from every tool call that made it to disk, and resumes with full context.
+4. **Crash recovery** — A lock file tracks the current unit. If the session dies, the next `/gsd auto` reads the surviving session file, synthesizes a recovery briefing from every tool call that made it to disk, and resumes with full context. Parallel orchestrator state is persisted to disk with PID liveness detection, so multi-worker sessions survive crashes too. In headless mode, crashes trigger automatic restart with exponential backoff (default 3 attempts).
 
-5. **Stuck detection** — If the same unit dispatches twice (the LLM didn't produce the expected artifact), it retries once with a deep diagnostic. If it fails again, auto mode stops with the exact file it expected.
+5. **Provider error recovery** — Transient provider errors (rate limits, 500/503 server errors, overloaded) auto-resume after a delay. Permanent errors (auth, billing) pause for manual review. The model fallback chain retries transient network errors before switching models.
 
-6. **Timeout supervision** — Soft timeout warns the LLM to wrap up. Idle watchdog detects stalls. Hard timeout pauses auto mode. Recovery steering nudges the LLM to finish durable output before giving up.
+6. **Stuck detection** — If the same unit dispatches twice (the LLM didn't produce the expected artifact), it retries once with a deep diagnostic. If it fails again, auto mode stops with the exact file it expected.
 
-7. **Cost tracking** — Every unit's token usage and cost is captured, broken down by phase, slice, and model. The dashboard shows running totals and projections. Budget ceilings can pause auto mode before overspending.
+7. **Timeout supervision** — Soft timeout warns the LLM to wrap up. Idle watchdog detects stalls. Hard timeout pauses auto mode. Recovery steering nudges the LLM to finish durable output before giving up.
 
-8. **Adaptive replanning** — After each slice completes, the roadmap is reassessed. If the work revealed new information that changes the plan, slices are reordered, added, or removed before continuing.
+8. **Cost tracking** — Every unit's token usage and cost is captured, broken down by phase, slice, and model. The dashboard shows running totals and projections. Budget ceilings can pause auto mode before overspending.
 
-9. **Escape hatch** — Press Escape to pause. The conversation is preserved. Interact with the agent, inspect what happened, or just `/gsd auto` to resume from disk state.
+9. **Adaptive replanning** — After each slice completes, the roadmap is reassessed. If the work revealed new information that changes the plan, slices are reordered, added, or removed before continuing.
+
+10. **Verification enforcement** — Configure shell commands (`npm run lint`, `npm run test`, etc.) that run automatically after task execution. Failures trigger auto-fix retries before advancing. Auto-discovered checks from `package.json` run in advisory mode — they log warnings but don't block on pre-existing errors. Configurable via `verification_commands`, `verification_auto_fix`, and `verification_max_retries` preferences.
+
+11. **Milestone validation** — After all slices complete, a `validate-milestone` gate compares roadmap success criteria against actual results before sealing the milestone.
+
+12. **Escape hatch** — Press Escape to pause. The conversation is preserved. Interact with the agent, inspect what happened, or just `/gsd auto` to resume from disk state.
 
 ### `/gsd` and `/gsd next` — Step Mode
 
@@ -221,6 +260,31 @@ gsd
 
 Both terminals read and write the same `.gsd/` files on disk. Your decisions in terminal 2 are picked up automatically at the next phase boundary — no need to stop auto mode.
 
+### Headless mode — CI and scripts
+
+`gsd headless` runs any `/gsd` command without a TUI. Designed for CI pipelines, cron jobs, and scripted automation.
+
+```bash
+# Run auto mode in CI
+gsd headless --timeout 600000
+
+# Create and execute a milestone end-to-end
+gsd headless new-milestone --context spec.md --auto
+
+# One unit at a time (cron-friendly)
+gsd headless next
+
+# Instant JSON snapshot (no LLM, ~50ms)
+gsd headless query
+
+# Force a specific pipeline phase
+gsd headless dispatch plan
+```
+
+Headless auto-responds to interactive prompts, detects completion, and exits with structured codes: `0` complete, `1` error/timeout, `2` blocked. Auto-restarts on crash with exponential backoff. Use `gsd headless query` for instant, machine-readable state inspection — returns phase, next dispatch preview, and parallel worker costs as a single JSON object without spawning an LLM session. Pair with [remote questions](./docs/remote-questions.md) to route decisions to Slack or Discord when human input is needed.
+
+**Multi-session orchestration** — headless mode supports file-based IPC in `.gsd/parallel/` for coordinating multiple GSD workers across milestones. Build orchestrators that spawn, monitor, and budget-cap a fleet of GSD workers.
+
 ### First launch
 
 On first run, GSD launches a branded setup wizard that walks you through LLM provider selection (OAuth or API key), then optional tool API keys (Brave Search, Context7, Jina, Slack, Discord). Every step is skippable — press Enter to skip any. If you have an existing Pi installation, your provider credentials (LLM and tool keys) are imported automatically. Run `gsd config` anytime to re-run the wizard.
@@ -245,6 +309,9 @@ On first run, GSD launches a branded setup wizard that walks you through LLM pro
 | `/gsd forensics`        | Post-mortem investigation of auto-mode failures                 |
 | `/gsd cleanup`          | Archive phase directories from completed milestones             |
 | `/gsd doctor`           | Runtime health checks with auto-fix for common issues           |
+| `/gsd keys`             | API key manager — list, add, remove, test, rotate, doctor       |
+| `/gsd logs`             | Browse activity, debug, and metrics logs                        |
+| `/gsd export --html`    | Generate HTML report for current or completed milestone         |
 | `/worktree` (`/wt`)     | Git worktree lifecycle — create, switch, merge, remove          |
 | `/voice`                | Toggle real-time speech-to-text (macOS, Linux)                  |
 | `/exit`                 | Graceful shutdown — saves session state before exiting          |
@@ -253,8 +320,13 @@ On first run, GSD launches a branded setup wizard that walks you through LLM pro
 | `Ctrl+Alt+G`            | Toggle dashboard overlay                                        |
 | `Ctrl+Alt+V`            | Toggle voice transcription                                      |
 | `Ctrl+Alt+B`            | Show background shell processes                                 |
+| `Alt+V`                 | Paste clipboard image (macOS)                                   |
 | `gsd config`            | Re-run the setup wizard (LLM provider + tool keys)              |
+| `gsd update`            | Update GSD to the latest version                                |
+| `gsd headless [cmd]`    | Run `/gsd` commands without TUI (CI, cron, scripts)             |
+| `gsd headless query`    | Instant JSON snapshot — state, next dispatch, costs (no LLM)    |
 | `gsd --continue` (`-c`) | Resume the most recent session for the current directory        |
+| `gsd sessions`          | Interactive session picker — browse and resume any saved session |
 
 ---
 
@@ -294,7 +366,7 @@ gsd/M001/S01 (deleted after merge):
   feat(S01/T01): core types and interfaces
 ```
 
-One squash commit per milestone on main (or whichever branch you started from). The worktree is torn down after merge. Git bisect works. Individual milestones are revertable.
+One squash commit per milestone on main (or whichever branch you started from). The worktree is torn down after merge. Git bisect works. Individual milestones are revertable. Commit messages are generated from task summaries — no more generic "complete task" messages.
 
 ### Verification
 
@@ -315,6 +387,15 @@ The verification ladder: static checks → command execution → behavioral test
 - Per-unit cost and token breakdown by phase, slice, and model
 - Cost projections based on completed work
 - Completed and in-progress units
+
+### HTML Reports
+
+After a milestone completes, GSD auto-generates a self-contained HTML report in `.gsd/reports/`. Each report includes project summary, progress tree, slice dependency graph (SVG DAG), cost/token metrics with bar charts, execution timeline, changelog, and knowledge base sections. No external dependencies — all CSS and JS are inlined, printable to PDF from any browser.
+
+An auto-generated `index.html` shows all reports with progression metrics across milestones.
+
+- **Automatic** — generated after milestone completion (configurable via `auto_report` preference)
+- **Manual** — run `/gsd export --html` anytime
 
 ---
 
@@ -343,6 +424,10 @@ auto_supervisor:
   hard_timeout_minutes: 30
 budget_ceiling: 50.00
 unique_milestone_ids: true
+verification_commands:
+  - npm run lint
+  - npm run test
+auto_report: true
 ---
 ```
 
@@ -359,7 +444,14 @@ unique_milestone_ids: true
 | `skill_rules`          | Situational rules for skill routing                                                                   |
 | `skill_staleness_days` | Skills unused for N days get deprioritized (default: 60, 0 = disabled)                                |
 | `unique_milestone_ids` | Uses unique milestone names to avoid clashes when working in teams of people                          |
-| `git.isolation`        | `worktree` (default) or `none` — disable worktree isolation for projects that don't need it           |
+| `git.isolation`        | `worktree` (default), `branch`, or `none` — disable worktree isolation for projects that don't need it           |
+| `git.manage_gitignore` | Set `false` to prevent GSD from modifying `.gitignore`                                                           |
+| `verification_commands`| Array of shell commands to run after task execution (e.g., `["npm run lint", "npm run test"]`)        |
+| `verification_auto_fix`| Auto-retry on verification failures (default: true)                                                   |
+| `verification_max_retries` | Max retries for verification failures (default: 2)                                               |
+| `require_slice_discussion` | Pause auto-mode before each slice for human discussion review                                    |
+| `auto_report`          | Auto-generate HTML reports after milestone completion (default: true)                                 |
+| `searchExcludeDirs`    | Directories to exclude from `@` file autocomplete (e.g., `["node_modules", ".git", "dist"]`)          |
 
 ### Agent Instructions
 
@@ -391,24 +483,26 @@ See the full [Token Optimization Guide](./docs/token-optimization.md) for detail
 
 ### Bundled Tools
 
-GSD ships with 14 extensions, all loaded automatically:
+GSD ships with 16 extensions, all loaded automatically:
 
 | Extension              | What it provides                                                                                                       |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | **GSD**                | Core workflow engine, auto mode, commands, dashboard                                                                   |
-| **Browser Tools**      | Playwright-based browser with form intelligence, intent-ranked element finding, and semantic actions                   |
+| **Browser Tools**      | Playwright-based browser with form intelligence, intent-ranked element finding, semantic actions, PDF export, session state persistence, network mocking, device emulation, structured extraction, visual diffing, region zoom, test code generation, and prompt injection detection |
 | **Search the Web**     | Brave Search, Tavily, or Jina page extraction                                                                          |
 | **Google Search**      | Gemini-powered web search with AI-synthesized answers                                                                  |
 | **Context7**           | Up-to-date library/framework documentation                                                                             |
 | **Background Shell**   | Long-running process management with readiness detection                                                               |
 | **Subagent**           | Delegated tasks with isolated context windows                                                                          |
 | **Mac Tools**          | macOS native app automation via Accessibility APIs                                                                     |
-| **MCPorter**           | Lazy on-demand MCP server integration                                                                                  |
+| **MCP Client**         | Native MCP server integration via @modelcontextprotocol/sdk                                                            |
 | **Voice**              | Real-time speech-to-text transcription (macOS, Linux — Ubuntu 22.04+)                                                  |
 | **Slash Commands**     | Custom command creation                                                                                                |
 | **LSP**                | Language Server Protocol integration — diagnostics, go-to-definition, references, hover, symbols, rename, code actions |
 | **Ask User Questions** | Structured user input with single/multi-select                                                                         |
 | **Secure Env Collect** | Masked secret collection without manual .env editing                                                                   |
+| **Remote Questions**   | Route decisions to Slack/Discord when human input is needed in headless/CI mode                                         |
+| **Universal Config**   | Discover and import MCP servers and rules from other AI coding tools                                                    |
 
 ### Bundled Agents
 
@@ -444,6 +538,10 @@ The best practice for working in teams is to ensure unique milestone names acros
 .gsd/runtime/
 # Git worktree working copies
 .gsd/worktrees/
+# Parallel orchestration IPC and worker status
+.gsd/parallel/
+# Generated HTML reports (regenerable via /gsd export --html)
+.gsd/reports/
 # Session-specific interrupted-work markers
 .gsd/milestones/**/continue.md
 .gsd/milestones/**/*-CONTINUE.md
@@ -482,6 +580,7 @@ GSD is a TypeScript application that embeds the Pi coding agent SDK.
 gsd (CLI binary)
   └─ loader.ts          Sets PI_PACKAGE_DIR, GSD env vars, dynamic-imports cli.ts
       └─ cli.ts         Wires SDK managers, loads extensions, starts InteractiveMode
+          ├─ headless.ts     Headless orchestrator (spawns RPC child, auto-responds, detects completion)
           ├─ onboarding.ts   First-run setup wizard (LLM provider + tool keys)
           ├─ wizard.ts       Env hydration from stored auth.json credentials
           ├─ app-paths.ts    ~/.gsd/agent/, ~/.gsd/sessions/, auth.json
@@ -505,7 +604,7 @@ gsd (CLI binary)
 
 ## Requirements
 
-- **Node.js** ≥ 20.6.0 (22+ recommended)
+- **Node.js** ≥ 22.0.0 (24 LTS recommended)
 - **An LLM provider** — any of the 20+ supported providers (see [Use Any Model](#use-any-model))
 - **Git** — initialized automatically if missing
 
@@ -531,7 +630,13 @@ Anthropic, OpenAI, Google (Gemini), OpenRouter, GitHub Copilot, Amazon Bedrock, 
 
 If you have a **Claude Max**, **Codex**, or **GitHub Copilot** subscription, you can use those directly — Pi handles the OAuth flow. No API key needed.
 
-> **Note:** Using OAuth tokens from subscription plans (e.g. Claude Max) outside their native applications may not be explicitly permitted by the provider's Terms of Service. GSD supports API key authentication for all providers as an alternative. Use at your own discretion.
+> **⚠️ Important:** Using OAuth tokens from subscription plans outside their native applications may violate the provider's Terms of Service. In particular:
+>
+> - **Google Gemini** — Using Gemini CLI or Antigravity OAuth tokens in third-party tools has resulted in **Google account suspensions**. This affects your entire Google account, not just the Gemini service. **Use a Gemini API key instead.**
+> - **Claude Max** — Anthropic's ToS may not explicitly permit OAuth use outside Claude's own applications.
+> - **GitHub Copilot** — Usage outside GitHub's own tools may be restricted by your subscription terms.
+>
+> GSD supports API key authentication for all providers as the safe alternative. **We strongly recommend using API keys over OAuth for Google Gemini.**
 
 ### OpenRouter
 

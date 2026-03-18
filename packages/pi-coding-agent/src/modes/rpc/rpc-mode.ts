@@ -165,7 +165,6 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 		},
 
 		setWidget(key: string, content: unknown, options?: ExtensionWidgetOptions): void {
-			// Only support string arrays in RPC mode - factory functions are ignored
 			if (content === undefined || Array.isArray(content)) {
 				output({
 					type: "extension_ui_request",
@@ -175,8 +174,18 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 					widgetLines: content as string[] | undefined,
 					widgetPlacement: options?.placement,
 				} as RpcExtensionUIRequest);
+			} else if (typeof content === "function") {
+				// Factory-based widgets require TUI access which RPC mode does not have.
+				// Emit a minimal placeholder so the RPC client knows a widget was requested.
+				output({
+					type: "extension_ui_request",
+					id: crypto.randomUUID(),
+					method: "setWidget",
+					widgetKey: key,
+					widgetLines: undefined,
+					widgetPlacement: options?.placement,
+				} as RpcExtensionUIRequest);
 			}
-			// Component factories are not supported in RPC mode - would need TUI access
 		},
 
 		setFooter(_factory: unknown): void {

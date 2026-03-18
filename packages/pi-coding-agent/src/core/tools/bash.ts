@@ -43,6 +43,71 @@ function getTempFilePath(): string {
 	return join(tmpdir(), `pi-bash-${id}.log`);
 }
 
+/**
+ * Detect whether a command fragment ends with an unquoted & (background operator).
+ * Returns true for patterns like: `cmd &`, `cmd arg &`, `cmd & disown`, `(cmd) &`.
+ * Returns false when & appears inside a string literal or as &&.
+ */
+function endsWithBackgroundOperator(fragment: string): boolean {
+	// Remove content inside single-quoted strings to avoid false positives
+	const stripped = fragment.replace(/'[^']*'/g, "''");
+	// Match trailing & not preceded by another & (i.e., not &&)
+	return /(?<!&)&\s*(?:disown\s*)?(?:#.*)?$/.test(stripped.trim());
+}
+
+/**
+ * Determine whether a command segment already redirects stdout away from the terminal.
+ * Checks for >, >>, &>, |, /dev/null redirects.
+ */
+function hasOutputRedirect(segment: string): boolean {
+	// Remove single-quoted strings to avoid matching inside them
+	const stripped = segment.replace(/'[^']*'/g, "''");
+	// Match >, >> not preceded by 2 (stderr-only) — we only care about stdout
+	// Also match &> (combined), >&, or a pipe | which routes stdout elsewhere
+	return /(?<!\d)(?:>>?|&>|>&|\|)/.test(stripped);
+}
+
+/**
+ * Rewrite a command that uses & for backgrounding so the background process
+ * does not inherit the bash tool's stdout/stderr pipes.
+ *
+ * Without this, `python -m http.server 8080 &` causes the bash tool to hang
+ * indefinitely because Node.js keeps the pipe open until every process that
+ * inherited it exits — including the long-running server.
+ *
+ * The rewrite adds `>/dev/null 2>&1` before each & where stdout is not already
+ * redirected, ensuring the background process detaches from the pipes while
+ * still producing a human-readable notice in the tool output.
+ *
+ * Returns { command: string; rewritten: boolean }.
+ */
+export function rewriteBackgroundCommand(command: string): { command: string; rewritten: boolean } {
+	// Quick pre-check: if there's no & at all, skip the more expensive processing
+	if (!command.includes("&")) return { command, rewritten: false };
+
+	// Split on ; and newlines to handle compound commands.
+	// We rewrite each segment independently.
+	// Note: this is intentionally simple and covers the common LLM patterns.
+	// It does not attempt to parse complex nested subshells.
+	const segments = command.split(/(?<=[;\n])/);
+	let anyRewritten = false;
+
+	const rewrittenSegments = segments.map((segment) => {
+		if (!endsWithBackgroundOperator(segment)) return segment;
+		if (hasOutputRedirect(segment)) return segment;
+
+		anyRewritten = true;
+		// Insert >/dev/null 2>&1 before the trailing & (and optional disown/comment)
+		return segment.replace(
+			/(?<!&)(&\s*(?:disown\s*)?(?:#.*)?)$/,
+			">/dev/null 2>&1 $1",
+		);
+	});
+
+	if (!anyRewritten) return { command, rewritten: false };
+	return { command: rewrittenSegments.join(""), rewritten: true };
+}
+
 const bashSchema = Type.Object({
 	command: Type.String({ description: "Bash command to execute" }),
 	timeout: Type.Optional(Type.Number({ description: "Timeout in seconds (optional, no default timeout)" })),
@@ -239,8 +304,25 @@ export function createBashTool(cwd: string, options?: BashToolOptions): AgentToo
 				}
 			}
 
+			// Rewrite background commands (&) to redirect output away from the pipes.
+			// Without this, `cmd &` causes the tool to hang because the background
+			// process inherits the piped stdout/stderr and keeps them open indefinitely.
+			const bgResult = rewriteBackgroundCommand(command);
+			const effectiveCommand = bgResult.command;
+			if (bgResult.rewritten) {
+				// Surface a brief advisory so the LLM knows what happened.
+				// The rewrite is transparent for the common case; explicit detachment
+				// (nohup, start_new_session) is preferred for robustness.
+				onUpdate?.({
+					content: [{
+						type: "text" as const,
+						text: "Note: Background command output redirected to /dev/null to prevent pipe hang. Use nohup or setsid for reliable detachment.",
+					}],
+					details: undefined,
+				});
+			}
 			// Apply command prefix if configured (e.g., "shopt -s expand_aliases" for alias support)
-			const resolvedCommand = sanitizeCommand(commandPrefix ? `${commandPrefix}\n${command}` : command);
+			const resolvedCommand = sanitizeCommand(commandPrefix ? `${commandPrefix}\n${effectiveCommand}` : effectiveCommand);
 			const spawnContext = resolveSpawnContext(resolvedCommand, cwd, spawnHook);
 
 			return new Promise((resolve, reject) => {

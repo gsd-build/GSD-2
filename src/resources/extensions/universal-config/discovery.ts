@@ -10,6 +10,25 @@ import { TOOLS } from "./tools.js";
 import { SCANNERS } from "./scanners.js";
 import type { DiscoveryResult, DiscoveredItem, ToolDiscoveryResult } from "./types.js";
 
+/** Inline concurrency limiter to cap parallel async operations. */
+function pLimit(concurrency: number) {
+  const queue: (() => void)[] = [];
+  let active = 0;
+  return <T>(fn: () => Promise<T>): Promise<T> => {
+    return new Promise<T>((resolve, reject) => {
+      const run = () => {
+        active++;
+        fn().then(resolve, reject).finally(() => {
+          active--;
+          if (queue.length > 0) queue.shift()!();
+        });
+      };
+      if (active < concurrency) run();
+      else queue.push(run);
+    });
+  };
+}
+
 /**
  * Run universal config discovery across all supported AI coding tools.
  *
@@ -25,22 +44,25 @@ export async function discoverAllConfigs(
   const allWarnings: string[] = [];
   const toolResults: ToolDiscoveryResult[] = [];
 
-  // Run all scanners in parallel
+  // Run scanners with bounded concurrency to avoid memory spikes
+  const limit = pLimit(5);
   const results = await Promise.allSettled(
-    TOOLS.map(async (tool) => {
-      const scanner = SCANNERS[tool.id];
-      if (!scanner) return { tool, items: [] as DiscoveredItem[], warnings: [`No scanner for ${tool.id}`] };
-      try {
-        const { items, warnings } = await scanner(projectRoot, home, tool);
-        return { tool, items, warnings };
-      } catch (err) {
-        return {
-          tool,
-          items: [] as DiscoveredItem[],
-          warnings: [`Scanner error for ${tool.name}: ${err instanceof Error ? err.message : String(err)}`],
-        };
-      }
-    }),
+    TOOLS.map((tool) =>
+      limit(async () => {
+        const scanner = SCANNERS[tool.id];
+        if (!scanner) return { tool, items: [] as DiscoveredItem[], warnings: [`No scanner for ${tool.id}`] };
+        try {
+          const { items, warnings } = await scanner(projectRoot, home, tool);
+          return { tool, items, warnings };
+        } catch (err) {
+          return {
+            tool,
+            items: [] as DiscoveredItem[],
+            warnings: [`Scanner error for ${tool.name}: ${err instanceof Error ? err.message : String(err)}`],
+          };
+        }
+      }),
+    ),
   );
 
   for (const result of results) {

@@ -3,7 +3,10 @@
  * Used by auth-storage.ts and model-registry.ts.
  */
 
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
+import { COMMAND_EXECUTION_TIMEOUT_MS } from "./constants.js";
+
+const SHELL_OPERATORS = /[;|&`$><]/;
 
 // Cache for shell command results (persists for process lifetime)
 const commandResultCache = new Map<string, string | undefined>();
@@ -40,18 +43,25 @@ function executeCommand(commandConfig: string): string | undefined {
 	}
 
 	const command = commandConfig.slice(1);
-	const firstToken = command.split(/\s+/)[0];
+	const tokens = command.split(/\s+/).filter(Boolean);
+	const firstToken = tokens[0];
 	if (!SAFE_COMMAND_PREFIXES.includes(firstToken)) {
 		process.stderr.write(`[resolve-config-value] Blocked disallowed command: "${firstToken}". Allowed: ${SAFE_COMMAND_PREFIXES.join(", ")}\n`);
 		commandResultCache.set(commandConfig, undefined);
 		return undefined;
 	}
 
+	if (SHELL_OPERATORS.test(command)) {
+		process.stderr.write(`[resolve-config-value] Blocked shell operators in command: "${command}"\n`);
+		commandResultCache.set(commandConfig, undefined);
+		return undefined;
+	}
+
 	let result: string | undefined;
 	try {
-		const output = execSync(command, {
+		const output = execFileSync(firstToken, tokens.slice(1), {
 			encoding: "utf-8",
-			timeout: 10000,
+			timeout: COMMAND_EXECUTION_TIMEOUT_MS,
 			stdio: ["ignore", "pipe", "ignore"],
 		});
 		result = output.trim() || undefined;

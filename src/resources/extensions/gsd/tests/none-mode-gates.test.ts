@@ -11,8 +11,9 @@
  * prefs to the runner's cwd .gsd/preferences.md and clean up in finally.
  */
 
-import { mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import { homedir } from "node:os";
 
 import { shouldUseWorktreeIsolation } from "../auto.ts";
 import { getIsolationMode } from "../preferences.ts";
@@ -71,13 +72,21 @@ try {
 }
 
 // Test 4: shouldUseWorktreeIsolation returns true for no prefs (default)
-console.log("Test 4: shouldUseWorktreeIsolation returns true for no prefs (default)");
-try {
-  removeRunnerPreferences(); // ensure no prefs file
-  invalidateAllCaches();
-  assertEq(shouldUseWorktreeIsolation(), true, "shouldUseWorktreeIsolation() with no prefs (default worktree)");
-} finally {
-  invalidateAllCaches();
+// Skip if global prefs exist — they override the default and this test
+// cannot control ~/.gsd/preferences.md.
+const globalPrefsExist = existsSync(join(homedir(), ".gsd", "preferences.md"))
+  || existsSync(join(homedir(), ".gsd", "PREFERENCES.md"));
+if (!globalPrefsExist) {
+  console.log("Test 4: shouldUseWorktreeIsolation returns true for no prefs (default)");
+  try {
+    removeRunnerPreferences(); // ensure no prefs file
+    invalidateAllCaches();
+    assertEq(shouldUseWorktreeIsolation(), true, "shouldUseWorktreeIsolation() with no prefs (default worktree)");
+  } finally {
+    invalidateAllCaches();
+  }
+} else {
+  console.log("Test 4: SKIPPED — global prefs file exists, cannot test bare default");
 }
 
 // Test 5: getIsolationMode returns "none" with none prefs

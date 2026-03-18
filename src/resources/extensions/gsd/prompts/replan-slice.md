@@ -44,7 +44,6 @@ Consider these captures when rewriting the remaining tasks — they represent th
    - Update the Files Likely Touched section if the replan changes which files are affected
 5. If any incomplete task had a `T0x-PLAN.md`, remove or rewrite it to match the new task description.
 6. Do not commit manually — the system auto-commits your changes after this unit completes.
-7. Update `.gsd/STATE.md`
 
 **You MUST write `{{replanPath}}` and the updated slice plan before finishing.**
 

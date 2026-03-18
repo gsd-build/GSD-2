@@ -264,3 +264,57 @@ preferences.md
 ```
 
 The profile is resolved once and flows through the entire dispatch pipeline. Explicit preferences override profile defaults at every layer.
+
+## Prompt Compression
+
+*Introduced in v2.29.0*
+
+GSD can apply deterministic prompt compression before falling back to section-boundary truncation. This preserves more information when context exceeds the budget.
+
+### Compression Strategy
+
+Set via preferences:
+
+```yaml
+---
+version: 1
+compression_strategy: compress
+---
+```
+
+Two strategies are available:
+
+| Strategy | Behavior | Default For |
+|----------|----------|------------|
+| `truncate` | Drop entire sections at boundaries (pre-v2.29 behavior) | `quality` profile |
+| `compress` | Apply heuristic text compression first, then truncate if still over budget | `budget` and `balanced` profiles |
+
+Compression removes redundant whitespace, abbreviates verbose phrases, deduplicates repeated content, and removes low-information boilerplate — all deterministically with no LLM calls.
+
+### Context Selection
+
+Controls how files are inlined into prompts:
+
+```yaml
+---
+version: 1
+context_selection: smart
+---
+```
+
+| Mode | Behavior | Default For |
+|------|----------|------------|
+| `full` | Inline entire files | `balanced` and `quality` profiles |
+| `smart` | Use TF-IDF semantic chunking for large files (>3KB), including only relevant portions | `budget` profile |
+
+### Structured Data Compression
+
+At `budget` and `balanced` inline levels, decisions and requirements are formatted in a compact notation that saves 30-50% tokens compared to full markdown tables.
+
+### Summary Distillation
+
+When a slice has 3+ dependency summaries and the total exceeds the summary budget, GSD extracts essential structured data (provides, requires, key_files, key_decisions) and drops verbose prose sections before falling back to section-boundary truncation.
+
+### Cache Hit Rate Tracking
+
+The metrics ledger now tracks `cacheHitRate` per unit (percentage of input tokens served from cache) and provides `aggregateCacheHitRate()` for session-wide cache performance.

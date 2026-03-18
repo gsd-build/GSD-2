@@ -48,6 +48,26 @@ In **branch mode**, the flow is the same except work happens in the project root
 
 In **none mode**, commits land directly on the current branch — no milestone branch is created, and no merge step is needed.
 
+### Parallel Worktrees
+
+With [parallel orchestration](./parallel-orchestration.md) enabled, multiple milestones run in separate worktrees simultaneously:
+
+```
+main ──────────────────────────────────────────────────────────
+  │                                      ↑              ↑
+  ├── milestone/M002 (worktree) ─────────┘              │
+  │    commit: feat(S01/T01): auth types                │
+  │    commit: feat(S01/T02): JWT middleware             │
+  │    → squash-merged first                            │
+  │                                                     │
+  └── milestone/M003 (worktree) ────────────────────────┘
+       commit: feat(S01/T01): dashboard layout
+       commit: feat(S01/T02): chart components
+       → squash-merged second
+```
+
+Each worktree operates on its own branch with its own commit history. Merges happen sequentially to avoid conflicts.
+
 ### Key Properties
 
 - **Sequential commits on one branch** — no per-slice branches, no merge conflicts within a milestone
@@ -127,6 +147,22 @@ git:
   main_branch: main           # primary branch name
   commit_docs: true           # commit .gsd/ to git
   isolation: worktree         # "worktree", "branch", or "none"
+  auto_pr: false              # create PR on milestone completion
+  pr_target_branch: develop   # PR target branch (default: main)
+```
+
+### Automatic Pull Requests
+
+For teams using Gitflow or branch-based workflows, GSD can automatically create a pull request when a milestone completes:
+
+```yaml
+git:
+  auto_push: true
+  auto_pr: true
+  pr_target_branch: develop
+```
+
+This pushes the milestone branch and creates a PR targeting `develop` (or whichever branch you specify). Requires `gh` CLI installed and authenticated. See [git.auto_pr](./configuration.md#gitauto_pr) for details.
 ```
 
 ### `commit_docs: false`

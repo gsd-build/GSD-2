@@ -37,6 +37,15 @@ blocker_discovered: false
 
 {{whatWasVerifiedAndHow — commands run, tests passed, behavior confirmed}}
 
+## Verification Evidence
+
+<!-- Populated from verification gate output. If the gate ran, fill in the table below.
+     If no gate ran (e.g., no verification commands discovered), note that. -->
+
+| # | Command | Exit Code | Verdict | Duration |
+|---|---------|-----------|---------|----------|
+| {{row}} | {{command}} | {{exitCode}} | {{verdict}} | {{duration}} |
+
 ## Diagnostics
 
 {{howToInspectWhatThisTaskBuiltLater — status surfaces, logs, error shapes, failure artifacts, or none}}

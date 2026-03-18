@@ -115,6 +115,81 @@ test("fixLevel:all (default) — detects AND fixes completion issues", async () 
   }
 });
 
+test("fixLevel:all — marks indented roadmap checkboxes done (#1063)", async () => {
+  const tmp = makeTmp("indented-roadmap");
+  try {
+    buildScaffold(tmp);
+
+    // Overwrite roadmap with indented checkbox (LLM formatting drift)
+    writeFileSync(join(tmp, ".gsd", "milestones", "M001", "M001-ROADMAP.md"), `# M001: Test
+
+## Slices
+
+  - [ ] **S01: Test Slice** \`risk:low\` \`depends:[]\`
+    > Demo text
+`);
+
+    const report = await runGSDDoctor(tmp, { fix: true });
+
+    const roadmapContent = readFileSync(join(tmp, ".gsd", "milestones", "M001", "M001-ROADMAP.md"), "utf8");
+    // Should mark [x] while preserving the leading whitespace
+    assert.ok(roadmapContent.includes("  - [x] **S01"), "indented roadmap checkbox should be marked done");
+    // Verify indentation is preserved: line should start with "  -", not just "-"
+    const checkedLine = roadmapContent.split("\n").find(l => l.includes("[x] **S01"));
+    assert.ok(checkedLine?.startsWith("  -"), `should preserve leading whitespace, got: "${checkedLine}"`);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("fixLevel:all — marks indented task checkboxes done (#1063)", async () => {
+  const tmp = makeTmp("indented-task");
+  try {
+    const gsd = join(tmp, ".gsd");
+    const m = join(gsd, "milestones", "M001");
+    const s = join(m, "slices", "S01", "tasks");
+    mkdirSync(s, { recursive: true });
+
+    writeFileSync(join(m, "M001-ROADMAP.md"), `# M001: Test
+
+## Slices
+
+- [ ] **S01: Test Slice** \`risk:low\` \`depends:[]\`
+`);
+
+    // Plan with indented checkbox
+    writeFileSync(join(m, "slices", "S01", "S01-PLAN.md"), `# S01: Test Slice
+
+**Goal:** test
+
+## Tasks
+
+  - [ ] **T01: Do stuff** \`est:5m\`
+`);
+
+    writeFileSync(join(s, "T01-SUMMARY.md"), `---
+id: T01
+parent: S01
+milestone: M001
+duration: 5m
+verification_result: passed
+completed_at: 2026-01-01
+---
+
+# T01: Do stuff
+
+Done.
+`);
+
+    const report = await runGSDDoctor(tmp, { fix: true, fixLevel: "task" });
+
+    const planContent = readFileSync(join(m, "slices", "S01", "S01-PLAN.md"), "utf8");
+    assert.ok(planContent.includes("  - [x] **T01"), "indented task checkbox should be marked done");
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test("fixLevel:task — still fixes task-level bookkeeping (checkbox marking)", async () => {
   const tmp = makeTmp("task-checkbox");
   try {

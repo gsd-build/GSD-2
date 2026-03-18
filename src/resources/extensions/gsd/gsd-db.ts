@@ -6,9 +6,9 @@
 // Schema is initialized on first open with WAL mode for file-backed DBs.
 
 import { createRequire } from 'node:module';
-import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { existsSync } from 'node:fs';
 import type { Decision, Requirement } from './types.js';
+import { GSDError, GSD_STALE_STATE } from './errors.js';
 
 // Create a require function for loading native modules in ESM context
 const _require = createRequire(import.meta.url);
@@ -161,7 +161,7 @@ function openRawDb(path: string): unknown {
 
 // ─── Schema ────────────────────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 function initSchema(db: DbAdapter, fileBacked: boolean): void {
   // WAL mode for file-backed databases (must be outside transaction)
@@ -221,9 +221,36 @@ function initSchema(db: DbAdapter, fileBacked: boolean): void {
       )
     `);
 
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS memories (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        id TEXT NOT NULL UNIQUE,
+        category TEXT NOT NULL,
+        content TEXT NOT NULL,
+        confidence REAL NOT NULL DEFAULT 0.8,
+        source_unit_type TEXT,
+        source_unit_id TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        superseded_by TEXT DEFAULT NULL,
+        hit_count INTEGER NOT NULL DEFAULT 0
+      )
+    `);
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS memory_processed_units (
+        unit_key TEXT PRIMARY KEY,
+        activity_file TEXT,
+        processed_at TEXT NOT NULL
+      )
+    `);
+
+    db.exec('CREATE INDEX IF NOT EXISTS idx_memories_active ON memories(superseded_by)');
+
     // Views — DROP + CREATE since CREATE VIEW IF NOT EXISTS doesn't update definitions
     db.exec(`CREATE VIEW IF NOT EXISTS active_decisions AS SELECT * FROM decisions WHERE superseded_by IS NULL`);
     db.exec(`CREATE VIEW IF NOT EXISTS active_requirements AS SELECT * FROM requirements WHERE superseded_by IS NULL`);
+    db.exec(`CREATE VIEW IF NOT EXISTS active_memories AS SELECT * FROM memories WHERE superseded_by IS NULL`);
 
     // Insert schema version if not already present
     const existing = db.prepare('SELECT count(*) as cnt FROM schema_version').get();
@@ -274,6 +301,41 @@ function migrateSchema(db: DbAdapter): void {
       );
     }
 
+    // v2 → v3: add memories + memory_processed_units tables
+    if (currentVersion < 3) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS memories (
+          seq INTEGER PRIMARY KEY AUTOINCREMENT,
+          id TEXT NOT NULL UNIQUE,
+          category TEXT NOT NULL,
+          content TEXT NOT NULL,
+          confidence REAL NOT NULL DEFAULT 0.8,
+          source_unit_type TEXT,
+          source_unit_id TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          superseded_by TEXT DEFAULT NULL,
+          hit_count INTEGER NOT NULL DEFAULT 0
+        )
+      `);
+
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS memory_processed_units (
+          unit_key TEXT PRIMARY KEY,
+          activity_file TEXT,
+          processed_at TEXT NOT NULL
+        )
+      `);
+
+      db.exec('CREATE INDEX IF NOT EXISTS idx_memories_active ON memories(superseded_by)');
+      db.exec('DROP VIEW IF EXISTS active_memories');
+      db.exec('CREATE VIEW active_memories AS SELECT * FROM memories WHERE superseded_by IS NULL');
+
+      db.prepare('INSERT INTO schema_version (version, applied_at) VALUES (:version, :applied_at)').run(
+        { ':version': 3, ':applied_at': new Date().toISOString() },
+      );
+    }
+
     db.exec('COMMIT');
   } catch (err) {
     db.exec('ROLLBACK');
@@ -285,6 +347,8 @@ function migrateSchema(db: DbAdapter): void {
 
 let currentDb: DbAdapter | null = null;
 let currentPath: string | null = null;
+/** PID that opened the current connection — used for diagnostic logging. */
+let currentPid: number = 0;
 
 // ─── Public API ────────────────────────────────────────────────────────────
 
@@ -332,6 +396,7 @@ export function openDatabase(path: string): boolean {
 
   currentDb = adapter;
   currentPath = path;
+  currentPid = process.pid;
   return true;
 }
 
@@ -347,6 +412,7 @@ export function closeDatabase(): void {
     }
     currentDb = null;
     currentPath = null;
+    currentPid = 0;
   }
 }
 
@@ -354,7 +420,7 @@ export function closeDatabase(): void {
  * Runs a function inside a transaction. Rolls back on error.
  */
 export function transaction<T>(fn: () => T): T {
-  if (!currentDb) throw new Error('gsd-db: No database open');
+  if (!currentDb) throw new GSDError(GSD_STALE_STATE, 'gsd-db: No database open');
   currentDb.exec('BEGIN');
   try {
     const result = fn();
@@ -372,7 +438,7 @@ export function transaction<T>(fn: () => T): T {
  * Insert a decision. The `seq` field is auto-generated.
  */
 export function insertDecision(d: Omit<Decision, 'seq'>): void {
-  if (!currentDb) throw new Error('gsd-db: No database open');
+  if (!currentDb) throw new GSDError(GSD_STALE_STATE, 'gsd-db: No database open');
   currentDb.prepare(
     `INSERT INTO decisions (id, when_context, scope, decision, choice, rationale, revisable, superseded_by)
      VALUES (:id, :when_context, :scope, :decision, :choice, :rationale, :revisable, :superseded_by)`,
@@ -433,7 +499,7 @@ export function getActiveDecisions(): Decision[] {
  * Insert a requirement.
  */
 export function insertRequirement(r: Requirement): void {
-  if (!currentDb) throw new Error('gsd-db: No database open');
+  if (!currentDb) throw new GSDError(GSD_STALE_STATE, 'gsd-db: No database open');
   currentDb.prepare(
     `INSERT INTO requirements (id, class, status, description, why, source, primary_owner, supporting_slices, validation, notes, full_content, superseded_by)
      VALUES (:id, :class, :status, :description, :why, :source, :primary_owner, :supporting_slices, :validation, :notes, :full_content, :superseded_by)`,
@@ -498,167 +564,19 @@ export function getActiveRequirements(): Requirement[] {
   }));
 }
 
-// ─── Worktree DB Operations ────────────────────────────────────────────────
-
 /**
- * Copy a gsd.db file to a new worktree location.
- * Copies only the .db file — skips -wal and -shm files so the copy starts clean.
- * Returns true on success, false on failure (never throws).
+ * Returns the PID of the process that opened the current DB connection.
+ * Returns 0 if no connection is open.
  */
-export function copyWorktreeDb(srcDbPath: string, destDbPath: string): boolean {
-  try {
-    if (!existsSync(srcDbPath)) {
-      return false; // source doesn't exist — expected when no DB yet
-    }
-    const destDir = dirname(destDbPath);
-    mkdirSync(destDir, { recursive: true });
-    copyFileSync(srcDbPath, destDbPath);
-    return true;
-  } catch (err) {
-    process.stderr.write(`gsd-db: failed to copy DB to worktree: ${(err as Error).message}\n`);
-    return false;
-  }
+export function getDbOwnerPid(): number {
+  return currentPid;
 }
 
 /**
- * Reconcile rows from a worktree DB back into the main DB using ATTACH DATABASE.
- * Merges all three tables (decisions, requirements, artifacts) via INSERT OR REPLACE.
- * Detects conflicts where both DBs modified the same row.
- *
- * ATTACH must happen outside any transaction. INSERT OR REPLACE runs inside a transaction.
- * DETACH happens after commit (or rollback on error).
+ * Returns the path of the currently open database, or null if none.
  */
-export function reconcileWorktreeDb(
-  mainDbPath: string,
-  worktreeDbPath: string,
-): { decisions: number; requirements: number; artifacts: number; conflicts: string[] } {
-  const zero = { decisions: 0, requirements: 0, artifacts: 0, conflicts: [] as string[] };
-
-  // Validate worktree DB exists
-  if (!existsSync(worktreeDbPath)) {
-    return zero;
-  }
-
-  // Safety: reject single quotes which could break the ATTACH DATABASE '...' SQL literal.
-  // SQLite ATTACH doesn't support parameterized binding. We block the one dangerous char
-  // rather than allowlisting, since OS temp paths vary widely (tildes, parens, unicode).
-  if (worktreeDbPath.includes("'")) {
-    process.stderr.write(`gsd-db: worktree DB reconciliation failed: path contains unsafe characters\n`);
-    return zero;
-  }
-
-  // Ensure main DB is open
-  if (!currentDb) {
-    const opened = openDatabase(mainDbPath);
-    if (!opened) {
-      process.stderr.write(`gsd-db: worktree DB reconciliation failed: cannot open main DB\n`);
-      return zero;
-    }
-  }
-
-  const adapter = currentDb!;
-  const conflicts: string[] = [];
-
-  try {
-    // ATTACH must be outside transaction
-    adapter.exec(`ATTACH DATABASE '${worktreeDbPath}' AS wt`);
-
-    try {
-      // ── Conflict detection phase ──
-      // Decisions: same id, different content
-      const decisionConflicts = adapter.prepare(
-        `SELECT m.id FROM decisions m
-         INNER JOIN wt.decisions w ON m.id = w.id
-         WHERE m.decision != w.decision
-            OR m.choice != w.choice
-            OR m.rationale != w.rationale
-            OR m.superseded_by IS NOT w.superseded_by`,
-      ).all();
-      for (const row of decisionConflicts) {
-        conflicts.push(`decision ${row['id']}: modified in both main and worktree`);
-      }
-
-      // Requirements: same id, different content
-      const reqConflicts = adapter.prepare(
-        `SELECT m.id FROM requirements m
-         INNER JOIN wt.requirements w ON m.id = w.id
-         WHERE m.description != w.description
-            OR m.status != w.status
-            OR m.notes != w.notes
-            OR m.superseded_by IS NOT w.superseded_by`,
-      ).all();
-      for (const row of reqConflicts) {
-        conflicts.push(`requirement ${row['id']}: modified in both main and worktree`);
-      }
-
-      // Artifacts: same path, different content
-      const artifactConflicts = adapter.prepare(
-        `SELECT m.path FROM artifacts m
-         INNER JOIN wt.artifacts w ON m.path = w.path
-         WHERE m.full_content != w.full_content
-            OR m.artifact_type != w.artifact_type`,
-      ).all();
-      for (const row of artifactConflicts) {
-        conflicts.push(`artifact ${row['path']}: modified in both main and worktree`);
-      }
-
-      // ── Merge phase (inside manual transaction) ──
-      adapter.exec('BEGIN');
-      try {
-        // Decisions: exclude seq to let main auto-assign
-        adapter.exec(
-          `INSERT OR REPLACE INTO decisions (id, when_context, scope, decision, choice, rationale, revisable, superseded_by)
-           SELECT id, when_context, scope, decision, choice, rationale, revisable, superseded_by FROM wt.decisions`,
-        );
-        const dCount = adapter.prepare('SELECT changes() as cnt').get();
-
-        // Requirements: full row copy
-        adapter.exec(
-          `INSERT OR REPLACE INTO requirements (id, class, status, description, why, source, primary_owner, supporting_slices, validation, notes, full_content, superseded_by)
-           SELECT id, class, status, description, why, source, primary_owner, supporting_slices, validation, notes, full_content, superseded_by FROM wt.requirements`,
-        );
-        const rCount = adapter.prepare('SELECT changes() as cnt').get();
-
-        // Artifacts: copy with fresh imported_at timestamp
-        adapter.exec(
-          `INSERT OR REPLACE INTO artifacts (path, artifact_type, milestone_id, slice_id, task_id, full_content, imported_at)
-           SELECT path, artifact_type, milestone_id, slice_id, task_id, full_content, datetime('now') FROM wt.artifacts`,
-        );
-        const aCount = adapter.prepare('SELECT changes() as cnt').get();
-
-        adapter.exec('COMMIT');
-
-        const result = {
-          decisions: (dCount?.['cnt'] as number) || 0,
-          requirements: (rCount?.['cnt'] as number) || 0,
-          artifacts: (aCount?.['cnt'] as number) || 0,
-          conflicts,
-        };
-
-        if (conflicts.length > 0) {
-          process.stderr.write(`gsd-db: reconciliation conflicts:\n${conflicts.map(c => `  - ${c}`).join('\n')}\n`);
-        }
-        process.stderr.write(
-          `gsd-db: reconciled ${result.decisions} decisions, ${result.requirements} requirements, ${result.artifacts} artifacts (${conflicts.length} conflicts)\n`,
-        );
-
-        return result;
-      } catch (err) {
-        adapter.exec('ROLLBACK');
-        throw err;
-      }
-    } finally {
-      // DETACH always, even on error
-      try {
-        adapter.exec('DETACH DATABASE wt');
-      } catch {
-        // swallow — may already be detached
-      }
-    }
-  } catch (err) {
-    process.stderr.write(`gsd-db: worktree DB reconciliation failed: ${(err as Error).message}\n`);
-    return zero;
-  }
+export function getDbPath(): string | null {
+  return currentPath;
 }
 
 // ─── Internal Access (for testing) ─────────────────────────────────────────
@@ -685,7 +603,7 @@ export function _resetProvider(): void {
  * Insert or replace a decision. Uses the `id` UNIQUE constraint for idempotency.
  */
 export function upsertDecision(d: Omit<Decision, 'seq'>): void {
-  if (!currentDb) throw new Error('gsd-db: No database open');
+  if (!currentDb) throw new GSDError(GSD_STALE_STATE, 'gsd-db: No database open');
   currentDb.prepare(
     `INSERT OR REPLACE INTO decisions (id, when_context, scope, decision, choice, rationale, revisable, superseded_by)
      VALUES (:id, :when_context, :scope, :decision, :choice, :rationale, :revisable, :superseded_by)`,
@@ -705,7 +623,7 @@ export function upsertDecision(d: Omit<Decision, 'seq'>): void {
  * Insert or replace a requirement. Uses the `id` PK for idempotency.
  */
 export function upsertRequirement(r: Requirement): void {
-  if (!currentDb) throw new Error('gsd-db: No database open');
+  if (!currentDb) throw new GSDError(GSD_STALE_STATE, 'gsd-db: No database open');
   currentDb.prepare(
     `INSERT OR REPLACE INTO requirements (id, class, status, description, why, source, primary_owner, supporting_slices, validation, notes, full_content, superseded_by)
      VALUES (:id, :class, :status, :description, :why, :source, :primary_owner, :supporting_slices, :validation, :notes, :full_content, :superseded_by)`,
@@ -728,6 +646,21 @@ export function upsertRequirement(r: Requirement): void {
 /**
  * Insert or replace an artifact. Uses the `path` PK for idempotency.
  */
+/**
+ * Delete all rows from the artifacts table.
+ * The artifacts table is a read cache — clearing it forces the next
+ * deriveState() to fall through to disk reads (native Rust batch parse).
+ * Safe to call when no database is open (no-op).
+ */
+export function clearArtifacts(): void {
+  if (!currentDb) return;
+  try {
+    currentDb.exec('DELETE FROM artifacts');
+  } catch {
+    // Clearing a cache should never be fatal
+  }
+}
+
 export function insertArtifact(a: {
   path: string;
   artifact_type: string;
@@ -736,7 +669,7 @@ export function insertArtifact(a: {
   task_id: string | null;
   full_content: string;
 }): void {
-  if (!currentDb) throw new Error('gsd-db: No database open');
+  if (!currentDb) throw new GSDError(GSD_STALE_STATE, 'gsd-db: No database open');
   currentDb.prepare(
     `INSERT OR REPLACE INTO artifacts (path, artifact_type, milestone_id, slice_id, task_id, full_content, imported_at)
      VALUES (:path, :artifact_type, :milestone_id, :slice_id, :task_id, :full_content, :imported_at)`,

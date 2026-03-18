@@ -13,11 +13,14 @@
  *   4. On crash recovery or fresh start, the ledger is loaded from disk
  */
 
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { ExtensionContext } from "@gsd/pi-coding-agent";
 import { gsdRoot } from "./paths.js";
 import { getAndClearSkills } from "./skill-telemetry.js";
+import { loadJsonFile, loadJsonFileOrNull, saveJsonFile } from "./json-persistence.js";
+
+// Re-export from shared — canonical implementation lives in format-utils.
+export { formatTokenCount } from "../shared/mod.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -40,6 +43,7 @@ export interface UnitMetrics {
   toolCalls: number;
   assistantMessages: number;
   userMessages: number;
+  apiRequests?: number;    // total API requests made (useful for copilot users where cost is always 0)
   // Budget fields (optional — absent in pre-M009 metrics data)
   contextWindowTokens?: number;
   truncationSections?: number;
@@ -49,6 +53,8 @@ export interface UnitMetrics {
   tier?: string;           // complexity tier (light/standard/heavy) if dynamic routing active
   modelDowngraded?: boolean; // true if dynamic routing used a cheaper model
   skills?: string[];       // skill names available/loaded during this unit (#599)
+  cacheHitRate?: number;       // percentage 0-100, computed from cacheRead/(cacheRead+input)
+  compressionSavings?: number; // percentage 0-100, char savings from prompt compression
 }
 
 /** Budget state passed to snapshotUnitMetrics for persistence in the metrics ledger. */
@@ -174,6 +180,7 @@ export function snapshotUnitMetrics(
     toolCalls,
     assistantMessages,
     userMessages,
+    apiRequests: assistantMessages, // each assistant message = one API request
     ...(opts?.tier ? { tier: opts.tier } : {}),
     ...(opts?.modelDowngraded !== undefined ? { modelDowngraded: opts.modelDowngraded } : {}),
     ...(opts?.contextWindowTokens !== undefined ? { contextWindowTokens: opts.contextWindowTokens } : {}),
@@ -187,6 +194,12 @@ export function snapshotUnitMetrics(
   const skills = getAndClearSkills();
   if (skills.length > 0) {
     unit.skills = skills;
+  }
+
+  // Compute cache hit rate
+  if (tokens.cacheRead > 0 || tokens.input > 0) {
+    const totalInput = tokens.cacheRead + tokens.input;
+    unit.cacheHitRate = totalInput > 0 ? Math.round((tokens.cacheRead / totalInput) * 100) : 0;
   }
 
   ledger.units.push(unit);
@@ -236,6 +249,7 @@ export interface ProjectTotals {
   toolCalls: number;
   assistantMessages: number;
   userMessages: number;
+  apiRequests: number;
   totalTruncationSections: number;
   continueHereFiredCount: number;
 }
@@ -319,6 +333,7 @@ export function getProjectTotals(units: UnitMetrics[]): ProjectTotals {
     toolCalls: 0,
     assistantMessages: 0,
     userMessages: 0,
+    apiRequests: 0,
     totalTruncationSections: 0,
     continueHereFiredCount: 0,
   };
@@ -329,6 +344,7 @@ export function getProjectTotals(units: UnitMetrics[]): ProjectTotals {
     totals.toolCalls += u.toolCalls;
     totals.assistantMessages += u.assistantMessages;
     totals.userMessages += u.userMessages;
+    totals.apiRequests += u.apiRequests ?? u.assistantMessages; // fallback for pre-existing data
     totals.totalTruncationSections += u.truncationSections ?? 0;
     if (u.continueHereFired) totals.continueHereFiredCount++;
   }
@@ -376,6 +392,22 @@ export function formatTierSavings(units: UnitMetrics[]): string {
   const pct = totalUnits > 0 ? Math.round((downgraded.length / totalUnits) * 100) : 0;
 
   return `Dynamic routing: ${downgraded.length}/${totalUnits} units downgraded (${pct}%), cost: ${formatCost(downgradedCost)}`;
+}
+
+/**
+ * Compute aggregate cache hit rate across all units.
+ * Returns percentage 0-100.
+ */
+export function aggregateCacheHitRate(): number {
+  if (!ledger || ledger.units.length === 0) return 0;
+  let totalInput = 0;
+  let totalCacheRead = 0;
+  for (const unit of ledger.units) {
+    totalInput += unit.tokens.input;
+    totalCacheRead += unit.tokens.cacheRead;
+  }
+  const total = totalInput + totalCacheRead;
+  return total > 0 ? Math.round((totalCacheRead / total) * 100) : 0;
 }
 
 // ─── Formatting helpers ───────────────────────────────────────────────────────
@@ -463,11 +495,6 @@ export function formatCostProjection(
   return result;
 }
 
-export function formatTokenCount(count: number): string {
-  if (count < 1000) return `${count}`;
-  if (count < 1_000_000) return `${(count / 1000).toFixed(1)}k`;
-  return `${(count / 1_000_000).toFixed(2)}M`;
-}
 
 // ─── Disk I/O ─────────────────────────────────────────────────────────────────
 
@@ -475,45 +502,31 @@ function metricsPath(base: string): string {
   return join(gsdRoot(base), "metrics.json");
 }
 
+function isMetricsLedger(data: unknown): data is MetricsLedger {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    (data as MetricsLedger).version === 1 &&
+    Array.isArray((data as MetricsLedger).units)
+  );
+}
+
+function defaultLedger(): MetricsLedger {
+  return { version: 1, projectStartedAt: Date.now(), units: [] };
+}
+
 /**
  * Load ledger from disk without initializing in-memory state.
  * Used by history/export commands outside of auto-mode.
  */
 export function loadLedgerFromDisk(base: string): MetricsLedger | null {
-  try {
-    const raw = readFileSync(metricsPath(base), "utf-8");
-    const parsed = JSON.parse(raw);
-    if (parsed.version === 1 && Array.isArray(parsed.units)) {
-      return parsed as MetricsLedger;
-    }
-  } catch {
-    // File doesn't exist or is corrupt
-  }
-  return null;
+  return loadJsonFileOrNull(metricsPath(base), isMetricsLedger);
 }
 
 function loadLedger(base: string): MetricsLedger {
-  try {
-    const raw = readFileSync(metricsPath(base), "utf-8");
-    const parsed = JSON.parse(raw);
-    if (parsed.version === 1 && Array.isArray(parsed.units)) {
-      return parsed as MetricsLedger;
-    }
-  } catch {
-    // File doesn't exist or is corrupt — start fresh
-  }
-  return {
-    version: 1,
-    projectStartedAt: Date.now(),
-    units: [],
-  };
+  return loadJsonFile(metricsPath(base), isMetricsLedger, defaultLedger);
 }
 
 function saveLedger(base: string, data: MetricsLedger): void {
-  try {
-    mkdirSync(gsdRoot(base), { recursive: true });
-    writeFileSync(metricsPath(base), JSON.stringify(data, null, 2) + "\n", "utf-8");
-  } catch {
-    // Don't let metrics failures break auto-mode
-  }
+  saveJsonFile(metricsPath(base), data);
 }

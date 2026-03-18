@@ -368,9 +368,14 @@ async function* mapCodexEvents(events: AsyncIterable<Record<string, unknown>>): 
 		if (!type) continue;
 
 		if (type === "error") {
-			const code = (event as { code?: string }).code || "";
-			const message = (event as { message?: string }).message || "";
-			throw new Error(`Codex error: ${message || code || JSON.stringify(event)}`);
+			// Codex error events nest details under event.error (e.g.
+			// { type: "error", error: { type: "server_error", code: "server_error", message: "..." } })
+			const errorObj = (event as { error?: { code?: string; type?: string; message?: string } }).error;
+			const code = errorObj?.code || (event as { code?: string }).code || "";
+			const errorType = errorObj?.type || "";
+			const message = errorObj?.message || (event as { message?: string }).message || "";
+			const prefix = errorType ? `Codex ${errorType}` : "Codex error";
+			throw new Error(`${prefix}: ${message || code || JSON.stringify(event)}`);
 		}
 
 		if (type === "response.failed") {
@@ -410,8 +415,14 @@ async function* parseSSE(response: Response): AsyncGenerator<Record<string, unkn
 	while (true) {
 		const { done, value } = await reader.read();
 		if (done) break;
-		buffer += decoder.decode(value, { stream: true });
 
+		const decoded = decoder.decode(value, { stream: true });
+		// Avoid appending to an empty buffer — assign directly to skip the
+		// string concatenation and its intermediate allocation.
+		buffer = buffer ? buffer + decoded : decoded;
+
+		// Consume all complete SSE messages (delimited by \n\n) so the
+		// buffer only ever holds one partial message between reads.
 		let idx = buffer.indexOf("\n\n");
 		while (idx !== -1) {
 			const chunk = buffer.slice(0, idx);

@@ -6,6 +6,405 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.31.0] - 2026-03-18
+
+### Added
+- add aws-auth extension for automatic Bedrock credential refresh (#1253)
+- add -w/--worktree CLI flag for isolated worktree sessions (#1247)
+
+### Fixed
+- remove stale git-commit assertion in worktree test after commit_docs removal
+- remove commit_docs test that broke CI after type removal (#1258)
+- replace blanket git clean .gsd/ with targeted runtime file removal (#1252)
+- invalidate caches inside discuss loop to detect newly written slice context (#1249)
+- robust prose slice header parsing — handle H1-H4, bold, dots, no-separator variants (#1248)
+- clean up stranded .gsd.lock/ directory to prevent false lock conflicts (#1251)
+
+### Changed
+- remove dead commit_docs preference (incompatible with external .gsd/ state) (#1258)
+
+## [2.30.0] - 2026-03-18
+
+### Added
+- add extension manifest + registry for user-managed enable/disable (#1238)
+- add model health indicator to auto-mode progress widget (#1232)
+- simplify auto pipeline — merge research into planning, mechanical completion (ADR-003) (#1235)
+- add create-gsd-extension skill (#1229)
+- add built-in skill authoring system (ADR-003) (#1228)
+- **prefs**: two-step provider→model picker in preferences wizard (#1218)
+- workflow templates — right-sized workflows for every task type (#1185)
+
+### Fixed
+- align react-best-practices skill name with directory name (#1234)
+- gate slice progression on UAT verdict, not just file existence (#1241)
+- invalidate caches before roadmap check in /gsd discuss (#1240)
+- use shell: true for LSP spawn on Windows to resolve .cmd executables (#1233)
+- increase headless new-milestone timeout and limit investigation scope (#1230)
+- clean untracked .gsd/ files before squash-merge to prevent failure (#1239)
+- graceful fallback when native addon is unavailable on unsupported platforms (#1225)
+- replace ambiguous double-question in discussion reflection step (#1226)
+- kill non-persistent bg processes between auto-mode units (#1217)
+- Two-column dashboard layout with task checklist (#1195)
+
+### Changed
+- move .gsd/ to external state directory with symlink (ADR-002) (#1242)
+- replace MCPorter with native MCP client (#1210)
+- extend json-persistence utility and migrate top JSON I/O callsites (#1216)
+- deduplicate dispatchDoctorHeal — keep single copy in commands-handlers.ts (#1211)
+- remove facade re-exports from auto.ts — import directly from source modules (#1214)
+- extract shared HTTP client for remote-questions adapters (#1212)
+
+## [2.29.0] - 2026-03-18
+
+### Added
+- add searchExcludeDirs setting for @ file autocomplete blacklist (#1202)
+- **ci**: automate prod-release with version bump, changelog, and tag push (#1194)
+- auto-open HTML reports in default browser on manual export (#1164)
+- upgrade to Node.js 24 LTS across CI, Docker, and package config (#1165)
+- add /gsd logs command to browse activity, debug, and metrics logs (#1162)
+- **browser-tools**: configurable screenshot resolution, format, and quality (#1152)
+- add pre-commit secret scanner and CI secret detection (#1148)
+- **mcporter**: add .gsd/mcp.json per-project MCP config support (#1141)
+- **metrics**: add API request counter for copilot/subscription users (#1140)
+- per-milestone depth verification + queue-flow write-gate (#1116)
+- add OSC 8 clickable hyperlinks for file paths in export notifications (#1114)
+- park/discard actions for in-progress milestones (#1107)
+- **ci**: implement three-stage promotion pipeline (Dev → Test → Prod) (#1098)
+- cache-ordered prompt assembly and dashboard cache hit rate (#1094)
+- add comprehensive API key manager (/gsd keys) (#1089)
+- **ci**: add multi-stage Dockerfile for CI builder and runtime images
+- **gsd**: add directory safeguards for system/home paths (#1053)
+- enhance HTML report with derived metrics, visualizations, and interactivity (#1078)
+- auto-extract lessons to KNOWLEDGE.md on slice/milestone completion (#711) (#1081)
+- auto-create PR on milestone completion (#687) (#1084)
+- wire semantic chunking, add preferences, metrics, and docs
+- add token optimization suite for prompt caching, compression, and smart context selection
+- **autocomplete**: add /thinking completions, GSD subcommand descriptions, and test coverage (#1019)
+- add respectGitignoreInPicker setting for @ file picker (#979) (#1016)
+- **prefs**: add search_provider to preferences.md (#1001)
+- add `--events` flag for JSONL stream filtering (#1000)
+- add 10 bundled skills for UI, quality, and code optimization (#999)
+- **ux**: group model list by provider in /gsd prefs wizard (#993)
+- add `--answers` flag for headless answer injection (#982)
+- add project onboarding detection and init wizard
+
+### Fixed
+- **ci**: add npm publish to prod-release and prevent mid-deploy cancellation (#1208)
+- **ci**: use env var for Discord webhook secret in if-condition
+- complete shared barrel exports and add import-claude to help text (#1198)
+- broaden unit-runtime path sanitization to strip all unsafe characters
+- detect stale bundled resources via content fingerprint (#1193)
+- include promptGuidelines in customPrompt path of buildSystemPrompt (#1187)
+- prevent branch-mode merge fallback from firing in worktree isolation (#1183)
+- treat auto-discovered verification failures as advisory, not blocking (#1188)
+- **ci**: remove @latest npm promotion from pipeline
+- **ci**: skip GitHub release creation when tag already exists
+- handle Windows non-ASCII paths in cpSync with copyFileSync fallback (#1181)
+- non-blocking verification gate for auto-discovered commands (#1177)
+- add defensive guards against undefined .filter() in auto-mode dispatch/recovery (#1180)
+- sync living docs (DECISIONS/REQUIREMENTS/PROJECT/KNOWLEDGE) between worktree and project root (#1173)
+- route needs-discussion phase to interactive flow instead of stopping (#1175)
+- run resource-skew check before early TTY gate
+- move TTY check before heavy initialization to prevent process hang
+- **ci**: skip init smoke test in non-TTY CI environments (#1172)
+- **ci**: skip publish when version already exists on npm (#1166)
+- **ci**: use local binary for pipeline smoke test (#1163)
+- prevent concurrent GSD sessions from overlapping on same project (#1154)
+- exclude completion-transition errors from health escalation at task level (#1157)
+- **ci**: skip git-diff guard in prepublishOnly during CI (#1160)
+- /gsd quick respects git isolation: none preference (#1156)
+- text-based fallbacks for RPC mode where TUI widgets produce empty turns (#1112)
+- **headless-query**: use jiti to load extension .ts modules (#1143)
+- pause auto-mode when env variables needed instead of blocking (#1147)
+- **ci**: fix dev-publish version stamp and platform sync (#1145)
+- **google-search**: add 30s timeout to Gemini API call (#1139)
+- **verification-gate**: sanitize preference commands with isLikelyCommand (#1138)
+- **auto-dashboard**: show trigger task label for hook units (#1136)
+- **auto-worktree**: detect worktree structurally when originalBase is null (#1135)
+- **model-resolver**: prefer provider's recommended variant over saved base model (#1131)
+- **auto-worktree**: auto-commit project root dirty state before milestone merge (#1130)
+- **guided-flow**: support re-discuss flow for already-discussed slices (#1129)
+- dispatch guard skips parked milestones — they no longer block later milestone dispatch (#1126)
+- worktree reassess-roadmap loop — existsSync fallback in checkNeedsReassessment (#1117)
+- **lsp**: use where.exe on Windows to resolve command paths (#1134)
+- **gsd-db**: auto-initialize database when tools are called (#1133)
+- inline preferences path to fix remote questions setup (#1110) (#1111)
+- **ci**: add safe.directory for containerized pipeline job (#1108)
+- remove .gsd/ from tracking, ignore entire directory
+- update tests for god-file decomposition
+- strip model variant suffix for API key auth (#1097) (#1099)
+- match both milestoneId and sliceId when filtering duplicate blocker cards
+- add dispatch stall guards to prevent auto-mode pause after slice completion (#1073) (#1076)
+- prevent summarizing phase stall by retrying dropped agent_end events (#1072) (#1074)
+- use atomic writes for completed-units.json and invalidate caches in db-writer (#1069)
+- reject prose Verify: fields from being executed as shell commands (#1066) (#1068)
+- restore session model on error instead of reading stale global prefs (#1065) (#1067)
+- prevent run-uat re-dispatch loop when roadmap checkbox update fails (#1063) (#1064)
+- inline compareSemver in gsd extension to fix broken relative import (#1058)
+- disable reasoning for MiniMax-M2.5 in alibaba-coding-plan provider (#1003) (#1055)
+- improve LSP diagnostics when no servers detected (#1082) (#1086)
+- prevent summarizing phase stall by retrying dropped agent_end events (#1072)
+- switch alibaba-coding-plan to OpenAI-compat endpoint with proper compat flags (#1003)
+- add barrel files for remote-questions, ttsr, and shared extensions (#1048)
+- consolidate frontmatter parsing into shared module (#1040)
+- always ensure tasks/ directory exists for slice units (#900) (#1050)
+- centralize GSD timeout and cache constants (#1038)
+- improve RemotePromptRecord.ref type safety (#1041)
+- document silent catch handlers in browser-tools (#1037)
+- use literal union types in RuntimeErrorJSON for type safety (#1034)
+- extract sanitizeError to shared module and apply to ask-user-questions (#1033)
+- deduplicate formatDateShort into shared/format-utils (#1032)
+- add error handlers to visualizer overlay promise chains (#1027)
+- **security**: use execFileSync in resolve-config-value to prevent shell operator bypass (#1025)
+- **security**: use execFile for browser URL opening to prevent shell injection (#1022)
+- prevent duplicate milestone IDs when generating multiple before persisting (#961) (#1018)
+- consolidate duplicate formatting functions (#1011)
+- **gsd**: delete orphaned complexity.ts (#1005)
+- **search**: consolidate duplicate Brave API helpers (#1010)
+- merge worktree to main when all milestones complete (#962) (#1007)
+- **gsd**: deduplicate resolveGitHeadPath function (#1015)
+- add missing package.json subpath exports and oauth stubs (#1014)
+- **gsd**: consolidate string-array normalizer functions into shared utility (#1009)
+- **browser-tools**: document intentional silent catches, add debug logging for others (#1013)
+- consolidate duplicate VerificationCheck/Result type definitions (#1008)
+- **gsd**: add GIT_NO_PROMPT_ENV to gitFileExec and deduplicate constant (#1006)
+- **remote-questions**: add null coalesce for optional threadUrl (#1004)
+- auto-resume on transient server errors, not just rate limits (#886) (#957)
+- replace ambiguous compound question in reflection step (#963) (#1002)
+- **gsd**: remove STATE.md update instructions from all prompts (#983)
+- **gsd**: clear all caches after discuss dispatch so picker sees new CONTEXT files (#981)
+- **auto**: dispatch retry after verification gate failure (#998)
+- enforce GSDError usage and activate unused error codes (#997)
+- unify extension discovery logic (#995)
+- deduplicate tierLabel/tierOrdinal exports (#988)
+- deduplicate getMainBranch implementations (#994)
+- add error handling for unhandled promise rejections (#992)
+- deduplicate formatTokenCount into shared format-utils (#987)
+- add debug logging to silent catch blocks in auto.ts (#986)
+- deduplicate formatDuration into shared format-utils (#989)
+- add exports fields to pi-tui and pi-agent-core packages (#991)
+- remove dead github-client.ts (never imported) (#990)
+- deduplicate parseJSONL and unify MAX_JSONL_BYTES constant (#985)
+- remove broken ./hooks export path from pi-coding-agent (#984)
+- inline bundled extension path parsing in subagent
+
+### Changed
+- extract numeric validation helpers in prefs wizard (#1205)
+- deduplicate projectRoot() and dispatchDoctorHeal() between commands.ts and commands-handlers.ts (#1203)
+- extract shared JSON persistence utility, migrate metrics + routing-history + unit-runtime (#1206)
+- remove unused preferences-hooks.ts re-export facade (#1207)
+- remove commands.ts re-exports, import directly from submodules (#1204)
+- extract frontmatter body extraction into shared helper (#1201)
+- deduplicate projectRoot() — single source in commands.ts (#1197)
+- extract PER_REQUEST_TIMEOUT_MS to shared types (#1196)
+- update state — S01 planned, ready for execution
+- **M001-1ya5a3/S01**: auto-commit after state-rebuild
+- **M001-1ya5a3/S01**: auto-commit after research-slice
+- decompose doctor.ts into types, format, and checks modules (#1096)
+- extract milestone-ids and guided-flow-queue from guided-flow.ts (#1095)
+- decompose preferences.ts, populate skills and models modules (#1091)
+- decompose auto.ts into 6 focused modules (#1088)
+- decompose commands.ts into 5 focused modules
+- remove redundant test file, identify consolidation targets (#1070)
+- batch 2 — consolidate preferences, convert 8 more files to node:test (#1061)
+- consolidate tests by area, standardize on node:test (#1059)
+- skip initResources when version matches, consolidate startup I/O (#1052)
+- centralize magic numbers into constants.ts (#1044)
+- **resource-loader**: extract syncResourceDir to eliminate triplicated sync logic (#1036)
+- **bg-shell**: split 1604-line god file into tool, command, and lifecycle modules (#1049)
+- **headless**: split 772-line god file into events, UI, and context modules (#1047)
+- **gsd**: extract safeCopy/safeMkdir helpers to replace repetitive try/catch FS patterns (#1043)
+- **gsd**: extract atomicWriteSync utility to replace 6 duplicate write-tmp-rename patterns (#1046)
+- **gsd**: unify duplicate padRight/truncate into shared format-utils (#1045)
+- **loader**: consolidate 5 duplicate package.json version reads into cached helper (#1042)
+- **headless**: remove duplicate jsonLine, use serializeJsonLine from pi-coding-agent (#1039)
+- fix unicode regex discrepancy and standardize function naming (#1031)
+- fix chalk version mismatch and document pinned dependency rationale (#1030)
+- add concurrency limits to unbounded Promise.all operations (#1029)
+- optimize SSE streaming buffer to avoid quadratic string growth (#1024)
+- reduce makeTreeWritable calls from 6 to 2 on startup (#1023)
+- add domain-grouped re-exports for preferences module (#996)
+
+## [2.28.0] - 2026-03-17
+
+### Added
+- `gsd headless query` command for instant, read-only state inspection — returns phase, cost, progress, and next-unit as parseable JSON without spawning an LLM session
+- `/gsd update` slash command for in-session self-update
+- `/gsd export --html --all` for retrospective milestone reports
+
+### Fixed
+- Failure recovery & resume safeguards: atomic file writes, OAuth fetch timeouts (30s), RPC subprocess exit detection, extension command context guards, bash temp file cleanup, settings write queue flush, LSP init retry with backoff, crash detection on session resume, blob garbage collection
+- Consolidated duplicate `mcp-server.ts` into single implementation
+- Consolidated duplicate `bundled-extension-paths.ts` into single module
+- Removed duplicate `marketplace-discovery.test.ts` test file
+- Established npm as canonical package manager
+- Exported RPC utilities from pi-coding-agent public API
+- Prompt system requires grammatical narration for clearer agent output
+
+### Changed
+- Updated documentation for v2.26 and v2.27.0 features
+- Documented all `preferences.md` fields in reference and template
+- Removed stale `.pi/agents/` files superseded by built-in agent definitions
+
+## [2.27.0] - 2026-03-17
+
+### Added
+- HTML report generator with progression index across milestones
+- Crash recovery for parallel orchestrator — persisted state with PID liveness detection
+- Headless orchestration skill with supervised mode
+- Verification enforcement gate for milestone completion
+- `git.manage_gitignore` preference to opt out of automatic `.gitignore` changes
+
+### Changed
+- Encapsulated auto.ts state into AutoSession class (cleaner session lifecycle)
+- Extracted 7 focused modules from auto.ts (auto-worktree-sync, resource staleness, stale escape)
+- TUI dashboard cleanup, dedup, and feature improvements
+- Reordered visualizer tabs and HTML report sections into logical groupings
+
+### Fixed
+- Single ENTER now correctly submits slash command argument autocomplete
+- Web search loop broken with consecutive duplicate guard
+- Transient network errors retried before model fallback
+- Parallel worker PID tracking, spawn-status race, and exit persistence
+- `/gsd discuss` now recommends next undiscussed slice
+- Roadmap parser allows suffix text after `## Slices` heading
+- User's model choice no longer overwritten when API key is temporarily unavailable
+- Reassess-roadmap skip loop broken by preventing re-persistence of evicted keys
+- LSP command resolution and ENOENT crash on Windows/MSYS
+- Dispatch plan-slice when task plan files are missing
+- Reduced CPU usage on long auto-mode sessions
+- Orphan-prone child processes reaped across session churn
+- Symlinked skill directories resolved in `always_use_skills` and preferences
+- Replan-slice infinite loop and non-standard `finish_reason` crash
+- Skip slice plan commit when `commit_docs` is false
+- Context-pressure monitor wired to send wrap-up signal at 70%
+- Missing STATE.md in fresh worktree no longer deadlocks pre-dispatch health gate
+- Stale runtime unit files for completed milestones cleaned on startup
+- Broken install detection with Windows symlink fallback
+- Auto-restart headless mode on crash with exponential backoff
+- Generic type preserved on `resolveModelId` through resolution
+
+## [2.26.0] - 2026-03-17
+
+### Added
+- Model selector grouped by provider with model type, provider, and API docs fields
+- `require_slice_discussion` option to pause auto-mode before each slice for human review
+- Discussion status indicators in `/gsd discuss` slice picker
+- Worker NDJSON monitoring and budget enforcement for parallel orchestration
+- `gsd_generate_milestone_id` tool for multi-milestone unique ID generation
+- Alt+V clipboard image paste shortcut on macOS
+- Hashline edit mode integration into active workflow
+- Fallback parser for prose-style roadmaps without `## Slices` section
+
+### Fixed
+- Windows path normalization in LLM-visible text to prevent bash failures
+- Async bash job completion no longer triggers spurious LLM turns
+- Native web_search limited to max 5 uses per response
+- Completed milestone with summary no longer re-entered as active on resume
+- Replan-slice artifact verification breaks infinite replanning-slice loop
+- Auto-heal STATE.md missing in preDispatchHealthGate
+- Worktree artifact copy includes STATE.md, KNOWLEDGE.md, OVERRIDES.md
+- Transient network errors marked as retriable in Anthropic provider
+- `needs-remediation` treated as terminal validation verdict to prevent hard loop
+- Post-hook doctor uses fixLevel 'all' to fix roadmap checkboxes
+- `task_done_missing_summary` fixable in doctor to prevent validate-milestone skip loop
+- BMP clipboard images on WSL2 handled via wl-paste PNG conversion
+- Extended idle timeout for headless new-milestone
+- EPIPE handling in LSP sendNotification with proper process exit wait
+- Debug logging for silent early-return paths in dispatchNextUnit
+- Untracked .gsd/ state files removed before milestone merge checkout
+- Crash prevention when cancelling OAuth provider login dialog
+- Resource staleness check compares gsdVersion instead of syncedAt
+- Unique temp paths in saveFile() to prevent parallel write collisions
+- Validation/summary file generation for completed milestones during migration
+- Cache invalidation before initial state derivation in startAuto
+- Headless mode no longer exits early on progress notifications containing 'complete'
+
+### Removed
+- Symlink-based development workflow (reverted PR #744)
+
+### Changed
+- Explicit Gemini OAuth ToS warning added to README — recommends API keys over OAuth
+- Documentation updated for v2.24 release features
+- Bug report template updated with model type, provider, and API docs fields
+
+## [2.25.0] - 2026-03-16
+
+### Added
+- Native web search results rendering in TUI with `PREFER_BRAVE_SEARCH` environment variable toggle
+- Meaningful commit messages generated from task summaries instead of generic messages
+- Incremental memory system for auto-mode sessions
+- Visualizer enriched with stats and discussion status
+- 14 new E2E smoke tests for CLI verification
+
+### Fixed
+- Phantom skip loop caused by stale crash recovery context
+- Skip-loop now interruptible and counts toward lifetime cap
+- Cache invalidation consistency — orphaned `invalidateStateCache()` calls replaced, DB artifact cache included in `invalidateAllCaches()`
+- Plan checkbox reconciliation on worktree re-attach after crash
+
+### Changed
+- Removed unnecessary `as any` casts, dead exports, and duplicate code
+- Updated documentation for v2.22 and v2.23 release features
+
+## [2.24.0] - 2026-03-16
+
+### Added
+- **Parallel milestone orchestration** — run multiple workers across phases simultaneously
+- Dashboard view for parallel workers with 80% budget alert
+- Headless `new-milestone` command for programmatic milestone creation
+- Interactive update prompt on startup when a new version is available
+- Symlink-based development workflow for `src/resources/`
+- Descriptions added to `/gsd` autocomplete commands
+- `validate-milestone` phase and dispatch
+
+### Fixed
+- Sync `completed-units.json` across worktree boundaries
+- Worktree artifact verification uses correct base path
+- Auto-resume auto-mode after rate limit cooldown
+- Raise `maxDelayMs` default from 60s to 300s for better rate-limit handling
+- Downgrade `missing_tasks_dir` to warning for completed slices
+- Prevent stale state loop on auto-mode restart with existing worktree
+- Always sync bundled resources and clean stale files
+- Add stop reason to every auto-mode stop
+- Skip redundant checkout in worktree merge when main already current
+- Prevent runaway execute-task when task plan missing after failed research
+- Fix read-only file permissions after cpSync from Nix store
+- Fix parallel sendMessage calls missing required fields
+- Strip clack UI from postinstall, keep silent Playwright download
+
+### Changed
+- Lazy-load LLM provider SDKs to reduce startup time
+
+## [2.23.0] - 2026-03-16
+
+### Added
+- **VS Code extension** — full extension with chat participant, RPC integration, marketplace publishing under FluxLabs publisher
+- **`gsd headless`** — redesigned headless mode for full workflow orchestration: auto-responds to prompts, detects completion, supports `--json` output and `--timeout` flags
+- **`gsd sessions`** — interactive session picker for browsing and resuming saved sessions (#721)
+- **10 new browser tools** — `browser_save_pdf`, `browser_save_state`, `browser_restore_state`, `browser_mock_route`, `browser_block_urls`, `browser_clear_routes`, `browser_emulate_device`, `browser_extract`, `browser_visual_diff`, `browser_zoom_region`, `browser_generate_test`, `browser_check_injection`, `browser_action_cache` (#698)
+- **Structured discussion rounds** — `ask_user_questions` in guided-discuss-milestone for better requirement gathering (#688)
+- **`validate-milestone` prompt** — milestone validation prompt and template
+- **`models.json` resolution** — custom model definitions with fallback to `~/.pi/agent/models.json`
+
+### Changed
+- **Background shell performance** — optimized hot path with parallel git queries and lazy workspace validation
+
+### Fixed
+- Forensics uses `GSD_VERSION` env var instead of fragile package.json path traversal; now worktree-aware to prevent stale root misdiagnosis
+- Background commands rewritten to prevent pipe-open hang; stalled-tool detection added with prompt guidance
+- Auto mode breaks infinite skip loop on repeatedly-skipped completed units
+- Roadmap parser expands range syntax in depends (e.g. `S01-S04` → `S01,S02,S03,S04`)
+- Empty scaffold plan files rejected during plan-slice artifact verification (#699)
+- Anti-pattern rule prevents `bash &` usage that causes agent hangs (#733)
+- Shift-Tab navigates to previous tab in workflow visualizer (#717)
+- Capture resolutions executed after triage instead of only classified (#714)
+- Screenshot constraining uses independent width/height caps (#725)
+- `auto.lock` written at startup; remote sessions detected in dashboard (#723)
+- Cross-platform test compatibility with `process.ppid`
+- CSP nonce, dead branch cleanup, restart cooldown fixes
+- CI fix: `pi.getActiveTools()` replaces `ctx.getActiveTools()`
+
 ## [2.22.0] - 2026-03-16
 
 ### Added
@@ -861,7 +1260,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - License updated to MIT
 
-[Unreleased]: https://github.com/gsd-build/gsd-2/compare/v2.22.0...HEAD
+[Unreleased]: https://github.com/gsd-build/gsd-2/compare/v2.31.0...HEAD
+[2.31.0]: https://github.com/gsd-build/gsd-2/compare/v2.30.0...v2.31.0
+[2.30.0]: https://github.com/gsd-build/gsd-2/compare/v2.29.0...v2.30.0
+[2.29.0]: https://github.com/gsd-build/gsd-2/compare/v2.28.0...v2.29.0
+[2.28.0]: https://github.com/gsd-build/gsd-2/compare/v2.27.0...v2.28.0
+[2.27.0]: https://github.com/gsd-build/gsd-2/compare/v2.26.0...v2.27.0
+[2.26.0]: https://github.com/gsd-build/gsd-2/compare/v2.25.0...v2.26.0
+[2.25.0]: https://github.com/gsd-build/gsd-2/releases/tag/v2.25.0
+[2.24.0]: https://github.com/gsd-build/gsd-2/compare/v2.23.0...v2.24.0
+[2.23.0]: https://github.com/gsd-build/gsd-2/compare/v2.22.0...v2.23.0
 [2.21.0]: https://github.com/gsd-build/gsd-2/compare/v2.20.0...v2.21.0
 [2.19.0]: https://github.com/gsd-build/gsd-2/compare/v2.18.0...v2.19.0
 [2.18.0]: https://github.com/gsd-build/gsd-2/compare/v2.17.0...v2.18.0

@@ -12,9 +12,9 @@
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@gsd/pi-coding-agent";
 import { loadPrompt } from "./prompt-loader.js";
-import { autoCommitCurrentBranch } from "./worktree.js";
+import { autoCommitCurrentBranch, getMainBranch, resolveGitHeadPath, nudgeGitBranchCache } from "./worktree.js";
 import { runWorktreePostCreateHook } from "./auto-worktree.js";
-import { showConfirm } from "../shared/confirm-ui.js";
+import { showConfirm } from "../shared/mod.js";
 import { gsdRoot, milestonesDir } from "./paths.js";
 import {
   createWorktree,
@@ -23,7 +23,6 @@ import {
   mergeWorktreeToMain,
   diffWorktreeAll,
   diffWorktreeNumstat,
-  getMainBranch,
   getWorktreeGSDDiff,
   getWorktreeCodeDiff,
   getWorktreeLog,
@@ -32,9 +31,9 @@ import {
 } from "./worktree-manager.js";
 import { inferCommitType } from "./git-service.js";
 import type { FileLineStat } from "./worktree-manager.js";
-import { existsSync, realpathSync, readFileSync, readdirSync, rmSync, unlinkSync, utimesSync } from "node:fs";
+import { existsSync, realpathSync, readdirSync, rmSync, unlinkSync } from "node:fs";
 import { nativeMergeAbort } from "./native-git-bridge.js";
-import { join, resolve, sep } from "node:path";
+import { join, sep } from "node:path";
 
 /**
  * Tracks the original project root so we can switch back.
@@ -47,57 +46,11 @@ export function getWorktreeOriginalCwd(): string | null {
   return originalCwd;
 }
 
-/**
- * Resolve the git HEAD file path for a given directory.
- * Handles both normal repos (.git is a directory) and worktrees (.git is a file).
- */
-function resolveGitHeadPath(dir: string): string | null {
-  const gitPath = join(dir, ".git");
-  if (!existsSync(gitPath)) return null;
-
-  try {
-    const content = readFileSync(gitPath, "utf8").trim();
-    if (content.startsWith("gitdir: ")) {
-      // Worktree — .git is a file pointing to the real gitdir
-      const gitDir = resolve(dir, content.slice(8));
-      const headPath = join(gitDir, "HEAD");
-      return existsSync(headPath) ? headPath : null;
-    }
-    // Normal repo — .git is a directory
-    const headPath = join(dir, ".git", "HEAD");
-    return existsSync(headPath) ? headPath : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Nudge pi's FooterDataProvider to re-read the git branch.
- *
- * The footer caches the branch and watches a single .git dir for changes.
- * After process.chdir() into a worktree (or back), the watcher is stale —
- * it's still watching the old git dir. We touch HEAD in both the old and
- * new git dirs to ensure the watcher fires regardless of which one it's
- * monitoring. This clears cachedBranch; the next getGitBranch() call uses
- * the new process.cwd() and picks up the correct branch.
- */
-function nudgeGitBranchCache(previousCwd: string): void {
-  const now = new Date();
-  for (const dir of [previousCwd, process.cwd()]) {
-    try {
-      const headPath = resolveGitHeadPath(dir);
-      if (headPath) utimesSync(headPath, now, now);
-    } catch {
-      // Best-effort — branch display may be stale
-    }
-  }
-}
-
 /** Get the name of the active worktree, or null if not in one. */
 export function getActiveWorktreeName(): string | null {
   if (!originalCwd) return null;
   const cwd = process.cwd();
-  const wtDir = join(originalCwd, ".gsd", "worktrees");
+  const wtDir = join(gsdRoot(originalCwd), "worktrees");
   if (!cwd.startsWith(wtDir)) return null;
   const rel = cwd.slice(wtDir.length + 1);
   const name = rel.split("/")[0] ?? rel.split("\\")[0];
@@ -679,16 +632,6 @@ async function handleMerge(
     // Try a direct squash-merge first. Only fall back to LLM on conflict.
     const commitType = inferCommitType(name);
     const commitMessage = `${commitType}(${name}): merge worktree ${name}`;
-
-    // Reconcile worktree DB into main DB before squash merge
-    const wtDbPath = join(worktreePath(basePath, name), ".gsd", "gsd.db");
-    const mainDbPath = join(basePath, ".gsd", "gsd.db");
-    if (existsSync(wtDbPath) && existsSync(mainDbPath)) {
-      try {
-        const { reconcileWorktreeDb } = await import("./gsd-db.js");
-        reconcileWorktreeDb(mainDbPath, wtDbPath);
-      } catch { /* non-fatal */ }
-    }
 
     try {
       mergeWorktreeToMain(basePath, name, commitMessage);

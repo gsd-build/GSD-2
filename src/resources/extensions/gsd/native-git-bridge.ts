@@ -8,14 +8,8 @@
 import { execSync, execFileSync } from "node:child_process";
 import { existsSync, readFileSync, unlinkSync, rmSync } from "node:fs";
 import { join } from "node:path";
-
-/** Env overlay that suppresses interactive git credential prompts and git-svn noise. */
-const GIT_NO_PROMPT_ENV = {
-  ...process.env,
-  GIT_TERMINAL_PROMPT: "0",
-  GIT_ASKPASS: "",
-  GIT_SVN_ID: "",
-};
+import { GSDError, GSD_GIT_ERROR } from "./errors.js";
+import { GIT_NO_PROMPT_ENV } from "./git-constants.js";
 
 // Issue #453: keep auto-mode bookkeeping on the stable git CLI path unless a
 // caller explicitly opts into the native helper.
@@ -148,7 +142,7 @@ function gitExec(basePath: string, args: string[], allowFailure = false): string
     }).trim();
   } catch {
     if (allowFailure) return "";
-    throw new Error(`git ${args.join(" ")} failed in ${basePath}`);
+    throw new GSDError(GSD_GIT_ERROR, `git ${args.join(" ")} failed in ${basePath}`);
   }
 }
 
@@ -159,10 +153,11 @@ function gitFileExec(basePath: string, args: string[], allowFailure = false): st
       cwd: basePath,
       stdio: ["ignore", "pipe", "pipe"],
       encoding: "utf-8",
+      env: GIT_NO_PROMPT_ENV,
     }).trim();
   } catch {
     if (allowFailure) return "";
-    throw new Error(`git ${args.join(" ")} failed in ${basePath}`);
+    throw new GSDError(GSD_GIT_ERROR, `git ${args.join(" ")} failed in ${basePath}`);
   }
 }
 
@@ -249,18 +244,46 @@ export function nativeWorkingTreeStatus(basePath: string): string {
   return gitExec(basePath, ["status", "--porcelain"], true);
 }
 
+// ─── nativeHasChanges fallback cache (10s TTL) ─────────────────────────
+let _hasChangesCachedResult: boolean = false;
+let _hasChangesCachedAt: number = 0;
+let _hasChangesCachedPath: string = "";
+const HAS_CHANGES_CACHE_TTL_MS = 10_000; // 10 seconds
+
 /**
  * Quick check: any staged or unstaged changes?
  * Native: libgit2 status check (single syscall).
- * Fallback: `git status --short`.
+ * Fallback: `git status --short` (cached for 10s per basePath).
  */
 export function nativeHasChanges(basePath: string): boolean {
   const native = loadNative();
   if (native) {
     return native.gitHasChanges(basePath);
   }
+
+  const now = Date.now();
+  if (
+    basePath === _hasChangesCachedPath &&
+    now - _hasChangesCachedAt < HAS_CHANGES_CACHE_TTL_MS
+  ) {
+    return _hasChangesCachedResult;
+  }
+
   const result = gitExec(basePath, ["status", "--short"], true);
-  return result !== "";
+  const hasChanges = result !== "";
+
+  _hasChangesCachedResult = hasChanges;
+  _hasChangesCachedAt = now;
+  _hasChangesCachedPath = basePath;
+
+  return hasChanges;
+}
+
+/** Reset the nativeHasChanges fallback cache (exported for testing). */
+export function _resetHasChangesCache(): void {
+  _hasChangesCachedResult = false;
+  _hasChangesCachedAt = 0;
+  _hasChangesCachedPath = "";
 }
 
 /**

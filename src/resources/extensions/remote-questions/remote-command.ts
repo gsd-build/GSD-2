@@ -9,7 +9,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { getGlobalGSDPreferencesPath, loadEffectiveGSDPreferences } from "../gsd/preferences.js";
 import { getRemoteConfigStatus, isValidChannelId, resolveRemoteConfig } from "./config.js";
-import { sanitizeError } from "./manager.js";
+import { sanitizeError } from "../shared/sanitize.js";
 import { getLatestPromptSummary } from "./status.js";
 
 export async function handleRemote(

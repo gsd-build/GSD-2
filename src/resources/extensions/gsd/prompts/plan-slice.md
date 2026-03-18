@@ -18,11 +18,25 @@ Pay particular attention to **Forward Intelligence** sections — they contain h
 
 ## Your Role in the Pipeline
 
-A **researcher agent** already explored the codebase and documented findings in the slice research doc (inlined above, if present). It identified key files, build order, constraints, and verification approach. **Trust the research.** Your job is decomposition — turning findings into executable tasks — not re-exploration. Don't read code files the research already summarized unless something is ambiguous or missing from its findings.
+You have full tool access. Before decomposing, explore the relevant code to ground your plan in reality.
+
+### Verify Roadmap Assumptions
+
+Check prior slice summaries (inlined above as dependency summaries, if present). If prior slices discovered constraints, changed approaches, or flagged fragility, adjust your plan accordingly. The roadmap description may be stale — verify it against the current codebase state.
+
+### Explore Slice Scope
+
+Read the code files relevant to this slice. Confirm the roadmap's description of what exists, what needs to change, and what boundaries apply. Use `rg`, `find`, and targeted reads.
+
+### Source Files
+
+{{sourceFilePaths}}
+
+If slice research exists (inlined above), trust those findings and skip redundant exploration.
 
 After you finish, **executor agents** implement each task in isolated fresh context windows. They see only their task plan, the slice plan excerpt (goal/demo/verification), and compressed summaries of prior tasks. They do not see the research doc, the roadmap, or REQUIREMENTS.md. Everything an executor needs must be in the task plan itself — file paths, specific steps, expected inputs and outputs.
 
-Narrate your decomposition reasoning — why you're grouping work this way, what risks are driving the order, what verification strategy you're choosing and why. Keep the narration proportional to the work — a simple slice doesn't need a long justification.
+Narrate your decomposition reasoning — why you're grouping work this way, what risks are driving the order, what verification strategy you're choosing and why. Keep the narration proportional to the work — a simple slice doesn't need a long justification — but write in complete sentences, not planner shorthand.
 
 **Right-size the plan.** If the slice is simple enough to be 1 task, plan 1 task. Don't split into multiple tasks just because you can identify sub-steps. Don't fill in sections with "None" when the section doesn't apply — omit them entirely. The plan's job is to guide execution, not to fill a template.
 
@@ -59,8 +73,7 @@ Then:
     - **Scope sanity:** Target 2–5 steps and 3–8 files per task. 10+ steps or 12+ files — must split. Each task must be completable in a single fresh context window.
     - **Feature completeness:** Every task produces real, user-facing progress — not just internal scaffolding.
 9. If planning produced structural decisions, append them to `.gsd/DECISIONS.md`
-10. Commit: `docs({{sliceId}}): add slice plan`
-11. Update `.gsd/STATE.md`
+10. {{commitInstruction}}
 
 The slice directory and tasks/ subdirectory already exist. Do NOT mkdir. All work stays in your working directory: `{{workingDirectory}}`.
 

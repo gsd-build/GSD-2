@@ -11,6 +11,25 @@ import { join } from "path";
 import { createInterface } from "readline";
 import type { MemoryStorage } from "./storage.js";
 
+/** Inline concurrency limiter to cap parallel async operations. */
+function pLimit(concurrency: number) {
+	const queue: (() => void)[] = [];
+	let active = 0;
+	return <T>(fn: () => Promise<T>): Promise<T> => {
+		return new Promise<T>((resolve, reject) => {
+			const run = () => {
+				active++;
+				fn().then(resolve, reject).finally(() => {
+					active--;
+					if (queue.length > 0) queue.shift()!();
+				});
+			};
+			if (active < concurrency) run();
+			else queue.push(run);
+		});
+	};
+}
+
 /** Max session file size to process (50MB) — prevents OOM with concurrent workers */
 const MAX_SESSION_FILE_SIZE = 50 * 1024 * 1024;
 
@@ -320,8 +339,9 @@ async function runPhase1(
 		return { processed: 0, errors: 0 };
 	}
 
-	// Process jobs concurrently
-	const promises = jobs.map(async (job) => {
+	// Process jobs with bounded concurrency to avoid memory spikes
+	const limit = pLimit(5);
+	const promises = jobs.map((job) => limit(async () => {
 		try {
 			const thread = storage.getThread(job.threadId);
 			if (!thread) {
@@ -369,7 +389,7 @@ async function runPhase1(
 			storage.failStage1Job(job.threadId, message);
 			errors++;
 		}
-	});
+	}));
 
 	await Promise.all(promises);
 	return { processed, errors };

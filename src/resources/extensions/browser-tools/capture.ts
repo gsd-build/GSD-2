@@ -10,9 +10,43 @@ import sharp from "sharp";
 import type { CompactPageState, CompactSelectorState } from "./state.js";
 import { formatCompactStateSummary } from "./utils.js";
 
-// Anthropic API rejects images > 2000px in multi-image requests.
-// Cap at 1568px (recommended optimal size) to stay well within limits.
-const MAX_SCREENSHOT_DIM = 1568;
+// Anthropic vision: 1568px is the recommended optimal width. Height is capped
+// generously at 8000px so tall full-page screenshots remain readable rather
+// than being squished into a square constraint.
+//
+// Override via environment variables:
+//   SCREENSHOT_MAX_WIDTH=0   → uncap width (use raw resolution)
+//   SCREENSHOT_MAX_HEIGHT=0  → uncap height
+//   SCREENSHOT_FORMAT=png    → lossless PNG for all viewport/fullpage screenshots
+//   SCREENSHOT_QUALITY=100   → max JPEG quality (1-100, default 80)
+const MAX_SCREENSHOT_WIDTH = parseScreenshotDimension(process.env.SCREENSHOT_MAX_WIDTH, 1568);
+const MAX_SCREENSHOT_HEIGHT = parseScreenshotDimension(process.env.SCREENSHOT_MAX_HEIGHT, 8000);
+
+/** Parse a dimension env var: positive int = that value, 0 = Infinity (uncapped), absent/invalid = default. */
+function parseScreenshotDimension(value: string | undefined, fallback: number): number {
+	if (value === undefined || value === "") return fallback;
+	const n = parseInt(value, 10);
+	if (isNaN(n) || n < 0) return fallback;
+	if (n === 0) return Infinity;
+	return n;
+}
+
+/** Return the user-configured screenshot format override, or null for default behavior. */
+export function getScreenshotFormatOverride(): "png" | "jpeg" | null {
+	const fmt = process.env.SCREENSHOT_FORMAT?.toLowerCase();
+	if (fmt === "png") return "png";
+	if (fmt === "jpeg" || fmt === "jpg") return "jpeg";
+	return null;
+}
+
+/** Return the user-configured default JPEG quality, or the provided fallback. */
+export function getScreenshotQualityDefault(fallback: number): number {
+	const q = process.env.SCREENSHOT_QUALITY;
+	if (q === undefined || q === "") return fallback;
+	const n = parseInt(q, 10);
+	if (isNaN(n) || n < 1 || n > 100) return fallback;
+	return n;
+}
 
 // ---------------------------------------------------------------------------
 // Compact page state capture
@@ -120,9 +154,10 @@ export async function postActionSummary(p: Page, target?: Page | Frame): Promise
 // ---------------------------------------------------------------------------
 
 /**
- * If either dimension of the image buffer exceeds MAX_SCREENSHOT_DIM,
- * downscale proportionally using sharp. Returns the original buffer
- * unchanged if already within limits.
+ * Constrain screenshot dimensions for the Anthropic vision API.
+ * Width is capped at 1568px (optimal) and height at 8000px, each
+ * independently, using `fit: "inside"` so aspect ratio is preserved.
+ * Small images are never upscaled.
  *
  * `page` parameter is retained for ToolDeps signature stability (D008)
  * but is no longer used — all processing is server-side via sharp.
@@ -133,18 +168,17 @@ export async function constrainScreenshot(
 	mimeType: string,
 	quality: number,
 ): Promise<Buffer> {
-	const { width, height } = await sharp(buffer).metadata();
+	const meta = await sharp(buffer).metadata();
+	const width = meta.width;
+	const height = meta.height;
 
-	if (
-		width !== undefined &&
-		height !== undefined &&
-		width <= MAX_SCREENSHOT_DIM &&
-		height <= MAX_SCREENSHOT_DIM
-	) {
-		return buffer;
-	}
+	if (width === undefined || height === undefined) return buffer;
+	if (width <= MAX_SCREENSHOT_WIDTH && height <= MAX_SCREENSHOT_HEIGHT) return buffer;
 
-	const resizer = sharp(buffer).resize(MAX_SCREENSHOT_DIM, MAX_SCREENSHOT_DIM, { fit: "inside" });
+	const resizer = sharp(buffer).resize(MAX_SCREENSHOT_WIDTH, MAX_SCREENSHOT_HEIGHT, {
+		fit: "inside",
+		withoutEnlargement: true,
+	});
 
 	if (mimeType === "image/png") {
 		return Buffer.from(await resizer.png().toBuffer());

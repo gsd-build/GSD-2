@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "templates": {
+    "full-project": {
+      "name": "Full Project",
+      "description": "Complete GSD workflow with roadmap, milestones, slices, and full ceremony",
+      "file": "full-project.md",
+      "phases": ["init", "discuss", "plan", "execute", "verify"],
+      "triggers": ["new project", "greenfield", "from scratch", "build an app", "create a new"],
+      "artifact_dir": ".gsd/",
+      "estimated_complexity": "high",
+      "requires_project": true
+    },
+    "bugfix": {
+      "name": "Bug Fix",
+      "description": "Triage, reproduce, fix, test, and ship a bug fix",
+      "file": "bugfix.md",
+      "phases": ["triage", "fix", "verify", "ship"],
+      "triggers": ["bug", "issue", "fix", "broken", "regression", "error", "crash", "failing", "github.com/*/issues/*"],
+      "artifact_dir": ".gsd/workflows/bugfixes/",
+      "estimated_complexity": "low",
+      "requires_project": false
+    },
+    "small-feature": {
+      "name": "Small Feature",
+      "description": "Lightweight feature development with optional discussion and research",
+      "file": "small-feature.md",
+      "phases": ["scope", "plan", "implement", "verify"],
+      "triggers": ["add", "feature", "implement", "build", "create", "new command", "new endpoint"],
+      "artifact_dir": ".gsd/workflows/features/",
+      "estimated_complexity": "medium",
+      "requires_project": false
+    },
+    "refactor": {
+      "name": "Refactor / Migration",
+      "description": "Systematic code transformation with inventory and wave-based execution",
+      "file": "refactor.md",
+      "phases": ["inventory", "plan", "migrate", "verify"],
+      "triggers": ["refactor", "migrate", "rename", "restructure", "move", "reorganize", "clean up"],
+      "artifact_dir": ".gsd/workflows/refactors/",
+      "estimated_complexity": "medium",
+      "requires_project": false
+    },
+    "spike": {
+      "name": "Research Spike",
+      "description": "Investigate a question, prototype, and document findings",
+      "file": "spike.md",
+      "phases": ["scope", "research", "synthesize"],
+      "triggers": ["research", "investigate", "explore", "spike", "compare", "evaluate", "should we", "what if", "how does"],
+      "artifact_dir": ".gsd/workflows/spikes/",
+      "estimated_complexity": "low",
+      "requires_project": false
+    },
+    "hotfix": {
+      "name": "Hotfix",
+      "description": "Minimal ceremony: fix the thing, test it, ship it",
+      "file": "hotfix.md",
+      "phases": ["fix", "ship"],
+      "triggers": ["hotfix", "urgent", "critical", "asap", "production down", "p0"],
+      "artifact_dir": null,
+      "estimated_complexity": "minimal",
+      "requires_project": false
+    },
+    "security-audit": {
+      "name": "Security Audit",
+      "description": "Scan for vulnerabilities, triage findings, remediate, and verify",
+      "file": "security-audit.md",
+      "phases": ["scan", "triage", "remediate", "re-scan"],
+      "triggers": ["security", "audit", "vulnerability", "owasp", "cve", "penetration", "hardening"],
+      "artifact_dir": ".gsd/workflows/audits/",
+      "estimated_complexity": "medium",
+      "requires_project": false
+    },
+    "dep-upgrade": {
+      "name": "Dependency Upgrade",
+      "description": "Assess impact, upgrade dependencies, fix breaking changes",
+      "file": "dep-upgrade.md",
+      "phases": ["assess", "upgrade", "fix", "verify"],
+      "triggers": ["upgrade", "update", "dependency", "deps", "bump", "outdated", "npm update", "renovate"],
+      "artifact_dir": ".gsd/workflows/upgrades/",
+      "estimated_complexity": "medium",
+      "requires_project": false
+    }
+  }
+}

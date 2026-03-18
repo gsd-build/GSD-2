@@ -38,6 +38,9 @@ function createTempRepo(): string {
   run("git config user.email test@test.com", dir);
   run("git config user.name Test", dir);
   writeFileSync(join(dir, "README.md"), "# test\n");
+  // Mirror production: .gsd/worktrees/ is gitignored so autoCommitDirtyState
+  // doesn't pick up the worktrees directory as dirty state (#1127 fix).
+  writeFileSync(join(dir, ".gitignore"), ".gsd/worktrees/\n");
   mkdirSync(join(dir, ".gsd"), { recursive: true });
   writeFileSync(join(dir, ".gsd", "STATE.md"), "# State\n");
   run("git add .", dir);
@@ -209,13 +212,13 @@ _None_
       run("git worktree add -b milestone/M001 .gsd/worktrees/M001", repo);
 
       // Detect
-      const detect = await runGSDDoctor(repo);
+      const detect = await runGSDDoctor(repo, { isolationMode: "worktree" });
       const orphanIssues = detect.issues.filter(i => i.code === "orphaned_auto_worktree");
       assertTrue(orphanIssues.length > 0, "doctor detects orphaned worktree");
       assertEq(orphanIssues[0]?.unitId, "M001", "orphaned worktree unitId is M001");
 
       // Fix
-      const fixed = await runGSDDoctor(repo, { fix: true });
+      const fixed = await runGSDDoctor(repo, { fix: true, isolationMode: "worktree" });
       assertTrue(
         fixed.fixesApplied.some(f => f.includes("removed orphaned worktree")),
         "doctor fix removes orphaned worktree",

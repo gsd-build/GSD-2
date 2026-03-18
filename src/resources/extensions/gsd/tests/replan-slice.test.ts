@@ -40,6 +40,7 @@ function writeRoadmap(base: string, mid: string, content: string): void {
 function writePlan(base: string, mid: string, sid: string, content: string): void {
   const dir = join(base, '.gsd', 'milestones', mid, 'slices', sid);
   mkdirSync(join(dir, 'tasks'), { recursive: true });
+  writeFileSync(join(dir, "tasks", "T01-PLAN.md"), "# T01 Plan\n");
   writeFileSync(join(dir, `${sid}-PLAN.md`), content);
 }
 
@@ -490,6 +491,47 @@ console.log('\n=== doctor: no blocker → no blocker_discovered_no_replan issue 
   const report = await runGSDDoctor(base, { fix: false, scope: 'M001/S01' });
   const blockerIssues = report.issues.filter(i => i.code === 'blocker_discovered_no_replan');
   assertEq(blockerIssues.length, 0, 'no blocker_discovered_no_replan when no blocker');
+  rmSync(base, { recursive: true, force: true });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Artifact Resolution: resolveExpectedArtifactPath for replan-slice (#858)
+// ═══════════════════════════════════════════════════════════════════════════
+
+import { resolveExpectedArtifactPath, verifyExpectedArtifact } from '../auto-recovery.ts';
+
+console.log('\n=== artifact: resolveExpectedArtifactPath returns REPLAN.md path for replan-slice ===');
+{
+  const base = createFixtureBase();
+  writeRoadmap(base, 'M001', ROADMAP_ONE_SLICE);
+  writePlan(base, 'M001', 'S01', makePlanT01DoneT02Pending());
+
+  const path = resolveExpectedArtifactPath('replan-slice', 'M001/S01', base);
+  assertTrue(path !== null, 'resolveExpectedArtifactPath returns non-null for replan-slice');
+  assertTrue(path!.endsWith('S01-REPLAN.md'), 'path ends with S01-REPLAN.md');
+  rmSync(base, { recursive: true, force: true });
+}
+
+console.log('\n=== artifact: verifyExpectedArtifact fails when REPLAN.md missing (#858) ===');
+{
+  const base = createFixtureBase();
+  writeRoadmap(base, 'M001', ROADMAP_ONE_SLICE);
+  writePlan(base, 'M001', 'S01', makePlanT01DoneT02Pending());
+
+  const result = verifyExpectedArtifact('replan-slice', 'M001/S01', base);
+  assertEq(result, false, 'verifyExpectedArtifact returns false when REPLAN.md is missing');
+  rmSync(base, { recursive: true, force: true });
+}
+
+console.log('\n=== artifact: verifyExpectedArtifact passes when REPLAN.md exists (#858) ===');
+{
+  const base = createFixtureBase();
+  writeRoadmap(base, 'M001', ROADMAP_ONE_SLICE);
+  writePlan(base, 'M001', 'S01', makePlanT01DoneT02Pending());
+  writeReplanFile(base, 'M001', 'S01', '# Replan\n\nBlocker addressed.');
+
+  const result = verifyExpectedArtifact('replan-slice', 'M001/S01', base);
+  assertEq(result, true, 'verifyExpectedArtifact returns true when REPLAN.md exists');
   rmSync(base, { recursive: true, force: true });
 }
 

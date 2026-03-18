@@ -235,6 +235,7 @@ export {
 	type BashToolInput,
 	type BashToolOptions,
 	bashTool,
+	rewriteBackgroundCommand,
 	checkBashInterception,
 	type CompiledInterceptor,
 	compileInterceptor,
@@ -278,6 +279,19 @@ export {
 	type WriteToolInput,
 	type WriteToolOptions,
 	writeTool,
+	// Hashline edit mode tools
+	hashlineEditTool,
+	hashlineReadTool,
+	hashlineCodingTools,
+	createHashlineEditTool,
+	createHashlineReadTool,
+	createHashlineCodingTools,
+	type HashlineEditInput,
+	type HashlineEditToolDetails,
+	type HashlineEditToolOptions,
+	type HashlineReadToolDetails,
+	type HashlineReadToolInput,
+	type HashlineReadToolOptions,
 } from "./core/tools/index.js";
 // Main entry point
 export { main } from "./main.js";
@@ -288,7 +302,16 @@ export {
 	type PrintModeOptions,
 	runPrintMode,
 	runRpcMode,
+	type ModelInfo,
+	RpcClient,
+	type RpcClientOptions,
+	type RpcEventListener,
+	type RpcCommand,
+	type RpcResponse,
+	type RpcSessionState,
 } from "./modes/index.js";
+// RPC JSONL utilities
+export { attachJsonlLineReader, serializeJsonLine } from "./modes/rpc/jsonl.js";
 // UI components for extensions
 export {
 	ArminComponent,
@@ -347,3 +370,5 @@ export { copyToClipboard } from "./utils/clipboard.js";
 export { parseFrontmatter, stripFrontmatter } from "./utils/frontmatter.js";
 // Shell utilities
 export { getShellConfig, sanitizeCommand } from "./utils/shell.js";
+// Cross-platform path display
+export { toPosixPath } from "./utils/path-display.js";

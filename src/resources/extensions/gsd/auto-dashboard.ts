@@ -6,11 +6,12 @@
  * or AutoContext dependency. State accessors are passed as callbacks.
  */
 
-import type { ExtensionContext, ExtensionCommandContext } from "@gsd/pi-coding-agent";
+import type { ExtensionContext, ExtensionCommandContext, SessionMessageEntry } from "@gsd/pi-coding-agent";
 import type { GSDState } from "./types.js";
 import { getCurrentBranch } from "./worktree.js";
 import { getActiveHook } from "./post-unit-hooks.js";
 import { getLedger, getProjectTotals, formatCost, formatTokenCount, formatTierSavings } from "./metrics.js";
+import { getHealthTrend, getConsecutiveErrorUnits } from "./doctor-proactive.js";
 import {
   resolveMilestoneFile,
   resolveSliceFile,
@@ -18,7 +19,7 @@ import {
 import { parseRoadmap, parsePlan } from "./files.js";
 import { readFileSync, existsSync } from "node:fs";
 import { truncateToWidth, visibleWidth } from "@gsd/pi-tui";
-import { makeUI, GLYPH, INDENT } from "../shared/ui.js";
+import { makeUI, GLYPH, INDENT } from "../shared/mod.js";
 
 // ─── Dashboard Data ───────────────────────────────────────────────────────────
 
@@ -41,6 +42,8 @@ export interface AutoDashboardData {
   profileDowngraded?: boolean;
   /** Number of pending captures awaiting triage (0 if none or file missing) */
   pendingCaptureCount: number;
+  /** Cross-process: another auto-mode session detected via auto.lock (PID, startedAt) */
+  remoteSession?: { pid: number; startedAt: string; unitType: string; unitId: string };
 }
 
 // ─── Unit Description Helpers ─────────────────────────────────────────────────
@@ -157,6 +160,49 @@ export function formatWidgetTokens(count: number): string {
   return `${Math.round(count / 1000000)}M`;
 }
 
+// ─── ETA Estimation ──────────────────────────────────────────────────────────
+
+/**
+ * Estimate remaining time based on average unit duration from the metrics ledger.
+ * Returns a formatted string like "~12m remaining" or null if insufficient data.
+ */
+export function estimateTimeRemaining(): string | null {
+  const ledger = getLedger();
+  if (!ledger || ledger.units.length < 2) return null;
+
+  const sliceProgress = getRoadmapSlicesSync();
+  if (!sliceProgress || sliceProgress.total === 0) return null;
+
+  const remainingSlices = sliceProgress.total - sliceProgress.done;
+  if (remainingSlices <= 0) return null;
+
+  // Compute average duration per completed slice from the ledger
+  const completedSliceUnits = ledger.units.filter(
+    u => u.finishedAt > 0 && u.startedAt > 0,
+  );
+  if (completedSliceUnits.length < 2) return null;
+
+  const totalDuration = completedSliceUnits.reduce(
+    (sum, u) => sum + (u.finishedAt - u.startedAt), 0,
+  );
+  const avgDuration = totalDuration / completedSliceUnits.length;
+
+  // Rough estimate: remaining slices × average units per slice × avg duration
+  const completedSlices = sliceProgress.done || 1;
+  const unitsPerSlice = completedSliceUnits.length / completedSlices;
+  const estimatedMs = remainingSlices * unitsPerSlice * avgDuration;
+
+  if (estimatedMs < 5_000) return null; // Too small to display
+
+  const s = Math.floor(estimatedMs / 1000);
+  if (s < 60) return `~${s}s remaining`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `~${m}m remaining`;
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  return rm > 0 ? `~${h}h ${rm}m remaining` : `~${h}h remaining`;
+}
+
 // ─── Slice Progress Cache ─────────────────────────────────────────────────────
 
 /** Cached slice progress for the widget — avoid async in render */
@@ -264,6 +310,16 @@ export function updateProgressWidget(
   }
   if (cachedBranch) widgetPwd = `${widgetPwd} (${cachedBranch})`;
 
+  // Set a string-array fallback first — this is the only version RPC mode will
+  // see, since the factory widget set below is not supported in RPC mode.
+  const progressText = buildProgressTextLines(
+    verb, phaseLabel, unitId, mid, slice, task, next,
+    accessors, tierBadge, widgetPwd,
+  );
+  ctx.ui.setWidget("gsd-progress", progressText);
+
+  // Set the factory-based widget — in TUI mode this replaces the string-array
+  // version with a dynamic, animated widget. In RPC mode this call is a no-op.
   ctx.ui.setWidget("gsd-progress", (tui, theme) => {
     let pulseBright = true;
     let cachedLines: string[] | undefined;
@@ -275,15 +331,16 @@ export function updateProgressWidget(
       tui.requestRender();
     }, 800);
 
-    // Refresh progress cache from disk every 5s so the widget reflects
+    // Refresh progress cache from disk every 15s so the widget reflects
     // task/slice completion mid-unit. Without this, the progress bar only
     // updates at dispatch time, appearing frozen during long-running units.
+    // 15s (vs 5s) reduces synchronous file I/O on the hot path.
     const progressRefreshTimer = mid ? setInterval(() => {
       try {
         updateSliceProgressCache(accessors.getBasePath(), mid.id, slice?.id);
         cachedLines = undefined;
       } catch { /* non-fatal */ }
-    }, 5_000) : null;
+    }, 15_000) : null;
 
     return {
       render(width: number): string[] {
@@ -320,7 +377,10 @@ export function updateProgressWidget(
 
         lines.push("");
 
-        const target = task ? `${task.id}: ${task.title}` : unitId;
+        const isHook = unitType.startsWith("hook/");
+        const target = isHook
+          ? (unitId.split("/").pop() ?? unitId)
+          : (task ? `${task.id}: ${task.title}` : unitId);
         const actionLeft = `${pad}${theme.fg("accent", "▸")} ${theme.fg("accent", verb)}  ${theme.fg("text", target)}`;
         const tierTag = tierBadge ? theme.fg("dim", `[${tierBadge}] `) : "";
         const phaseBadge = `${tierTag}${theme.fg("dim", phaseLabel)}`;
@@ -340,8 +400,17 @@ export function updateProgressWidget(
             let meta = theme.fg("dim", `${done}/${total} slices`);
 
             if (activeSliceTasks && activeSliceTasks.total > 0) {
-              const taskNum = Math.min(activeSliceTasks.done + 1, activeSliceTasks.total);
+              // For hooks, show the trigger task number (done), not the next task (done + 1)
+              const taskNum = isHook
+                ? Math.max(activeSliceTasks.done, 1)
+                : Math.min(activeSliceTasks.done + 1, activeSliceTasks.total);
               meta += theme.fg("dim", `  ·  task ${taskNum}/${activeSliceTasks.total}`);
+            }
+
+            // ETA estimate
+            const eta = estimateTimeRemaining();
+            if (eta) {
+              meta += theme.fg("dim", `  ·  ${eta}`);
             }
 
             lines.push(truncateToWidth(`${pad}${bar}  ${meta}`, width));
@@ -368,13 +437,16 @@ export function updateProgressWidget(
           let totalCacheRead = 0, totalCacheWrite = 0;
           if (cmdCtx) {
             for (const entry of cmdCtx.sessionManager.getEntries()) {
-              if (entry.type === "message" && (entry as any).message?.role === "assistant") {
-                const u = (entry as any).message.usage;
-                if (u) {
-                  totalInput += u.input || 0;
-                  totalOutput += u.output || 0;
-                  totalCacheRead += u.cacheRead || 0;
-                  totalCacheWrite += u.cacheWrite || 0;
+              if (entry.type === "message") {
+                const msgEntry = entry as SessionMessageEntry;
+                if (msgEntry.message?.role === "assistant") {
+                  const u = (msgEntry.message as any).usage;
+                  if (u) {
+                    totalInput += u.input || 0;
+                    totalOutput += u.output || 0;
+                    totalCacheRead += u.cacheRead || 0;
+                    totalCacheWrite += u.cacheWrite || 0;
+                  }
                 }
               }
             }
@@ -393,7 +465,13 @@ export function updateProgressWidget(
           if (totalOutput) sp.push(`↓${formatWidgetTokens(totalOutput)}`);
           if (totalCacheRead) sp.push(`R${formatWidgetTokens(totalCacheRead)}`);
           if (totalCacheWrite) sp.push(`W${formatWidgetTokens(totalCacheWrite)}`);
+          // Cache hit rate for current unit
+          if (totalCacheRead + totalInput > 0) {
+            const hitRate = Math.round((totalCacheRead / (totalCacheRead + totalInput)) * 100);
+            sp.push(`\u26A1${hitRate}%`);
+          }
           if (cumulativeCost) sp.push(`$${cumulativeCost.toFixed(3)}`);
+          else if (autoTotals?.apiRequests) sp.push(`${autoTotals.apiRequests} reqs`);
 
           const cxDisplay = cxPct === "?"
             ? `?/${formatWidgetTokens(cxWindow)}`
@@ -450,6 +528,95 @@ export function updateProgressWidget(
       },
     };
   });
+}
+
+// ─── Text Fallback for RPC Mode ───────────────────────────────────────────
+
+/**
+ * Build a compact string-array representation of the progress widget.
+ * Used as a fallback when the factory-based widget cannot render (RPC mode).
+ */
+// ─── Model Health Indicator ───────────────────────────────────────────────────
+
+/**
+ * Compute a traffic-light health indicator from observable signals.
+ * 🟢 progressing well — no errors, trend stable/improving
+ * 🟡 struggling — some errors or degrading trend
+ * 🔴 stuck — consecutive errors, likely needs attention
+ */
+export function getModelHealthIndicator(): { emoji: string; label: string } {
+  const trend = getHealthTrend();
+  const consecutiveErrors = getConsecutiveErrorUnits();
+
+  if (consecutiveErrors >= 3) {
+    return { emoji: "🔴", label: "stuck" };
+  }
+  if (consecutiveErrors >= 1 || trend === "degrading") {
+    return { emoji: "🟡", label: "struggling" };
+  }
+  if (trend === "improving") {
+    return { emoji: "🟢", label: "progressing well" };
+  }
+  // stable or unknown
+  return { emoji: "🟢", label: "progressing" };
+}
+
+function buildProgressTextLines(
+  verb: string,
+  phaseLabel: string,
+  unitId: string,
+  mid: { id: string; title: string } | null,
+  slice: { id: string; title: string } | null,
+  task: { id: string; title: string } | null,
+  next: string,
+  accessors: WidgetStateAccessors,
+  tierBadge: string | undefined,
+  widgetPwd: string,
+): string[] {
+  const mode = accessors.isStepMode() ? "step" : "auto";
+  const elapsed = formatAutoElapsed(accessors.getAutoStartTime());
+  const tierStr = tierBadge ? ` [${tierBadge}]` : "";
+
+  const lines: string[] = [];
+  lines.push(`[GSD ${mode}] ${verb} ${unitId}${tierStr}${elapsed ? ` — ${elapsed}` : ""}`);
+
+  if (mid) lines.push(`  Milestone: ${mid.id} — ${mid.title}`);
+  if (slice) lines.push(`  Slice: ${slice.id} — ${slice.title}`);
+  if (task) lines.push(`  Task: ${task.id} — ${task.title}`);
+
+  // Progress bar
+  const sp = cachedSliceProgress;
+  if (sp && sp.total > 0) {
+    const pct = Math.round((sp.done / sp.total) * 100);
+    const taskInfo = sp.activeSliceTasks
+      ? ` (tasks: ${sp.activeSliceTasks.done}/${sp.activeSliceTasks.total})`
+      : "";
+    lines.push(`  Progress: ${sp.done}/${sp.total} slices (${pct}%)${taskInfo}`);
+  }
+
+  // Cost / tokens
+  const ledger = getLedger();
+  const totals = ledger ? getProjectTotals(ledger.units) : null;
+  if (totals) {
+    const parts: string[] = [];
+    if (totals.tokens.input || totals.tokens.output) {
+      parts.push(`tokens: ${formatWidgetTokens(totals.tokens.input)}↑ ${formatWidgetTokens(totals.tokens.output)}↓`);
+    }
+    if (totals.cost > 0) {
+      parts.push(`cost: ${formatCost(totals.cost)}`);
+    }
+    if (parts.length > 0) lines.push(`  ${parts.join(" — ")}`);
+  }
+
+  if (next) lines.push(`  Next: ${next}`);
+
+  // Model health indicator
+  const health = getModelHealthIndicator();
+  lines.push(`  Health: ${health.emoji} ${health.label}`);
+
+  lines.push(`  ${widgetPwd}`);
+
+  return lines;
 }
 
 // ─── Right-align Helper ───────────────────────────────────────────────────────

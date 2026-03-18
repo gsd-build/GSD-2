@@ -2,10 +2,10 @@
 // Tracks success/failure per tier per unit-type pattern to improve
 // classification accuracy over time.
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { gsdRoot } from "./paths.js";
 import type { ComplexityTier } from "./types.js";
+import { loadJsonFile, saveJsonFile } from "./json-persistence.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -267,24 +267,20 @@ function historyPath(base: string): string {
   return join(gsdRoot(base), HISTORY_FILE);
 }
 
+function isRoutingHistoryData(data: unknown): data is RoutingHistoryData {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    (data as RoutingHistoryData).version === 1 &&
+    typeof (data as RoutingHistoryData).patterns === "object" &&
+    (data as RoutingHistoryData).patterns !== null
+  );
+}
+
 function loadHistory(base: string): RoutingHistoryData {
-  try {
-    const raw = readFileSync(historyPath(base), "utf-8");
-    const parsed = JSON.parse(raw);
-    if (parsed.version === 1 && parsed.patterns) {
-      return parsed as RoutingHistoryData;
-    }
-  } catch {
-    // File doesn't exist or is corrupt — start fresh
-  }
-  return createEmptyHistory();
+  return loadJsonFile(historyPath(base), isRoutingHistoryData, createEmptyHistory);
 }
 
 function saveHistory(base: string, data: RoutingHistoryData): void {
-  try {
-    mkdirSync(gsdRoot(base), { recursive: true });
-    writeFileSync(historyPath(base), JSON.stringify(data, null, 2) + "\n", "utf-8");
-  } catch {
-    // Non-fatal — don't let history failures break auto-mode
-  }
+  saveJsonFile(historyPath(base), data);
 }

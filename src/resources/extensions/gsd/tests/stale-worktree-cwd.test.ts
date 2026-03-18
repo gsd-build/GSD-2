@@ -28,6 +28,9 @@ function createTempRepo(): string {
   run("git config user.email test@test.com", dir);
   run("git config user.name Test", dir);
   writeFileSync(join(dir, "README.md"), "# test\n");
+  // Mirror production: .gsd/worktrees/ is gitignored so autoCommitDirtyState
+  // doesn't pick up the worktrees directory as dirty state (#1127 fix).
+  writeFileSync(join(dir, ".gitignore"), ".gsd/worktrees/\n");
   run("git add .", dir);
   run("git commit -m init", dir);
   run("git branch -M main", dir);

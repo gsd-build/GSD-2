@@ -1,6 +1,6 @@
 {
   "name": "@gsd/pi-coding-agent",
-  "version": "0.57.1",
+  "version": "2.31.0",
   "description": "Coding agent CLI (vendored from pi-mono)",
   "type": "module",
   "piConfig": {
@@ -13,10 +13,6 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    },
-    "./hooks": {
-      "types": "./dist/core/hooks/index.d.ts",
-      "import": "./dist/core/hooks/index.js"
     }
   },
   "scripts": {

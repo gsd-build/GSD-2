@@ -23,8 +23,8 @@ Then:
 6. Write `{{milestoneSummaryPath}}` using the milestone-summary template. Fill all frontmatter fields and narrative sections. The `requirement_outcomes` field must list every requirement that changed status with `from_status`, `to_status`, and `proof`.
 7. Update `.gsd/REQUIREMENTS.md` if any requirement status transitions were validated in step 5.
 8. Update `.gsd/PROJECT.md` to reflect milestone completion and current project state.
-9. Do not commit manually — the system auto-commits your changes after this unit completes.
-10. Update `.gsd/STATE.md`
+9. Review all slice summaries for cross-cutting lessons, patterns, or gotchas that emerged during this milestone. Append any non-obvious, reusable insights to `.gsd/KNOWLEDGE.md`.
+10. Do not commit manually — the system auto-commits your changes after this unit completes.
 
 **Important:** Do NOT skip the success criteria and definition of done verification (steps 3-4). The milestone summary must reflect actual verified outcomes, not assumed success. If any criterion was not met, document it clearly in the summary and do not mark the milestone as passing verification.
 

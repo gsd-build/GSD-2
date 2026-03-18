@@ -8,6 +8,7 @@ skill_rules: []
 custom_instructions: []
 models: {}
 skill_discovery:
+skill_staleness_days:
 auto_supervisor: {}
 git:
   auto_push:
@@ -19,10 +20,35 @@ git:
   main_branch:
   merge_strategy:
   isolation:
+  manage_gitignore:
+  worktree_post_create:
 unique_milestone_ids:
 budget_ceiling:
 budget_enforcement:
 context_pause_threshold:
+token_profile:
+phases:
+  skip_research:
+  skip_reassess:
+  skip_slice_research:
+dynamic_routing:
+  enabled:
+  tier_models: {}
+  escalate_on_failure:
+  budget_pressure:
+  cross_provider:
+  hooks:
+auto_visualize:
+auto_report:
+parallel:
+  enabled:
+  max_workers:
+  budget_ceiling:
+  merge_strategy:
+  auto_merge:
+verification_commands: []
+verification_auto_fix:
+verification_max_retries:
 notifications:
   enabled:
   on_complete:
@@ -30,7 +56,14 @@ notifications:
   on_budget:
   on_milestone:
   on_attention:
+remote_questions:
+  channel:
+  channel_id:
+  timeout_minutes:
+  poll_interval_seconds:
 uat_dispatch:
+post_unit_hooks: []
+pre_dispatch_hooks: []
 ---
 
 # GSD Skill Preferences

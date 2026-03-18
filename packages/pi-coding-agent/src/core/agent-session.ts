@@ -774,6 +774,42 @@ export class AgentSession {
 		);
 	}
 
+	/**
+	 * Switch edit mode between standard (text-match) and hashline (LINE#ID anchors).
+	 * Swaps the active read/edit tools and rebuilds the system prompt.
+	 */
+	setEditMode(mode: "standard" | "hashline"): void {
+		this.settingsManager.setEditMode(mode);
+
+		// Get current active tool registry keys
+		const currentKeys = new Set<string>();
+		for (const [key, tool] of this._toolRegistry.entries()) {
+			if (this.agent.state.tools.includes(tool)) {
+				currentKeys.add(key);
+			}
+		}
+
+		// Swap read tools
+		if (mode === "hashline") {
+			currentKeys.delete("read");
+			currentKeys.add("hashline_read");
+			currentKeys.delete("edit");
+			currentKeys.add("hashline_edit");
+		} else {
+			currentKeys.delete("hashline_read");
+			currentKeys.add("read");
+			currentKeys.delete("hashline_edit");
+			currentKeys.add("edit");
+		}
+
+		this.setActiveToolsByName([...currentKeys]);
+	}
+
+	/** Current edit mode */
+	get editMode(): "standard" | "hashline" {
+		return this.settingsManager.getEditMode();
+	}
+
 	/** All messages including custom types like BashExecutionMessage */
 	get messages(): AgentMessage[] {
 		return this.agent.state.messages;
@@ -2180,6 +2216,20 @@ export class AgentSession {
 						});
 					});
 				},
+				retryLastTurn: () => {
+					const messages = this.agent.state.messages;
+					const last = messages[messages.length - 1];
+					if (last?.role === "assistant" && (last as AssistantMessage).stopReason === "error") {
+						this.agent.replaceMessages(messages.slice(0, -1));
+						this.agent.continue().catch((err) => {
+							runner.emitError({
+								extensionPath: "<runtime>",
+								event: "retry_last_turn",
+								error: err instanceof Error ? err.message : String(err),
+							});
+						});
+					}
+				},
 				appendEntry: (customType, data) => {
 					this.sessionManager.appendCustomEntry(customType, data);
 				},
@@ -2391,7 +2441,7 @@ export class AgentSession {
 
 		const err = message.errorMessage;
 		// Match: overloaded_error, rate limit, 429, 500, 502, 503, 504, service unavailable, connection errors, fetch failed, terminated, retry delay exceeded, network unavailable / auth expired (transient network failures)
-		return /overloaded|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server error|internal error|connection.?error|connection.?refused|other side closed|fetch failed|upstream.?connect|reset before headers|terminated|retry delay|network.?(?:is\s+)?unavailable|credentials.*expired|temporarily backed off/i.test(
+		return /overloaded|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server.?error|internal.?error|connection.?error|connection.?refused|other side closed|fetch failed|upstream.?connect|reset before headers|terminated|retry delay|network.?(?:is\s+)?unavailable|credentials.*expired|temporarily backed off/i.test(
 			err,
 		);
 	}
@@ -2553,7 +2603,7 @@ export class AgentSession {
 		if (message.retryAfterMs !== undefined) {
 			const cap = settings.maxDelayMs > 0 ? settings.maxDelayMs : Infinity;
 			if (message.retryAfterMs > cap) {
-				// Server wants us to wait longer than our max — give up immediately
+				// Server wants us to wait longer than maxDelayMs — give up to let auto-mode handle recovery
 				this._emit({
 					type: "auto_retry_end",
 					success: false,

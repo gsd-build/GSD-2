@@ -26,15 +26,16 @@ import {
   resolveSlicePath,
   resolveSliceFile,
   resolveTaskFile,
+  resolveTasksDir,
   resolveGsdRootFile,
   gsdRoot,
 } from './paths.js';
 
 import { milestoneIdSort, findMilestoneIds } from './guided-flow.js';
 import { nativeBatchParseGsdFiles, type BatchParsedFile } from './native-parser-bridge.js';
-// DB imports removed — state derivation no longer uses DB artifacts (stale content bug)
 
 import { join, resolve } from 'path';
+import { existsSync, readdirSync } from 'node:fs';
 import { debugCount, debugTime } from './debug-logger.js';
 
 // ─── Query Functions ───────────────────────────────────────────────────────
@@ -51,6 +52,23 @@ export function isSliceComplete(plan: SlicePlan): boolean {
  */
 export function isMilestoneComplete(roadmap: Roadmap): boolean {
   return roadmap.slices.length > 0 && roadmap.slices.every(s => s.done);
+}
+
+/**
+ * Check whether a VALIDATION file's verdict is terminal (pass or needs-attention).
+ * A non-terminal verdict (needs-remediation) means validation must re-run
+ * after remediation slices are executed.
+ */
+export function isValidationTerminal(validationContent: string): boolean {
+  const match = validationContent.match(/^---\n([\s\S]*?)\n---/);
+  if (!match) return false;
+  const verdict = match[1].match(/verdict:\s*(\S+)/);
+  if (!verdict) return false;
+  // 'pass' and 'needs-attention' are always terminal.
+  // 'needs-remediation' is treated as terminal to prevent infinite loops
+  // when no remediation slices exist in the roadmap (#832). The validation
+  // report is preserved on disk for manual review.
+  return verdict[1] === 'pass' || verdict[1] === 'needs-attention' || verdict[1] === 'needs-remediation';
 }
 
 // ─── State Derivation ──────────────────────────────────────────────────────
@@ -82,7 +100,20 @@ export function invalidateStateCache(): void {
  */
 export async function getActiveMilestoneId(basePath: string): Promise<string | null> {
   const milestoneIds = findMilestoneIds(basePath);
+  // Parallel worker isolation
+  const milestoneLock = process.env.GSD_MILESTONE_LOCK;
+  if (milestoneLock) {
+    if (!milestoneIds.includes(milestoneLock)) return null;
+    // Locked milestone that is parked should not be active
+    const lockedParked = resolveMilestoneFile(basePath, milestoneLock, "PARKED");
+    if (lockedParked) return null;
+    return milestoneLock;
+  }
   for (const mid of milestoneIds) {
+    // Skip parked milestones — they are not eligible for active status
+    const parkedFile = resolveMilestoneFile(basePath, mid, "PARKED");
+    if (parkedFile) continue;
+
     const roadmapFile = resolveMilestoneFile(basePath, mid, "ROADMAP");
     const content = roadmapFile ? await loadFile(roadmapFile) : null;
     if (!content) {
@@ -129,6 +160,18 @@ export async function deriveState(basePath: string): Promise<GSDState> {
 async function _deriveStateImpl(basePath: string): Promise<GSDState> {
   const milestoneIds = findMilestoneIds(basePath);
 
+  // ── Parallel worker isolation ──────────────────────────────────────────
+  // When GSD_MILESTONE_LOCK is set, this process is a parallel worker
+  // scoped to a single milestone. Filter the milestone list so this worker
+  // only sees its assigned milestone (all others are treated as if they
+  // don't exist). This gives each worker complete isolation without
+  // modifying any other state derivation logic.
+  const milestoneLock = process.env.GSD_MILESTONE_LOCK;
+  if (milestoneLock && milestoneIds.includes(milestoneLock)) {
+    milestoneIds.length = 0;
+    milestoneIds.push(milestoneLock);
+  }
+
   // ── Batch-parse file cache ──────────────────────────────────────────────
   // When the native Rust parser is available, read every .md file under .gsd/
   // in one call and build an in-memory content map keyed by absolute path.
@@ -136,15 +179,12 @@ async function _deriveStateImpl(basePath: string): Promise<GSDState> {
   const fileContentCache = new Map<string, string>();
   const gsdDir = gsdRoot(basePath);
 
-  // ── Content loading: native batch parse (preferred) or sequential reads ──
-  // The DB artifacts table is NOT used for state derivation because it has no
-  // write-through: roadmap/plan files are edited directly on disk (checkbox
-  // ticking via `edit` tool), so DB content goes stale immediately. This caused
-  // infinite skip loops where deriveState kept returning already-completed slices
-  // because the DB roadmap still showed them as [ ] while disk had [x].
-  //
-  // The native Rust batch parser reads all .md files in one call and is nearly
-  // as fast as a DB query. Falls back to sequential JS reads via cachedLoadFile.
+  // NOTE: We intentionally do NOT load from the SQLite DB here (#759).
+  // The DB's artifacts table is populated once during migrateFromMarkdown
+  // and is never updated when files change on disk (e.g. roadmap [x] updates,
+  // plan checkbox changes). Using stale DB content causes deriveState to
+  // return incorrect phase/slice state, leading to infinite skip loops.
+  // The native Rust batch parser is fast enough for state derivation.
   const batchFiles = nativeBatchParseGsdFiles(gsdDir);
   if (batchFiles) {
     for (const f of batchFiles) {
@@ -192,7 +232,22 @@ async function _deriveStateImpl(basePath: string): Promise<GSDState> {
   const roadmapCache = new Map<string, Roadmap>();
   const completeMilestoneIds = new Set<string>();
 
+  // Track parked milestone IDs so Phase 2 can check without re-reading disk
+  const parkedMilestoneIds = new Set<string>();
+
   for (const mid of milestoneIds) {
+    // Skip parked milestones — they do NOT count as complete (don't satisfy depends_on)
+    // But still parse their roadmap for title extraction in Phase 2.
+    const parkedFile = resolveMilestoneFile(basePath, mid, "PARKED");
+    if (parkedFile) {
+      parkedMilestoneIds.add(mid);
+      // Cache roadmap for title extraction (but don't add to completeMilestoneIds)
+      const prf = resolveMilestoneFile(basePath, mid, "ROADMAP");
+      const prc = prf ? await cachedLoadFile(prf) : null;
+      if (prc) roadmapCache.set(mid, parseRoadmap(prc));
+      continue;
+    }
+
     const rf = resolveMilestoneFile(basePath, mid, "ROADMAP");
     const rc = rf ? await cachedLoadFile(rf) : null;
     if (!rc) {
@@ -215,6 +270,16 @@ async function _deriveStateImpl(basePath: string): Promise<GSDState> {
   let activeMilestoneHasDraft = false;
 
   for (const mid of milestoneIds) {
+    // Skip parked milestones — register them as 'parked' and move on
+    if (parkedMilestoneIds.has(mid)) {
+      const roadmap = roadmapCache.get(mid) ?? null;
+      const title = roadmap
+        ? roadmap.title.replace(/^M\d+(?:-[a-z0-9]{6})?[^:]*:\s*/, '')
+        : mid;
+      registry.push({ id: mid, title, status: 'parked' });
+      continue;
+    }
+
     const roadmap = roadmapCache.get(mid) ?? null;
 
     if (!roadmap) {
@@ -263,10 +328,27 @@ async function _deriveStateImpl(basePath: string): Promise<GSDState> {
     const complete = isMilestoneComplete(roadmap);
 
     if (complete) {
-      // All slices done — check if milestone summary exists
+      // All slices done — check validation and summary state
       const summaryFile = resolveMilestoneFile(basePath, mid, "SUMMARY");
-      if (!summaryFile && !activeMilestoneFound) {
-        // All slices complete but no summary written yet → completing-milestone
+      const validationFile = resolveMilestoneFile(basePath, mid, "VALIDATION");
+      const validationContent = validationFile ? await cachedLoadFile(validationFile) : null;
+      const validationTerminal = validationContent ? isValidationTerminal(validationContent) : false;
+
+      if (summaryFile) {
+        // Summary exists → milestone is complete regardless of validation state.
+        // The summary is the terminal artifact (#864).
+        registry.push({ id: mid, title, status: 'complete' });
+      } else if (!validationTerminal && !activeMilestoneFound) {
+        // No summary and no terminal validation → validating-milestone
+        activeMilestone = { id: mid, title };
+        activeRoadmap = roadmap;
+        activeMilestoneFound = true;
+        registry.push({ id: mid, title, status: 'active' });
+      } else if (!validationTerminal && activeMilestoneFound) {
+        // No summary and no terminal validation, but another milestone is already active
+        registry.push({ id: mid, title, status: 'pending' });
+      } else if (!activeMilestoneFound) {
+        // Terminal validation but no summary → completing-milestone
         activeMilestone = { id: mid, title };
         activeRoadmap = roadmap;
         activeMilestoneFound = true;
@@ -303,8 +385,9 @@ async function _deriveStateImpl(basePath: string): Promise<GSDState> {
   };
 
   if (!activeMilestone) {
-    // Check whether any milestones are pending (dep-blocked) vs all complete
+    // Check whether any milestones are pending (dep-blocked) or parked
     const pendingEntries = registry.filter(entry => entry.status === 'pending');
+    const parkedEntries = registry.filter(entry => entry.status === 'parked');
     if (pendingEntries.length > 0) {
       // All incomplete milestones are dep-blocked — no progress possible
       const blockerDetails = pendingEntries
@@ -320,6 +403,24 @@ async function _deriveStateImpl(basePath: string): Promise<GSDState> {
           ? blockerDetails
           : ['All remaining milestones are dep-blocked but no deps listed — check CONTEXT.md files'],
         nextAction: 'Resolve milestone dependencies before proceeding.',
+        registry,
+        requirements,
+        progress: {
+          milestones: milestoneProgress,
+        },
+      };
+    }
+    if (parkedEntries.length > 0) {
+      // All non-complete milestones are parked — nothing active, but not "all complete"
+      const parkedIds = parkedEntries.map(e => e.id).join(', ');
+      return {
+        activeMilestone: null,
+        activeSlice: null,
+        activeTask: null,
+        phase: 'pre-planning',
+        recentDecisions: [],
+        blockers: [],
+        nextAction: `All remaining milestones are parked (${parkedIds}). Run /gsd unpark <id> or create a new milestone.`,
         registry,
         requirements,
         progress: {
@@ -369,12 +470,34 @@ async function _deriveStateImpl(basePath: string): Promise<GSDState> {
     };
   }
 
-  // Check if active milestone needs completion (all slices done, no summary)
+  // Check if active milestone needs validation or completion (all slices done)
   if (isMilestoneComplete(activeRoadmap)) {
+    const validationFile = resolveMilestoneFile(basePath, activeMilestone.id, "VALIDATION");
+    const validationContent = validationFile ? await cachedLoadFile(validationFile) : null;
+    const validationTerminal = validationContent ? isValidationTerminal(validationContent) : false;
     const sliceProgress = {
       done: activeRoadmap.slices.length,
       total: activeRoadmap.slices.length,
     };
+
+    if (!validationTerminal) {
+      return {
+        activeMilestone,
+        activeSlice: null,
+        activeTask: null,
+        phase: 'validating-milestone',
+        recentDecisions: [],
+        blockers: [],
+        nextAction: `Validate milestone ${activeMilestone.id} before completion.`,
+        registry,
+        requirements,
+        progress: {
+          milestones: milestoneProgress,
+          slices: sliceProgress,
+        },
+      };
+    }
+
     return {
       activeMilestone,
       activeSlice: null,
@@ -503,6 +626,34 @@ async function _deriveStateImpl(basePath: string): Promise<GSDState> {
     id: activeTaskEntry.id,
     title: activeTaskEntry.title,
   };
+
+  // ── Task plan file check (#909) ──────────────────────────────────────
+  // The slice plan may reference tasks but per-task plan files may be
+  // missing — e.g. when the slice plan was pre-created during roadmapping.
+  // If the tasks dir exists but has literally zero files (empty dir from
+  // mkdir), fall back to planning so plan-slice generates task plans.
+  const tasksDir = resolveTasksDir(basePath, activeMilestone.id, activeSlice.id);
+  if (tasksDir && existsSync(tasksDir) && slicePlan.tasks.length > 0) {
+    const allFiles = readdirSync(tasksDir).filter(f => f.endsWith(".md"));
+    if (allFiles.length === 0) {
+      return {
+        activeMilestone,
+        activeSlice,
+        activeTask: null,
+        phase: 'planning',
+        recentDecisions: [],
+        blockers: [],
+        nextAction: `Task plan files missing for ${activeSlice.id}. Run plan-slice to generate task plans.`,
+        registry,
+        requirements,
+        progress: {
+          milestones: milestoneProgress,
+          slices: sliceProgress,
+          tasks: taskProgress,
+        },
+      };
+    }
+  }
 
   // ── Blocker detection: scan completed task summaries ──────────────────
   // If any completed task has blocker_discovered: true and no REPLAN.md

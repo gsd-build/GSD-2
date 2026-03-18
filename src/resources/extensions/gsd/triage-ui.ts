@@ -10,7 +10,7 @@
  */
 
 import type { ExtensionCommandContext } from "@gsd/pi-coding-agent";
-import { showNextAction } from "../shared/next-action-ui.js";
+import { showNextAction } from "../shared/mod.js";
 import type { CaptureEntry, Classification, TriageResult } from "./captures.js";
 import { markCaptureResolved } from "./captures.js";
 
@@ -135,7 +135,7 @@ export async function showTriageConfirmation(
       recommended: cls === proposed,
     }));
 
-    const choice = await showNextAction(ctx as any, {
+    const choice = await showNextAction(ctx, {
       title: `Triage: ${result.captureId}`,
       summary,
       actions,

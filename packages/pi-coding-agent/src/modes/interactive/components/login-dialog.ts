@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Jeremy McSpadden <jeremy@fluxlabs.net>
 import { getOAuthProviders } from "@gsd/pi-ai/oauth";
 import { Container, type Focusable, getEditorKeybindings, Input, Spacer, Text, type TUI } from "@gsd/pi-tui";
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { keyHint } from "./keybinding-hints.js";
@@ -134,11 +134,11 @@ export class LoginDialogComponent extends Container implements Focusable {
 
 		// Try to open browser — on Windows, `start` needs an empty title arg
 		// so it treats the URL as a target, not a window title
-		const openCmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
 		if (process.platform === "win32") {
-			exec(`start "" "${url}"`);
+			execFile("cmd", ["/c", "start", "", url], () => {});
 		} else {
-			exec(`${openCmd} "${url}"`);
+			const openCmd = process.platform === "darwin" ? "open" : "xdg-open";
+			execFile(openCmd, [url], () => {});
 		}
 
 		this.tui.requestRender();

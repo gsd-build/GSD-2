@@ -45,6 +45,7 @@ function writeRoadmap(base: string, mid: string, content: string): void {
 function writePlan(base: string, mid: string, sid: string, content: string): void {
   const dir = join(base, '.gsd', 'milestones', mid, 'slices', sid);
   mkdirSync(join(dir, 'tasks'), { recursive: true });
+  writeFileSync(join(dir, "tasks", "T01-PLAN.md"), "# T01 Plan\n");
   writeFileSync(join(dir, `${sid}-PLAN.md`), content);
 }
 
@@ -52,6 +53,12 @@ function writeMilestoneSummary(base: string, mid: string, content: string): void
   const dir = join(base, '.gsd', 'milestones', mid);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, `${mid}-SUMMARY.md`), content);
+}
+
+function writeMilestoneValidation(base: string, mid: string): void {
+  const dir = join(base, '.gsd', 'milestones', mid);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `${mid}-VALIDATION.md`), `---\nverdict: pass\nremediation_round: 0\n---\n\n# Validation\nPassed.`);
 }
 
 function cleanup(base: string): void {
@@ -143,6 +150,7 @@ async function main(): Promise<void> {
 - [x] **S01: Done** \`risk:low\` \`depends:[]\`
   > After this: Done.
 `);
+      writeMilestoneValidation(base, 'M001');
       writeMilestoneSummary(base, 'M001', '# M001 Summary\n\nFirst milestone complete.');
 
       // M002: only CONTEXT-DRAFT.md
@@ -178,6 +186,7 @@ async function main(): Promise<void> {
 - [x] **S01: Done** \`risk:low\` \`depends:[]\`
   > After this: Done.
 `);
+      writeMilestoneValidation(base, 'M001');
       writeMilestoneSummary(base, 'M001', '# M001 Summary\n\nComplete.');
 
       // M002: draft only — should become active with needs-discussion

@@ -7,6 +7,7 @@ import {
   describeNextUnit,
   formatAutoElapsed,
   formatWidgetTokens,
+  estimateTimeRemaining,
 } from "../auto-dashboard.ts";
 
 // ─── unitVerb ─────────────────────────────────────────────────────────────
@@ -150,4 +151,16 @@ test("formatWidgetTokens formats millions with M", () => {
   assert.equal(formatWidgetTokens(1_000_000), "1.0M");
   assert.equal(formatWidgetTokens(10_000_000), "10M");
   assert.equal(formatWidgetTokens(25_000_000), "25M");
+});
+
+// ─── estimateTimeRemaining ──────────────────────────────────────────────
+
+test("estimateTimeRemaining returns null when no ledger data", () => {
+  // With no active auto-mode session, ledger is empty
+  const result = estimateTimeRemaining();
+  assert.equal(result, null);
+});
+
+test("estimateTimeRemaining is exported and callable", () => {
+  assert.equal(typeof estimateTimeRemaining, "function");
 });

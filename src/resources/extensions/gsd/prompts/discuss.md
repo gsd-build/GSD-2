@@ -11,7 +11,7 @@ After the user describes their idea, **do not ask questions yet**. First, prove 
 1. Summarize what you understood in your own words — concretely, not abstractly.
 2. Give an honest size read: roughly how many milestones, roughly how many slices in the first one. Base this on the actual work involved, not a classification label. A config change might be 1 milestone with 1 slice. A social network might be 5 milestones with 8+ slices each. Use your judgment.
 3. Include scope honesty — a bullet list of the major capabilities you're hearing: "Here's what I'm hearing: [bullet list of major capabilities]."
-4. Ask: "Did I get that right, or did I miss something?" — plain text, not `ask_user_questions`. Let them correct freely.
+4. Ask: "Does that capture it? If not, tell me what I missed." — plain text, not `ask_user_questions`. Let them correct freely.
 
 This prevents runaway questioning by forcing comprehension proof before anything else. Do not skip this step. Do not combine it with the first question round.
 
@@ -200,10 +200,9 @@ When writing context.md, preserve the user's exact terminology, emphasis, and sp
 4. Write `{{contextPath}}` — use the **Context** output template below. Preserve key risks, unknowns, existing codebase constraints, integration points, and relevant requirements surfaced during discussion.
 5. Write `{{roadmapPath}}` — use the **Roadmap** output template below. Decompose into demoable vertical slices with checkboxes, risk, depends, demo sentences, proof strategy, verification classes, milestone definition of done, requirement coverage, and a boundary map. If the milestone crosses multiple runtime boundaries, include an explicit final integration slice that proves the assembled system works end-to-end in a real environment.
 6. Seed `.gsd/DECISIONS.md` — use the **Decisions** output template below. Append rows for any architectural or pattern decisions made during discussion.
-7. Update `.gsd/STATE.md`
-8. Commit: `docs({{milestoneId}}): context, requirements, and roadmap`
+7. {{commitInstruction}}
 
-After writing the files and committing, say exactly: "Milestone {{milestoneId}} ready." — nothing else. Auto-mode will start automatically.
+After writing the files, say exactly: "Milestone {{milestoneId}} ready." — nothing else. Auto-mode will start automatically.
 
 ### Multi-Milestone
 
@@ -211,7 +210,7 @@ Once the user confirms the milestone split:
 
 #### Phase 1: Shared artifacts
 
-1. `mkdir -p .gsd/milestones/{{milestoneId}}/slices` for each milestone
+1. For each milestone, call `gsd_generate_milestone_id` to get its ID — never invent milestone IDs manually. Then `mkdir -p .gsd/milestones/<ID>/slices`.
 2. Write `.gsd/PROJECT.md` — use the **Project** output template below.
 3. Write `.gsd/REQUIREMENTS.md` — use the **Requirements** output template below. Capture Active, Deferred, Out of Scope, and any already Validated requirements. Later milestones may have provisional ownership where slice plans do not exist yet.
 4. Seed `.gsd/DECISIONS.md` — use the **Decisions** output template below.
@@ -243,6 +242,16 @@ For each remaining milestone **one at a time, in sequence**, use `ask_user_quest
 - **"Write draft for later"** — This milestone has seed material from the current conversation but needs its own dedicated discussion in a future session. Write a `CONTEXT-DRAFT.md` capturing the seed material (what was discussed, key ideas, provisional scope, open questions). Mark it clearly as a draft, not a finalized context. **What happens downstream:** When auto-mode reaches this milestone, it pauses and notifies the user: "M00x has draft context — needs discussion. Run /gsd." The `/gsd` wizard shows a "Discuss from draft" option that seeds the new discussion with this draft, so nothing from the current conversation is lost. After the dedicated discussion produces a full CONTEXT.md, the draft file is automatically deleted.
 - **"Just queue it"** — This milestone is identified but intentionally left without context. No context file is written — the directory already exists from Phase 1. **What happens downstream:** When auto-mode reaches this milestone, it pauses and notifies the user to run /gsd. The wizard starts a full discussion from scratch.
 
+**When "Discuss now" is chosen — Technical Assumption Verification is MANDATORY:**
+
+Before writing each milestone's CONTEXT.md (whether primary or secondary), you MUST verify technical assumptions:
+
+1. **Read the actual code** for every file or module you reference. Confirm APIs exist, check what functions actually do, identify phantom capabilities (code that exists but isn't wired up).
+2. **Check for stale assumptions** — the codebase changes. Verify referenced modules still work as described.
+3. **Present findings** — use `ask_user_questions` with a question ID containing BOTH `depth_verification` AND the milestone ID (e.g., `depth_verification_M002`). Present: what you're about to write, key technical findings from investigation, risks the code review surfaced.
+
+**The system mechanically blocks CONTEXT.md writes until the per-milestone depth verification passes.** Each milestone needs its own verification — one global verification does not unlock all milestones.
+
 **Why sequential, not batch:** After writing the primary milestone's context and roadmap, the agent still has context window capacity. Asking one milestone at a time lets the user decide per-milestone whether to invest that remaining capacity in a focused discussion now, or defer to a future session. A batch question ("Ready/Draft/Queue for M002, M003, M004?") forces the user to decide everything upfront without knowing how much session capacity remains.
 
 Each context file (full or draft) should be rich enough that a future agent encountering it fresh — with no memory of this conversation — can understand the intent, constraints, dependencies, what this milestone unlocks, and what "done" looks like.
@@ -270,9 +279,8 @@ For single-milestone projects, do NOT write this file — it is only for multi-m
 
 #### Phase 4: Finalize
 
-7. Update `.gsd/STATE.md`
-8. Commit: `docs: project plan — N milestones` (replace N with the actual milestone count)
+7. {{multiMilestoneCommitInstruction}}
 
-After writing the files and committing, say exactly: "Milestone M001 ready." — nothing else. Auto-mode will start automatically.
+After writing the files, say exactly: "Milestone M001 ready." — nothing else. Auto-mode will start automatically.
 
 {{inlinedTemplates}}

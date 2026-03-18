@@ -86,11 +86,11 @@ test("stopAutoRemote cleans up stale lock (dead PID) and returns found:false", (
 test("stopAutoRemote sends SIGTERM to a live process and returns found:true", { timeout: 15000 }, async () => {
   const base = makeTmpBase();
 
-  // Spawn a child process that sleeps, acting as a fake auto-mode session
+  // Spawn a child process that prints "ready" then sleeps, acting as a fake auto-mode session
   const child = spawn(
     process.execPath,
-    ["-e", "process.on('SIGTERM', () => process.exit(0)); setTimeout(() => process.exit(1), 30000);"],
-    { stdio: "ignore", detached: false },
+    ["-e", "process.on('SIGTERM', () => process.exit(0)); process.stdout.write('ready'); setTimeout(() => process.exit(1), 30000);"],
+    { stdio: ["ignore", "pipe", "ignore"], detached: false },
   );
 
   if (!child.pid) {
@@ -98,8 +98,11 @@ test("stopAutoRemote sends SIGTERM to a live process and returns found:true", { 
   }
 
   try {
-    // Wait for child to be ready (increase tolerance to reduce flakiness in CI)
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    // Wait for child to signal readiness via stdout
+    await new Promise<void>((resolve) => {
+      child.stdout!.once("data", () => resolve());
+      setTimeout(resolve, 2000); // fallback timeout
+    });
 
     // Write lock with child's PID
     const lockData = {

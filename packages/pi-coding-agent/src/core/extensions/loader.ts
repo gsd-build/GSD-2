@@ -20,6 +20,9 @@ import * as _bundledPiTui from "@gsd/pi-tui";
 // The virtualModules option then makes them available to extensions.
 import * as _bundledTypebox from "@sinclair/typebox";
 import * as _bundledYaml from "yaml";
+import * as _bundledMcpClient from "@modelcontextprotocol/sdk/client";
+import * as _bundledMcpStdio from "@modelcontextprotocol/sdk/client/stdio.js";
+import * as _bundledMcpStreamableHttp from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { getAgentDir, isBunBinary } from "../../config.js";
 // NOTE: This import works because loader.ts exports are NOT re-exported from index.ts,
 // avoiding a circular dependency. Extensions can import from @gsd/pi-coding-agent.
@@ -50,6 +53,11 @@ const VIRTUAL_MODULES: Record<string, unknown> = {
 	"@gsd/pi-ai/oauth": _bundledPiAiOauth,
 	"@gsd/pi-coding-agent": _bundledPiCodingAgent,
 	"yaml": _bundledYaml,
+	"@modelcontextprotocol/sdk/client": _bundledMcpClient,
+	"@modelcontextprotocol/sdk/client/stdio": _bundledMcpStdio,
+	"@modelcontextprotocol/sdk/client/stdio.js": _bundledMcpStdio,
+	"@modelcontextprotocol/sdk/client/streamableHttp": _bundledMcpStreamableHttp,
+	"@modelcontextprotocol/sdk/client/streamableHttp.js": _bundledMcpStreamableHttp,
 	// Aliases for external PI ecosystem packages that import from the original scope
 	"@mariozechner/pi-agent-core": _bundledPiAgentCore,
 	"@mariozechner/pi-tui": _bundledPiTui,
@@ -94,6 +102,11 @@ function getAliases(): Record<string, string> {
 		"@gsd/pi-ai/oauth": resolveWorkspaceOrImport("ai/dist/oauth.js", "@gsd/pi-ai/oauth"),
 		"@sinclair/typebox": typeboxRoot,
 		"yaml": yamlRoot,
+		"@modelcontextprotocol/sdk/client": require.resolve("@modelcontextprotocol/sdk/client"),
+		"@modelcontextprotocol/sdk/client/stdio": require.resolve("@modelcontextprotocol/sdk/client/stdio.js"),
+		"@modelcontextprotocol/sdk/client/stdio.js": require.resolve("@modelcontextprotocol/sdk/client/stdio.js"),
+		"@modelcontextprotocol/sdk/client/streamableHttp": require.resolve("@modelcontextprotocol/sdk/client/streamableHttp.js"),
+		"@modelcontextprotocol/sdk/client/streamableHttp.js": require.resolve("@modelcontextprotocol/sdk/client/streamableHttp.js"),
 		// Aliases for external PI ecosystem packages that import from the original scope
 		"@mariozechner/pi-coding-agent": packageIndex,
 		"@mariozechner/pi-agent-core": resolveWorkspaceOrImport("agent/dist/index.js", "@gsd/pi-agent-core"),
@@ -105,7 +118,7 @@ function getAliases(): Record<string, string> {
 	return _aliases;
 }
 
-const UNICODE_SPACES = /[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g;
+const UNICODE_SPACES = /[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g;
 
 function normalizeUnicodeSpaces(str: string): string {
 	return str.replace(UNICODE_SPACES, " ");
@@ -144,6 +157,7 @@ export function createExtensionRuntime(): ExtensionRuntime {
 	const runtime: ExtensionRuntime = {
 		sendMessage: notInitialized,
 		sendUserMessage: notInitialized,
+		retryLastTurn: notInitialized,
 		appendEntry: notInitialized,
 		setSessionName: notInitialized,
 		getSessionName: notInitialized,
@@ -240,6 +254,10 @@ function createExtensionAPI(
 
 		sendUserMessage(content, options): void {
 			runtime.sendUserMessage(content, options);
+		},
+
+		retryLastTurn(): void {
+			runtime.retryLastTurn();
 		},
 
 		appendEntry(customType: string, data?: unknown): void {

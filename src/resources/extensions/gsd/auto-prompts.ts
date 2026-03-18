@@ -21,6 +21,10 @@ import type { GSDPreferences } from "./preferences.js";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
 import { computeBudgets, resolveExecutorContextWindow } from "./context-budget.js";
+import { compressToTarget } from "./prompt-compressor.js";
+import { distillSummaries } from "./summary-distiller.js";
+import { formatDecisionsCompact, formatRequirementsCompact } from "./structured-data-formatter.js";
+import { chunkByRelevance, formatChunks } from "./semantic-chunker.js";
 
 // ─── Executor Constraints ─────────────────────────────────────────────────────
 
@@ -82,6 +86,43 @@ export async function inlineFileOptional(
 }
 
 /**
+ * Smart file inlining — for large files, use semantic chunking to include
+ * only the most relevant portions based on the task context.
+ * Falls back to full content for small files or when no query is provided.
+ *
+ * @param absPath Absolute file path
+ * @param relPath Relative display path
+ * @param label Section label
+ * @param query Task description for relevance scoring (optional)
+ * @param threshold Character threshold for chunking (default: 3000)
+ */
+export async function inlineFileSmart(
+  absPath: string | null, relPath: string, label: string,
+  query?: string, threshold = 3000,
+): Promise<string> {
+  const content = absPath ? await loadFile(absPath) : null;
+  if (!content) {
+    return `### ${label}\nSource: \`${relPath}\`\n\n_(not found — file does not exist yet)_`;
+  }
+
+  // For small files or no query, include full content
+  if (content.length <= threshold || !query) {
+    return `### ${label}\nSource: \`${relPath}\`\n\n${content.trim()}`;
+  }
+
+  // Use semantic chunking for large files
+  const result = chunkByRelevance(content, query, { maxChunks: 5, minScore: 0.05 });
+
+  // If chunking didn't save much (< 20%), just include full content
+  if (result.savingsPercent < 20) {
+    return `### ${label}\nSource: \`${relPath}\`\n\n${content.trim()}`;
+  }
+
+  const formatted = formatChunks(result, relPath);
+  return `### ${label} (${result.omittedChunks} sections omitted for relevance)\nSource: \`${relPath}\`\n\n${formatted}`;
+}
+
+/**
  * Load and inline dependency slice summaries (full content, not just paths).
  */
 export async function inlineDependencySummaries(
@@ -111,8 +152,21 @@ export async function inlineDependencySummaries(
   }
 
   const result = sections.join("\n\n");
-  // When a budget is provided, truncate at section boundaries to fit
   if (budgetChars !== undefined && result.length > budgetChars) {
+    // For 3+ summaries, try distillation first (preserves more information)
+    if (sections.length >= 3) {
+      const rawSummaries = sections.map(s => {
+        // Extract content after the header line
+        const lines = s.split("\n");
+        const contentStart = lines.findIndex(l => l.startsWith("Source:"));
+        return contentStart >= 0 ? lines.slice(contentStart + 1).join("\n").trim() : s;
+      });
+      const distilled = distillSummaries(rawSummaries, budgetChars);
+      if (distilled.content.length <= budgetChars) {
+        return distilled.content;
+      }
+    }
+    // Fall back to section-boundary truncation
     const { truncateAtSectionBoundary } = await import("./context-budget.js");
     return truncateAtSectionBoundary(result, budgetChars).content;
   }
@@ -139,15 +193,19 @@ export async function inlineGsdRootFile(
  * Falls back to filesystem via inlineGsdRootFile when DB unavailable or empty.
  */
 export async function inlineDecisionsFromDb(
-  base: string, milestoneId?: string, scope?: string,
+  base: string, milestoneId?: string, scope?: string, level?: InlineLevel,
 ): Promise<string | null> {
+  const inlineLevel = level ?? resolveInlineLevel();
   try {
     const { isDbAvailable } = await import("./gsd-db.js");
     if (isDbAvailable()) {
       const { queryDecisions, formatDecisionsForPrompt } = await import("./context-store.js");
       const decisions = queryDecisions({ milestoneId, scope });
       if (decisions.length > 0) {
-        const formatted = formatDecisionsForPrompt(decisions);
+        // Use compact format for non-full levels to save ~35% tokens
+        const formatted = inlineLevel !== "full"
+          ? formatDecisionsCompact(decisions)
+          : formatDecisionsForPrompt(decisions);
         return `### Decisions\nSource: \`.gsd/DECISIONS.md\`\n\n${formatted}`;
       }
     }
@@ -162,15 +220,19 @@ export async function inlineDecisionsFromDb(
  * Falls back to filesystem via inlineGsdRootFile when DB unavailable or empty.
  */
 export async function inlineRequirementsFromDb(
-  base: string, sliceId?: string,
+  base: string, sliceId?: string, level?: InlineLevel,
 ): Promise<string | null> {
+  const inlineLevel = level ?? resolveInlineLevel();
   try {
     const { isDbAvailable } = await import("./gsd-db.js");
     if (isDbAvailable()) {
       const { queryRequirements, formatRequirementsForPrompt } = await import("./context-store.js");
       const requirements = queryRequirements({ sliceId });
       if (requirements.length > 0) {
-        const formatted = formatRequirementsForPrompt(requirements);
+        // Use compact format for non-full levels to save ~40% tokens
+        const formatted = inlineLevel !== "full"
+          ? formatRequirementsCompact(requirements)
+          : formatRequirementsForPrompt(requirements);
         return `### Requirements\nSource: \`.gsd/REQUIREMENTS.md\`\n\n${formatted}`;
       }
     }
@@ -407,6 +469,17 @@ export async function checkNeedsReassessment(
 
   if (hasAssessment) return null;
 
+  // Fallback: check the expected path directly via existsSync.
+  // resolveSliceFile relies on directory listing (readdirSync) which may not
+  // reflect a freshly written file in git worktree directories on some
+  // filesystems (observed on macOS APFS). A direct existsSync on the
+  // constructed path bypasses directory listing entirely. (#1112)
+  const sliceDir = resolveSlicePath(base, mid, lastCompleted.id);
+  if (sliceDir) {
+    const directPath = join(sliceDir, `${lastCompleted.id}-ASSESSMENT.md`);
+    if (existsSync(directPath)) return null;
+  }
+
   // Also need a summary to reassess against
   const summaryFile = resolveSliceFile(base, mid, lastCompleted.id, "SUMMARY");
   const hasSummary = !!(summaryFile && await loadFile(summaryFile));
@@ -457,11 +530,21 @@ export async function checkNeedsRunUat(
   const uatContent = await loadFile(uatFile);
   if (!uatContent) return null;
 
-  // If UAT result already exists, skip (idempotent)
+  // If UAT result already exists with a PASS verdict, skip (idempotent).
+  // Non-PASS verdicts (FAIL, surfaced-for-human-review) should block slice
+  // progression — return the slice for re-evaluation (#1231).
   const uatResultFile = resolveSliceFile(base, mid, sid, "UAT-RESULT");
   if (uatResultFile) {
-    const hasResult = !!(await loadFile(uatResultFile));
-    if (hasResult) return null;
+    const resultContent = await loadFile(uatResultFile);
+    if (resultContent) {
+      const verdictMatch = resultContent.match(/verdict:\s*([\w-]+)/i);
+      const verdict = verdictMatch?.[1]?.toLowerCase();
+      if (verdict === "pass" || verdict === "passed") return null; // PASS — skip
+      // Non-PASS verdict exists — don't re-run UAT, but don't advance either.
+      // Return null here since the UAT already ran; the dispatch table's
+      // complete-slice rule should check the verdict before advancing.
+      // For now, returning the slice signals it still needs attention.
+    }
   }
 
   // Classify UAT type; unknown type → treat as human-experience (human review)
@@ -516,14 +599,18 @@ export async function buildPlanMilestonePrompt(mid: string, midTitle: string, ba
   const { inlinePriorMilestoneSummary } = await import("./files.js");
   const priorSummaryInline = await inlinePriorMilestoneSummary(mid, base);
   if (priorSummaryInline) inlined.push(priorSummaryInline);
-  if (inlineLevel !== "minimal") {
-    const projectInline = await inlineProjectFromDb(base);
-    if (projectInline) inlined.push(projectInline);
-    const requirementsInline = await inlineRequirementsFromDb(base);
-    if (requirementsInline) inlined.push(requirementsInline);
-    const decisionsInline = await inlineDecisionsFromDb(base, mid);
-    if (decisionsInline) inlined.push(decisionsInline);
-  }
+  // Build source file paths for the planner to read on demand (reduces inlining)
+  const sourcePaths: string[] = [];
+  if (existsSync(resolveGsdRootFile(base, "PROJECT")))
+    sourcePaths.push(`- **Project**: \`${relGsdRootFile("PROJECT")}\``);
+  if (existsSync(resolveGsdRootFile(base, "REQUIREMENTS")))
+    sourcePaths.push(`- **Requirements**: \`${relGsdRootFile("REQUIREMENTS")}\``);
+  if (existsSync(resolveGsdRootFile(base, "DECISIONS")))
+    sourcePaths.push(`- **Decisions**: \`${relGsdRootFile("DECISIONS")}\``);
+  const sourceFilePaths = sourcePaths.length > 0
+    ? sourcePaths.join("\n")
+    : "_No project/requirements/decisions files found._";
+
   const knowledgeInlinePM = await inlineGsdRootFile(base, "knowledge.md", "Project Knowledge");
   if (knowledgeInlinePM) inlined.push(knowledgeInlinePM);
   inlined.push(inlineTemplate("roadmap", "Roadmap"));
@@ -542,6 +629,7 @@ export async function buildPlanMilestonePrompt(mid: string, midTitle: string, ba
 
   const outputRelPath = relMilestoneFile(base, mid, "ROADMAP");
   const secretsOutputPath = join(base, relMilestoneFile(base, mid, "SECRETS"));
+  const researchOutputRelPath = relMilestoneFile(base, mid, "RESEARCH");
   return loadPrompt("plan-milestone", {
     workingDirectory: base,
     milestoneId: mid, milestoneTitle: midTitle,
@@ -551,6 +639,9 @@ export async function buildPlanMilestonePrompt(mid: string, midTitle: string, ba
     outputPath: join(base, outputRelPath),
     secretsOutputPath,
     inlinedContext,
+    sourceFilePaths,
+    researchOutputPath: join(base, researchOutputRelPath),
+    ...buildSkillDiscoveryVars(),
   });
 }
 
@@ -613,12 +704,16 @@ export async function buildPlanSlicePrompt(
   inlined.push(await inlineFile(roadmapPath, roadmapRel, "Milestone Roadmap"));
   const researchInline = await inlineFileOptional(researchPath, researchRel, "Slice Research");
   if (researchInline) inlined.push(researchInline);
-  if (inlineLevel !== "minimal") {
-    const decisionsInline = await inlineDecisionsFromDb(base, mid);
-    if (decisionsInline) inlined.push(decisionsInline);
-    const requirementsInline = await inlineRequirementsFromDb(base, sid);
-    if (requirementsInline) inlined.push(requirementsInline);
-  }
+  // Build source file paths for the planner to read on demand (reduces inlining)
+  const sliceSourcePaths: string[] = [];
+  if (existsSync(resolveGsdRootFile(base, "REQUIREMENTS")))
+    sliceSourcePaths.push(`- **Requirements**: \`${relGsdRootFile("REQUIREMENTS")}\``);
+  if (existsSync(resolveGsdRootFile(base, "DECISIONS")))
+    sliceSourcePaths.push(`- **Decisions**: \`${relGsdRootFile("DECISIONS")}\``);
+  const sliceSourceFilePaths = sliceSourcePaths.length > 0
+    ? sliceSourcePaths.join("\n")
+    : "_No requirements/decisions files found._";
+
   const knowledgeInlinePS = await inlineGsdRootFile(base, "knowledge.md", "Project Knowledge");
   if (knowledgeInlinePS) inlined.push(knowledgeInlinePS);
   inlined.push(inlineTemplate("plan", "Slice Plan"));
@@ -637,6 +732,7 @@ export async function buildPlanSlicePrompt(
   const executorContextConstraints = formatExecutorConstraints();
 
   const outputRelPath = relSliceFile(base, mid, sid, "PLAN");
+  const commitInstruction = "Do not commit planning artifacts — .gsd/ is managed externally.";
   return loadPrompt("plan-slice", {
     workingDirectory: base,
     milestoneId: mid, sliceId: sid, sliceTitle: sTitle,
@@ -647,6 +743,8 @@ export async function buildPlanSlicePrompt(
     inlinedContext,
     dependencySummaries: depContent,
     executorContextConstraints,
+    commitInstruction,
+    sourceFilePaths: sliceSourceFilePaths,
   });
 }
 
@@ -700,15 +798,25 @@ export async function buildExecuteTaskPrompt(
     : priorSummaries;
   const carryForwardSection = await buildCarryForwardSection(effectivePriorSummaries, base);
 
-  // Inline project knowledge if available
-  const knowledgeInlineET = await inlineGsdRootFile(base, "knowledge.md", "Project Knowledge");
+  // Inline project knowledge if available (smart-chunked for relevance)
+  const knowledgeAbsPath = resolveGsdRootFile(base, "KNOWLEDGE");
+  const knowledgeInlineET = existsSync(knowledgeAbsPath)
+    ? await inlineFileSmart(
+        knowledgeAbsPath,
+        relGsdRootFile("KNOWLEDGE"),
+        "Project Knowledge",
+        `${tTitle} ${sTitle}`,  // use task + slice title as relevance query
+      )
+    : null;
+  // Only include if it has content (not a "not found" result)
+  const knowledgeContent = knowledgeInlineET && !knowledgeInlineET.includes("not found") ? knowledgeInlineET : null;
 
   const inlinedTemplates = inlineLevel === "minimal"
     ? inlineTemplate("task-summary", "Task Summary")
     : [
         inlineTemplate("task-summary", "Task Summary"),
         inlineTemplate("decisions", "Decisions"),
-        ...(knowledgeInlineET ? [knowledgeInlineET] : []),
+        ...(knowledgeContent ? [knowledgeContent] : []),
       ].join("\n\n---\n\n");
 
   const taskSummaryPath = join(base, `${relSlicePath(base, mid, sid)}/tasks/${tid}-SUMMARY.md`);
@@ -722,6 +830,17 @@ export async function buildExecuteTaskPrompt(
   const budgets = computeBudgets(contextWindow);
   const verificationBudget = `~${Math.round(budgets.verificationBudgetChars / 1000)}K chars`;
 
+  // Compress carry-forward section when it exceeds 40% of inline context budget.
+  // Only compress when compression_strategy is "compress" (budget/balanced profiles).
+  const carryForwardBudget = Math.floor(budgets.inlineContextBudgetChars * 0.4);
+  let finalCarryForward = carryForwardSection;
+  if (carryForwardSection.length > carryForwardBudget) {
+    const { resolveCompressionStrategy } = await import("./preferences.js");
+    if (resolveCompressionStrategy() === "compress") {
+      finalCarryForward = compressToTarget(carryForwardSection, carryForwardBudget).content;
+    }
+  }
+
   return loadPrompt("execute-task", {
     overridesSection,
     workingDirectory: base,
@@ -731,7 +850,7 @@ export async function buildExecuteTaskPrompt(
     taskPlanPath: taskPlanRelPath,
     taskPlanInline,
     slicePlanExcerpt,
-    carryForwardSection,
+    carryForwardSection: finalCarryForward,
     resumeSection,
     priorTaskLines: priorLines,
     taskSummaryPath,
@@ -754,7 +873,7 @@ export async function buildCompleteSlicePrompt(
   inlined.push(await inlineFile(roadmapPath, roadmapRel, "Milestone Roadmap"));
   inlined.push(await inlineFile(slicePlanPath, slicePlanRel, "Slice Plan"));
   if (inlineLevel !== "minimal") {
-    const requirementsInline = await inlineRequirementsFromDb(base, sid);
+    const requirementsInline = await inlineRequirementsFromDb(base, sid, inlineLevel);
     if (requirementsInline) inlined.push(requirementsInline);
   }
   const knowledgeInlineCS = await inlineGsdRootFile(base, "knowledge.md", "Project Knowledge");
@@ -825,9 +944,9 @@ export async function buildCompleteMilestonePrompt(
 
   // Inline root GSD files (skip for minimal — completion can read these if needed)
   if (inlineLevel !== "minimal") {
-    const requirementsInline = await inlineRequirementsFromDb(base);
+    const requirementsInline = await inlineRequirementsFromDb(base, undefined, inlineLevel);
     if (requirementsInline) inlined.push(requirementsInline);
-    const decisionsInline = await inlineDecisionsFromDb(base, mid);
+    const decisionsInline = await inlineDecisionsFromDb(base, mid, undefined, inlineLevel);
     if (decisionsInline) inlined.push(decisionsInline);
     const projectInline = await inlineProjectFromDb(base);
     if (projectInline) inlined.push(projectInline);
@@ -852,6 +971,79 @@ export async function buildCompleteMilestonePrompt(
     roadmapPath: roadmapRel,
     inlinedContext,
     milestoneSummaryPath,
+  });
+}
+
+export async function buildValidateMilestonePrompt(
+  mid: string, midTitle: string, base: string, level?: InlineLevel,
+): Promise<string> {
+  const inlineLevel = level ?? resolveInlineLevel();
+  const roadmapPath = resolveMilestoneFile(base, mid, "ROADMAP");
+  const roadmapRel = relMilestoneFile(base, mid, "ROADMAP");
+
+  const inlined: string[] = [];
+  inlined.push(await inlineFile(roadmapPath, roadmapRel, "Milestone Roadmap"));
+
+  // Inline all slice summaries and UAT results
+  const roadmapContent = roadmapPath ? await loadFile(roadmapPath) : null;
+  if (roadmapContent) {
+    const roadmap = parseRoadmap(roadmapContent);
+    const seenSlices = new Set<string>();
+    for (const slice of roadmap.slices) {
+      if (seenSlices.has(slice.id)) continue;
+      seenSlices.add(slice.id);
+      const summaryPath = resolveSliceFile(base, mid, slice.id, "SUMMARY");
+      const summaryRel = relSliceFile(base, mid, slice.id, "SUMMARY");
+      inlined.push(await inlineFile(summaryPath, summaryRel, `${slice.id} Summary`));
+
+      const uatPath = resolveSliceFile(base, mid, slice.id, "UAT-RESULT");
+      const uatRel = relSliceFile(base, mid, slice.id, "UAT-RESULT");
+      const uatInline = await inlineFileOptional(uatPath, uatRel, `${slice.id} UAT Result`);
+      if (uatInline) inlined.push(uatInline);
+    }
+  }
+
+  // Inline existing VALIDATION file if this is a re-validation round
+  const validationPath = resolveMilestoneFile(base, mid, "VALIDATION");
+  const validationRel = relMilestoneFile(base, mid, "VALIDATION");
+  const validationContent = validationPath ? await loadFile(validationPath) : null;
+  let remediationRound = 0;
+  if (validationContent) {
+    const roundMatch = validationContent.match(/remediation_round:\s*(\d+)/);
+    remediationRound = roundMatch ? parseInt(roundMatch[1], 10) + 1 : 1;
+    inlined.push(`### Previous Validation (re-validation round ${remediationRound})\nSource: \`${validationRel}\`\n\n${validationContent.trim()}`);
+  }
+
+  // Inline root GSD files
+  if (inlineLevel !== "minimal") {
+    const requirementsInline = await inlineRequirementsFromDb(base, undefined, inlineLevel);
+    if (requirementsInline) inlined.push(requirementsInline);
+    const decisionsInline = await inlineDecisionsFromDb(base, mid, undefined, inlineLevel);
+    if (decisionsInline) inlined.push(decisionsInline);
+    const projectInline = await inlineProjectFromDb(base);
+    if (projectInline) inlined.push(projectInline);
+  }
+  const knowledgeInline = await inlineGsdRootFile(base, "knowledge.md", "Project Knowledge");
+  if (knowledgeInline) inlined.push(knowledgeInline);
+  // Inline milestone context file
+  const contextPath = resolveMilestoneFile(base, mid, "CONTEXT");
+  const contextRel = relMilestoneFile(base, mid, "CONTEXT");
+  const contextInline = await inlineFileOptional(contextPath, contextRel, "Milestone Context");
+  if (contextInline) inlined.push(contextInline);
+
+  const inlinedContext = `## Inlined Context (preloaded — do not re-read these files)\n\n${inlined.join("\n\n---\n\n")}`;
+
+  const validationOutputPath = join(base, `${relMilestonePath(base, mid)}/${mid}-VALIDATION.md`);
+  const roadmapOutputPath = `${relMilestonePath(base, mid)}/${mid}-ROADMAP.md`;
+
+  return loadPrompt("validate-milestone", {
+    workingDirectory: base,
+    milestoneId: mid,
+    milestoneTitle: midTitle,
+    roadmapPath: roadmapOutputPath,
+    inlinedContext,
+    validationPath: validationOutputPath,
+    remediationRound: String(remediationRound),
   });
 }
 
@@ -972,9 +1164,9 @@ export async function buildReassessRoadmapPrompt(
   if (inlineLevel !== "minimal") {
     const projectInline = await inlineProjectFromDb(base);
     if (projectInline) inlined.push(projectInline);
-    const requirementsInline = await inlineRequirementsFromDb(base);
+    const requirementsInline = await inlineRequirementsFromDb(base, undefined, inlineLevel);
     if (requirementsInline) inlined.push(requirementsInline);
-    const decisionsInline = await inlineDecisionsFromDb(base, mid);
+    const decisionsInline = await inlineDecisionsFromDb(base, mid, undefined, inlineLevel);
     if (decisionsInline) inlined.push(decisionsInline);
   }
   const knowledgeInlineRA = await inlineGsdRootFile(base, "knowledge.md", "Project Knowledge");
@@ -998,6 +1190,8 @@ export async function buildReassessRoadmapPrompt(
     // Non-fatal — captures module may not be available
   }
 
+  const reassessCommitInstruction = "Do not commit planning artifacts — .gsd/ is managed externally.";
+
   return loadPrompt("reassess-roadmap", {
     workingDirectory: base,
     milestoneId: mid,
@@ -1008,6 +1202,7 @@ export async function buildReassessRoadmapPrompt(
     assessmentPath,
     inlinedContext,
     deferredCaptures,
+    commitInstruction: reassessCommitInstruction,
   });
 }
 

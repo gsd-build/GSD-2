@@ -11,6 +11,7 @@
 import { writeFileSync, writeSync, mkdirSync, readdirSync, unlinkSync, statSync, openSync, closeSync, constants } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
+import { GSDError, GSD_IO_ERROR } from "./errors.js";
 
 const SEQ_PREFIX_RE = /^(\d+)-/;
 import type { ExtensionContext } from "@gsd/pi-coding-agent";
@@ -95,7 +96,7 @@ function nextActivityFilePath(
     }
   }
   // Fallback: should never reach here in practice
-  throw new Error(`Failed to find available activity log sequence in ${activityDir}`);
+  throw new GSDError(GSD_IO_ERROR, `Failed to find available activity log sequence in ${activityDir}`);
 }
 
 export function saveActivityLog(
@@ -103,10 +104,10 @@ export function saveActivityLog(
   basePath: string,
   unitType: string,
   unitId: string,
-): void {
+): string | null {
   try {
     const entries = ctx.sessionManager.getEntries();
-    if (!entries || entries.length === 0) return;
+    if (!entries || entries.length === 0) return null;
 
     const activityDir = join(gsdRoot(basePath), "activity");
     mkdirSync(activityDir, { recursive: true });
@@ -116,7 +117,7 @@ export function saveActivityLog(
     const unitKey = `${unitType}\0${safeUnitId}`;
     // Use lightweight fingerprint instead of serializing all entries (#611)
     const key = snapshotKey(unitType, safeUnitId, entries);
-    if (state.lastSnapshotKeyByUnit.get(unitKey) === key) return;
+    if (state.lastSnapshotKeyByUnit.get(unitKey) === key) return null;
 
     const filePath = nextActivityFilePath(activityDir, state, unitType, safeUnitId);
     // Stream entries to disk line-by-line instead of building one massive string (#611).
@@ -131,9 +132,11 @@ export function saveActivityLog(
     }
     state.nextSeq += 1;
     state.lastSnapshotKeyByUnit.set(unitKey, key);
+    return filePath;
   } catch (e) {
     // Don't let logging failures break auto-mode
     void e;
+    return null;
   }
 }
 

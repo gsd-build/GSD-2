@@ -15,6 +15,7 @@ import {
   SLICE_BRANCH_RE,
 } from "../worktree.ts";
 import { readIntegrationBranch } from "../git-service.ts";
+import { _resetHasChangesCache } from "../native-git-bridge.ts";
 import { createTestContext } from './test-helpers.ts';
 
 const { assertEq, assertTrue, report } = createTestContext();
@@ -40,7 +41,8 @@ async function main(): Promise<void> {
   const cleanResult = autoCommitCurrentBranch(base, "execute-task", "M001/S01/T01");
   assertEq(cleanResult, null, "returns null for clean repo");
 
-  // Make dirty
+  // Make dirty — reset the nativeHasChanges cache so the fresh dirt is detected
+  _resetHasChangesCache();
   writeFileSync(join(base, "dirty.txt"), "uncommitted\n", "utf-8");
   const dirtyResult = autoCommitCurrentBranch(base, "execute-task", "M001/S01/T01");
   assertTrue(dirtyResult !== null, "returns commit message for dirty repo");
@@ -106,10 +108,7 @@ async function main(): Promise<void> {
     assertEq(readIntegrationBranch(repo, "M001"), "f-123-thing",
       "captureIntegrationBranch records the current branch");
 
-    // Verify it was committed (not just written to disk)
-    const logOut = run("git log --oneline -1", repo);
-    assertTrue(logOut.includes("integration branch"), "metadata committed to git");
-
+    // .gsd/ metadata is written to disk only (not committed) since commit_docs removal
     rmSync(repo, { recursive: true, force: true });
   }
 

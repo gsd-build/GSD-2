@@ -602,14 +602,14 @@ describe("constrainScreenshot", () => {
 	});
 
 	it("handles an image where only height exceeds the limit", async () => {
-		const buf = await createTestJpeg(1000, 2000);
+		const buf = await createTestJpeg(1000, 9000);
 		const result = await constrainScreenshot(null, buf, "image/jpeg", 80);
 		const sharp = require("sharp");
 		const meta = await sharp(result).metadata();
 		assert.ok(meta.width <= 1568);
-		assert.ok(meta.height <= 1568);
+		assert.ok(meta.height <= 8000);
 		// Height was the constraining dimension
-		assert.equal(meta.height, 1568);
+		assert.equal(meta.height, 8000);
 	});
 });
 

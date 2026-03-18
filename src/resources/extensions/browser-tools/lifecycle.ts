@@ -103,10 +103,10 @@ export function attachPageListeners(p: Page, pageId: number): void {
 				try {
 					const body = await response.text();
 					entry.responseBody = body.slice(0, 2000);
-				} catch {}
+				} catch { /* non-fatal — response body may be unavailable or already consumed */ }
 			}
 			logPusher(networkLogs, entry);
-		} catch {}
+		} catch { /* non-fatal — request may have been aborted or page closed */ }
 	});
 
 	p.on("requestfailed", (request) => {
@@ -137,7 +137,7 @@ export function attachPageListeners(p: Page, pageId: number): void {
 			pageId,
 		});
 		// Auto-accept all dialogs to prevent page freezes
-		await dialog.accept().catch(() => {});
+		await dialog.accept().catch(() => { /* cleanup — dialog may already be dismissed */ });
 	});
 
 	// Frame detach handler — clears activeFrame if the selected frame detaches
@@ -236,7 +236,7 @@ export async function ensureBrowser(): Promise<{ browser: Browser; context: Brow
 		newPage.waitForLoadState("domcontentloaded", { timeout: 5000 })
 			.then(() => newPage.title())
 			.then((title) => { entry.title = title; })
-			.catch(() => {});
+			.catch(() => { /* best-effort title fetch — page may have closed or navigated away */ });
 	});
 
 	return { browser, context, page: getActivePage() };
@@ -264,7 +264,7 @@ export function getActivePageOrNull(): Page | null {
 export async function closeBrowser(): Promise<void> {
 	const browser = getBrowser();
 	if (browser) {
-		await browser.close().catch(() => {});
+		await browser.close().catch(() => { /* cleanup — browser may already be closed */ });
 	}
 	resetAllState();
 }

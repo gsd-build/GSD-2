@@ -1,4 +1,6 @@
-import OpenAI from "openai";
+// Lazy-loaded: OpenAI SDK is imported on first use, not at startup.
+// This avoids penalizing users who don't use OpenAI models.
+import type OpenAI from "openai";
 import type { ResponseCreateParamsStreaming } from "openai/resources/responses/responses.js";
 import { getEnvApiKey } from "../env-api-keys.js";
 import { supportsXhigh } from "../models.js";
@@ -17,6 +19,15 @@ import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.js";
 import { convertResponsesMessages, convertResponsesTools, processResponsesStream } from "./openai-responses-shared.js";
 import { buildBaseOptions, clampReasoning } from "./simple-options.js";
+
+let _OpenAIResponsesClass: typeof OpenAI | undefined;
+async function getOpenAIResponsesClass(): Promise<typeof OpenAI> {
+	if (!_OpenAIResponsesClass) {
+		const mod = await import("openai");
+		_OpenAIResponsesClass = mod.default;
+	}
+	return _OpenAIResponsesClass;
+}
 
 /**
  * Clamp reasoning effort for models that don't support all levels.
@@ -98,7 +109,7 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses", OpenAIRes
 		try {
 			// Create OpenAI client
 			const apiKey = options?.apiKey || getEnvApiKey(model.provider) || "";
-			const client = createClient(model, context, apiKey, options?.headers);
+			const client = await createClient(model, context, apiKey, options?.headers);
 			let params = buildParams(model, context, options);
 			const nextParams = await options?.onPayload?.(params, model);
 			if (nextParams !== undefined) {
@@ -156,7 +167,7 @@ export const streamSimpleOpenAIResponses: StreamFunction<"openai-responses", Sim
 	} satisfies OpenAIResponsesOptions);
 };
 
-function createClient(
+async function createClient(
 	model: Model<"openai-responses">,
 	context: Context,
 	apiKey?: string,
@@ -186,7 +197,8 @@ function createClient(
 		Object.assign(headers, optionsHeaders);
 	}
 
-	return new OpenAI({
+	const OpenAIClass = await getOpenAIResponsesClass();
+	return new OpenAIClass({
 		apiKey,
 		baseURL: model.baseUrl,
 		dangerouslyAllowBrowser: true,

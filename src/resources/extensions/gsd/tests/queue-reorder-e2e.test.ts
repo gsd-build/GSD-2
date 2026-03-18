@@ -58,6 +58,7 @@ function writeCompleteMilestone(base: string, mid: string): void {
 - [x] **S01: Done** \`risk:low\` \`depends:[]\`
   > After this: Done.
 `);
+  writeFileSync(join(dir, `${mid}-VALIDATION.md`), `---\nverdict: pass\nremediation_round: 0\n---\n\n# Validation\nPassed.`);
   writeFileSync(join(dir, `${mid}-SUMMARY.md`), `# ${mid} Summary\n\nComplete.`);
 }
 

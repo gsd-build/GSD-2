@@ -50,9 +50,17 @@ It checks:
 
 ### Provider errors during auto mode
 
-**Symptoms:** Auto mode pauses with a provider error (rate limit, auth failure, etc.).
+**Symptoms:** Auto mode pauses with a provider error (rate limit, server error, auth failure).
 
-**Fix:** GSD automatically tries fallback models if configured. To add fallbacks:
+**How GSD handles it (v2.26):**
+
+| Error type | Auto-resume? | Delay |
+|-----------|-------------|-------|
+| Rate limit (429, "too many requests") | ✅ Yes | retry-after header or 60s |
+| Server error (500, 502, 503, "overloaded") | ✅ Yes | 30s |
+| Auth/billing ("unauthorized", "invalid key") | ❌ No | Manual resume |
+
+For transient errors, GSD pauses briefly and resumes automatically. For permanent errors, configure fallback models:
 
 ```yaml
 models:
@@ -61,6 +69,8 @@ models:
     fallbacks:
       - openrouter/minimax/minimax-m2.5
 ```
+
+**Headless mode:** `gsd headless auto` auto-restarts the entire process on crash (default 3 attempts with exponential backoff). Combined with provider error auto-resume, this enables true overnight unattended execution.
 
 ### Budget ceiling reached
 
@@ -111,5 +121,67 @@ Doctor rebuilds `STATE.md` from plan and roadmap files on disk and fixes detecte
 
 - **GitHub Issues:** [github.com/gsd-build/GSD-2/issues](https://github.com/gsd-build/GSD-2/issues)
 - **Dashboard:** `Ctrl+Alt+G` or `/gsd status` for real-time diagnostics
+- **Forensics:** `/gsd forensics` for structured post-mortem analysis of auto-mode failures
 - **Session logs:** `.gsd/activity/` contains JSONL session dumps for crash forensics
-ctivity/` contains JSONL session dumps for crash forensics
+
+## Windows-Specific Issues
+
+### LSP returns ENOENT on Windows (MSYS2/Git Bash)
+
+**Symptoms:** LSP initialization fails with `ENOENT` or resolves POSIX-style paths like `/c/Users/...` instead of `C:\Users\...`.
+
+**Cause:** The `which` command in MSYS2/Git Bash returns POSIX paths that Node.js `spawn()` can't resolve.
+
+**Fix:** Updated in v2.29+ to use `where.exe` on Windows. Upgrade to the latest version.
+
+### EBUSY errors during WXT/extension builds
+
+**Symptoms:** `EBUSY: resource busy or locked, rmdir .output/chrome-mv3` when building browser extensions.
+
+**Cause:** A Chromium browser has the extension loaded from the build output directory, preventing deletion.
+
+**Fix:** Close the browser extension, or set a different `outDirTemplate` in your WXT config to avoid the locked directory.
+
+## Database Issues
+
+### "GSD database is not available"
+
+**Symptoms:** `gsd_save_decision`, `gsd_update_requirement`, or `gsd_save_summary` fail with this error.
+
+**Cause:** The SQLite database wasn't initialized. This happens in manual `/gsd` sessions (non-auto mode) on versions before v2.29.
+
+**Fix:** Updated in v2.29+ to auto-initialize the database on first tool call. Upgrade to the latest version.
+
+## Verification Issues
+
+### Verification gate fails with shell syntax error
+
+**Symptoms:** `stderr: /bin/sh: 1: Syntax error: "(" unexpected` during verification checks.
+
+**Cause:** A description-like string (e.g., `All 10 checks pass (build, lint)`) was treated as a shell command. This can happen when task plans have `verify:` fields with prose instead of actual commands.
+
+**Fix:** Updated in v2.29+ to filter preference commands through `isLikelyCommand()`. Ensure `verification_commands` in preferences contains only valid shell commands, not descriptions.
+
+## LSP (Language Server Protocol)
+
+### "LSP isn't available in this workspace"
+
+GSD auto-detects language servers based on project files (e.g. `package.json` → TypeScript, `Cargo.toml` → Rust, `go.mod` → Go). If no servers are detected, the agent skips LSP features.
+
+**Check status:**
+```
+lsp status
+```
+
+This shows which servers are active and, if none are found, diagnoses why — including which project markers were detected but which server commands are missing.
+
+**Common fixes:**
+
+| Project type | Install command |
+|-------------|-----------------|
+| TypeScript/JavaScript | `npm install -g typescript-language-server typescript` |
+| Python | `pip install pyright` or `pip install python-lsp-server` |
+| Rust | `rustup component add rust-analyzer` |
+| Go | `go install golang.org/x/tools/gopls@latest` |
+
+After installing, run `lsp reload` to restart detection without restarting GSD.

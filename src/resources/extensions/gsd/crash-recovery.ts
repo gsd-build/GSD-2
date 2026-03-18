@@ -10,9 +10,10 @@
  * so the file on disk reflects every tool call up to the crash point).
  */
 
-import { writeFileSync, readFileSync, unlinkSync, existsSync } from "node:fs";
+import { readFileSync, unlinkSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { gsdRoot } from "./paths.js";
+import { atomicWriteSync } from "./atomic-write.js";
 
 const LOCK_FILE = "auto.lock";
 
@@ -49,7 +50,8 @@ export function writeLock(
       completedUnits,
       sessionFile,
     };
-    writeFileSync(lockPath(basePath), JSON.stringify(data, null, 2), "utf-8");
+    const lp = lockPath(basePath);
+    atomicWriteSync(lp, JSON.stringify(data, null, 2));
   } catch (e) { /* non-fatal: lock write failure */ void e; }
 }
 

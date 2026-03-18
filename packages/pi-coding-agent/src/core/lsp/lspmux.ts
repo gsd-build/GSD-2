@@ -2,6 +2,7 @@ import { execSync, spawn } from "node:child_process";
 import * as fsPromises from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
+import { LSP_LIVENESS_TIMEOUT_MS, LSP_STATE_CACHE_TTL_MS } from "../constants.js";
 
 /**
  * lspmux integration for LSP server multiplexing.
@@ -41,8 +42,6 @@ const DEFAULT_SUPPORTED_SERVERS = new Set([
 	"rust-analyzer",
 ]);
 
-const LIVENESS_TIMEOUT_MS = 1000;
-const STATE_CACHE_TTL_MS = 5 * 60 * 1000;
 
 // =============================================================================
 // Helpers
@@ -50,7 +49,16 @@ const STATE_CACHE_TTL_MS = 5 * 60 * 1000;
 
 function which(command: string): string | null {
 	try {
-		return execSync(`which ${command}`, { encoding: "utf-8" }).trim() || null;
+		// On Windows, prefer `where.exe` over `which` — MSYS/Git Bash's `which`
+		// returns POSIX paths (/c/Users/...) that Node's spawn() can't execute (#1121).
+		const isWindows = process.platform === "win32";
+		const cmd = isWindows ? "where.exe" : "which";
+		const result = isWindows
+			? execSync(`${cmd} ${command}`, { encoding: "utf-8" })
+			: execSync(`which ${command}`, { encoding: "utf-8" });
+		// `where.exe` may return multiple lines — take the first
+		const resolved = result.trim().split(/\r?\n/)[0]?.trim();
+		return resolved || null;
 	} catch {
 		return null;
 	}
@@ -108,7 +116,7 @@ async function checkServerRunning(binaryPath: string): Promise<boolean> {
 			new Promise<number>((resolve) => {
 				proc.on("exit", (code: number | null) => resolve(code ?? 1));
 			}),
-			new Promise<null>(resolve => setTimeout(() => resolve(null), LIVENESS_TIMEOUT_MS)),
+			new Promise<null>(resolve => setTimeout(() => resolve(null), LSP_LIVENESS_TIMEOUT_MS)),
 		]);
 
 		if (exited === null) {
@@ -124,7 +132,7 @@ async function checkServerRunning(binaryPath: string): Promise<boolean> {
 
 export async function detectLspmux(): Promise<LspmuxState> {
 	const now = Date.now();
-	if (cachedState && now - cacheTimestamp < STATE_CACHE_TTL_MS) {
+	if (cachedState && now - cacheTimestamp < LSP_STATE_CACHE_TTL_MS) {
 		return cachedState;
 	}
 

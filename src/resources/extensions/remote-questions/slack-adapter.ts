@@ -2,11 +2,11 @@
  * Remote Questions — Slack adapter
  */
 
-import type { ChannelAdapter, RemotePrompt, RemoteDispatchResult, RemoteAnswer, RemotePromptRef } from "./types.js";
+import { type ChannelAdapter, type RemotePrompt, type RemoteDispatchResult, type RemoteAnswer, type RemotePromptRef } from "./types.js";
 import { formatForSlack, parseSlackReply, parseSlackReactionResponse, SLACK_NUMBER_REACTION_NAMES } from "./format.js";
+import { apiRequest } from "./http-client.js";
 
 const SLACK_API = "https://slack.com/api";
-const PER_REQUEST_TIMEOUT_MS = 15_000;
 const SLACK_ACK_REACTION = "white_check_mark";
 
 export class SlackAdapter implements ChannelAdapter {
@@ -123,26 +123,19 @@ export class SlackAdapter implements ChannelAdapter {
   }
 
   private async slackApi(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const url = `${SLACK_API}/${method}`;
     const isGet = method === "conversations.replies" || method === "auth.test" || method === "reactions.get";
+    const opts = { authScheme: "Bearer" as const, authToken: this.token, errorLabel: "Slack API" };
 
-    let response: Response;
     if (isGet) {
-      const qs = new URLSearchParams(Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)]))).toString();
-      response = await fetch(`${url}?${qs}`, { method: "GET", headers: { Authorization: `Bearer ${this.token}` }, signal: AbortSignal.timeout(PER_REQUEST_TIMEOUT_MS) });
-    } else {
-      response = await fetch(url, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${this.token}`,
-          "Content-Type": "application/json; charset=utf-8",
-        },
-        body: JSON.stringify(params),
-        signal: AbortSignal.timeout(PER_REQUEST_TIMEOUT_MS),
-      });
+      const qs = new URLSearchParams(
+        Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)])),
+      ).toString();
+      return apiRequest(`${SLACK_API}/${method}?${qs}`, "GET", undefined, opts);
     }
 
-    if (!response.ok) throw new Error(`Slack API HTTP ${response.status}: ${response.statusText}`);
-    return (await response.json()) as Record<string, unknown>;
+    return apiRequest(`${SLACK_API}/${method}`, "POST", params, {
+      ...opts,
+      contentType: "application/json; charset=utf-8",
+    });
   }
 }

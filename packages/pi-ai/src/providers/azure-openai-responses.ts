@@ -1,4 +1,6 @@
-import { AzureOpenAI } from "openai";
+// Lazy-loaded: OpenAI SDK (AzureOpenAI) is imported on first use, not at startup.
+// This avoids penalizing users who don't use Azure OpenAI models.
+import type { AzureOpenAI } from "openai";
 import type { ResponseCreateParamsStreaming } from "openai/resources/responses/responses.js";
 import { getEnvApiKey } from "../env-api-keys.js";
 import { supportsXhigh } from "../models.js";
@@ -14,6 +16,15 @@ import type {
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { convertResponsesMessages, convertResponsesTools, processResponsesStream } from "./openai-responses-shared.js";
 import { buildBaseOptions, clampReasoning } from "./simple-options.js";
+
+let _AzureOpenAIClass: typeof AzureOpenAI | undefined;
+async function getAzureOpenAIClass(): Promise<typeof AzureOpenAI> {
+	if (!_AzureOpenAIClass) {
+		const mod = await import("openai");
+		_AzureOpenAIClass = mod.AzureOpenAI;
+	}
+	return _AzureOpenAIClass;
+}
 
 /**
  * Clamp reasoning effort for models that don't support all levels.
@@ -94,7 +105,7 @@ export const streamAzureOpenAIResponses: StreamFunction<"azure-openai-responses"
 		try {
 			// Create Azure OpenAI client
 			const apiKey = options?.apiKey || getEnvApiKey(model.provider) || "";
-			const client = createClient(model, apiKey, options);
+			const client = await createClient(model, apiKey, options);
 			let params = buildParams(model, context, options, deploymentName);
 			const nextParams = await options?.onPayload?.(params, model);
 			if (nextParams !== undefined) {
@@ -188,7 +199,7 @@ function resolveAzureConfig(
 	};
 }
 
-function createClient(model: Model<"azure-openai-responses">, apiKey: string, options?: AzureOpenAIResponsesOptions) {
+async function createClient(model: Model<"azure-openai-responses">, apiKey: string, options?: AzureOpenAIResponsesOptions) {
 	if (!apiKey) {
 		if (!process.env.AZURE_OPENAI_API_KEY) {
 			throw new Error(
@@ -205,8 +216,9 @@ function createClient(model: Model<"azure-openai-responses">, apiKey: string, op
 	}
 
 	const { baseUrl, apiVersion } = resolveAzureConfig(model, options);
+	const AzureOpenAIClass = await getAzureOpenAIClass();
 
-	return new AzureOpenAI({
+	return new AzureOpenAIClass({
 		apiKey,
 		apiVersion,
 		dangerouslyAllowBrowser: true,

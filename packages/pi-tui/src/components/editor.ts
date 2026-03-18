@@ -559,7 +559,9 @@ export class Editor implements Component, Focusable {
 					this.state.cursorLine = result.cursorLine;
 					this.setCursorCol(result.cursorCol);
 
-					if (this.autocompletePrefix.startsWith("/")) {
+					if (this.autocompletePrefix.startsWith("/") || this.isInSlashCommandContext(
+						(this.state.lines[this.state.cursorLine] || "").slice(0, this.state.cursorCol),
+					)) {
 						this.cancelAutocomplete();
 						// Fall through to submit
 					} else {

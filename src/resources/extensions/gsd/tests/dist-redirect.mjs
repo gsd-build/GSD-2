@@ -16,12 +16,16 @@ export function resolve(specifier, context, nextResolve) {
     specifier = new URL("packages/pi-ai/dist/index.js", ROOT).href;
   } else if (specifier === "@gsd/pi-agent-core") {
     specifier = new URL("packages/pi-agent-core/dist/index.js", ROOT).href;
-  } 
-  // 2. Mapping .js to .ts for local imports when running tests from src/
-  //    Skip rewrite for dist/ paths — those .js files are real compiled artifacts.
+  }
+  // 2. Redirect packages/*/dist/ → packages/*/src/ with .js→.ts for strip-types
+  //    Also handles local imports — skip rewrite for dist/ paths that are real compiled artifacts.
   else if (specifier.endsWith('.js') && (specifier.startsWith('./') || specifier.startsWith('../'))) {
-    if (context.parentURL && context.parentURL.includes('/src/') && !specifier.includes('/dist/')) {
-      specifier = specifier.replace(/\.js$/, '.ts');
+    if (context.parentURL && context.parentURL.includes('/src/')) {
+      if (specifier.includes('/dist/')) {
+        specifier = specifier.replace('/dist/', '/src/').replace(/\.js$/, '.ts');
+      } else {
+        specifier = specifier.replace(/\.js$/, '.ts');
+      }
     }
   }
   // 3. Extensionless relative imports from web/ (Next.js convention).

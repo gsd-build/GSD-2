@@ -1,0 +1,57 @@
+name: Cleanup Dev Versions
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Monday 06:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    name: Remove stale -dev versions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Unpublish old dev versions
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          PACKAGE="gsd-pi"
+          MAX_AGE_DAYS=30
+          CUTOFF=$(date -u -d "-${MAX_AGE_DAYS} days" +%s 2>/dev/null || date -u -v-${MAX_AGE_DAYS}d +%s)
+
+          echo "Fetching all versions of ${PACKAGE}..."
+          VERSIONS=$(npm view "${PACKAGE}" versions --json 2>/dev/null | node -e "
+            const data = JSON.parse(require('fs').readFileSync('/dev/stdin', 'utf8'));
+            const versions = Array.isArray(data) ? data : [data];
+            versions.filter(v => v.includes('-dev.')).forEach(v => console.log(v));
+          ")
+
+          if [ -z "${VERSIONS}" ]; then
+            echo "No dev versions found."
+            exit 0
+          fi
+
+          REMOVED=0
+          while IFS= read -r VERSION; do
+            PUBLISH_TIME=$(npm view "${PACKAGE}@${VERSION}" time --json 2>/dev/null | node -e "
+              const data = JSON.parse(require('fs').readFileSync('/dev/stdin', 'utf8'));
+              console.log(Math.floor(new Date(data).getTime() / 1000));
+            " 2>/dev/null || echo "0")
+
+            if [ "${PUBLISH_TIME}" -gt 0 ] && [ "${PUBLISH_TIME}" -lt "${CUTOFF}" ]; then
+              echo "Unpublishing ${PACKAGE}@${VERSION} (published $(date -u -d @${PUBLISH_TIME} +%Y-%m-%d 2>/dev/null || date -u -r ${PUBLISH_TIME} +%Y-%m-%d))"
+              npm unpublish "${PACKAGE}@${VERSION}" || echo "  Warning: failed to unpublish ${VERSION}"
+              REMOVED=$((REMOVED + 1))
+            fi
+          done <<< "${VERSIONS}"
+
+          echo "Removed ${REMOVED} stale dev version(s)."

@@ -10,7 +10,7 @@
  * All steps are skippable. All errors are recoverable. Never crashes boot.
  */
 
-import { exec } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { AuthStorage } from '@gsd/pi-coding-agent'
@@ -122,12 +122,12 @@ async function loadPico(): Promise<PicoModule> {
 
 /** Open a URL in the system browser (best-effort, non-blocking) */
 function openBrowser(url: string): void {
-  const cmd = process.platform === 'darwin' ? 'open' :
-    process.platform === 'win32' ? 'start' :
-      'xdg-open'
-  exec(`${cmd} "${url}"`, () => {
-    // Ignore errors — user can manually open the URL
-  })
+  if (process.platform === 'win32') {
+    execFile('cmd', ['/c', 'start', '', url], () => {})
+  } else {
+    const cmd = process.platform === 'darwin' ? 'open' : 'xdg-open'
+    execFile(cmd, [url], () => {})
+  }
 }
 
 /** Check if an error is a clack cancel signal */

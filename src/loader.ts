@@ -2,8 +2,8 @@
 // GSD Startup Loader
 // Copyright (c) 2026 Jeremy McSpadden <jeremy@fluxlabs.net>
 import { fileURLToPath } from 'url'
-import { dirname, resolve, join, delimiter } from 'path'
-import { existsSync, readFileSync, readdirSync, mkdirSync, symlinkSync } from 'fs'
+import { dirname, resolve, join, relative, delimiter } from 'path'
+import { existsSync, readFileSync, mkdirSync, symlinkSync, cpSync } from 'fs'
 
 // Fast-path: handle --version/-v and --help/-h before importing any heavy
 // dependencies. This avoids loading the entire pi-coding-agent barrel import
@@ -12,29 +12,28 @@ const gsdRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const args = process.argv.slice(2)
 const firstArg = args[0]
 
+// Read package.json once — reused for version, banner, and GSD_VERSION below
+let gsdVersion = '0.0.0'
+try {
+  const pkg = JSON.parse(readFileSync(join(gsdRoot, 'package.json'), 'utf-8'))
+  gsdVersion = pkg.version || '0.0.0'
+} catch { /* ignore */ }
+
 if (firstArg === '--version' || firstArg === '-v') {
-  try {
-    const pkg = JSON.parse(readFileSync(join(gsdRoot, 'package.json'), 'utf-8'))
-    process.stdout.write((pkg.version || '0.0.0') + '\n')
-  } catch {
-    process.stdout.write('0.0.0\n')
-  }
+  process.stdout.write(gsdVersion + '\n')
   process.exit(0)
 }
 
 if (firstArg === '--help' || firstArg === '-h') {
-  let version = '0.0.0'
-  try {
-    const pkg = JSON.parse(readFileSync(join(gsdRoot, 'package.json'), 'utf-8'))
-    version = pkg.version || version
-  } catch { /* ignore */ }
   const { printHelp } = await import('./help-text.js')
-  printHelp(version)
+  printHelp(gsdVersion)
   process.exit(0)
 }
 
 import { agentDir, appRoot } from './app-paths.js'
 import { serializeBundledExtensionPaths } from './bundled-extension-paths.js'
+import { discoverExtensionEntryPaths } from './extension-discovery.js'
+import { loadRegistry, readManifestFromEntryPath, isExtensionEnabled } from './extension-registry.js'
 import { renderLogo } from './logo.js'
 
 // pkg/ is a shim directory: contains gsd's piConfig (package.json) and pi's
@@ -57,15 +56,10 @@ if (!existsSync(appRoot)) {
   const dim   = '\x1b[2m'
   const reset = '\x1b[0m'
   const colorCyan = (s: string) => `${cyan}${s}${reset}`
-  let version = ''
-  try {
-    const pkgJson = JSON.parse(readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '..', 'package.json'), 'utf-8'))
-    version = pkgJson.version ?? ''
-  } catch { /* ignore */ }
   process.stderr.write(
     renderLogo(colorCyan) +
     '\n' +
-    `  Get Shit Done ${dim}v${version}${reset}\n` +
+    `  Get Shit Done ${dim}v${gsdVersion}${reset}\n` +
     `  ${green}Welcome.${reset} Setting up your environment...\n\n`
   )
 }
@@ -88,12 +82,7 @@ const { Module } = await import('module');
 (Module as any)._initPaths?.()
 
 // GSD_VERSION — expose package version so extensions can display it
-try {
-  const gsdPkg = JSON.parse(readFileSync(join(gsdRoot, 'package.json'), 'utf-8'))
-  process.env.GSD_VERSION = gsdPkg.version || '0.0.0'
-} catch {
-  process.env.GSD_VERSION = '0.0.0'
-}
+process.env.GSD_VERSION = gsdVersion
 
 // GSD_BIN_PATH — absolute path to this loader (dist/loader.js), used by patched subagent
 // to spawn gsd instead of pi when dispatching workflow tasks
@@ -108,37 +97,19 @@ const resourcesDir = existsSync(distRes) ? distRes : srcRes
 process.env.GSD_WORKFLOW_PATH = join(resourcesDir, 'GSD-WORKFLOW.md')
 
 // GSD_BUNDLED_EXTENSION_PATHS — dynamically discovered bundled extension entry points.
-// Scans the bundled resources directory to find all extensions, then maps paths to
-// agentDir (~/.gsd/agent/extensions/) where initResources() will sync them.
-//
-// Discovery rules (mirroring resource-loader.ts discoverExtensionEntryPaths):
-//   - Top-level .ts/.js files → extension entry point
-//   - Directories with index.ts or index.js → extension entry point
-//   - Directories without either (e.g. shared/, remote-questions/) → skipped
-//
-// Previously this was a hardcoded list that required manual updates whenever
-// extensions were added or removed — causing merge conflicts in forks and
-// falling out of sync with what buildResourceLoader() discovers at runtime.
+// Uses the shared discoverExtensionEntryPaths() to scan the bundled resources
+// directory, then remaps discovered paths to agentDir (~/.gsd/agent/extensions/)
+// where initResources() will sync them.
 const bundledExtDir = join(resourcesDir, 'extensions')
 const agentExtDir = join(agentDir, 'extensions')
-const discoveredExtensionPaths: string[] = []
-
-if (existsSync(bundledExtDir)) {
-  for (const entry of readdirSync(bundledExtDir, { withFileTypes: true })) {
-    if (entry.isFile() && (entry.name.endsWith('.ts') || entry.name.endsWith('.js'))) {
-      discoveredExtensionPaths.push(join(agentExtDir, entry.name))
-    } else if (entry.isDirectory()) {
-      const srcIndex = existsSync(join(bundledExtDir, entry.name, 'index.ts'))
-        ? 'index.ts'
-        : existsSync(join(bundledExtDir, entry.name, 'index.js'))
-          ? 'index.js'
-          : null
-      if (srcIndex) {
-        discoveredExtensionPaths.push(join(agentExtDir, entry.name, srcIndex))
-      }
-    }
-  }
-}
+const registry = loadRegistry()
+const discoveredExtensionPaths = discoverExtensionEntryPaths(bundledExtDir)
+  .map((entryPath) => join(agentExtDir, relative(bundledExtDir, entryPath)))
+  .filter((entryPath) => {
+    const manifest = readManifestFromEntryPath(entryPath)
+    if (!manifest) return true  // no manifest = always load
+    return isExtensionEnabled(registry, manifest.id)
+  })
 
 process.env.GSD_BUNDLED_EXTENSION_PATHS = serializeBundledExtensionPaths(discoveredExtensionPaths)
 
@@ -151,8 +122,12 @@ if (process.env.HTTP_PROXY || process.env.HTTPS_PROXY || process.env.http_proxy 
   setGlobalDispatcher(new EnvHttpProxyAgent())
 }
 
-// Ensure workspace packages are linked before importing cli.js (which imports @gsd/*).
+// Ensure workspace packages are linked (or copied on Windows) before importing
+// cli.js (which imports @gsd/*).
 // npm postinstall handles this normally, but npx --ignore-scripts skips postinstall.
+// On Windows without Developer Mode or admin rights, symlinkSync will throw even for
+// 'junction' type — so we fall back to cpSync (a full directory copy) which works
+// everywhere without elevated permissions.
 const gsdScopeDir = join(gsdNodeModules, '@gsd')
 const packagesDir = join(gsdRoot, 'packages')
 const wsPackages = ['native', 'pi-agent-core', 'pi-ai', 'pi-coding-agent', 'pi-tui']
@@ -161,11 +136,37 @@ try {
   for (const pkg of wsPackages) {
     const target = join(gsdScopeDir, pkg)
     const source = join(packagesDir, pkg)
-    if (existsSync(source) && !existsSync(target)) {
-      try { symlinkSync(source, target, 'junction') } catch { /* non-fatal */ }
+    if (!existsSync(source) || existsSync(target)) continue
+    try {
+      symlinkSync(source, target, 'junction')
+    } catch {
+      // Symlink failed (common on Windows without Developer Mode / admin).
+      // Fall back to a directory copy — slower on first run but universally works.
+      try { cpSync(source, target, { recursive: true }) } catch { /* non-fatal */ }
     }
   }
 } catch { /* non-fatal */ }
+
+// Validate critical workspace packages are resolvable. If still missing after the
+// symlink+copy attempts, emit a clear diagnostic instead of a cryptic
+// ERR_MODULE_NOT_FOUND from deep inside cli.js.
+const criticalPackages = ['pi-coding-agent']
+const missingPackages = criticalPackages.filter(pkg => !existsSync(join(gsdScopeDir, pkg)))
+if (missingPackages.length > 0) {
+  const missing = missingPackages.map(p => `@gsd/${p}`).join(', ')
+  process.stderr.write(
+    `\nError: GSD installation is broken — missing packages: ${missing}\n\n` +
+    `This is usually caused by one of:\n` +
+    `  • An outdated version installed from npm (run: npm install -g gsd-pi@latest)\n` +
+    `  • The packages/ directory was excluded from the installed tarball\n` +
+    `  • A filesystem error prevented linking or copying the workspace packages\n\n` +
+    `Fix it by reinstalling:\n\n` +
+    `  npm install -g gsd-pi@latest\n\n` +
+    `If the issue persists, please open an issue at:\n` +
+    `  https://github.com/gsd-build/gsd-2/issues\n`
+  )
+  process.exit(1)
+}
 
 // Dynamic import defers ESM evaluation — config.js will see PI_PACKAGE_DIR above
 await import('./cli.js')

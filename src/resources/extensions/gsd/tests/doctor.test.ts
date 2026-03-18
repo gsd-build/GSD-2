@@ -585,6 +585,64 @@ Discovered an issue.
     rmSync(dtBase, { recursive: true, force: true });
   }
 
+  // ─── unresolvable_dependency: range syntax dep warns ─────────────────
+  console.log("\n=== doctor: unresolvable_dependency warns for leftover range ID ===");
+  {
+    // Simulate a roadmap where expandDependencies did NOT expand (pre-fix stored artifact)
+    // by writing a dep that looks like a range but doesn't match any real slice.
+    const base = mkdtempSync(join(tmpdir(), "gsd-doctor-udep-"));
+    const mDir2 = join(base, ".gsd", "milestones", "M001");
+    const sDir2 = join(mDir2, "slices", "S01");
+    const tDir2 = join(sDir2, "tasks");
+    mkdirSync(tDir2, { recursive: true });
+    writeFileSync(join(mDir2, "M001-ROADMAP.md"), [
+      "# M001: Test",
+      "",
+      "## Slices",
+      "- [x] **S01: Done** `risk:low` `depends:[]`",
+      "  > After this: done",
+      "- [ ] **S02: Blocked** `risk:low` `depends:[S99]`",
+      "  > After this: also done",
+    ].join("\n") + "\n");
+    writeFileSync(join(sDir2, "S01-PLAN.md"), "# S01\n\n**Goal:** g\n**Demo:** d\n\n## Tasks\n- [x] **T01: t** `est:5m`\n");
+    writeFileSync(join(tDir2, "T01-SUMMARY.md"), "---\nid: T01\nparent: S01\nmilestone: M001\n---\n# T01\n## What Happened\nDone.\n");
+
+    const r = await runGSDDoctor(base, { fix: false });
+    const udepIssues = r.issues.filter(i => i.code === "unresolvable_dependency");
+    assertTrue(udepIssues.length > 0, "unresolvable_dependency fires for unknown dep S99");
+    assertEq(udepIssues[0]?.severity, "warning", "severity is warning");
+    assertTrue(udepIssues[0]?.message.includes("S99"), "message names the bad dep");
+
+    rmSync(base, { recursive: true, force: true });
+  }
+
+  // ─── unresolvable_dependency: valid deps do not warn ─────────────────
+  console.log("\n=== doctor: no unresolvable_dependency for valid deps ===");
+  {
+    const base = mkdtempSync(join(tmpdir(), "gsd-doctor-udep-ok-"));
+    const mDir2 = join(base, ".gsd", "milestones", "M001");
+    const sDir2 = join(mDir2, "slices", "S01");
+    const tDir2 = join(sDir2, "tasks");
+    mkdirSync(tDir2, { recursive: true });
+    writeFileSync(join(mDir2, "M001-ROADMAP.md"), [
+      "# M001: Test",
+      "",
+      "## Slices",
+      "- [x] **S01: Done** `risk:low` `depends:[]`",
+      "  > After this: done",
+      "- [ ] **S02: Next** `risk:low` `depends:[S01]`",
+      "  > After this: next done",
+    ].join("\n") + "\n");
+    writeFileSync(join(sDir2, "S01-PLAN.md"), "# S01\n\n**Goal:** g\n**Demo:** d\n\n## Tasks\n- [x] **T01: t** `est:5m`\n");
+    writeFileSync(join(tDir2, "T01-SUMMARY.md"), "---\nid: T01\nparent: S01\nmilestone: M001\n---\n# T01\n## What Happened\nDone.\n");
+
+    const r = await runGSDDoctor(base, { fix: false });
+    const udepIssues = r.issues.filter(i => i.code === "unresolvable_dependency");
+    assertEq(udepIssues.length, 0, "no unresolvable_dependency for valid S01 dep");
+
+    rmSync(base, { recursive: true, force: true });
+  }
+
   report();
 }
 

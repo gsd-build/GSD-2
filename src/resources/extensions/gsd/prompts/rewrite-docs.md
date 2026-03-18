@@ -25,7 +25,6 @@ An override was issued by the user that changes a fundamental decision or approa
    - Milestone context files are reference only — do not modify them.
 4. Mark all active overrides as resolved: change `**Scope:** active` to `**Scope:** resolved` in `{{overridesPath}}`
 5. Do not commit manually — the system auto-commits your changes after this unit completes.
-6. Update `.gsd/STATE.md`
 
 **You MUST update the relevant documents AND mark overrides as resolved in `{{overridesPath}}` before finishing.**
 

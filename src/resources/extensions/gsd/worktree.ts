@@ -12,12 +12,14 @@
  * SLICE_BRANCH_RE) remain for backwards compatibility with legacy branches.
  */
 
-import { sep } from "node:path";
+import { existsSync, lstatSync, readFileSync, utimesSync } from "node:fs";
+import { join, resolve, sep } from "node:path";
 
-import { GitServiceImpl, writeIntegrationBranch } from "./git-service.js";
+import { GitServiceImpl, writeIntegrationBranch, type TaskCommitContext } from "./git-service.js";
 import { loadEffectiveGSDPreferences } from "./preferences.js";
 
 export { MergeConflictError } from "./git-service.js";
+export type { TaskCommitContext } from "./git-service.js";
 
 // ─── Lazy GitServiceImpl Cache ─────────────────────────────────────────────
 
@@ -54,13 +56,13 @@ export function setActiveMilestoneId(basePath: string, milestoneId: string | nul
  * record when the user starts from a different branch (#300). Always a no-op
  * if on a GSD slice branch.
  */
-export function captureIntegrationBranch(basePath: string, milestoneId: string, options?: { commitDocs?: boolean }): void {
+export function captureIntegrationBranch(basePath: string, milestoneId: string): void {
   // In a worktree, the base branch is implicit (worktree/<name>).
   // Writing it to META.json would leave stale metadata after merge back to main.
   if (detectWorktreeName(basePath)) return;
   const svc = getService(basePath);
   const current = svc.getCurrentBranch();
-  writeIntegrationBranch(basePath, milestoneId, current, options);
+  writeIntegrationBranch(basePath, milestoneId, current);
 }
 
 // ─── Pure Utility Functions (unchanged) ────────────────────────────────────
@@ -70,6 +72,25 @@ export function captureIntegrationBranch(basePath: string, milestoneId: string, 
  * Returns null if not inside a GSD worktree (.gsd/worktrees/<name>/).
  */
 export function detectWorktreeName(basePath: string): string | null {
+  // Primary: use git metadata — .git file with gitdir: pointer
+  const gitPath = join(basePath, ".git");
+  try {
+    const stat = lstatSync(gitPath);
+    if (stat.isFile()) {
+      const content = readFileSync(gitPath, "utf-8").trim();
+      if (content.startsWith("gitdir:")) {
+        const gitdir = content.slice(7).trim();
+        // Git worktree gitdir format: <repo>/.git/worktrees/<name>
+        const parts = gitdir.replace(/\\/g, "/").split("/");
+        const wtIdx = parts.lastIndexOf("worktrees");
+        if (wtIdx !== -1 && wtIdx < parts.length - 1) {
+          return parts[wtIdx + 1] || null;
+        }
+      }
+    }
+  } catch { /* fall through */ }
+
+  // Fallback: path-based detection for legacy setups
   const normalizedPath = basePath.replaceAll("\\", "/");
   const marker = "/.gsd/worktrees/";
   const idx = normalizedPath.indexOf(marker);
@@ -88,14 +109,32 @@ export function detectWorktreeName(basePath: string): string | null {
  * operate against the real project root, not a worktree subdirectory.
  */
 export function resolveProjectRoot(basePath: string): string {
+  // Primary: use git metadata to resolve the main worktree root
+  const gitPath = join(basePath, ".git");
+  try {
+    const stat = lstatSync(gitPath);
+    if (stat.isFile()) {
+      const content = readFileSync(gitPath, "utf-8").trim();
+      if (content.startsWith("gitdir:")) {
+        const gitdir = resolve(basePath, content.slice(7).trim());
+        // Git worktree gitdir: <repo>/.git/worktrees/<name>
+        // Walk up to <repo>
+        const parts = gitdir.replace(/\\/g, "/").split("/");
+        const wtIdx = parts.lastIndexOf("worktrees");
+        if (wtIdx >= 2 && parts[wtIdx - 1] === ".git") {
+          return parts.slice(0, wtIdx - 1).join("/");
+        }
+      }
+    }
+  } catch { /* fall through */ }
+
+  // Fallback: legacy path-based detection
   const normalizedPath = basePath.replaceAll("\\", "/");
   const marker = "/.gsd/worktrees/";
   const idx = normalizedPath.indexOf(marker);
   if (idx === -1) return basePath;
-  // Return the original path up to the .gsd/ marker (un-normalized)
-  // Account for potential OS-specific separators
-  const sep = basePath.includes("\\") ? "\\" : "/";
-  const markerOs = `${sep}.gsd${sep}worktrees${sep}`;
+  const osSep = basePath.includes("\\") ? "\\" : "/";
+  const markerOs = `${osSep}.gsd${osSep}worktrees${osSep}`;
   const idxOs = basePath.indexOf(markerOs);
   if (idxOs !== -1) return basePath.slice(0, idxOs);
   return basePath.slice(0, idx);
@@ -162,12 +201,57 @@ export function getCurrentBranch(basePath: string): string {
 
 /**
  * Auto-commit any dirty files in the current working tree.
+ *
+ * When `taskContext` is provided, generates a meaningful conventional commit
+ * message from the task summary (one-liner, inferred type, key files).
+ * Falls back to a generic `chore()` message for non-task commits.
+ *
  * Returns the commit message used, or null if already clean.
  */
 export function autoCommitCurrentBranch(
   basePath: string, unitType: string, unitId: string,
+  taskContext?: TaskCommitContext,
 ): string | null {
-  return getService(basePath).autoCommit(unitType, unitId);
+  return getService(basePath).autoCommit(unitType, unitId, [], taskContext);
 }
 
+// ─── Git HEAD Resolution ────────────────────────────────────────────────────
 
+/**
+ * Resolve the git HEAD file path for a given directory.
+ * Handles both normal repos (.git is a directory) and worktrees (.git is a file
+ * containing a `gitdir:` pointer to the real gitdir).
+ */
+export function resolveGitHeadPath(dir: string): string | null {
+  const gitPath = join(dir, ".git");
+  if (!existsSync(gitPath)) return null;
+
+  try {
+    const content = readFileSync(gitPath, "utf8").trim();
+    if (content.startsWith("gitdir: ")) {
+      const gitDir = resolve(dir, content.slice(8));
+      const headPath = join(gitDir, "HEAD");
+      return existsSync(headPath) ? headPath : null;
+    }
+    const headPath = join(dir, ".git", "HEAD");
+    return existsSync(headPath) ? headPath : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Nudge pi's FooterDataProvider to re-read the git branch after chdir.
+ * Touches HEAD in both old and new cwd to fire the fs watcher.
+ */
+export function nudgeGitBranchCache(previousCwd: string): void {
+  const now = new Date();
+  for (const dir of [previousCwd, process.cwd()]) {
+    try {
+      const headPath = resolveGitHeadPath(dir);
+      if (headPath) utimesSync(headPath, now, now);
+    } catch {
+      // Best-effort
+    }
+  }
+}

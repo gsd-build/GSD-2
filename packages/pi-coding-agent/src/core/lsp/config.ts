@@ -177,9 +177,16 @@ const LOCAL_BIN_PATHS: Array<{ markers: string[]; binDir: string }> = [
 ];
 
 function which(command: string): string | null {
-	const result = spawnSync("which", [command], { encoding: "utf-8" });
+	// On Windows, prefer `where.exe` over `which` — MSYS/Git Bash's `which`
+	// returns POSIX paths (/c/Users/...) that Node's spawn() can't execute.
+	// `where.exe` returns native Windows paths (C:\Users\...).
+	const isWindows = process.platform === "win32";
+	const cmd = isWindows ? "where.exe" : "which";
+	const result = spawnSync(cmd, [command], { encoding: "utf-8", shell: isWindows });
 	if (result.status !== 0) return null;
-	return result.stdout.trim() || null;
+	// `where.exe` may return multiple lines — take the first
+	const resolved = result.stdout.trim().split(/\r?\n/)[0]?.trim();
+	return resolved || null;
 }
 
 export function resolveCommand(command: string, cwd: string): string | null {

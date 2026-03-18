@@ -3,6 +3,7 @@
  */
 
 import { getDocsPath, getExamplesPath, getReadmePath } from "../config.js";
+import { toPosixPath } from "../utils/path-display.js";
 import { formatSkillsForPrompt, type Skill } from "./skills.js";
 
 /** Tool descriptions for system prompt */
@@ -48,7 +49,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 		contextFiles: providedContextFiles,
 		skills: providedSkills,
 	} = options;
-	const resolvedCwd = cwd ?? process.cwd();
+	const resolvedCwd = toPosixPath(cwd ?? process.cwd());
 
 	const now = new Date();
 	const dateTime = now.toLocaleString("en-US", {
@@ -92,6 +93,17 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 		// Add date/time and working directory last
 		prompt += `\nCurrent date and time: ${dateTime}`;
 		prompt += `\nCurrent working directory: ${resolvedCwd}`;
+
+		// Append promptGuidelines from extension-registered tools.
+		// Without this, tools registered via pi.registerTool() with promptGuidelines
+		// have their definitions reach the API but the model has no guidance on when
+		// to use them (#1184).
+		if (promptGuidelines && promptGuidelines.length > 0) {
+			prompt += "\n\n";
+			for (const guideline of promptGuidelines) {
+				prompt += guideline + "\n";
+			}
+		}
 
 		return prompt;
 	}

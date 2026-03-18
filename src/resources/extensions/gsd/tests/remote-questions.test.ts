@@ -5,7 +5,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseSlackReply, parseDiscordResponse, formatForDiscord, formatForSlack, parseSlackReactionResponse, formatForTelegram, parseTelegramResponse } from "../../remote-questions/format.ts";
 import { resolveRemoteConfig, isValidChannelId } from "../../remote-questions/config.ts";
-import { sanitizeError } from "../../remote-questions/manager.ts";
+import { sanitizeError } from "../../shared/sanitize.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);

@@ -82,7 +82,6 @@ Setting `prefer_skills: []` does **not** disable skill discovery — it just mea
   | `git.pre_merge_check` | `false` | `true` |
   | `git.merge_strategy` | `"squash"` | `"squash"` |
   | `git.isolation` | `"worktree"` | `"worktree"` |
-  | `git.commit_docs` | `true` | `true` |
   | `unique_milestone_ids` | `false` | `true` |
 
   Quick setup: `/gsd mode` (global) or `/gsd mode project` (project-level).
@@ -103,6 +102,8 @@ Setting `prefer_skills: []` does **not** disable skill discovery — it just mea
   - Object with fallbacks: `{ model: "claude-opus-4-6", fallbacks: ["glm-5", "minimax-m2.5"] }` — tries fallbacks in order if primary fails
   - Object with provider: `{ model: "claude-opus-4-6", provider: "bedrock" }` — explicit provider targeting in object format
   - Omit a key to use whatever model is currently active. Fallbacks are tried when model switching fails (provider unavailable, rate limited, etc.).
+
+- `skill_staleness_days`: number — skills unused for this many days get deprioritized during discovery. Set to `0` to disable staleness tracking. Default: `60`.
 
 - `skill_discovery`: controls how GSD discovers and applies skills during auto-mode. Valid values:
   - `auto` — skills are found and applied automatically without prompting.
@@ -125,7 +126,7 @@ Setting `prefer_skills: []` does **not** disable skill discovery — it just mea
   - `main_branch`: string — the primary branch name for new git repos (e.g., `"main"`, `"master"`, `"trunk"`). Also used by `getMainBranch()` as the preferred branch when auto-detection is ambiguous. Default: `"main"`.
   - `merge_strategy`: `"squash"` or `"merge"` — controls how worktree branches are merged back. `"squash"` combines all commits into one; `"merge"` preserves individual commits. Default: `"squash"`.
   - `isolation`: `"worktree"`, `"branch"`, or `"none"` — controls auto-mode git isolation strategy. `"worktree"` creates a milestone worktree for isolated work; `"branch"` works directly in the project root but creates a milestone branch (useful for submodule-heavy repos); `"none"` works directly on the current branch with no worktree or milestone branch (ideal for step-mode with hot reloads). Default: `"worktree"`.
-  - `commit_docs`: boolean — when `false`, prevents GSD from committing `.gsd/` planning artifacts to git. The `.gsd/` folder is added to `.gitignore` and kept local-only. Useful for teams where only some members use GSD, or when company policy requires a clean repository. Default: `true`.
+  - `manage_gitignore`: boolean — when `false`, GSD will not touch `.gitignore` at all. Useful when your project has a strictly managed `.gitignore` and you don't want GSD adding entries. Default: `true`.
   - `worktree_post_create`: string — script to run after a worktree is created (both auto-mode and manual `/worktree`). Receives `SOURCE_DIR` and `WORKTREE_DIR` as environment variables. Can be absolute or relative to project root. Runs with 30-second timeout. Failure is non-fatal (logged as warning). Default: none.
 
 - `unique_milestone_ids`: boolean — when `true`, generates milestone IDs in `M{seq}-{rand6}` format (e.g. `M001-eh88as`) instead of plain sequential `M001`. Prevents ID collisions in team workflows where multiple contributors create milestones concurrently. Both formats coexist — existing `M001`-style milestones remain valid. Default: `false`.
@@ -160,6 +161,31 @@ Setting `prefer_skills: []` does **not** disable skill discovery — it just mea
   - `on_budget`: boolean — notify when budget thresholds are reached. Default: `true`.
   - `on_milestone`: boolean — notify when a milestone finishes. Default: `true`.
   - `on_attention`: boolean — notify when manual attention is needed. Default: `true`.
+
+- `dynamic_routing`: configures the dynamic model router that adjusts model selection based on task complexity. Keys:
+  - `enabled`: boolean — enable dynamic routing. Default: `false`.
+  - `tier_models`: object — model overrides per complexity tier. Keys: `light`, `standard`, `heavy`. Values are model ID strings.
+  - `escalate_on_failure`: boolean — escalate to a higher-tier model when the current one fails. Default: `true`.
+  - `budget_pressure`: boolean — downgrade model tier when budget is under pressure. Default: `true`.
+  - `cross_provider`: boolean — allow routing across different providers. Default: `true`.
+  - `hooks`: boolean — enable routing hooks. Default: `true`.
+
+- `auto_visualize`: boolean — show a visualizer hint after each milestone completion in auto-mode. Default: `false`.
+
+- `auto_report`: boolean — generate an HTML report snapshot after each milestone completion. Default: `true`.
+
+- `parallel`: configures parallel orchestration for running multiple slices concurrently. Keys:
+  - `enabled`: boolean — enable parallel execution. Default: `false`.
+  - `max_workers`: number — maximum concurrent workers (1-4). Default: `2`.
+  - `budget_ceiling`: number — optional per-parallel-run budget ceiling.
+  - `merge_strategy`: `"per-slice"` or `"per-milestone"` — when to merge worktree results back. Default: `"per-milestone"`.
+  - `auto_merge`: `"auto"`, `"confirm"`, or `"manual"` — merge behavior after completion. `"auto"` merges immediately; `"confirm"` asks first; `"manual"` leaves branches for you. Default: `"confirm"`.
+
+- `verification_commands`: string[] — shell commands to run as verification after task execution (e.g., `["npm test", "npm run lint"]`). Commands run in order; if any fails, the task is marked as needing fixes.
+
+- `verification_auto_fix`: boolean — when `true`, automatically attempt to fix verification failures instead of just reporting them. Default: `false`.
+
+- `verification_max_retries`: number — maximum number of fix-and-retry cycles for verification failures. Default: `0` (no retries).
 
 - `uat_dispatch`: boolean — when `true`, enables UAT (User Acceptance Testing) dispatch mode. Default: `false`.
 
@@ -216,7 +242,7 @@ mode: solo
 ---
 ```
 
-Equivalent to setting `git.auto_push: true`, `git.push_branches: false`, `git.pre_merge_check: false`, `git.merge_strategy: squash`, `git.isolation: worktree`, `git.commit_docs: true`, `unique_milestone_ids: false`.
+Equivalent to setting `git.auto_push: true`, `git.push_branches: false`, `git.pre_merge_check: false`, `git.merge_strategy: squash`, `git.isolation: worktree`, `unique_milestone_ids: false`.
 
 **Team — unique IDs, push branches, pre-merge checks:**
 
@@ -227,7 +253,7 @@ mode: team
 ---
 ```
 
-Equivalent to setting `git.auto_push: false`, `git.push_branches: true`, `git.pre_merge_check: true`, `git.merge_strategy: squash`, `git.isolation: worktree`, `git.commit_docs: true`, `unique_milestone_ids: true`.
+Equivalent to setting `git.auto_push: false`, `git.push_branches: true`, `git.pre_merge_check: true`, `git.merge_strategy: squash`, `git.isolation: worktree`, `unique_milestone_ids: true`.
 
 **Mode with overrides — team mode but with auto-push:**
 
@@ -531,3 +557,58 @@ remote_questions:
 ```
 
 Routes interactive questions to a Slack channel for headless auto-mode sessions. Questions time out after 15 minutes if unanswered.
+
+---
+
+## Dynamic Routing Example
+
+```yaml
+---
+version: 1
+dynamic_routing:
+  enabled: true
+  tier_models:
+    light: openrouter/minimax/minimax-m2.5
+    standard: claude-sonnet-4-6
+    heavy: claude-opus-4-6
+  escalate_on_failure: true
+  budget_pressure: true
+---
+```
+
+Automatically selects model tier based on task complexity. Simple tasks use the `light` model, complex tasks escalate to `heavy`. Under budget pressure, tasks are routed to cheaper tiers.
+
+---
+
+## Parallel Execution Example
+
+```yaml
+---
+version: 1
+parallel:
+  enabled: true
+  max_workers: 3
+  merge_strategy: per-milestone
+  auto_merge: confirm
+---
+```
+
+Runs up to 3 slices concurrently in separate worktrees. Results are merged per-milestone with user confirmation.
+
+---
+
+## Verification Example
+
+```yaml
+---
+version: 1
+verification_commands:
+  - npm test
+  - npm run lint
+  - npm run typecheck
+verification_auto_fix: true
+verification_max_retries: 2
+---
+```
+
+Runs test, lint, and typecheck after each task. On failure, auto-fix is attempted up to 2 times before reporting the issue.

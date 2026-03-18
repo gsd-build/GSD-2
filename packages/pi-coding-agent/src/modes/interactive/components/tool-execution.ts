@@ -903,6 +903,24 @@ export class ToolExecutionComponent extends Container {
 					text += `\n${theme.fg("warning", `[Truncated: ${warnings.join(", ")}]`)}`;
 				}
 			}
+		} else if (this.toolName === "web_search") {
+			// Server-side Anthropic web search
+			text = theme.fg("toolTitle", theme.bold("web search"));
+
+			if (this.result) {
+				const output = this.getTextOutput().trim();
+				if (output) {
+					const lines = output.split("\n");
+					const maxLines = this.expanded ? lines.length : 10;
+					const displayLines = lines.slice(0, maxLines);
+					const remaining = lines.length - maxLines;
+
+					text += `\n\n${displayLines.map((line: string) => theme.fg("toolOutput", line)).join("\n")}`;
+					if (remaining > 0) {
+						text += `${theme.fg("muted", `\n... (${remaining} more lines,`)} ${keyHint("expandTools", "to expand")})`;
+					}
+				}
+			}
 		} else {
 			// Generic tool (shouldn't reach here for custom tools)
 			text = theme.fg("toolTitle", theme.bold(this.toolName));

@@ -4,13 +4,36 @@
 import type { ExtensionCommandContext } from "@gsd/pi-coding-agent";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join, basename } from "node:path";
+import { exec } from "node:child_process";
 import {
   getLedger, getProjectTotals, aggregateByPhase, aggregateBySlice,
   aggregateByModel, formatCost, formatTokenCount, loadLedgerFromDisk,
 } from "./metrics.js";
 import type { UnitMetrics } from "./metrics.js";
 import { gsdRoot } from "./paths.js";
-import { formatDuration } from "./history.js";
+import { formatDuration, fileLink } from "../shared/mod.js";
+
+/**
+ * Open a file in the user's default browser.
+ * Uses platform-specific commands: `open` (macOS), `xdg-open` (Linux), `start` (Windows).
+ * Non-blocking, non-fatal — failures are silently ignored.
+ */
+export function openInBrowser(filePath: string): void {
+  const cmd =
+    process.platform === "darwin" ? "open" :
+    process.platform === "win32" ? "start" :
+    "xdg-open";
+
+  // On Windows, `start` needs an empty title argument when the path has spaces
+  const args = process.platform === "win32"
+    ? `"" "${filePath}"`
+    : `"${filePath}"`;
+
+  exec(`${cmd} ${args}`, (err) => {
+    // Non-fatal — if the browser can't be opened, the file path is still shown
+    if (err) void err;
+  });
+}
 
 /**
  * Write an export file directly, without requiring an ExtensionCommandContext.
@@ -93,9 +116,123 @@ export function writeExportFile(
 }
 
 /**
- * Export session/milestone data to JSON or markdown.
+ * Export session/milestone data to JSON, markdown, or HTML.
  */
 export async function handleExport(args: string, ctx: ExtensionCommandContext, basePath: string): Promise<void> {
+  // HTML report — delegates to the full visualizer-data pipeline
+  if (args.includes("--html")) {
+    const generateAll = args.includes("--all");
+    try {
+      const { loadVisualizerData } = await import("./visualizer-data.js");
+      const { generateHtmlReport } = await import("./export-html.js");
+      const { writeReportSnapshot, loadReportsIndex } = await import("./reports.js");
+      const { basename: bn } = await import("node:path");
+      const data = await loadVisualizerData(basePath);
+      const projName = basename(basePath);
+      const gsdVersion = process.env.GSD_VERSION ?? "0.0.0";
+      const doneMilestones = data.milestones.filter(m => m.status === "complete").length;
+
+      const htmlOpts = {
+        projectName: projName,
+        projectPath: basePath,
+        gsdVersion,
+        indexRelPath: "index.html",
+      };
+
+      if (generateAll) {
+        // Generate a report snapshot for every milestone
+        const existing = loadReportsIndex(basePath);
+        const existingIds = new Set(existing?.entries.map(e => e.milestoneId) ?? []);
+
+        const targets = data.milestones.filter(m => !existingIds.has(m.id));
+        if (targets.length === 0) {
+          ctx.ui.notify(
+            "All milestones already have report snapshots. Run without --all to create a new snapshot for the active milestone.",
+            "info",
+          );
+          return;
+        }
+
+        const html = generateHtmlReport(data, htmlOpts);
+        const paths: string[] = [];
+
+        for (const ms of targets) {
+          const msSlicesDone = ms.slices.filter(sl => sl.done).length;
+          const msSlicesTotal = ms.slices.length;
+
+          // Accumulate project-wide progress up to and including this milestone
+          const msIdx = data.milestones.indexOf(ms);
+          let cumulativeDone = 0;
+          let cumulativeTotal = 0;
+          for (let i = 0; i <= msIdx; i++) {
+            cumulativeDone += data.milestones[i].slices.filter(sl => sl.done).length;
+            cumulativeTotal += data.milestones[i].slices.length;
+          }
+
+          const outPath = writeReportSnapshot({
+            basePath,
+            html,
+            milestoneId: ms.id,
+            milestoneTitle: ms.title,
+            kind: ms.status === "complete" ? "milestone" : "manual",
+            projectName: projName,
+            projectPath: basePath,
+            gsdVersion,
+            totalCost: data.totals?.cost ?? 0,
+            totalTokens: data.totals?.tokens.total ?? 0,
+            totalDuration: data.totals?.duration ?? 0,
+            doneSlices: cumulativeDone,
+            totalSlices: cumulativeTotal,
+            doneMilestones: data.milestones.slice(0, msIdx + 1).filter(m => m.status === "complete").length,
+            totalMilestones: data.milestones.length,
+            phase: ms.status === "complete" ? "complete" : data.phase,
+          });
+          paths.push(bn(outPath));
+        }
+
+        const indexPath = join(gsdRoot(basePath), "reports", "index.html");
+        ctx.ui.notify(
+          `Generated ${paths.length} report snapshot${paths.length !== 1 ? "s" : ""}:\n${paths.map(p => `  ${p}`).join("\n")}\nOpening reports index in browser...`,
+          "success",
+        );
+        openInBrowser(indexPath);
+      } else {
+        // Single report for the active milestone (existing behavior)
+        const doneSlices = data.milestones.reduce((s, m) => s + m.slices.filter(sl => sl.done).length, 0);
+        const totalSlices = data.milestones.reduce((s, m) => s + m.slices.length, 0);
+        const outPath = writeReportSnapshot({
+          basePath,
+          html: generateHtmlReport(data, htmlOpts),
+          milestoneId: data.milestones.find(m => m.status === "active")?.id ?? "manual",
+          milestoneTitle: data.milestones.find(m => m.status === "active")?.title ?? "",
+          kind: "manual",
+          projectName: projName,
+          projectPath: basePath,
+          gsdVersion,
+          totalCost: data.totals?.cost ?? 0,
+          totalTokens: data.totals?.tokens.total ?? 0,
+          totalDuration: data.totals?.duration ?? 0,
+          doneSlices,
+          totalSlices,
+          doneMilestones,
+          totalMilestones: data.milestones.length,
+          phase: data.phase,
+        });
+        ctx.ui.notify(
+          `HTML report saved: .gsd/reports/${bn(outPath)}\nOpening in browser...`,
+          "success",
+        );
+        openInBrowser(outPath);
+      }
+    } catch (err) {
+      ctx.ui.notify(
+        `HTML export failed: ${err instanceof Error ? err.message : String(err)}`,
+        "error",
+      );
+    }
+    return;
+  }
+
   const format = args.includes("--json") ? "json" : "markdown";
 
   const ledger = getLedger();
@@ -130,7 +267,7 @@ export async function handleExport(args: string, ctx: ExtensionCommandContext, b
     };
     const outPath = join(exportDir, `export-${timestamp}.json`);
     writeFileSync(outPath, JSON.stringify(report, null, 2) + "\n", "utf-8");
-    ctx.ui.notify(`Exported to ${outPath}`, "success");
+    ctx.ui.notify(`Exported to ${fileLink(outPath)}`, "success");
   } else {
     const totals = getProjectTotals(units);
     const phases = aggregateByPhase(units);
@@ -174,6 +311,6 @@ export async function handleExport(args: string, ctx: ExtensionCommandContext, b
 
     const outPath = join(exportDir, `export-${timestamp}.md`);
     writeFileSync(outPath, md, "utf-8");
-    ctx.ui.notify(`Exported to ${outPath}`, "success");
+    ctx.ui.notify(`Exported to ${fileLink(outPath)}`, "success");
   }
 }

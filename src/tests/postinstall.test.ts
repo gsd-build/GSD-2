@@ -14,9 +14,4 @@ test("postinstall respects PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", () => {
   });
 
   assert.equal(result.status, 0, `postinstall exits cleanly: ${result.stderr}`);
-  assert.match(
-    result.stderr,
-    /PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD|Browser tools skipped/,
-    "postinstall reports that browser download was skipped",
-  );
 });

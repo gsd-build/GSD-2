@@ -5,6 +5,7 @@
 
 import { join } from 'node:path';
 import { saveFile } from '../files.js';
+import { gsdRoot } from '../paths.js';
 
 import type {
   GSDMilestone,
@@ -421,7 +422,7 @@ export async function writeGSDDirectory(
   project: GSDProject,
   targetPath: string,
 ): Promise<WrittenFiles> {
-  const gsdDir = join(targetPath, '.gsd');
+  const gsdDir = gsdRoot(targetPath);
   const milestonesBase = join(gsdDir, 'milestones');
   const paths: string[] = [];
   const counts: WrittenFiles['counts'] = {
@@ -481,6 +482,45 @@ export async function writeGSDDirectory(
       await saveFile(researchPath, milestone.research);
       paths.push(researchPath);
       counts.research++;
+    }
+
+    // For fully-completed milestones (all slices done), write a pass-through
+    // validation file so deriveState() doesn't enter validating-milestone
+    // phase for historical milestones that predate the validation gate (#819).
+    const allSlicesDone = milestone.slices.length > 0 && milestone.slices.every(s => s.done);
+    if (allSlicesDone) {
+      const validationPath = join(mDir, `${milestone.id}-VALIDATION.md`);
+      const validationContent = [
+        `---`,
+        `verdict: pass`,
+        `migrated: true`,
+        `---`,
+        ``,
+        `# ${milestone.id} Validation`,
+        ``,
+        `Migrated milestone — all slices were completed in the original project.`,
+        ``,
+      ].join('\n');
+      await saveFile(validationPath, validationContent);
+      paths.push(validationPath);
+      counts.other++;
+
+      // Also write a milestone summary if one doesn't exist
+      const summaryPath = join(mDir, `${milestone.id}-SUMMARY.md`);
+      const summaryContent = [
+        `---`,
+        `status: done`,
+        `migrated: true`,
+        `---`,
+        ``,
+        `# ${milestone.id}: ${milestone.title}`,
+        ``,
+        `Migrated from .planning — ${milestone.slices.length} slices completed.`,
+        ``,
+      ].join('\n');
+      await saveFile(summaryPath, summaryContent);
+      paths.push(summaryPath);
+      counts.other++;
     }
 
     // Slices

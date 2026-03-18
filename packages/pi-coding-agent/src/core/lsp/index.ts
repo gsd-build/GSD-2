@@ -14,7 +14,7 @@ import {
 	setIdleTimeout,
 	WARMUP_TIMEOUT_MS,
 } from "./client.js";
-import { getServersForFile, type LspConfig, loadConfig } from "./config.js";
+import { getServersForFile, type LspConfig, loadConfig, hasRootMarkers, resolveCommand } from "./config.js";
 import { applyTextEdits, applyWorkspaceEdit } from "./edits.js";
 import { ToolAbortError, clampTimeout, throwIfAborted } from "./helpers.js";
 import { detectLspmux } from "./lspmux.js";
@@ -211,6 +211,13 @@ async function reloadServer(client: LspClient, serverName: string, signal?: Abor
 	}
 	if (output.startsWith("Restarted")) {
 		client.proc.kill();
+		// Wait for the process to actually exit so the crash recovery handler
+		// removes the client from the cache. Without this, the next
+		// getOrCreateClient call may return the dead client (#815).
+		await Promise.race([
+			client.proc.exited,
+			new Promise(r => setTimeout(r, 3000)),
+		]);
 	}
 	return output;
 }
@@ -363,10 +370,36 @@ export function createLspTool(cwd: string): AgentTool<typeof lspSchema, LspToolD
 						: "lspmux: installed but server not running"
 					: "";
 
-				const serverStatus =
-					servers.length > 0
-						? `Active language servers: ${servers.join(", ")}`
-						: "No language servers configured for this project";
+				let serverStatus: string;
+				if (servers.length > 0) {
+					serverStatus = `Active language servers: ${servers.join(", ")}`;
+				} else {
+					// Diagnose why no servers were detected
+					const DEFAULTS = (await import("./defaults.json", { with: { type: "json" } })).default as Record<string, { command: string; rootMarkers: string[] }>;
+					const diagnostics: string[] = ["No language servers configured for this project."];
+					const matchedButMissing: string[] = [];
+					const noMarkers: string[] = [];
+
+					for (const [name, def] of Object.entries(DEFAULTS)) {
+						if (hasRootMarkers(cwd, def.rootMarkers)) {
+							const resolved = resolveCommand(def.command, cwd);
+							if (!resolved) {
+								matchedButMissing.push(`  ${name}: project detected (${def.rootMarkers[0]}) but '${def.command}' not found — install it with npm/pip/brew`);
+							}
+						}
+					}
+
+					if (matchedButMissing.length > 0) {
+						diagnostics.push("\nDetected projects missing language servers:");
+						diagnostics.push(...matchedButMissing);
+						diagnostics.push("\nInstall the missing server command and restart GSD, or run: lsp reload");
+					} else {
+						diagnostics.push("No recognized project markers found in the working directory.");
+						diagnostics.push("LSP auto-detects projects via files like package.json, Cargo.toml, go.mod, pyproject.toml, etc.");
+					}
+
+					serverStatus = diagnostics.join("\n");
+				}
 
 				const output = lspmuxStatus ? `${serverStatus}\n${lspmuxStatus}` : serverStatus;
 				return {

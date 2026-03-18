@@ -161,7 +161,7 @@ export function registerNetworkMockTools(pi: ExtensionAPI, deps: ToolDeps): void
 					const cleanup = async () => {
 						try {
 							await p.unroute(pattern, handler);
-						} catch {}
+						} catch { /* cleanup — route may already be removed or page closed */ }
 					};
 
 					const routeInfo: ActiveRoute = {

@@ -39,6 +39,8 @@ export function setPendingAlerts(alerts: string[]): void {
 
 export function addOutputLine(bg: BgProcess, stream: "stdout" | "stderr", line: string): void {
 	bg.output.push({ stream, line, ts: Date.now() });
+	if (stream === "stdout") bg.stdoutLineCount++;
+	else bg.stderrLineCount++;
 	if (bg.output.length > MAX_BUFFER_LINES) {
 		const excess = bg.output.length - MAX_BUFFER_LINES;
 		bg.output.splice(0, excess);
@@ -60,20 +62,20 @@ export function pushAlert(bg: BgProcess, message: string): void {
 }
 
 export function getInfo(p: BgProcess): BgProcessInfo {
-	const stdoutLines = p.output.filter(l => l.stream === "stdout").length;
-	const stderrLines = p.output.filter(l => l.stream === "stderr").length;
 	return {
 		id: p.id,
 		label: p.label,
 		command: p.command,
 		cwd: p.cwd,
+		ownerSessionFile: p.ownerSessionFile,
+		persistAcrossSessions: p.persistAcrossSessions,
 		startedAt: p.startedAt,
 		alive: p.alive,
 		exitCode: p.exitCode,
 		signal: p.signal,
 		outputLines: p.output.length,
-		stdoutLines,
-		stderrLines,
+		stdoutLines: p.stdoutLineCount,
+		stderrLines: p.stderrLineCount,
 		status: p.status,
 		processType: p.processType,
 		ports: p.ports,
@@ -138,6 +140,8 @@ export function startProcess(opts: StartOptions): BgProcess {
 		label: opts.label || command.slice(0, 60),
 		command,
 		cwd: opts.cwd,
+		ownerSessionFile: opts.ownerSessionFile ?? null,
+		persistAcrossSessions: opts.persistAcrossSessions ?? false,
 		startedAt: Date.now(),
 		proc,
 		output: [],
@@ -161,6 +165,8 @@ export function startProcess(opts: StartOptions): BgProcess {
 		commandHistory: [],
 		lineDedup: new Map(),
 		totalRawLines: 0,
+		stdoutLineCount: 0,
+		stderrLineCount: 0,
 		envKeys: Object.keys(opts.env || {}),
 		restartCount: 0,
 		startConfig: {
@@ -168,6 +174,8 @@ export function startProcess(opts: StartOptions): BgProcess {
 			cwd: opts.cwd,
 			label: opts.label || command.slice(0, 60),
 			processType,
+			ownerSessionFile: opts.ownerSessionFile ?? null,
+			persistAcrossSessions: opts.persistAcrossSessions ?? false,
 			readyPattern: opts.readyPattern || null,
 			readyPort: opts.readyPort || null,
 			group: opts.group || null,
@@ -310,6 +318,8 @@ export async function restartProcess(id: string): Promise<BgProcess | null> {
 		cwd: config.cwd,
 		label: config.label,
 		type: config.processType,
+		ownerSessionFile: config.ownerSessionFile,
+		persistAcrossSessions: config.persistAcrossSessions,
 		readyPattern: config.readyPattern || undefined,
 		readyPort: config.readyPort || undefined,
 		group: config.group || undefined,
@@ -365,6 +375,54 @@ export function cleanupAll(): void {
 	processes.clear();
 }
 
+/**
+ * Kill all alive, non-persistent bg processes.
+ * Called between auto-mode units to prevent orphaned servers from
+ * keeping ports bound across task boundaries (#1209).
+ */
+export function killSessionProcesses(): void {
+	for (const [id, bg] of processes) {
+		if (bg.alive && !bg.persistAcrossSessions) {
+			killProcess(id, "SIGTERM");
+		}
+	}
+}
+
+async function waitForProcessExit(bg: BgProcess, timeoutMs: number): Promise<boolean> {
+	if (!bg.alive) return true;
+	await new Promise<void>((resolve) => {
+		const done = () => resolve();
+		const timer = setTimeout(done, timeoutMs);
+		bg.proc.once("exit", () => {
+			clearTimeout(timer);
+			resolve();
+		});
+	});
+	return !bg.alive;
+}
+
+export async function cleanupSessionProcesses(
+	sessionFile: string,
+	options?: { graceMs?: number },
+): Promise<string[]> {
+	const graceMs = Math.max(0, options?.graceMs ?? 300);
+	const matches = Array.from(processes.values()).filter(
+		(bg) => bg.alive && !bg.persistAcrossSessions && bg.ownerSessionFile === sessionFile,
+	);
+	if (matches.length === 0) return [];
+
+	for (const bg of matches) {
+		killProcess(bg.id, "SIGTERM");
+	}
+	if (graceMs > 0) {
+		await Promise.all(matches.map((bg) => waitForProcessExit(bg, graceMs)));
+	}
+	for (const bg of matches) {
+		if (bg.alive) killProcess(bg.id, "SIGKILL");
+	}
+	return matches.map((bg) => bg.id);
+}
+
 // ── Persistence ────────────────────────────────────────────────────────────
 
 export function getManifestPath(cwd: string): string {
@@ -382,6 +440,8 @@ export function persistManifest(cwd: string): void {
 				label: p.label,
 				command: p.command,
 				cwd: p.cwd,
+				ownerSessionFile: p.ownerSessionFile,
+				persistAcrossSessions: p.persistAcrossSessions,
 				startedAt: p.startedAt,
 				processType: p.processType,
 				group: p.group,

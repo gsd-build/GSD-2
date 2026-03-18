@@ -1,75 +1,38 @@
+import test from "node:test";
+import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-
 import { getSuggestedNextCommands, indexWorkspace, listDoctorScopeSuggestions } from "../workspace-index.ts";
-import { createTestContext } from './test-helpers.ts';
 
-const { assertEq, assertTrue, report } = createTestContext();
-const base = mkdtempSync(join(tmpdir(), "gsd-workspace-index-test-"));
-const gsd = join(base, ".gsd");
-const mDir = join(gsd, "milestones", "M001");
-const sDir = join(mDir, "slices", "S01");
-const tDir = join(sDir, "tasks");
-mkdirSync(tDir, { recursive: true });
+test("workspace index: indexes active milestone/slice/task and suggests commands", async () => {
+  const base = mkdtempSync(join(tmpdir(), "gsd-workspace-index-test-"));
+  const gsd = join(base, ".gsd");
+  const mDir = join(gsd, "milestones", "M001");
+  const sDir = join(mDir, "slices", "S01");
+  mkdirSync(join(sDir, "tasks"), { recursive: true });
 
-writeFileSync(join(mDir, "M001-ROADMAP.md"), `# M001: Demo Milestone
+  writeFileSync(join(mDir, "M001-ROADMAP.md"), `# M001: Demo Milestone\n\n## Slices\n- [ ] **S01: Demo Slice** \`risk:low\` \`depends:[]\`\n  > After this: demo works\n`);
+  writeFileSync(join(sDir, "S01-PLAN.md"), `# S01: Demo Slice\n\n**Goal:** Demo\n**Demo:** Demo\n\n## Must-Haves\n- done\n\n## Tasks\n- [ ] **T01: Implement thing** \`est:10m\`\n  Task is in progress.\n`);
+  writeFileSync(join(sDir, "tasks", "T01-PLAN.md"), `# T01: Implement thing\n\n## Steps\n- do it\n`);
 
-## Slices
-- [ ] **S01: Demo Slice** \`risk:low\` \`depends:[]\`
-  > After this: demo works
-`);
-
-writeFileSync(join(sDir, "S01-PLAN.md"), `# S01: Demo Slice
-
-**Goal:** Demo
-**Demo:** Demo
-
-## Must-Haves
-- done
-
-## Tasks
-- [ ] **T01: Implement thing** \`est:10m\`
-  Task is in progress.
-`);
-
-writeFileSync(join(tDir, "T01-PLAN.md"), `# T01: Implement thing
-
-## Steps
-- do it
-`);
-
-async function main(): Promise<void> {
-  console.log("\n=== workspace index ===");
-  {
+  try {
     const index = await indexWorkspace(base);
-    assertEq(index.active.milestoneId, "M001", "active milestone indexed");
-    assertEq(index.active.sliceId, "S01", "active slice indexed");
-    assertEq(index.active.taskId, "T01", "active task indexed");
-    assertTrue(index.scopes.some(scope => scope.scope === "M001/S01"), "slice scope listed");
-    assertTrue(index.scopes.some(scope => scope.scope === "M001/S01/T01"), "task scope listed");
-  }
+    assert.equal(index.active.milestoneId, "M001");
+    assert.equal(index.active.sliceId, "S01");
+    assert.equal(index.active.taskId, "T01");
+    assert.ok(index.scopes.some(s => s.scope === "M001/S01"));
+    assert.ok(index.scopes.some(s => s.scope === "M001/S01/T01"));
 
-  console.log("\n=== doctor scope suggestions ===");
-  {
     const suggestions = await listDoctorScopeSuggestions(base);
-    assertEq(suggestions[0].value, "M001/S01", "active slice suggested first");
-    assertTrue(suggestions.some(item => item.value === "M001/S01/T01"), "task scope suggested");
-  }
+    assert.equal(suggestions[0].value, "M001/S01");
+    assert.ok(suggestions.some(item => item.value === "M001/S01/T01"));
 
-  console.log("\n=== next command suggestions ===");
-  {
     const commands = await getSuggestedNextCommands(base);
-    assertTrue(commands.includes("/gsd auto"), "suggests auto during execution");
-    assertTrue(commands.includes("/gsd doctor M001/S01"), "suggests scoped doctor");
-    assertTrue(commands.includes("/gsd status"), "suggests status");
+    assert.ok(commands.includes("/gsd auto"));
+    assert.ok(commands.includes("/gsd doctor M001/S01"));
+    assert.ok(commands.includes("/gsd status"));
+  } finally {
+    rmSync(base, { recursive: true, force: true });
   }
-
-  rmSync(base, { recursive: true, force: true });
-  report();
-}
-
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
 });

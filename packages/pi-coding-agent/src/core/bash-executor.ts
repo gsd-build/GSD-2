@@ -7,10 +7,28 @@
  */
 
 import { randomBytes } from "node:crypto";
-import { createWriteStream, type WriteStream } from "node:fs";
+import { createWriteStream, unlinkSync, type WriteStream } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type ChildProcess, spawn } from "child_process";
+
+/** Track temp files created by bash execution for cleanup on exit. */
+const bashTempFiles = new Set<string>();
+
+let cleanupRegistered = false;
+function registerTempCleanup(): void {
+	if (cleanupRegistered) return;
+	cleanupRegistered = true;
+	process.on("exit", () => {
+		for (const file of bashTempFiles) {
+			try {
+				unlinkSync(file);
+			} catch {
+				// Best-effort cleanup
+			}
+		}
+	});
+}
 import { processStreamChunk, type StreamState } from "@gsd/native";
 import { getShellConfig, getShellEnv, killProcessTree, sanitizeCommand } from "../utils/shell.js";
 import type { BashOperations } from "./tools/bash.js";
@@ -111,8 +129,10 @@ export function executeBash(command: string, options?: BashExecutorOptions): Pro
 
 			// Start writing to temp file if exceeds threshold
 			if (totalBytes > DEFAULT_MAX_BYTES && !tempFilePath) {
+				registerTempCleanup();
 				const id = randomBytes(8).toString("hex");
 				tempFilePath = join(tmpdir(), `pi-bash-${id}.log`);
+				bashTempFiles.add(tempFilePath);
 				tempFileStream = createWriteStream(tempFilePath);
 				// Write already-buffered chunks to temp file
 				for (const chunk of outputChunks) {
@@ -212,8 +232,10 @@ export async function executeBashWithOperations(
 
 		// Start writing to temp file if exceeds threshold
 		if (totalBytes > DEFAULT_MAX_BYTES && !tempFilePath) {
+			registerTempCleanup();
 			const id = randomBytes(8).toString("hex");
 			tempFilePath = join(tmpdir(), `pi-bash-${id}.log`);
+			bashTempFiles.add(tempFilePath);
 			tempFileStream = createWriteStream(tempFilePath);
 			for (const chunk of outputChunks) {
 				tempFileStream.write(chunk);

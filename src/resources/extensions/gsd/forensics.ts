@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 
 import { extractTrace, type ExecutionTrace } from "./session-forensics.js";
 import { nativeParseJsonlTail } from "./native-parser-bridge.js";
+import { MAX_JSONL_BYTES, parseJSONL } from "./jsonl-utils.js";
 import {
   loadLedgerFromDisk, getAverageCostPerUnitType, getProjectTotals,
   formatCost, formatTokenCount, type UnitMetrics, type MetricsLedger,
@@ -26,7 +27,8 @@ import { deriveState } from "./state.js";
 import { isAutoActive } from "./auto.js";
 import { loadPrompt } from "./prompt-loader.js";
 import { gsdRoot } from "./paths.js";
-import { formatDuration } from "./history.js";
+import { formatDuration } from "../shared/mod.js";
+import { getAutoWorktreePath } from "./auto-worktree.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -54,6 +56,7 @@ interface ForensicReport {
   basePath: string;
   activeMilestone: string | null;
   activeSlice: string | null;
+  activeWorktree: string | null;
   unitTraces: UnitTrace[];
   metrics: MetricsLedger | null;
   completedKeys: string[];
@@ -61,17 +64,6 @@ interface ForensicReport {
   doctorIssues: DoctorIssue[];
   anomalies: ForensicAnomaly[];
   recentUnits: { type: string; id: string; cost: number; duration: number; model: string; finishedAt: number }[];
-}
-
-// ─── JSONL Parser (inline — session-forensics.ts version is module-private) ──
-
-const MAX_JSONL_BYTES = 5 * 1024 * 1024;
-
-function parseJSONL(raw: string): unknown[] {
-  const source = raw.length > MAX_JSONL_BYTES ? raw.slice(-MAX_JSONL_BYTES) : raw;
-  return source.trim().split("\n").map(line => {
-    try { return JSON.parse(line); } catch { return null; }
-  }).filter(Boolean) as unknown[];
 }
 
 // ─── Entry Point ──────────────────────────────────────────────────────────────
@@ -143,8 +135,11 @@ export async function buildForensicReport(basePath: string): Promise<ForensicRep
     activeSlice = state.activeSlice?.id ?? null;
   } catch { /* state derivation failure is non-fatal */ }
 
-  // 2. Scan activity logs (last 5)
-  const unitTraces = scanActivityLogs(basePath);
+  // 1b. Check for active auto-worktree
+  const activeWorktree = activeMilestone ? getAutoWorktreePath(basePath, activeMilestone) : null;
+
+  // 2. Scan activity logs (last 5) — worktree-aware
+  const unitTraces = scanActivityLogs(basePath, activeMilestone);
 
   // 3. Load metrics
   const metrics = loadLedgerFromDisk(basePath);
@@ -178,20 +173,16 @@ export async function buildForensicReport(basePath: string): Promise<ForensicRep
     }
   }
 
-  // 8. GSD version
-  let gsdVersion = "unknown";
-  try {
-    const pkgPath = join(dirname(fileURLToPath(import.meta.url)), "../../../../package.json");
-    if (existsSync(pkgPath)) {
-      gsdVersion = JSON.parse(readFileSync(pkgPath, "utf-8")).version ?? "unknown";
-    }
-  } catch { /* non-fatal */ }
+  // 8. GSD version — use GSD_VERSION env var set by the loader at startup.
+  // Extensions run from ~/.gsd/agent/extensions/gsd/ at runtime, so path-traversal
+  // from import.meta.url would resolve to ~/package.json (wrong on every system).
+  const gsdVersion = process.env.GSD_VERSION || "unknown";
 
   // 9. Run anomaly detectors
   if (metrics?.units) detectStuckLoops(metrics.units, anomalies);
   if (metrics?.units) detectCostSpikes(metrics.units, anomalies);
   detectTimeouts(unitTraces, anomalies);
-  detectMissingArtifacts(completedKeys, basePath, anomalies);
+  detectMissingArtifacts(completedKeys, basePath, activeMilestone, anomalies);
   detectCrash(crashLock, anomalies);
   detectDoctorIssues(doctorIssues, anomalies);
   detectErrorTraces(unitTraces, anomalies);
@@ -202,6 +193,7 @@ export async function buildForensicReport(basePath: string): Promise<ForensicRep
     basePath,
     activeMilestone,
     activeSlice,
+    activeWorktree: activeWorktree ? relative(basePath, activeWorktree) : null,
     unitTraces,
     metrics,
     completedKeys,
@@ -216,54 +208,84 @@ export async function buildForensicReport(basePath: string): Promise<ForensicRep
 
 const ACTIVITY_FILENAME_RE = /^(\d+)-(.+?)-(.+)\.jsonl$/;
 
-function scanActivityLogs(basePath: string): UnitTrace[] {
-  const activityDir = join(gsdRoot(basePath), "activity");
-  if (!existsSync(activityDir)) return [];
+function scanActivityLogs(basePath: string, activeMilestone?: string | null): UnitTrace[] {
+  const activityDirs = resolveActivityDirs(basePath, activeMilestone);
+  const allTraces: UnitTrace[] = [];
 
-  const files = readdirSync(activityDir).filter(f => f.endsWith(".jsonl")).sort();
-  const lastFiles = files.slice(-5);
-  const traces: UnitTrace[] = [];
+  for (const activityDir of activityDirs) {
+    if (!existsSync(activityDir)) continue;
 
-  for (const file of lastFiles) {
-    const match = ACTIVITY_FILENAME_RE.exec(file);
-    if (!match) continue;
+    const files = readdirSync(activityDir).filter(f => f.endsWith(".jsonl")).sort();
+    const lastFiles = files.slice(-5);
 
-    const seq = parseInt(match[1]!, 10);
-    const unitType = match[2]!;
-    const unitId = match[3]!;
-    const filePath = join(activityDir, file);
+    for (const file of lastFiles) {
+      const match = ACTIVITY_FILENAME_RE.exec(file);
+      if (!match) continue;
 
-    let entries: unknown[] = [];
-    const nativeResult = nativeParseJsonlTail(filePath, MAX_JSONL_BYTES);
-    if (nativeResult) {
-      entries = nativeResult.entries;
-    } else {
-      try {
-        const raw = readFileSync(filePath, "utf-8");
-        entries = parseJSONL(raw);
-      } catch { continue; }
+      const seq = parseInt(match[1]!, 10);
+      const unitType = match[2]!;
+      const unitId = match[3]!;
+      const filePath = join(activityDir, file);
+
+      let entries: unknown[] = [];
+      const nativeResult = nativeParseJsonlTail(filePath, MAX_JSONL_BYTES);
+      if (nativeResult) {
+        entries = nativeResult.entries;
+      } else {
+        try {
+          const raw = readFileSync(filePath, "utf-8");
+          entries = parseJSONL(raw);
+        } catch { continue; }
+      }
+
+      const trace = extractTrace(entries);
+      const stat = statSync(filePath, { throwIfNoEntry: false });
+
+      allTraces.push({
+        file: activityDirs.length > 1 ? `[${relative(basePath, activityDir)}] ${file}` : file,
+        unitType,
+        unitId,
+        seq,
+        trace,
+        mtime: stat?.mtimeMs ?? 0,
+      });
     }
-
-    const trace = extractTrace(entries);
-    const stat = statSync(filePath, { throwIfNoEntry: false });
-
-    traces.push({
-      file,
-      unitType,
-      unitId,
-      seq,
-      trace,
-      mtime: stat?.mtimeMs ?? 0,
-    });
   }
 
-  return traces.sort((a, b) => b.seq - a.seq);
+  // Sort by mtime descending so the most recent traces (regardless of source) come first
+  return allTraces.sort((a, b) => b.mtime - a.mtime).slice(0, 5);
+}
+
+/**
+ * Resolve activity directories to scan for forensics.
+ * If an active auto-worktree exists for the milestone, its activity dir
+ * is included first (preferred) so stale root logs don't mask worktree progress.
+ */
+function resolveActivityDirs(basePath: string, activeMilestone?: string | null): string[] {
+  const dirs: string[] = [];
+
+  // Check for active auto-worktree activity logs
+  if (activeMilestone) {
+    const wtPath = getAutoWorktreePath(basePath, activeMilestone);
+    if (wtPath) {
+      const wtActivityDir = join(gsdRoot(wtPath), "activity");
+      if (existsSync(wtActivityDir)) {
+        dirs.push(wtActivityDir);
+      }
+    }
+  }
+
+  // Always include root activity logs
+  const rootActivityDir = join(gsdRoot(basePath), "activity");
+  dirs.push(rootActivityDir);
+
+  return dirs;
 }
 
 // ─── Completed Keys Loader ────────────────────────────────────────────────────
 
 function loadCompletedKeys(basePath: string): string[] {
-  const file = join(basePath, ".gsd", "completed-units.json");
+  const file = join(gsdRoot(basePath), "completed-units.json");
   try {
     if (existsSync(file)) {
       return JSON.parse(readFileSync(file, "utf-8"));
@@ -336,21 +358,27 @@ function detectTimeouts(traces: UnitTrace[], anomalies: ForensicAnomaly[]): void
   }
 }
 
-function detectMissingArtifacts(completedKeys: string[], basePath: string, anomalies: ForensicAnomaly[]): void {
+function detectMissingArtifacts(completedKeys: string[], basePath: string, activeMilestone: string | null, anomalies: ForensicAnomaly[]): void {
+  // Also check the worktree path for artifacts — they may exist there but not at root
+  const wtBasePath = activeMilestone ? getAutoWorktreePath(basePath, activeMilestone) : null;
+
   for (const key of completedKeys) {
     const slashIdx = key.indexOf("/");
     if (slashIdx === -1) continue;
     const unitType = key.slice(0, slashIdx);
     const unitId = key.slice(slashIdx + 1);
 
-    if (!verifyExpectedArtifact(unitType, unitId, basePath)) {
+    const rootHasArtifact = verifyExpectedArtifact(unitType, unitId, basePath);
+    const wtHasArtifact = wtBasePath ? verifyExpectedArtifact(unitType, unitId, wtBasePath) : false;
+
+    if (!rootHasArtifact && !wtHasArtifact) {
       anomalies.push({
         type: "missing-artifact",
         severity: "error",
         unitType,
         unitId,
         summary: `Completed key ${key} but artifact missing or invalid`,
-        details: `The unit is recorded as completed but verifyExpectedArtifact() returns false. The completion state is stale.`,
+        details: `The unit is recorded as completed but verifyExpectedArtifact() returns false at both project root and worktree. The completion state is stale.`,
       });
     }
   }
@@ -416,6 +444,7 @@ function saveForensicReport(basePath: string, report: ForensicReport, problemDes
     `**GSD Version:** ${report.gsdVersion}`,
     `**Active Milestone:** ${report.activeMilestone ?? "none"}`,
     `**Active Slice:** ${report.activeSlice ?? "none"}`,
+    `**Active Worktree:** ${report.activeWorktree ?? "none"}`,
     ``,
     `## Problem Description`,
     ``,
@@ -559,6 +588,10 @@ function formatReportForPrompt(report: ForensicReport): string {
   sections.push(`### GSD Version: ${report.gsdVersion}`);
   sections.push(`### Active Milestone: ${report.activeMilestone ?? "none"}`);
   sections.push(`### Active Slice: ${report.activeSlice ?? "none"}`);
+  if (report.activeWorktree) {
+    sections.push(`### Active Worktree: ${report.activeWorktree}`);
+    sections.push(`Note: Activity logs were scanned from both the worktree and the project root. Worktree logs take priority.`);
+  }
 
   let result = sections.join("\n");
   if (result.length > MAX_BYTES) {

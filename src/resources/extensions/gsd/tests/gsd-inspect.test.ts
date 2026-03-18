@@ -3,7 +3,7 @@
 // Tests the pure formatInspectOutput function with known data.
 
 import { createTestContext } from './test-helpers.ts';
-import { formatInspectOutput, type InspectData } from '../commands.ts';
+import { formatInspectOutput, type InspectData } from '../commands-inspect.ts';
 
 const { assertEq, assertTrue, assertMatch, report } = createTestContext();
 

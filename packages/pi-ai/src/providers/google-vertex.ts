@@ -1,9 +1,10 @@
-import {
-	type GenerateContentConfig,
-	type GenerateContentParameters,
-	GoogleGenAI,
-	type ThinkingConfig,
-	ThinkingLevel,
+// Lazy-loaded: Google GenAI SDK is imported on first use, not at startup.
+// This avoids penalizing users who don't use Google Vertex models.
+import type { GoogleGenAI } from "@google/genai";
+import type {
+	GenerateContentConfig,
+	GenerateContentParameters,
+	ThinkingConfig,
 } from "@google/genai";
 import { calculateCost } from "../models.js";
 import type {
@@ -33,6 +34,15 @@ import {
 } from "./google-shared.js";
 import { buildBaseOptions, clampReasoning } from "./simple-options.js";
 
+let _GoogleVertexClass: typeof GoogleGenAI | undefined;
+async function getGoogleVertexClass(): Promise<typeof GoogleGenAI> {
+	if (!_GoogleVertexClass) {
+		const mod = await import("@google/genai");
+		_GoogleVertexClass = mod.GoogleGenAI;
+	}
+	return _GoogleVertexClass;
+}
+
 export interface GoogleVertexOptions extends StreamOptions {
 	toolChoice?: "auto" | "none" | "any";
 	thinking?: {
@@ -46,12 +56,14 @@ export interface GoogleVertexOptions extends StreamOptions {
 
 const API_VERSION = "v1";
 
-const THINKING_LEVEL_MAP: Record<GoogleThinkingLevel, ThinkingLevel> = {
-	THINKING_LEVEL_UNSPECIFIED: ThinkingLevel.THINKING_LEVEL_UNSPECIFIED,
-	MINIMAL: ThinkingLevel.MINIMAL,
-	LOW: ThinkingLevel.LOW,
-	MEDIUM: ThinkingLevel.MEDIUM,
-	HIGH: ThinkingLevel.HIGH,
+// ThinkingLevel is a string enum where each value equals its key name.
+// Using string literals avoids importing the SDK at module load time.
+const THINKING_LEVEL_MAP: Record<GoogleThinkingLevel, string> = {
+	THINKING_LEVEL_UNSPECIFIED: "THINKING_LEVEL_UNSPECIFIED",
+	MINIMAL: "MINIMAL",
+	LOW: "LOW",
+	MEDIUM: "MEDIUM",
+	HIGH: "HIGH",
 };
 
 // Counter for generating unique tool call IDs
@@ -86,7 +98,7 @@ export const streamGoogleVertex: StreamFunction<"google-vertex", GoogleVertexOpt
 		try {
 			const project = resolveProject(options);
 			const location = resolveLocation(options);
-			const client = createClient(model, project, location, options?.headers);
+			const client = await createClient(model, project, location, options?.headers);
 			let params = buildParams(model, context, options);
 			const nextParams = await options?.onPayload?.(params, model);
 			if (nextParams !== undefined) {
@@ -318,12 +330,12 @@ export const streamSimpleGoogleVertex: StreamFunction<"google-vertex", SimpleStr
 	} satisfies GoogleVertexOptions);
 };
 
-function createClient(
+async function createClient(
 	model: Model<"google-vertex">,
 	project: string,
 	location: string,
 	optionsHeaders?: Record<string, string>,
-): GoogleGenAI {
+): Promise<GoogleGenAI> {
 	const httpOptions: { headers?: Record<string, string> } = {};
 
 	if (model.headers || optionsHeaders) {
@@ -331,8 +343,9 @@ function createClient(
 	}
 
 	const hasHttpOptions = Object.values(httpOptions).some(Boolean);
+	const GoogleGenAIClass = await getGoogleVertexClass();
 
-	return new GoogleGenAI({
+	return new GoogleGenAIClass({
 		vertexai: true,
 		project,
 		location,
@@ -393,7 +406,9 @@ function buildParams(
 	if (options.thinking?.enabled && model.reasoning) {
 		const thinkingConfig: ThinkingConfig = { includeThoughts: true };
 		if (options.thinking.level !== undefined) {
-			thinkingConfig.thinkingLevel = THINKING_LEVEL_MAP[options.thinking.level];
+			// Cast safe: string values match ThinkingLevel enum values exactly
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			thinkingConfig.thinkingLevel = THINKING_LEVEL_MAP[options.thinking.level] as any;
 		} else if (options.thinking.budgetTokens !== undefined) {
 			thinkingConfig.thinkingBudget = options.thinking.budgetTokens;
 		}

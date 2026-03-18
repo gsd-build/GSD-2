@@ -134,7 +134,7 @@ export function registerDeviceTools(pi: ExtensionAPI, deps: ToolDeps): void {
 
 				// Navigate back to previous URL if it wasn't about:blank
 				if (currentUrl && currentUrl !== "about:blank") {
-					await page.goto(currentUrl, { waitUntil: "domcontentloaded", timeout: 15000 }).catch(() => {});
+					await page.goto(currentUrl, { waitUntil: "domcontentloaded", timeout: 15000 }).catch((e) => { if (process.env.GSD_DEBUG) console.error("[browser-tools] device goto restore failed:", e.message); });
 				}
 
 				const viewport = deviceDescriptor.viewport;

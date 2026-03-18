@@ -36,6 +36,7 @@ interface CliFlags {
   print?: boolean
   continue?: boolean
   noSession?: boolean
+  worktree?: boolean | string
   model?: string
   listModels?: string | true
   extensions: string[]
@@ -44,6 +45,8 @@ interface CliFlags {
   messages: string[]
   web?: boolean
   webPath?: string
+  /** Set by `gsd sessions` when the user picks a specific session to resume */
+  _selectedSessionPath?: string
 }
 
 function exitIfManagedResourcesAreNewer(currentAgentDir: string): void {
@@ -88,6 +91,13 @@ function parseCliArgs(argv: string[]): CliFlags {
     } else if (arg === '--version' || arg === '-v') {
       process.stdout.write((process.env.GSD_VERSION || '0.0.0') + '\n')
       process.exit(0)
+    } else if (arg === '--worktree' || arg === '-w') {
+      // -w with no value → auto-generate name; -w <name> → use that name
+      if (i + 1 < args.length && !args[i + 1].startsWith('-')) {
+        flags.worktree = args[++i]
+      } else {
+        flags.worktree = true
+      }
     } else if (arg === '--help' || arg === '-h') {
       printHelp(process.env.GSD_VERSION || '0.0.0')
       process.exit(0)
@@ -106,6 +116,23 @@ function parseCliArgs(argv: string[]): CliFlags {
 
 const cliFlags = parseCliArgs(process.argv)
 const isPrintMode = cliFlags.print || cliFlags.mode !== undefined
+
+// Early resource-skew check — must run before TTY gate so version mismatch
+// errors surface even in non-TTY environments.
+exitIfManagedResourcesAreNewer(agentDir)
+
+// Early TTY check — must come before heavy initialization to avoid dangling
+// handles that prevent process.exit() from completing promptly.
+const hasSubcommand = cliFlags.messages.length > 0
+if (!process.stdin.isTTY && !isPrintMode && !hasSubcommand && !cliFlags.listModels) {
+  process.stderr.write('[gsd] Error: Interactive mode requires a terminal (TTY).\n')
+  process.stderr.write('[gsd] Non-interactive alternatives:\n')
+  process.stderr.write('[gsd]   gsd --print "your message"     Single-shot prompt\n')
+  process.stderr.write('[gsd]   gsd --mode rpc                 JSON-RPC over stdin/stdout\n')
+  process.stderr.write('[gsd]   gsd --mode mcp                 MCP server over stdin/stdout\n')
+  process.stderr.write('[gsd]   gsd --mode text "message"      Text output mode\n')
+  process.exit(1)
+}
 
 // `gsd <subcommand> --help` — show subcommand-specific help
 const subcommand = cliFlags.messages[0]
@@ -157,6 +184,70 @@ if (cliFlags.web || (cliFlags.messages[0] === 'web' && cliFlags.messages[1] !== 
   }
 }
 
+// `gsd sessions` — list past sessions and pick one to resume
+if (cliFlags.messages[0] === 'sessions') {
+  const cwd = process.cwd()
+  const safePath = `--${cwd.replace(/^[/\\]/, '').replace(/[/\\:]/g, '-')}--`
+  const projectSessionsDir = join(sessionsDir, safePath)
+
+  process.stderr.write(chalk.dim(`Loading sessions for ${cwd}...\n`))
+  const sessions = await SessionManager.list(cwd, projectSessionsDir)
+
+  if (sessions.length === 0) {
+    process.stderr.write(chalk.yellow('No sessions found for this directory.\n'))
+    process.exit(0)
+  }
+
+  process.stderr.write(chalk.bold(`\n  Sessions (${sessions.length}):\n\n`))
+
+  const maxShow = 20
+  const toShow = sessions.slice(0, maxShow)
+  for (let i = 0; i < toShow.length; i++) {
+    const s = toShow[i]
+    const date = s.modified.toLocaleString()
+    const msgs = s.messageCount
+    const name = s.name ? ` ${chalk.cyan(s.name)}` : ''
+    const preview = s.firstMessage
+      ? s.firstMessage.replace(/\n/g, ' ').substring(0, 80)
+      : chalk.dim('(empty)')
+    const num = String(i + 1).padStart(3)
+    process.stderr.write(`  ${chalk.bold(num)}. ${chalk.green(date)} ${chalk.dim(`(${msgs} msgs)`)}${name}\n`)
+    process.stderr.write(`       ${chalk.dim(preview)}\n\n`)
+  }
+
+  if (sessions.length > maxShow) {
+    process.stderr.write(chalk.dim(`  ... and ${sessions.length - maxShow} more\n\n`))
+  }
+
+  // Interactive selection
+  const readline = await import('node:readline')
+  const rl = readline.createInterface({ input: process.stdin, output: process.stderr })
+  const answer = await new Promise<string>((resolve) => {
+    rl.question(chalk.bold('  Enter session number to resume (or q to quit): '), resolve)
+  })
+  rl.close()
+
+  const choice = parseInt(answer, 10)
+  if (isNaN(choice) || choice < 1 || choice > toShow.length) {
+    process.stderr.write(chalk.dim('Cancelled.\n'))
+    process.exit(0)
+  }
+
+  const selected = toShow[choice - 1]
+  process.stderr.write(chalk.green(`\nResuming session from ${selected.modified.toLocaleString()}...\n\n`))
+
+  // Mark for the interactive session below to open this specific session
+  cliFlags.continue = true
+  cliFlags._selectedSessionPath = selected.path
+}
+
+// `gsd headless` — run auto-mode without TUI
+if (cliFlags.messages[0] === 'headless') {
+  const { runHeadless, parseHeadlessArgs } = await import('./headless.js')
+  await runHeadless(parseHeadlessArgs(process.argv))
+  process.exit(0)
+}
+
 // Pi's tool bootstrap can mis-detect already-installed fd/rg on some systems
 // because spawnSync(..., ["--version"]) returns EPERM despite a zero exit code.
 // Provision local managed binaries first so Pi sees them without probing PATH.
@@ -166,7 +257,11 @@ const authStorage = AuthStorage.create(authFilePath)
 loadStoredEnvKeys(authStorage)
 migratePiCredentials(authStorage)
 
-const modelRegistry = new ModelRegistry(authStorage)
+// Resolve models.json path with fallback to ~/.pi/agent/models.json
+const { resolveModelsJsonPath } = await import('./models-resolver.js')
+const modelsJsonPath = resolveModelsJsonPath()
+
+const modelRegistry = new ModelRegistry(authStorage, modelsJsonPath)
 const settingsManager = SettingsManager.create(agentDir)
 
 // Run onboarding wizard on first launch (no LLM provider configured)
@@ -183,7 +278,9 @@ if (!isPrintMode && shouldRunOnboarding(authStorage, settingsManager.getDefaultP
   process.stdin.pause()
 }
 
-// Non-blocking update check — runs at most once per 24h, fire-and-forget
+// Update check — non-blocking banner check; interactive prompt deferred to avoid
+// blocking startup. The passive checkForUpdates() prints a banner if an update is
+// available (using cached data or a background fetch) without blocking the TUI.
 if (!isPrintMode) {
   checkForUpdates().catch(() => {})
 }
@@ -251,7 +348,9 @@ const configuredExists = configuredProvider && configuredModel &&
 const configuredAvailable = configuredProvider && configuredModel &&
   availableModels.some((m) => m.provider === configuredProvider && m.id === configuredModel)
 
-if (!configuredModel || !configuredExists || !configuredAvailable) {
+if (!configuredModel || !configuredExists) {
+  // Model not configured at all, or removed from registry — pick a fallback.
+  // Only fires when the model is genuinely unknown (not just temporarily unavailable).
   const piDefault = getPiDefaultModelAndProvider()
   const preferred =
     (piDefault
@@ -268,7 +367,7 @@ if (!configuredModel || !configuredExists || !configuredAvailable) {
   }
 }
 
-if (settingsManager.getDefaultThinkingLevel() !== 'off' && (!configuredExists || !configuredAvailable)) {
+if (settingsManager.getDefaultThinkingLevel() !== 'off' && !configuredExists) {
   settingsManager.setDefaultThinkingLevel('off')
 }
 
@@ -360,6 +459,47 @@ if (isPrintMode) {
 }
 
 // ---------------------------------------------------------------------------
+// Worktree subcommand — `gsd worktree <list|merge|clean|remove>`
+// ---------------------------------------------------------------------------
+if (cliFlags.messages[0] === 'worktree' || cliFlags.messages[0] === 'wt') {
+  const { handleList, handleMerge, handleClean, handleRemove } = await import('./worktree-cli.js')
+  const sub = cliFlags.messages[1]
+  const subArgs = cliFlags.messages.slice(2)
+
+  if (!sub || sub === 'list') {
+    handleList(process.cwd())
+  } else if (sub === 'merge') {
+    await handleMerge(process.cwd(), subArgs)
+  } else if (sub === 'clean') {
+    handleClean(process.cwd())
+  } else if (sub === 'remove' || sub === 'rm') {
+    handleRemove(process.cwd(), subArgs)
+  } else {
+    process.stderr.write(`Unknown worktree command: ${sub}\n`)
+    process.stderr.write('Commands: list, merge [name], clean, remove <name>\n')
+  }
+  process.exit(0)
+}
+
+// ---------------------------------------------------------------------------
+// Worktree flag (-w) — create/resume a worktree for the interactive session
+// ---------------------------------------------------------------------------
+if (cliFlags.worktree) {
+  const { handleWorktreeFlag } = await import('./worktree-cli.js')
+  handleWorktreeFlag(cliFlags.worktree)
+}
+
+// ---------------------------------------------------------------------------
+// Active worktree banner — remind user of unmerged worktrees on normal launch
+// ---------------------------------------------------------------------------
+if (!cliFlags.worktree && !isPrintMode) {
+  try {
+    const { handleStatusBanner } = await import('./worktree-cli.js')
+    handleStatusBanner(process.cwd())
+  } catch { /* non-fatal */ }
+}
+
+// ---------------------------------------------------------------------------
 // Interactive mode — normal TTY session
 // ---------------------------------------------------------------------------
 
@@ -373,9 +513,11 @@ const projectSessionsDir = getProjectSessionsDir(cwd)
 // subdirectory so /resume can find them.
 migrateLegacyFlatSessions(sessionsDir, projectSessionsDir)
 
-const sessionManager = cliFlags.continue
-  ? SessionManager.continueRecent(cwd, projectSessionsDir)
-  : SessionManager.create(cwd, projectSessionsDir)
+const sessionManager = cliFlags._selectedSessionPath
+  ? SessionManager.open(cliFlags._selectedSessionPath, projectSessionsDir)
+  : cliFlags.continue
+    ? SessionManager.continueRecent(cwd, projectSessionsDir)
+    : SessionManager.create(cwd, projectSessionsDir)
 
 exitIfManagedResourcesAreNewer(agentDir)
 initResources(agentDir)

@@ -319,6 +319,23 @@ export class InteractiveMode {
 			};
 		}
 
+		// Add argument completions for /thinking
+		const thinkingCommand = slashCommands.find((command) => command.name === "thinking");
+		if (thinkingCommand) {
+			thinkingCommand.getArgumentCompletions = (prefix: string): AutocompleteItem[] | null => {
+				const levels = [
+					{ value: "off", label: "off", description: "Disable extended thinking" },
+					{ value: "minimal", label: "minimal", description: "Minimal thinking budget" },
+					{ value: "low", label: "low", description: "Low thinking budget" },
+					{ value: "medium", label: "medium", description: "Medium thinking budget" },
+					{ value: "high", label: "high", description: "High thinking budget" },
+					{ value: "xhigh", label: "xhigh", description: "Maximum thinking budget" },
+				];
+				const filtered = levels.filter((l) => l.value.startsWith(prefix.trim().toLowerCase()));
+				return filtered.length > 0 ? filtered : null;
+			};
+		}
+
 		// Convert prompt templates to SlashCommand format for autocomplete
 		const templateCommands: SlashCommand[] = this.session.promptTemplates.map((cmd) => ({
 			name: cmd.name,
@@ -350,6 +367,10 @@ export class InteractiveMode {
 		this.autocompleteProvider = new CombinedAutocompleteProvider(
 			[...slashCommands, ...templateCommands, ...extensionCommands, ...skillCommandList],
 			process.cwd(),
+			{
+				respectGitignore: this.settingsManager.getRespectGitignoreInPicker(),
+				excludeDirs: this.settingsManager.getSearchExcludeDirs(),
+			},
 		);
 		this.defaultEditor.setAutocompleteProvider(this.autocompleteProvider);
 		if (this.editor !== this.defaultEditor) {
@@ -1163,6 +1184,34 @@ export class InteractiveMode {
 		const tools = this.session.extensionRunner?.getAllRegisteredTools() ?? [];
 		const registeredTool = tools.find((t) => t.definition.name === toolName);
 		return registeredTool?.definition;
+	}
+
+	/**
+	 * Format web search result content for display in the TUI.
+	 */
+	private formatWebSearchResult(content: unknown): string {
+		if (!content) return "Web search completed";
+
+		// Error result
+		if (typeof content === "object" && "type" in (content as any) && (content as any).type === "web_search_tool_result_error") {
+			const error = content as any;
+			return `Search error: ${error.error_code || "unknown"}`;
+		}
+
+		// Array of search results
+		if (Array.isArray(content)) {
+			const results = content.filter((r: any) => r.type === "web_search_result");
+			if (results.length === 0) return "No results found";
+			return results
+				.map((r: any) => {
+					const title = r.title || "Untitled";
+					const url = r.url || "";
+					return `${title}\n  ${url}`;
+				})
+				.join("\n");
+		}
+
+		return "Web search completed";
 	}
 
 	/**
@@ -2035,6 +2084,12 @@ export class InteractiveMode {
 				this.handleThinkingCommand(arg);
 				return;
 			}
+			if (text === "/edit-mode" || text.startsWith("/edit-mode ")) {
+				const arg = text.startsWith("/edit-mode ") ? text.slice(11).trim() : undefined;
+				this.editor.setText("");
+				this.handleEditModeCommand(arg);
+				return;
+			}
 			if (text === "/debug") {
 				this.handleDebugCommand();
 				this.editor.setText("");
@@ -2200,6 +2255,35 @@ export class InteractiveMode {
 								if (component) {
 									component.updateArgs(content.arguments);
 								}
+							}
+						} else if (content.type === "serverToolUse") {
+							// Server-side tool (e.g., native web search) — show as pending tool execution
+							if (!this.pendingTools.has(content.id)) {
+								const component = new ToolExecutionComponent(
+									content.name,
+									content.input ?? {},
+									{
+										showImages: this.settingsManager.getShowImages(),
+									},
+									undefined,
+									this.ui,
+								);
+								component.setExpanded(this.toolOutputExpanded);
+								this.chatContainer.addChild(component);
+								this.pendingTools.set(content.id, component);
+							}
+						} else if (content.type === "webSearchResult") {
+							// Server-side tool result — resolve the pending server tool execution
+							const component = this.pendingTools.get(content.toolUseId);
+							if (component) {
+								const searchContent = content.content;
+								const isError = searchContent && typeof searchContent === "object" && "type" in (searchContent as any) && (searchContent as any).type === "web_search_tool_result_error";
+								const resultText = this.formatWebSearchResult(searchContent);
+								component.updateResult({
+									content: [{ type: "text", text: resultText }],
+									isError: !!isError,
+								});
+								this.pendingTools.delete(content.toolUseId);
 							}
 						}
 					}
@@ -2594,6 +2678,33 @@ export class InteractiveMode {
 						} else {
 							this.pendingTools.set(content.id, component);
 						}
+					} else if (content.type === "serverToolUse") {
+						// Server-side tool (e.g., native web search)
+						const component = new ToolExecutionComponent(
+							content.name,
+							content.input ?? {},
+							{ showImages: this.settingsManager.getShowImages() },
+							undefined,
+							this.ui,
+						);
+						component.setExpanded(this.toolOutputExpanded);
+						this.chatContainer.addChild(component);
+						// Find matching webSearchResult in this message's content
+						const resultBlock = message.content.find(
+							(c) => c.type === "webSearchResult" && c.toolUseId === content.id,
+						);
+						if (resultBlock && resultBlock.type === "webSearchResult") {
+							const searchContent = resultBlock.content;
+							const isError = searchContent && typeof searchContent === "object" && "type" in (searchContent as any) && (searchContent as any).type === "web_search_tool_result_error";
+							const resultText = this.formatWebSearchResult(searchContent);
+							component.updateResult({
+								content: [{ type: "text", text: resultText }],
+								isError: !!isError,
+							});
+						} else {
+							// No result yet (aborted stream?) — show as pending
+							this.pendingTools.set(content.id, component);
+						}
 					}
 				}
 			} else if (message.role === "toolResult") {
@@ -2673,6 +2784,9 @@ export class InteractiveMode {
 	private async shutdown(): Promise<void> {
 		if (this.isShuttingDown) return;
 		this.isShuttingDown = true;
+
+		// Flush any queued settings writes before shutdown
+		await this.settingsManager.flush();
 
 		// Emit shutdown event to extensions
 		const extensionRunner = this.session.extensionRunner;
@@ -2805,6 +2919,27 @@ export class InteractiveMode {
 		}
 
 		this.showThinkingSelector();
+	}
+
+	private handleEditModeCommand(arg?: string): void {
+		const modes = ["standard", "hashline"] as const;
+
+		if (arg) {
+			const mode = arg.toLowerCase();
+			if (!modes.includes(mode as typeof modes[number])) {
+				this.showStatus(`Invalid edit mode "${arg}". Available: standard, hashline`);
+				return;
+			}
+			this.session.setEditMode(mode as "standard" | "hashline");
+			this.showStatus(`Edit mode: ${mode}${mode === "hashline" ? " (LINE#ID anchored edits)" : " (text-match edits)"}`);
+			return;
+		}
+
+		// Toggle
+		const current = this.session.editMode;
+		const next = current === "standard" ? "hashline" : "standard";
+		this.session.setEditMode(next);
+		this.showStatus(`Edit mode: ${next}${next === "hashline" ? " (LINE#ID anchored edits)" : " (text-match edits)"}`);
 	}
 
 	private showThinkingSelector(): void {
@@ -3200,6 +3335,7 @@ export class InteractiveMode {
 					showHardwareCursor: this.settingsManager.getShowHardwareCursor(),
 					editorPaddingX: this.settingsManager.getEditorPaddingX(),
 					autocompleteMaxVisible: this.settingsManager.getAutocompleteMaxVisible(),
+					respectGitignoreInPicker: this.settingsManager.getRespectGitignoreInPicker(),
 					quietStartup: this.settingsManager.getQuietStartup(),
 					clearOnShrink: this.settingsManager.getClearOnShrink(),
 				},
@@ -3300,6 +3436,10 @@ export class InteractiveMode {
 					onClearOnShrinkChange: (enabled) => {
 						this.settingsManager.setClearOnShrink(enabled);
 						this.ui.setClearOnShrink(enabled);
+					},
+					onRespectGitignoreInPickerChange: (enabled) => {
+						this.settingsManager.setRespectGitignoreInPicker(enabled);
+						this.autocompleteProvider?.setRespectGitignore(enabled);
 					},
 					onCancel: () => {
 						done();
@@ -3749,7 +3889,12 @@ export class InteractiveMode {
 		// Clear and re-render the chat
 		this.chatContainer.clear();
 		this.renderInitialMessages();
-		this.showStatus("Resumed session");
+
+		if (this.session.sessionManager.wasInterrupted()) {
+			this.showStatus("Resumed session (previous session ended unexpectedly — last action may be incomplete)");
+		} else {
+			this.showStatus("Resumed session");
+		}
 	}
 
 	private showProviderManager(): void {
@@ -3799,12 +3944,16 @@ export class InteractiveMode {
 			const selector = new OAuthSelectorComponent(
 				mode,
 				this.session.modelRegistry.authStorage,
-				async (providerId: string) => {
+				(providerId: string) => {
 					done();
 
-					if (mode === "login") {
-						await this.showLoginDialog(providerId);
-					} else {
+					// OAuthSelectorComponent calls this synchronously (no await),
+					// so we must catch async errors here to prevent unhandled rejections
+					// when the user cancels the login dialog (#821).
+					const handleAsync = async () => {
+						if (mode === "login") {
+							await this.showLoginDialog(providerId);
+						} else {
 						// Logout flow
 						const providerInfo = this.session.modelRegistry.authStorage
 							.getOAuthProviders()
@@ -3835,6 +3984,11 @@ export class InteractiveMode {
 							this.showError(`Logout failed: ${error instanceof Error ? error.message : String(error)}`);
 						}
 					}
+					};
+					handleAsync().catch(() => {
+						// Swallow — showLoginDialog already handles its own errors.
+						// This prevents unhandled rejections when login is cancelled.
+					});
 				},
 				() => {
 					done();

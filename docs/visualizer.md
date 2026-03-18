@@ -25,18 +25,20 @@ Switch tabs with `Tab`, `1`-`4`, or arrow keys.
 A tree view of milestones, slices, and tasks with completion status:
 
 ```
-M001: User Management
-  ✅ S01: Auth module
+M001: User Management                        3/6 tasks ⏳
+  ✅ S01: Auth module                         3/3 tasks
     ✅ T01: Core types
     ✅ T02: JWT middleware
     ✅ T03: Login flow
-  ⏳ S02: User dashboard
+  ⏳ S02: User dashboard                      1/2 tasks
     ✅ T01: Layout component
     ⬜ T02: Profile page
-  ⬜ S03: Admin panel
+  ⬜ S03: Admin panel                         0/1 tasks
 ```
 
-Shows checkmarks for completed items, spinners for in-progress, and empty boxes for pending.
+Shows checkmarks for completed items, spinners for in-progress, and empty boxes for pending. Task counts and completion percentages are displayed at each level.
+
+**Discussion status** is also shown when milestones have been through a discussion phase — indicates whether requirements were captured and what state the discussion left off in.
 
 ### 2. Dependencies
 
@@ -84,6 +86,16 @@ Ordered by execution time, showing the full history of auto-mode dispatches.
 ## Auto-Refresh
 
 The visualizer refreshes data from disk every 2 seconds, so it stays current if opened alongside a running auto-mode session.
+
+## HTML Export (v2.26)
+
+For shareable reports outside the terminal, use `/gsd export --html`. This generates a self-contained HTML file in `.gsd/reports/` with the same data as the TUI visualizer — progress tree, dependency graph (SVG DAG), cost/token bar charts, execution timeline, changelog, and knowledge base. All CSS and JS are inlined — no external dependencies. Printable to PDF from any browser.
+
+An auto-generated `index.html` shows all reports with progression metrics across milestones.
+
+```yaml
+auto_report: true    # auto-generate after milestone completion (default)
+```
 
 ## Configuration
 

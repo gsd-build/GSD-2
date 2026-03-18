@@ -10,6 +10,7 @@
  */
 
 import type { ExtensionAPI } from "@gsd/pi-coding-agent";
+import { sanitizeError } from "./shared/sanitize.js";
 import { Text } from "@gsd/pi-tui";
 import { Type } from "@sinclair/typebox";
 import {
@@ -17,7 +18,7 @@ import {
 	type Question,
 	type QuestionOption,
 	type RoundResult,
-} from "./shared/interview-ui.js";
+} from "./shared/mod.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -80,7 +81,7 @@ function errorResult(
 	questions: Question[] = [],
 ): { content: { type: "text"; text: string }[]; details: AskUserQuestionsDetails } {
 	return {
-		content: [{ type: "text", text: message }],
+		content: [{ type: "text", text: sanitizeError(message) }],
 		details: { questions, response: null, cancelled: true },
 	};
 }

@@ -45,6 +45,12 @@ function writeMilestoneSummary(base: string, mid: string, content: string): void
   writeFileSync(join(dir, `${mid}-SUMMARY.md`), content);
 }
 
+function writeMilestoneValidation(base: string, mid: string, verdict: string = "pass"): void {
+  const dir = join(base, ".gsd", "milestones", mid);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `${mid}-VALIDATION.md`), `---\nverdict: ${verdict}\nremediation_round: 0\n---\n\n# Validation\nValidated.`);
+}
+
 function cleanup(base: string): void {
   rmSync(base, { recursive: true, force: true });
 }
@@ -176,7 +182,8 @@ async function main(): Promise<void> {
       const roadmap = parseRoadmap(roadmapContent!);
       assertTrue(isMilestoneComplete(roadmap), "isMilestoneComplete returns true when all slices are [x]");
 
-      // Verify deriveState returns completing-milestone phase
+      // Verify deriveState returns completing-milestone phase (with validation already done)
+      writeMilestoneValidation(base, "M001");
       const state = await deriveState(base);
       assertEq(state.phase, "completing-milestone", "deriveState returns completing-milestone when all slices done, no summary");
       assertEq(state.activeMilestone?.id, "M001", "active milestone is M001");

@@ -39,10 +39,4 @@ You are executing a GSD quick task — a lightweight, focused unit of work outsi
 - <what was tested/verified>
 ```
 
-8. Update `.gsd/STATE.md` — add or update the "Quick Tasks Completed" table:
-   - If the section doesn't exist, create it after "### Blockers/Concerns"
-   - Table format: `| # | Description | Date | Commit | Directory |`
-   - Add a row: `| {{taskNum}} | {{description}} | {{date}} | <commit-hash> | [{{taskNum}}-{{slug}}](./quick/{{taskNum}}-{{slug}}/) |`
-   - Update the "Last activity" line
-
 When done, say: "Quick task {{taskNum}} complete."

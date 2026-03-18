@@ -32,6 +32,9 @@ function createTempRepo(): string {
   run("git config user.email test@test.com", dir);
   run("git config user.name Test", dir);
   writeFileSync(join(dir, "README.md"), "# test\n");
+  // Mirror production: GSD runtime dirs are gitignored so autoCommitDirtyState
+  // doesn't pick up the worktrees directory as dirty state (#1127 fix).
+  writeFileSync(join(dir, ".gitignore"), ".gsd/worktrees/\n");
   mkdirSync(join(dir, ".gsd"), { recursive: true });
   writeFileSync(join(dir, ".gsd", "STATE.md"), "# State\n");
   run("git add .", dir);
@@ -288,6 +291,40 @@ async function main(): Promise<void> {
 
       // Feature file should be on main
       assertTrue(existsSync(join(repo, "feature.ts")), "feature.ts merged to main");
+    }
+
+    // ─── Test 6: Skip checkout when main already current (#757) ───────
+    console.log("\n=== skip checkout when main already current (#757) ===");
+    {
+      const repo = freshRepo();
+      const wtPath = createAutoWorktree(repo, "M060");
+
+      addSliceToMilestone(repo, wtPath, "M060", "S01", "Skip checkout test", [
+        { file: "skip-checkout.ts", content: "export const skip = true;\n", message: "add skip-checkout" },
+      ]);
+
+      const roadmap = makeRoadmap("M060", "Skip checkout verification", [
+        { id: "S01", title: "Skip checkout test" },
+      ]);
+
+      // Verify main is already checked out at repo root (worktree default)
+      const branchAtRoot = run("git rev-parse --abbrev-ref HEAD", repo);
+      assertEq(branchAtRoot, "main", "main is already checked out at project root");
+
+      // mergeMilestoneToMain should succeed without attempting to checkout main
+      // (which would fail with "already used by worktree" error)
+      let threw = false;
+      try {
+        const result = mergeMilestoneToMain(repo, "M060", roadmap);
+        assertTrue(result.commitMessage.includes("feat(M060)"), "merge commit created");
+      } catch (err) {
+        threw = true;
+        console.error("Unexpected error:", err);
+      }
+      assertTrue(!threw, "does not fail when main is already checked out at project root");
+
+      // Verify the merge actually happened
+      assertTrue(existsSync(join(repo, "skip-checkout.ts")), "skip-checkout.ts merged to main");
     }
 
   } finally {
