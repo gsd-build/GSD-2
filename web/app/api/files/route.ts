@@ -1,5 +1,5 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { join, resolve, relative } from "node:path";
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { join, resolve, relative, dirname } from "node:path";
 
 import { resolveProjectCwd } from "../../../../src/web/bridge-service.ts";
 
@@ -159,4 +159,72 @@ export async function GET(request: Request): Promise<Response> {
 
   const content = readFileSync(resolvedPath, "utf-8");
   return Response.json({ content }, { headers });
+}
+
+export async function POST(request: Request): Promise<Response> {
+  let body: Record<string, unknown>;
+  try {
+    body = await request.json();
+  } catch {
+    return Response.json(
+      { error: "Invalid JSON body" },
+      { status: 400 },
+    );
+  }
+
+  const { path: pathParam, content, root: rootParam = "gsd" } = body as {
+    path?: string;
+    content?: unknown;
+    root?: string;
+  };
+
+  if (rootParam !== "gsd" && rootParam !== "project") {
+    return Response.json(
+      { error: `Invalid root: must be "gsd" or "project"` },
+      { status: 400 },
+    );
+  }
+
+  if (typeof content !== "string") {
+    return Response.json(
+      { error: "Missing or invalid content: must be a string" },
+      { status: 400 },
+    );
+  }
+
+  if (Buffer.byteLength(content, "utf-8") > MAX_FILE_SIZE) {
+    return Response.json(
+      { error: `Content too large: ${Buffer.byteLength(content, "utf-8")} bytes exceeds max ${MAX_FILE_SIZE}` },
+      { status: 413 },
+    );
+  }
+
+  const projectCwd = resolveProjectCwd(request);
+  const root = getRootForMode(rootParam as RootMode, projectCwd);
+
+  if (typeof pathParam !== "string" || pathParam.length === 0) {
+    return Response.json(
+      { error: "Missing or invalid path: must be a non-empty string" },
+      { status: 400 },
+    );
+  }
+
+  const resolvedPath = resolveSecurePath(pathParam, root);
+  if (!resolvedPath) {
+    const label = rootParam === "project" ? "project root" : ".gsd/";
+    return Response.json(
+      { error: `Invalid path: path must be relative within ${label} and cannot contain '..' or start with '/'` },
+      { status: 400 },
+    );
+  }
+
+  if (!existsSync(dirname(resolvedPath))) {
+    return Response.json(
+      { error: "Parent directory does not exist" },
+      { status: 404 },
+    );
+  }
+
+  writeFileSync(resolvedPath, content, "utf-8");
+  return Response.json({ success: true });
 }

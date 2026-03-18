@@ -51,6 +51,12 @@ The existing route file already has `resolveSecurePath()`, `getRootForMode()`, `
   - `curl -X POST ... -d '{"path":"nonexistent-deep/nested/file.txt","content":"x","root":"project"}'` → 404
   - Clean up the test file after verification
 
+## Observability Impact
+
+- **New signal:** POST `/api/files` returns structured JSON `{ error: "..." }` with HTTP 400/404/413 for all rejection paths — agents and UI can programmatically inspect why a write was rejected.
+- **Inspection:** `curl -v -X POST /api/files?project=... -d '...'` shows status code + JSON body for any write attempt.
+- **Failure visibility:** Path traversal attempts return 400 with descriptive message; missing parent dirs return 404 with "Parent directory does not exist"; oversized content returns 413. All use the same `{ error }` shape as the existing GET handler.
+
 ## Inputs
 
 - `web/app/api/files/route.ts` — existing GET-only route with `resolveSecurePath()`, `getRootForMode()`, `resolveProjectCwd()`, `MAX_FILE_SIZE` already defined

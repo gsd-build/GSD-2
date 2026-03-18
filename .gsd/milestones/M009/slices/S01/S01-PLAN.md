@@ -24,7 +24,15 @@
 - `curl -X POST http://localhost:3000/api/files?project=... -H 'Content-Type: application/json' -d '{"path":"test-write.txt","content":"hello","root":"project"}'` → 200 with `{ success: true }`
 - `curl -X POST ... -d '{"path":"../../../etc/passwd","content":"x","root":"gsd"}'` → 400
 - `curl -X POST ... -d '{"path":"nonexistent/deep/file.txt","content":"x","root":"project"}'` → 404
+- `curl -X POST ... -d '{"content":"x","root":"gsd"}'` with missing `path` field → 400 with structured `{ error: "..." }` JSON (failure-path diagnostic check)
 - `npm run build:web-host` exits 0
+
+## Observability / Diagnostics
+
+- POST `/api/files` returns structured JSON errors with appropriate HTTP status codes (400, 404, 413) — inspectable via `curl -v` or browser network tab.
+- Successful writes return `{ success: true }` — agent or UI can confirm write completed.
+- Path validation failures include descriptive error messages matching the GET handler's style — agents can programmatically distinguish traversal rejections from missing-parent errors.
+- Editor font size persisted in `localStorage` key `gsd-editor-font-size` — inspectable via browser devtools `localStorage.getItem("gsd-editor-font-size")`.
 
 ## Integration Closure
 
@@ -34,7 +42,7 @@
 
 ## Tasks
 
-- [ ] **T01: Add POST handler to /api/files with path validation and write security** `est:30m`
+- [x] **T01: Add POST handler to /api/files with path validation and write security** `est:30m`
   - Why: S02's Save button depends on this endpoint. It's the security-critical piece — path traversal must be rejected using the same `resolveSecurePath()` the GET handler uses.
   - Files: `web/app/api/files/route.ts`
   - Do: Add `writeFileSync` and `dirname` to the `node:fs` / `node:path` imports. Add a `POST` export function that: parses JSON body (`await request.json()`), validates `root` is "gsd" or "project", validates `content` is a string, checks `Buffer.byteLength(content) <= MAX_FILE_SIZE` (413 if exceeded), resolves the path with `resolveSecurePath()` (400 if null), checks parent directory exists with `existsSync(dirname(resolved))` (404 if missing), writes with `writeFileSync(resolved, content, "utf-8")`, returns `{ success: true }`. Wrap the whole body parse in try/catch for malformed JSON (400). Allow `content === ""`.
