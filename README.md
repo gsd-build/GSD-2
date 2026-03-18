@@ -24,20 +24,21 @@ One command. Walk away. Come back to a built project with clean git history.
 
 ---
 
-## What's New in v2.28
+## What's New in v2.29
 
-- **`gsd headless query`** — instant JSON snapshot of project state (~50ms, no LLM session)
-- **`/gsd update`** — update GSD to the latest version without leaving your session
-- **`/gsd export --html --all`** — generate retrospective HTML reports for all milestones at once
-- **Reliability hardening** — atomic file writes, OAuth fetch timeouts, RPC exit detection, blob GC, LSP init retry with backoff
-- **RPC utilities** now part of the public API for headless/scripted integrations
-- **npm** established as the canonical package manager
-- **CI/CD Pipeline** — three-stage promotion (Dev → Test → Prod) with automated versioning
-- **Docker support** — containerized builds with multi-stage Dockerfile
-- **`/gsd keys`** — full API key lifecycle management (list, add, remove, test, rotate, doctor)
-- **Milestone parking** — park in-progress milestones to work on something else, unpark to resume
-- **Studio** — experimental Electron desktop app (early preview)
+- **Node.js 24 LTS** — CI, Docker, and package config all upgraded to Node 24 (Krypton)
+- **`searchExcludeDirs` setting** — blacklist directories from `@` file autocomplete (e.g., `node_modules`, `dist`)
+- **Automated releases** — prod-release now auto-generates changelogs, bumps versions, and publishes to npm
+- **`/gsd logs`** — browse activity, debug, and metrics logs from within a session
+- **Configurable screenshots** — browser-tools now support custom resolution, format, and quality
+- **Pre-commit secret scanning** — automatic detection of hardcoded secrets in CI and locally
 - **Per-project MCP config** — `.gsd/mcp.json` for project-scoped MCP server definitions
+- **API request metrics** — track request counts for Copilot/subscription users
+- **`/gsd keys`** — full API key lifecycle management (list, add, remove, test, rotate, doctor)
+- **Advisory verification gate** — auto-discovered checks (lint/test from package.json) no longer doom-loop on pre-existing errors
+- **Worktree living doc sync** — DECISIONS, REQUIREMENTS, PROJECT, and KNOWLEDGE now sync between worktree and project root
+- **Windows non-ASCII path support** — `cpSync` fallback for usernames with special characters
+- **`needs-discussion` routing** — milestones with draft context now route to the interactive discussion flow instead of stopping
 
 See the full [Changelog](./CHANGELOG.md) for details.
 
@@ -62,6 +63,8 @@ Full documentation is available in the [`docs/`](./docs/) directory:
 - **[CI/CD Pipeline](./docs/ci-cd-pipeline.md)** — three-stage promotion pipeline (Dev → Test → Prod)
 - **[VS Code Extension](./vscode-extension/README.md)** — chat participant, sidebar dashboard, RPC integration
 - **[Visualizer](./docs/visualizer.md)** — workflow visualizer with stats and discussion status
+- **[Remote Questions](./docs/remote-questions.md)** — route decisions to Slack or Discord when human input is needed
+- **[Dynamic Model Routing](./docs/dynamic-model-routing.md)** — complexity-based model selection and budget pressure
 - **[Migration from v1](./docs/migration.md)** — `.planning` → `.gsd` migration
 
 ---
@@ -175,7 +178,7 @@ Auto mode is a state machine driven by files on disk. It reads `.gsd/STATE.md`, 
 
 9. **Adaptive replanning** — After each slice completes, the roadmap is reassessed. If the work revealed new information that changes the plan, slices are reordered, added, or removed before continuing.
 
-10. **Verification enforcement** — Configure shell commands (`npm run lint`, `npm run test`, etc.) that run automatically after task execution. Failures trigger auto-fix retries before advancing. Configurable via `verification_commands`, `verification_auto_fix`, and `verification_max_retries` preferences.
+10. **Verification enforcement** — Configure shell commands (`npm run lint`, `npm run test`, etc.) that run automatically after task execution. Failures trigger auto-fix retries before advancing. Auto-discovered checks from `package.json` run in advisory mode — they log warnings but don't block on pre-existing errors. Configurable via `verification_commands`, `verification_auto_fix`, and `verification_max_retries` preferences.
 
 11. **Milestone validation** — After all slices complete, a `validate-milestone` gate compares roadmap success criteria against actual results before sealing the milestone.
 
@@ -307,6 +310,7 @@ On first run, GSD launches a branded setup wizard that walks you through LLM pro
 | `/gsd cleanup`          | Archive phase directories from completed milestones             |
 | `/gsd doctor`           | Runtime health checks with auto-fix for common issues           |
 | `/gsd keys`             | API key manager — list, add, remove, test, rotate, doctor       |
+| `/gsd logs`             | Browse activity, debug, and metrics logs                        |
 | `/gsd export --html`    | Generate HTML report for current or completed milestone         |
 | `/worktree` (`/wt`)     | Git worktree lifecycle — create, switch, merge, remove          |
 | `/voice`                | Toggle real-time speech-to-text (macOS, Linux)                  |
@@ -447,6 +451,7 @@ auto_report: true
 | `verification_max_retries` | Max retries for verification failures (default: 2)                                               |
 | `require_slice_discussion` | Pause auto-mode before each slice for human discussion review                                    |
 | `auto_report`          | Auto-generate HTML reports after milestone completion (default: true)                                 |
+| `searchExcludeDirs`    | Directories to exclude from `@` file autocomplete (e.g., `["node_modules", ".git", "dist"]`)          |
 
 ### Agent Instructions
 
@@ -478,7 +483,7 @@ See the full [Token Optimization Guide](./docs/token-optimization.md) for detail
 
 ### Bundled Tools
 
-GSD ships with 14 extensions, all loaded automatically:
+GSD ships with 16 extensions, all loaded automatically:
 
 | Extension              | What it provides                                                                                                       |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------- |
@@ -496,6 +501,8 @@ GSD ships with 14 extensions, all loaded automatically:
 | **LSP**                | Language Server Protocol integration — diagnostics, go-to-definition, references, hover, symbols, rename, code actions |
 | **Ask User Questions** | Structured user input with single/multi-select                                                                         |
 | **Secure Env Collect** | Masked secret collection without manual .env editing                                                                   |
+| **Remote Questions**   | Route decisions to Slack/Discord when human input is needed in headless/CI mode                                         |
+| **Universal Config**   | Discover and import MCP servers and rules from other AI coding tools                                                    |
 
 ### Bundled Agents
 
@@ -597,7 +604,7 @@ gsd (CLI binary)
 
 ## Requirements
 
-- **Node.js** ≥ 20.6.0 (22+ recommended)
+- **Node.js** ≥ 22.0.0 (24 LTS recommended)
 - **An LLM provider** — any of the 20+ supported providers (see [Use Any Model](#use-any-model))
 - **Git** — initialized automatically if missing
 
