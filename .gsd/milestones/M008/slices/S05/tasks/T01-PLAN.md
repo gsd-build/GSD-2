@@ -49,3 +49,9 @@ The dashboard progress bar currently uses `bg-foreground` (monochrome) for all c
 ## Expected Output
 
 - `web/components/gsd/dashboard.tsx` — progress bar div uses dynamic `backgroundColor` from `getProgressColor(progressPercent)` instead of `bg-foreground`
+
+## Observability Impact
+
+- **New signal:** Progress bar `backgroundColor` is now a dynamic oklch string visible in browser DevTools. The hue value directly encodes completion percentage (25=0%, 85=50%, 145=100%).
+- **Inspection:** Inspect the `.h-full.rounded-full` div inside the progress container — its inline `style.backgroundColor` should be `oklch(0.65 0.16 H)` where H varies by percent.
+- **Failure state:** If `progressPercent` is NaN/undefined, the oklch string will be malformed and the bar will render transparent (no background color applied). This is visually obvious — a missing bar fill against the accent track.

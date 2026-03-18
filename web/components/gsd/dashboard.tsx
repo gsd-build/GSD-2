@@ -41,6 +41,14 @@ import {
 import { ScopeBadge } from "@/components/gsd/scope-badge"
 import { ProjectWelcome } from "@/components/gsd/project-welcome"
 
+/** Interpolate progress bar color from red (0%) through yellow (50%) to green (100%) using oklch. */
+function getProgressColor(percent: number): string {
+  const p = Math.max(0, Math.min(100, percent))
+  // Hue: 25 (red) → 85 (yellow) at 50% → 145 (green) at 100%
+  const hue = 25 + (p / 100) * 120
+  return `oklch(0.65 0.16 ${hue.toFixed(1)})`
+}
+
 interface MetricCardProps {
   label: string
   value: string | null
@@ -386,8 +394,8 @@ export function Dashboard({ onSwitchView, onExpandTerminal }: DashboardProps = {
                   <div className="mt-3">
                     <div className="h-1 w-full overflow-hidden rounded-full bg-accent">
                       <div
-                        className="h-full rounded-full bg-foreground transition-all duration-500"
-                        style={{ width: `${progressPercent}%` }}
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{ width: `${progressPercent}%`, backgroundColor: getProgressColor(progressPercent) }}
                       />
                     </div>
                     <p className="mt-1.5 text-xs text-muted-foreground">{doneTasks} of {totalTasks} tasks complete</p>
