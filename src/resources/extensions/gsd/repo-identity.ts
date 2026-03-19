@@ -11,6 +11,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, symlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
+import { ensureStateGitRepo } from "./state-git.js";
 
 // ─── Repo Identity ──────────────────────────────────────────────────────────
 
@@ -112,8 +113,9 @@ export function ensureGsdSymlink(projectPath: string): string {
   const externalPath = externalGsdRoot(projectPath);
   const localGsd = join(projectPath, ".gsd");
 
-  // Ensure external directory exists
+  // Ensure external directory exists and is a git repo for state tracking
   mkdirSync(externalPath, { recursive: true });
+  ensureStateGitRepo(externalPath);
 
   if (!existsSync(localGsd)) {
     // Nothing exists yet — create symlink

@@ -9,6 +9,7 @@
 import { existsSync, lstatSync, mkdirSync, readdirSync, renameSync, cpSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { externalGsdRoot } from "./repo-identity.js";
+import { ensureStateGitRepo } from "./state-git.js";
 import { getErrorMessage } from "./error-utils.js";
 
 export interface MigrationResult {
@@ -101,6 +102,9 @@ export function migrateToExternalState(basePath: string): MigrationResult {
 
     // Remove .gsd.migrating
     rmSync(migratingPath, { recursive: true, force: true });
+
+    // Initialize git repo in external state dir so users can track state
+    ensureStateGitRepo(externalPath);
 
     return { migrated: true };
   } catch (err) {
