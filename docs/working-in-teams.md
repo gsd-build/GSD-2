@@ -54,16 +54,11 @@ git add .gsd/preferences.md
 git commit -m "chore: enable GSD team workflow"
 ```
 
-## `commit_docs: false`
+## External State Directory
 
-For teams where only some members use GSD, or when company policy requires a clean repo:
+As of v2.30, GSD stores `.gsd/` state in an external directory (`~/.gsd/projects/`) with a symlink in the project root. This keeps the repository clean by default — the `.gsd` symlink should be added to `.gitignore`.
 
-```yaml
-git:
-  commit_docs: false
-```
-
-This adds `.gsd/` to `.gitignore` entirely and keeps all artifacts local. The developer gets the benefits of structured planning without affecting teammates who don't use GSD.
+For teams where only some members use GSD, this means GSD artifacts don't clutter the shared repository. Each developer's planning state lives in their home directory.
 
 ## Migrating an Existing Project
 

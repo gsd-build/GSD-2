@@ -214,9 +214,9 @@ The server registers all tools from the agent session and maps MCP `tools/list` 
 
 ```bash
 /gsd update
-# Current version: v2.28.0
+# Current version: v2.32.0
 # Checking npm registry...
-# Updated to v2.29.0. Restart GSD to use the new version.
+# Updated to v2.32.0. Restart GSD to use the new version.
 ```
 
 If already up to date, it reports so and takes no action.

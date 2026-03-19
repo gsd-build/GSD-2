@@ -267,7 +267,7 @@ The profile is resolved once and flows through the entire dispatch pipeline. Exp
 
 ## Prompt Compression
 
-*Introduced in v2.29.0*
+
 
 GSD can apply deterministic prompt compression before falling back to section-boundary truncation. This preserves more information when context exceeds the budget.
 
@@ -286,7 +286,7 @@ Two strategies are available:
 
 | Strategy | Behavior | Default For |
 |----------|----------|------------|
-| `truncate` | Drop entire sections at boundaries (pre-v2.29 behavior) | `quality` profile |
+| `truncate` | Drop entire sections at boundaries (legacy behavior) | `quality` profile |
 | `compress` | Apply heuristic text compression first, then truncate if still over budget | `budget` and `balanced` profiles |
 
 Compression removes redundant whitespace, abbreviates verbose phrases, deduplicates repeated content, and removes low-information boilerplate — all deterministically with no LLM calls.

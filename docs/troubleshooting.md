@@ -46,7 +46,7 @@ It checks:
 **Common causes:**
 - Missing workspace packages — fixed in v2.10.4+
 - `postinstall` hangs on Linux (Playwright `--with-deps` triggering sudo) — fixed in v2.3.6+
-- Node.js version too old — requires ≥ 20.6.0
+- Node.js version too old — requires ≥ 22.0.0
 
 ### Provider errors during auto mode
 
@@ -132,7 +132,7 @@ Doctor rebuilds `STATE.md` from plan and roadmap files on disk and fixes detecte
 
 **Cause:** The `which` command in MSYS2/Git Bash returns POSIX paths that Node.js `spawn()` can't resolve.
 
-**Fix:** Updated in v2.29+ to use `where.exe` on Windows. Upgrade to the latest version.
+**Fix:** Updated to use `where.exe` on Windows. Upgrade to the latest version.
 
 ### EBUSY errors during WXT/extension builds
 
@@ -148,9 +148,9 @@ Doctor rebuilds `STATE.md` from plan and roadmap files on disk and fixes detecte
 
 **Symptoms:** `gsd_save_decision`, `gsd_update_requirement`, or `gsd_save_summary` fail with this error.
 
-**Cause:** The SQLite database wasn't initialized. This happens in manual `/gsd` sessions (non-auto mode) on versions before v2.29.
+**Cause:** The SQLite database wasn't initialized. This happens in manual `/gsd` sessions (non-auto mode) on older versions.
 
-**Fix:** Updated in v2.29+ to auto-initialize the database on first tool call. Upgrade to the latest version.
+**Fix:** Updated to auto-initialize the database on first tool call. Upgrade to the latest version.
 
 ## Verification Issues
 
@@ -160,7 +160,7 @@ Doctor rebuilds `STATE.md` from plan and roadmap files on disk and fixes detecte
 
 **Cause:** A description-like string (e.g., `All 10 checks pass (build, lint)`) was treated as a shell command. This can happen when task plans have `verify:` fields with prose instead of actual commands.
 
-**Fix:** Updated in v2.29+ to filter preference commands through `isLikelyCommand()`. Ensure `verification_commands` in preferences contains only valid shell commands, not descriptions.
+**Fix:** Updated to filter preference commands through `isLikelyCommand()`. Ensure `verification_commands` in preferences contains only valid shell commands, not descriptions.
 
 ## LSP (Language Server Protocol)
 

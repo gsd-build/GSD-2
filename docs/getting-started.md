@@ -6,7 +6,7 @@
 npm install -g gsd-pi
 ```
 
-Requires Node.js ≥ 20.6.0 (22+ recommended) and Git.
+Requires Node.js ≥ 22.0.0 (24 LTS recommended) and Git.
 
 GSD checks for updates once every 24 hours. When a new version is available, you'll see an interactive prompt at startup with the option to update immediately or skip. You can also update from within a session with `/gsd update`.
 
@@ -77,7 +77,7 @@ Step mode is the on-ramp. You stay in the loop, reviewing output between each st
 
 ### Auto Mode — `/gsd auto`
 
-Type `/gsd auto` and walk away. GSD autonomously researches, plans, executes, verifies, commits, and advances through every slice until the milestone is complete.
+Type `/gsd auto` and walk away. GSD autonomously plans (with integrated research), executes, verifies, commits, and advances through every slice until the milestone is complete.
 
 ```
 /gsd auto

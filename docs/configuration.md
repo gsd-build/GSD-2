@@ -155,7 +155,7 @@ Fine-grained control over which phases run in auto mode:
 phases:
   skip_research: false        # skip milestone-level research
   skip_reassess: false        # skip roadmap reassessment after each slice
-  skip_slice_research: true   # skip per-slice research
+  # (research is now integrated into plan-slice per ADR-003)
   require_slice_discussion: false  # pause auto-mode before each slice for discussion
 ```
 
@@ -271,7 +271,6 @@ git:
   main_branch: main           # primary branch name
   merge_strategy: squash      # how worktree branches merge: "squash" or "merge"
   isolation: worktree         # git isolation: "worktree", "branch", or "none"
-  commit_docs: true           # commit .gsd/ artifacts to git (set false to keep local)
   manage_gitignore: true      # set false to prevent GSD from modifying .gitignore
   worktree_post_create: .gsd/hooks/post-worktree-create  # script to run after worktree creation
   auto_pr: false              # create a PR on milestone completion (requires push_branches)
@@ -289,7 +288,6 @@ git:
 | `main_branch` | string | `"main"` | Primary branch name |
 | `merge_strategy` | string | `"squash"` | How worktree branches merge: `"squash"` (combine all commits) or `"merge"` (preserve individual commits) |
 | `isolation` | string | `"worktree"` | Auto-mode isolation: `"worktree"` (separate directory), `"branch"` (work in project root — useful for submodule-heavy repos), or `"none"` (no isolation — commits on current branch, no worktree or milestone branch) |
-| `commit_docs` | boolean | `true` | Commit `.gsd/` planning artifacts to git. Set `false` to keep local-only |
 | `manage_gitignore` | boolean | `true` | When `false`, GSD will not modify `.gitignore` at all — no baseline patterns, no self-healing. Use if you manage your own `.gitignore` |
 | `worktree_post_create` | string | (none) | Script to run after worktree creation. Receives `SOURCE_DIR` and `WORKTREE_DIR` env vars |
 | `auto_pr` | boolean | `false` | Automatically create a pull request when a milestone completes. Requires `auto_push: true` and `gh` CLI installed and authenticated |
@@ -386,7 +384,7 @@ post_unit_hooks:
     enabled: true                   # optional: disable without removing
 ```
 
-**Known unit types for `after`:** `research-milestone`, `plan-milestone`, `research-slice`, `plan-slice`, `execute-task`, `complete-slice`, `replan-slice`, `reassess-roadmap`, `run-uat`
+**Known unit types for `after`:** `research-milestone`, `plan-milestone`, `plan-slice`, `execute-task`, `complete-slice`, `replan-slice`, `reassess-roadmap`, `run-uat`
 
 **Prompt substitutions:** `{milestoneId}`, `{sliceId}`, `{taskId}` are replaced with current context values.
 
@@ -410,7 +408,7 @@ pre_dispatch_hooks:
 ```yaml
 pre_dispatch_hooks:
   - name: skip-research
-    before: [research-slice]
+    before: [plan-slice]
     action: skip
     skip_if: RESEARCH.md            # optional: only skip if this file exists
 ```
@@ -551,7 +549,6 @@ git:
   auto_push: true
   merge_strategy: squash
   isolation: worktree         # "worktree", "branch", or "none"
-  commit_docs: true
 
 # Skills
 skill_discovery: suggest
