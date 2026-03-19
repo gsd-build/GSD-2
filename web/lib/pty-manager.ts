@@ -19,6 +19,8 @@ export interface PtySession {
   pty: IPty;
   listeners: Set<(data: string) => void>;
   alive: boolean;
+  buffer: string[];
+  bufferedBytes: number;
 }
 
 interface LoadedNodePty {
@@ -29,6 +31,7 @@ interface LoadedNodePty {
 // Use globalThis to persist across Turbopack/HMR module re-evaluations in dev
 const GLOBAL_KEY = "__gsd_pty_sessions__" as const;
 const CLEANUP_GUARD_KEY = "__gsd_pty_cleanup_installed__" as const;
+const MAX_SESSION_BUFFER_BYTES = 1024 * 1024;
 
 function getSessions(): Map<string, PtySession> {
   const g = globalThis as Record<string, unknown>;
@@ -36,6 +39,23 @@ function getSessions(): Map<string, PtySession> {
     g[GLOBAL_KEY] = new Map<string, PtySession>();
   }
   return g[GLOBAL_KEY] as Map<string, PtySession>;
+}
+
+function getChunkByteLength(data: string): number {
+  return Buffer.byteLength(data, "utf8");
+}
+
+function appendToSessionBuffer(session: PtySession, data: string): void {
+  if (!data) return;
+
+  session.buffer.push(data);
+  session.bufferedBytes += getChunkByteLength(data);
+
+  while (session.bufferedBytes > MAX_SESSION_BUFFER_BYTES && session.buffer.length > 1) {
+    const removed = session.buffer.shift();
+    if (!removed) break;
+    session.bufferedBytes -= getChunkByteLength(removed);
+  }
 }
 
 function destroyAllSessions(): void {
@@ -286,9 +306,12 @@ export function getOrCreateSession(sessionId: string, projectCwd?: string, comma
     pty: ptyProcess,
     listeners: new Set(),
     alive: true,
+    buffer: [],
+    bufferedBytes: 0,
   };
 
   ptyProcess.onData((data: string) => {
+    appendToSessionBuffer(session, data);
     for (const listener of session.listeners) {
       try {
         listener(data);
@@ -302,6 +325,7 @@ export function getOrCreateSession(sessionId: string, projectCwd?: string, comma
     session.alive = false;
     // Notify listeners about exit
     const exitMessage = `\r\n\x1b[90m[Process exited with code ${exitCode}${signal ? `, signal ${signal}` : ""}]\x1b[0m\r\n`;
+    appendToSessionBuffer(session, exitMessage);
     for (const listener of session.listeners) {
       try {
         listener(exitMessage);
@@ -358,7 +382,19 @@ export function addListener(
 ): (() => void) | null {
   const session = getSessions().get(sessionId);
   if (!session) return null;
+
+  const snapshot = session.buffer.slice();
   session.listeners.add(listener);
+
+  for (const chunk of snapshot) {
+    try {
+      listener(chunk);
+    } catch {
+      session.listeners.delete(listener);
+      return null;
+    }
+  }
+
   return () => {
     session.listeners.delete(listener);
   };

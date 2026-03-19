@@ -590,18 +590,23 @@ export default function (pi: ExtensionAPI) {
     depthVerifiedMilestones.clear();
     activeQueuePhase = false;
 
-    // Theme access throws in RPC mode (no TUI) — header is decorative, skip it
-    try {
-      const theme = ctx.ui.theme;
-      const version = process.env.GSD_VERSION || "0.0.0";
+    // The right-side PTY-backed `gsd` session should look like the attached
+    // bridge terminal, not a fresh standalone TUI with an extra decorative
+    // header block. Skip the branded header in web PTY sessions only.
+    if (process.env.GSD_WEB_PTY !== "1") {
+      // Register the branded header lazily so RPC mode can cache the factory
+      // and replay it once the embedded bridge terminal attaches.
+      try {
+        const version = process.env.GSD_VERSION || "0.0.0";
 
-      const logoText = GSD_LOGO_LINES.map((line) => theme.fg("accent", line)).join("\n");
-      const titleLine = `  ${theme.bold("Get Shit Done")} ${theme.fg("dim", `v${version}`)}`;
-
-      const headerContent = `${logoText}\n${titleLine}`;
-      ctx.ui.setHeader((_ui, _theme) => new Text(headerContent, 1, 0));
-    } catch {
-      // RPC mode — no TUI, skip header rendering
+        ctx.ui.setHeader((_ui, theme) => {
+          const logoText = GSD_LOGO_LINES.map((line) => theme.fg("accent", line)).join("\n");
+          const titleLine = `  ${theme.bold("Get Shit Done")} ${theme.fg("dim", `v${version}`)}`;
+          return new Text(`${logoText}\n${titleLine}`, 1, 0);
+        });
+      } catch {
+        // Header rendering is decorative — skip it if the active UI host rejects it.
+      }
     }
 
     // Load tool API keys from auth.json into environment

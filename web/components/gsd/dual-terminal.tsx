@@ -1,10 +1,10 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { cn } from "@/lib/utils"
 import { GripVertical } from "lucide-react"
 import { MainSessionTerminal } from "@/components/gsd/main-session-terminal"
 import { ShellTerminal } from "@/components/gsd/shell-terminal"
+import { TerminalTuiHeader } from "@/components/gsd/terminal-tui-header"
 import { useTerminalFontSize } from "@/lib/use-terminal-font-size"
 
 export function DualTerminal() {
@@ -53,8 +53,9 @@ export function DualTerminal() {
       {/* Split terminals */}
       <div ref={containerRef} className="flex flex-1 overflow-hidden">
         {/* Left terminal - Main bridge native TUI */}
-        <div style={{ width: `${splitPosition}%` }} className="h-full overflow-hidden">
-          <MainSessionTerminal className="h-full" fontSize={terminalFontSize} />
+        <div style={{ width: `${splitPosition}%` }} className="flex h-full min-w-0 flex-col overflow-hidden bg-terminal">
+          <TerminalTuiHeader fontSize={terminalFontSize} />
+          <MainSessionTerminal className="min-h-0 flex-1" fontSize={terminalFontSize} />
         </div>
 
         {/* Divider */}
