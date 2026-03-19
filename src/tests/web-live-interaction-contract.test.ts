@@ -9,6 +9,8 @@ import { StringDecoder } from "node:string_decoder";
 
 const repoRoot = process.cwd();
 const bridge = await import("../web/bridge-service.ts");
+const onboarding = await import("../web/onboarding-service.ts");
+const { AuthStorage } = await import("@gsd/pi-coding-agent");
 const commandRoute = await import("../../web/app/api/session/command/route.ts");
 const eventsRoute = await import("../../web/app/api/session/events/route.ts");
 
@@ -204,6 +206,12 @@ function fakeSessionState(sessionId: string, sessionPath: string) {
 }
 
 function setupBridge(harness: ReturnType<typeof createHarness>, fixture: ReturnType<typeof makeWorkspaceFixture>) {
+  onboarding.configureOnboardingServiceForTests({
+    authStorage: AuthStorage.inMemory({
+      anthropic: { type: "api_key", key: "sk-test-live-interaction" },
+    } as any),
+  });
+
   bridge.configureBridgeServiceForTests({
     env: {
       ...process.env,
@@ -421,6 +429,7 @@ test("(a) SSE emits extension_ui_request with method 'select' → typed payload 
     assert.equal(state.pendingUiRequests[0].allowMultiple, true);
   } finally {
     await bridge.resetBridgeServiceForTests();
+    onboarding.resetOnboardingServiceForTests();
     fixture.cleanup();
   }
 });
@@ -511,6 +520,7 @@ test("(c) Responding to a UI request posts extension_ui_response with correct id
     assert.equal(uiResponseCmd.value, "option-b");
   } finally {
     await bridge.resetBridgeServiceForTests();
+    onboarding.resetOnboardingServiceForTests();
     fixture.cleanup();
   }
 });
@@ -569,6 +579,7 @@ test("(d) Dismissing a UI request posts cancelled: true and removes from pending
     assert.equal(state.pendingUiRequests.length, 0);
   } finally {
     await bridge.resetBridgeServiceForTests();
+    onboarding.resetOnboardingServiceForTests();
     fixture.cleanup();
   }
 });
@@ -636,6 +647,7 @@ test("(e) SSE emits message_update with text delta → streamingAssistantText ac
     assert.equal(msgEvent.assistantMessageEvent.delta, "streamed text");
   } finally {
     await bridge.resetBridgeServiceForTests();
+    onboarding.resetOnboardingServiceForTests();
     fixture.cleanup();
   }
 });
@@ -875,6 +887,7 @@ test("(h) steer and abort commands post the correct RPC command type", async () 
     assert.ok(abortCmd, "abort command was sent to the bridge");
   } finally {
     await bridge.resetBridgeServiceForTests();
+    onboarding.resetOnboardingServiceForTests();
     fixture.cleanup();
   }
 });
@@ -1101,6 +1114,7 @@ test("(session-controls) browser session RPCs round-trip through /api/session/co
     );
   } finally {
     await bridge.resetBridgeServiceForTests();
+    onboarding.resetOnboardingServiceForTests();
     fixture.cleanup();
   }
 });

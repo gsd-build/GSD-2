@@ -9,6 +9,8 @@ import { StringDecoder } from "node:string_decoder";
 
 const repoRoot = process.cwd();
 const bridge = await import("../web/bridge-service.ts");
+const onboarding = await import("../web/onboarding-service.ts");
+const { AuthStorage } = await import("@gsd/pi-coding-agent");
 const bootRoute = await import("../../web/app/api/boot/route.ts");
 const commandRoute = await import("../../web/app/api/session/command/route.ts");
 const eventsRoute = await import("../../web/app/api/session/events/route.ts");
@@ -569,6 +571,13 @@ test("/api/session/events streams bridge status, agent events, and extension_ui_
 test("bridge command/runtime failures are inspectable and redact secret material", async () => {
   const fixture = makeWorkspaceFixture();
   const sessionPath = createSessionFile(fixture.projectCwd, fixture.sessionsDir, "sess-failure", "Failure Session");
+
+  onboarding.configureOnboardingServiceForTests({
+    authStorage: AuthStorage.inMemory({
+      anthropic: { type: "api_key", key: "sk-test-bridge-failure" },
+    } as any),
+  });
+
   const harness = createHarness((command, current) => {
     if (command.type === "get_state") {
       current.emit({
@@ -646,6 +655,7 @@ test("bridge command/runtime failures are inspectable and redact secret material
     assert.doesNotMatch(snapshot.lastError?.message ?? "", /sk-after-attach-12345|sk-test-command-secret-9999/);
   } finally {
     await bridge.resetBridgeServiceForTests();
+    onboarding.resetOnboardingServiceForTests();
     fixture.cleanup();
   }
 });

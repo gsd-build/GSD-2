@@ -9,6 +9,8 @@ import { StringDecoder } from "node:string_decoder";
 
 const repoRoot = process.cwd();
 const bridge = await import("../web/bridge-service.ts");
+const onboarding = await import("../web/onboarding-service.ts");
+const { AuthStorage } = await import("@gsd/pi-coding-agent");
 const commandRoute = await import("../../web/app/api/session/command/route.ts");
 const manageRoute = await import("../../web/app/api/session/manage/route.ts");
 const eventsRoute = await import("../../web/app/api/session/events/route.ts");
@@ -291,6 +293,12 @@ function setupBridge(
   fixture: { projectCwd: string; sessionsDir: string },
   overrides: Record<string, unknown> = {},
 ): void {
+  onboarding.configureOnboardingServiceForTests({
+    authStorage: AuthStorage.inMemory({
+      anthropic: { type: "api_key", key: "sk-test-live-state" },
+    } as any),
+  });
+
   bridge.configureBridgeServiceForTests({
     env: {
       ...process.env,
@@ -416,6 +424,7 @@ test("/api/session/events exposes explicit live_state_invalidation events for ag
     await waitForMicrotasks();
   } finally {
     await bridge.resetBridgeServiceForTests();
+    onboarding.resetOnboardingServiceForTests();
     fixture.cleanup();
   }
 });
@@ -572,6 +581,7 @@ test("workspace cache only busts on real boundaries and session mutations emit t
     unsubscribe();
   } finally {
     await bridge.resetBridgeServiceForTests();
+    onboarding.resetOnboardingServiceForTests();
     fixture.cleanup();
   }
 });
