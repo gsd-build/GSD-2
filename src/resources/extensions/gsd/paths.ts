@@ -10,7 +10,8 @@
  */
 
 import { readdirSync, existsSync, realpathSync, Dirent } from "node:fs";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { spawnSync } from "node:child_process";
 import { nativeScanGsdTree, type GsdTreeEntry } from "./native-parser-bridge.js";
 import { DIR_CACHE_MAX } from "./constants.js";
 
@@ -277,15 +278,80 @@ const LEGACY_GSD_ROOT_FILES: Record<GSDRootFileKey, string> = {
   KNOWLEDGE: "knowledge.md",
 };
 
-export function gsdRoot(basePath: string): string {
-  const local = join(basePath, ".gsd");
-  try {
-    const resolved = realpathSync(local);
-    if (resolved !== local) return resolved; // symlink resolved
-  } catch { /* doesn't exist yet — fall through */ }
-  return local; // backwards compat: unmigrated projects
+// ─── GSD Root Discovery ───────────────────────────────────────────────────────
+
+const gsdRootCache = new Map<string, string>();
+
+/** Exported for tests only — do not call in production code. */
+export function _clearGsdRootCache(): void {
+  gsdRootCache.clear();
 }
 
+/**
+ * Resolve the `.gsd` directory for a given project base path.
+ *
+ * Probe order:
+ *   1. basePath/.gsd         — fast path (common case)
+ *   2. git rev-parse root    — handles cwd-is-a-subdirectory
+ *   3. Walk up from basePath — handles moved .gsd in an ancestor (bounded by git root)
+ *   4. basePath/.gsd         — creation fallback (init scenario)
+ *
+ * Result is cached per basePath for the process lifetime.
+ */
+export function gsdRoot(basePath: string): string {
+  const cached = gsdRootCache.get(basePath);
+  if (cached) return cached;
+
+  const result = probeGsdRoot(basePath);
+  gsdRootCache.set(basePath, result);
+  return result;
+}
+
+function probeGsdRoot(rawBasePath: string): string {
+  // 1. Fast path — check the input path directly
+  const local = join(rawBasePath, ".gsd");
+  if (existsSync(local)) return local;
+
+  // Resolve symlinks so path comparisons work correctly across platforms
+  // (e.g. macOS /var → /private/var). Use rawBasePath as fallback if not resolvable.
+  let basePath: string;
+  try { basePath = realpathSync(rawBasePath); } catch { basePath = rawBasePath; }
+
+  // 2. Git root anchor — used as both probe target and walk-up boundary
+  //    Only walk if we're inside a git project — prevents escaping into
+  //    unrelated filesystem territory when running outside any repo.
+  let gitRoot: string | null = null;
+  try {
+    const out = spawnSync("git", ["rev-parse", "--show-toplevel"], {
+      cwd: basePath,
+      encoding: "utf-8",
+    });
+    if (out.status === 0) {
+      const r = out.stdout.trim();
+      if (r) gitRoot = r;
+    }
+  } catch { /* git not available */ }
+
+  if (gitRoot) {
+    const candidate = join(gitRoot, ".gsd");
+    if (existsSync(candidate)) return candidate;
+  }
+
+  // 3. Walk up from basePath to the git root (only if we are in a subdirectory)
+  if (gitRoot && basePath !== gitRoot) {
+    let cur = dirname(basePath);
+    while (cur !== basePath) {
+      const candidate = join(cur, ".gsd");
+      if (existsSync(candidate)) return candidate;
+      if (cur === gitRoot) break;
+      basePath = cur;
+      cur = dirname(cur);
+    }
+  }
+
+  // 4. Fallback for init/creation
+  return local;
+}
 export function milestonesDir(basePath: string): string {
   return join(gsdRoot(basePath), "milestones");
 }
