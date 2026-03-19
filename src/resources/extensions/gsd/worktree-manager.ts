@@ -438,6 +438,16 @@ export function mergeWorktreeToMain(basePath: string, name: string, commitMessag
     throw new GSDError(GSD_GIT_ERROR, `Must be on ${mainBranch} to merge. Currently on ${current}.`);
   }
 
+  // Sync .gsd/ state from worktree back to main before merge.
+  // The worktree has authoritative ROADMAP checkboxes and SUMMARY files.
+  const wtPath = worktreePath(basePath, name);
+  if (existsSync(wtPath)) {
+    try {
+      const { syncGsdStateFromWorktree } = require("./auto-worktree.js") as typeof import("./auto-worktree.js");
+      syncGsdStateFromWorktree(wtPath, basePath);
+    } catch { /* non-fatal — sync failure shouldn't block merge */ }
+  }
+
   const result = nativeMergeSquash(basePath, branch);
   if (!result.success) {
     throw new GSDError(GSD_MERGE_CONFLICT, `Merge conflicts detected in: ${result.conflicts.join(", ")}`);

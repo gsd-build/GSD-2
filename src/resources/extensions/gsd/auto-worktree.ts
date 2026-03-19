@@ -162,6 +162,96 @@ export function syncGsdStateToWorktree(mainBasePath: string, worktreePath_: stri
   return { synced };
 }
 
+/**
+ * Sync .gsd/ state from the worktree BACK to the main repo.
+ *
+ * Called before merge — the worktree has the authoritative execution state
+ * (ROADMAP checkboxes updated, SUMMARY files created, META.json updated).
+ * Without this, the main repo's .gsd/ (often a symlink to the external
+ * state dir) retains stale checkboxes and missing summaries, causing
+ * deriveState() to think completed milestones are still in progress.
+ *
+ * Unlike syncGsdStateToWorktree (which only copies MISSING files),
+ * this function OVERWRITES existing files — the worktree is authoritative
+ * for milestone/slice state after execution.
+ *
+ * Skips runtime/transient files (STATE.md, auto.lock, gsd.db, runtime/, activity/).
+ */
+export function syncGsdStateFromWorktree(worktreePath_: string, mainBasePath: string): { synced: string[] } {
+  const wtGsd = gsdRoot(worktreePath_);
+  const mainGsd = gsdRoot(mainBasePath);
+  const synced: string[] = [];
+
+  // If both resolve to the same directory (symlink), no sync needed
+  try {
+    const mainResolved = realpathSync(mainGsd);
+    const wtResolved = realpathSync(wtGsd);
+    if (mainResolved === wtResolved) return { synced };
+  } catch {
+    // Can't resolve — proceed with sync as a safety measure
+  }
+
+  if (!existsSync(wtGsd) || !existsSync(mainGsd)) return { synced };
+
+  // Sync root-level .gsd/ files (PROJECT.md may have updated milestone checkboxes)
+  const rootFiles = ["PROJECT.md", "DECISIONS.md", "KNOWLEDGE.md", "REQUIREMENTS.md"];
+  for (const f of rootFiles) {
+    const src = join(wtGsd, f);
+    const dst = join(mainGsd, f);
+    if (existsSync(src)) {
+      try {
+        cpSync(src, dst);
+        synced.push(f);
+      } catch { /* non-fatal */ }
+    }
+  }
+
+  // Sync milestone state files (ROADMAP, SUMMARY, META, CONTEXT, VALIDATION, slices)
+  const wtMilestonesDir = join(wtGsd, "milestones");
+  const mainMilestonesDir = join(mainGsd, "milestones");
+  if (existsSync(wtMilestonesDir)) {
+    mkdirSync(mainMilestonesDir, { recursive: true });
+    try {
+      const milestones = readdirSync(wtMilestonesDir, { withFileTypes: true })
+        .filter(d => d.isDirectory() && /^M\d{3}/.test(d.name))
+        .map(d => d.name);
+
+      for (const mid of milestones) {
+        const srcDir = join(wtMilestonesDir, mid);
+        const dstDir = join(mainMilestonesDir, mid);
+        mkdirSync(dstDir, { recursive: true });
+
+        // Copy milestone-level files (ROADMAP, SUMMARY, META, CONTEXT, VALIDATION)
+        try {
+          const files = readdirSync(srcDir).filter(f => f.endsWith(".md") || f.endsWith(".json"));
+          for (const f of files) {
+            const srcFile = join(srcDir, f);
+            try {
+              const stat = lstatSyncFn(srcFile);
+              if (stat.isFile()) {
+                cpSync(srcFile, join(dstDir, f));
+                synced.push(`milestones/${mid}/${f}`);
+              }
+            } catch { /* non-fatal */ }
+          }
+        } catch { /* non-fatal */ }
+
+        // Copy slices directory (contains PLAN, SUMMARY, RESEARCH, UAT, tasks/)
+        const srcSlicesDir = join(srcDir, "slices");
+        const dstSlicesDir = join(dstDir, "slices");
+        if (existsSync(srcSlicesDir)) {
+          try {
+            cpSync(srcSlicesDir, dstSlicesDir, { recursive: true });
+            synced.push(`milestones/${mid}/slices/`);
+          } catch { /* non-fatal */ }
+        }
+      }
+    } catch { /* non-fatal */ }
+  }
+
+  return { synced };
+}
+
 // ─── Worktree Post-Create Hook (#597) ────────────────────────────────────────
 
 /**
@@ -493,6 +583,13 @@ export function mergeMilestoneToMain(
 
   // 1. Auto-commit dirty state in worktree before leaving
   autoCommitDirtyState(worktreeCwd);
+
+  // 1b. Sync .gsd/ state from worktree back to the main project.
+  // The worktree has authoritative execution state (ROADMAP checkboxes,
+  // SUMMARY files, META updates) that must be copied to the main .gsd/
+  // before the worktree is removed. Without this, deriveState() on the
+  // main project sees stale unchecked roadmaps and missing summaries.
+  syncGsdStateFromWorktree(worktreeCwd, originalBasePath_);
 
   // 2. Parse roadmap for slice listing
   const roadmap = parseRoadmap(roadmapContent);
