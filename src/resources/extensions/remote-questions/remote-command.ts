@@ -4,12 +4,12 @@
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@gsd/pi-coding-agent";
 import { AuthStorage } from "@gsd/pi-coding-agent";
-import { CURSOR_MARKER, Editor, type EditorTheme, Key, matchesKey, truncateToWidth } from "@gsd/pi-tui";
+import { Editor, type EditorTheme, Key, matchesKey, truncateToWidth } from "@gsd/pi-tui";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { getGlobalGSDPreferencesPath, loadEffectiveGSDPreferences } from "../gsd/preferences.js";
 import { getRemoteConfigStatus, isValidChannelId, resolveRemoteConfig } from "./config.js";
-import { sanitizeError } from "../shared/sanitize.js";
+import { maskEditorLine, sanitizeError } from "../shared/mod.js";
 import { getLatestPromptSummary } from "./status.js";
 
 export async function handleRemote(
@@ -351,27 +351,6 @@ function removeRemoteQuestionsConfig(): void {
   const frontmatter = fmMatch[1].replace(/remote_questions:[\s\S]*?(?=\n[a-zA-Z_]|\n---|$)/, "").trim();
   const next = frontmatter ? `---\n${frontmatter}\n---${content.slice(fmMatch[0].length)}` : content.slice(fmMatch[0].length).replace(/^\n+/, "");
   writeFileSync(prefsPath, next, "utf-8");
-}
-
-function maskEditorLine(line: string): string {
-  let output = "";
-  let i = 0;
-  while (i < line.length) {
-    if (line.startsWith(CURSOR_MARKER, i)) {
-      output += CURSOR_MARKER;
-      i += CURSOR_MARKER.length;
-      continue;
-    }
-    const ansiMatch = /^\x1b\[[0-9;]*m/.exec(line.slice(i));
-    if (ansiMatch) {
-      output += ansiMatch[0];
-      i += ansiMatch[0].length;
-      continue;
-    }
-    output += line[i] === " " ? " " : "*";
-    i += 1;
-  }
-  return output;
 }
 
 async function promptMaskedInput(ctx: ExtensionCommandContext, label: string, hint: string): Promise<string | null> {

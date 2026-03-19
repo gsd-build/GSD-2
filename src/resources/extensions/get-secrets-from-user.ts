@@ -11,9 +11,9 @@ import { existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 
 import type { ExtensionAPI, Theme } from "@gsd/pi-coding-agent";
-import { CURSOR_MARKER, Editor, type EditorTheme, Key, matchesKey, Text, truncateToWidth, wrapTextWithAnsi } from "@gsd/pi-tui";
+import { Editor, type EditorTheme, Key, matchesKey, Text, truncateToWidth, wrapTextWithAnsi } from "@gsd/pi-tui";
 import { Type } from "@sinclair/typebox";
-import { makeUI, type ProgressStatus } from "./shared/mod.js";
+import { makeUI, maskEditorLine, type ProgressStatus } from "./shared/mod.js";
 import { parseSecretsManifest, formatSecretsManifest } from "./gsd/files.js";
 import { resolveMilestoneFile } from "./gsd/paths.js";
 import type { SecretsManifestEntry } from "./gsd/types.js";
@@ -40,39 +40,6 @@ function maskPreview(value: string): string {
 	if (!value) return "";
 	if (value.length <= 8) return "*".repeat(value.length);
 	return `${value.slice(0, 4)}${"*".repeat(Math.max(4, value.length - 8))}${value.slice(-4)}`;
-}
-
-/**
- * Replace editor visible text with masked characters while preserving ANSI cursor/sequencer codes.
- */
-function maskEditorLine(line: string): string {
-	// Keep border / metadata lines readable.
-	if (line.startsWith("─")) {
-		return line;
-	}
-
-	let output = "";
-	let i = 0;
-	while (i < line.length) {
-		if (line.startsWith(CURSOR_MARKER, i)) {
-			output += CURSOR_MARKER;
-			i += CURSOR_MARKER.length;
-			continue;
-		}
-
-		const ansiMatch = /^\x1b\[[0-9;]*m/.exec(line.slice(i));
-		if (ansiMatch) {
-			output += ansiMatch[0];
-			i += ansiMatch[0].length;
-			continue;
-		}
-
-		const ch = line[i] as string;
-		output += ch === " " ? " " : "*";
-		i += 1;
-	}
-
-	return output;
 }
 
 function shellEscapeSingle(value: string): string {
