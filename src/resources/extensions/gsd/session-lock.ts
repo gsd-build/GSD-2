@@ -57,9 +57,15 @@ let _lockCompromised: boolean = false;
 /** Whether we've already registered a process.on('exit') handler. */
 let _exitHandlerRegistered: boolean = false;
 
+/** Snapshotted lock file path — captured at acquireSessionLock time to avoid
+ *  gsdRoot() resolving differently in worktree vs project root contexts (#1363). */
+let _snapshotLockPath: string | null = null;
+
 const LOCK_FILE = "auto.lock";
 
 function lockPath(basePath: string): string {
+  // If we have a snapshotted path from acquisition, use it for consistency
+  if (_snapshotLockPath) return _snapshotLockPath;
   return join(gsdRoot(basePath), LOCK_FILE);
 }
 
@@ -209,6 +215,7 @@ export function acquireSessionLock(basePath: string): SessionLockResult {
     _lockedPath = basePath;
     _lockPid = process.pid;
     _lockCompromised = false;
+    _snapshotLockPath = lp; // Snapshot the resolved path for consistent access (#1363)
 
     // Safety net: clean up lock dir on process exit if _releaseFunction
     // wasn't called (e.g., normal exit after clean completion) (#1245).
@@ -245,6 +252,7 @@ export function acquireSessionLock(basePath: string): SessionLockResult {
         _lockedPath = basePath;
         _lockPid = process.pid;
         _lockCompromised = false;
+        _snapshotLockPath = lp; // Snapshot for retry path too (#1363)
 
         // Safety net — uses centralized handler to avoid double-registration
         ensureExitHandler(gsdDir);
@@ -394,6 +402,7 @@ export function releaseSessionLock(basePath: string): void {
   _lockedPath = null;
   _lockPid = 0;
   _lockCompromised = false;
+  _snapshotLockPath = null;
 }
 
 /**

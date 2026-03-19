@@ -175,7 +175,16 @@ export default function (pi: ExtensionAPI) {
         // Pipe closed — nothing we can write; just exit cleanly
         process.exit(0);
       }
-      // Re-throw anything that isn't EPIPE so real crashes still surface
+      if ((err as NodeJS.ErrnoException).code === "ENOENT" &&
+          (err as any).syscall?.startsWith("spawn")) {
+        // spawn ENOENT — command not found (e.g., npx on Windows).
+        // This surfaces as an uncaught exception from child_process but
+        // is not a fatal process error. Log and continue instead of
+        // crashing auto-mode (#1384).
+        process.stderr.write(`[gsd] spawn ENOENT: ${(err as any).path ?? "unknown"} — command not found\n`);
+        return;
+      }
+      // Re-throw anything that isn't EPIPE/ENOENT so real crashes still surface
       throw err;
     };
     process.on("uncaughtException", _gsdEpipeGuard);
