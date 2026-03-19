@@ -92,18 +92,10 @@ export interface BgProcess {
 	lastErrorCount: number;
 	/** Last warning count snapshot for diff detection */
 	lastWarningCount: number;
-	/** Command history for shell-type sessions */
-	commandHistory: string[];
-	/** Dedup tracker: hash → count of repeated lines (capped at LINE_DEDUP_MAX entries) */
-	lineDedup: Map<string, number>;
-	/** Total raw lines (before dedup) for token savings calc */
-	totalRawLines: number;
 	/** Tracked stdout line count (incremented in addOutputLine, avoids O(n) filter) */
 	stdoutLineCount: number;
 	/** Tracked stderr line count (incremented in addOutputLine, avoids O(n) filter) */
 	stderrLineCount: number;
-	/** Env snapshot (keys only, no values for security) */
-	envKeys: string[];
 	/** Restart count */
 	restartCount: number;
 	/** Original start config for restart */

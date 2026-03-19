@@ -162,12 +162,8 @@ export function startProcess(opts: StartOptions): BgProcess {
 		group: opts.group || null,
 		lastErrorCount: 0,
 		lastWarningCount: 0,
-		commandHistory: [],
-		lineDedup: new Map(),
-		totalRawLines: 0,
 		stdoutLineCount: 0,
 		stderrLineCount: 0,
-		envKeys: Object.keys(opts.env || {}),
 		restartCount: 0,
 		startConfig: {
 			command,
