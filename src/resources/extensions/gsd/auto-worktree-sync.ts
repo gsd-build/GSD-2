@@ -14,7 +14,6 @@ import { existsSync, mkdirSync, readFileSync, cpSync, unlinkSync, readdirSync } 
 import { join, sep as pathSep } from "node:path";
 import { homedir } from "node:os";
 import { safeCopy, safeCopyRecursive } from "./safe-fs.js";
-import { atomicWriteSync } from "./atomic-write.js";
 
 // ─── Project Root → Worktree Sync ─────────────────────────────────────────
 
@@ -67,22 +66,6 @@ export function syncStateToProjectRoot(worktreePath: string, projectRoot: string
   // 2. Milestone directory — ROADMAP, slice PLANs, task summaries
   // Copy the entire milestone .gsd subtree so deriveState reads current checkboxes
   safeCopyRecursive(join(wtGsd, "milestones", milestoneId), join(prGsd, "milestones", milestoneId), { force: true })
-
-  // 3. Merge completed-units.json (set-union of both locations)
-  // Prevents already-completed units from being re-dispatched after crash/restart.
-  const srcKeysFile = join(wtGsd, "completed-units.json");
-  const dstKeysFile = join(prGsd, "completed-units.json");
-  if (existsSync(srcKeysFile)) {
-    try {
-      const srcKeys: string[] = JSON.parse(readFileSync(srcKeysFile, "utf8"));
-      let dstKeys: string[] = [];
-      if (existsSync(dstKeysFile)) {
-        try { dstKeys = JSON.parse(readFileSync(dstKeysFile, "utf8")); } catch { /* ignore corrupt dst */ }
-      }
-      const merged = [...new Set([...dstKeys, ...srcKeys])];
-      atomicWriteSync(dstKeysFile, JSON.stringify(merged, null, 2));
-    } catch { /* non-fatal */ }
-  }
 
   // 4. Runtime records — unit dispatch state used by selfHealRuntimeRecords().
   // Without this, a crash during a unit leaves the runtime record only in the

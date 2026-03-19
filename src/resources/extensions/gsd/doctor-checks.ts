@@ -217,7 +217,7 @@ export async function checkGitHealth(
 }
 
 // ── Runtime Health Checks ──────────────────────────────────────────────────
-// Checks for stale crash locks, orphaned completed-units, stale hook state,
+// Checks for stale crash locks, stale hook state,
 // activity log bloat, STATE.md drift, and gitignore drift.
 
 export async function checkRuntimeHealth(
@@ -277,52 +277,6 @@ export async function checkRuntimeHealth(
     }
   } catch {
     // Non-fatal — parallel session check failed
-  }
-
-  // ── Orphaned completed-units keys ─────────────────────────────────────
-  try {
-    const completedKeysFile = join(root, "completed-units.json");
-    if (existsSync(completedKeysFile)) {
-      const raw = readFileSync(completedKeysFile, "utf-8");
-      const keys: string[] = JSON.parse(raw);
-      const orphaned: string[] = [];
-
-      for (const key of keys) {
-        // Key format: "unitType/unitId" e.g. "execute-task/M001/S01/T01"
-        const slashIdx = key.indexOf("/");
-        if (slashIdx === -1) continue;
-        const unitType = key.slice(0, slashIdx);
-        const unitId = key.slice(slashIdx + 1);
-
-        // Only validate artifact-producing unit types
-        const { verifyExpectedArtifact } = await import("./auto-recovery.js");
-        if (!verifyExpectedArtifact(unitType, unitId, basePath)) {
-          orphaned.push(key);
-        }
-      }
-
-      if (orphaned.length > 0) {
-        issues.push({
-          severity: "warning",
-          code: "orphaned_completed_units",
-          scope: "project",
-          unitId: "project",
-          message: `${orphaned.length} completed-unit key(s) reference missing artifacts: ${orphaned.slice(0, 3).join(", ")}${orphaned.length > 3 ? "..." : ""}`,
-          file: ".gsd/completed-units.json",
-          fixable: true,
-        });
-
-        if (shouldFix("orphaned_completed_units")) {
-          const { removePersistedKey } = await import("./auto-recovery.js");
-          for (const key of orphaned) {
-            removePersistedKey(basePath, key);
-          }
-          fixesApplied.push(`removed ${orphaned.length} orphaned completed-unit key(s)`);
-        }
-      }
-    }
-  } catch {
-    // Non-fatal — completed-units check failed
   }
 
   // ── Stale hook state ──────────────────────────────────────────────────
@@ -479,7 +433,6 @@ export async function checkRuntimeHealth(
         ".gsd/runtime/",
         ".gsd/auto.lock",
         ".gsd/gsd.db",
-        ".gsd/completed-units.json",
       ];
 
       // If blanket .gsd/ or .gsd is present, all patterns are covered

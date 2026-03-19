@@ -11,43 +11,46 @@ import { gsdRoot, resolveTasksDir, resolveSlicePath, buildTaskFileName } from ".
 import { sendDesktopNotification } from "./notifications.js";
 
 /**
- * Undo the last completed unit: revert git commits, remove from completed-units,
+ * Undo the last completed unit: revert git commits,
  * delete summary artifacts, and uncheck the task in PLAN.
+ * deriveState() handles re-derivation after revert.
  */
 export async function handleUndo(args: string, ctx: ExtensionCommandContext, _pi: ExtensionAPI, basePath: string): Promise<void> {
   const force = args.includes("--force");
 
-  // 1. Load completed-units.json
-  const completedKeysFile = join(gsdRoot(basePath), "completed-units.json");
-  if (!existsSync(completedKeysFile)) {
-    ctx.ui.notify("Nothing to undo — no completed units found.", "info");
+  // Find the last GSD-related commit from git activity logs
+  const activityDir = join(gsdRoot(basePath), "activity");
+  if (!existsSync(activityDir)) {
+    ctx.ui.notify("Nothing to undo — no activity logs found.", "info");
     return;
   }
 
-  let keys: string[];
-  try {
-    keys = JSON.parse(readFileSync(completedKeysFile, "utf-8"));
-  } catch {
-    ctx.ui.notify("Nothing to undo — completed-units.json is corrupt.", "warning");
+  // Parse activity logs to find the most recent unit
+  const files = readdirSync(activityDir)
+    .filter(f => f.endsWith(".jsonl"))
+    .sort()
+    .reverse();
+
+  if (files.length === 0) {
+    ctx.ui.notify("Nothing to undo — no activity logs found.", "info");
     return;
   }
 
-  if (keys.length === 0) {
-    ctx.ui.notify("Nothing to undo — no completed units.", "info");
+  // Extract unit type and ID from the most recent activity log filename
+  // Format: <seq>-<unitType>-<unitId>.jsonl
+  const match = files[0].match(/^\d+-(.+?)-(.+)\.jsonl$/);
+  if (!match) {
+    ctx.ui.notify("Nothing to undo — could not parse latest activity log.", "warning");
     return;
   }
 
-  // Get the last completed unit
-  const lastKey = keys[keys.length - 1];
-  const sepIdx = lastKey.indexOf("/");
-  const unitType = sepIdx >= 0 ? lastKey.slice(0, sepIdx) : lastKey;
-  const unitId = sepIdx >= 0 ? lastKey.slice(sepIdx + 1) : lastKey;
+  const unitType = match[1];
+  const unitId = match[2].replace(/-/g, "/");
 
   if (!force) {
     ctx.ui.notify(
       `Will undo: ${unitType} (${unitId})\n` +
       `This will:\n` +
-      `  - Remove from completed-units.json\n` +
       `  - Delete summary artifacts\n` +
       `  - Uncheck task in PLAN (if execute-task)\n` +
       `  - Attempt to revert associated git commits\n\n` +
@@ -57,11 +60,7 @@ export async function handleUndo(args: string, ctx: ExtensionCommandContext, _pi
     return;
   }
 
-  // 2. Remove from completed-units.json
-  keys = keys.filter(k => k !== lastKey);
-  writeFileSync(completedKeysFile, JSON.stringify(keys), "utf-8");
-
-  // 3. Delete summary artifact
+  // 1. Delete summary artifact
   const parts = unitId.split("/");
   let summaryRemoved = false;
   if (parts.length === 3) {
@@ -80,7 +79,6 @@ export async function handleUndo(args: string, ctx: ExtensionCommandContext, _pi
     const [mid, sid] = parts;
     const slicePath = resolveSlicePath(basePath, mid, sid);
     if (slicePath) {
-      // Try common summary filenames
       for (const suffix of ["SUMMARY", "COMPLETE"]) {
         const candidates = findFileWithPrefix(slicePath, sid, suffix);
         for (const f of candidates) {
@@ -91,41 +89,37 @@ export async function handleUndo(args: string, ctx: ExtensionCommandContext, _pi
     }
   }
 
-  // 4. Uncheck task in PLAN if execute-task
+  // 2. Uncheck task in PLAN if execute-task
   let planUpdated = false;
   if (unitType === "execute-task" && parts.length === 3) {
     const [mid, sid, tid] = parts;
     planUpdated = uncheckTaskInPlan(basePath, mid, sid, tid);
   }
 
-  // 5. Try to revert git commits from activity log
+  // 3. Try to revert git commits from activity log
   let commitsReverted = 0;
-  const activityDir = join(gsdRoot(basePath), "activity");
   try {
-    if (existsSync(activityDir)) {
-      const commits = findCommitsForUnit(activityDir, unitType, unitId);
-      if (commits.length > 0) {
-        for (const sha of commits.reverse()) {
-          try {
-            nativeRevertCommit(basePath, sha);
-            commitsReverted++;
-          } catch {
-            // Revert conflict or already reverted — skip
-            try { nativeRevertAbort(basePath); } catch { /* no-op */ }
-            break;
-          }
+    const commits = findCommitsForUnit(activityDir, unitType, unitId);
+    if (commits.length > 0) {
+      for (const sha of commits.reverse()) {
+        try {
+          nativeRevertCommit(basePath, sha);
+          commitsReverted++;
+        } catch {
+          // Revert conflict or already reverted — skip
+          try { nativeRevertAbort(basePath); } catch { /* no-op */ }
+          break;
         }
       }
     }
   } finally {
-    // 6. Re-derive state — always invalidate caches even if git operations fail
+    // 4. Re-derive state — always invalidate caches even if git operations fail
     invalidateAllCaches();
     await deriveState(basePath);
   }
 
   // Build result message
   const results: string[] = [`Undone: ${unitType} (${unitId})`];
-  results.push(`  - Removed from completed-units.json`);
   if (summaryRemoved) results.push(`  - Deleted summary artifact`);
   if (planUpdated) results.push(`  - Unchecked task in PLAN`);
   if (commitsReverted > 0) {

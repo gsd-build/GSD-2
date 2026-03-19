@@ -24,7 +24,6 @@ export type DoctorIssueCode =
   | "legacy_slice_branches"
   | "stale_crash_lock"
   | "stale_parallel_session"
-  | "orphaned_completed_units"
   | "stale_hook_state"
   | "activity_log_bloat"
   | "state_file_stale"

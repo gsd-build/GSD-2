@@ -1,6 +1,6 @@
 /**
  * Auto-mode Recovery — artifact resolution, verification, blocker placeholders,
- * skip artifacts, completed-unit persistence, merge state reconciliation,
+ * skip artifacts, merge state reconciliation,
  * self-heal runtime records, and loop remediation steps.
  *
  * Pure functions that receive all needed state as parameters — no module-level
@@ -37,7 +37,6 @@ import {
   resolveGsdRootFile,
 } from "./paths.js";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
-import { atomicWriteSync } from "./atomic-write.js";
 import { dirname, join } from "node:path";
 
 // ─── Artifact Resolution & Verification ───────────────────────────────────────
@@ -336,55 +335,6 @@ export function skipExecuteTask(
   return true;
 }
 
-// ─── Disk-backed completed-unit helpers ───────────────────────────────────────
-
-/** Path to the persisted completed-unit keys file. */
-export function completedKeysPath(base: string): string {
-  return join(base, ".gsd", "completed-units.json");
-}
-
-/** Write a completed unit key to disk (read-modify-write append to set). */
-export function persistCompletedKey(base: string, key: string): void {
-  const file = completedKeysPath(base);
-  let keys: string[] = [];
-  try {
-    if (existsSync(file)) {
-      keys = JSON.parse(readFileSync(file, "utf-8"));
-    }
-  } catch (e) { /* corrupt file — start fresh */ void e; }
-  const keySet = new Set(keys);
-  if (!keySet.has(key)) {
-    keys.push(key);
-    atomicWriteSync(file, JSON.stringify(keys));
-  }
-}
-
-/** Remove a stale completed unit key from disk. */
-export function removePersistedKey(base: string, key: string): void {
-  const file = completedKeysPath(base);
-  try {
-    if (existsSync(file)) {
-      const keys: string[] = JSON.parse(readFileSync(file, "utf-8"));
-      const filtered = keys.filter(k => k !== key);
-      // Only write if the key was actually present
-      if (filtered.length !== keys.length) {
-        atomicWriteSync(file, JSON.stringify(filtered));
-      }
-    }
-  } catch (e) { /* non-fatal: removePersistedKey failure */ void e; }
-}
-
-/** Load all completed unit keys from disk into the in-memory set. */
-export function loadPersistedKeys(base: string, target: Set<string>): void {
-  const file = completedKeysPath(base);
-  try {
-    if (existsSync(file)) {
-      const keys: string[] = JSON.parse(readFileSync(file, "utf-8"));
-      for (const k of keys) target.add(k);
-    }
-  } catch (e) { /* non-fatal: loadPersistedKeys failure */ void e; }
-}
-
 // ─── Merge State Reconciliation ───────────────────────────────────────────────
 
 /**
@@ -468,14 +418,14 @@ export function reconcileMergeState(basePath: string, ctx: ExtensionContext): bo
 // ─── Self-Heal Runtime Records ────────────────────────────────────────────────
 
 /**
- * Self-heal: scan runtime records in .gsd/ and clear any where the expected
- * artifact already exists on disk. This repairs incomplete closeouts from
- * prior crashes — preventing spurious re-dispatch of already-completed units.
+ * Self-heal: scan runtime records in .gsd/ and clear stale ones.
+ * Clears dispatched records older than 1 hour (process crashed before
+ * completing the unit). deriveState() handles re-derivation — no need
+ * for completion key persistence here.
  */
 export async function selfHealRuntimeRecords(
   base: string,
   ctx: ExtensionContext,
-  completedKeySet: Set<string>,
 ): Promise<void> {
   try {
     const { listUnitRuntimeRecords } = await import("./unit-runtime.js");
@@ -485,26 +435,8 @@ export async function selfHealRuntimeRecords(
     const now = Date.now();
     for (const record of records) {
       const { unitType, unitId } = record;
-      const artifactPath = resolveExpectedArtifactPath(unitType, unitId, base);
 
-      // Case 1: Artifact exists — unit completed but closeout didn't finish.
-      // Use verifyExpectedArtifact (not just existsSync) so that execute-task
-      // also checks the plan checkbox is marked [x]. Without this, a task
-      // whose summary exists but checkbox is unchecked would be incorrectly
-      // marked as completed, causing deriveState to re-dispatch it endlessly.
-      if (artifactPath && existsSync(artifactPath) && verifyExpectedArtifact(unitType, unitId, base)) {
-        clearUnitRuntimeRecord(base, unitType, unitId);
-        // Also persist completion key if missing
-        const key = `${unitType}/${unitId}`;
-        if (!completedKeySet.has(key)) {
-          persistCompletedKey(base, key);
-          completedKeySet.add(key);
-        }
-        healed++;
-        continue;
-      }
-
-      // Case 2: No artifact but record is stale (dispatched > 1h ago, process crashed)
+      // Clear stale dispatched records (dispatched > 1h ago, process crashed)
       const age = now - (record.startedAt ?? 0);
       if (record.phase === "dispatched" && age > STALE_THRESHOLD_MS) {
         clearUnitRuntimeRecord(base, unitType, unitId);

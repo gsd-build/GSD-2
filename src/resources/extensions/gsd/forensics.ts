@@ -22,7 +22,6 @@ import {
 } from "./metrics.js";
 import { readCrashLock, isLockProcessAlive, formatCrashInfo, type LockData } from "./crash-recovery.js";
 import { runGSDDoctor, formatDoctorIssuesForPrompt, type DoctorIssue } from "./doctor.js";
-import { verifyExpectedArtifact } from "./auto-recovery.js";
 import { deriveState } from "./state.js";
 import { isAutoActive } from "./auto.js";
 import { loadPrompt } from "./prompt-loader.js";
@@ -59,7 +58,6 @@ interface ForensicReport {
   activeWorktree: string | null;
   unitTraces: UnitTrace[];
   metrics: MetricsLedger | null;
-  completedKeys: string[];
   crashLock: LockData | null;
   doctorIssues: DoctorIssue[];
   anomalies: ForensicAnomaly[];
@@ -144,9 +142,6 @@ async function buildForensicReport(basePath: string): Promise<ForensicReport> {
   // 3. Load metrics
   const metrics = loadLedgerFromDisk(basePath);
 
-  // 4. Load completed keys
-  const completedKeys = loadCompletedKeys(basePath);
-
   // 5. Check crash lock
   const crashLock = readCrashLock(basePath);
 
@@ -182,7 +177,6 @@ async function buildForensicReport(basePath: string): Promise<ForensicReport> {
   if (metrics?.units) detectStuckLoops(metrics.units, anomalies);
   if (metrics?.units) detectCostSpikes(metrics.units, anomalies);
   detectTimeouts(unitTraces, anomalies);
-  detectMissingArtifacts(completedKeys, basePath, activeMilestone, anomalies);
   detectCrash(crashLock, anomalies);
   detectDoctorIssues(doctorIssues, anomalies);
   detectErrorTraces(unitTraces, anomalies);
@@ -196,7 +190,6 @@ async function buildForensicReport(basePath: string): Promise<ForensicReport> {
     activeWorktree: activeWorktree ? relative(basePath, activeWorktree) : null,
     unitTraces,
     metrics,
-    completedKeys,
     crashLock,
     doctorIssues,
     anomalies,
@@ -282,18 +275,6 @@ function resolveActivityDirs(basePath: string, activeMilestone?: string | null):
   return dirs;
 }
 
-// ─── Completed Keys Loader ────────────────────────────────────────────────────
-
-function loadCompletedKeys(basePath: string): string[] {
-  const file = join(basePath, ".gsd", "completed-units.json");
-  try {
-    if (existsSync(file)) {
-      return JSON.parse(readFileSync(file, "utf-8"));
-    }
-  } catch { /* non-fatal */ }
-  return [];
-}
-
 // ─── Anomaly Detectors ───────────────────────────────────────────────────────
 
 function detectStuckLoops(units: UnitMetrics[], anomalies: ForensicAnomaly[]): void {
@@ -353,32 +334,6 @@ function detectTimeouts(traces: UnitTrace[], anomalies: ForensicAnomaly[]): void
         unitId: ut.unitId,
         summary: `Timeout detected in ${ut.unitType}/${ut.unitId}`,
         details: `Activity log ${ut.file} contains timeout recovery patterns. The unit may have stalled.`,
-      });
-    }
-  }
-}
-
-function detectMissingArtifacts(completedKeys: string[], basePath: string, activeMilestone: string | null, anomalies: ForensicAnomaly[]): void {
-  // Also check the worktree path for artifacts — they may exist there but not at root
-  const wtBasePath = activeMilestone ? getAutoWorktreePath(basePath, activeMilestone) : null;
-
-  for (const key of completedKeys) {
-    const slashIdx = key.indexOf("/");
-    if (slashIdx === -1) continue;
-    const unitType = key.slice(0, slashIdx);
-    const unitId = key.slice(slashIdx + 1);
-
-    const rootHasArtifact = verifyExpectedArtifact(unitType, unitId, basePath);
-    const wtHasArtifact = wtBasePath ? verifyExpectedArtifact(unitType, unitId, wtBasePath) : false;
-
-    if (!rootHasArtifact && !wtHasArtifact) {
-      anomalies.push({
-        type: "missing-artifact",
-        severity: "error",
-        unitType,
-        unitId,
-        summary: `Completed key ${key} but artifact missing or invalid`,
-        details: `The unit is recorded as completed but verifyExpectedArtifact() returns false at both project root and worktree. The completion state is stale.`,
       });
     }
   }
@@ -583,8 +538,6 @@ function formatReportForPrompt(report: ForensicReport): string {
     sections.push("");
   }
 
-  // Completed keys count
-  sections.push(`### Completed Keys: ${report.completedKeys.length}`);
   sections.push(`### GSD Version: ${report.gsdVersion}`);
   sections.push(`### Active Milestone: ${report.activeMilestone ?? "none"}`);
   sections.push(`### Active Slice: ${report.activeSlice ?? "none"}`);

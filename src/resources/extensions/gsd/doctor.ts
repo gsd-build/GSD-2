@@ -391,7 +391,7 @@ export async function runGSDDoctor(basePath: string, options?: { fix?: boolean; 
     prefs?.preferences?.git?.isolation === "branch" ? "branch" : "worktree");
   await checkGitHealth(basePath, issues, fixesApplied, shouldFix, isolationMode);
 
-  // Runtime health checks (crash locks, completed-units, hook state, activity logs, STATE.md, gitignore)
+  // Runtime health checks (crash locks, hook state, activity logs, STATE.md, gitignore)
   await checkRuntimeHealth(basePath, issues, fixesApplied, shouldFix);
 
   const milestonesPath = milestonesDir(basePath);

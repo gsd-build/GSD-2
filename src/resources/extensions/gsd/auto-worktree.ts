@@ -188,24 +188,6 @@ function reconcilePlanCheckboxes(projectRoot: string, wtPath: string, milestoneI
       } catch { /* non-fatal */ }
     }
   }
-
-  // Also forward-merge completed-units.json (set-union)
-  const srcKeys = join(projectRoot, ".gsd", "completed-units.json");
-  const dstKeys = join(wtPath, ".gsd", "completed-units.json");
-  if (existsSync(srcKeys)) {
-    try {
-      const src: string[] = JSON.parse(readFileSync(srcKeys, "utf-8"));
-      let dst: string[] = [];
-      if (existsSync(dstKeys)) {
-        try { dst = JSON.parse(readFileSync(dstKeys, "utf-8")); } catch { /* ignore corrupt */ }
-      }
-      const merged = [...new Set([...dst, ...src])];
-      if (merged.length > dst.length) {
-        mkdirSync(join(wtPath, ".gsd"), { recursive: true });
-        atomicWriteSync(dstKeys, JSON.stringify(merged), "utf-8");
-      }
-    } catch { /* non-fatal */ }
-  }
 }
 
 export function createAutoWorktree(basePath: string, milestoneId: string): string {
@@ -526,7 +508,7 @@ export function mergeMilestoneToMain(
     // are not meaningful in the main working tree — the worktree had the
     // real state. Without this, `git checkout main` fails with
     // "Your local changes would be overwritten" (#827).
-    const gsdStateFiles = ["STATE.md", "completed-units.json", "auto.lock"];
+    const gsdStateFiles = ["STATE.md", "auto.lock"];
     for (const f of gsdStateFiles) {
       const p = join(originalBasePath_, ".gsd", f);
       try { unlinkSync(p); } catch { /* non-fatal — file may not exist */ }
@@ -555,7 +537,7 @@ export function mergeMilestoneToMain(
 
     if (conflictedFiles.length > 0) {
       // Separate .gsd/ state file conflicts from real code conflicts.
-      // GSD state files (STATE.md, completed-units.json, auto.lock, etc.)
+      // GSD state files (STATE.md, auto.lock, etc.)
       // diverge between branches during normal operation — always prefer the
       // milestone branch version since it has the latest execution state.
       const gsdConflicts = conflictedFiles.filter(f => f.startsWith(".gsd/"));

@@ -89,17 +89,6 @@ export async function handleSkip(unitArg: string, ctx: ExtensionCommandContext, 
     return;
   }
 
-  const { existsSync: fileExists, writeFileSync: writeFile, mkdirSync: mkDir, readFileSync: readFile } = await import("node:fs");
-  const { join: pathJoin } = await import("node:path");
-
-  const completedKeysFile = pathJoin(basePath, ".gsd", "completed-units.json");
-  let keys: string[] = [];
-  try {
-    if (fileExists(completedKeysFile)) {
-      keys = JSON.parse(readFile(completedKeysFile, "utf-8"));
-    }
-  } catch { /* start fresh */ }
-
   // Normalize: accept "execute-task/M001/S01/T03", "M001/S01/T03", or just "T03"
   let skipKey = unitArg;
 
@@ -117,16 +106,14 @@ export async function handleSkip(unitArg: string, ctx: ExtensionCommandContext, 
     }
   }
 
-  if (keys.includes(skipKey)) {
-    ctx.ui.notify(`Already skipped: ${skipKey}`, "info");
-    return;
-  }
-
-  keys.push(skipKey);
-  mkDir(pathJoin(basePath, ".gsd"), { recursive: true });
-  writeFile(completedKeysFile, JSON.stringify(keys), "utf-8");
-
-  ctx.ui.notify(`Skipped: ${skipKey}. Will not be dispatched in auto-mode.`, "success");
+  // Skip is no longer supported — deriveState is the sole authority.
+  // Skip is no longer supported — deriveState() is the sole authority.
+  ctx.ui.notify(
+    `Skip is no longer supported. deriveState() is the sole authority on workflow position.\n` +
+    `To skip a unit, manually write its expected artifact and mark it complete in the plan file.\n` +
+    `Then run \`gsd doctor\` to reconcile state.`,
+    "warning",
+  );
 }
 
 export async function handleDryRun(ctx: ExtensionCommandContext, basePath: string): Promise<void> {
