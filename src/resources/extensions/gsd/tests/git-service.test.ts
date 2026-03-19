@@ -1086,9 +1086,9 @@ async function main(): Promise<void> {
     rmSync(repo, { recursive: true, force: true });
   }
 
-  // ─── smartStage always excludes .gsd/ ──────────────────────────────
+  // ─── smartStage excludes runtime files but allows milestone artifacts ──
 
-  console.log("\n=== smartStage always excludes .gsd/ ===");
+  console.log("\n=== smartStage excludes runtime files, allows milestone artifacts ===");
 
   {
     const repo = mkdtempSync(join(tmpdir(), "gsd-smart-stage-excludes-"));
@@ -1098,21 +1098,30 @@ async function main(): Promise<void> {
     writeFileSync(join(repo, "README.md"), "init");
     run("git add -A && git commit -m init", repo);
 
-    // Create .gsd/ planning files + a normal source file
+    // Create .gsd/ runtime files + milestone artifacts + a normal source file
     mkdirSync(join(repo, ".gsd", "milestones", "M001"), { recursive: true });
+    mkdirSync(join(repo, ".gsd", "runtime"), { recursive: true });
+    mkdirSync(join(repo, ".gsd", "activity"), { recursive: true });
     writeFileSync(join(repo, ".gsd", "milestones", "M001", "ROADMAP.md"), "# Roadmap");
     writeFileSync(join(repo, ".gsd", "preferences.md"), "---\nversion: 1\n---");
+    writeFileSync(join(repo, ".gsd", "STATE.md"), "# State");
+    writeFileSync(join(repo, ".gsd", "runtime", "units.json"), "{}");
+    writeFileSync(join(repo, ".gsd", "activity", "log.jsonl"), "{}");
     writeFileSync(join(repo, "src.ts"), "const x = 1;");
 
-    // smartStage always excludes .gsd/ — state is managed externally
+    // smartStage excludes only runtime paths, not all of .gsd/ (#1326)
     const svc = new GitServiceImpl(repo);
     const msg = svc.commit({ message: "test commit" });
-    assertTrue(msg !== null, "smartStage: commit succeeds with non-.gsd files");
+    assertTrue(msg !== null, "smartStage: commit succeeds");
 
-    // .gsd/ files should NOT be in the commit
     const committed = run("git show --name-only HEAD", repo);
-    assertTrue(!committed.includes(".gsd/"), "smartStage: .gsd/ files not in commit");
     assertTrue(committed.includes("src.ts"), "smartStage: source files ARE in commit");
+    // Runtime files should NOT be committed
+    assertTrue(!committed.includes(".gsd/STATE.md"), "smartStage: STATE.md excluded (runtime)");
+    assertTrue(!committed.includes(".gsd/runtime/"), "smartStage: runtime/ excluded");
+    assertTrue(!committed.includes(".gsd/activity/"), "smartStage: activity/ excluded");
+    // Milestone artifacts SHOULD be committed when not gitignored (#1326)
+    assertTrue(committed.includes(".gsd/milestones/"), "smartStage: milestone artifacts ARE committed");
 
     rmSync(repo, { recursive: true, force: true });
   }

@@ -336,13 +336,17 @@ export class GitServiceImpl {
    * @param extraExclusions Additional pathspec exclusions beyond RUNTIME_EXCLUSION_PATHS.
    */
   private smartStage(extraExclusions: readonly string[] = []): void {
-    // Always exclude .gsd/ — state is managed externally (symlinked to ~/.gsd/projects/<hash>/)
-    const allExclusions = [".gsd/", ...extraExclusions];
-
     // One-time cleanup: if runtime files are already tracked in the index
     // (from older versions where the fallback bug staged them), untrack them
     // in a dedicated commit. This must happen as a separate commit because
     // the git reset HEAD step below would otherwise undo the rm --cached.
+    //
+    // SAFETY: Only untrack the specific RUNTIME paths (activity/, runtime/,
+    // auto.lock, etc.) — NOT all of .gsd/. If .gsd/milestones/ files were
+    // previously tracked, they stay tracked until the milestone completes
+    // and the worktree is torn down. This prevents a mid-execution behavioral
+    // discontinuity where the first half of a milestone has .gsd/ artifacts
+    // committed but the second half doesn't (#1326).
     if (!this._runtimeFilesCleanedUp) {
       let cleaned = false;
       for (const exclusion of RUNTIME_EXCLUSION_PATHS) {
@@ -357,17 +361,19 @@ export class GitServiceImpl {
 
     // Stage everything, then unstage excluded paths.
     //
-    // Previous approach used pathspec excludes (:(exclude)...) with git add -A,
-    // but that fails when .gsd/ is in .gitignore — git exits non-zero before
-    // evaluating the excludes. The catch fallback ran plain `git add -A`,
-    // staging all tracked runtime files unconditionally and defeating the
-    // exclusion list entirely.
+    // Exclude only RUNTIME paths from staging — not the entire .gsd/ directory.
+    // When .gsd/milestones/ files are already tracked in the index (projects
+    // where .gsd/ is not gitignored, or Windows junctions that git sees as
+    // real directories), they should continue to be committed. Excluding the
+    // entire .gsd/ directory mid-milestone causes silent commit failure where
+    // the second half of a milestone's artifacts are never committed (#1326).
     //
-    // git reset HEAD silently succeeds when the path isn't staged, so no
-    // error handling is needed per-path.
+    // If .gsd/ IS in .gitignore (the default for external state projects),
+    // git add -A already skips it and the reset is a harmless no-op.
     nativeAddAll(this.basePath);
 
-    for (const exclusion of allExclusions) {
+    const runtimeExclusions = [...RUNTIME_EXCLUSION_PATHS, ...extraExclusions];
+    for (const exclusion of runtimeExclusions) {
       try { nativeResetPaths(this.basePath, [exclusion]); } catch { /* path not staged — ignore */ }
     }
   }
