@@ -1,8 +1,35 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, parse } from "node:path";
 import { tmpdir } from "node:os";
+
+function overrideHomeEnv(homeDir: string): () => void {
+  const original = {
+    HOME: process.env.HOME,
+    USERPROFILE: process.env.USERPROFILE,
+    HOMEDRIVE: process.env.HOMEDRIVE,
+    HOMEPATH: process.env.HOMEPATH,
+  };
+
+  process.env.HOME = homeDir;
+  process.env.USERPROFILE = homeDir;
+
+  if (process.platform === "win32") {
+    const parsedHome = parse(homeDir);
+    process.env.HOMEDRIVE = parsedHome.root.replace(/[\\/]+$/, "");
+
+    const homePath = homeDir.slice(parsedHome.root.length).replace(/\//g, "\\");
+    process.env.HOMEPATH = homePath.startsWith("\\") ? homePath : `\\${homePath}`;
+  }
+
+  return () => {
+    if (original.HOME === undefined) delete process.env.HOME; else process.env.HOME = original.HOME;
+    if (original.USERPROFILE === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = original.USERPROFILE;
+    if (original.HOMEDRIVE === undefined) delete process.env.HOMEDRIVE; else process.env.HOMEDRIVE = original.HOMEDRIVE;
+    if (original.HOMEPATH === undefined) delete process.env.HOMEPATH; else process.env.HOMEPATH = original.HOMEPATH;
+  };
+}
 
 test("getExtensionKey normalizes top-level .ts and .js entry names to the same key", async () => {
   const { getExtensionKey } = await import("../resource-loader.ts");
@@ -43,16 +70,15 @@ test("hasStaleCompiledExtensionSiblings only flags top-level .ts/.js sibling pai
 });
 
 test("buildResourceLoader excludes duplicate top-level pi extensions when bundled resources use .js", async () => {
-  const originalHome = process.env.HOME;
   const tmp = mkdtempSync(join(tmpdir(), "gsd-resource-loader-home-"));
   const piExtensionsDir = join(tmp, ".pi", "agent", "extensions");
   const fakeAgentDir = join(tmp, ".gsd", "agent");
+  const restoreHomeEnv = overrideHomeEnv(tmp);
 
   try {
     mkdirSync(piExtensionsDir, { recursive: true });
     writeFileSync(join(piExtensionsDir, "ask-user-questions.ts"), "export {};\n");
     writeFileSync(join(piExtensionsDir, "custom-extension.ts"), "export {};\n");
-    process.env.HOME = tmp;
 
     const { buildResourceLoader } = await import("../resource-loader.ts");
     const loader = buildResourceLoader(fakeAgentDir) as { additionalExtensionPaths?: string[] };
@@ -69,11 +95,7 @@ test("buildResourceLoader excludes duplicate top-level pi extensions when bundle
       "non-duplicate pi extensions should still load",
     );
   } finally {
-    if (originalHome === undefined) {
-      delete process.env.HOME;
-    } else {
-      process.env.HOME = originalHome;
-    }
+    restoreHomeEnv();
     rmSync(tmp, { recursive: true, force: true });
   }
 });
