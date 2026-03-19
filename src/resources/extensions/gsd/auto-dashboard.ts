@@ -523,25 +523,26 @@ export function updateProgressWidget(
         const rightLines: string[] = [];
         const maxVisibleTasks = 8;
         const rpad = " ";
+        const dividerCol = leftColWidth + colGap - 1; // 1-based column for CSI G
 
         if (useTwoCol && taskDetailsCol) {
+          // Task label column: divider + space + rpad + glyph area
+          const taskRightLabelCol = dividerCol + 2 + visibleWidth(rpad) + 2;
           const visibleTasks = taskDetailsCol.slice(0, maxVisibleTasks);
           for (const t of visibleTasks) {
             const isCurrent = task && t.id === task.id;
-            let prefix: string;
-            if (t.done) {
-              prefix = `${theme.fg("success", GLYPH.statusDone)} `;
-            } else if (isCurrent) {
-              prefix = `${theme.fg("accent", "▸")} `;
-            } else {
-              prefix = "   ";
-            }
+            const glyph = t.done
+              ? theme.fg("success", GLYPH.statusDone)
+              : isCurrent
+                ? theme.fg("accent", "▸")
+                : "";
             const label = isCurrent
               ? theme.fg("text", `${t.id}: ${t.title}`)
               : t.done
                 ? theme.fg("dim", `${t.id}: ${t.title}`)
                 : theme.fg("text", `${t.id}: ${t.title}`);
-            rightLines.push(truncateToWidth(`${rpad}${prefix}${label}`, rightColWidth));
+            const moveToLabel = `\x1b[${taskRightLabelCol}G`;
+            rightLines.push(`${rpad}${glyph}${moveToLabel}${label}`);
           }
           if (taskDetailsCol.length > maxVisibleTasks) {
             rightLines.push(truncateToWidth(
@@ -551,22 +552,22 @@ export function updateProgressWidget(
           }
         } else if (!useTwoCol && taskDetailsCol && taskDetailsCol.length > 0) {
           // Narrow single-column: task list goes into left column
+          // Use CSI cursor-column to fix label position regardless of glyph width
+          const taskLabelCol = visibleWidth(pad) + 3; // pad + 2-col glyph area + space
           for (const t of taskDetailsCol.slice(0, maxVisibleTasks)) {
             const isCurrent = task && t.id === task.id;
-            let prefix: string;
-            if (t.done) {
-              prefix = `${theme.fg("success", GLYPH.statusDone)} `;
-            } else if (isCurrent) {
-              prefix = `${theme.fg("accent", "▸")} `;
-            } else {
-              prefix = "   ";
-            }
+            const glyph = t.done
+              ? theme.fg("success", GLYPH.statusDone)
+              : isCurrent
+                ? theme.fg("accent", "▸")
+                : "";
             const label = isCurrent
               ? theme.fg("text", `${t.id}: ${t.title}`)
               : t.done
                 ? theme.fg("dim", `${t.id}: ${t.title}`)
                 : theme.fg("text", `${t.id}: ${t.title}`);
-            leftLines.push(truncateToWidth(`${pad}${prefix}${label}`, leftColWidth));
+            const moveToLabel = `\x1b[${taskLabelCol}G`;
+            leftLines.push(truncateToWidth(`${pad}${glyph}${moveToLabel}${label}`, leftColWidth));
           }
         }
 
@@ -576,7 +577,6 @@ export function updateProgressWidget(
         // the right column.
         if (useTwoCol) {
           const maxRows = Math.max(leftLines.length, rightLines.length);
-          const dividerCol = leftColWidth + colGap - 1; // 1-based column for CSI G
           if (maxRows > 0) {
             lines.push("");
             for (let i = 0; i < maxRows; i++) {

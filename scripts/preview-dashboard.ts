@@ -181,50 +181,48 @@ function render(w: number, healthState: { icon: string; color: string; summary: 
   // Right column: task checklist
   const rightLines: string[] = [];
   const rpad = " ";
+  const dividerCol = leftColWidth + colGap - 1;
 
   if (useTwoCol) {
+    const taskRightLabelCol = dividerCol + 2 + visibleWidth(rpad) + 2;
     for (const t of mockTasks) {
       const isCurrent = t.id === currentTaskId;
-      let prefix: string;
-      if (t.done) {
-        prefix = `${theme.fg("success", GLYPH.statusDone)} `;
-      } else if (isCurrent) {
-        prefix = `${theme.fg("accent", "▸")} `;
-      } else {
-        prefix = "   ";
-      }
+      const glyph = t.done
+        ? theme.fg("success", GLYPH.statusDone)
+        : isCurrent
+          ? theme.fg("accent", "▸")
+          : "";
       const label = isCurrent
         ? theme.fg("text", `${t.id}: ${t.title}`)
         : t.done
           ? theme.fg("dim", `${t.id}: ${t.title}`)
           : theme.fg("text", `${t.id}: ${t.title}`);
-      rightLines.push(truncateToWidth(`${rpad}${prefix}${label}`, rightColWidth));
+      const moveToLabel = `\x1b[${taskRightLabelCol}G`;
+      rightLines.push(`${rpad}${glyph}${moveToLabel}${label}`);
     }
   } else if (hasTasks) {
-    // Narrow: tasks inline
+    // Narrow: tasks inline — use CSI cursor-column for label alignment
+    const taskLabelCol = visibleWidth(pad) + 3;
     for (const t of mockTasks) {
       const isCurrent = t.id === currentTaskId;
-      let prefix: string;
-      if (t.done) {
-        prefix = `${theme.fg("success", GLYPH.statusDone)} `;
-      } else if (isCurrent) {
-        prefix = `${theme.fg("accent", "▸")} `;
-      } else {
-        prefix = "   ";
-      }
+      const glyph = t.done
+        ? theme.fg("success", GLYPH.statusDone)
+        : isCurrent
+          ? theme.fg("accent", "▸")
+          : "";
       const label = isCurrent
         ? theme.fg("text", `${t.id}: ${t.title}`)
         : t.done
           ? theme.fg("dim", `${t.id}: ${t.title}`)
           : theme.fg("text", `${t.id}: ${t.title}`);
-      leftLines.push(truncateToWidth(`${pad}${prefix}${label}`, leftColWidth));
+      const moveToLabel = `\x1b[${taskLabelCol}G`;
+      leftLines.push(truncateToWidth(`${pad}${glyph}${moveToLabel}${label}`, leftColWidth));
     }
   }
 
   // Compose columns — use ANSI cursor-column (CSI n G) to fix divider position
   if (useTwoCol) {
     const divider = theme.fg("dim", "│");
-    const dividerCol = leftColWidth + colGap - 1;
     const maxRows = Math.max(leftLines.length, rightLines.length);
     lines.push("");
     for (let i = 0; i < maxRows; i++) {
