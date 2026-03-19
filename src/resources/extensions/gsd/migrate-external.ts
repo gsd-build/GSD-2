@@ -10,6 +10,7 @@ import { existsSync, lstatSync, mkdirSync, readdirSync, renameSync, cpSync, rmSy
 import { join } from "node:path";
 import { externalGsdRoot } from "./repo-identity.js";
 import { getErrorMessage } from "./error-utils.js";
+import { hasGitTrackedGsdFiles } from "./gitignore.js";
 
 export interface MigrationResult {
   migrated: boolean;
@@ -49,6 +50,12 @@ export function migrateToExternalState(basePath: string): MigrationResult {
     }
   } catch (err) {
     return { migrated: false, error: `Cannot stat .gsd: ${getErrorMessage(err)}` };
+  }
+
+  // Skip if .gsd/ contains git-tracked files — the project intentionally
+  // keeps .gsd/ in version control and migration would destroy that.
+  if (hasGitTrackedGsdFiles(basePath)) {
+    return { migrated: false };
   }
 
   const externalPath = externalGsdRoot(basePath);

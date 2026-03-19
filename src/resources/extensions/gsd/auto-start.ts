@@ -20,6 +20,8 @@ import {
   resolveSkillDiscoveryMode,
   getIsolationMode,
 } from "./preferences.js";
+import { ensureGsdSymlink } from "./repo-identity.js";
+import { migrateToExternalState, recoverFailedMigration } from "./migrate-external.js";
 import { collectSecretsFromManifest } from "../get-secrets-from-user.js";
 import { gsdRoot, resolveMilestoneFile, milestonesDir } from "./paths.js";
 import { invalidateAllCaches } from "./cache.js";
@@ -128,7 +130,20 @@ export async function bootstrapAutoSession(
       nativeInit(base, mainBranch);
     }
 
-    // Ensure .gitignore has baseline patterns
+    // Migrate legacy in-project .gsd/ to external state directory.
+    // Migration MUST run before ensureGitignore to avoid adding ".gsd" to
+    // .gitignore when .gsd/ is git-tracked (data-loss bug #1364).
+    recoverFailedMigration(base);
+    const migration = migrateToExternalState(base);
+    if (migration.error) {
+      ctx.ui.notify(`External state migration warning: ${migration.error}`, "warning");
+    }
+    // Ensure symlink exists (handles fresh projects and post-migration)
+    ensureGsdSymlink(base);
+
+    // Ensure .gitignore has baseline patterns.
+    // ensureGitignore checks for git-tracked .gsd/ files and skips the
+    // ".gsd" pattern if the project intentionally tracks .gsd/ in git.
     const gitPrefs = loadEffectiveGSDPreferences()?.preferences?.git;
     const commitDocs = gitPrefs?.commit_docs;
     const manageGitignore = gitPrefs?.manage_gitignore;
