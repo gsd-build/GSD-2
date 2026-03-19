@@ -109,4 +109,4 @@ function initGit(dir: string): void {
   } finally { cleanup(outer); }
 }
 
-report("paths.test.ts");
+report();
