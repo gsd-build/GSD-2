@@ -10,7 +10,7 @@ import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve, sep } from "node:path";
+import { join, resolve } from "node:path";
 
 // ─── Repo Identity ──────────────────────────────────────────────────────────
 
