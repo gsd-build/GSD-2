@@ -25,12 +25,13 @@ function run(command: string, cwd: string): string {
 function createTestRepo(): string {
   const repo = mkdtempSync(join(tmpdir(), "gsd-quick-lifecycle-"));
   run("git init -b main", repo);
-  run("git config user.name 'GSD Test'", repo);
-  run("git config user.email 'test@gsd.dev'", repo);
+  run(`git config user.name "GSD Test"`, repo);
+  run(`git config user.email "test@gsd.dev"`, repo);
   mkdirSync(join(repo, ".gsd", "runtime"), { recursive: true });
   mkdirSync(join(repo, ".gsd", "milestones", "M001"), { recursive: true });
   writeFileSync(join(repo, "README.md"), "init\n");
-  run("git add -A && git commit -m init", repo);
+  run("git add -A", repo);
+  run(`git commit -m "init"`, repo);
   return repo;
 }
 
@@ -101,10 +102,11 @@ async function main(): Promise<void> {
     // Simulate quick-task lifecycle: branch off, do work, return to main
     run("git checkout -b gsd/quick/1-fix-typo", repo);
     writeFileSync(join(repo, "fix.txt"), "fixed\n");
-    run("git add -A && git commit -m 'quick fix'", repo);
+    run("git add -A", repo);
+    run(`git commit -m "quick-fix"`, repo);
     run("git checkout main", repo);
     run("git merge --squash gsd/quick/1-fix-typo", repo);
-    run("git commit -m 'quick(Q1): fix typo'", repo);
+    run(`git commit -m "quick(Q1): fix-typo"`, repo);
     run("git branch -D gsd/quick/1-fix-typo", repo);
 
     // Now capture — should get main, not the deleted quick branch
@@ -128,7 +130,8 @@ async function main(): Promise<void> {
     // Simulate what handleQuick does: create branch, set pending state
     run("git checkout -b gsd/quick/1-fix-typo", repo);
     writeFileSync(join(repo, "fix.txt"), "fixed\n");
-    run("git add -A && git commit -m 'quick fix'", repo);
+    run("git add -A", repo);
+    run(`git commit -m "quick-fix"`, repo);
 
     // Write the disk state (simulating handleQuick's persistPendingReturn)
     const returnState = {
@@ -183,7 +186,8 @@ async function main(): Promise<void> {
     // but in-memory state is gone (new process)
     run("git checkout -b gsd/quick/2-add-docs", repo);
     writeFileSync(join(repo, "docs.md"), "# Docs\n");
-    run("git add -A && git commit -m 'add docs'", repo);
+    run("git add -A", repo);
+    run(`git commit -m "add-docs"`, repo);
 
     // Write disk state manually (simulates what handleQuick would persist)
     const runtimeDir = join(repo, ".gsd", "runtime");
