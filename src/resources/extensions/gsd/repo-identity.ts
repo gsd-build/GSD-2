@@ -37,6 +37,28 @@ function getRemoteUrl(basePath: string): string {
  */
 function resolveGitRoot(basePath: string): string {
   try {
+    // First: inspect the local .git entry directly. In git worktrees this is
+    // a file with a `gitdir:` pointer to <repo>/.git/worktrees/<name>, which
+    // lets us recover the main repo root without depending on git's path
+    // formatting behavior across platforms.
+    const gitPath = join(basePath, ".git");
+    try {
+      const stat = lstatSync(gitPath);
+      if (stat.isFile()) {
+        const content = readFileSync(gitPath, "utf-8").trim();
+        if (content.startsWith("gitdir:")) {
+          const gitdir = resolve(basePath, content.slice(7).trim());
+          const normalized = gitdir.replaceAll("\\", "/");
+          const marker = "/.git/worktrees/";
+          if (normalized.includes(marker)) {
+            return resolve(gitdir, "..", "..", "..");
+          }
+        }
+      }
+    } catch {
+      // Fall through to git-based detection.
+    }
+
     // Prefer the shared git directory because it identifies the main repo root
     // for both normal repos and worktrees. Git may return this as a relative
     // path (e.g. ".git" or "../../.git") or as an absolute path.
@@ -47,14 +69,16 @@ function resolveGitRoot(basePath: string): string {
       timeout: 5_000,
     }).trim();
     const commonDir = resolve(basePath, commonDirRaw);
+    const normalizedCommonDir = commonDir.replaceAll("\\", "/");
 
     // Normal repo or worktree with shared common dir pointing at <repo>/.git.
-    if (commonDir.endsWith(`${sep}.git`) || commonDir.endsWith("/.git")) {
+    if (normalizedCommonDir.endsWith("/.git")) {
       return resolve(commonDir, "..");
     }
 
     // Some git setups may still expose <repo>/.git/worktrees/<name>.
-    if (commonDir.includes(`${sep}.git${sep}worktrees${sep}`) || commonDir.includes("/.git/worktrees/")) {
+    const worktreeMarker = "/.git/worktrees/";
+    if (normalizedCommonDir.includes(worktreeMarker)) {
       return resolve(commonDir, "..", "..");
     }
 
