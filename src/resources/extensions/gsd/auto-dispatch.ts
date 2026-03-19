@@ -145,9 +145,28 @@ const DISPATCH_RULES: DispatchRule[] = [
         const verdictMatch = content.match(/verdict:\s*([\w-]+)/i);
         const verdict = verdictMatch?.[1]?.toLowerCase();
         if (verdict && verdict !== "pass" && verdict !== "passed") {
+          // Extract summary from UAT result content for recovery guidance (#1388)
+          const summaryMatch = content.match(/##\s*(?:Summary|Verdict Rationale|Issues?)\s*\n([\s\S]*?)(?=\n##|\n---|\Z)/i);
+          const summary = summaryMatch?.[1]?.trim().split('\n')[0]?.slice(0, 120) ?? "see UAT result for details";
+
+          const isWorktree = basePath.includes("worktrees/");
+          const recoveryGuidance = [
+            `\n\n**Recovery guidance:**`,
+            `  Workspace: ${basePath}${isWorktree ? " (worktree)" : " (project root)"}`,
+            `  Blocking artifact: ${resultFile}`,
+            `  Summary: ${summary}`,
+            `  Verdict: ${verdict}`,
+            ``,
+            `  Next steps:`,
+            `    1. Review the UAT result file above`,
+            `    2. Fix the failing checks, then update the verdict to PASS`,
+            `    3. Run /gsd auto to resume`,
+            `    Or: /gsd doctor --fix to auto-repair state, then /gsd auto`,
+          ].join('\n');
+
           return {
             action: "stop" as const,
-            reason: `UAT verdict for ${slice.id} is "${verdict}" — blocking progression until resolved.\nReview the UAT result and update the verdict to PASS, or re-run /gsd auto after fixing.`,
+            reason: `UAT verdict for ${slice.id} is "${verdict}" — blocking progression.${recoveryGuidance}`,
             level: "warning" as const,
           };
         }
