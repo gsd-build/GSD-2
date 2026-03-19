@@ -1,8 +1,19 @@
 import type { Metadata, Viewport } from 'next'
+import { Geist, Geist_Mono } from 'next/font/google'
 import { Toaster } from '@/components/ui/sonner'
 import { ThemeProvider } from '@/components/theme-provider'
 import { SwRegister } from './sw-register'
 import './globals.css'
+
+const geistSans = Geist({
+  subsets: ['latin'],
+  variable: '--font-geist-sans',
+})
+
+const geistMono = Geist_Mono({
+  subsets: ['latin'],
+  variable: '--font-geist-mono',
+})
 
 export const metadata: Metadata = {
   title: 'Autonomous Coding Agent',
@@ -44,7 +55,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="font-sans antialiased">
+      <body className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased`}>
         <ThemeProvider attribute="class" defaultTheme="dark">
           {children}
           <Toaster position="bottom-right" />
