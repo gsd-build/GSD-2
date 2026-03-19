@@ -1,15 +1,23 @@
-## Summary
-<!-- What does this PR do? 1-3 bullet points. -->
+## TL;DR
 
--
+**What:** <!-- One sentence — what does this change? -->
+**Why:** <!-- One sentence — why is it needed? -->
+**How:** <!-- One sentence — what's the approach? -->
 
-## Motivation
-<!-- Why is this change needed? Link issues if applicable. -->
+## What
 
-Closes #
+<!-- Detailed description of the change. What files, modules, or systems are affected? -->
+
+## Why
+
+<!-- The motivation. What problem does this solve? Link issues: Closes #123 -->
+
+## How
+
+<!-- The approach. How does the implementation work? Key decisions and alternatives considered? -->
 
 ## Change type
-<!-- Check one: -->
+
 - [ ] `feat` — New feature or capability
 - [ ] `fix` — Bug fix
 - [ ] `refactor` — Code restructuring (no behavior change)
@@ -18,32 +26,27 @@ Closes #
 - [ ] `chore` — Build, CI, or tooling changes
 
 ## Scope
-<!-- Which packages/areas does this touch? Check all that apply. -->
+
 - [ ] `pi-tui` — Terminal UI
 - [ ] `pi-ai` — AI/LLM layer
 - [ ] `pi-agent-core` — Agent orchestration
 - [ ] `pi-coding-agent` — Coding agent
-- [ ] `gsd extension` — GSD workflow (`src/resources/extensions/gsd/`)
+- [ ] `gsd extension` — GSD workflow
 - [ ] `native` — Native bindings
 - [ ] `ci/build` — Workflows, scripts, config
 
 ## Breaking changes
-<!-- Does this change any public API, CLI behavior, config format, or file structure? -->
+
 - [ ] No breaking changes
-- [ ] Yes — describe below:
+- [ ] Yes — described above
 
 ## Test plan
-<!-- How was this tested? Check all that apply. -->
-- [ ] Unit tests added/updated (`npm run test:unit`)
-- [ ] Integration tests added/updated (`npm run test:integration`)
-- [ ] Manual testing — describe steps:
-- [ ] No tests needed — explain why:
 
-## Rollback plan
-<!-- If this causes issues in production, how do we revert safely? -->
-- [ ] Safe to revert (no migrations, no state changes)
-- [ ] Requires steps — describe:
+- [ ] CI passes
+- [ ] New/updated tests included
+- [ ] Manual testing — steps described above
+- [ ] No tests needed — explained above
 
-## Release context
-<!-- What branch does this PR target? -->
-- **Target**: <!-- e.g., milestone/2.15.x or main -->
+## AI disclosure
+
+- [ ] This PR includes AI-assisted code <!-- If so, note the tool and what was tested -->
