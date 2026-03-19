@@ -6,7 +6,7 @@
  * manages create, enter, detect, and teardown for auto-mode worktrees.
  */
 
-import { existsSync, readFileSync, realpathSync, unlinkSync, statSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, unlinkSync, statSync, rmSync, readdirSync, cpSync, lstatSync as lstatSyncFn } from "node:fs";
 import { isAbsolute, join, sep } from "node:path";
 import { GSDError, GSD_IO_ERROR, GSD_GIT_ERROR } from "./errors.js";
 import { execSync, execFileSync } from "node:child_process";
@@ -44,6 +44,122 @@ import { getErrorMessage } from "./error-utils.js";
 
 /** Original project root before chdir into auto-worktree. */
 let originalBase: string | null = null;
+
+// ─── Worktree ↔ Main Repo Sync (#1311) ──────────────────────────────────────
+
+/**
+ * Sync .gsd/ state from the main repo into the worktree.
+ *
+ * When .gsd/ is a symlink to the external state directory, both the main
+ * repo and worktree share the same directory — no sync needed.
+ *
+ * When .gsd/ is a real directory (e.g., git-tracked or manage_gitignore:false),
+ * the worktree has its own copy that may be stale. This function copies
+ * missing milestones, CONTEXT, ROADMAP, DECISIONS, REQUIREMENTS, and
+ * PROJECT files from the main repo's .gsd/ into the worktree's .gsd/.
+ *
+ * Only adds missing content — never overwrites existing files in the worktree
+ * (the worktree's execution state is authoritative for in-progress work).
+ */
+export function syncGsdStateToWorktree(mainBasePath: string, worktreePath_: string): { synced: string[] } {
+  const mainGsd = gsdRoot(mainBasePath);
+  const wtGsd = gsdRoot(worktreePath_);
+  const synced: string[] = [];
+
+  // If both resolve to the same directory (symlink), no sync needed
+  try {
+    const mainResolved = realpathSync(mainGsd);
+    const wtResolved = realpathSync(wtGsd);
+    if (mainResolved === wtResolved) return { synced };
+  } catch {
+    // Can't resolve — proceed with sync as a safety measure
+  }
+
+  if (!existsSync(mainGsd) || !existsSync(wtGsd)) return { synced };
+
+  // Sync root-level .gsd/ files (DECISIONS, REQUIREMENTS, PROJECT, KNOWLEDGE)
+  const rootFiles = ["DECISIONS.md", "REQUIREMENTS.md", "PROJECT.md", "KNOWLEDGE.md", "OVERRIDES.md"];
+  for (const f of rootFiles) {
+    const src = join(mainGsd, f);
+    const dst = join(wtGsd, f);
+    if (existsSync(src) && !existsSync(dst)) {
+      try {
+        cpSync(src, dst);
+        synced.push(f);
+      } catch { /* non-fatal */ }
+    }
+  }
+
+  // Sync milestones: copy entire milestone directories that are missing
+  const mainMilestonesDir = join(mainGsd, "milestones");
+  const wtMilestonesDir = join(wtGsd, "milestones");
+  if (existsSync(mainMilestonesDir) && existsSync(wtMilestonesDir)) {
+    try {
+      const mainMilestones = readdirSync(mainMilestonesDir, { withFileTypes: true })
+        .filter(d => d.isDirectory() && /^M\d{3}/.test(d.name))
+        .map(d => d.name);
+
+      for (const mid of mainMilestones) {
+        const srcDir = join(mainMilestonesDir, mid);
+        const dstDir = join(wtMilestonesDir, mid);
+
+        if (!existsSync(dstDir)) {
+          // Entire milestone missing from worktree — copy it
+          try {
+            cpSync(srcDir, dstDir, { recursive: true });
+            synced.push(`milestones/${mid}/`);
+          } catch { /* non-fatal */ }
+        } else {
+          // Milestone directory exists but may be missing files (stale snapshot).
+          // Sync individual top-level milestone files (CONTEXT, ROADMAP, RESEARCH, etc.)
+          try {
+            const srcFiles = readdirSync(srcDir).filter(f => f.endsWith(".md") || f.endsWith(".json"));
+            for (const f of srcFiles) {
+              const srcFile = join(srcDir, f);
+              const dstFile = join(dstDir, f);
+              if (!existsSync(dstFile)) {
+                try {
+                  const srcStat = lstatSyncFn(srcFile);
+                  if (srcStat.isFile()) {
+                    cpSync(srcFile, dstFile);
+                    synced.push(`milestones/${mid}/${f}`);
+                  }
+                } catch { /* non-fatal */ }
+              }
+            }
+
+            // Sync slices directory if it exists in main but not in worktree
+            const srcSlicesDir = join(srcDir, "slices");
+            const dstSlicesDir = join(dstDir, "slices");
+            if (existsSync(srcSlicesDir) && !existsSync(dstSlicesDir)) {
+              try {
+                cpSync(srcSlicesDir, dstSlicesDir, { recursive: true });
+                synced.push(`milestones/${mid}/slices/`);
+              } catch { /* non-fatal */ }
+            } else if (existsSync(srcSlicesDir) && existsSync(dstSlicesDir)) {
+              // Both exist — sync missing slice directories
+              const srcSlices = readdirSync(srcSlicesDir, { withFileTypes: true })
+                .filter(d => d.isDirectory())
+                .map(d => d.name);
+              for (const sid of srcSlices) {
+                const srcSlice = join(srcSlicesDir, sid);
+                const dstSlice = join(dstSlicesDir, sid);
+                if (!existsSync(dstSlice)) {
+                  try {
+                    cpSync(srcSlice, dstSlice, { recursive: true });
+                    synced.push(`milestones/${mid}/slices/${sid}/`);
+                  } catch { /* non-fatal */ }
+                }
+              }
+            }
+          } catch { /* non-fatal */ }
+        }
+      }
+    } catch { /* non-fatal */ }
+  }
+
+  return { synced };
+}
 
 // ─── Worktree Post-Create Hook (#597) ────────────────────────────────────────
 
@@ -124,6 +240,12 @@ export function createAutoWorktree(basePath: string, milestoneId: string): strin
 
   // Ensure worktree shares external state via symlink
   ensureGsdSymlink(info.path);
+
+  // Sync .gsd/ state from main repo into the worktree (#1311).
+  // Even with the symlink, the worktree may have stale git-tracked files
+  // if .gsd/ is not gitignored. And on fresh create, the milestone files
+  // created on main since the branch point won't be in the worktree.
+  syncGsdStateToWorktree(basePath, info.path);
 
   // Run user-configured post-create hook (#597) — e.g. copy .env, symlink assets
   const hookError = runWorktreePostCreateHook(basePath, info.path);
@@ -266,6 +388,18 @@ export function enterAutoWorktree(basePath: string, milestoneId: string): string
     if (err instanceof Error && err.message.includes("worktree")) throw err;
     throw new GSDError(GSD_IO_ERROR, `Auto-worktree path ${p} exists but .git is unreadable`);
   }
+
+  // Ensure worktree shares external state via symlink (#1311).
+  // On resume (enterAutoWorktree), the symlink may be missing if it was
+  // created before ensureGsdSymlink existed, or the .gsd/ directory may be
+  // a stale git-tracked copy instead of a symlink. Refreshing here ensures
+  // the worktree sees the same milestone state as the main repo.
+  ensureGsdSymlink(p);
+
+  // Sync .gsd/ state from main repo into worktree (#1311).
+  // Covers the case where .gsd/ is a real directory (not symlinked) and
+  // milestones were created on main after the worktree was last used.
+  syncGsdStateToWorktree(basePath, p);
 
   const previousCwd = process.cwd();
 
