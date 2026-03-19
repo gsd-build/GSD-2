@@ -24,21 +24,24 @@ One command. Walk away. Come back to a built project with clean git history.
 
 ---
 
-## What's New in v2.29
+## What's New in v2.32
 
-- **Node.js 24 LTS** — CI, Docker, and package config all upgraded to Node 24 (Krypton)
-- **`searchExcludeDirs` setting** — blacklist directories from `@` file autocomplete (e.g., `node_modules`, `dist`)
-- **Automated releases** — prod-release now auto-generates changelogs, bumps versions, and publishes to npm
-- **`/gsd logs`** — browse activity, debug, and metrics logs from within a session
-- **Configurable screenshots** — browser-tools now support custom resolution, format, and quality
-- **Pre-commit secret scanning** — automatic detection of hardcoded secrets in CI and locally
-- **Per-project MCP config** — `.gsd/mcp.json` for project-scoped MCP server definitions
-- **API request metrics** — track request counts for Copilot/subscription users
-- **`/gsd keys`** — full API key lifecycle management (list, add, remove, test, rotate, doctor)
-- **Advisory verification gate** — auto-discovered checks (lint/test from package.json) no longer doom-loop on pre-existing errors
-- **Worktree living doc sync** — DECISIONS, REQUIREMENTS, PROJECT, and KNOWLEDGE now sync between worktree and project root
-- **Windows non-ASCII path support** — `cpSync` fallback for usernames with special characters
-- **`needs-discussion` routing** — milestones with draft context now route to the interactive discussion flow instead of stopping
+- **Simplified pipeline** — research merged into planning, mechanical completion (ADR-003)
+- **Always-on health widget** — 🟢🟡🔴 traffic-light indicator in the progress widget and visualizer health tab
+- **Environment health checks** — progress scoring and status integration for auto-mode
+- **Extension registry** — user-managed enable/disable for bundled and custom extensions
+- **Built-in skill authoring** — create and distribute custom skills from within GSD
+- **Workflow templates** — right-sized workflows for every task type (research, plan, execute, complete)
+- **AWS Bedrock auth** — automatic credential refresh via the new `aws-auth` extension
+- **`-w` / `--worktree` CLI flag** — launch isolated worktree sessions from the command line
+- **Native MCP client** — replaced MCPorter with a built-in MCP client for better reliability
+- **External state directory** — `.gsd/` now lives in `~/.gsd/projects/` with a symlink (ADR-002)
+- **Model health indicator** — live health status based on error trends and consecutive failures
+- **Quick-task branch cleanup** — `/gsd quick` branches auto-merge back after completion
+- **Windows EPERM fallback** — migration rename uses copy+delete when NTFS blocks rename
+- **Worktree identity fix** — stable project hash across worktrees and main repo
+- **Crash recovery guidance** — actionable next-step messages based on what was interrupted
+- **UAT verdict gating** — non-PASS verdicts now block slice progression instead of being ignored
 
 See the full [Changelog](./CHANGELOG.md) for details.
 
@@ -65,6 +68,7 @@ Full documentation is available in the [`docs/`](./docs/) directory:
 - **[Visualizer](./docs/visualizer.md)** — workflow visualizer with stats and discussion status
 - **[Remote Questions](./docs/remote-questions.md)** — route decisions to Slack or Discord when human input is needed
 - **[Dynamic Model Routing](./docs/dynamic-model-routing.md)** — complexity-based model selection and budget pressure
+- **[Pipeline Simplification (ADR-003)](./docs/ADR-003-pipeline-simplification.md)** — merged research into planning, mechanical completion
 - **[Migration from v1](./docs/migration.md)** — `.planning` → `.gsd` migration
 
 ---
@@ -141,12 +145,12 @@ The iron rule: **a task must fit in one context window.** If it can't, it's two 
 Each slice flows through phases automatically:
 
 ```
-Research → Plan → Execute (per task) → Complete → Reassess Roadmap → Next Slice
-                                                                      ↓ (all slices done)
-                                                              Validate Milestone → Complete Milestone
+Plan (with integrated research) → Execute (per task) → Complete → Reassess Roadmap → Next Slice
+                                                                                      ↓ (all slices done)
+                                                                              Validate Milestone → Complete Milestone
 ```
 
-**Research** scouts the codebase and relevant docs. **Plan** decomposes the slice into tasks with must-haves (mechanically verifiable outcomes). **Execute** runs each task in a fresh context window with only the relevant files pre-loaded — then runs configured verification commands (lint, test, etc.) with auto-fix retries. **Complete** writes the summary, UAT script, marks the roadmap, and commits with meaningful messages derived from task summaries. **Reassess** checks if the roadmap still makes sense given what was learned. **Validate Milestone** runs a reconciliation gate after all slices complete — comparing roadmap success criteria against actual results before sealing the milestone.
+**Plan** scouts the codebase, researches relevant docs, and decomposes the slice into tasks with must-haves (mechanically verifiable outcomes). **Execute** runs each task in a fresh context window with only the relevant files pre-loaded — then runs configured verification commands (lint, test, etc.) with auto-fix retries. **Complete** writes the summary, UAT script, marks the roadmap, and commits with meaningful messages derived from task summaries. **Reassess** checks if the roadmap still makes sense given what was learned. **Validate Milestone** runs a reconciliation gate after all slices complete — comparing roadmap success criteria against actual results before sealing the milestone.
 
 ### `/gsd auto` — The Main Event
 
@@ -326,6 +330,7 @@ On first run, GSD launches a branded setup wizard that walks you through LLM pro
 | `gsd headless [cmd]`    | Run `/gsd` commands without TUI (CI, cron, scripts)             |
 | `gsd headless query`    | Instant JSON snapshot — state, next dispatch, costs (no LLM)    |
 | `gsd --continue` (`-c`) | Resume the most recent session for the current directory        |
+| `gsd --worktree` (`-w`) | Launch an isolated worktree session for the active milestone    |
 | `gsd sessions`          | Interactive session picker — browse and resume any saved session |
 
 ---
@@ -483,7 +488,7 @@ See the full [Token Optimization Guide](./docs/token-optimization.md) for detail
 
 ### Bundled Tools
 
-GSD ships with 16 extensions, all loaded automatically:
+GSD ships with 18 extensions, all loaded automatically:
 
 | Extension              | What it provides                                                                                                       |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------- |
@@ -503,6 +508,8 @@ GSD ships with 16 extensions, all loaded automatically:
 | **Secure Env Collect** | Masked secret collection without manual .env editing                                                                   |
 | **Remote Questions**   | Route decisions to Slack/Discord when human input is needed in headless/CI mode                                         |
 | **Universal Config**   | Discover and import MCP servers and rules from other AI coding tools                                                    |
+| **AWS Auth**           | Automatic Bedrock credential refresh for AWS-hosted models                                                              |
+| **TTSR**               | Tool-use type-safe runtime validation                                                                                   |
 
 ### Bundled Agents
 
