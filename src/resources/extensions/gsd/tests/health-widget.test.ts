@@ -80,28 +80,66 @@ test("buildHealthLines: initialized state shows continue setup copy", () => {
   ]);
 });
 
-test("buildHealthLines: active state with ledger-driven spend shows spent summary", () => {
-  const lines = buildHealthLines(activeData({ budgetSpent: 0.42 }));
-  assert.equal(lines.length, 1);
-  assert.match(lines[0]!, /● System OK/);
-  assert.match(lines[0]!, /Spent: 42\.0¢/);
+test("buildHealthLines: active state leads with execution summary", () => {
+  const lines = buildHealthLines(activeData({
+    executionStatus: "Progressing well",
+    executionTarget: "Plan S01",
+    progress: {
+      milestones: { done: 0, total: 1 },
+      slices: { done: 0, total: 3 },
+      tasks: { done: 0, total: 5 },
+    },
+  }));
+
+  assert.equal(lines.length, 2);
+  assert.equal(lines[0], "  GSD  Progressing well — Plan S01");
+  assert.match(lines[1]!, /Progress: M 0\/1 · S 0\/3 · T 0\/5/);
+});
+
+test("buildHealthLines: active state keeps issues secondary", () => {
+  const lines = buildHealthLines(activeData({
+    executionStatus: "Struggling",
+    executionTarget: "Execute T03",
+    providerIssue: "✗ Anthropic (Claude) key missing",
+    environmentWarningCount: 1,
+    budgetSpent: 0.42,
+  }));
+
+  assert.equal(lines.length, 2);
+  assert.equal(lines[0], "  GSD  Struggling — Execute T03");
+  assert.match(lines[1]!, /✗ Anthropic \(Claude\) key missing/);
+  assert.match(lines[1]!, /Env: 1 warning/);
+  assert.match(lines[1]!, /Spent: 42\.0¢/);
+});
+
+test("buildHealthLines: blocked state explains wait reason", () => {
+  const lines = buildHealthLines(activeData({
+    executionStatus: "Blocked",
+    executionTarget: "waiting on unmet deps: M001",
+    blocker: "M002 is waiting on unmet deps: M001",
+  }));
+
+  assert.equal(lines[0], "  GSD  Blocked — waiting on unmet deps: M001");
+});
+
+test("buildHealthLines: paused state can omit secondary line", () => {
+  const lines = buildHealthLines(activeData({
+    executionStatus: "Paused",
+    executionTarget: "waiting to resume",
+  }));
+
+  assert.deepEqual(lines, ["  GSD  Paused — waiting to resume"]);
 });
 
 test("buildHealthLines: active state with budget ceiling shows percent summary", () => {
-  const lines = buildHealthLines(activeData({ budgetSpent: 2.5, budgetCeiling: 10 }));
-  assert.equal(lines.length, 1);
-  assert.match(lines[0]!, /Budget: \$2\.50\/\$10\.00 \(25%\)/);
-});
-
-test("buildHealthLines: active state with issues reports issue summary", () => {
   const lines = buildHealthLines(activeData({
-    providerIssue: "✗ OpenAI key missing",
-    environmentErrorCount: 1,
+    executionStatus: "Progressing well",
+    executionTarget: "Plan S01",
+    budgetSpent: 2.5,
+    budgetCeiling: 10,
   }));
-  assert.equal(lines.length, 1);
-  assert.match(lines[0]!, /✗ 2 issues/);
-  assert.match(lines[0]!, /✗ OpenAI key missing/);
-  assert.match(lines[0]!, /Env: 1 error/);
+  assert.equal(lines.length, 2);
+  assert.match(lines[1]!, /Budget: \$2\.50\/\$10\.00 \(25%\)/);
 });
 
 test("detectHealthWidgetProjectState: metrics file alone does not imply project", () => {
