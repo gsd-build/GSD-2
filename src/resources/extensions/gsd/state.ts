@@ -64,11 +64,12 @@ export function isValidationTerminal(validationContent: string): boolean {
   if (!match) return false;
   const verdict = match[1].match(/verdict:\s*(\S+)/);
   if (!verdict) return false;
+  const v = verdict[1] === 'passed' ? 'pass' : verdict[1];
   // 'pass' and 'needs-attention' are always terminal.
   // 'needs-remediation' is treated as terminal to prevent infinite loops
   // when no remediation slices exist in the roadmap (#832). The validation
   // report is preserved on disk for manual review.
-  return verdict[1] === 'pass' || verdict[1] === 'needs-attention' || verdict[1] === 'needs-remediation';
+  return v === 'pass' || v === 'needs-attention' || v === 'needs-remediation';
 }
 
 // ─── State Derivation ──────────────────────────────────────────────────────
