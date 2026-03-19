@@ -174,6 +174,8 @@ import { checkStuckAndRecover, type StuckContext } from "./auto-stuck-detection.
 import { runPostUnitVerification, type VerificationContext } from "./auto-verification.js";
 import { postUnitPreVerification, postUnitPostVerification, type PostUnitContext } from "./auto-post-unit.js";
 import { bootstrapAutoSession, type BootstrapDeps } from "./auto-start.js";
+import { autoLoop, resolveAgentEnd, type LoopDeps } from "./auto-loop.js";
+import { reorderForCaching } from "./prompt-ordering.js";
 
 // Worktree sync, resource staleness, stale worktree escape → auto-worktree-sync.ts
 
@@ -583,6 +585,118 @@ export async function pauseAuto(ctx?: ExtensionContext, _pi?: ExtensionAPI): Pro
   );
 }
 
+/**
+ * Build the LoopDeps object from auto.ts private scope.
+ * This bundles all private functions that autoLoop needs without exporting them.
+ */
+function buildLoopDeps(): LoopDeps {
+  return {
+    lockBase,
+    buildSnapshotOpts,
+    stopAuto,
+    pauseAuto,
+    clearUnitTimeout,
+    updateProgressWidget,
+    startDispatchGapWatchdog,
+
+    // State and cache
+    invalidateAllCaches,
+    deriveState,
+    loadEffectiveGSDPreferences,
+
+    // Pre-dispatch health gate
+    preDispatchHealthGate,
+
+    // Worktree sync
+    syncProjectRootToWorktree,
+
+    // Resource version guard
+    checkResourcesStale,
+
+    // Milestone transition
+    sendDesktopNotification,
+    setActiveMilestoneId,
+    pruneQueueOrder,
+    isInAutoWorktree,
+    shouldUseWorktreeIsolation,
+    mergeMilestoneToMain,
+    teardownAutoWorktree,
+    createAutoWorktree,
+    captureIntegrationBranch,
+    getIsolationMode,
+    getCurrentBranch,
+    autoWorktreeBranch,
+    resolveMilestoneFile,
+    completedKeysPath,
+    reconcileMergeState,
+
+    // Budget/context/secrets
+    getLedger,
+    getProjectTotals,
+    formatCost,
+    getBudgetAlertLevel,
+    getNewBudgetAlertLevel,
+    getBudgetEnforcementAction,
+    getManifestStatus,
+    collectSecretsFromManifest,
+
+    // Dispatch
+    resolveDispatch,
+    runPreDispatchHooks,
+    getPriorSliceCompletionBlocker,
+    getMainBranch,
+    collectObservabilityWarnings: _collectObservabilityWarnings,
+    buildObservabilityRepairBlock,
+
+    // Idempotency + stuck detection
+    checkIdempotency,
+    checkStuckAndRecover,
+
+    // Unit closeout + runtime records
+    closeoutUnit,
+    verifyExpectedArtifact,
+    persistCompletedKey,
+    clearUnitRuntimeRecord,
+    writeUnitRuntimeRecord,
+    recordOutcome,
+    writeLock,
+    captureAvailableSkills,
+    ensurePreconditions,
+    updateSliceProgressCache,
+
+    // Model selection + supervision
+    selectAndApplyModel,
+    startUnitSupervision,
+
+    // Prompt helpers
+    getDeepDiagnostic,
+    isDbAvailable,
+    reorderForCaching,
+
+    // Filesystem
+    existsSync,
+    readFileSync: (path: string, encoding: string) => readFileSync(path, encoding as BufferEncoding),
+    atomicWriteSync,
+
+    // Git
+    GitServiceImpl: GitServiceImpl as unknown as LoopDeps["GitServiceImpl"],
+
+    // Post-unit processing
+    postUnitPreVerification,
+    runPostUnitVerification,
+    postUnitPostVerification,
+
+    // Session manager
+    getSessionFile: (ctx: ExtensionContext) => {
+      try {
+        return ctx.sessionManager?.getSessionFile() ?? "";
+      } catch {
+        return "";
+      }
+    },
+  } as unknown as LoopDeps;
+}
+
 
 export async function startAuto(
   ctx: ExtensionCommandContext,
@@ -669,7 +783,7 @@ export async function startAuto(
 
     writeLock(lockBase(), "resuming", s.currentMilestoneId ?? "unknown", s.completedUnits.length);
 
-    await dispatchNextUnit(ctx, pi);
+    await autoLoop(ctx, pi, s, buildLoopDeps());
     return;
   }
 
@@ -684,123 +798,27 @@ export async function startAuto(
   if (!ready) return;
 
   // Dispatch the first unit
-  await dispatchNextUnit(ctx, pi);
+  await autoLoop(ctx, pi, s, buildLoopDeps());
 }
 
 // ─── Agent End Handler ────────────────────────────────────────────────────────
 
-/** Guard against concurrent handleAgentEnd execution. */
-
+/**
+ * Deprecated thin wrapper — kept as export for backward compatibility.
+ * The actual agent_end processing now happens via resolveAgentEnd() in auto-loop.ts,
+ * which is called directly from index.ts. The autoLoop() while loop handles all
+ * post-unit processing (verification, hooks, dispatch) that this function used to do.
+ *
+ * If called by straggler code, it simply resolves the pending promise so the loop
+ * can continue.
+ */
 export async function handleAgentEnd(
   ctx: ExtensionContext,
   pi: ExtensionAPI,
 ): Promise<void> {
   if (!s.active || !s.cmdCtx) return;
-  if (s.handlingAgentEnd) {
-    // Another agent_end arrived while we're still processing the previous one.
-    // This happens when a unit dispatched inside handleAgentEnd (e.g. via hooks,
-    // triage, or quick-task early-dispatch paths) completes before the outer
-    // handleAgentEnd returns. Queue a retry so the completed unit's agent_end
-    // is not silently dropped (#1072).
-    s.pendingAgentEndRetry = true;
-    return;
-  }
-  s.handlingAgentEnd = true;
-
-  try {
-
-  // Unit completed — clear its timeout
   clearUnitTimeout();
-
-  // ── Pre-verification processing (commit, doctor, state rebuild, etc.) ──
-  const postUnitCtx: PostUnitContext = {
-    s,
-    ctx,
-    pi,
-    buildSnapshotOpts,
-    lockBase,
-    stopAuto,
-    pauseAuto,
-    updateProgressWidget,
-  };
-
-  const preResult = await postUnitPreVerification(postUnitCtx);
-  if (preResult === "dispatched") return;
-
-  // ── Verification gate: run typecheck/lint/test after execute-task ──
-  const verificationResult = await runPostUnitVerification(
-    { s, ctx, pi },
-    dispatchNextUnit,
-    startDispatchGapWatchdog,
-    pauseAuto,
-  );
-  if (verificationResult === "retry" || verificationResult === "pause") return;
-
-  // ── Post-verification processing (DB dual-write, hooks, triage, quick-tasks) ──
-  const postResult = await postUnitPostVerification(postUnitCtx);
-  if (postResult === "dispatched" || postResult === "stopped") return;
-  if (postResult === "step-wizard") {
-    await showStepWizard(ctx, pi);
-    return;
-  }
-
-  // ── Dispatch with hang detection (#1073) ────────────────────────────────
-  // Start a safety watchdog BEFORE calling dispatchNextUnit. If dispatch
-  // hangs at any await (newSession, model selection, etc.), the gap watchdog
-  // inside handleAgentEnd never fires because we never reach the check.
-  // This pre-dispatch watchdog ensures recovery even when dispatchNextUnit
-  // itself is permanently blocked.
-  const dispatchHangGuard = setTimeout(() => {
-    if (!s.active) return;
-    // dispatchNextUnit has been running for too long — it's likely hung.
-    // Start the gap watchdog which will retry dispatch from scratch.
-    if (!s.unitTimeoutHandle && !s.wrapupWarningHandle) {
-      ctx.ui.notify(
-        `Dispatch hang detected (${DISPATCH_HANG_TIMEOUT_MS / 1000}s without completion). Starting recovery watchdog.`,
-        "warning",
-      );
-      startDispatchGapWatchdog(ctx, pi);
-    }
-  }, DISPATCH_HANG_TIMEOUT_MS);
-
-  try {
-    await dispatchNextUnit(ctx, pi);
-  } catch (dispatchErr) {
-    const message = dispatchErr instanceof Error ? dispatchErr.message : String(dispatchErr);
-    ctx.ui.notify(
-      `Dispatch error after unit completion: ${message}. Retrying in ${DISPATCH_GAP_TIMEOUT_MS / 1000}s.`,
-      "error",
-    );
-    startDispatchGapWatchdog(ctx, pi);
-    return;
-  } finally {
-    clearTimeout(dispatchHangGuard);
-  }
-
-  if (s.active && !s.unitTimeoutHandle && !s.wrapupWarningHandle) {
-    startDispatchGapWatchdog(ctx, pi);
-  }
-
-  } finally {
-    s.handlingAgentEnd = false;
-
-    // If an agent_end event was dropped by the reentrancy guard while we were
-    // processing, re-enter handleAgentEnd on the next microtask. This prevents
-    // the summarizing phase stall (#1072) where a unit dispatched inside
-    // handleAgentEnd (hooks, triage, quick-task) completes before we return,
-    // and its agent_end is silently dropped — leaving auto-mode active but
-    // permanently stalled with no unit running and no watchdog set.
-    if (s.pendingAgentEndRetry) {
-      s.pendingAgentEndRetry = false;
-      setImmediate(() => {
-        handleAgentEnd(ctx, pi).catch((err) => {
-          const msg = err instanceof Error ? err.message : String(err);
-          ctx.ui.notify(`Deferred agent_end retry failed: ${msg}`, "error");
-          pauseAuto(ctx, pi).catch(() => {});
-        });
-      });
-    }
-  }
+  resolveAgentEnd({ messages: [] });
 }
 
 // ─── Step Mode Wizard ─────────────────────────────────────────────────────
@@ -1697,7 +1715,6 @@ function ensurePreconditions(
 function buildRecoveryContext(): import("./auto-timeout-recovery.js").RecoveryContext {
   return { basePath: s.basePath, verbose: s.verbose,
     currentUnitStartedAt: s.currentUnit?.startedAt ?? Date.now(), unitRecoveryCount: s.unitRecoveryCount,
-    dispatchNextUnit,
   };
 }
 

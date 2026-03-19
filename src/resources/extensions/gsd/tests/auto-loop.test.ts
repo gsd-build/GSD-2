@@ -734,3 +734,104 @@ test("autoLoop contains while (s.active) loop", () => {
     "autoLoop should contain a while (s.active) loop",
   );
 });
+
+// ── T03: End-to-end wiring structural assertions ─────────────────────────────
+
+test("auto-loop.ts exports autoLoop, runUnit, and resolveAgentEnd", () => {
+  const src = readFileSync(
+    resolve(import.meta.dirname, "..", "auto-loop.ts"),
+    "utf-8",
+  );
+  assert.ok(src.includes("export async function autoLoop"), "must export autoLoop");
+  assert.ok(src.includes("export async function runUnit"), "must export runUnit");
+  assert.ok(src.includes("export function resolveAgentEnd"), "must export resolveAgentEnd");
+});
+
+test("auto.ts startAuto calls autoLoop (not dispatchNextUnit as first dispatch)", () => {
+  const src = readFileSync(
+    resolve(import.meta.dirname, "..", "auto.ts"),
+    "utf-8",
+  );
+  // Find the startAuto function body
+  const fnIdx = src.indexOf("export async function startAuto");
+  assert.ok(fnIdx > -1, "startAuto must exist in auto.ts");
+  const fnEnd = src.indexOf("\n// ─── ", fnIdx + 100);
+  const fnBlock = fnEnd > -1 ? src.slice(fnIdx, fnEnd) : src.slice(fnIdx, fnIdx + 5000);
+  assert.ok(
+    fnBlock.includes("autoLoop("),
+    "startAuto must call autoLoop() instead of dispatchNextUnit()",
+  );
+});
+
+test("index.ts agent_end handler calls resolveAgentEnd (not handleAgentEnd)", () => {
+  const src = readFileSync(
+    resolve(import.meta.dirname, "..", "index.ts"),
+    "utf-8",
+  );
+  // Find the agent_end handler success path
+  const handlerIdx = src.indexOf('pi.on("agent_end"');
+  assert.ok(handlerIdx > -1, "index.ts must have an agent_end handler");
+  const handlerBlock = src.slice(handlerIdx, handlerIdx + 10000);
+  assert.ok(
+    handlerBlock.includes("resolveAgentEnd(event)"),
+    "agent_end success path must call resolveAgentEnd(event) instead of handleAgentEnd(ctx, pi)",
+  );
+});
+
+test("auto-verification.ts runPostUnitVerification does not take dispatchNextUnit callback", () => {
+  const src = readFileSync(
+    resolve(import.meta.dirname, "..", "auto-verification.ts"),
+    "utf-8",
+  );
+  const fnIdx = src.indexOf("export async function runPostUnitVerification");
+  assert.ok(fnIdx > -1, "runPostUnitVerification must exist");
+  const sigEnd = src.indexOf("): Promise<VerificationResult>", fnIdx);
+  const signature = src.slice(fnIdx, sigEnd);
+  assert.ok(
+    !signature.includes("dispatchNextUnit"),
+    "runPostUnitVerification must not take a dispatchNextUnit callback parameter",
+  );
+  assert.ok(
+    !signature.includes("startDispatchGapWatchdog"),
+    "runPostUnitVerification must not take a startDispatchGapWatchdog callback parameter",
+  );
+});
+
+test("auto-timeout-recovery.ts calls resolveAgentEnd instead of dispatchNextUnit", () => {
+  const src = readFileSync(
+    resolve(import.meta.dirname, "..", "auto-timeout-recovery.ts"),
+    "utf-8",
+  );
+  assert.ok(
+    !src.includes("await dispatchNextUnit"),
+    "auto-timeout-recovery.ts must not call dispatchNextUnit",
+  );
+  assert.ok(
+    src.includes("resolveAgentEnd("),
+    "auto-timeout-recovery.ts must call resolveAgentEnd to re-iterate the loop on timeout recovery",
+  );
+});
+
+test("handleAgentEnd in auto.ts is a thin wrapper calling resolveAgentEnd", () => {
+  const src = readFileSync(
+    resolve(import.meta.dirname, "..", "auto.ts"),
+    "utf-8",
+  );
+  const fnIdx = src.indexOf("export async function handleAgentEnd");
+  assert.ok(fnIdx > -1, "handleAgentEnd must exist");
+  const fnEnd = src.indexOf("\n// ─── ", fnIdx + 100);
+  const fnBlock = fnEnd > -1 ? src.slice(fnIdx, fnEnd) : src.slice(fnIdx, fnIdx + 1000);
+  assert.ok(
+    fnBlock.includes("resolveAgentEnd("),
+    "handleAgentEnd must call resolveAgentEnd",
+  );
+  // The function should be short — no reentrancy guard, no verification, no dispatch
+  assert.ok(
+    !fnBlock.includes("dispatchNextUnit"),
+    "handleAgentEnd must not call dispatchNextUnit (it's now a thin wrapper)",
+  );
+  assert.ok(
+    !fnBlock.includes("postUnitPreVerification") && !fnBlock.includes("postUnitPostVerification"),
+    "handleAgentEnd must not contain verification logic (moved to autoLoop)",
+  );
+});

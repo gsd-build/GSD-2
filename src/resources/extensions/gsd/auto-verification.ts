@@ -37,13 +37,11 @@ export type VerificationResult = "continue" | "retry" | "pause";
  * Run the verification gate for the current execute-task unit.
  * Returns:
  * - "continue" — gate passed (or no checks configured), proceed normally
- * - "retry" — gate failed with retries remaining, dispatchNextUnit already called
+ * - "retry" — gate failed with retries remaining, s.pendingVerificationRetry set for loop re-iteration
  * - "pause" — gate failed with retries exhausted, pauseAuto already called
  */
 export async function runPostUnitVerification(
   vctx: VerificationContext,
-  dispatchNextUnit: (ctx: ExtensionContext, pi: ExtensionAPI) => Promise<void>,
-  startDispatchGapWatchdog: (ctx: ExtensionContext, pi: ExtensionAPI) => void,
   pauseAuto: (ctx?: ExtensionContext, pi?: ExtensionAPI) => Promise<void>,
 ): Promise<VerificationResult> {
   const { s, ctx, pi } = vctx;
@@ -166,14 +164,7 @@ export async function runPostUnitVerification(
       ctx.ui.notify(`Verification failed — auto-fix attempt ${nextAttempt}/${maxRetries}`, "warning");
       s.completedKeySet.delete(completionKey);
       removePersistedKey(s.basePath, completionKey);
-      // Dispatch retry immediately
-      try {
-        await dispatchNextUnit(ctx, pi);
-      } catch (retryDispatchErr) {
-        const msg = retryDispatchErr instanceof Error ? retryDispatchErr.message : String(retryDispatchErr);
-        ctx.ui.notify(`Verification retry dispatch error: ${msg}`, "error");
-        startDispatchGapWatchdog(ctx, pi);
-      }
+      // Return "retry" — the autoLoop while loop will re-iterate with the retry context
       return "retry";
     } else {
       // Gate failed, retries exhausted

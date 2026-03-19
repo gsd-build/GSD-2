@@ -35,6 +35,7 @@ import { saveFile, formatContinue, loadFile, parseContinue, parseSummary, loadAc
 import { loadPrompt } from "./prompt-loader.js";
 import { deriveState } from "./state.js";
 import { isAutoActive, isAutoPaused, handleAgentEnd, pauseAuto, getAutoDashboardData, getAutoModeStartModel, markToolStart, markToolEnd } from "./auto.js";
+import { resolveAgentEnd } from "./auto-loop.js";
 import { saveActivityLog } from "./activity-log.js";
 import { checkAutoStartAfterDiscuss, getDiscussionMilestoneId, findMilestoneIds, nextMilestoneId } from "./guided-flow.js";
 import { GSDDashboardOverlay } from "./dashboard-overlay.js";
@@ -884,10 +885,9 @@ export default function (pi: ExtensionAPI) {
 
     try {
       networkRetryCounters.clear(); // Clear network retry state on successful unit completion
-      await handleAgentEnd(ctx, pi);
+      resolveAgentEnd(event);
     } catch (err) {
-      // Safety net: if handleAgentEnd throws despite its internal try-catch,
-      // ensure auto-mode stops gracefully instead of silently stalling (#381).
+      // Safety net: if resolveAgentEnd throws, ensure auto-mode stops gracefully (#381).
       const message = err instanceof Error ? err.message : String(err);
       ctx.ui.notify(
         `Auto-mode error in agent_end handler: ${message}. Stopping auto-mode.`,

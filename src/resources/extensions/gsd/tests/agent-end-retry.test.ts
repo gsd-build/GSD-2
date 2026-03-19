@@ -1,14 +1,16 @@
 /**
- * agent-end-retry.test.ts — Verifies the deferred agent_end retry mechanism (#1072).
+ * agent-end-retry.test.ts — Verifies the agent_end handling mechanism.
  *
- * When handleAgentEnd is already running and a second agent_end event fires
- * (e.g. a hook/triage/quick-task unit dispatched inside handleAgentEnd completes
- * before it returns), the reentrancy guard must not silently drop the event.
- * Instead, it should queue a retry via pendingAgentEndRetry so the completed
- * unit's agent_end is processed after the current handler finishes.
+ * In the new architecture (S01), handleAgentEnd is a thin wrapper that calls
+ * resolveAgentEnd(). The actual reentrancy and retry handling is done by the
+ * autoLoop() while loop in auto-loop.ts, which awaits the promise resolved by
+ * resolveAgentEnd() and handles inline-dispatched units via a while loop.
  *
- * Without this, auto-mode can stall permanently in the "summarizing" phase
- * with no unit running and no watchdog set.
+ * The AutoSession still declares pendingAgentEndRetry (S03 removes it).
+ * The core mechanism for handling concurrent agent_end events is now:
+ * 1. resolveAgentEnd() in auto-loop.ts resolves the pending promise
+ * 2. autoLoop() processes the unit result and handles inline dispatches
+ * 3. The one-shot promise pattern prevents double-resolution
  */
 
 import test from "node:test";
@@ -19,29 +21,33 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const AUTO_TS_PATH = join(__dirname, "..", "auto.ts");
+const AUTO_LOOP_TS_PATH = join(__dirname, "..", "auto-loop.ts");
 const SESSION_TS_PATH = join(__dirname, "..", "auto", "session.ts");
 
 function getAutoTsSource(): string {
   return readFileSync(AUTO_TS_PATH, "utf-8");
 }
 
+function getAutoLoopTsSource(): string {
+  return readFileSync(AUTO_LOOP_TS_PATH, "utf-8");
+}
+
 function getSessionTsSource(): string {
   return readFileSync(SESSION_TS_PATH, "utf-8");
 }
 
-// ── AutoSession must declare pendingAgentEndRetry ────────────────────────────
+// ── AutoSession must declare pendingAgentEndRetry (until S03 removes it) ─────
 
 test("AutoSession declares pendingAgentEndRetry field", () => {
   const source = getSessionTsSource();
   assert.ok(
     source.includes("pendingAgentEndRetry"),
-    "AutoSession (auto/session.ts) must declare pendingAgentEndRetry field for deferred retry",
+    "AutoSession (auto/session.ts) must declare pendingAgentEndRetry field (removed in S03)",
   );
 });
 
 test("AutoSession resets pendingAgentEndRetry in reset()", () => {
   const source = getSessionTsSource();
-  // Find the reset() method — it's declared as "reset(): void {"
   const resetIdx = source.indexOf("reset(): void");
   assert.ok(resetIdx > -1, "AutoSession must have a reset() method");
   const resetBlock = source.slice(resetIdx, resetIdx + 3000);
@@ -51,57 +57,74 @@ test("AutoSession resets pendingAgentEndRetry in reset()", () => {
   );
 });
 
-// ── handleAgentEnd reentrancy guard must queue retry ─────────────────────────
+// ── handleAgentEnd is now a thin wrapper calling resolveAgentEnd ─────────────
 
-test("handleAgentEnd sets pendingAgentEndRetry when reentrant", () => {
+test("handleAgentEnd exists in auto.ts as an exported function", () => {
   const source = getAutoTsSource();
-  // Find the handleAgentEnd function
   const fnIdx = source.indexOf("export async function handleAgentEnd");
-  assert.ok(fnIdx > -1, "handleAgentEnd must exist in auto.ts");
-
-  // The reentrancy guard section (within ~500 chars of the function start)
-  const guardBlock = source.slice(fnIdx, fnIdx + 800);
-  assert.ok(
-    guardBlock.includes("s.handlingAgentEnd"),
-    "handleAgentEnd must check s.handlingAgentEnd",
-  );
-  assert.ok(
-    guardBlock.includes("pendingAgentEndRetry = true"),
-    "reentrancy guard must set pendingAgentEndRetry = true instead of silently dropping (#1072)",
-  );
+  assert.ok(fnIdx > -1, "handleAgentEnd must still exist as an export for backward compatibility");
 });
 
-// ── finally block must process pendingAgentEndRetry ──────────────────────────
-
-test("handleAgentEnd finally block retries if pendingAgentEndRetry is set", () => {
+test("handleAgentEnd calls resolveAgentEnd (thin wrapper)", () => {
   const source = getAutoTsSource();
   const fnIdx = source.indexOf("export async function handleAgentEnd");
   assert.ok(fnIdx > -1, "handleAgentEnd must exist");
-
-  // Find the finally block within handleAgentEnd (search for the closing pattern)
-  const fnBlock = source.slice(fnIdx, source.indexOf("\n// ─── ", fnIdx + 100));
+  // Find the next function or section boundary
+  const fnEnd = source.indexOf("\n// ─── ", fnIdx + 100);
+  const fnBlock = fnEnd > -1 ? source.slice(fnIdx, fnEnd) : source.slice(fnIdx, fnIdx + 1000);
   assert.ok(
-    fnBlock.includes("pendingAgentEndRetry"),
-    "handleAgentEnd finally block must check pendingAgentEndRetry",
-  );
-  assert.ok(
-    fnBlock.includes("setImmediate"),
-    "deferred retry must use setImmediate to avoid stack overflow (#1072)",
-  );
-  assert.ok(
-    fnBlock.includes("handleAgentEnd(ctx, pi)"),
-    "deferred retry must call handleAgentEnd recursively (#1072)",
+    fnBlock.includes("resolveAgentEnd"),
+    "handleAgentEnd must call resolveAgentEnd() as a thin wrapper",
   );
 });
 
-// ── Regression: reentrancy guard must NOT silently return ─────────────────────
-
-test("reentrancy guard references issue #1072", () => {
+test("handleAgentEnd preserves s.active and s.cmdCtx guard", () => {
   const source = getAutoTsSource();
   const fnIdx = source.indexOf("export async function handleAgentEnd");
-  const guardBlock = source.slice(fnIdx, fnIdx + 800);
+  const fnBlock = source.slice(fnIdx, fnIdx + 500);
   assert.ok(
-    guardBlock.includes("1072"),
-    "reentrancy guard comment must reference #1072 for traceability",
+    fnBlock.includes("s.active") && fnBlock.includes("s.cmdCtx"),
+    "handleAgentEnd must preserve the s.active and s.cmdCtx early-return guards",
+  );
+});
+
+// ── resolveAgentEnd in auto-loop.ts handles the promise mechanism ────────────
+
+test("auto-loop.ts exports resolveAgentEnd", () => {
+  const source = getAutoLoopTsSource();
+  assert.ok(
+    source.includes("export function resolveAgentEnd"),
+    "auto-loop.ts must export resolveAgentEnd for the agent_end event handler",
+  );
+});
+
+test("resolveAgentEnd uses one-shot pattern (nulls resolver before calling)", () => {
+  const source = getAutoLoopTsSource();
+  const fnIdx = source.indexOf("export function resolveAgentEnd");
+  assert.ok(fnIdx > -1, "resolveAgentEnd must exist");
+  const fnBlock = source.slice(fnIdx, fnIdx + 500);
+  assert.ok(
+    fnBlock.includes("pendingResolve = null"),
+    "resolveAgentEnd must null pendingResolve before calling resolver (one-shot pattern)",
+  );
+});
+
+test("resolveAgentEnd logs warning on orphan/double resolution", () => {
+  const source = getAutoLoopTsSource();
+  const fnIdx = source.indexOf("export function resolveAgentEnd");
+  const fnBlock = source.slice(fnIdx, fnIdx + 500);
+  assert.ok(
+    fnBlock.includes("no-pending-promise") || fnBlock.includes("orphan"),
+    "resolveAgentEnd must log a warning when called with no pending promise (orphan/double case)",
+  );
+});
+
+// ── The loop handles inline dispatches that previously needed reentrancy guard ──
+
+test("autoLoop handles inline dispatch via while loop (replaces reentrancy guard)", () => {
+  const source = getAutoLoopTsSource();
+  assert.ok(
+    source.includes("await-inline-dispatch") || source.includes("inline-unit-complete"),
+    "autoLoop must handle inline dispatches (hook/triage/quick-task agent_end events) via its while loop",
   );
 });

@@ -19,12 +19,13 @@ import {
 } from "./auto-recovery.js";
 import { existsSync } from "node:fs";
 
+import { resolveAgentEnd } from "./auto-loop.js";
+
 export interface RecoveryContext {
   basePath: string;
   verbose: boolean;
   currentUnitStartedAt: number;
   unitRecoveryCount: Map<string, number>;
-  dispatchNextUnit: (ctx: ExtensionContext, pi: ExtensionAPI) => Promise<void>;
 }
 
 export async function recoverTimedOutUnit(
@@ -35,7 +36,7 @@ export async function recoverTimedOutUnit(
   reason: "idle" | "hard",
   rctx: RecoveryContext,
 ): Promise<"recovered" | "paused"> {
-  const { basePath, verbose, currentUnitStartedAt, unitRecoveryCount, dispatchNextUnit } = rctx;
+  const { basePath, verbose, currentUnitStartedAt, unitRecoveryCount } = rctx;
 
   const runtime = readUnitRuntimeRecord(basePath, unitType, unitId);
   const recoveryAttempts = runtime?.recoveryAttempts ?? 0;
@@ -74,7 +75,7 @@ export async function recoverTimedOutUnit(
         "info",
       );
       unitRecoveryCount.delete(recoveryKey);
-      await dispatchNextUnit(ctx, pi);
+      resolveAgentEnd({ messages: [], _synthetic: "timeout-recovery" } as any);
       return "recovered";
     }
 
@@ -145,7 +146,7 @@ export async function recoverTimedOutUnit(
         "warning",
       );
       unitRecoveryCount.delete(recoveryKey);
-      await dispatchNextUnit(ctx, pi);
+      resolveAgentEnd({ messages: [], _synthetic: "timeout-recovery" } as any);
       return "recovered";
     }
 
@@ -179,7 +180,7 @@ export async function recoverTimedOutUnit(
       "info",
     );
     unitRecoveryCount.delete(recoveryKey);
-    await dispatchNextUnit(ctx, pi);
+    resolveAgentEnd({ messages: [], _synthetic: "timeout-recovery" } as any);
     return "recovered";
   }
 
@@ -248,7 +249,7 @@ export async function recoverTimedOutUnit(
       "warning",
     );
     unitRecoveryCount.delete(recoveryKey);
-    await dispatchNextUnit(ctx, pi);
+    resolveAgentEnd({ messages: [], _synthetic: "timeout-recovery" } as any);
     return "recovered";
   }
 

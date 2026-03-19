@@ -1,11 +1,11 @@
 /**
  * dispatch-stall-guard.test.ts — Verifies defensive guards against dispatch stalls (#1073).
  *
- * After a slice completes, dispatchNextUnit must reliably dispatch the next unit.
- * These tests verify:
- * 1. newSession() has timeout protection (prevents permanent hang if session creation stalls)
- * 2. handleAgentEnd has a dispatch hang guard (catches dispatchNextUnit itself hanging)
- * 3. Session timeout constants are exported for configurability
+ * In the new architecture (S01), the autoLoop() while loop replaces the
+ * recursive dispatchNextUnit chain. Stall prevention is now provided by:
+ * 1. runUnit() in auto-loop.ts wraps newSession() with a Promise.race timeout
+ * 2. The loop structure itself prevents dispatch hangs (no recursive callbacks)
+ * 3. Session timeout constants remain in auto/session.ts for configurability
  */
 
 import test from "node:test";
@@ -16,10 +16,15 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const AUTO_TS_PATH = join(__dirname, "..", "auto.ts");
+const AUTO_LOOP_TS_PATH = join(__dirname, "..", "auto-loop.ts");
 const SESSION_TS_PATH = join(__dirname, "..", "auto", "session.ts");
 
 function getAutoTsSource(): string {
   return readFileSync(AUTO_TS_PATH, "utf-8");
+}
+
+function getAutoLoopTsSource(): string {
+  return readFileSync(AUTO_LOOP_TS_PATH, "utf-8");
 }
 
 function getSessionTsSource(): string {
@@ -66,48 +71,39 @@ test("DISPATCH_HANG_TIMEOUT_MS is greater than NEW_SESSION_TIMEOUT_MS", () => {
   );
 });
 
-// ── newSession() timeout in dispatchNextUnit ─────────────────────────────────
+// ── newSession() timeout in runUnit (auto-loop.ts) ──────────────────────────
 
-test("dispatchNextUnit wraps newSession() with Promise.race timeout", () => {
-  const source = getAutoTsSource();
-  // Search the full file — dispatchNextUnit is very large
+test("runUnit wraps newSession() with Promise.race timeout", () => {
+  const source = getAutoLoopTsSource();
   assert.ok(
     source.includes("Promise.race") && source.includes("NEW_SESSION_TIMEOUT_MS"),
-    "dispatchNextUnit must use Promise.race with NEW_SESSION_TIMEOUT_MS to timeout newSession() (#1073)",
+    "runUnit in auto-loop.ts must use Promise.race with NEW_SESSION_TIMEOUT_MS to timeout newSession() (#1073)",
   );
 });
 
-test("dispatchNextUnit handles newSession() timeout gracefully", () => {
-  const source = getAutoTsSource();
-  // Must notify user when session times out
+test("runUnit handles newSession() timeout gracefully", () => {
+  const source = getAutoLoopTsSource();
   assert.ok(
-    source.includes("Session creation timed out") || source.includes("Session creation failed"),
-    "dispatchNextUnit must notify user when newSession() times out or fails (#1073)",
+    source.includes("session-timeout") || source.includes("runUnit-session-timeout"),
+    "runUnit must log when newSession() times out or fails (#1073)",
   );
 });
 
-// ── Dispatch hang guard in handleAgentEnd ────────────────────────────────────
+// ── The loop structure replaces dispatch hang guards ─────────────────────────
 
-test("handleAgentEnd has a dispatch hang guard before dispatchNextUnit", () => {
-  const source = getAutoTsSource();
-  const fnIdx = source.indexOf("export async function handleAgentEnd");
-  assert.ok(fnIdx > -1, "handleAgentEnd must exist");
-
-  // Find the section between step mode check and dispatchNextUnit call
-  const fnBlock = source.slice(fnIdx, source.indexOf("\n// ─── Step Mode", fnIdx + 100));
+test("autoLoop uses a while loop (structural stall prevention)", () => {
+  const source = getAutoLoopTsSource();
   assert.ok(
-    fnBlock.includes("DISPATCH_HANG_TIMEOUT_MS") || fnBlock.includes("dispatchHangGuard"),
-    "handleAgentEnd must have a dispatch hang guard before calling dispatchNextUnit (#1073)",
+    source.includes("while (s.active)"),
+    "autoLoop must use a while loop — the loop structure itself prevents dispatch stalls",
   );
 });
 
-test("dispatch hang guard is cleared in finally block", () => {
-  const source = getAutoTsSource();
-  const fnIdx = source.indexOf("export async function handleAgentEnd");
-  const fnBlock = source.slice(fnIdx, source.indexOf("\n// ─── Step Mode", fnIdx + 100));
+test("autoLoop exits with explicit reason on session failure", () => {
+  const source = getAutoLoopTsSource();
   assert.ok(
-    fnBlock.includes("clearTimeout(dispatchHangGuard)"),
-    "dispatch hang guard must be cleared in finally block to prevent false alarms (#1073)",
+    source.includes('"session-failed"'),
+    "autoLoop must log an explicit exit reason when session creation fails",
   );
 });
 
@@ -122,5 +118,15 @@ test("auto.ts imports NEW_SESSION_TIMEOUT_MS and DISPATCH_HANG_TIMEOUT_MS", () =
   assert.ok(
     source.includes("DISPATCH_HANG_TIMEOUT_MS"),
     "auto.ts must import DISPATCH_HANG_TIMEOUT_MS from session.ts",
+  );
+});
+
+// ── Dispatch gap watchdog still exists for safety (deleted in S03) ───────────
+
+test("auto.ts still has startDispatchGapWatchdog (vestigial until S03)", () => {
+  const source = getAutoTsSource();
+  assert.ok(
+    source.includes("startDispatchGapWatchdog"),
+    "startDispatchGapWatchdog must still exist in auto.ts (vestigial, removed in S03)",
   );
 });

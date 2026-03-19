@@ -262,11 +262,11 @@ export interface LoopDeps {
   atomicWriteSync: (path: string, content: string) => void;
 
   // Git
-  GitServiceImpl: new (basePath: string, gitConfig: Record<string, unknown>) => unknown;
+  GitServiceImpl: new (basePath: string, gitConfig: unknown) => unknown;
 
   // Post-unit processing
   postUnitPreVerification: (pctx: PostUnitContext) => Promise<"dispatched" | "continue">;
-  runPostUnitVerification: (vctx: VerificationContext, dispatchNextUnit: (ctx: ExtensionContext, pi: ExtensionAPI) => Promise<void>, startDispatchGapWatchdog: (ctx: ExtensionContext, pi: ExtensionAPI) => void, pauseAuto: (ctx?: ExtensionContext, pi?: ExtensionAPI) => Promise<void>) => Promise<VerificationResult>;
+  runPostUnitVerification: (vctx: VerificationContext, pauseAuto: (ctx?: ExtensionContext, pi?: ExtensionAPI) => Promise<void>) => Promise<VerificationResult>;
   postUnitPostVerification: (pctx: PostUnitContext) => Promise<"dispatched" | "continue" | "step-wizard" | "stopped">;
 
   // Session manager
@@ -347,7 +347,7 @@ export async function autoLoop(
     let state = await deps.deriveState(s.basePath);
     let mid = state.activeMilestone?.id;
     let midTitle = state.activeMilestone?.title;
-    debugLog("autoLoop", { phase: "state-derived", iteration, mid, phase: state.phase });
+    debugLog("autoLoop", { phase: "state-derived", iteration, mid, statePhase: state.phase });
 
     // ── Milestone transition ────────────────────────────────────────────
     if (mid && s.currentMilestoneId && mid !== s.currentMilestoneId) {
@@ -1054,12 +1054,9 @@ export async function autoLoop(
       break;
     }
 
-    // Verification gate — pass a no-op dispatchNextUnit (the loop handles retries)
-    const noopDispatch = async () => {};
+    // Verification gate — the loop handles retries via s.pendingVerificationRetry
     const verificationResult = await deps.runPostUnitVerification(
       { s, ctx, pi },
-      noopDispatch,
-      deps.startDispatchGapWatchdog,
       deps.pauseAuto,
     );
 
@@ -1094,7 +1091,7 @@ export async function autoLoop(
       // inside postUnitPostVerification. We must await its completion before continuing.
       debugLog("autoLoop", { phase: "await-inline-dispatch", iteration });
 
-      let inlineResult = postResult;
+      let inlineResult: "dispatched" | "continue" | "step-wizard" | "stopped" = postResult;
       while (inlineResult === "dispatched") {
         // Create a new promise for the inline unit's agent_end
         const inlinePromise = new Promise<UnitResult>((resolve) => {
