@@ -23,6 +23,7 @@ import {
 	parseHashlineText,
 	parseTag,
 } from "./hashline.js";
+import { withAbortSignal } from "./abort-utils.js";
 import { resolveToCwd } from "./path-utils.js";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -155,160 +156,128 @@ export function createHashlineEditTool(cwd: string, options?: HashlineEditToolOp
 			const { path, edits, delete: deleteFile, move } = params;
 			const absolutePath = resolveToCwd(path, cwd);
 
-			return new Promise<{
-				content: Array<{ type: "text"; text: string }>;
-				details: HashlineEditToolDetails | undefined;
-			}>((resolve, reject) => {
-				if (signal?.aborted) {
-					reject(new Error("Operation aborted"));
-					return;
-				}
-
-				let aborted = false;
-				const onAbort = () => {
-					aborted = true;
-					reject(new Error("Operation aborted"));
-				};
-				if (signal) {
-					signal.addEventListener("abort", onAbort, { once: true });
-				}
-
-				(async () => {
+			return withAbortSignal(signal, async (checkAborted) => {
+				// Handle delete
+				if (deleteFile) {
+					let fileExists = true;
 					try {
-						// Handle delete
-						if (deleteFile) {
-							let fileExists = true;
-							try {
-								await ops.access(absolutePath);
-							} catch {
-								fileExists = false;
+						await ops.access(absolutePath);
+					} catch {
+						fileExists = false;
+					}
+					if (fileExists) {
+						await ops.unlink(absolutePath);
+					}
+					return {
+						content: [{ type: "text" as const, text: fileExists ? `Deleted ${path}` : `File not found, nothing to delete: ${path}` }],
+						details: { diff: "" },
+					};
+				}
+
+				// Handle file creation (no existing file, anchorless appends/prepends)
+				let fileExists = true;
+				try {
+					await ops.access(absolutePath);
+				} catch {
+					fileExists = false;
+				}
+
+				if (!fileExists) {
+					const lines: string[] = [];
+					for (const edit of edits) {
+						if ((edit.op === "append" || edit.op === "prepend") && !edit.pos && !edit.end) {
+							if (edit.op === "prepend") {
+								lines.unshift(...parseHashlineText(edit.lines));
+							} else {
+								lines.push(...parseHashlineText(edit.lines));
 							}
-							if (fileExists) {
-								await ops.unlink(absolutePath);
-							}
-							if (signal) signal.removeEventListener("abort", onAbort);
-							resolve({
-								content: [{ type: "text", text: fileExists ? `Deleted ${path}` : `File not found, nothing to delete: ${path}` }],
-								details: { diff: "" },
-							});
-							return;
-						}
-
-						// Handle file creation (no existing file, anchorless appends/prepends)
-						let fileExists = true;
-						try {
-							await ops.access(absolutePath);
-						} catch {
-							fileExists = false;
-						}
-
-						if (!fileExists) {
-							const lines: string[] = [];
-							for (const edit of edits) {
-								if ((edit.op === "append" || edit.op === "prepend") && !edit.pos && !edit.end) {
-									if (edit.op === "prepend") {
-										lines.unshift(...parseHashlineText(edit.lines));
-									} else {
-										lines.push(...parseHashlineText(edit.lines));
-									}
-								} else {
-									throw new Error(`File not found: ${path}`);
-								}
-							}
-							await ops.writeFile(absolutePath, lines.join("\n"));
-							if (signal) signal.removeEventListener("abort", onAbort);
-							resolve({
-								content: [{ type: "text", text: `Created ${path}` }],
-								details: { diff: "" },
-							});
-							return;
-						}
-
-						if (aborted) return;
-
-						// Read file
-						const rawContent = (await ops.readFile(absolutePath)).toString("utf-8");
-						const { bom, text } = stripBom(rawContent);
-						const originalEnding = detectLineEnding(text);
-						const originalNormalized = normalizeToLF(text);
-
-						if (aborted) return;
-
-						// Resolve and apply edits
-						const anchorEdits = resolveEditAnchors(edits);
-						const result = applyHashlineEdits(originalNormalized, anchorEdits);
-
-						if (originalNormalized === result.lines && !move) {
-							let diagnostic = `No changes made to ${path}. The edits produced identical content.`;
-							if (result.noopEdits && result.noopEdits.length > 0) {
-								const details = result.noopEdits
-									.map(
-										e =>
-											`Edit ${e.editIndex}: replacement for ${e.loc} is identical to current content:\n  ${e.loc}| ${e.current}`,
-									)
-									.join("\n");
-								diagnostic += `\n${details}`;
-								diagnostic +=
-									"\nYour content must differ from what the file already contains. Re-read the file to see the current state.";
-							}
-							throw new Error(diagnostic);
-						}
-
-						if (aborted) return;
-
-						// Write result
-						const finalContent = bom + restoreLineEndings(result.lines, originalEnding);
-						const writePath = move ? resolveToCwd(move, cwd) : absolutePath;
-
-						// Prevent silent overwrite when moving to an existing file
-						if (move && writePath !== absolutePath) {
-							try {
-								await ops.access(writePath);
-								// If access succeeds, the file exists — refuse the move
-								throw new Error(`Destination file already exists: ${writePath}. Use a different path or delete the existing file first.`);
-							} catch (err: any) {
-								// Re-throw our own error; swallow only "file not found"
-								if (err.message?.startsWith("Destination file already exists:")) throw err;
-								// File doesn't exist — safe to proceed
-							}
-						}
-
-						await ops.writeFile(writePath, finalContent);
-
-						// If moved, delete original
-						if (move && writePath !== absolutePath) {
-							await ops.unlink(absolutePath);
-						}
-
-						if (aborted) return;
-
-						if (signal) signal.removeEventListener("abort", onAbort);
-
-						const diffResult = generateDiffString(originalNormalized, result.lines);
-						const resultText = move ? `Moved ${path} to ${move}` : `Updated ${path}`;
-						const warningsBlock = result.warnings?.length
-							? `\nWarnings:\n${result.warnings.join("\n")}`
-							: "";
-
-						resolve({
-							content: [
-								{
-									type: "text",
-									text: `${resultText}${warningsBlock}`,
-								},
-							],
-							details: {
-								diff: diffResult.diff,
-								firstChangedLine: result.firstChangedLine ?? diffResult.firstChangedLine,
-							},
-						});
-					} catch (error: any) {
-						if (signal) signal.removeEventListener("abort", onAbort);
-						if (!aborted) {
-							reject(error);
+						} else {
+							throw new Error(`File not found: ${path}`);
 						}
 					}
-				})();
+					await ops.writeFile(absolutePath, lines.join("\n"));
+					return {
+						content: [{ type: "text" as const, text: `Created ${path}` }],
+						details: { diff: "" },
+					};
+				}
+
+				checkAborted();
+
+				// Read file
+				const rawContent = (await ops.readFile(absolutePath)).toString("utf-8");
+				const { bom, text } = stripBom(rawContent);
+				const originalEnding = detectLineEnding(text);
+				const originalNormalized = normalizeToLF(text);
+
+				checkAborted();
+
+				// Resolve and apply edits
+				const anchorEdits = resolveEditAnchors(edits);
+				const result = applyHashlineEdits(originalNormalized, anchorEdits);
+
+				if (originalNormalized === result.lines && !move) {
+					let diagnostic = `No changes made to ${path}. The edits produced identical content.`;
+					if (result.noopEdits && result.noopEdits.length > 0) {
+						const details = result.noopEdits
+							.map(
+								e =>
+									`Edit ${e.editIndex}: replacement for ${e.loc} is identical to current content:\n  ${e.loc}| ${e.current}`,
+							)
+							.join("\n");
+						diagnostic += `\n${details}`;
+						diagnostic +=
+							"\nYour content must differ from what the file already contains. Re-read the file to see the current state.";
+					}
+					throw new Error(diagnostic);
+				}
+
+				checkAborted();
+
+				// Write result
+				const finalContent = bom + restoreLineEndings(result.lines, originalEnding);
+				const writePath = move ? resolveToCwd(move, cwd) : absolutePath;
+
+				// Prevent silent overwrite when moving to an existing file
+				if (move && writePath !== absolutePath) {
+					try {
+						await ops.access(writePath);
+						// If access succeeds, the file exists — refuse the move
+						throw new Error(`Destination file already exists: ${writePath}. Use a different path or delete the existing file first.`);
+					} catch (err: any) {
+						// Re-throw our own error; swallow only "file not found"
+						if (err.message?.startsWith("Destination file already exists:")) throw err;
+						// File doesn't exist — safe to proceed
+					}
+				}
+
+				await ops.writeFile(writePath, finalContent);
+
+				// If moved, delete original
+				if (move && writePath !== absolutePath) {
+					await ops.unlink(absolutePath);
+				}
+
+				checkAborted();
+
+				const diffResult = generateDiffString(originalNormalized, result.lines);
+				const resultText = move ? `Moved ${path} to ${move}` : `Updated ${path}`;
+				const warningsBlock = result.warnings?.length
+					? `\nWarnings:\n${result.warnings.join("\n")}`
+					: "";
+
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `${resultText}${warningsBlock}`,
+						},
+					],
+					details: {
+						diff: diffResult.diff,
+						firstChangedLine: result.firstChangedLine ?? diffResult.firstChangedLine,
+					},
+				};
 			});
 		},
 	};

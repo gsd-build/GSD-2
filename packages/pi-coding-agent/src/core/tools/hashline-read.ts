@@ -15,6 +15,7 @@ import { constants } from "fs";
 import { access as fsAccess, readFile as fsReadFile } from "fs/promises";
 import { formatDimensionNote, resizeImage } from "../../utils/image-resize.js";
 import { detectSupportedImageMimeTypeFromFile } from "../../utils/mime.js";
+import { withAbortSignal } from "./abort-utils.js";
 import { formatHashLines } from "./hashline.js";
 import { resolveReadPath } from "./path-utils.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult, truncateHead } from "./truncate.js";
@@ -67,127 +68,101 @@ export function createHashlineReadTool(cwd: string, options?: HashlineReadToolOp
 		) => {
 			const absolutePath = resolveReadPath(path, cwd);
 
-			return new Promise<{ content: (TextContent | ImageContent)[]; details: HashlineReadToolDetails | undefined }>(
-				(resolve, reject) => {
-					if (signal?.aborted) {
-						reject(new Error("Operation aborted"));
-						return;
-					}
+			return withAbortSignal(signal, async (checkAborted) => {
+				await ops.access(absolutePath);
 
-					let aborted = false;
-					const onAbort = () => {
-						aborted = true;
-						reject(new Error("Operation aborted"));
-					};
-					if (signal) {
-						signal.addEventListener("abort", onAbort, { once: true });
-					}
+				checkAborted();
 
-					(async () => {
-						try {
-							await ops.access(absolutePath);
+				const mimeType = ops.detectImageMimeType ? await ops.detectImageMimeType(absolutePath) : undefined;
 
-							if (aborted) return;
+				let content: (TextContent | ImageContent)[];
+				let details: HashlineReadToolDetails | undefined;
 
-							const mimeType = ops.detectImageMimeType ? await ops.detectImageMimeType(absolutePath) : undefined;
+				if (mimeType) {
+					// Image handling (identical to standard read tool)
+					const buffer = await ops.readFile(absolutePath);
+					const base64 = buffer.toString("base64");
 
-							let content: (TextContent | ImageContent)[];
-							let details: HashlineReadToolDetails | undefined;
-
-							if (mimeType) {
-								// Image handling (identical to standard read tool)
-								const buffer = await ops.readFile(absolutePath);
-								const base64 = buffer.toString("base64");
-
-								if (autoResizeImages) {
-									const resized = await resizeImage({ type: "image", data: base64, mimeType });
-									const dimensionNote = formatDimensionNote(resized);
-									let textNote = `Read image file [${resized.mimeType}]`;
-									if (dimensionNote) {
-										textNote += `\n${dimensionNote}`;
-									}
-									content = [
-										{ type: "text", text: textNote },
-										{ type: "image", data: resized.data, mimeType: resized.mimeType },
-									];
-								} else {
-									content = [
-										{ type: "text", text: `Read image file [${mimeType}]` },
-										{ type: "image", data: base64, mimeType },
-									];
-								}
-							} else {
-								// Text file — format with hashline prefixes
-								const buffer = await ops.readFile(absolutePath);
-								const textContent = buffer.toString("utf-8");
-								const allLines = textContent.split("\n");
-								const totalFileLines = allLines.length;
-
-								const startLine = offset ? Math.max(0, offset - 1) : 0;
-								const startLineDisplay = startLine + 1;
-
-								if (startLine >= allLines.length) {
-									throw new Error(`Offset ${offset} is beyond end of file (${allLines.length} lines total)`);
-								}
-
-								let selectedContent: string;
-								let userLimitedLines: number | undefined;
-								if (limit !== undefined) {
-									const endLine = Math.min(startLine + limit, allLines.length);
-									selectedContent = allLines.slice(startLine, endLine).join("\n");
-									userLimitedLines = endLine - startLine;
-								} else {
-									selectedContent = allLines.slice(startLine).join("\n");
-								}
-
-								// Apply truncation
-								const truncation = truncateHead(selectedContent);
-
-								let outputText: string;
-
-								if (truncation.firstLineExceedsLimit) {
-									const firstLineSize = formatSize(Buffer.byteLength(allLines[startLine], "utf-8"));
-									outputText = `[Line ${startLineDisplay} is ${firstLineSize}, exceeds ${formatSize(DEFAULT_MAX_BYTES)} limit. Use bash: sed -n '${startLineDisplay}p' ${path} | head -c ${DEFAULT_MAX_BYTES}]`;
-									details = { truncation };
-								} else if (truncation.truncated) {
-									const endLineDisplay = startLineDisplay + truncation.outputLines - 1;
-									const nextOffset = endLineDisplay + 1;
-
-									// Format with hashline prefixes
-									outputText = formatHashLines(truncation.content, startLineDisplay);
-
-									if (truncation.truncatedBy === "lines") {
-										outputText += `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${totalFileLines}. Use offset=${nextOffset} to continue.]`;
-									} else {
-										outputText += `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${totalFileLines} (${formatSize(DEFAULT_MAX_BYTES)} limit). Use offset=${nextOffset} to continue.]`;
-									}
-									details = { truncation };
-								} else if (userLimitedLines !== undefined && startLine + userLimitedLines < allLines.length) {
-									const remaining = allLines.length - (startLine + userLimitedLines);
-									const nextOffset = startLine + userLimitedLines + 1;
-
-									outputText = formatHashLines(truncation.content, startLineDisplay);
-									outputText += `\n\n[${remaining} more lines in file. Use offset=${nextOffset} to continue.]`;
-								} else {
-									outputText = formatHashLines(truncation.content, startLineDisplay);
-								}
-
-								content = [{ type: "text", text: outputText }];
-							}
-
-							if (aborted) return;
-
-							if (signal) signal.removeEventListener("abort", onAbort);
-							resolve({ content, details });
-						} catch (error: any) {
-							if (signal) signal.removeEventListener("abort", onAbort);
-							if (!aborted) {
-								reject(error);
-							}
+					if (autoResizeImages) {
+						const resized = await resizeImage({ type: "image", data: base64, mimeType });
+						const dimensionNote = formatDimensionNote(resized);
+						let textNote = `Read image file [${resized.mimeType}]`;
+						if (dimensionNote) {
+							textNote += `\n${dimensionNote}`;
 						}
-					})();
-				},
-			);
+						content = [
+							{ type: "text", text: textNote },
+							{ type: "image", data: resized.data, mimeType: resized.mimeType },
+						];
+					} else {
+						content = [
+							{ type: "text", text: `Read image file [${mimeType}]` },
+							{ type: "image", data: base64, mimeType },
+						];
+					}
+				} else {
+					// Text file — format with hashline prefixes
+					const buffer = await ops.readFile(absolutePath);
+					const textContent = buffer.toString("utf-8");
+					const allLines = textContent.split("\n");
+					const totalFileLines = allLines.length;
+
+					const startLine = offset ? Math.max(0, offset - 1) : 0;
+					const startLineDisplay = startLine + 1;
+
+					if (startLine >= allLines.length) {
+						throw new Error(`Offset ${offset} is beyond end of file (${allLines.length} lines total)`);
+					}
+
+					let selectedContent: string;
+					let userLimitedLines: number | undefined;
+					if (limit !== undefined) {
+						const endLine = Math.min(startLine + limit, allLines.length);
+						selectedContent = allLines.slice(startLine, endLine).join("\n");
+						userLimitedLines = endLine - startLine;
+					} else {
+						selectedContent = allLines.slice(startLine).join("\n");
+					}
+
+					// Apply truncation
+					const truncation = truncateHead(selectedContent);
+
+					let outputText: string;
+
+					if (truncation.firstLineExceedsLimit) {
+						const firstLineSize = formatSize(Buffer.byteLength(allLines[startLine], "utf-8"));
+						outputText = `[Line ${startLineDisplay} is ${firstLineSize}, exceeds ${formatSize(DEFAULT_MAX_BYTES)} limit. Use bash: sed -n '${startLineDisplay}p' ${path} | head -c ${DEFAULT_MAX_BYTES}]`;
+						details = { truncation };
+					} else if (truncation.truncated) {
+						const endLineDisplay = startLineDisplay + truncation.outputLines - 1;
+						const nextOffset = endLineDisplay + 1;
+
+						// Format with hashline prefixes
+						outputText = formatHashLines(truncation.content, startLineDisplay);
+
+						if (truncation.truncatedBy === "lines") {
+							outputText += `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${totalFileLines}. Use offset=${nextOffset} to continue.]`;
+						} else {
+							outputText += `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${totalFileLines} (${formatSize(DEFAULT_MAX_BYTES)} limit). Use offset=${nextOffset} to continue.]`;
+						}
+						details = { truncation };
+					} else if (userLimitedLines !== undefined && startLine + userLimitedLines < allLines.length) {
+						const remaining = allLines.length - (startLine + userLimitedLines);
+						const nextOffset = startLine + userLimitedLines + 1;
+
+						outputText = formatHashLines(truncation.content, startLineDisplay);
+						outputText += `\n\n[${remaining} more lines in file. Use offset=${nextOffset} to continue.]`;
+					} else {
+						outputText = formatHashLines(truncation.content, startLineDisplay);
+					}
+
+					content = [{ type: "text", text: outputText }];
+				}
+
+				checkAborted();
+
+				return { content, details };
+			});
 		},
 	};
 }

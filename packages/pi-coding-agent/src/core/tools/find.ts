@@ -4,6 +4,7 @@ import { type Static, Type } from "@sinclair/typebox";
 import { existsSync } from "fs";
 import path from "path";
 import { FIND_DEFAULT_LIMIT } from "../constants.js";
+import { withAbortSignal } from "./abort-utils.js";
 import { resolveToCwd } from "./path-utils.js";
 import { DEFAULT_MAX_BYTES, formatSize, type TruncationResult, truncateHead } from "./truncate.js";
 
@@ -61,136 +62,113 @@ export function createFindTool(cwd: string, options?: FindToolOptions): AgentToo
 			{ pattern, path: searchDir, limit }: { pattern: string; path?: string; limit?: number },
 			signal?: AbortSignal,
 		) => {
-			return new Promise((resolve, reject) => {
-				if (signal?.aborted) {
-					reject(new Error("Operation aborted"));
-					return;
+			return withAbortSignal(signal, async () => {
+				const searchPath = resolveToCwd(searchDir || ".", cwd);
+				const effectiveLimit = limit ?? DEFAULT_LIMIT;
+				const ops = customOps ?? defaultFindOperations;
+
+				// If custom operations provided with glob, use that
+				if (customOps?.glob) {
+					if (!(await ops.exists(searchPath))) {
+						throw new Error(`Path not found: ${searchPath}`);
+					}
+
+					const results = await ops.glob(pattern, searchPath, {
+						ignore: ["**/node_modules/**", "**/.git/**"],
+						limit: effectiveLimit,
+					});
+
+					if (results.length === 0) {
+						return {
+							content: [{ type: "text" as const, text: "No files found matching pattern" }],
+							details: undefined,
+						};
+					}
+
+					// Relativize paths
+					const relativized = results.map((p) => {
+						if (p.startsWith(searchPath)) {
+							return p.slice(searchPath.length + 1);
+						}
+						return path.relative(searchPath, p);
+					});
+
+					const resultLimitReached = relativized.length >= effectiveLimit;
+					const rawOutput = relativized.join("\n");
+					const truncation = truncateHead(rawOutput, { maxLines: Number.MAX_SAFE_INTEGER });
+
+					let resultOutput = truncation.content;
+					const details: FindToolDetails = {};
+					const notices: string[] = [];
+
+					if (resultLimitReached) {
+						notices.push(`${effectiveLimit} results limit reached`);
+						details.resultLimitReached = effectiveLimit;
+					}
+
+					if (truncation.truncated) {
+						notices.push(`${formatSize(DEFAULT_MAX_BYTES)} limit reached`);
+						details.truncation = truncation;
+					}
+
+					if (notices.length > 0) {
+						resultOutput += `\n\n[${notices.join(". ")}]`;
+					}
+
+					return {
+						content: [{ type: "text" as const, text: resultOutput }],
+						details: Object.keys(details).length > 0 ? details : undefined,
+					};
 				}
 
-				const onAbort = () => reject(new Error("Operation aborted"));
-				signal?.addEventListener("abort", onAbort, { once: true });
+				// Default: use native Rust glob
+				const globResult = await nativeGlob({
+					pattern,
+					path: searchPath,
+					hidden: true,
+					gitignore: true,
+					cache: true,
+					maxResults: effectiveLimit,
+				});
 
-				(async () => {
-					try {
-						const searchPath = resolveToCwd(searchDir || ".", cwd);
-						const effectiveLimit = limit ?? DEFAULT_LIMIT;
-						const ops = customOps ?? defaultFindOperations;
+				if (globResult.matches.length === 0) {
+					return {
+						content: [{ type: "text" as const, text: "No files found matching pattern" }],
+						details: undefined,
+					};
+				}
 
-						// If custom operations provided with glob, use that
-						if (customOps?.glob) {
-							if (!(await ops.exists(searchPath))) {
-								reject(new Error(`Path not found: ${searchPath}`));
-								return;
-							}
+				// Native glob returns paths relative to the search root
+				const relativized = globResult.matches.map((m: { path: string }) => m.path);
 
-							const results = await ops.glob(pattern, searchPath, {
-								ignore: ["**/node_modules/**", "**/.git/**"],
-								limit: effectiveLimit,
-							});
+				const resultLimitReached = relativized.length >= effectiveLimit;
+				const rawOutput = relativized.join("\n");
+				const truncation = truncateHead(rawOutput, { maxLines: Number.MAX_SAFE_INTEGER });
 
-							signal?.removeEventListener("abort", onAbort);
+				let resultOutput = truncation.content;
+				const details: FindToolDetails = {};
+				const notices: string[] = [];
 
-							if (results.length === 0) {
-								resolve({
-									content: [{ type: "text", text: "No files found matching pattern" }],
-									details: undefined,
-								});
-								return;
-							}
+				if (resultLimitReached) {
+					notices.push(
+						`${effectiveLimit} results limit reached. Use limit=${effectiveLimit * 2} for more, or refine pattern`,
+					);
+					details.resultLimitReached = effectiveLimit;
+				}
 
-							// Relativize paths
-							const relativized = results.map((p) => {
-								if (p.startsWith(searchPath)) {
-									return p.slice(searchPath.length + 1);
-								}
-								return path.relative(searchPath, p);
-							});
+				if (truncation.truncated) {
+					notices.push(`${formatSize(DEFAULT_MAX_BYTES)} limit reached`);
+					details.truncation = truncation;
+				}
 
-							const resultLimitReached = relativized.length >= effectiveLimit;
-							const rawOutput = relativized.join("\n");
-							const truncation = truncateHead(rawOutput, { maxLines: Number.MAX_SAFE_INTEGER });
+				if (notices.length > 0) {
+					resultOutput += `\n\n[${notices.join(". ")}]`;
+				}
 
-							let resultOutput = truncation.content;
-							const details: FindToolDetails = {};
-							const notices: string[] = [];
-
-							if (resultLimitReached) {
-								notices.push(`${effectiveLimit} results limit reached`);
-								details.resultLimitReached = effectiveLimit;
-							}
-
-							if (truncation.truncated) {
-								notices.push(`${formatSize(DEFAULT_MAX_BYTES)} limit reached`);
-								details.truncation = truncation;
-							}
-
-							if (notices.length > 0) {
-								resultOutput += `\n\n[${notices.join(". ")}]`;
-							}
-
-							resolve({
-								content: [{ type: "text", text: resultOutput }],
-								details: Object.keys(details).length > 0 ? details : undefined,
-							});
-							return;
-						}
-
-						// Default: use native Rust glob
-						const globResult = await nativeGlob({
-							pattern,
-							path: searchPath,
-							hidden: true,
-							gitignore: true,
-							cache: true,
-							maxResults: effectiveLimit,
-						});
-
-						signal?.removeEventListener("abort", onAbort);
-
-						if (globResult.matches.length === 0) {
-							resolve({
-								content: [{ type: "text", text: "No files found matching pattern" }],
-								details: undefined,
-							});
-							return;
-						}
-
-						// Native glob returns paths relative to the search root
-						const relativized = globResult.matches.map((m: { path: string }) => m.path);
-
-						const resultLimitReached = relativized.length >= effectiveLimit;
-						const rawOutput = relativized.join("\n");
-						const truncation = truncateHead(rawOutput, { maxLines: Number.MAX_SAFE_INTEGER });
-
-						let resultOutput = truncation.content;
-						const details: FindToolDetails = {};
-						const notices: string[] = [];
-
-						if (resultLimitReached) {
-							notices.push(
-								`${effectiveLimit} results limit reached. Use limit=${effectiveLimit * 2} for more, or refine pattern`,
-							);
-							details.resultLimitReached = effectiveLimit;
-						}
-
-						if (truncation.truncated) {
-							notices.push(`${formatSize(DEFAULT_MAX_BYTES)} limit reached`);
-							details.truncation = truncation;
-						}
-
-						if (notices.length > 0) {
-							resultOutput += `\n\n[${notices.join(". ")}]`;
-						}
-
-						resolve({
-							content: [{ type: "text", text: resultOutput }],
-							details: Object.keys(details).length > 0 ? details : undefined,
-						});
-					} catch (e: any) {
-						signal?.removeEventListener("abort", onAbort);
-						reject(e);
-					}
-				})();
+				return {
+					content: [{ type: "text" as const, text: resultOutput }],
+					details: Object.keys(details).length > 0 ? details : undefined,
+				};
 			});
 		},
 	};

@@ -3,6 +3,7 @@ import { type Static, Type } from "@sinclair/typebox";
 import { mkdir as fsMkdir, writeFile as fsWriteFile } from "fs/promises";
 import { dirname } from "path";
 import { notifyFileChanged } from "../lsp/client.js";
+import { withAbortSignal } from "./abort-utils.js";
 import { resolveToCwd } from "./path-utils.js";
 
 const writeSchema = Type.Object({
@@ -50,69 +51,24 @@ export function createWriteTool(cwd: string, options?: WriteToolOptions): AgentT
 			const absolutePath = resolveToCwd(path, cwd);
 			const dir = dirname(absolutePath);
 
-			return new Promise<{ content: Array<{ type: "text"; text: string }>; details: undefined }>(
-				(resolve, reject) => {
-					// Check if already aborted
-					if (signal?.aborted) {
-						reject(new Error("Operation aborted"));
-						return;
-					}
+			return withAbortSignal(signal, async (checkAborted) => {
+				// Create parent directories if needed
+				await ops.mkdir(dir);
 
-					let aborted = false;
+				checkAborted();
 
-					// Set up abort handler
-					const onAbort = () => {
-						aborted = true;
-						reject(new Error("Operation aborted"));
-					};
+				// Write the file
+				await ops.writeFile(absolutePath, content);
 
-					if (signal) {
-						signal.addEventListener("abort", onAbort, { once: true });
-					}
+				try { notifyFileChanged(absolutePath); } catch { /* best-effort */ }
 
-					// Perform the write operation
-					(async () => {
-						try {
-							// Create parent directories if needed
-							await ops.mkdir(dir);
+				checkAborted();
 
-							// Check if aborted before writing
-							if (aborted) {
-								return;
-							}
-
-							// Write the file
-							await ops.writeFile(absolutePath, content);
-
-							try { notifyFileChanged(absolutePath); } catch { /* best-effort */ }
-
-							// Check if aborted after writing
-							if (aborted) {
-								return;
-							}
-
-							// Clean up abort handler
-							if (signal) {
-								signal.removeEventListener("abort", onAbort);
-							}
-
-							resolve({
-								content: [{ type: "text", text: `Successfully wrote ${content.length} bytes to ${path}` }],
-								details: undefined,
-							});
-						} catch (error: any) {
-							// Clean up abort handler
-							if (signal) {
-								signal.removeEventListener("abort", onAbort);
-							}
-
-							if (!aborted) {
-								reject(error);
-							}
-						}
-					})();
-				},
-			);
+				return {
+					content: [{ type: "text", text: `Successfully wrote ${content.length} bytes to ${path}` }],
+					details: undefined,
+				};
+			});
 		},
 	};
 }

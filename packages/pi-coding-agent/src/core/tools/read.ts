@@ -5,6 +5,7 @@ import { constants } from "fs";
 import { access as fsAccess, readFile as fsReadFile } from "fs/promises";
 import { formatDimensionNote, resizeImage } from "../../utils/image-resize.js";
 import { detectSupportedImageMimeTypeFromFile } from "../../utils/mime.js";
+import { withAbortSignal } from "./abort-utils.js";
 import { resolveReadPath } from "./path-utils.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult, truncateHead } from "./truncate.js";
 
@@ -62,158 +63,113 @@ export function createReadTool(cwd: string, options?: ReadToolOptions): AgentToo
 		) => {
 			const absolutePath = resolveReadPath(path, cwd);
 
-			return new Promise<{ content: (TextContent | ImageContent)[]; details: ReadToolDetails | undefined }>(
-				(resolve, reject) => {
-					// Check if already aborted
-					if (signal?.aborted) {
-						reject(new Error("Operation aborted"));
-						return;
-					}
+			return withAbortSignal(signal, async (checkAborted) => {
+				// Check if file exists
+				await ops.access(absolutePath);
 
-					let aborted = false;
+				checkAborted();
 
-					// Set up abort handler
-					const onAbort = () => {
-						aborted = true;
-						reject(new Error("Operation aborted"));
-					};
+				const mimeType = ops.detectImageMimeType ? await ops.detectImageMimeType(absolutePath) : undefined;
 
-					if (signal) {
-						signal.addEventListener("abort", onAbort, { once: true });
-					}
+				// Read the file based on type
+				let content: (TextContent | ImageContent)[];
+				let details: ReadToolDetails | undefined;
 
-					// Perform the read operation
-					(async () => {
-						try {
-							// Check if file exists
-							await ops.access(absolutePath);
+				if (mimeType) {
+					// Read as image (binary)
+					const buffer = await ops.readFile(absolutePath);
+					const base64 = buffer.toString("base64");
 
-							// Check if aborted before reading
-							if (aborted) {
-								return;
-							}
+					if (autoResizeImages) {
+						// Resize image if needed
+						const resized = await resizeImage({ type: "image", data: base64, mimeType });
+						const dimensionNote = formatDimensionNote(resized);
 
-							const mimeType = ops.detectImageMimeType ? await ops.detectImageMimeType(absolutePath) : undefined;
-
-							// Read the file based on type
-							let content: (TextContent | ImageContent)[];
-							let details: ReadToolDetails | undefined;
-
-							if (mimeType) {
-								// Read as image (binary)
-								const buffer = await ops.readFile(absolutePath);
-								const base64 = buffer.toString("base64");
-
-								if (autoResizeImages) {
-									// Resize image if needed
-									const resized = await resizeImage({ type: "image", data: base64, mimeType });
-									const dimensionNote = formatDimensionNote(resized);
-
-									let textNote = `Read image file [${resized.mimeType}]`;
-									if (dimensionNote) {
-										textNote += `\n${dimensionNote}`;
-									}
-
-									content = [
-										{ type: "text", text: textNote },
-										{ type: "image", data: resized.data, mimeType: resized.mimeType },
-									];
-								} else {
-									const textNote = `Read image file [${mimeType}]`;
-									content = [
-										{ type: "text", text: textNote },
-										{ type: "image", data: base64, mimeType },
-									];
-								}
-							} else {
-								// Read as text
-								const buffer = await ops.readFile(absolutePath);
-								const textContent = buffer.toString("utf-8");
-								const allLines = textContent.split("\n");
-								const totalFileLines = allLines.length;
-
-								// Apply offset if specified (1-indexed to 0-indexed)
-								const startLine = offset ? Math.max(0, offset - 1) : 0;
-								const startLineDisplay = startLine + 1; // For display (1-indexed)
-
-								// Check if offset is out of bounds
-								if (startLine >= allLines.length) {
-									throw new Error(`Offset ${offset} is beyond end of file (${allLines.length} lines total)`);
-								}
-
-								// If limit is specified by user, use it; otherwise we'll let truncateHead decide
-								let selectedContent: string;
-								let userLimitedLines: number | undefined;
-								if (limit !== undefined) {
-									const endLine = Math.min(startLine + limit, allLines.length);
-									selectedContent = allLines.slice(startLine, endLine).join("\n");
-									userLimitedLines = endLine - startLine;
-								} else {
-									selectedContent = allLines.slice(startLine).join("\n");
-								}
-
-								// Apply truncation (respects both line and byte limits)
-								const truncation = truncateHead(selectedContent);
-
-								let outputText: string;
-
-								if (truncation.firstLineExceedsLimit) {
-									// First line at offset exceeds 30KB - tell model to use bash
-									const firstLineSize = formatSize(Buffer.byteLength(allLines[startLine], "utf-8"));
-									outputText = `[Line ${startLineDisplay} is ${firstLineSize}, exceeds ${formatSize(DEFAULT_MAX_BYTES)} limit. Use bash: sed -n '${startLineDisplay}p' ${path} | head -c ${DEFAULT_MAX_BYTES}]`;
-									details = { truncation };
-								} else if (truncation.truncated) {
-									// Truncation occurred - build actionable notice
-									const endLineDisplay = startLineDisplay + truncation.outputLines - 1;
-									const nextOffset = endLineDisplay + 1;
-
-									outputText = truncation.content;
-
-									if (truncation.truncatedBy === "lines") {
-										outputText += `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${totalFileLines}. Use offset=${nextOffset} to continue.]`;
-									} else {
-										outputText += `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${totalFileLines} (${formatSize(DEFAULT_MAX_BYTES)} limit). Use offset=${nextOffset} to continue.]`;
-									}
-									details = { truncation };
-								} else if (userLimitedLines !== undefined && startLine + userLimitedLines < allLines.length) {
-									// User specified limit, there's more content, but no truncation
-									const remaining = allLines.length - (startLine + userLimitedLines);
-									const nextOffset = startLine + userLimitedLines + 1;
-
-									outputText = truncation.content;
-									outputText += `\n\n[${remaining} more lines in file. Use offset=${nextOffset} to continue.]`;
-								} else {
-									// No truncation, no user limit exceeded
-									outputText = truncation.content;
-								}
-
-								content = [{ type: "text", text: outputText }];
-							}
-
-							// Check if aborted after reading
-							if (aborted) {
-								return;
-							}
-
-							// Clean up abort handler
-							if (signal) {
-								signal.removeEventListener("abort", onAbort);
-							}
-
-							resolve({ content, details });
-						} catch (error: any) {
-							// Clean up abort handler
-							if (signal) {
-								signal.removeEventListener("abort", onAbort);
-							}
-
-							if (!aborted) {
-								reject(error);
-							}
+						let textNote = `Read image file [${resized.mimeType}]`;
+						if (dimensionNote) {
+							textNote += `\n${dimensionNote}`;
 						}
-					})();
-				},
-			);
+
+						content = [
+							{ type: "text", text: textNote },
+							{ type: "image", data: resized.data, mimeType: resized.mimeType },
+						];
+					} else {
+						const textNote = `Read image file [${mimeType}]`;
+						content = [
+							{ type: "text", text: textNote },
+							{ type: "image", data: base64, mimeType },
+						];
+					}
+				} else {
+					// Read as text
+					const buffer = await ops.readFile(absolutePath);
+					const textContent = buffer.toString("utf-8");
+					const allLines = textContent.split("\n");
+					const totalFileLines = allLines.length;
+
+					// Apply offset if specified (1-indexed to 0-indexed)
+					const startLine = offset ? Math.max(0, offset - 1) : 0;
+					const startLineDisplay = startLine + 1; // For display (1-indexed)
+
+					// Check if offset is out of bounds
+					if (startLine >= allLines.length) {
+						throw new Error(`Offset ${offset} is beyond end of file (${allLines.length} lines total)`);
+					}
+
+					// If limit is specified by user, use it; otherwise we'll let truncateHead decide
+					let selectedContent: string;
+					let userLimitedLines: number | undefined;
+					if (limit !== undefined) {
+						const endLine = Math.min(startLine + limit, allLines.length);
+						selectedContent = allLines.slice(startLine, endLine).join("\n");
+						userLimitedLines = endLine - startLine;
+					} else {
+						selectedContent = allLines.slice(startLine).join("\n");
+					}
+
+					// Apply truncation (respects both line and byte limits)
+					const truncation = truncateHead(selectedContent);
+
+					let outputText: string;
+
+					if (truncation.firstLineExceedsLimit) {
+						// First line at offset exceeds 30KB - tell model to use bash
+						const firstLineSize = formatSize(Buffer.byteLength(allLines[startLine], "utf-8"));
+						outputText = `[Line ${startLineDisplay} is ${firstLineSize}, exceeds ${formatSize(DEFAULT_MAX_BYTES)} limit. Use bash: sed -n '${startLineDisplay}p' ${path} | head -c ${DEFAULT_MAX_BYTES}]`;
+						details = { truncation };
+					} else if (truncation.truncated) {
+						// Truncation occurred - build actionable notice
+						const endLineDisplay = startLineDisplay + truncation.outputLines - 1;
+						const nextOffset = endLineDisplay + 1;
+
+						outputText = truncation.content;
+
+						if (truncation.truncatedBy === "lines") {
+							outputText += `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${totalFileLines}. Use offset=${nextOffset} to continue.]`;
+						} else {
+							outputText += `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${totalFileLines} (${formatSize(DEFAULT_MAX_BYTES)} limit). Use offset=${nextOffset} to continue.]`;
+						}
+						details = { truncation };
+					} else if (userLimitedLines !== undefined && startLine + userLimitedLines < allLines.length) {
+						// User specified limit, there's more content, but no truncation
+						const remaining = allLines.length - (startLine + userLimitedLines);
+						const nextOffset = startLine + userLimitedLines + 1;
+
+						outputText = truncation.content;
+						outputText += `\n\n[${remaining} more lines in file. Use offset=${nextOffset} to continue.]`;
+					} else {
+						// No truncation, no user limit exceeded
+						outputText = truncation.content;
+					}
+
+					content = [{ type: "text", text: outputText }];
+				}
+
+				checkAborted();
+
+				return { content, details };
+			});
 		},
 	};
 }

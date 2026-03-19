@@ -12,6 +12,7 @@ import {
 	stripBom,
 } from "./edit-diff.js";
 import { notifyFileChanged } from "../lsp/client.js";
+import { withAbortSignal } from "./abort-utils.js";
 import { resolveToCwd } from "./path-utils.js";
 
 const editSchema = Type.Object({
@@ -69,158 +70,84 @@ export function createEditTool(cwd: string, options?: EditToolOptions): AgentToo
 		) => {
 			const absolutePath = resolveToCwd(path, cwd);
 
-			return new Promise<{
-				content: Array<{ type: "text"; text: string }>;
-				details: EditToolDetails | undefined;
-			}>((resolve, reject) => {
-				// Check if already aborted
-				if (signal?.aborted) {
-					reject(new Error("Operation aborted"));
-					return;
+			return withAbortSignal(signal, async (checkAborted) => {
+				// Check if file exists
+				try {
+					await ops.access(absolutePath);
+				} catch {
+					throw new Error(`File not found: ${path}`);
 				}
 
-				let aborted = false;
+				checkAborted();
 
-				// Set up abort handler
-				const onAbort = () => {
-					aborted = true;
-					reject(new Error("Operation aborted"));
+				// Read the file
+				const buffer = await ops.readFile(absolutePath);
+				const rawContent = buffer.toString("utf-8");
+
+				checkAborted();
+
+				// Strip BOM before matching (LLM won't include invisible BOM in oldText)
+				const { bom, text: content } = stripBom(rawContent);
+
+				const originalEnding = detectLineEnding(content);
+				const normalizedContent = normalizeToLF(content);
+				const normalizedOldText = normalizeToLF(oldText);
+				const normalizedNewText = normalizeToLF(newText);
+
+				// Find the old text using fuzzy matching (tries exact match first, then fuzzy)
+				const matchResult = fuzzyFindText(normalizedContent, normalizedOldText);
+
+				if (!matchResult.found) {
+					throw new Error(
+						`Could not find the exact text in ${path}. The old text must match exactly including all whitespace and newlines.`,
+					);
+				}
+
+				// Count occurrences using fuzzy-normalized content for consistency
+				const fuzzyContent = normalizeForFuzzyMatch(normalizedContent);
+				const fuzzyOldText = normalizeForFuzzyMatch(normalizedOldText);
+				const occurrences = fuzzyContent.split(fuzzyOldText).length - 1;
+
+				if (occurrences > 1) {
+					throw new Error(
+						`Found ${occurrences} occurrences of the text in ${path}. The text must be unique. Please provide more context to make it unique.`,
+					);
+				}
+
+				checkAborted();
+
+				// Perform replacement using the matched text position
+				// When fuzzy matching was used, contentForReplacement is the normalized version
+				const baseContent = matchResult.contentForReplacement;
+				const newContent =
+					baseContent.substring(0, matchResult.index) +
+					normalizedNewText +
+					baseContent.substring(matchResult.index + matchResult.matchLength);
+
+				// Verify the replacement actually changed something
+				if (baseContent === newContent) {
+					throw new Error(
+						`No changes made to ${path}. The replacement produced identical content. This might indicate an issue with special characters or the text not existing as expected.`,
+					);
+				}
+
+				const finalContent = bom + restoreLineEndings(newContent, originalEnding);
+				await ops.writeFile(absolutePath, finalContent);
+
+				try { notifyFileChanged(absolutePath); } catch { /* best-effort */ }
+
+				checkAborted();
+
+				const diffResult = generateDiffString(baseContent, newContent);
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `Successfully replaced text in ${path}.`,
+						},
+					],
+					details: { diff: diffResult.diff, firstChangedLine: diffResult.firstChangedLine },
 				};
-
-				if (signal) {
-					signal.addEventListener("abort", onAbort, { once: true });
-				}
-
-				// Perform the edit operation
-				(async () => {
-					try {
-						// Check if file exists
-						try {
-							await ops.access(absolutePath);
-						} catch {
-							if (signal) {
-								signal.removeEventListener("abort", onAbort);
-							}
-							reject(new Error(`File not found: ${path}`));
-							return;
-						}
-
-						// Check if aborted before reading
-						if (aborted) {
-							return;
-						}
-
-						// Read the file
-						const buffer = await ops.readFile(absolutePath);
-						const rawContent = buffer.toString("utf-8");
-
-						// Check if aborted after reading
-						if (aborted) {
-							return;
-						}
-
-						// Strip BOM before matching (LLM won't include invisible BOM in oldText)
-						const { bom, text: content } = stripBom(rawContent);
-
-						const originalEnding = detectLineEnding(content);
-						const normalizedContent = normalizeToLF(content);
-						const normalizedOldText = normalizeToLF(oldText);
-						const normalizedNewText = normalizeToLF(newText);
-
-						// Find the old text using fuzzy matching (tries exact match first, then fuzzy)
-						const matchResult = fuzzyFindText(normalizedContent, normalizedOldText);
-
-						if (!matchResult.found) {
-							if (signal) {
-								signal.removeEventListener("abort", onAbort);
-							}
-							reject(
-								new Error(
-									`Could not find the exact text in ${path}. The old text must match exactly including all whitespace and newlines.`,
-								),
-							);
-							return;
-						}
-
-						// Count occurrences using fuzzy-normalized content for consistency
-						const fuzzyContent = normalizeForFuzzyMatch(normalizedContent);
-						const fuzzyOldText = normalizeForFuzzyMatch(normalizedOldText);
-						const occurrences = fuzzyContent.split(fuzzyOldText).length - 1;
-
-						if (occurrences > 1) {
-							if (signal) {
-								signal.removeEventListener("abort", onAbort);
-							}
-							reject(
-								new Error(
-									`Found ${occurrences} occurrences of the text in ${path}. The text must be unique. Please provide more context to make it unique.`,
-								),
-							);
-							return;
-						}
-
-						// Check if aborted before writing
-						if (aborted) {
-							return;
-						}
-
-						// Perform replacement using the matched text position
-						// When fuzzy matching was used, contentForReplacement is the normalized version
-						const baseContent = matchResult.contentForReplacement;
-						const newContent =
-							baseContent.substring(0, matchResult.index) +
-							normalizedNewText +
-							baseContent.substring(matchResult.index + matchResult.matchLength);
-
-						// Verify the replacement actually changed something
-						if (baseContent === newContent) {
-							if (signal) {
-								signal.removeEventListener("abort", onAbort);
-							}
-							reject(
-								new Error(
-									`No changes made to ${path}. The replacement produced identical content. This might indicate an issue with special characters or the text not existing as expected.`,
-								),
-							);
-							return;
-						}
-
-						const finalContent = bom + restoreLineEndings(newContent, originalEnding);
-						await ops.writeFile(absolutePath, finalContent);
-
-						try { notifyFileChanged(absolutePath); } catch { /* best-effort */ }
-
-						// Check if aborted after writing
-						if (aborted) {
-							return;
-						}
-
-						// Clean up abort handler
-						if (signal) {
-							signal.removeEventListener("abort", onAbort);
-						}
-
-						const diffResult = generateDiffString(baseContent, newContent);
-						resolve({
-							content: [
-								{
-									type: "text",
-									text: `Successfully replaced text in ${path}.`,
-								},
-							],
-							details: { diff: diffResult.diff, firstChangedLine: diffResult.firstChangedLine },
-						});
-					} catch (error: any) {
-						// Clean up abort handler
-						if (signal) {
-							signal.removeEventListener("abort", onAbort);
-						}
-
-						if (!aborted) {
-							reject(error);
-						}
-					}
-				})();
 			});
 		},
 	};
