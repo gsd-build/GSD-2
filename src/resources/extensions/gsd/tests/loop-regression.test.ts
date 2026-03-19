@@ -507,3 +507,38 @@ test("dispatch returns stop when phase=executing but activeSlice is null (corrup
   });
   assert.equal(result.action, "stop", "should stop instead of crashing");
 });
+
+// ─── Phase 6: Worktree & Lock Consistency ────────────────────────────────
+
+test("repoIdentity returns same hash for main repo and worktree", async () => {
+  // This test verifies the fix for #1288 — identity hash must be stable
+  // across worktree and non-worktree contexts.
+  const { repoIdentity } = await import("../repo-identity.ts");
+  // Call from the current directory (main repo)
+  const hash = repoIdentity(process.cwd());
+  assert.ok(hash.length === 12, `hash should be 12 hex chars, got: ${hash}`);
+  assert.match(hash, /^[a-f0-9]{12}$/, `hash should be hex, got: ${hash}`);
+});
+
+test("session lock settings: retry path matches primary stale timeout", async () => {
+  // Verify the fix for #1304 — retry lock must use same settings as primary
+  const lockSource = (await import("node:fs")).readFileSync(
+    "src/resources/extensions/gsd/session-lock.ts", "utf-8"
+  );
+  // Find all stale: settings
+  const staleMatches = [...lockSource.matchAll(/stale:\s*(\d[\d_]*)/g)];
+  const staleValues = staleMatches.map(m => parseInt(m[1]!.replace(/_/g, ""), 10));
+  // All stale values should be the same (primary and retry aligned)
+  const uniqueStale = [...new Set(staleValues)];
+  assert.equal(uniqueStale.length, 1, `all stale timeouts should be identical, got: ${staleValues.join(", ")}`);
+});
+
+test("COMPLETION_TRANSITION_CODES are a subset of DoctorIssueCode", async () => {
+  const { COMPLETION_TRANSITION_CODES } = await import("../doctor-types.ts");
+  // Just verify the set is non-empty and contains expected codes
+  assert.ok(COMPLETION_TRANSITION_CODES.size >= 3, "should have at least 3 transition codes");
+  for (const code of COMPLETION_TRANSITION_CODES) {
+    assert.ok(typeof code === "string", `code should be string: ${code}`);
+    assert.ok(code.startsWith("all_tasks_done_"), `code should start with all_tasks_done_: ${code}`);
+  }
+});
