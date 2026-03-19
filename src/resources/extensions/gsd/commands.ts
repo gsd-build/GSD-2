@@ -17,7 +17,7 @@ import { GSDVisualizerOverlay } from "./visualizer-overlay.js";
 import { showQueue, showDiscuss, showHeadlessMilestoneCreation } from "./guided-flow.js";
 import { startAuto, stopAuto, pauseAuto, isAutoActive, isAutoPaused, isStepMode, stopAutoRemote } from "./auto.js";
 import { dispatchDirectPhase } from "./auto-direct-dispatch.js";
-import { resolveProjectRoot } from "./worktree.js";
+import { detectWorktreeName, resolveProjectRoot } from "./worktree.js";
 import { assertSafeDirectory } from "./validate-directory.js";
 import {
   getGlobalGSDPreferencesPath,
@@ -50,6 +50,10 @@ import { handleLogs } from "./commands-logs.js";
 import { handleStart, handleTemplates, getTemplateCompletions } from "./commands-workflow-templates.js";
 
 
+export function shouldValidateResolvedProjectCwd(cwd: string, root: string): boolean {
+  return root !== cwd && detectWorktreeName(cwd) !== null;
+}
+
 /** Resolve the effective project root, accounting for worktree paths. */
 export function projectRoot(): string {
   const cwd = process.cwd();
@@ -60,7 +64,7 @@ export function projectRoot(): string {
   // should validate the actual working directory, not the upstream root,
   // because the worktree itself is a safe project subdirectory.
   // Only skip the root check when we can confirm we're in a valid worktree.
-  if (root !== cwd) {
+  if (shouldValidateResolvedProjectCwd(cwd, root)) {
     // We're in a worktree — validate the worktree path instead of the root
     assertSafeDirectory(cwd);
   } else {

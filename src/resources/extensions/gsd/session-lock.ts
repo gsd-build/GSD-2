@@ -57,10 +57,23 @@ let _lockCompromised: boolean = false;
 /** Whether we've already registered a process.on('exit') handler. */
 let _exitHandlerRegistered: boolean = false;
 
+/** Current proper-lockfile sidecar directory to clean up on exit. */
+let _exitCleanupDir: string | null = null;
+
 const LOCK_FILE = "auto.lock";
 
 function lockPath(basePath: string): string {
   return join(gsdRoot(basePath), LOCK_FILE);
+}
+
+export function _lockDirNameForTests(gsdDir: string): string {
+  const normalized = gsdDir.replace(/\\/g, "/").replace(/\/+$/, "");
+  const parts = normalized.split("/");
+  return parts[parts.length - 1] || ".gsd";
+}
+
+export function _getExitCleanupDirForTests(): string | null {
+  return _exitCleanupDir;
 }
 
 // ─── Stray Lock Cleanup ─────────────────────────────────────────────────────
@@ -91,7 +104,7 @@ export function cleanupStrayLockFiles(basePath: string): void {
   // The canonical one is ".gsd.lock/" — anything else is stray.
   try {
     const parentDir = dirname(gsdDir);
-    const gsdDirName = gsdDir.split("/").pop() || ".gsd";
+    const gsdDirName = _lockDirNameForTests(gsdDir);
     if (existsSync(parentDir)) {
       for (const entry of readdirSync(parentDir)) {
         // Match ".gsd <N>.lock" or ".gsd (<N>).lock" directories but NOT ".gsd.lock"
@@ -110,11 +123,11 @@ export function cleanupStrayLockFiles(basePath: string): void {
 }
 
 /**
- * Register a single process exit handler that cleans up lock state.
+ * Register a single process exit handler that cleans up the current lock state.
  * Uses module-level references so it always operates on current state.
  * Only registers once — subsequent calls are no-ops.
  */
-function ensureExitHandler(gsdDir: string): void {
+function ensureExitHandler(): void {
   if (_exitHandlerRegistered) return;
   _exitHandlerRegistered = true;
 
@@ -129,8 +142,9 @@ function ensureExitHandler(gsdDir: string): void {
       if (existsSync(lockFile)) unlinkSync(lockFile);
     } catch { /* best-effort */ }
     try {
-      const lockDir = join(gsdDir + ".lock");
-      if (existsSync(lockDir)) rmSync(lockDir, { recursive: true, force: true });
+      if (_exitCleanupDir && existsSync(_exitCleanupDir)) {
+        rmSync(_exitCleanupDir, { recursive: true, force: true });
+      }
     } catch { /* best-effort */ }
   });
 }
@@ -199,10 +213,11 @@ export function acquireSessionLock(basePath: string): SessionLockResult {
     _lockedPath = basePath;
     _lockPid = process.pid;
     _lockCompromised = false;
+    _exitCleanupDir = `${gsdDir}.lock`;
 
     // Safety net: clean up lock dir on process exit if _releaseFunction
     // wasn't called (e.g., normal exit after clean completion) (#1245).
-    ensureExitHandler(gsdDir);
+    ensureExitHandler();
 
     // Write the informational lock data
     atomicWriteSync(lp, JSON.stringify(lockData, null, 2));
@@ -234,9 +249,11 @@ export function acquireSessionLock(basePath: string): SessionLockResult {
         _releaseFunction = release;
         _lockedPath = basePath;
         _lockPid = process.pid;
+        _lockCompromised = false;
+        _exitCleanupDir = `${gsdDir}.lock`;
 
         // Safety net — uses centralized handler to avoid double-registration
-        ensureExitHandler(gsdDir);
+        ensureExitHandler();
 
         atomicWriteSync(lp, JSON.stringify(lockData, null, 2));
         return { acquired: true };
@@ -383,6 +400,7 @@ export function releaseSessionLock(basePath: string): void {
   _lockedPath = null;
   _lockPid = 0;
   _lockCompromised = false;
+  _exitCleanupDir = null;
 }
 
 /**

@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import {
+  _getExitCleanupDirForTests,
+  _lockDirNameForTests,
   acquireSessionLock,
   releaseSessionLock,
   updateSessionLock,
@@ -14,6 +16,7 @@ import {
   isSessionLockProcessAlive,
   cleanupStrayLockFiles,
 } from "../session-lock.ts";
+import { gsdRoot } from "../paths.ts";
 
 // ─── acquireSessionLock ──────────────────────────────────────────────────
 
@@ -394,6 +397,10 @@ test("cleanupStrayLockFiles is safe when .gsd/ does not exist", () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+test("_lockDirNameForTests normalizes Windows-style paths", () => {
+  assert.equal(_lockDirNameForTests("C:\\Users\\test\\repo\\.gsd"), ".gsd");
+});
+
 test("acquireSessionLock cleans stray lock files before acquiring", () => {
   const dir = mkdtempSync(join(tmpdir(), "gsd-session-lock-"));
   const gsdDir = join(dir, ".gsd");
@@ -412,6 +419,29 @@ test("acquireSessionLock cleans stray lock files before acquiring", () => {
 
   releaseSessionLock(dir);
   rmSync(dir, { recursive: true, force: true });
+});
+
+test("exit cleanup target tracks the latest acquired project", () => {
+  const dir1 = mkdtempSync(join(tmpdir(), "gsd-session-lock-a-"));
+  const dir2 = mkdtempSync(join(tmpdir(), "gsd-session-lock-b-"));
+  mkdirSync(join(dir1, ".gsd"), { recursive: true });
+  mkdirSync(join(dir2, ".gsd"), { recursive: true });
+
+  try {
+    const result1 = acquireSessionLock(dir1);
+    assert.equal(result1.acquired, true);
+    assert.equal(_getExitCleanupDirForTests(), `${gsdRoot(dir1)}.lock`);
+    releaseSessionLock(dir1);
+
+    const result2 = acquireSessionLock(dir2);
+    assert.equal(result2.acquired, true);
+    assert.equal(_getExitCleanupDirForTests(), `${gsdRoot(dir2)}.lock`);
+    releaseSessionLock(dir2);
+    assert.equal(_getExitCleanupDirForTests(), null);
+  } finally {
+    rmSync(dir1, { recursive: true, force: true });
+    rmSync(dir2, { recursive: true, force: true });
+  }
 });
 
 test("releaseSessionLock cleans stray lock files after releasing", () => {

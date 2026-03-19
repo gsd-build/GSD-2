@@ -47,6 +47,43 @@ let originalBase: string | null = null;
 
 // ─── Worktree ↔ Main Repo Sync (#1311) ──────────────────────────────────────
 
+function syncMissingFile(src: string, dst: string, relPath: string, synced: string[]): void {
+  if (!existsSync(src) || existsSync(dst)) return;
+  try {
+    const srcStat = lstatSyncFn(src);
+    if (!srcStat.isFile()) return;
+    cpSync(src, dst);
+    synced.push(relPath);
+  } catch { /* non-fatal */ }
+}
+
+function syncMissingTree(srcDir: string, dstDir: string, relPrefix: string, synced: string[]): void {
+  if (!existsSync(srcDir)) return;
+
+  try {
+    const srcEntries = readdirSync(srcDir, { withFileTypes: true });
+    for (const entry of srcEntries) {
+      const srcEntry = join(srcDir, entry.name);
+      const dstEntry = join(dstDir, entry.name);
+      const relEntry = `${relPrefix}${entry.name}`;
+
+      if (entry.isDirectory()) {
+        if (!existsSync(dstEntry)) {
+          try {
+            cpSync(srcEntry, dstEntry, { recursive: true });
+            synced.push(`${relEntry}/`);
+          } catch { /* non-fatal */ }
+        } else {
+          syncMissingTree(srcEntry, dstEntry, `${relEntry}/`, synced);
+        }
+        continue;
+      }
+
+      syncMissingFile(srcEntry, dstEntry, relEntry, synced);
+    }
+  } catch { /* non-fatal */ }
+}
+
 /**
  * Sync .gsd/ state from the main repo into the worktree.
  *
@@ -77,17 +114,20 @@ export function syncGsdStateToWorktree(mainBasePath: string, worktreePath_: stri
 
   if (!existsSync(mainGsd) || !existsSync(wtGsd)) return { synced };
 
-  // Sync root-level .gsd/ files (DECISIONS, REQUIREMENTS, PROJECT, KNOWLEDGE)
-  const rootFiles = ["DECISIONS.md", "REQUIREMENTS.md", "PROJECT.md", "KNOWLEDGE.md", "OVERRIDES.md"];
+  // Sync root-level .gsd/ files that affect runtime behavior inside the worktree.
+  const rootFiles = [
+    "DECISIONS.md",
+    "REQUIREMENTS.md",
+    "PROJECT.md",
+    "KNOWLEDGE.md",
+    "OVERRIDES.md",
+    "preferences.md",
+    "PREFERENCES.md",
+  ];
   for (const f of rootFiles) {
     const src = join(mainGsd, f);
     const dst = join(wtGsd, f);
-    if (existsSync(src) && !existsSync(dst)) {
-      try {
-        cpSync(src, dst);
-        synced.push(f);
-      } catch { /* non-fatal */ }
-    }
+    syncMissingFile(src, dst, f, synced);
   }
 
   // Sync milestones: copy entire milestone directories that are missing
@@ -118,15 +158,7 @@ export function syncGsdStateToWorktree(mainBasePath: string, worktreePath_: stri
             for (const f of srcFiles) {
               const srcFile = join(srcDir, f);
               const dstFile = join(dstDir, f);
-              if (!existsSync(dstFile)) {
-                try {
-                  const srcStat = lstatSyncFn(srcFile);
-                  if (srcStat.isFile()) {
-                    cpSync(srcFile, dstFile);
-                    synced.push(`milestones/${mid}/${f}`);
-                  }
-                } catch { /* non-fatal */ }
-              }
+              syncMissingFile(srcFile, dstFile, `milestones/${mid}/${f}`, synced);
             }
 
             // Sync slices directory if it exists in main but not in worktree
@@ -138,20 +170,7 @@ export function syncGsdStateToWorktree(mainBasePath: string, worktreePath_: stri
                 synced.push(`milestones/${mid}/slices/`);
               } catch { /* non-fatal */ }
             } else if (existsSync(srcSlicesDir) && existsSync(dstSlicesDir)) {
-              // Both exist — sync missing slice directories
-              const srcSlices = readdirSync(srcSlicesDir, { withFileTypes: true })
-                .filter(d => d.isDirectory())
-                .map(d => d.name);
-              for (const sid of srcSlices) {
-                const srcSlice = join(srcSlicesDir, sid);
-                const dstSlice = join(dstSlicesDir, sid);
-                if (!existsSync(dstSlice)) {
-                  try {
-                    cpSync(srcSlice, dstSlice, { recursive: true });
-                    synced.push(`milestones/${mid}/slices/${sid}/`);
-                  } catch { /* non-fatal */ }
-                }
-              }
+              syncMissingTree(srcSlicesDir, dstSlicesDir, `milestones/${mid}/slices/`, synced);
             }
           } catch { /* non-fatal */ }
         }

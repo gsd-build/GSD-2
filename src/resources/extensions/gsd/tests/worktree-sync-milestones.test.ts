@@ -10,7 +10,8 @@
  *   - Milestone exists but missing CONTEXT/ROADMAP files
  *   - Missing slices within an existing milestone
  *   - No-op when directories are identical (symlinked)
- *   - Root-level files (DECISIONS, REQUIREMENTS, etc.)
+ *   - Root-level files (DECISIONS, REQUIREMENTS, preferences, etc.)
+ *   - Missing nested files inside existing slice directories
  */
 
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync, symlinkSync, realpathSync } from 'node:fs';
@@ -176,6 +177,7 @@ async function main(): Promise<void> {
       writeFileSync(join(mainBase, '.gsd', 'DECISIONS.md'), '# Decisions');
       writeFileSync(join(mainBase, '.gsd', 'REQUIREMENTS.md'), '# Requirements');
       writeFileSync(join(mainBase, '.gsd', 'PROJECT.md'), '# Project');
+      writeFileSync(join(mainBase, '.gsd', 'preferences.md'), '---\nversion: 1\n---\n');
 
       // Worktree has none of these
       const result = syncGsdStateToWorktree(mainBase, wtBase);
@@ -183,15 +185,49 @@ async function main(): Promise<void> {
       assertTrue(existsSync(join(wtBase, '.gsd', 'DECISIONS.md')), 'DECISIONS.md synced');
       assertTrue(existsSync(join(wtBase, '.gsd', 'REQUIREMENTS.md')), 'REQUIREMENTS.md synced');
       assertTrue(existsSync(join(wtBase, '.gsd', 'PROJECT.md')), 'PROJECT.md synced');
-      assertTrue(result.synced.length >= 3, 'at least 3 files synced');
+      assertTrue(existsSync(join(wtBase, '.gsd', 'preferences.md')), 'preferences.md synced');
+      assertTrue(result.synced.length >= 4, 'at least 4 files synced');
     } finally {
       cleanup(mainBase);
       cleanup(wtBase);
     }
   }
 
-  // ─── 6. Non-existent directories handled gracefully ───────────────────
-  console.log('\n=== 6. non-existent directories → no-op ===');
+  // ─── 6. Existing slice directories receive missing nested files ───────
+  console.log('\n=== 6. existing slice directories receive missing nested files ===');
+  {
+    const mainBase = createBase('main');
+    const wtBase = createBase('wt');
+
+    try {
+      const mainTasksDir = join(mainBase, '.gsd', 'milestones', 'M001', 'slices', 'S01', 'tasks');
+      mkdirSync(mainTasksDir, { recursive: true });
+      writeFileSync(join(mainBase, '.gsd', 'milestones', 'M001', 'M001-ROADMAP.md'), '# Roadmap');
+      writeFileSync(join(mainBase, '.gsd', 'milestones', 'M001', 'slices', 'S01', 'S01-PLAN.md'), '# Slice plan');
+      writeFileSync(join(mainTasksDir, 'T01-PLAN.md'), '# Task plan');
+
+      const wtTasksDir = join(wtBase, '.gsd', 'milestones', 'M001', 'slices', 'S01', 'tasks');
+      mkdirSync(wtTasksDir, { recursive: true });
+      writeFileSync(join(wtBase, '.gsd', 'milestones', 'M001', 'M001-ROADMAP.md'), '# Roadmap');
+      writeFileSync(join(wtBase, '.gsd', 'milestones', 'M001', 'slices', 'S01', 'S01-PLAN.md'), '# Slice plan');
+
+      assertTrue(!existsSync(join(wtTasksDir, 'T01-PLAN.md')), 'nested task file missing before sync');
+
+      const result = syncGsdStateToWorktree(mainBase, wtBase);
+
+      assertTrue(existsSync(join(wtTasksDir, 'T01-PLAN.md')), 'nested task file synced into existing slice dir');
+      assertTrue(
+        result.synced.includes('milestones/M001/slices/S01/tasks/T01-PLAN.md'),
+        'sync reports nested task file',
+      );
+    } finally {
+      cleanup(mainBase);
+      cleanup(wtBase);
+    }
+  }
+
+  // ─── 7. Non-existent directories handled gracefully ───────────────────
+  console.log('\n=== 7. non-existent directories → no-op ===');
   {
     const result = syncGsdStateToWorktree('/tmp/does-not-exist-main', '/tmp/does-not-exist-wt');
     assertEq(result.synced.length, 0, 'no crash on missing directories');
