@@ -865,8 +865,44 @@ export default function (pi: ExtensionAPI) {
       return;
     }
 
+    // Guided-mode post-unit verification (#1378):
+    // When a guided workflow (non-auto, non-discuss) completes, run state
+    // rebuild and doctor checks to ensure artifacts were written correctly.
+    // This enforces the same artifact creation that auto-mode requires.
+    if (!isAutoActive()) {
+      try {
+        const basePath = process.cwd();
+        const { gsdRoot: getGsdRoot } = await importExtensionModule<typeof import("./paths.js")>(import.meta.url, "./paths.js");
+        const gsdDir = getGsdRoot(basePath);
+        const { existsSync: fsExists } = await import("node:fs");
+        if (fsExists(gsdDir)) {
+          const { rebuildState } = await importExtensionModule<typeof import("./doctor.js")>(import.meta.url, "./doctor.js");
+          const { runGSDDoctor } = await importExtensionModule<typeof import("./doctor.js")>(import.meta.url, "./doctor.js");
+          const { createGitService } = await importExtensionModule<typeof import("./git-service.js")>(import.meta.url, "./git-service.js");
+
+          // Rebuild STATE.md from disk
+          await rebuildState(basePath);
+
+          // Run doctor with auto-fix to repair any missing checkboxes, stale state
+          const report = await runGSDDoctor(basePath, { fix: true });
+          if (report.fixesApplied.length > 0) {
+            ctx.ui.notify(`Post-unit: applied ${report.fixesApplied.length} fix(es) to state.`, "info");
+          }
+
+          // Auto-commit any changes the guided agent made
+          try {
+            const gitService = createGitService(basePath);
+            const commitMsg = gitService.commit({ message: "chore: guided-mode auto-commit" });
+            if (commitMsg) {
+              ctx.ui.notify("Changes committed.", "info");
+            }
+          } catch { /* non-fatal — may not be a git repo */ }
+        }
+      } catch { /* non-fatal — guided verification should never block */ }
+      return;
+    }
+
     // If auto-mode is already running, advance to next unit
-    if (!isAutoActive()) return;
 
     // If the agent was aborted (user pressed Escape) or hit a provider
     // error (fetch failure, rate limit, etc.), pause auto-mode instead of

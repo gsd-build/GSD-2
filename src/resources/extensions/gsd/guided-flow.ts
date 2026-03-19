@@ -55,6 +55,22 @@ function buildDocsCommitInstruction(_message: string): string {
 
 // ─── Auto-start after discuss ─────────────────────────────────────────────────
 
+// ─── Guided dispatch tracking (#1378) ─────────────────────────────────────────
+/** Tracks the last guided-mode unit type + ID for post-unit verification. */
+let _activeGuidedUnit: { unitType: string; unitId: string } | null = null;
+
+export function setActiveGuidedUnit(unitType: string, unitId: string): void {
+  _activeGuidedUnit = { unitType, unitId };
+}
+
+export function consumeActiveGuidedUnit(): { unitType: string; unitId: string } | null {
+  const unit = _activeGuidedUnit;
+  _activeGuidedUnit = null;
+  return unit;
+}
+
+// ─── Auto-start after discuss ─────────────────────────────────────────────────
+
 /** Stashed context + flag for auto-starting after discuss phase completes */
 let pendingAutoStart: {
   ctx: ExtensionCommandContext;
