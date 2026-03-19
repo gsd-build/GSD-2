@@ -6,6 +6,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.33.0] - 2026-03-19
+
+### Added
+- add live regression test harness for post-build pipeline validation (#1316)
+
+### Fixed
+- align retry lock path with primary lock settings to prevent ECOMPROMISED (#1307)
+- skip symlinks in makeTreeWritable to prevent EPERM on NixOS/nix-darwin (#1303)
+- handle Windows EPERM on .gsd migration rename with copy+delete fallback (#1296)
+- add actionable recovery guidance to crash info messages (#1295)
+- resolve main repo root in worktrees for stable identity hash (#1294)
+- merge quick-task branch back to original after completion (#1293)
+
+### Changed
+- extract tryMergeMilestone to eliminate 4 duplicate merge paths in auto.ts (#1314)
+- dispatch loop hardening — defensive guards, regression tests, lock alignment (#1310)
+- extract parseUnitId() to centralize unit ID parsing (#1282)
+- extract getErrorMessage() helper to eliminate 65 inline duplicates (#1280)
+- consolidate DB-fallback inline functions in auto-prompts (#1276)
+
 ## [2.32.0] - 2026-03-19
 
 ### Added
@@ -1289,7 +1309,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - License updated to MIT
 
-[Unreleased]: https://github.com/gsd-build/gsd-2/compare/v2.32.0...HEAD
+[Unreleased]: https://github.com/gsd-build/gsd-2/compare/v2.33.0...HEAD
+[2.33.0]: https://github.com/gsd-build/gsd-2/compare/v2.32.0...v2.33.0
 [2.32.0]: https://github.com/gsd-build/gsd-2/compare/v2.31.2...v2.32.0
 [2.31.2]: https://github.com/gsd-build/gsd-2/compare/v2.31.1...v2.31.2
 [2.31.1]: https://github.com/gsd-build/gsd-2/compare/v2.31.0...v2.31.1
