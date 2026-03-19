@@ -221,16 +221,17 @@ function render(w: number, healthState: { icon: string; color: string; summary: 
     }
   }
 
-  // Compose columns
+  // Compose columns — use ANSI cursor-column (CSI n G) to fix divider position
   if (useTwoCol) {
     const divider = theme.fg("dim", "│");
+    const dividerCol = leftColWidth + colGap - 1;
     const maxRows = Math.max(leftLines.length, rightLines.length);
     lines.push("");
     for (let i = 0; i < maxRows; i++) {
-      const left = padToWidth(leftLines[i] ?? "", leftColWidth);
-      const gap = " ".repeat(colGap - 2);
+      const left = truncateToWidth(leftLines[i] ?? "", leftColWidth);
       const right = rightLines[i] ?? "";
-      lines.push(truncateToWidth(`${left}${gap}${divider} ${right}`, w));
+      const moveToCol = `\x1b[${dividerCol}G`;
+      lines.push(`${left}${moveToCol}${divider} ${right}`);
     }
   } else {
     lines.push("");

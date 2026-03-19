@@ -571,15 +571,20 @@ export function updateProgressWidget(
         }
 
         // Compose columns
+        // Use ANSI cursor-column (CSI n G) to place the divider at a fixed
+        // position so ambiguous-width glyphs in the left column don't shift
+        // the right column.
         if (useTwoCol) {
           const maxRows = Math.max(leftLines.length, rightLines.length);
+          const dividerCol = leftColWidth + colGap - 1; // 1-based column for CSI G
           if (maxRows > 0) {
             lines.push("");
             for (let i = 0; i < maxRows; i++) {
-              const left = padToWidth(leftLines[i] ?? "", leftColWidth);
-              const gap = " ".repeat(colGap - 2);
+              const left = truncateToWidth(leftLines[i] ?? "", leftColWidth);
               const right = rightLines[i] ?? "";
-              lines.push(truncateToWidth(`${left}${gap}${divider} ${right}`, width));
+              // CSI <col> G moves cursor to absolute column, ensuring alignment
+              const moveToCol = `\x1b[${dividerCol}G`;
+              lines.push(`${left}${moveToCol}${divider} ${right}`);
             }
           }
         } else {
