@@ -350,6 +350,12 @@ export async function bootstrapAutoSession(
         ctx.ui.notify(`Created auto-worktree at ${wtPath}`, "info");
       }
       registerSigtermHandler(s.originalBasePath);
+      // Reload completed keys from worktree — the initial loadPersistedKeys ran
+      // against the project root (base) which may not have completed-units.json.
+      // The worktree has its own copy persisted by prior auto sessions. Without
+      // this reload, the completedKeySet is empty and previously completed units
+      // (e.g. research-milestone) get re-dispatched. (#1333)
+      loadPersistedKeys(s.basePath, s.completedKeySet);
     } catch (err) {
       ctx.ui.notify(
         `Auto-worktree setup failed: ${getErrorMessage(err)}. Continuing in project root.`,
