@@ -44,7 +44,11 @@ try {
 }
 
 // Locate the built library
-const targetDir = path.join(nativeRoot, "target", profile);
+const cargoTargetRoot = process.env.CARGO_TARGET_DIR
+  ? path.resolve(process.env.CARGO_TARGET_DIR)
+  : path.join(nativeRoot, "target");
+
+const targetDir = path.join(cargoTargetRoot, profile);
 const platformTag = `${process.platform}-${process.arch}`;
 
 const libraryNames = {
