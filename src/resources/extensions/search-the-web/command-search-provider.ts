@@ -18,7 +18,7 @@ import {
   setSearchProviderPreference,
   resolveSearchProvider,
   type SearchProviderPreference,
-} from './provider.ts'
+} from './provider.js'
 
 const VALID_PREFERENCES: SearchProviderPreference[] = ['tavily', 'brave', 'ollama', 'auto']
 

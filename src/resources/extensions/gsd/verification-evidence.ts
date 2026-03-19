@@ -11,7 +11,7 @@
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { VerificationResult } from "./types.ts";
+import type { VerificationResult } from "./types.js";
 
 // ─── JSON Evidence Artifact ──────────────────────────────────────────────────
 

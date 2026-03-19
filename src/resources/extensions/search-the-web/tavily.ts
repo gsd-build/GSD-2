@@ -6,7 +6,7 @@
  * All exports are pure functions with no side effects.
  */
 
-import type { SearchResultFormatted } from "./format.ts";
+import type { SearchResultFormatted } from "./format.js";
 
 // =============================================================================
 // Tavily API Types

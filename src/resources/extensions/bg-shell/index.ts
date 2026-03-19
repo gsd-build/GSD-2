@@ -1,59 +1,54 @@
 /**
  * Background Shell Extension v2
  *
- * A next-generation background process manager designed for agentic workflows.
- * Provides intelligent process lifecycle management, structured output digests,
- * event-driven readiness detection, and context-efficient communication.
- *
- * Key capabilities:
- * - Multi-tier output: digest (30 tokens) → highlights → raw (full context)
- * - Readiness detection: port probing, pattern matching, auto-classification
- * - Process lifecycle events: starting → ready → error → exited
- * - Output diffing & dedup: detect novel errors vs. repeated noise
- * - Process groups: manage related processes as a unit
- * - Cross-session persistence: survive context resets
- * - Expect-style interactions: send_and_wait for interactive CLIs
- * - Context injection: proactive alerts for crashes and state changes
- *
- * Tools:
- *   bg_shell — start, output, digest, wait_for_ready, send, send_and_wait, run,
- *              signal, list, kill, restart, group_status
- *
- * Commands:
- *   /bg — interactive process manager overlay
+ * Command/tool registration is deferred in interactive mode so startup does not
+ * block on the full background-process stack before the TUI paints.
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@gsd/pi-coding-agent";
-
-import { registerBgShellTool } from "./bg-shell-tool.js";
-import { registerBgShellCommand } from "./bg-shell-command.js";
+import { importExtensionModule, type ExtensionAPI, type ExtensionContext } from "@gsd/pi-coding-agent";
 import { registerBgShellLifecycle } from "./bg-shell-lifecycle.js";
 
-// ── Re-exports for consumers ───────────────────────────────────────────────
-
-export type { ProcessStatus, ProcessType, BgProcess, BgProcessInfo, OutputDigest, OutputLine, ProcessEvent } from "./types.js";
-export { processes, startProcess, killProcess, restartProcess, cleanupAll, cleanupSessionProcesses } from "./process-manager.js";
-export { generateDigest, getHighlights, getOutput, formatDigestText } from "./output-formatter.js";
-export { waitForReady, probePort } from "./readiness-detector.js";
-export { sendAndWait, runOnSession, queryShellEnv } from "./interaction.js";
-export { BgManagerOverlay } from "./overlay.js";
-
-// ── Shared State ────────────────────────────────────────────────────────────
-
 export interface BgShellSharedState {
-	latestCtx: ExtensionContext | null;
-	refreshWidget: () => void;
+  latestCtx: ExtensionContext | null;
+  refreshWidget: () => void;
 }
 
-// ── Extension Entry Point ──────────────────────────────────────────────────
+let featuresPromise: Promise<void> | null = null;
+
+async function registerBgShellFeatures(pi: ExtensionAPI, state: BgShellSharedState): Promise<void> {
+  if (!featuresPromise) {
+    featuresPromise = (async () => {
+      const [{ registerBgShellTool }, { registerBgShellCommand }] = await Promise.all([
+        importExtensionModule<typeof import("./bg-shell-tool.js")>(import.meta.url, "./bg-shell-tool.js"),
+        importExtensionModule<typeof import("./bg-shell-command.js")>(import.meta.url, "./bg-shell-command.js"),
+      ]);
+      registerBgShellTool(pi, state);
+      registerBgShellCommand(pi, state);
+    })().catch((error) => {
+      featuresPromise = null;
+      throw error;
+    });
+  }
+
+  return featuresPromise;
+}
 
 export default function (pi: ExtensionAPI) {
-	const state: BgShellSharedState = {
-		latestCtx: null,
-		refreshWidget: () => {},
-	};
+  const state: BgShellSharedState = {
+    latestCtx: null,
+    refreshWidget: () => {},
+  };
 
-	registerBgShellLifecycle(pi, state);
-	registerBgShellTool(pi, state);
-	registerBgShellCommand(pi, state);
+  registerBgShellLifecycle(pi, state);
+
+  pi.on("session_start", async (_event, ctx) => {
+    if (ctx.hasUI) {
+      void registerBgShellFeatures(pi, state).catch((error) => {
+        ctx.ui.notify(`bg-shell failed to load: ${error instanceof Error ? error.message : String(error)}`, "warning");
+      });
+      return;
+    }
+
+    await registerBgShellFeatures(pi, state);
+  });
 }

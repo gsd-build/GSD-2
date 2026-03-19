@@ -404,36 +404,46 @@ export function registerGSDCommand(pi: ExtensionAPI): void {
     },
 
     async handler(args: string, ctx: ExtensionCommandContext) {
-      const trimmed = (typeof args === "string" ? args : "").trim();
+      await handleGSDCommand(args, ctx, pi);
+    },
+  });
+}
 
-      if (trimmed === "help" || trimmed === "h" || trimmed === "?") {
-        showHelp(ctx);
-        return;
-      }
+export async function handleGSDCommand(
+  args: string,
+  ctx: ExtensionCommandContext,
+  pi: ExtensionAPI,
+): Promise<void> {
+  const trimmed = (typeof args === "string" ? args : "").trim();
 
-      if (trimmed === "status") {
-        await handleStatus(ctx);
-        return;
-      }
+  if (trimmed === "help" || trimmed === "h" || trimmed === "?") {
+    showHelp(ctx);
+    return;
+  }
 
-      if (trimmed === "visualize") {
-        await handleVisualize(ctx);
-        return;
-      }
+  if (trimmed === "status") {
+    await handleStatus(ctx);
+    return;
+  }
 
-      if (trimmed === "mode" || trimmed.startsWith("mode ")) {
-        const modeArgs = trimmed.replace(/^mode\s*/, "").trim();
-        const scope = modeArgs === "project" ? "project" : "global";
-        const path = scope === "project" ? getProjectGSDPreferencesPath() : getGlobalGSDPreferencesPath();
-        await ensurePreferencesFile(path, ctx, scope);
-        await handlePrefsMode(ctx, scope);
-        return;
-      }
+  if (trimmed === "visualize") {
+    await handleVisualize(ctx);
+    return;
+  }
 
-      if (trimmed === "prefs" || trimmed.startsWith("prefs ")) {
-        await handlePrefs(trimmed.replace(/^prefs\s*/, "").trim(), ctx);
-        return;
-      }
+  if (trimmed === "mode" || trimmed.startsWith("mode ")) {
+    const modeArgs = trimmed.replace(/^mode\s*/, "").trim();
+    const scope = modeArgs === "project" ? "project" : "global";
+    const path = scope === "project" ? getProjectGSDPreferencesPath() : getGlobalGSDPreferencesPath();
+    await ensurePreferencesFile(path, ctx, scope);
+    await handlePrefsMode(ctx, scope);
+    return;
+  }
+
+  if (trimmed === "prefs" || trimmed.startsWith("prefs ")) {
+    await handlePrefs(trimmed.replace(/^prefs\s*/, "").trim(), ctx);
+    return;
+  }
 
       if (trimmed === "init") {
         const { detectProjectState } = await import("./detection.js");
@@ -881,12 +891,10 @@ Examples:
         return;
       }
 
-      ctx.ui.notify(
-        `Unknown: /gsd ${trimmed}. Run /gsd help for available commands.`,
-        "warning",
-      );
-    },
-  });
+  ctx.ui.notify(
+    `Unknown: /gsd ${trimmed}. Run /gsd help for available commands.`,
+    "warning",
+  );
 }
 
 function showHelp(ctx: ExtensionCommandContext): void {

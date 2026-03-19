@@ -67,6 +67,12 @@ const VIRTUAL_MODULES: Record<string, unknown> = {
 };
 
 const require = createRequire(import.meta.url);
+const EXTENSION_TIMING_ENABLED = process.env.GSD_STARTUP_TIMING === "1" || process.env.PI_TIMING === "1";
+
+function logExtensionTiming(extensionPath: string, ms: number, outcome: "loaded" | "failed"): void {
+	if (!EXTENSION_TIMING_ENABLED) return;
+	console.error(`[startup] extension ${outcome}: ${extensionPath} (${ms}ms)`);
+}
 
 /**
  * Get aliases for jiti (used in Node.js/development mode).
@@ -116,6 +122,30 @@ function getAliases(): Record<string, string> {
 	};
 
 	return _aliases;
+}
+
+function getJitiOptions() {
+	return isBunBinary ? { virtualModules: VIRTUAL_MODULES, tryNative: false } : { alias: getAliases() };
+}
+
+const _moduleImporters = new Map<string, ReturnType<typeof createJiti>>();
+
+function getModuleImporter(parentModuleUrl: string) {
+	let importer = _moduleImporters.get(parentModuleUrl);
+	if (!importer) {
+		importer = createJiti(parentModuleUrl, {
+			moduleCache: true,
+			...getJitiOptions(),
+		});
+		_moduleImporters.set(parentModuleUrl, importer);
+	}
+	return importer;
+}
+
+export async function importExtensionModule<T = unknown>(parentModuleUrl: string, specifier: string): Promise<T> {
+	const importer = getModuleImporter(parentModuleUrl);
+	const resolvedPath = fileURLToPath(new URL(specifier, parentModuleUrl));
+	return importer.import(resolvedPath) as Promise<T>;
 }
 
 const UNICODE_SPACES = /[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g;
@@ -325,10 +355,7 @@ function createExtensionAPI(
 async function loadExtensionModule(extensionPath: string) {
 	const jiti = createJiti(import.meta.url, {
 		moduleCache: false,
-		// In Bun binary: use virtualModules for bundled packages (no filesystem resolution)
-		// Also disable tryNative so jiti handles ALL imports (not just the entry point)
-		// In Node.js/dev: use aliases to resolve to node_modules paths
-		...(isBunBinary ? { virtualModules: VIRTUAL_MODULES, tryNative: false } : { alias: getAliases() }),
+		...getJitiOptions(),
 	});
 
 	const module = await jiti.import(extensionPath, { default: true });
@@ -359,20 +386,24 @@ async function loadExtension(
 	runtime: ExtensionRuntime,
 ): Promise<{ extension: Extension | null; error: string | null }> {
 	const resolvedPath = resolvePath(extensionPath, cwd);
+	const start = Date.now();
 
 	try {
 		const factory = await loadExtensionModule(resolvedPath);
 		if (!factory) {
+			logExtensionTiming(extensionPath, Date.now() - start, "failed");
 			return { extension: null, error: `Extension does not export a valid factory function: ${extensionPath}` };
 		}
 
 		const extension = createExtension(extensionPath, resolvedPath);
 		const api = createExtensionAPI(extension, runtime, cwd, eventBus);
 		await factory(api);
+		logExtensionTiming(extensionPath, Date.now() - start, "loaded");
 
 		return { extension, error: null };
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
+		logExtensionTiming(extensionPath, Date.now() - start, "failed");
 		return { extension: null, error: `Failed to load extension: ${message}` };
 	}
 }

@@ -127,6 +127,7 @@ export {
 	createExtensionRuntime,
 	discoverAndLoadExtensions,
 	ExtensionRunner,
+	importExtensionModule,
 	isBashToolResult,
 	isEditToolResult,
 	isFindToolResult,

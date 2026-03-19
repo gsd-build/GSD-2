@@ -20,6 +20,14 @@ import { fileURLToPath } from "node:url";
 
 const projectRoot = join(fileURLToPath(import.meta.url), "..", "..", "..");
 
+function assertExtensionIndexExists(agentDir: string, extensionName: string): void {
+  assert.ok(
+    existsSync(join(agentDir, "extensions", extensionName, "index.js"))
+      || existsSync(join(agentDir, "extensions", extensionName, "index.ts")),
+    `${extensionName} extension synced`,
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // 1. app-paths
 // ═══════════════════════════════════════════════════════════════════════════
@@ -111,7 +119,7 @@ test("loader sets all 4 GSD_ env vars and PI_PACKAGE_DIR", async () => {
   // Spot-check that core extensions are discoverable
   const discoveredNames = discovered.map(p => {
     const rel = p.slice(bundledExtensionsDir.length + 1);
-    return rel.split(/[\\/]/)[0].replace(/\.ts$/, "");
+    return rel.split(/[\\/]/)[0].replace(/\.(?:ts|js)$/, "");
   });
   for (const core of ["gsd", "bg-shell", "browser-tools", "subagent", "search-the-web"]) {
     assert.ok(discoveredNames.includes(core), `core extension '${core}' is discoverable`);
@@ -133,11 +141,11 @@ test("initResources syncs extensions, agents, and skills to target dir", async (
     initResources(fakeAgentDir);
 
     // Extensions synced
-    assert.ok(existsSync(join(fakeAgentDir, "extensions", "gsd", "index.ts")), "gsd extension synced");
-    assert.ok(existsSync(join(fakeAgentDir, "extensions", "browser-tools", "index.ts")), "browser-tools synced");
-    assert.ok(existsSync(join(fakeAgentDir, "extensions", "search-the-web", "index.ts")), "search-the-web synced");
-    assert.ok(existsSync(join(fakeAgentDir, "extensions", "context7", "index.ts")), "context7 synced");
-    assert.ok(existsSync(join(fakeAgentDir, "extensions", "subagent", "index.ts")), "subagent synced");
+    assertExtensionIndexExists(fakeAgentDir, "gsd");
+    assertExtensionIndexExists(fakeAgentDir, "browser-tools");
+    assertExtensionIndexExists(fakeAgentDir, "search-the-web");
+    assertExtensionIndexExists(fakeAgentDir, "context7");
+    assertExtensionIndexExists(fakeAgentDir, "subagent");
 
     // Agents synced
     assert.ok(existsSync(join(fakeAgentDir, "agents", "scout.md")), "scout agent synced");
@@ -151,7 +159,7 @@ test("initResources syncs extensions, agents, and skills to target dir", async (
 
     // Idempotent: run again, no crash
     initResources(fakeAgentDir);
-    assert.ok(existsSync(join(fakeAgentDir, "extensions", "gsd", "index.ts")), "idempotent re-sync works");
+    assertExtensionIndexExists(fakeAgentDir, "gsd");
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

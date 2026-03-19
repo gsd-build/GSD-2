@@ -32,9 +32,9 @@ interface ManagedResourceManifest {
 
 export { discoverExtensionEntryPaths } from './extension-discovery.js'
 
-function getExtensionKey(entryPath: string, extensionsDir: string): string {
+export function getExtensionKey(entryPath: string, extensionsDir: string): string {
   const relPath = relative(extensionsDir, entryPath)
-  return relPath.split(/[\\/]/)[0]
+  return relPath.split(/[\\/]/)[0].replace(/\.(?:ts|js)$/, '')
 }
 
 function getManagedResourceManifestPath(agentDir: string): string {
@@ -176,6 +176,7 @@ function makeTreeWritable(dirPath: string): void {
 function syncResourceDir(srcDir: string, destDir: string): void {
   makeTreeWritable(destDir)
   if (existsSync(srcDir)) {
+    pruneStaleSiblingFiles(srcDir, destDir)
     for (const entry of readdirSync(srcDir, { withFileTypes: true })) {
       if (entry.isDirectory()) {
         const target = join(destDir, entry.name)
@@ -190,6 +191,27 @@ function syncResourceDir(srcDir: string, destDir: string): void {
       copyDirRecursive(srcDir, destDir)
     }
     makeTreeWritable(destDir)
+  }
+}
+
+function pruneStaleSiblingFiles(srcDir: string, destDir: string): void {
+  if (!existsSync(destDir)) return
+
+  const sourceFiles = new Set(
+    readdirSync(srcDir, { withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name),
+  )
+
+  for (const entry of readdirSync(destDir, { withFileTypes: true })) {
+    if (!entry.isFile()) continue
+    if (sourceFiles.has(entry.name)) continue
+
+    const sourceJsName = entry.name.replace(/\.ts$/, '.js')
+    const sourceTsName = entry.name.replace(/\.js$/, '.ts')
+    if (sourceFiles.has(sourceJsName) || sourceFiles.has(sourceTsName)) {
+      rmSync(join(destDir, entry.name), { force: true })
+    }
   }
 }
 
@@ -236,7 +258,8 @@ export function initResources(agentDir: string): void {
   if (manifest && manifest.gsdVersion === currentVersion) {
     // Version matches — check content fingerprint for same-version staleness.
     const currentHash = computeResourceFingerprint()
-    if (manifest.contentHash && manifest.contentHash === currentHash) {
+    const hasStaleExtensionFiles = hasStaleCompiledExtensionSiblings(join(agentDir, 'extensions'))
+    if (manifest.contentHash && manifest.contentHash === currentHash && !hasStaleExtensionFiles) {
       return
     }
   }
@@ -251,6 +274,18 @@ export function initResources(agentDir: string): void {
 
   writeManagedResourceManifest(agentDir)
   ensureRegistryEntries(join(agentDir, 'extensions'))
+}
+
+export function hasStaleCompiledExtensionSiblings(extensionsDir: string): boolean {
+  if (!existsSync(extensionsDir)) return false
+  for (const entry of readdirSync(extensionsDir, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith('.ts')) continue
+    const jsName = entry.name.replace(/\.ts$/, '.js')
+    if (existsSync(join(extensionsDir, jsName))) {
+      return true
+    }
+  }
+  return false
 }
 
 /**

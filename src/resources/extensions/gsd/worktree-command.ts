@@ -42,13 +42,25 @@ import { getErrorMessage } from "./error-utils.js";
  */
 let originalCwd: string | null = null;
 
+function ensureWorktreeStateInitialized(): void {
+  if (originalCwd) return;
+  const cwd = process.cwd();
+  const marker = `${sep}.gsd${sep}worktrees${sep}`;
+  const markerIdx = cwd.indexOf(marker);
+  if (markerIdx !== -1) {
+    originalCwd = cwd.slice(0, markerIdx);
+  }
+}
+
 /** Get the original project root if currently in a worktree, or null. */
 export function getWorktreeOriginalCwd(): string | null {
+  ensureWorktreeStateInitialized();
   return originalCwd;
 }
 
 /** Get the name of the active worktree, or null if not in one. */
 export function getActiveWorktreeName(): string | null {
+  ensureWorktreeStateInitialized();
   if (!originalCwd) return null;
   const cwd = process.cwd();
   const wtDir = join(gsdRoot(originalCwd), "worktrees");
@@ -104,12 +116,13 @@ function worktreeCompletions(prefix: string) {
   return [];
 }
 
-async function worktreeHandler(
+export async function handleWorktreeCommand(
   args: string,
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI,
   alias: string,
 ): Promise<void> {
+  ensureWorktreeStateInitialized();
   const trimmed = (typeof args === "string" ? args : "").trim();
   const basePath = process.cwd();
 
@@ -233,21 +246,14 @@ export function registerWorktreeCommand(pi: ExtensionAPI): void {
   // Restore worktree state after /reload.
   // The module-level originalCwd resets to null when extensions are re-loaded,
   // but process.cwd() is still inside the worktree. Detect this and recover.
-  if (!originalCwd) {
-    const cwd = process.cwd();
-    const marker = `${sep}.gsd${sep}worktrees${sep}`;
-    const markerIdx = cwd.indexOf(marker);
-    if (markerIdx !== -1) {
-      originalCwd = cwd.slice(0, markerIdx);
-    }
-  }
+  ensureWorktreeStateInitialized();
 
   pi.registerCommand("worktree", {
     description: "Git worktrees (also /wt): /worktree <name> | list | merge | remove",
     getArgumentCompletions: worktreeCompletions,
 
     async handler(args: string, ctx: ExtensionCommandContext) {
-      await worktreeHandler(args, ctx, pi, "worktree");
+      await handleWorktreeCommand(args, ctx, pi, "worktree");
     },
   });
 
@@ -256,7 +262,7 @@ export function registerWorktreeCommand(pi: ExtensionAPI): void {
     description: "Alias for /worktree",
     getArgumentCompletions: worktreeCompletions,
     async handler(args: string, ctx: ExtensionCommandContext) {
-      await worktreeHandler(args, ctx, pi, "wt");
+      await handleWorktreeCommand(args, ctx, pi, "wt");
     },
   });
 }
