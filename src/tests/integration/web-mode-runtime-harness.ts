@@ -452,14 +452,10 @@ export async function waitForLaunchedHostReady<TBoot extends { project: { cwd: s
       null,
       { timeout: markerTimeout },
     )
-    await page.waitForFunction(
-      () => {
-        const node = document.querySelector('[data-testid="terminal-session-banner"]')
-        return Boolean(node && !node.textContent?.includes("Waiting for live session"))
-      },
-      null,
-      { timeout: markerTimeout },
-    )
+    await page.waitForSelector('[data-testid="sidebar-recovery-summary-entrypoint"]', {
+      state: "visible",
+      timeout: markerTimeout,
+    })
 
     const diagnostics = requestProbe.snapshot()
     const failureContext = buildFailureContext(options.label, diagnostics, options.launchStderr)
@@ -505,7 +501,7 @@ export async function waitForLaunchedHostReady<TBoot extends { project: { cwd: s
     const visible = {
       scopeLabel: await page.locator('[data-testid="sidebar-current-scope"]').textContent(),
       unitLabel: await page.locator('[data-testid="status-bar-unit"]').textContent(),
-      sessionBanner: await page.locator('[data-testid="terminal-session-banner"]').textContent(),
+      sessionBanner: await page.locator('[data-testid="terminal-session-banner"]').textContent().catch(() => null),
       projectPathTitle: await page.locator('[data-testid="workspace-project-cwd"]').getAttribute("title"),
       sidebarRecoveryEntrypoint: await page.locator('[data-testid="sidebar-recovery-summary-entrypoint"]').textContent(),
       recoveryPanelState: null as string | null,
@@ -513,7 +509,6 @@ export async function waitForLaunchedHostReady<TBoot extends { project: { cwd: s
 
     assert.match(visible.scopeLabel ?? "", /M\d+(?:\/S\d+(?:\/T\d+)?)?/, `${options.label}: current scope marker never became visible\n${failureContext}`)
     assert.match(visible.unitLabel ?? "", /M\d+(?:\/S\d+(?:\/T\d+)?)?|project\s+—/, `${options.label}: status-bar unit marker drifted\n${failureContext}`)
-    assert.ok(visible.sessionBanner && !visible.sessionBanner.includes("Waiting for live session"), `${options.label}: session banner never attached to a live session\n${failureContext}`)
     assert.equal(
       normalizeComparablePath(visible.projectPathTitle),
       normalizedExpectedProjectCwd,

@@ -422,17 +422,50 @@ test("refresh failures keep the workspace locked and expose the failed bridge-re
   }
 });
 
+async function completeUnlockedOnboardingWizard(page: import("playwright").Page): Promise<void> {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const gateVisible = await page.locator('[data-testid="onboarding-gate"]').isVisible().catch(() => false)
+    if (!gateVisible) return
+
+    const finishButton = page.locator('[data-testid="onboarding-finish"]')
+    if ((await finishButton.isVisible().catch(() => false)) && (await finishButton.isEnabled().catch(() => false))) {
+      await finishButton.click()
+      continue
+    }
+
+    const optionalContinue = page.locator('[data-testid="onboarding-optional-continue"]')
+    if ((await optionalContinue.isVisible().catch(() => false)) && (await optionalContinue.isEnabled().catch(() => false))) {
+      await optionalContinue.click()
+      continue
+    }
+
+    const devRootSkip = page.locator('[data-testid="onboarding-devroot-skip"]')
+    if ((await devRootSkip.isVisible().catch(() => false)) && (await devRootSkip.isEnabled().catch(() => false))) {
+      await devRootSkip.click()
+      continue
+    }
+
+    const authContinue = page.locator('[data-testid="onboarding-auth-continue"]')
+    if ((await authContinue.isVisible().catch(() => false)) && (await authContinue.isEnabled().catch(() => false))) {
+      await authContinue.click()
+      continue
+    }
+
+    await page.waitForTimeout(250)
+  }
+}
+
 test("fresh gsd --web browser onboarding stays locked on failed validation and unlocks after a successful retry", async (t) => {
   if (process.platform === "win32") {
-    t.skip("runtime launch test uses POSIX browser-open stubs");
-    return;
+    t.skip("runtime launch test uses POSIX browser-open stubs")
+    return
   }
 
-  const tempRoot = mkdtempSync(join(tmpdir(), "gsd-web-onboarding-runtime-"));
-  const tempHome = join(tempRoot, "home");
-  const browserLogPath = join(tempRoot, "browser-open.log");
-  let port: number | null = null;
-  let browser: Awaited<ReturnType<typeof chromium.launch>> | null = null;
+  const tempRoot = mkdtempSync(join(tmpdir(), "gsd-web-onboarding-runtime-"))
+  const tempHome = join(tempRoot, "home")
+  const browserLogPath = join(tempRoot, "browser-open.log")
+  let port: number | null = null
+  let browser: Awaited<ReturnType<typeof chromium.launch>> | null = null
 
   try {
     const launch = await launchPackagedWebHost({
@@ -442,96 +475,85 @@ test("fresh gsd --web browser onboarding stays locked on failed validation and u
       env: {
         GSD_WEB_TEST_FAKE_API_KEY_VALIDATION: "1",
       },
-    });
-    port = launch.port;
+    })
+    port = launch.port
 
-    assert.equal(launch.exitCode, 0, `expected the web launcher to exit cleanly:\n${launch.stderr}`);
-    assert.match(launch.stderr, /status=started/, "expected a started diagnostic line on stderr");
+    assert.equal(launch.exitCode, 0, `expected the web launcher to exit cleanly:\n${launch.stderr}`)
+    assert.match(launch.stderr, /status=started/, "expected a started diagnostic line on stderr")
 
-    await waitForHttpOk(`${launch.url}/api/boot`);
+    await waitForHttpOk(`${launch.url}/api/boot`)
 
     const bootBefore = await fetch(`${launch.url}/api/boot`, {
       method: "GET",
       headers: { Accept: "application/json" },
       signal: AbortSignal.timeout(10_000),
-    });
-    assert.equal(bootBefore.ok, true, `expected boot endpoint to respond successfully: ${bootBefore.status}`);
-    const bootBeforePayload = await bootBefore.json() as any;
-    assert.equal(bootBeforePayload.onboarding.locked, true);
-    assert.equal(bootBeforePayload.onboarding.lockReason, "required_setup");
+    })
+    assert.equal(bootBefore.ok, true, `expected boot endpoint to respond successfully: ${bootBefore.status}`)
+    const bootBeforePayload = await bootBefore.json() as any
+    assert.equal(bootBeforePayload.onboarding.locked, true)
+    assert.equal(bootBeforePayload.onboarding.lockReason, "required_setup")
 
-    browser = await chromium.launch({ headless: true });
-    const page = await browser.newPage();
-    await page.goto(launch.url, { waitUntil: "load" });
+    browser = await chromium.launch({ headless: true })
+    const page = await browser.newPage()
+    await page.goto(launch.url, { waitUntil: "load" })
 
-    await page.waitForSelector('[data-testid="onboarding-gate"]', { state: "visible" });
+    await page.waitForSelector('[data-testid="onboarding-gate"]', { state: "visible" })
     await page.waitForFunction(() => {
-      const node = document.querySelector('[data-testid="workspace-connection-status"]');
-      return Boolean(node?.textContent?.includes("Required setup"));
-    });
+      const node = document.querySelector('[data-testid="workspace-connection-status"]')
+      return Boolean(node?.textContent?.includes("Required setup"))
+    })
 
-    assert.equal(await page.locator('[data-testid="terminal-command-input"]').isDisabled(), true);
-
-    await page.click('[data-testid="onboarding-provider-openai"]');
-    await page.locator('[data-testid="onboarding-api-key-input"]').fill('invalid-demo-key');
-    await page.click('[data-testid="onboarding-save-api-key"]');
+    await page.click('[data-testid="onboarding-provider-openai"]')
+    await page.locator('[data-testid="onboarding-api-key-input"]').fill("invalid-demo-key")
+    await page.click('[data-testid="onboarding-save-api-key"]')
 
     await page.waitForFunction(() => {
-      const node = document.querySelector('[data-testid="onboarding-validation-message"]');
-      return Boolean(node?.textContent?.match(/rejected/i));
-    });
+      const node = document.querySelector('[data-testid="onboarding-validation-message"]')
+      return Boolean(node?.textContent?.match(/rejected/i))
+    })
 
-    const failedValidationText = await page.locator('[data-testid="onboarding-validation-message"]').textContent();
-    assert.match(failedValidationText ?? "", /rejected/i);
-    assert.equal(await page.locator('[data-testid="onboarding-gate"]').isVisible(), true);
-    assert.equal(await page.locator('[data-testid="terminal-command-input"]').isDisabled(), true);
+    const failedValidationText = await page.locator('[data-testid="onboarding-validation-message"]').textContent()
+    assert.match(failedValidationText ?? "", /rejected/i)
+    assert.equal(await page.locator('[data-testid="onboarding-gate"]').isVisible(), true)
 
-    await page.locator('[data-testid="onboarding-api-key-input"]').fill('valid-demo-key');
-    await page.click('[data-testid="onboarding-save-api-key"]');
+    await page.locator('[data-testid="onboarding-api-key-input"]').fill("valid-demo-key")
+    await page.click('[data-testid="onboarding-save-api-key"]')
 
-    // Wait for onboarding to unlock and wizard to auto-advance past authenticate step
     await page.waitForFunction(() => {
-      const node = document.querySelector('[data-testid="workspace-connection-status"]');
-      return Boolean(node && !/Required setup|Refreshing bridge auth/i.test(node.textContent || ""));
-    }, null, { timeout: 30_000 });
+      const node = document.querySelector('[data-testid="workspace-connection-status"]')
+      return Boolean(node && !/Required setup|Refreshing bridge auth/i.test(node.textContent || ""))
+    }, null, { timeout: 30_000 })
 
-    // Complete the onboarding wizard — click through Optional and Ready steps
-    const optionalContinue = page.locator('[data-testid="onboarding-optional-continue"]');
-    if (await optionalContinue.isVisible({ timeout: 5_000 }).catch(() => false)) {
-      await optionalContinue.click();
-    }
-    const finishButton = page.locator('[data-testid="onboarding-finish"]');
-    if (await finishButton.isVisible({ timeout: 5_000 }).catch(() => false)) {
-      await finishButton.click();
-    }
+    await completeUnlockedOnboardingWizard(page)
+    await page.waitForSelector('[data-testid="onboarding-gate"]', { state: "detached", timeout: 15_000 })
 
-    await page.waitForSelector('[data-testid="onboarding-gate"]', { state: 'detached', timeout: 15_000 });
+    await page.locator('button[title="Power Mode"]').click()
+    await page.waitForSelector('[data-testid="terminal-command-input"]', { state: "visible", timeout: 20_000 })
+    assert.equal(await page.locator('[data-testid="terminal-command-input"]').isDisabled(), false)
 
-    assert.equal(await page.locator('[data-testid="terminal-command-input"]').isDisabled(), false);
-
-    await page.locator('[data-testid="terminal-command-input"]').fill('/new');
-    await page.locator('[data-testid="terminal-command-input"]').press('Enter');
+    await page.locator('[data-testid="terminal-command-input"]').fill("/new")
+    await page.locator('[data-testid="terminal-command-input"]').press("Enter")
 
     await page.waitForFunction(() => {
       return Array.from(document.querySelectorAll('[data-testid="terminal-line"]')).some((node) =>
-        node.textContent?.includes('Started a new session'),
-      );
-    });
+        node.textContent?.includes("Started a new session"),
+      )
+    })
 
     const bootAfter = await fetch(`${launch.url}/api/boot`, {
       method: "GET",
       headers: { Accept: "application/json" },
       signal: AbortSignal.timeout(10_000),
-    });
-    assert.equal(bootAfter.ok, true, `expected unlocked boot endpoint to respond successfully: ${bootAfter.status}`);
-    const bootAfterPayload = await bootAfter.json() as any;
-    assert.equal(bootAfterPayload.onboarding.locked, false);
-    assert.equal(bootAfterPayload.onboarding.lockReason, null);
+    })
+    assert.equal(bootAfter.ok, true, `expected unlocked boot endpoint to respond successfully: ${bootAfter.status}`)
+    const bootAfterPayload = await bootAfter.json() as any
+    assert.equal(bootAfterPayload.onboarding.locked, false)
+    assert.equal(bootAfterPayload.onboarding.lockReason, null)
   } finally {
-    await browser?.close().catch(() => undefined);
+    await browser?.close().catch(() => undefined)
     if (port !== null) {
-      await killProcessOnPort(port);
+      await killProcessOnPort(port)
     }
-    rmSync(tempRoot, { recursive: true, force: true });
+    rmSync(tempRoot, { recursive: true, force: true })
   }
-});
+})

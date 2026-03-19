@@ -54,7 +54,17 @@ function parseCommandRequest(request: PlaywrightRequest): Record<string, unknown
   }
 }
 
+async function ensureBridgeTerminalVisible(page: Page): Promise<void> {
+  const field = page.locator('[data-testid="terminal-command-input"]')
+  const isVisible = await field.isVisible().catch(() => false)
+  if (isVisible) return
+
+  await page.locator('button[title="Power Mode"]').click()
+  await page.waitForSelector('[data-testid="terminal-command-input"]', { state: "visible", timeout: 20_000 })
+}
+
 async function submitTerminalInput(page: Page, input: string): Promise<void> {
+  await ensureBridgeTerminalVisible(page)
   const field = page.locator('[data-testid="terminal-command-input"]')
   await field.fill(input)
   await field.press("Enter")
