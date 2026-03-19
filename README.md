@@ -455,7 +455,9 @@ auto_report: true
 
 ### Agent Instructions
 
-Create an `agent-instructions.md` file in your project root to inject persistent per-project behavioral guidance into every agent session. This file is loaded automatically and provides project-specific context the LLM should always have — coding standards, architectural decisions, domain terminology, or workflow preferences.
+Place an `AGENTS.md` file in any directory to provide persistent behavioral guidance for that scope. Pi core loads `AGENTS.md` automatically (with `CLAUDE.md` as a fallback) at both user and project levels. Use these files for coding standards, architectural decisions, domain terminology, or workflow preferences.
+
+> **Note:** The legacy `agent-instructions.md` format (`~/.gsd/agent-instructions.md` and `.gsd/agent-instructions.md`) is deprecated and no longer loaded. Migrate any existing instructions to `AGENTS.md` or `CLAUDE.md`.
 
 ### Debug Mode
 

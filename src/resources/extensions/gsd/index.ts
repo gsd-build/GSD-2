@@ -66,32 +66,24 @@ import { toPosixPath } from "../shared/mod.js";
 import { isParallelActive, shutdownParallel } from "./parallel-orchestrator.js";
 import { DEFAULT_BASH_TIMEOUT_SECS } from "./constants.js";
 
-// ── Agent Instructions ────────────────────────────────────────────────────
-// Lightweight "always follow" files injected into every GSD agent session.
-// Global: ~/.gsd/agent-instructions.md   Project: .gsd/agent-instructions.md
-// Both are loaded and concatenated (global first, project appends).
+// ── Agent Instructions (DEPRECATED) ──────────────────────────────────────
+// agent-instructions.md is deprecated. Use AGENTS.md or CLAUDE.md instead.
+// Pi core natively supports AGENTS.md (with CLAUDE.md fallback) per directory.
 
-function loadAgentInstructions(): string | null {
-  const parts: string[] = [];
-
-  const globalPath = join(homedir(), ".gsd", "agent-instructions.md");
-  if (existsSync(globalPath)) {
-    try {
-      const content = readFileSync(globalPath, "utf-8").trim();
-      if (content) parts.push(content);
-    } catch { /* non-fatal — skip unreadable file */ }
+function warnDeprecatedAgentInstructions(): void {
+  const paths = [
+    join(homedir(), ".gsd", "agent-instructions.md"),
+    join(process.cwd(), ".gsd", "agent-instructions.md"),
+  ];
+  for (const p of paths) {
+    if (existsSync(p)) {
+      console.warn(
+        `[GSD] DEPRECATED: ${p} is no longer loaded. ` +
+        `Migrate your instructions to AGENTS.md (or CLAUDE.md) in the same directory. ` +
+        `See https://github.com/gsd-build/GSD-2/issues/1492`,
+      );
+    }
   }
-
-  const projectPath = join(process.cwd(), ".gsd", "agent-instructions.md");
-  if (existsSync(projectPath)) {
-    try {
-      const content = readFileSync(projectPath, "utf-8").trim();
-      if (content) parts.push(content);
-    } catch { /* non-fatal — skip unreadable file */ }
-  }
-
-  if (parts.length === 0) return null;
-  return parts.join("\n\n");
 }
 
 // ── Depth verification state ──────────────────────────────────────────────
@@ -682,12 +674,8 @@ export default function (pi: ExtensionAPI) {
       }
     }
 
-    // Load agent instructions (global + project)
-    let agentInstructionsBlock = "";
-    const agentInstructions = loadAgentInstructions();
-    if (agentInstructions) {
-      agentInstructionsBlock = `\n\n## Agent Instructions\n\nThe following instructions were provided by the user and must be followed in every session:\n\n${agentInstructions}`;
-    }
+    // Warn if deprecated agent-instructions.md files are still present
+    warnDeprecatedAgentInstructions();
 
     const injection = await buildGuidedExecuteContextInjection(event.prompt, process.cwd());
 
@@ -732,7 +720,7 @@ export default function (pi: ExtensionAPI) {
       ].join("\n");
     }
 
-    const fullSystem = `${event.systemPrompt}\n\n[SYSTEM CONTEXT — GSD]\n\n${systemContent}${preferenceBlock}${agentInstructionsBlock}${knowledgeBlock}${memoryBlock}${newSkillsBlock}${worktreeBlock}`;
+    const fullSystem = `${event.systemPrompt}\n\n[SYSTEM CONTEXT — GSD]\n\n${systemContent}${preferenceBlock}${knowledgeBlock}${memoryBlock}${newSkillsBlock}${worktreeBlock}`;
     stopContextTimer({
       systemPromptSize: fullSystem.length,
       injectionSize: injection?.length ?? 0,
