@@ -7,8 +7,9 @@
 import type { ExtensionAPI, ExtensionContext } from "@gsd/pi-coding-agent";
 import type { GSDPreferences } from "./preferences.js";
 import { resolveModelWithFallbacksForUnit, resolveDynamicRoutingConfig } from "./preferences.js";
+import type { ComplexityTier } from "./complexity-classifier.js";
 import { classifyUnitComplexity, tierLabel } from "./complexity-classifier.js";
-import { resolveModelForComplexity } from "./model-router.js";
+import { resolveModelForComplexity, escalateTier } from "./model-router.js";
 import { getLedger, getProjectTotals } from "./metrics.js";
 import { unitPhaseLabel } from "./auto-dashboard.js";
 
@@ -33,6 +34,7 @@ export async function selectAndApplyModel(
   prefs: GSDPreferences | undefined,
   verbose: boolean,
   autoModeStartModel: { provider: string; id: string } | null,
+  retryContext?: { isRetry: boolean; previousTier?: string },
 ): Promise<ModelSelectionResult> {
   const modelConfig = resolveModelWithFallbacksForUnit(unitType);
   let routing: { tier: string; modelDowngraded: boolean } | null = null;
@@ -60,8 +62,27 @@ export async function selectAndApplyModel(
       const shouldClassify = !isHook || routingConfig.hooks !== false;
 
       if (shouldClassify) {
-        const classification = classifyUnitComplexity(unitType, unitId, basePath, budgetPct);
+        let classification = classifyUnitComplexity(unitType, unitId, basePath, budgetPct);
         const availableModelIds = availableModels.map(m => m.id);
+
+        // Escalate tier on retry when escalate_on_failure is enabled (default: true)
+        if (
+          retryContext?.isRetry &&
+          retryContext.previousTier &&
+          routingConfig.escalate_on_failure !== false
+        ) {
+          const escalated = escalateTier(retryContext.previousTier as ComplexityTier);
+          if (escalated) {
+            classification = { ...classification, tier: escalated, reason: "escalated after failure" };
+            if (verbose) {
+              ctx.ui.notify(
+                `Tier escalation: ${retryContext.previousTier} → ${escalated} (retry after failure)`,
+                "info",
+              );
+            }
+          }
+        }
+
         const routingResult = resolveModelForComplexity(classification, modelConfig, routingConfig, availableModelIds);
 
         if (routingResult.wasDowngraded) {

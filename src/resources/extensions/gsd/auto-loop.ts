@@ -456,6 +456,7 @@ export interface LoopDeps {
     prefs: GSDPreferences | undefined,
     verbose: boolean,
     startModel: { provider: string; id: string } | null,
+    retryContext?: { isRetry: boolean; previousTier?: string },
   ) => Promise<{ routing: { tier: string; modelDowngraded: boolean } | null }>;
   startUnitSupervision: (sctx: {
     s: AutoSession;
@@ -1182,6 +1183,14 @@ export async function autoLoop(
         unitId,
       });
 
+      // Detect retry and capture previous tier for escalation
+      const isRetry = !!(
+        s.currentUnit &&
+        s.currentUnit.type === unitType &&
+        s.currentUnit.id === unitId
+      );
+      const previousTier = s.currentUnitRouting?.tier;
+
       // Closeout previous unit
       if (s.currentUnit) {
         await deps.closeoutUnit(
@@ -1335,7 +1344,7 @@ export async function autoLoop(
         );
       }
 
-      // Select and apply model
+      // Select and apply model (with tier escalation on retry)
       const modelResult = await deps.selectAndApplyModel(
         ctx,
         pi,
@@ -1345,6 +1354,7 @@ export async function autoLoop(
         prefs,
         s.verbose,
         s.autoModeStartModel,
+        { isRetry, previousTier },
       );
       s.currentUnitRouting =
         modelResult.routing as AutoSession["currentUnitRouting"];
