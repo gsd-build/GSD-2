@@ -326,9 +326,11 @@ export function getOldestInFlightToolAgeMs(): number {
  * Return the base path to use for the auto.lock file.
  * Always uses the original project root (not the worktree) so that
  * a second terminal can discover and stop a running auto-mode session.
+ *
+ * Delegates to AutoSession.lockBasePath — the single source of truth.
  */
 function lockBase(): string {
-  return s.originalBasePath || s.basePath;
+  return s.lockBasePath;
 }
 
 /**
@@ -406,19 +408,9 @@ export async function stopAuto(ctx?: ExtensionContext, pi?: ExtensionAPI, reason
   deregisterSigtermHandler();
 
   // ── Auto-worktree: exit worktree and reset s.basePath on stop ──
-  if (s.currentMilestoneId && isInAutoWorktree(s.basePath)) {
-    try {
-      try { autoCommitCurrentBranch(s.basePath, "stop", s.currentMilestoneId); } catch (e) { debugLog("stop-auto-commit-failed", { error: e instanceof Error ? e.message : String(e) }); }
-      teardownAutoWorktree(s.originalBasePath, s.currentMilestoneId, { preserveBranch: true });
-      s.basePath = s.originalBasePath;
-      s.gitService = new GitServiceImpl(s.basePath, loadEffectiveGSDPreferences()?.preferences?.git ?? {});
-      ctx?.ui.notify("Exited auto-worktree (branch preserved for resume).", "info");
-    } catch (err) {
-      ctx?.ui.notify(
-        `Auto-worktree teardown failed: ${err instanceof Error ? err.message : String(err)}`,
-        "warning",
-      );
-    }
+  if (s.currentMilestoneId) {
+    const notifyCtx = ctx ? { notify: ctx.ui.notify.bind(ctx.ui) } : { notify: () => {} };
+    buildResolver().exitMilestone(s.currentMilestoneId, notifyCtx, { preserveBranch: true });
   }
 
   // ── DB cleanup: close the SQLite connection ──
@@ -526,6 +518,41 @@ export async function pauseAuto(ctx?: ExtensionContext, _pi?: ExtensionAPI): Pro
 }
 
 /**
+ * Build a WorktreeResolverDeps from auto.ts private scope.
+ * Shared by buildResolver() and buildLoopDeps().
+ */
+function buildResolverDeps(): WorktreeResolverDeps {
+  return {
+    isInAutoWorktree,
+    shouldUseWorktreeIsolation,
+    getIsolationMode,
+    mergeMilestoneToMain,
+    teardownAutoWorktree,
+    createAutoWorktree,
+    enterAutoWorktree,
+    getAutoWorktreePath,
+    autoCommitCurrentBranch,
+    getCurrentBranch,
+    autoWorktreeBranch,
+    resolveMilestoneFile,
+    readFileSync: (path: string, encoding: string) => readFileSync(path, encoding as BufferEncoding),
+    GitServiceImpl: GitServiceImpl as unknown as WorktreeResolverDeps["GitServiceImpl"],
+    loadEffectiveGSDPreferences: loadEffectiveGSDPreferences as unknown as WorktreeResolverDeps["loadEffectiveGSDPreferences"],
+    invalidateAllCaches,
+    captureIntegrationBranch,
+  };
+}
+
+/**
+ * Build a WorktreeResolver wrapping the current session.
+ * Cheap to construct — it's just a thin wrapper over `s` + deps.
+ * Used by stopAuto(), resume path, and buildLoopDeps().
+ */
+function buildResolver(): WorktreeResolver {
+  return new WorktreeResolver(s, buildResolverDeps());
+}
+
+/**
  * Build the LoopDeps object from auto.ts private scope.
  * This bundles all private functions that autoLoop needs without exporting them.
  */
@@ -615,25 +642,7 @@ function buildLoopDeps(): LoopDeps {
     GitServiceImpl: GitServiceImpl as unknown as LoopDeps["GitServiceImpl"],
 
     // WorktreeResolver
-    resolver: new WorktreeResolver(s, {
-      isInAutoWorktree,
-      shouldUseWorktreeIsolation,
-      getIsolationMode,
-      mergeMilestoneToMain,
-      teardownAutoWorktree,
-      createAutoWorktree,
-      enterAutoWorktree,
-      getAutoWorktreePath,
-      autoCommitCurrentBranch,
-      getCurrentBranch,
-      autoWorktreeBranch,
-      resolveMilestoneFile,
-      readFileSync: (path: string, encoding: string) => readFileSync(path, encoding as BufferEncoding),
-      GitServiceImpl: GitServiceImpl as unknown as WorktreeResolverDeps["GitServiceImpl"],
-      loadEffectiveGSDPreferences: loadEffectiveGSDPreferences as unknown as WorktreeResolverDeps["loadEffectiveGSDPreferences"],
-      invalidateAllCaches,
-      captureIntegrationBranch,
-    } satisfies WorktreeResolverDeps),
+    resolver: buildResolver(),
 
     // Post-unit processing
     postUnitPreVerification,
@@ -679,25 +688,7 @@ export async function startAuto(
 
     // ── Auto-worktree: re-enter worktree on resume ──
     if (s.currentMilestoneId && shouldUseWorktreeIsolation() && s.originalBasePath && !isInAutoWorktree(s.basePath) && !detectWorktreeName(s.basePath) && !detectWorktreeName(s.originalBasePath)) {
-      try {
-        const existingWtPath = getAutoWorktreePath(s.originalBasePath, s.currentMilestoneId);
-        if (existingWtPath) {
-          const wtPath = enterAutoWorktree(s.originalBasePath, s.currentMilestoneId);
-          s.basePath = wtPath;
-          s.gitService = new GitServiceImpl(s.basePath, loadEffectiveGSDPreferences()?.preferences?.git ?? {});
-          ctx.ui.notify(`Re-entered auto-worktree at ${wtPath}`, "info");
-        } else {
-          const wtPath = createAutoWorktree(s.originalBasePath, s.currentMilestoneId);
-          s.basePath = wtPath;
-          s.gitService = new GitServiceImpl(s.basePath, loadEffectiveGSDPreferences()?.preferences?.git ?? {});
-          ctx.ui.notify(`Recreated auto-worktree at ${wtPath}`, "info");
-        }
-      } catch (err) {
-        ctx.ui.notify(
-          `Auto-worktree re-entry failed: ${err instanceof Error ? err.message : String(err)}. Continuing at current path.`,
-          "warning",
-        );
-      }
+      buildResolver().enterMilestone(s.currentMilestoneId, { notify: ctx.ui.notify.bind(ctx.ui) });
     }
 
     registerSigtermHandler(lockBase());
@@ -744,6 +735,7 @@ export async function startAuto(
     shouldUseWorktreeIsolation,
     registerSigtermHandler,
     lockBase,
+    buildResolver,
   };
 
   const ready = await bootstrapAutoSession(s, ctx, pi, base, verboseMode, requestedStepMode, bootstrapDeps);

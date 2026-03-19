@@ -34,8 +34,6 @@ import {
   setActiveMilestoneId,
 } from "./worktree.js";
 import {
-  createAutoWorktree,
-  enterAutoWorktree,
   getAutoWorktreePath,
   isInAutoWorktree,
 } from "./auto-worktree.js";
@@ -53,10 +51,13 @@ import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from "node:f
 import { join } from "node:path";
 import { sep as pathSep } from "node:path";
 
+import type { WorktreeResolver } from "./worktree-resolver.js";
+
 export interface BootstrapDeps {
   shouldUseWorktreeIsolation: () => boolean;
   registerSigtermHandler: (basePath: string) => void;
   lockBase: () => string;
+  buildResolver: () => WorktreeResolver;
 }
 
 /**
@@ -76,7 +77,7 @@ export async function bootstrapAutoSession(
   requestedStepMode: boolean,
   deps: BootstrapDeps,
 ): Promise<boolean> {
-  const { shouldUseWorktreeIsolation, registerSigtermHandler, lockBase } = deps;
+  const { shouldUseWorktreeIsolation, registerSigtermHandler, lockBase, buildResolver } = deps;
 
   // Ensure git repo exists
   if (!nativeIsRepo(base)) {
@@ -321,25 +322,10 @@ export async function bootstrapAutoSession(
   };
 
   if (s.currentMilestoneId && shouldUseWorktreeIsolation() && !detectWorktreeName(base) && !isUnderGsdWorktrees(base)) {
-    try {
-      const existingWtPath = getAutoWorktreePath(base, s.currentMilestoneId);
-      if (existingWtPath) {
-        const wtPath = enterAutoWorktree(base, s.currentMilestoneId);
-        s.basePath = wtPath;
-        s.gitService = new GitServiceImpl(s.basePath, loadEffectiveGSDPreferences()?.preferences?.git ?? {});
-        ctx.ui.notify(`Entered auto-worktree at ${wtPath}`, "info");
-      } else {
-        const wtPath = createAutoWorktree(base, s.currentMilestoneId);
-        s.basePath = wtPath;
-        s.gitService = new GitServiceImpl(s.basePath, loadEffectiveGSDPreferences()?.preferences?.git ?? {});
-        ctx.ui.notify(`Created auto-worktree at ${wtPath}`, "info");
-      }
+    buildResolver().enterMilestone(s.currentMilestoneId, { notify: ctx.ui.notify.bind(ctx.ui) });
+    if (s.basePath !== base) {
+      // Successfully entered worktree — re-register SIGTERM handler at original base
       registerSigtermHandler(s.originalBasePath);
-    } catch (err) {
-      ctx.ui.notify(
-        `Auto-worktree setup failed: ${err instanceof Error ? err.message : String(err)}. Continuing in project root.`,
-        "warning",
-      );
     }
   }
 
