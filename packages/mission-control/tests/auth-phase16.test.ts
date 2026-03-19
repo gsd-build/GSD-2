@@ -5,7 +5,7 @@
  * replaced the old Tauri-invoke/SSE approach.
  *
  * Architecture:
- *   - AuthStorage (@mariozechner/pi-coding-agent) owns credentials at ~/.gsd/auth.json
+ *   - AuthStorage (@gsd/pi-coding-agent) owns credentials at ~/.gsd/auth.json
  *   - Bun server (server/auth-api.ts) wraps AuthStorage and exposes REST routes
  *   - Client (auth/auth-api.ts) calls those routes via fetch()
  *   - OAuthConnectFlow uses startDeviceCodeFlow (polling, AbortController-based)
@@ -224,10 +224,10 @@ describe("AUTH-04/AUTH-02: auth-api client functions in non-Tauri env", () => {
 // ---------------------------------------------------------------------------
 
 describe("AUTH-SERVER: server auth-api uses GSD 2 AuthStorage config", () => {
-  test("server/auth-api.ts imports AuthStorage from @mariozechner/pi-coding-agent", () => {
+  test("server/auth-api.ts imports AuthStorage from @gsd/pi-coding-agent", () => {
     const content = readFileSync(src("server/auth-api.ts"), "utf-8");
     expect(content).toContain("AuthStorage");
-    expect(content).toContain("@mariozechner/pi-coding-agent");
+    expect(content).toContain("@gsd/pi-coding-agent");
   });
 
   test("server/auth-api.ts uses ~/.gsd/auth.json as the auth file path", () => {

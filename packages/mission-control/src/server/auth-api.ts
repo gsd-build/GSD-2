@@ -1,7 +1,7 @@
 /**
  * auth-api.ts — Bun server auth handler.
  *
- * Wraps AuthStorage from @mariozechner/pi-coding-agent to provide a
+ * Wraps AuthStorage from @gsd/pi-coding-agent to provide a
  * fetch-based auth API that works in both browser dev mode and Tauri.
  *
  * Routes:
