@@ -45,6 +45,13 @@ export function formatInspectOutput(data: InspectData): string {
 export async function handleInspect(ctx: ExtensionCommandContext): Promise<void> {
   try {
     const { isDbAvailable, _getAdapter } = await import("./gsd-db.js");
+    const { ensureDbAvailable } = await import("./index.js");
+
+    // Ensure the DB is open, initializing from disk if needed
+    if (!await ensureDbAvailable()) {
+      ctx.ui.notify("No GSD database available. Run /gsd auto to create one.", "info");
+      return;
+    }
 
     if (!isDbAvailable()) {
       ctx.ui.notify("No GSD database available. Run /gsd auto to create one.", "info");
