@@ -6,7 +6,8 @@
 // Schema is initialized on first open with WAL mode for file-backed DBs.
 
 import { createRequire } from 'node:module';
-import { existsSync } from 'node:fs';
+import { existsSync, copyFileSync, mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
 import type { Decision, Requirement } from './types.js';
 import { GSDError, GSD_STALE_STATE } from './errors.js';
 
@@ -682,4 +683,69 @@ export function insertArtifact(a: {
     ':full_content': a.full_content,
     ':imported_at': new Date().toISOString(),
   });
+}
+
+// ─── Worktree DB Helpers ──────────────────────────────────────────────────
+
+export function copyWorktreeDb(srcDbPath: string, destDbPath: string): boolean {
+  try {
+    if (!existsSync(srcDbPath)) return false;
+    const destDir = dirname(destDbPath);
+    mkdirSync(destDir, { recursive: true });
+    copyFileSync(srcDbPath, destDbPath);
+    return true;
+  } catch (err) {
+    process.stderr.write(`gsd-db: failed to copy DB to worktree: ${(err as Error).message}\n`);
+    return false;
+  }
+}
+
+export function reconcileWorktreeDb(
+  mainDbPath: string,
+  worktreeDbPath: string,
+): { decisions: number; requirements: number; artifacts: number; conflicts: string[] } {
+  const zero = { decisions: 0, requirements: 0, artifacts: 0, conflicts: [] as string[] };
+  if (!existsSync(worktreeDbPath)) return zero;
+  if (worktreeDbPath.includes("'")) {
+    process.stderr.write(`gsd-db: worktree DB reconciliation failed: path contains unsafe characters\n`);
+    return zero;
+  }
+  if (!currentDb) {
+    const opened = openDatabase(mainDbPath);
+    if (!opened) {
+      process.stderr.write(`gsd-db: worktree DB reconciliation failed: cannot open main DB\n`);
+      return zero;
+    }
+  }
+  const adapter = currentDb!;
+  const conflicts: string[] = [];
+  try {
+    adapter.exec(`ATTACH DATABASE '${worktreeDbPath}' AS wt`);
+    try {
+      const decConf = adapter.prepare(`SELECT m.id FROM decisions m INNER JOIN wt.decisions w ON m.id = w.id WHERE m.decision != w.decision OR m.choice != w.choice OR m.rationale != w.rationale OR m.superseded_by IS NOT w.superseded_by`).all();
+      for (const row of decConf) conflicts.push(`decision ${(row as Record<string, unknown>)['id']}: modified in both`);
+      const reqConf = adapter.prepare(`SELECT m.id FROM requirements m INNER JOIN wt.requirements w ON m.id = w.id WHERE m.description != w.description OR m.status != w.status OR m.notes != w.notes OR m.superseded_by IS NOT w.superseded_by`).all();
+      for (const row of reqConf) conflicts.push(`requirement ${(row as Record<string, unknown>)['id']}: modified in both`);
+      const merged = { decisions: 0, requirements: 0, artifacts: 0 };
+      adapter.exec('BEGIN');
+      try {
+        const dR = adapter.prepare(`INSERT OR REPLACE INTO decisions (id, seq, decision, choice, rationale, superseded_by, created_at) SELECT id, seq, decision, choice, rationale, superseded_by, created_at FROM wt.decisions`).run();
+        merged.decisions = typeof dR === 'object' && dR !== null ? ((dR as { changes?: number }).changes ?? 0) : 0;
+        const rR = adapter.prepare(`INSERT OR REPLACE INTO requirements (id, description, status, priority, source, notes, superseded_by, created_at) SELECT id, description, status, priority, source, notes, superseded_by, created_at FROM wt.requirements`).run();
+        merged.requirements = typeof rR === 'object' && rR !== null ? ((rR as { changes?: number }).changes ?? 0) : 0;
+        const aR = adapter.prepare(`INSERT OR REPLACE INTO artifacts (milestone_id, slice_id, task_id, full_content, imported_at) SELECT milestone_id, slice_id, task_id, full_content, imported_at FROM wt.artifacts`).run();
+        merged.artifacts = typeof aR === 'object' && aR !== null ? ((aR as { changes?: number }).changes ?? 0) : 0;
+        adapter.exec('COMMIT');
+      } catch (txErr) {
+        try { adapter.exec('ROLLBACK'); } catch { /* best-effort */ }
+        throw txErr;
+      }
+      return { ...merged, conflicts };
+    } finally {
+      try { adapter.exec('DETACH DATABASE wt'); } catch { /* best-effort */ }
+    }
+  } catch (err) {
+    process.stderr.write(`gsd-db: worktree DB reconciliation failed: ${(err as Error).message}\n`);
+    return { ...zero, conflicts };
+  }
 }
