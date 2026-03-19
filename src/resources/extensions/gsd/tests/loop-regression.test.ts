@@ -479,7 +479,7 @@ test("dispatch returns stop when phase=summarizing but activeSlice is null (corr
     blockers: [],
     nextAction: "",
     registry: [{ id: "M001", title: "Test", status: "active" }],
-    requirements: { active: 0, validated: 0, deferred: 0, outOfScope: 0 },
+    requirements: { active: 0, validated: 0, deferred: 0, outOfScope: 0, blocked: 0, total: 0 },
     progress: { milestones: { done: 0, total: 1 } },
   };
   const result = await resolveDispatch({
@@ -499,7 +499,7 @@ test("dispatch returns stop when phase=executing but activeSlice is null (corrup
     blockers: [],
     nextAction: "",
     registry: [{ id: "M001", title: "Test", status: "active" }],
-    requirements: { active: 0, validated: 0, deferred: 0, outOfScope: 0 },
+    requirements: { active: 0, validated: 0, deferred: 0, outOfScope: 0, blocked: 0, total: 0 },
     progress: { milestones: { done: 0, total: 1 } },
   };
   const result = await resolveDispatch({
