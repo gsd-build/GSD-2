@@ -697,6 +697,181 @@ async function closeoutAndStop(
   await deps.stopAuto(ctx, pi, reason);
 }
 
+// ─── runDispatch ──────────────────────────────────────────────────────────────
+
+/**
+ * Phase 3: Dispatch resolution — resolve next unit, stuck detection, pre-dispatch hooks.
+ * Returns break/continue to control the loop, or next with IterationData on success.
+ */
+async function runDispatch(
+  ic: IterationContext,
+  preData: PreDispatchData,
+  loopState: LoopState,
+): Promise<PhaseResult<IterationData>> {
+  const { ctx, pi, s, deps, prefs } = ic;
+  const { state, mid, midTitle } = preData;
+  const STUCK_WINDOW_SIZE = 6;
+
+  debugLog("autoLoop", { phase: "dispatch-resolve", iteration: ic.iteration });
+  const dispatchResult = await deps.resolveDispatch({
+    basePath: s.basePath,
+    mid,
+    midTitle,
+    state,
+    prefs,
+    session: s,
+  });
+
+  if (dispatchResult.action === "stop") {
+    await closeoutAndStop(ctx, pi, s, deps, dispatchResult.reason);
+    debugLog("autoLoop", { phase: "exit", reason: "dispatch-stop" });
+    return { action: "break", reason: "dispatch-stop" };
+  }
+
+  if (dispatchResult.action !== "dispatch") {
+    // Non-dispatch action (e.g. "skip") — re-derive state
+    await new Promise((r) => setImmediate(r));
+    return { action: "continue" };
+  }
+
+  let unitType = dispatchResult.unitType;
+  let unitId = dispatchResult.unitId;
+  let prompt = dispatchResult.prompt;
+  const pauseAfterUatDispatch = dispatchResult.pauseAfterDispatch ?? false;
+
+  // ── Sliding-window stuck detection with graduated recovery ──
+  const derivedKey = `${unitType}/${unitId}`;
+
+  if (!s.pendingVerificationRetry) {
+    loopState.recentUnits.push({ key: derivedKey });
+    if (loopState.recentUnits.length > STUCK_WINDOW_SIZE) loopState.recentUnits.shift();
+
+    const stuckSignal = detectStuck(loopState.recentUnits);
+    if (stuckSignal) {
+      debugLog("autoLoop", {
+        phase: "stuck-check",
+        unitType,
+        unitId,
+        reason: stuckSignal.reason,
+        recoveryAttempts: loopState.stuckRecoveryAttempts,
+      });
+
+      if (loopState.stuckRecoveryAttempts === 0) {
+        // Level 1: try verifying the artifact, then cache invalidation + retry
+        loopState.stuckRecoveryAttempts++;
+        const artifactExists = deps.verifyExpectedArtifact(
+          unitType,
+          unitId,
+          s.basePath,
+        );
+        if (artifactExists) {
+          debugLog("autoLoop", {
+            phase: "stuck-recovery",
+            level: 1,
+            action: "artifact-found",
+          });
+          ctx.ui.notify(
+            `Stuck recovery: artifact for ${unitType} ${unitId} found on disk. Invalidating caches.`,
+            "info",
+          );
+          deps.invalidateAllCaches();
+          return { action: "continue" };
+        }
+        ctx.ui.notify(
+          `Stuck on ${unitType} ${unitId} (${stuckSignal.reason}). Invalidating caches and retrying.`,
+          "warning",
+        );
+        deps.invalidateAllCaches();
+      } else {
+        // Level 2: hard stop — genuinely stuck
+        debugLog("autoLoop", {
+          phase: "stuck-detected",
+          unitType,
+          unitId,
+          reason: stuckSignal.reason,
+        });
+        await deps.stopAuto(
+          ctx,
+          pi,
+          `Stuck: ${stuckSignal.reason}`,
+        );
+        ctx.ui.notify(
+          `Stuck on ${unitType} ${unitId} — ${stuckSignal.reason}. The expected artifact was not written.`,
+          "error",
+        );
+        return { action: "break", reason: "stuck-detected" };
+      }
+    } else {
+      // Progress detected — reset recovery counter
+      if (loopState.stuckRecoveryAttempts > 0) {
+        debugLog("autoLoop", {
+          phase: "stuck-counter-reset",
+          from: loopState.recentUnits[loopState.recentUnits.length - 2]?.key ?? "",
+          to: derivedKey,
+        });
+        loopState.stuckRecoveryAttempts = 0;
+      }
+    }
+  }
+
+  // Pre-dispatch hooks
+  const preDispatchResult = deps.runPreDispatchHooks(
+    unitType,
+    unitId,
+    prompt,
+    s.basePath,
+  );
+  if (preDispatchResult.firedHooks.length > 0) {
+    ctx.ui.notify(
+      `Pre-dispatch hook${preDispatchResult.firedHooks.length > 1 ? "s" : ""}: ${preDispatchResult.firedHooks.join(", ")}`,
+      "info",
+    );
+  }
+  if (preDispatchResult.action === "skip") {
+    ctx.ui.notify(
+      `Skipping ${unitType} ${unitId} (pre-dispatch hook).`,
+      "info",
+    );
+    await new Promise((r) => setImmediate(r));
+    return { action: "continue" };
+  }
+  if (preDispatchResult.action === "replace") {
+    prompt = preDispatchResult.prompt ?? prompt;
+    if (preDispatchResult.unitType) unitType = preDispatchResult.unitType;
+  } else if (preDispatchResult.prompt) {
+    prompt = preDispatchResult.prompt;
+  }
+
+  const priorSliceBlocker = deps.getPriorSliceCompletionBlocker(
+    s.basePath,
+    deps.getMainBranch(s.basePath),
+    unitType,
+    unitId,
+  );
+  if (priorSliceBlocker) {
+    await deps.stopAuto(ctx, pi, priorSliceBlocker);
+    debugLog("autoLoop", { phase: "exit", reason: "prior-slice-blocker" });
+    return { action: "break", reason: "prior-slice-blocker" };
+  }
+
+  const observabilityIssues = await deps.collectObservabilityWarnings(
+    ctx,
+    s.basePath,
+    unitType,
+    unitId,
+  );
+
+  return {
+    action: "next",
+    data: {
+      unitType, unitId, prompt, finalPrompt: prompt,
+      pauseAfterUatDispatch, observabilityIssues,
+      state, mid, midTitle,
+      isRetry: false, previousTier: undefined,
+    },
+  };
+}
+
 // ─── runGuards ────────────────────────────────────────────────────────────────
 
 /**
@@ -1635,182 +1810,40 @@ export async function autoLoop(
         if (guardsResult.action === "break") break;
       }
 
-      // ── Phase 3: Dispatch resolution ────────────────────────────────────
+      } // end if (!sidecarItem)
 
-      debugLog("autoLoop", { phase: "dispatch-resolve", iteration });
-      const dispatchResult = await deps.resolveDispatch({
-        basePath: s.basePath,
-        mid,
-        midTitle: midTitle!,
-        state,
-        prefs,
-        session: s,
-      });
-
-      if (dispatchResult.action === "stop") {
-        await closeoutAndStop(ctx, pi, s, deps, dispatchResult.reason);
-        debugLog("autoLoop", { phase: "exit", reason: "dispatch-stop" });
-        break;
-      }
-
-      if (dispatchResult.action !== "dispatch") {
-        // Non-dispatch action (e.g. "skip") — re-derive state
-        await new Promise((r) => setImmediate(r));
-        continue;
-      }
-
-      unitType = dispatchResult.unitType;
-      unitId = dispatchResult.unitId;
-      prompt = dispatchResult.prompt;
-      pauseAfterUatDispatch = dispatchResult.pauseAfterDispatch ?? false;
-
-      // ── Sliding-window stuck detection with graduated recovery ──
-      const derivedKey = `${unitType}/${unitId}`;
-
-      if (!s.pendingVerificationRetry) {
-        recentUnits.push({ key: derivedKey });
-        if (recentUnits.length > STUCK_WINDOW_SIZE) recentUnits.shift();
-
-        const stuckSignal = detectStuck(recentUnits);
-        if (stuckSignal) {
-          debugLog("autoLoop", {
-            phase: "stuck-check",
-            unitType,
-            unitId,
-            reason: stuckSignal.reason,
-            recoveryAttempts: stuckRecoveryAttempts,
-          });
-
-          if (stuckRecoveryAttempts === 0) {
-            // Level 1: try verifying the artifact, then cache invalidation + retry
-            stuckRecoveryAttempts++;
-            const artifactExists = deps.verifyExpectedArtifact(
-              unitType,
-              unitId,
-              s.basePath,
-            );
-            if (artifactExists) {
-              debugLog("autoLoop", {
-                phase: "stuck-recovery",
-                level: 1,
-                action: "artifact-found",
-              });
-              ctx.ui.notify(
-                `Stuck recovery: artifact for ${unitType} ${unitId} found on disk. Invalidating caches.`,
-                "info",
-              );
-              deps.invalidateAllCaches();
-              continue;
-            }
-            ctx.ui.notify(
-              `Stuck on ${unitType} ${unitId} (${stuckSignal.reason}). Invalidating caches and retrying.`,
-              "warning",
-            );
-            deps.invalidateAllCaches();
-          } else {
-            // Level 2: hard stop — genuinely stuck
-            debugLog("autoLoop", {
-              phase: "stuck-detected",
-              unitType,
-              unitId,
-              reason: stuckSignal.reason,
-            });
-            await deps.stopAuto(
-              ctx,
-              pi,
-              `Stuck: ${stuckSignal.reason}`,
-            );
-            ctx.ui.notify(
-              `Stuck on ${unitType} ${unitId} — ${stuckSignal.reason}. The expected artifact was not written.`,
-              "error",
-            );
-            break;
-          }
-        } else {
-          // Progress detected — reset recovery counter
-          if (stuckRecoveryAttempts > 0) {
-            debugLog("autoLoop", {
-              phase: "stuck-counter-reset",
-              from: recentUnits[recentUnits.length - 2]?.key ?? "",
-              to: derivedKey,
-            });
-            stuckRecoveryAttempts = 0;
-          }
-        }
-      }
-
-      // Pre-dispatch hooks
-      const preDispatchResult = deps.runPreDispatchHooks(
-        unitType,
-        unitId,
-        prompt,
-        s.basePath,
-      );
-      if (preDispatchResult.firedHooks.length > 0) {
-        ctx.ui.notify(
-          `Pre-dispatch hook${preDispatchResult.firedHooks.length > 1 ? "s" : ""}: ${preDispatchResult.firedHooks.join(", ")}`,
-          "info",
-        );
-      }
-      if (preDispatchResult.action === "skip") {
-        ctx.ui.notify(
-          `Skipping ${unitType} ${unitId} (pre-dispatch hook).`,
-          "info",
-        );
-        await new Promise((r) => setImmediate(r));
-        continue;
-      }
-      if (preDispatchResult.action === "replace") {
-        prompt = preDispatchResult.prompt ?? prompt;
-        if (preDispatchResult.unitType) unitType = preDispatchResult.unitType;
-      } else if (preDispatchResult.prompt) {
-        prompt = preDispatchResult.prompt;
-      }
-
-      const priorSliceBlocker = deps.getPriorSliceCompletionBlocker(
-        s.basePath,
-        deps.getMainBranch(s.basePath),
-        unitType,
-        unitId,
-      );
-      if (priorSliceBlocker) {
-        await deps.stopAuto(ctx, pi, priorSliceBlocker);
-        debugLog("autoLoop", { phase: "exit", reason: "prior-slice-blocker" });
-        break;
-      }
-
-      observabilityIssues = await deps.collectObservabilityWarnings(
-        ctx,
-        s.basePath,
-        unitType,
-        unitId,
-      );
-
-      // Derive state for shared use in execution phase
-      // (state, mid, midTitle already set above)
-
-      } else {
-        // ── Sidecar path: use values from the sidecar item directly ──
-        unitType = sidecarItem.unitType;
-        unitId = sidecarItem.unitId;
-        prompt = sidecarItem.prompt;
-        // Derive minimal state for progress widget / execution context
-        state = await deps.deriveState(s.basePath);
-        mid = state.activeMilestone?.id;
-        midTitle = state.activeMilestone?.title;
-      }
-
-      // ── Phase 4: Unit execution ─────────────────────────────────────────
+      // ── Phase 3 + 4: Dispatch → Unit execution ─────────────────────────
 
       const ic: IterationContext = { ctx, pi, s, deps, prefs, iteration };
       const loopState: LoopState = { recentUnits, stuckRecoveryAttempts };
-      const iterData: IterationData = {
-        unitType, unitId, prompt, finalPrompt: prompt,
-        pauseAfterUatDispatch, observabilityIssues,
-        state, mid, midTitle,
-        isRetry: false, previousTier: undefined,
-      };
+      let iterData: IterationData;
+
+      if (!sidecarItem) {
+        const dispatchResult = await runDispatch(ic, { state, mid, midTitle: midTitle! }, loopState);
+        // Sync stuckRecoveryAttempts back from loopState (number is copied by value)
+        stuckRecoveryAttempts = loopState.stuckRecoveryAttempts;
+        if (dispatchResult.action === "break") break;
+        if (dispatchResult.action === "continue") continue;
+        iterData = dispatchResult.data;
+      } else {
+        // ── Sidecar path: use values from the sidecar item directly ──
+        const sidecarState = await deps.deriveState(s.basePath);
+        iterData = {
+          unitType: sidecarItem.unitType,
+          unitId: sidecarItem.unitId,
+          prompt: sidecarItem.prompt,
+          finalPrompt: sidecarItem.prompt,
+          pauseAfterUatDispatch: false,
+          observabilityIssues: [],
+          state: sidecarState,
+          mid: sidecarState.activeMilestone?.id,
+          midTitle: sidecarState.activeMilestone?.title,
+          isRetry: false, previousTier: undefined,
+        };
+      }
+
       const unitPhaseResult = await runUnitPhase(ic, iterData, loopState, sidecarItem);
+      stuckRecoveryAttempts = loopState.stuckRecoveryAttempts;
       if (unitPhaseResult.action === "break") break;
 
       // ── Phase 5: Finalize ───────────────────────────────────────────────
