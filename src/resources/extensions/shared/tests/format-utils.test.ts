@@ -2,13 +2,15 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   formatDuration,
+  sparkline,
+  stripAnsi,
+} from "../format-utils.js";
+import {
   padRight,
   joinColumns,
   centerLine,
   fitColumns,
-  sparkline,
-  stripAnsi,
-} from "../format-utils.js";
+} from "../layout-utils.js";
 
 describe("formatDuration", () => {
   it("formats seconds", () => {

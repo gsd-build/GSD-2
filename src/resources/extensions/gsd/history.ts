@@ -2,7 +2,8 @@
 // Human-readable display of past auto-mode unit executions.
 
 import type { ExtensionCommandContext } from "@gsd/pi-coding-agent";
-import { formatDuration, padRight, truncateWithEllipsis } from "../shared/format-utils.js";
+import { formatDuration, truncateWithEllipsis } from "../shared/format-utils.js";
+import { padRight } from "../shared/layout-utils.js";
 import {
   getLedger, getProjectTotals, formatCost, formatTokenCount,
   aggregateBySlice, aggregateByPhase, aggregateByModel, loadLedgerFromDisk,

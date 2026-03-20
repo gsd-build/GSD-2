@@ -13,14 +13,17 @@ export {
 	stripAnsi,
 	formatTokenCount,
 	formatDuration,
-	padRight,
-	joinColumns,
-	centerLine,
-	fitColumns,
 	sparkline,
 	normalizeStringArray,
 	fileLink,
 } from "./format-utils.js";
+
+export {
+	padRight,
+	joinColumns,
+	centerLine,
+	fitColumns,
+} from "./layout-utils.js";
 
 export { shortcutDesc } from "./terminal.js";
 export { toPosixPath } from "./path-display.js";
