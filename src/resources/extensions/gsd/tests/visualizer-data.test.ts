@@ -422,25 +422,25 @@ assertTrue(
   "overlay has 10 tab labels",
 );
 
-// Verify commands.ts integration
-const commandsPath = join(__dirname, "..", "commands.ts");
-const commandsSrc = readFileSync(commandsPath, "utf-8");
+// Verify commands/handlers/core.ts integration
+const coreHandlerPath = join(__dirname, "..", "commands", "handlers", "core.ts");
+const coreHandlerSrc = readFileSync(coreHandlerPath, "utf-8");
 
-console.log("\n=== commands.ts integration ===");
+console.log("\n=== commands/handlers/core.ts integration ===");
 
 assertTrue(
-  commandsSrc.includes('"visualize"'),
-  "commands.ts has visualize in subcommands array",
+  coreHandlerSrc.includes('"visualize"'),
+  "core.ts has visualize in subcommands array",
 );
 
 assertTrue(
-  commandsSrc.includes("GSDVisualizerOverlay"),
-  "commands.ts imports GSDVisualizerOverlay",
+  coreHandlerSrc.includes("GSDVisualizerOverlay"),
+  "core.ts imports GSDVisualizerOverlay",
 );
 
 assertTrue(
-  commandsSrc.includes("handleVisualize"),
-  "commands.ts has handleVisualize handler",
+  coreHandlerSrc.includes("handleVisualize"),
+  "core.ts has handleVisualize handler",
 );
 
 report();

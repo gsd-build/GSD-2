@@ -261,38 +261,38 @@ test("pauseAutoForProviderError falls back to indefinite pause when not rate lim
 
 // ── Escalating backoff for transient errors (#1166) ─────────────────────────
 
-test("index.ts tracks consecutive transient errors for escalating backoff", () => {
-  const indexSource = readFileSync(join(__dirname, "..", "index.ts"), "utf-8");
+test("agent-end-recovery.ts tracks consecutive transient errors for escalating backoff", () => {
+  const src = readFileSync(join(__dirname, "..", "bootstrap", "agent-end-recovery.ts"), "utf-8");
 
   assert.ok(
-    indexSource.includes("consecutiveTransientErrors"),
-    "index.ts must track consecutiveTransientErrors for escalating backoff (#1166)",
+    src.includes("consecutiveTransientErrors"),
+    "agent-end-recovery.ts must track consecutiveTransientErrors for escalating backoff (#1166)",
   );
   assert.ok(
-    indexSource.includes("MAX_TRANSIENT_AUTO_RESUMES"),
-    "index.ts must define MAX_TRANSIENT_AUTO_RESUMES to cap infinite retries (#1166)",
+    src.includes("MAX_TRANSIENT_AUTO_RESUMES"),
+    "agent-end-recovery.ts must define MAX_TRANSIENT_AUTO_RESUMES to cap infinite retries (#1166)",
   );
 });
 
-test("index.ts resets consecutive transient error counter on success", () => {
-  const indexSource = readFileSync(join(__dirname, "..", "index.ts"), "utf-8");
+test("agent-end-recovery.ts resets consecutive transient error counter on success", () => {
+  const src = readFileSync(join(__dirname, "..", "bootstrap", "agent-end-recovery.ts"), "utf-8");
 
-  // After successful unit completion, the counter must be reset.
+  // After successful agent_end (before resolveAgentEnd), the counter must be reset.
   // Use a regex across the success block so CRLF checkouts on Windows do not
   // push the reset line outside a fixed substring window.
   assert.ok(
-    /consecutiveTransientErrors\s*=\s*0\s*;[\s\S]{0,250}successful unit completion/.test(indexSource),
-    "consecutive transient error counter must be reset on successful unit completion (#1166)",
+    /consecutiveTransientErrors\s*=\s*0\s*;[\s\S]{0,250}resolveAgentEnd/.test(src),
+    "consecutive transient error counter must be reset before resolveAgentEnd on the success path (#1166)",
   );
 });
 
-test("index.ts applies escalating delay for repeated transient errors", () => {
-  const indexSource = readFileSync(join(__dirname, "..", "index.ts"), "utf-8");
+test("agent-end-recovery.ts applies escalating delay for repeated transient errors", () => {
+  const src = readFileSync(join(__dirname, "..", "bootstrap", "agent-end-recovery.ts"), "utf-8");
 
-  // Must contain the exponential backoff formula
+  // Must contain the exponential backoff formula (may span multiple lines)
   assert.ok(
-    /retryAfterMs\s*[=*].*2\s*\*\*/.test(indexSource),
-    "index.ts must escalate retryAfterMs exponentially for consecutive transient errors (#1166)",
+    src.includes("2 ** Math.max(0, consecutiveTransientErrors"),
+    "agent-end-recovery.ts must escalate retryAfterMs exponentially for consecutive transient errors (#1166)",
   );
 });
 

@@ -962,21 +962,25 @@ test("auto.ts startAuto calls autoLoop (not dispatchNextUnit as first dispatch)"
   );
 });
 
-test("index.ts agent_end handler calls resolveAgentEnd (not handleAgentEnd)", () => {
-  const src = readFileSync(
-    resolve(import.meta.dirname, "..", "index.ts"),
+test("agent_end handler calls resolveAgentEnd (not handleAgentEnd)", () => {
+  const hooksSrc = readFileSync(
+    resolve(import.meta.dirname, "..", "bootstrap", "register-hooks.ts"),
     "utf-8",
   );
-  // Find the agent_end handler success path
-  const handlerIdx = src.indexOf('pi.on("agent_end"');
-  assert.ok(handlerIdx > -1, "index.ts must have an agent_end handler");
-  const handlerBlock = src.slice(handlerIdx, handlerIdx + 10000);
+  // Verify the agent_end hook is registered
+  const handlerIdx = hooksSrc.indexOf('pi.on("agent_end"');
+  assert.ok(handlerIdx > -1, "register-hooks.ts must have an agent_end handler");
+
+  const recoverySrc = readFileSync(
+    resolve(import.meta.dirname, "..", "bootstrap", "agent-end-recovery.ts"),
+    "utf-8",
+  );
   assert.ok(
-    handlerBlock.includes("resolveAgentEnd(event)"),
+    recoverySrc.includes("resolveAgentEnd(event)"),
     "agent_end success path must call resolveAgentEnd(event) instead of handleAgentEnd(ctx, pi)",
   );
   assert.ok(
-    handlerBlock.includes("isSessionSwitchInFlight()"),
+    recoverySrc.includes("isSessionSwitchInFlight()"),
     "agent_end handler must ignore session-switch agent_end events from cmdCtx.newSession()",
   );
 });
