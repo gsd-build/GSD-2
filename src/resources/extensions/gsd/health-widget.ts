@@ -15,7 +15,7 @@ import { runEnvironmentChecks } from "./doctor-environment.js";
 import { loadEffectiveGSDPreferences } from "./preferences.js";
 import { loadLedgerFromDisk, getProjectTotals } from "./metrics.js";
 import { describeNextUnit, estimateTimeRemaining, updateSliceProgressCache } from "./auto-dashboard.js";
-import { projectRoot } from "./commands.js";
+import { projectRoot } from "./commands/context.js";
 import { deriveState, invalidateStateCache } from "./state.js";
 import {
   buildHealthLines,

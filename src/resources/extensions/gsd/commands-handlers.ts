@@ -21,7 +21,7 @@ import {
   filterDoctorIssues,
 } from "./doctor.js";
 import { isAutoActive } from "./auto.js";
-import { projectRoot } from "./commands.js";
+import { projectRoot } from "./commands/context.js";
 import { loadPrompt } from "./prompt-loader.js";
 
 export function dispatchDoctorHeal(pi: ExtensionAPI, scope: string | undefined, reportText: string, structuredIssues: string): void {
