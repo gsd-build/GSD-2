@@ -41,7 +41,7 @@
 
 ## Tasks
 
-- [ ] **T01: Wire custom engine reconcile + verify into handleAgentEnd** `est:30m`
+- [x] **T01: Wire custom engine reconcile + verify into handleAgentEnd** `est:30m`
   - Why: `handleAgentEnd` currently routes all completions through dev-specific post-unit processing. Custom workflow steps never complete because `engine.reconcile()` is never called. This is the central integration gap — without it, custom workflows dispatch but never advance.
   - Files: `src/resources/extensions/gsd/auto.ts`
   - Do: Add a branch at the top of `handleAgentEnd` (after the reentrancy guard, before `postUnitPreVerification`) that checks `s.activeEngineId?.startsWith("custom:")`. When true: resolve engine via `resolveEngine(s)`, call `engine.deriveState()`, then `engine.reconcile()` with the completed step info from `s.currentUnit`, then `policy.verify()`. If verify returns "retry", set `s.pendingVerificationRetry` context and re-dispatch. If verify returns "pause", call `pauseAuto()`. If reconcile returns "stop", call `stopAuto()`. Otherwise call `dispatchNextUnit()`. The branch must `return` before dev-specific processing starts. Guard with `clearUnitTimeout()` at the top of the branch. Must NOT modify any code path that runs for dev workflows.

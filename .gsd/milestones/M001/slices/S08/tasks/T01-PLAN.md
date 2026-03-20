@@ -94,6 +94,13 @@ estimated_files: 1
 - S05 Forward Intelligence: `CustomExecutionPolicy.verify()` fail-open — missing DEFINITION.yaml or unknown stepId returns "continue"
 - S06 Forward Intelligence: `deriveState()` and `reconcile()` both exclude expanded steps from completion checks
 
+## Observability Impact
+
+- **New signal:** Custom workflow step completions now flow through `engine.reconcile()` → `policy.verify()` in `handleAgentEnd`, producing observable state transitions in `GRAPH.yaml` (pending → complete).
+- **Inspection:** `cat <runDir>/GRAPH.yaml` shows step status after each reconcile call. The `ReconcileResult.outcome` ("stop" | "continue") and `verify()` outcome ("continue" | "retry" | "pause") are now exercised at runtime.
+- **Failure visibility:** `ctx.ui.notify()` fires on verification pause with the step ID. `stopAuto()` includes the reconcile reason string. `pendingVerificationRetry.failureContext` carries the specific step ID that failed verification — visible in the retry prompt prepended by `dispatchNextUnit`.
+- **No regression:** The branch is guarded by `s.activeEngineId?.startsWith("custom:")` — dev workflows never enter this path, so all existing observability is untouched.
+
 ## Expected Output
 
 - `src/resources/extensions/gsd/auto.ts` — modified with ~30-40 line custom engine branch in `handleAgentEnd()`, after `clearUnitTimeout()` and before dev-specific `PostUnitContext` construction

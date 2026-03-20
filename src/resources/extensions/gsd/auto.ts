@@ -785,6 +785,56 @@ export async function handleAgentEnd(
   // Unit completed — clear its timeout
   clearUnitTimeout();
 
+  // ── Custom workflow: reconcile + verify (skip dev post-unit processing) ──
+  if (s.activeEngineId?.startsWith("custom:")) {
+    const { engine, policy } = resolveEngine(s);
+    const engineState = await engine.deriveState(s.basePath);
+
+    // Reconcile: mark the completed step in GRAPH.yaml
+    if (s.currentUnit) {
+      const reconcileResult = await engine.reconcile(engineState, {
+        unitType: s.currentUnit.type,
+        unitId: s.currentUnit.id,
+        startedAt: s.currentUnit.startedAt,
+        finishedAt: Date.now(),
+      });
+
+      // Verify the completed step
+      const verifyOutcome = await policy.verify(
+        s.currentUnit.type,
+        s.currentUnit.id,
+        { basePath: s.basePath },
+      );
+
+      if (verifyOutcome === "pause") {
+        ctx.ui.notify(
+          `Verification paused for step ${s.currentUnit.id}`,
+          "warning",
+        );
+        await pauseAuto(ctx, pi);
+        return;
+      }
+
+      if (verifyOutcome === "retry") {
+        // Re-dispatch same step with verification failure context
+        s.pendingVerificationRetry = {
+          unitId: s.currentUnit.id,
+          attempt: (s.pendingVerificationRetry?.attempt ?? 0) + 1,
+          failureContext: `Verification failed for step ${s.currentUnit.id}. Check the step's produces artifacts and verify config.`,
+        };
+      }
+
+      if (reconcileResult.outcome === "stop") {
+        await stopAuto(ctx, pi, reconcileResult.reason ?? "Workflow complete");
+        return;
+      }
+    }
+
+    // Dispatch next step
+    await dispatchNextUnit(ctx, pi);
+    return;
+  }
+
   // ── Pre-verification processing (commit, doctor, state rebuild, etc.) ──
   const postUnitCtx: PostUnitContext = {
     s,
