@@ -31,7 +31,7 @@ import {
   gsdRoot,
 } from './paths.js';
 
-import { milestoneIdSort, findMilestoneIds } from './guided-flow.js';
+import { milestoneIdSort, findMilestoneIds } from './milestone-ids.js';
 import { nativeBatchParseGsdFiles, type BatchParsedFile } from './native-parser-bridge.js';
 
 import { join, resolve } from 'path';
