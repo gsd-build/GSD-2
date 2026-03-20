@@ -7,7 +7,7 @@
 
 import { spawn as nodeSpawn, exec } from "node:child_process";
 import { promisify } from "node:util";
-import { resolve } from "node:path";
+import { resolve, isAbsolute } from "node:path";
 
 const execAsync = promisify(exec);
 
@@ -132,8 +132,20 @@ export async function handleGitRequest(
 
   // GET /api/git/status?root=<path>
   if (pathname === "/api/git/status" && req.method === "GET") {
+    // SECURITY NOTE — Accepted: The `root` query parameter is not restricted to a specific
+    // directory. This mirrors the /api/fs/list browsing design:
+    // 1. Server binds to 127.0.0.1 only — not network-accessible
+    // 2. `git status` is a read-only operation (equivalent to `ls` in terms of information exposure)
+    // 3. The local-process threat model is accepted for this desktop application
+    //
+    // Validation: reject non-absolute paths to prevent CWD-relative probing.
     const root = searchParams.get("root") ?? repoRoot;
-    const files = await getGitStatus(root);
+    const resolvedRoot = resolve(root);
+    // H7: Reject relative paths — must be absolute
+    if (root !== repoRoot && !isAbsolute(root)) {
+      return Response.json({ error: "root must be an absolute path" }, { status: 400 });
+    }
+    const files = await getGitStatus(resolvedRoot);
     return Response.json({ files });
   }
 

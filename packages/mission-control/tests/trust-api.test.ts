@@ -67,7 +67,9 @@ describe("writeTrustFlag", () => {
 
 describe("registerTrustRoutes", () => {
   test("GET /api/trust returns { trusted: false } when file absent", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "trust-rest-"));
+    const base = await mkdtemp(join(tmpdir(), "trust-rest-"));
+    // Routes require a .gsd path (C3 validation)
+    const dir = join(base, ".gsd");
     try {
       const url = new URL(`http://localhost/api/trust?dir=${encodeURIComponent(dir)}`);
       const res = await registerTrustRoutes(url, "GET", null);
@@ -75,12 +77,28 @@ describe("registerTrustRoutes", () => {
       const json = await res!.json();
       expect(json).toEqual({ trusted: false });
     } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  });
+
+  test("GET /api/trust returns 400 for non-.gsd path", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "trust-rest-"));
+    try {
+      const url = new URL(`http://localhost/api/trust?dir=${encodeURIComponent(dir)}`);
+      const res = await registerTrustRoutes(url, "GET", null);
+      expect(res).not.toBeNull();
+      const json = await res!.json();
+      expect(json).toEqual({ error: "dir must be a .gsd directory path" });
+      expect(res!.status).toBe(400);
+    } finally {
       await rm(dir, { recursive: true, force: true });
     }
   });
 
   test("POST /api/trust creates file; subsequent GET returns { trusted: true }", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "trust-rest-"));
+    const base = await mkdtemp(join(tmpdir(), "trust-rest-"));
+    // Routes require a .gsd path (C3 validation)
+    const dir = join(base, ".gsd");
     try {
       // POST to create the trust flag
       const postUrl = new URL("http://localhost/api/trust");
@@ -95,6 +113,20 @@ describe("registerTrustRoutes", () => {
       expect(getRes).not.toBeNull();
       const getJson = await getRes!.json();
       expect(getJson).toEqual({ trusted: true });
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  });
+
+  test("POST /api/trust returns 400 for non-.gsd path", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "trust-rest-"));
+    try {
+      const postUrl = new URL("http://localhost/api/trust");
+      const postRes = await registerTrustRoutes(postUrl, "POST", { dir });
+      expect(postRes).not.toBeNull();
+      const postJson = await postRes!.json();
+      expect(postJson).toEqual({ error: "dir must be a .gsd directory path" });
+      expect(postRes!.status).toBe(400);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

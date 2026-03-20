@@ -127,7 +127,7 @@ export async function handleAuthRequest(req: Request, url: URL): Promise<Respons
       return Response.json({ error: "provider required" }, { status: 400 });
     }
     const provider = body.provider;
-    const sessionId = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+    const sessionId = crypto.randomUUID();
 
     const session: AuthSession = {
       provider,

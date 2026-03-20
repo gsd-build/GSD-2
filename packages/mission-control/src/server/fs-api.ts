@@ -153,6 +153,19 @@ export async function createDirectory(
 /**
  * HTTP request handler for /api/fs/* routes.
  * Returns Response or null if route not matched.
+ *
+ * SECURITY NOTE — Intentional: /api/fs/list and /api/fs/detect-project do NOT restrict
+ * the browsable directory tree.
+ *
+ * This is an accepted design decision for the project-picker feature:
+ * 1. The server binds to 127.0.0.1 only — not accessible from the network
+ * 2. The user needs to browse their filesystem to select a project directory
+ * 3. Restricting to a specific root would break the UX (user can't navigate to their projects)
+ * 4. The local-process threat model is accepted: any process that can reach localhost:4200
+ *    could also read the filesystem directly via OS APIs
+ *
+ * /api/fs/read and /api/fs/write ARE restricted to the open project's root via allowedRoot.
+ * /api/fs/mkdir is restricted to paths under the user's home directory (see below).
  */
 export async function handleFsRequest(
   req: Request,
@@ -214,6 +227,16 @@ export async function handleFsRequest(
       validatePath(body.path);
     } catch {
       return Response.json({ error: "Invalid path: traversal not allowed" }, { status: 400 });
+    }
+
+    // C1/C2: Restrict mkdir to user's home directory to prevent arbitrary directory creation
+    const resolvedMkdir = resolve(body.path);
+    const home = homedir();
+    if (!resolvedMkdir.toLowerCase().startsWith(home.toLowerCase())) {
+      return Response.json(
+        { error: "mkdir restricted to home directory" },
+        { status: 403 }
+      );
     }
 
     const result = await createDirectory(body.path);
