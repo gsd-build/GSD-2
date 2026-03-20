@@ -2,24 +2,41 @@ name: CI
 
 on:
   push:
-    branches: [main, feat/**]
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.github/workflows/ai-triage.yml'
+      - '.github/workflows/build-native.yml'
+      - '.github/workflows/cleanup-dev-versions.yml'
+      - '.github/workflows/pipeline.yml'
+      - 'LICENSE'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.github/workflows/ai-triage.yml'
+      - '.github/workflows/build-native.yml'
+      - '.github/workflows/cleanup-dev-versions.yml'
+      - '.github/workflows/pipeline.yml'
+      - 'LICENSE'
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  secret-scan:
+  lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+
       - name: Scan for hardcoded secrets
         run: bash scripts/secret-scan.sh --diff origin/main
 
-  no-gsd-dir:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
       - name: Ensure .gsd/ is not checked in
         run: |
           if [ -d ".gsd" ]; then
@@ -27,14 +44,11 @@ jobs:
             exit 1
           fi
 
-  skill-references:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: '24'
+
       - name: Validate skill references
         run: node scripts/check-skill-references.mjs
 
@@ -72,6 +86,7 @@ jobs:
         run: npm run test:integration
 
   windows-portability:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: windows-latest
 
     steps:
