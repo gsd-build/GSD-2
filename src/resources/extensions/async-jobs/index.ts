@@ -78,6 +78,17 @@ export default function AsyncJobs(pi: ExtensionAPI) {
 		});
 	});
 
+	pi.on("session_before_switch", async () => {
+		if (manager) {
+			// Cancel all running background jobs — their results are no longer
+			// relevant to the new session and would produce wasteful follow-up
+			// notifications that trigger empty LLM turns (#1642).
+			for (const job of manager.getRunningJobs()) {
+				manager.cancel(job.id);
+			}
+		}
+	});
+
 	pi.on("session_shutdown", async () => {
 		if (manager) {
 			manager.shutdown();

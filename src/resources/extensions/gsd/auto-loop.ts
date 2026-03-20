@@ -287,6 +287,20 @@ export async function runUnit(
     status: result.status,
   });
 
+  // Discard trailing follow-up messages (e.g. async_job_result notifications)
+  // from the completed unit. Without this, queued follow-ups trigger wasteful
+  // LLM turns before the next session can start (#1642).
+  // clearQueue() lives on AgentSession but isn't part of the typed
+  // ExtensionCommandContext interface — call it via runtime check.
+  try {
+    const cmdCtxAny = s.cmdCtx as Record<string, unknown> | null;
+    if (typeof cmdCtxAny?.clearQueue === "function") {
+      (cmdCtxAny.clearQueue as () => unknown)();
+    }
+  } catch {
+    // Non-fatal — clearQueue may not be available in all contexts
+  }
+
   return result;
 }
 
