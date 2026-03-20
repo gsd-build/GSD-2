@@ -122,23 +122,68 @@ rm -rf "$(dirname .gsd)/.gsd.lock"
 
 ## MCP Client Issues
 
-### `mcp_servers` shows no configured servers
+### Start with `/gsd mcp`
 
-**Symptoms:** `mcp_servers` reports no servers configured.
+When MCP behaves strangely, run:
+
+```text
+/gsd mcp --verbose
+```
+
+This checks the same project-local config files GSD actually uses (`.mcp.json` and `.gsd/mcp.json`), then attempts a real MCP connection and `tools/list` for each configured server. It also reports:
+
+- malformed JSON
+- invalid server shapes
+- duplicate server names where one definition shadows another
+- stdio command failures (for example `NOT FOUND on PATH`)
+- HTTP connection failures (`connection refused`, `timeout`, auth errors)
+
+Use `/gsd mcp <server-name> --refresh --verbose` when you want a cold-start check for one server.
+
+### `/gsd mcp` shows no configured servers
+
+**Symptoms:** `/gsd mcp` reports no servers configured.
 
 **Common causes:**
 - No `.mcp.json` or `.gsd/mcp.json` file exists in the current project
-- The config file is malformed JSON
+- The config file exists but doesn't define `mcpServers` or `servers`
 - The server is configured in a different project directory than the one where you launched GSD
 
 **Fix:**
 - Add the server to `.mcp.json` or `.gsd/mcp.json`
-- Verify the file parses as JSON
-- Re-run `mcp_servers(refresh=true)`
+- Confirm you're running GSD from the repo that contains that config
+- Re-run `/gsd mcp --refresh`
+
+### `/gsd mcp` reports invalid JSON or config issues
+
+**Symptoms:** The report includes a "Config issues" section.
+
+**Common causes:**
+- Malformed JSON
+- `mcpServers` / `servers` is not an object
+- A server entry is not an object
+- A server defines neither `command` nor `url`
+
+**Fix:**
+- Repair the JSON syntax
+- Ensure the root object contains `mcpServers` or `servers`
+- Ensure each server entry is an object with either `command` (stdio) or `url` (HTTP)
+
+### `/gsd mcp` reports a shadowed server definition
+
+**Symptoms:** The report includes a "Shadowed definitions" section.
+
+**Cause:** The same server name appears in both `.mcp.json` and `.gsd/mcp.json` (or twice in the effective config), and GSD keeps the first definition it finds.
+
+**Fix:**
+- Rename one of the servers, or
+- Delete the duplicate definition you don't want used
+
+Remember: `.mcp.json` is checked before `.gsd/mcp.json`, so repo-level config wins when names collide.
 
 ### `mcp_discover` times out
 
-**Symptoms:** `mcp_discover` fails with a timeout.
+**Symptoms:** `mcp_discover` fails with a timeout, or `/gsd mcp` shows `timeout`.
 
 **Common causes:**
 - The server process starts but never completes the MCP handshake
@@ -146,13 +191,14 @@ rm -rf "$(dirname .gsd)/.gsd.lock"
 - The server is waiting on an unavailable dependency or backend service
 
 **Fix:**
+- Run `/gsd mcp --verbose` to see which server timed out and from which config file it came
 - Run the configured command directly outside GSD and confirm the server actually starts
 - Check that any backend URLs or required services are reachable
 - For local custom servers, verify the implementation is using an MCP SDK or a correct stdio protocol implementation
 
 ### `mcp_discover` reports connection closed
 
-**Symptoms:** `mcp_discover` fails immediately with a connection-closed error.
+**Symptoms:** `mcp_discover` fails immediately with a connection-closed error, or `/gsd mcp` fails before listing tools.
 
 **Common causes:**
 - Wrong executable path
@@ -162,6 +208,7 @@ rm -rf "$(dirname .gsd)/.gsd.lock"
 
 **Fix:**
 - Verify `command` and `args` paths are correct and absolute
+- Run `/gsd mcp --verbose` to inspect the exact command GSD is launching
 - Run the command manually to catch import/runtime errors
 - Check that the configured interpreter or runtime exists on the machine
 
@@ -192,6 +239,7 @@ rm -rf "$(dirname .gsd)/.gsd.lock"
 - Use absolute paths for `command` and script arguments
 - Set required environment variables in the MCP config's `env` block
 - If needed, set `cwd` explicitly in the server definition
+- Re-run `/gsd mcp --refresh --verbose` after changes
 
 ## Recovery Procedures
 
