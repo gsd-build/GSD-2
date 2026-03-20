@@ -1186,15 +1186,6 @@ function buildRecoveryContext(): import("./auto-timeout-recovery.js").RecoveryCo
   };
 }
 
-// Re-export recovery functions for external consumers
-export {
-  resolveExpectedArtifactPath,
-  verifyExpectedArtifact,
-  writeBlockerPlaceholder,
-  skipExecuteTask,
-  buildLoopRemediationSteps,
-} from "./auto-recovery.js";
-
 /**
  * Test-only: expose skip-loop state for unit tests.
  * Not part of the public API.
@@ -1330,3 +1321,12 @@ export async function dispatchHookUnit(
 
 // Direct phase dispatch → auto-direct-dispatch.ts
 export { dispatchDirectPhase } from "./auto-direct-dispatch.js";
+
+// Re-export recovery functions for external consumers
+export {
+  resolveExpectedArtifactPath,
+  verifyExpectedArtifact,
+  writeBlockerPlaceholder,
+  skipExecuteTask,
+  buildLoopRemediationSteps,
+} from "./auto-recovery.js";
