@@ -775,7 +775,7 @@ export function parseTaskPlanIO(content: string): { inputFiles: string[]; output
  * The four UAT classification types recognised by GSD auto-mode.
  * `undefined` is returned (not this union) when no type can be determined.
  */
-export type UatType = 'artifact-driven' | 'live-runtime' | 'human-experience' | 'mixed';
+export type UatType = 'artifact-driven' | 'live-runtime' | 'human-experience' | 'mixed' | 'browser-executable' | 'runtime-executable';
 
 /**
  * Extract the UAT type from a UAT file's raw content.
@@ -799,6 +799,8 @@ export function extractUatType(content: string): UatType | undefined {
   const rawValue = modeBullet.slice('UAT mode:'.length).trim().toLowerCase();
 
   if (rawValue.startsWith('artifact-driven')) return 'artifact-driven';
+  if (rawValue.startsWith('browser-executable')) return 'browser-executable';
+  if (rawValue.startsWith('runtime-executable')) return 'runtime-executable';
   if (rawValue.startsWith('live-runtime')) return 'live-runtime';
   if (rawValue.startsWith('human-experience')) return 'human-experience';
   if (rawValue.startsWith('mixed')) return 'mixed';
