@@ -37,17 +37,6 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: S01: 10 role-based sub-interfaces in loop-deps-groups.ts covering all 58 modules imported by auto.ts. Composite LoopDeps interface groups all 10. Contract test validates count and group keys. Not yet consumed — S02 uses for engine construction.
 - Notes: The decomposition must be mechanical — same functions, grouped differently. No behavior change.
 
-### R006 — Workflow definitions are YAML files with a `version: 1` schema. Each definition has steps with IDs, names, prompts, dependency declarations (`requires`), artifact outputs (`produces`), and parameterization via `{{variable}}` template syntax.
-- Class: core-capability
-- Status: active
-- Description: Workflow definitions are YAML files with a `version: 1` schema. Each definition has steps with IDs, names, prompts, dependency declarations (`requires`), artifact outputs (`produces`), and parameterization via `{{variable}}` template syntax.
-- Why it matters: YAML definitions are the public API for custom workflows. They must be simple enough to write (or generate) and expressive enough for real workflows.
-- Source: user
-- Primary owning slice: M001/S04
-- Supporting slices: M001/S07
-- Validation: S04 T01: definition-loader.ts implements V1 YAML schema with validateDefinition() enforcing version===1, name required, steps non-empty with id/name/prompt, produces paths reject ".." traversal. Unknown fields silently accepted for forward compatibility. loadDefinition() handles snake_case→camelCase conversion (depends_on→requires, context_from→contextFrom). S04 T03: Integration test proves YAML file loads, validates, and feeds full dispatch cycle. 13 unit tests + 4 integration tests pass. Parameterization via {{variable}} deferred to S07.
-- Notes: Schema becomes a versioned public API. V1 surface must be minimal and stable.
-
 ### R007 — When a workflow run starts, the definition YAML is copied into the run directory as `DEFINITION.yaml`. Mid-run edits to the source definition do not affect active runs.
 - Class: continuity
 - Status: active
@@ -89,7 +78,7 @@ This file is the explicit capability and coverage contract for the project.
 - Source: user
 - Primary owning slice: M001/S07
 - Supporting slices: none
-- Validation: unmapped
+- Validation: S07 T02: handleWorkflow("new", ...) loads workflow-builder prompt via loadPrompt() and dispatches with triggerTurn. Auto-mode conflict guard prevents new during active workflows. S07 T03: workflow-builder.md prompt embeds V1 schema rules, all four verification policies, iterate/context_from syntax, and a complete 4-step blog-post-pipeline example. loadPrompt("workflow-builder", {defsDir, schemaVersion}) resolves to 7869 chars with zero unresolved variables. Builder prompt quality is partially proven by structure checks; full conversation quality deferred to S08 end-to-end validation.
 - Notes: The conversation should end with the saved file path and a prompt to run it via `/gsd workflow run <name>`.
 
 ### R013 — `/gsd workflow` subcommands provide the full lifecycle: `new` (LLM builder), `run <name>` (start a run), `list` (show available definitions and active runs), `pause` (stop active run), `resume` (continue paused run), `validate <file>` (check YAML against schema).
@@ -100,7 +89,7 @@ This file is the explicit capability and coverage contract for the project.
 - Source: user
 - Primary owning slice: M001/S07
 - Supporting slices: M001/S08
-- Validation: unmapped
+- Validation: S07 T02: commands-workflow.ts implements all six subcommands: new (loads builder prompt with triggerTurn), run (createRun + setActiveEngineId + startAuto with --param parsing), list (scans workflow-defs/ and workflow-runs/ with graph step counts), pause (delegates to pauseAuto), resume (re-derives engine ID from most recent incomplete run), validate (structured validateDefinition() error output). Routing wired in commands.ts with completions and help text. Auto-mode conflict guard on run and new. 15 integration tests pass covering validate, list, run param parsing, PARAMS.json creation, conflict guard, completions, resume engine-ID derivation, and routing wiring. Full runtime validation deferred to S08.
 - Notes: Commands register via the existing pi extension command system.
 
 ### R014 — The health widget / footer progress area shows custom workflow progress: current step name, step N/M fraction, and status. Uses `engine.getDisplayMetadata()`.
@@ -159,6 +148,17 @@ This file is the explicit capability and coverage contract for the project.
 - Supporting slices: M001/S03
 - Validation: S02 T01: resolveEngine() returns DevWorkflowEngine for null/"dev". S03 T01: resolveEngine() gains "custom:*" branch — extracts runDir, returns CustomWorkflowEngine + CustomExecutionPolicy. S03 T02: Integration test proves "custom:/tmp/test" returns correct engine/policy pair, bare "custom" and "bogus" still throw. 19/19 contract test assertions pass, 11/11 integration test assertions pass. Full suite 1602 pass, zero regressions.
 - Notes: `active-engine` file acts as a mutex — one active engine at a time.
+
+### R006 — Workflow definitions are YAML files with a `version: 1` schema. Each definition has steps with IDs, names, prompts, dependency declarations (`requires`), artifact outputs (`produces`), and parameterization via `{{variable}}` template syntax.
+- Class: core-capability
+- Status: validated
+- Description: Workflow definitions are YAML files with a `version: 1` schema. Each definition has steps with IDs, names, prompts, dependency declarations (`requires`), artifact outputs (`produces`), and parameterization via `{{variable}}` template syntax.
+- Why it matters: YAML definitions are the public API for custom workflows. They must be simple enough to write (or generate) and expressive enough for real workflows.
+- Source: user
+- Primary owning slice: M001/S04
+- Supporting slices: M001/S07
+- Validation: S04 T01: definition-loader.ts implements V1 YAML schema with validateDefinition() enforcing version===1, name required, steps non-empty with id/name/prompt, produces paths reject ".." traversal. Unknown fields silently accepted for forward compatibility. loadDefinition() handles snake_case→camelCase conversion (depends_on→requires, context_from→contextFrom). S04 T03: Integration test proves YAML file loads, validates, and feeds full dispatch cycle. S07 T01: substituteParams() replaces {{key}} in step prompts at dispatch time using definition.params merged with CLI overrides. Path traversal guard rejects ".." in param values. Unresolved keys throw with all missing keys listed. PARAMS.json stores overrides separately preserving R007 byte-exact snapshot. 14 param substitution tests + 25 definition-loader tests + 4 integration tests pass.
+- Notes: Schema becomes a versioned public API. V1 surface must be minimal and stable.
 
 ### R009 — Steps can declare `context_from: [step_ids]` to auto-inject summaries from prior steps' artifacts into their prompt. The engine handles this injection transparently.
 - Class: primary-user-loop
@@ -294,14 +294,14 @@ This file is the explicit capability and coverage contract for the project.
 | R003 | quality-attribute | active | M001/S01 | none | S01: 10 role-based sub-interfaces in loop-deps-groups.ts covering all 58 modules imported by auto.ts. Composite LoopDeps interface groups all 10. Contract test validates count and group keys. Not yet consumed — S02 uses for engine construction. |
 | R004 | core-capability | validated | M001/S02 | none | S02 T01: DevWorkflowEngine class in dev-workflow-engine.ts implements WorkflowEngine, delegates deriveState() to state.ts:deriveState() and resolveDispatch() to auto-dispatch.ts:resolveDispatch() with bridgeDispatchAction conversion. S02 T02: Wired into dispatchNextUnit() at 4 sites — resolveEngine(s) at entry, engine.deriveState() for initial derivation, engine.resolveDispatch() for dispatch resolution. All 1590 tests pass identically (1 pre-existing fail L001, 3 skipped). 18-assertion contract test validates all shapes. |
 | R005 | core-capability | validated | M001/S02 | M001/S03 | S02 T01: resolveEngine() returns DevWorkflowEngine for null/"dev". S03 T01: resolveEngine() gains "custom:*" branch — extracts runDir, returns CustomWorkflowEngine + CustomExecutionPolicy. S03 T02: Integration test proves "custom:/tmp/test" returns correct engine/policy pair, bare "custom" and "bogus" still throw. 19/19 contract test assertions pass, 11/11 integration test assertions pass. Full suite 1602 pass, zero regressions. |
-| R006 | core-capability | active | M001/S04 | M001/S07 | S04 T01: definition-loader.ts implements V1 YAML schema with validateDefinition() enforcing version===1, name required, steps non-empty with id/name/prompt, produces paths reject ".." traversal. Unknown fields silently accepted for forward compatibility. loadDefinition() handles snake_case→camelCase conversion (depends_on→requires, context_from→contextFrom). S04 T03: Integration test proves YAML file loads, validates, and feeds full dispatch cycle. 13 unit tests + 4 integration tests pass. Parameterization via {{variable}} deferred to S07. |
+| R006 | core-capability | validated | M001/S04 | M001/S07 | S04 T01: definition-loader.ts implements V1 YAML schema with validateDefinition() enforcing version===1, name required, steps non-empty with id/name/prompt, produces paths reject ".." traversal. Unknown fields silently accepted for forward compatibility. loadDefinition() handles snake_case→camelCase conversion (depends_on→requires, context_from→contextFrom). S04 T03: Integration test proves YAML file loads, validates, and feeds full dispatch cycle. S07 T01: substituteParams() replaces {{key}} in step prompts at dispatch time using definition.params merged with CLI overrides. Path traversal guard rejects ".." in param values. Unresolved keys throw with all missing keys listed. PARAMS.json stores overrides separately preserving R007 byte-exact snapshot. 14 param substitution tests + 25 definition-loader tests + 4 integration tests pass. |
 | R007 | continuity | active | M001/S04 | none | S04 T02: createRun() in run-manager.ts uses copyFileSync for exact byte-copy of source YAML into run directory as DEFINITION.yaml. S04 T03: Integration test "DEFINITION.yaml snapshot is immune to source modification" proves source YAML modified after createRun still has original bytes in run dir. 4/4 integration tests pass. |
 | R008 | core-capability | active | M001/S04 | M001/S06 | S03 T01: graph.ts implements GRAPH.yaml read/write with atomic writes (tmp + renameSync), step status tracking (pending→active→complete), topological dispatch order via getNextPendingStep(). S04 T01: graphFromDefinition() converts validated WorkflowDefinition into WorkflowGraph with all steps pending. S04 T02: createRun() generates initial GRAPH.yaml from definition via graphFromDefinition()+writeGraph(). S04 T03: Integration test proves full pipeline — YAML definition→createRun→3-step dispatch cycle→all steps complete with on-disk GRAPH.yaml verification. S06 T02: GraphStep gains "expanded" status and parentStepId for iteration instances. expandIteration() materializes instances with deterministic IDs and rewrites downstream deps. YAML roundtrip preserves new fields. S06 T03: Iteration expansion persists to GRAPH.yaml with full instance lineage. 11/11 engine tests + 15/15 iteration tests pass. |
 | R009 | primary-user-loop | validated | M001/S05 | none | S05 T01: injectContext() in context-injector.ts reads contextFrom step IDs, resolves produces paths from frozen DEFINITION.yaml, reads artifacts from runDir, assembles formatted context with per-step headers and token budget truncation. Returns empty string sentinel for no-op cases. S05 T03: resolveDispatch() in CustomWorkflowEngine parses DEFINITION.yaml and prepends injected context to step prompts. Integration test proves step-2 dispatch prompt contains "## Context from prior steps" header with step-1 artifact content. 7 unit tests + 4 integration tests pass. |
 | R010 | failure-visibility | active | M001/S05 | none | unmapped |
 | R011 | core-capability | validated | M001/S06 | none | S06 T01: IterateConfig typed with source+pattern, validateDefinition() enforces valid regex with capture group and no path traversal (5 new tests). S06 T02: expandIteration() pure function materializes instances with deterministic zero-padded IDs (<parentId>--001), "expanded" status, parentStepId lineage, downstream dep rewriting. YAML roundtrip preserves all fields (11 unit tests). S06 T03: resolveDispatch() triggers lazy expansion from source artifact regex, idempotency guard prevents double-expansion, getDisplayMetadata() excludes expanded steps, deriveState()/reconcile() handle expanded status for completion detection. Integration test proves 5-dispatch fan-out (outline + 3 chapter instances + review). Determinism proof: byte-identical GRAPH.yaml from identical input. 15/15 iteration tests + 11/11 engine tests + 25/25 definition-loader tests pass. Zero type errors. |
-| R012 | primary-user-loop | active | M001/S07 | none | unmapped |
-| R013 | launchability | active | M001/S07 | M001/S08 | unmapped |
+| R012 | primary-user-loop | active | M001/S07 | none | S07 T02: handleWorkflow("new", ...) loads workflow-builder prompt via loadPrompt() and dispatches with triggerTurn. Auto-mode conflict guard prevents new during active workflows. S07 T03: workflow-builder.md prompt embeds V1 schema rules, all four verification policies, iterate/context_from syntax, and a complete 4-step blog-post-pipeline example. loadPrompt("workflow-builder", {defsDir, schemaVersion}) resolves to 7869 chars with zero unresolved variables. Builder prompt quality is partially proven by structure checks; full conversation quality deferred to S08 end-to-end validation. |
+| R013 | launchability | active | M001/S07 | M001/S08 | S07 T02: commands-workflow.ts implements all six subcommands: new (loads builder prompt with triggerTurn), run (createRun + setActiveEngineId + startAuto with --param parsing), list (scans workflow-defs/ and workflow-runs/ with graph step counts), pause (delegates to pauseAuto), resume (re-derives engine ID from most recent incomplete run), validate (structured validateDefinition() error output). Routing wired in commands.ts with completions and help text. Auto-mode conflict guard on run and new. 15 integration tests pass covering validate, list, run param parsing, PARAMS.json creation, conflict guard, completions, resume engine-ID derivation, and routing wiring. Full runtime validation deferred to S08. |
 | R014 | primary-user-loop | active | M001/S08 | none | unmapped |
 | R015 | launchability | active | M001/S08 | M001/S04, M001/S05, M001/S06, M001/S07 | unmapped |
 | R016 | constraint | validated | M001/S01 | M001/S02 | S01: 1862 unit tests pass (1 pre-existing macOS symlink fail — L001), 23 integration tests pass (6 pre-existing version mismatch fails — L002). Zero new failures. All S01 files are additive types with no behavioral changes. Typecheck passes with 0 errors. |
@@ -317,7 +317,7 @@ This file is the explicit capability and coverage contract for the project.
 
 ## Coverage Summary
 
-- Active requirements: 12
-- Mapped to slices: 12
-- Validated: 5 (R004, R005, R009, R011, R016)
+- Active requirements: 11
+- Mapped to slices: 11
+- Validated: 6 (R004, R005, R006, R009, R011, R016)
 - Unmapped active requirements: 0
