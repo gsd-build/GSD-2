@@ -194,6 +194,7 @@ export async function postUnitPreVerification(pctx: PostUnitContext, opts?: PreV
             const reportText = formatDoctorReport(report, { scope: doctorScope, includeWarnings: true });
             const structuredIssues = formatDoctorIssuesForPrompt(actionable);
             dispatchDoctorHeal(pi, doctorScope, reportText, structuredIssues);
+            return "dispatched";
           } catch (e) {
             debugLog("postUnit", { phase: "doctor-heal-dispatch", error: String(e) });
           }
