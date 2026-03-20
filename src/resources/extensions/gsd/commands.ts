@@ -114,6 +114,7 @@ export function registerGSDCommand(pi: ExtensionAPI): void {
         { cmd: "stop", desc: "Stop auto mode gracefully" },
         { cmd: "pause", desc: "Pause auto-mode (preserves state, /gsd auto to resume)" },
         { cmd: "status", desc: "Progress dashboard" },
+        { cmd: "widget", desc: "Cycle widget: full → small → min → off" },
         { cmd: "visualize", desc: "Open 10-tab workflow visualizer (progress, timeline, deps, metrics, health, agent, changes, knowledge, captures, export)" },
         { cmd: "queue", desc: "Queue and reorder future milestones" },
         { cmd: "quick", desc: "Execute a quick task without full planning overhead" },
@@ -471,6 +472,18 @@ export async function handleGSDCommand(
 
   if (trimmed === "status") {
     await handleStatus(ctx);
+    return;
+  }
+
+  if (trimmed === "widget" || trimmed.startsWith("widget ")) {
+    const { cycleWidgetMode, setWidgetMode, getWidgetMode } = await import("./auto-dashboard.js");
+    const arg = trimmed.replace(/^widget\s*/, "").trim();
+    if (arg === "full" || arg === "small" || arg === "min" || arg === "off") {
+      setWidgetMode(arg);
+    } else {
+      cycleWidgetMode();
+    }
+    ctx.ui.notify(`Widget: ${getWidgetMode()}`, "info");
     return;
   }
 
