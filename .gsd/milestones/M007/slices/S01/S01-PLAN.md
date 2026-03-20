@@ -27,7 +27,7 @@
 
 ## Tasks
 
-- [ ] **T01: Verify telemetry schema completeness and dispatch integration** `est:30m`
+- [x] **T01: Verify telemetry schema completeness and dispatch integration** `est:30m`
   - Why: The implementation exists across `metrics.ts`, `metrics-logger.ts`, `activity-log.ts`, and `auto.ts`. This task confirms all roadmap requirements are met and tests pass.
   - Files: `src/resources/extensions/gsd/metrics.ts`, `src/resources/extensions/gsd/metrics-logger.ts`, `src/resources/extensions/gsd/activity-log.ts`, `src/resources/extensions/gsd/auto.ts`, `src/resources/extensions/gsd/tests/metrics-extended.test.ts`
   - Do: Run the full test suite. Verify `UnitMetrics` has all required fields (tokens, cost, interventions, factCheck, wallClockMs, skills). Verify `persistUnitMetrics` uses `appendFileSync` with non-blocking error handling. Verify all `snapshotUnitMetrics` sites in `auto.ts` call `persistUnitMetrics`. Verify `saveActivityLog` uses streaming writes and dedup. If any gap is found, fix it; if all checks pass, document the verification.
