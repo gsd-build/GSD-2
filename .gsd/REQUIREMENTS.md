@@ -37,17 +37,6 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: S01: 10 role-based sub-interfaces in loop-deps-groups.ts covering all 58 modules imported by auto.ts. Composite LoopDeps interface groups all 10. Contract test validates count and group keys. Not yet consumed — S02 uses for engine construction.
 - Notes: The decomposition must be mechanical — same functions, grouped differently. No behavior change.
 
-### R005 — A `resolveEngine()` function in the auto-loop checks an `active-engine` file to determine whether to use `DevWorkflowEngine` or `CustomWorkflowEngine`. Defaults to dev when no pointer exists.
-- Class: core-capability
-- Status: active
-- Description: A `resolveEngine()` function in the auto-loop checks an `active-engine` file to determine whether to use `DevWorkflowEngine` or `CustomWorkflowEngine`. Defaults to dev when no pointer exists.
-- Why it matters: This is the switching mechanism. Without it, only one engine can run.
-- Source: user
-- Primary owning slice: M001/S02
-- Supporting slices: M001/S03
-- Validation: S02 T01: resolveEngine() in engine-resolver.ts returns DevWorkflowEngine for null/"dev" activeEngineId, throws for unknown. S02 T02: Called in dispatchNextUnit(), session.activeEngineId drives resolution.
-- Notes: `active-engine` file acts as a mutex — one active engine at a time.
-
 ### R006 — Workflow definitions are YAML files with a `version: 1` schema. Each definition has steps with IDs, names, prompts, dependency declarations (`requires`), artifact outputs (`produces`), and parameterization via `{{variable}}` template syntax.
 - Class: core-capability
 - Status: active
@@ -78,8 +67,8 @@ This file is the explicit capability and coverage contract for the project.
 - Source: user
 - Primary owning slice: M001/S04
 - Supporting slices: M001/S06
-- Validation: unmapped
-- Notes: Artifact existence is validated during `reconcile()` — GRAPH says done but artifact missing triggers a corruption warning.
+- Validation: S03 T01: graph.ts implements GRAPH.yaml read/write with atomic writes (tmp + renameSync), step status tracking (pending → active → complete), topological dispatch order via getNextPendingStep(). S03 T02: Integration test proves roundtrip, status transitions, and 3-step dispatch cycle with on-disk state verification after each reconcile. Full run snapshotting and definition-loading deferred to S04.
+- Notes: Artifact existence is validated during `reconcile()` — GRAPH says done but artifact missing triggers a corruption warning. S03 established the core read/write/query primitives; S04 connects these to YAML definitions and run lifecycle.
 
 ### R009 — Steps can declare `context_from: [step_ids]` to auto-inject summaries from prior steps' artifacts into their prompt. The engine handles this injection transparently.
 - Class: primary-user-loop
@@ -181,6 +170,17 @@ This file is the explicit capability and coverage contract for the project.
 - Supporting slices: none
 - Validation: S02 T01: DevWorkflowEngine class in dev-workflow-engine.ts implements WorkflowEngine, delegates deriveState() to state.ts:deriveState() and resolveDispatch() to auto-dispatch.ts:resolveDispatch() with bridgeDispatchAction conversion. S02 T02: Wired into dispatchNextUnit() at 4 sites — resolveEngine(s) at entry, engine.deriveState() for initial derivation, engine.resolveDispatch() for dispatch resolution. All 1590 tests pass identically (1 pre-existing fail L001, 3 skipped). 18-assertion contract test validates all shapes.
 - Notes: Zero behavior change is a hard constraint. Test suite is the verification.
+
+### R005 — A `resolveEngine()` function in the auto-loop checks an `active-engine` file to determine whether to use `DevWorkflowEngine` or `CustomWorkflowEngine`. Defaults to dev when no pointer exists.
+- Class: core-capability
+- Status: validated
+- Description: A `resolveEngine()` function in the auto-loop checks an `active-engine` file to determine whether to use `DevWorkflowEngine` or `CustomWorkflowEngine`. Defaults to dev when no pointer exists.
+- Why it matters: This is the switching mechanism. Without it, only one engine can run.
+- Source: user
+- Primary owning slice: M001/S02
+- Supporting slices: M001/S03
+- Validation: S02 T01: resolveEngine() returns DevWorkflowEngine for null/"dev". S03 T01: resolveEngine() gains "custom:*" branch — extracts runDir, returns CustomWorkflowEngine + CustomExecutionPolicy. S03 T02: Integration test proves "custom:/tmp/test" returns correct engine/policy pair, bare "custom" and "bogus" still throw. 19/19 contract test assertions pass, 11/11 integration test assertions pass. Full suite 1602 pass, zero regressions.
+- Notes: `active-engine` file acts as a mutex — one active engine at a time.
 
 ### R016 — The existing dev workflow (milestones/slices/tasks) must be identical before and after the interface extraction. All 172 existing tests pass. No behavior change in state derivation, dispatch, post-unit processing, verification, or worktree management.
 - Class: constraint
@@ -293,10 +293,10 @@ This file is the explicit capability and coverage contract for the project.
 | R002 | core-capability | active | M001/S01 | M001/S02 | S01: ExecutionPolicy interface defined in execution-policy.ts with prepareWorkspace/selectModel/verify/recover/closeout. Compiles cleanly. Contract test validates shape. Not yet wired — S02 implements. |
 | R003 | quality-attribute | active | M001/S01 | none | S01: 10 role-based sub-interfaces in loop-deps-groups.ts covering all 58 modules imported by auto.ts. Composite LoopDeps interface groups all 10. Contract test validates count and group keys. Not yet consumed — S02 uses for engine construction. |
 | R004 | core-capability | validated | M001/S02 | none | S02 T01: DevWorkflowEngine class in dev-workflow-engine.ts implements WorkflowEngine, delegates deriveState() to state.ts:deriveState() and resolveDispatch() to auto-dispatch.ts:resolveDispatch() with bridgeDispatchAction conversion. S02 T02: Wired into dispatchNextUnit() at 4 sites — resolveEngine(s) at entry, engine.deriveState() for initial derivation, engine.resolveDispatch() for dispatch resolution. All 1590 tests pass identically (1 pre-existing fail L001, 3 skipped). 18-assertion contract test validates all shapes. |
-| R005 | core-capability | active | M001/S02 | M001/S03 | S02 T01: resolveEngine() in engine-resolver.ts returns DevWorkflowEngine for null/"dev" activeEngineId, throws for unknown. S02 T02: Called in dispatchNextUnit(), session.activeEngineId drives resolution. |
+| R005 | core-capability | validated | M001/S02 | M001/S03 | S02 T01: resolveEngine() returns DevWorkflowEngine for null/"dev". S03 T01: resolveEngine() gains "custom:*" branch — extracts runDir, returns CustomWorkflowEngine + CustomExecutionPolicy. S03 T02: Integration test proves "custom:/tmp/test" returns correct engine/policy pair, bare "custom" and "bogus" still throw. 19/19 contract test assertions pass, 11/11 integration test assertions pass. Full suite 1602 pass, zero regressions. |
 | R006 | core-capability | active | M001/S04 | M001/S07 | unmapped |
 | R007 | continuity | active | M001/S04 | none | unmapped |
-| R008 | core-capability | active | M001/S04 | M001/S06 | unmapped |
+| R008 | core-capability | active | M001/S04 | M001/S06 | S03 T01: graph.ts implements GRAPH.yaml read/write with atomic writes (tmp + renameSync), step status tracking (pending → active → complete), topological dispatch order via getNextPendingStep(). S03 T02: Integration test proves roundtrip, status transitions, and 3-step dispatch cycle with on-disk state verification after each reconcile. Full run snapshotting and definition-loading deferred to S04. |
 | R009 | primary-user-loop | active | M001/S05 | none | unmapped |
 | R010 | failure-visibility | active | M001/S05 | none | unmapped |
 | R011 | core-capability | active | M001/S06 | none | unmapped |
@@ -317,7 +317,7 @@ This file is the explicit capability and coverage contract for the project.
 
 ## Coverage Summary
 
-- Active requirements: 15
-- Mapped to slices: 15
-- Validated: 2 (R004, R016)
+- Active requirements: 14
+- Mapped to slices: 14
+- Validated: 3 (R004, R005, R016)
 - Unmapped active requirements: 0
