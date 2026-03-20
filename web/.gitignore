@@ -15,6 +15,3 @@ next.user-config.*
 node_modules/
 .next/
 .DS_Store
-
-# Generated build artifacts
-public/sw.js

@@ -1,8 +1,7 @@
-import type { Metadata, Viewport } from 'next'
+import type { Metadata } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import { Toaster } from '@/components/ui/sonner'
 import { ThemeProvider } from '@/components/theme-provider'
-import { SwRegister } from './sw-register'
 import './globals.css'
 
 const geistSans = Geist({
@@ -19,12 +18,6 @@ export const metadata: Metadata = {
   title: 'GSD',
   description: 'The evolution of Get Shit Done — now a real coding agent. One command. Walk away. Come back to a built project.',
   applicationName: 'GSD',
-  manifest: '/manifest.json',
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: 'default',
-    title: 'GSD',
-  },
   icons: {
     icon: [
       {
@@ -40,12 +33,7 @@ export const metadata: Metadata = {
         type: 'image/svg+xml',
       },
     ],
-    apple: '/apple-icon.png',
   },
-}
-
-export const viewport: Viewport = {
-  themeColor: '#1a1a1a',
 }
 
 export default function RootLayout({
@@ -60,7 +48,6 @@ export default function RootLayout({
           {children}
           <Toaster position="bottom-right" />
         </ThemeProvider>
-        <SwRegister />
       </body>
     </html>
   )

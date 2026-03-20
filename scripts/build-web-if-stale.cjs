@@ -4,7 +4,7 @@
  * staged standalone build. Skips the build when nothing has changed.
  *
  * Also self-heals a missing/incomplete web dependency install so `npm run gsd:web`
- * doesn't fail with bare `next`/`serwist` command-not-found errors.
+ * doesn't fail with bare `next` command-not-found errors.
  *
  * Exit codes:
  *   0 — build was up-to-date or successfully rebuilt
@@ -69,8 +69,7 @@ function sentinelMtime() {
 }
 
 function hasWebBuildDependencies() {
-  return existsSync(join(webRoot, 'node_modules', '.bin', 'next')) &&
-    existsSync(join(webRoot, 'node_modules', '.bin', 'serwist'))
+  return existsSync(join(webRoot, 'node_modules', '.bin', 'next'))
 }
 
 function ensureWebBuildDependencies() {

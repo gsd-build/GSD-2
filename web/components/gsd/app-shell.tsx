@@ -33,7 +33,6 @@ import { ScopeBadge } from "@/components/gsd/scope-badge"
 import { Badge } from "@/components/ui/badge"
 import { ProjectsView } from "@/components/gsd/projects-view"
 import { UpdateBanner } from "@/components/gsd/update-banner"
-import { InstallPromptBanner } from "@/components/gsd/install-prompt-banner"
 
 const KNOWN_VIEWS = new Set(["dashboard", "power", "chat", "roadmap", "files", "activity", "visualize", "projects"])
 
@@ -398,7 +397,6 @@ function WorkspaceChrome() {
       <CommandSurface />
       <OnboardingGate />
       <FocusedPanel />
-      <InstallPromptBanner />
     </div>
   )
 }

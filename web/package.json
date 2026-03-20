@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
-    "build": "next build --webpack && serwist build",
+    "build": "next build --webpack",
     "start": "next start",
     "start:standalone": "node .next/standalone/web/server.js",
     "lint": "eslint ."
@@ -41,7 +41,6 @@
     "@radix-ui/react-toggle": "1.1.10",
     "@radix-ui/react-toggle-group": "1.1.11",
     "@radix-ui/react-tooltip": "1.2.8",
-    "@serwist/next": "^9.5.7",
     "@uiw/codemirror-extensions-langs": "^4.25.8",
     "@uiw/codemirror-themes": "^4.25.8",
     "@uiw/react-codemirror": "^4.25.8",
@@ -65,7 +64,6 @@
     "react-hook-form": "^7.54.1",
     "react-resizable-panels": "^2.1.7",
     "recharts": "2.15.0",
-    "serwist": "^9.5.7",
     "sonner": "^1.7.1",
     "tailwind-merge": "^3.3.1",
     "vaul": "^1.1.2",
@@ -73,7 +71,6 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.1",
-    "@serwist/cli": "^9.5.7",
     "@tailwindcss/postcss": "^4.2.0",
     "@types/node": "^22",
     "@types/react": "19.2.14",
