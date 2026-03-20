@@ -272,11 +272,11 @@ export function getGsdArgumentCompletions(prefix: string) {
   if (command === "templates" && subcommand === "info" && parts.length <= 3) {
     try {
       const registry = loadRegistry();
-      return registry.templates
-        .filter((entry) => entry.id.startsWith(third))
-        .map((entry) => ({
-          value: `templates info ${entry.id}`,
-          label: entry.id,
+      return Object.entries(registry.templates)
+        .filter(([id]) => id.startsWith(third))
+        .map(([id, entry]) => ({
+          value: `templates info ${id}`,
+          label: id,
           description: entry.description,
         }));
     } catch {

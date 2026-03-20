@@ -27,13 +27,12 @@ export function registerDbTools(pi: ExtensionAPI): void {
       revisable: Type.Optional(Type.String({ description: "Whether this can be revisited (default: 'Yes')" })),
       when_context: Type.Optional(Type.String({ description: "When/context for the decision (e.g. milestone ID)" })),
     }),
-    async execute(_toolCallId, params) {
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       const dbAvailable = await ensureDbOpen();
       if (!dbAvailable) {
         return {
           content: [{ type: "text" as const, text: "Error: GSD database is not available. Cannot save decision." }],
-          isError: true,
-          details: { operation: "save_decision", error: "db_unavailable" },
+          details: { operation: "save_decision", error: "db_unavailable" } as any,
         };
       }
       try {
@@ -51,15 +50,14 @@ export function registerDbTools(pi: ExtensionAPI): void {
         );
         return {
           content: [{ type: "text" as const, text: `Saved decision ${id}` }],
-          details: { operation: "save_decision", id },
+          details: { operation: "save_decision", id } as any,
         };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         process.stderr.write(`gsd-db: gsd_save_decision tool failed: ${msg}\n`);
         return {
           content: [{ type: "text" as const, text: `Error saving decision: ${msg}` }],
-          isError: true,
-          details: { operation: "save_decision", error: msg },
+          details: { operation: "save_decision", error: msg } as any,
         };
       }
     },
@@ -87,13 +85,12 @@ export function registerDbTools(pi: ExtensionAPI): void {
       primary_owner: Type.Optional(Type.String({ description: "Primary owning slice" })),
       supporting_slices: Type.Optional(Type.String({ description: "Supporting slices" })),
     }),
-    async execute(_toolCallId, params) {
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       const dbAvailable = await ensureDbOpen();
       if (!dbAvailable) {
         return {
           content: [{ type: "text" as const, text: "Error: GSD database is not available. Cannot update requirement." }],
-          isError: true,
-          details: { operation: "update_requirement", id: params.id, error: "db_unavailable" },
+          details: { operation: "update_requirement", id: params.id, error: "db_unavailable" } as any,
         };
       }
       try {
@@ -102,8 +99,7 @@ export function registerDbTools(pi: ExtensionAPI): void {
         if (!existing) {
           return {
             content: [{ type: "text" as const, text: `Error: Requirement ${params.id} not found.` }],
-            isError: true,
-            details: { operation: "update_requirement", id: params.id, error: "not_found" },
+            details: { operation: "update_requirement", id: params.id, error: "not_found" } as any,
           };
         }
         const { updateRequirementInDb } = await import("../db-writer.js");
@@ -117,15 +113,14 @@ export function registerDbTools(pi: ExtensionAPI): void {
         await updateRequirementInDb(params.id, updates, process.cwd());
         return {
           content: [{ type: "text" as const, text: `Updated requirement ${params.id}` }],
-          details: { operation: "update_requirement", id: params.id },
+          details: { operation: "update_requirement", id: params.id } as any,
         };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         process.stderr.write(`gsd-db: gsd_update_requirement tool failed: ${msg}\n`);
         return {
           content: [{ type: "text" as const, text: `Error updating requirement: ${msg}` }],
-          isError: true,
-          details: { operation: "update_requirement", id: params.id, error: msg },
+          details: { operation: "update_requirement", id: params.id, error: msg } as any,
         };
       }
     },
@@ -151,21 +146,19 @@ export function registerDbTools(pi: ExtensionAPI): void {
       artifact_type: Type.String({ description: "One of: SUMMARY, RESEARCH, CONTEXT, ASSESSMENT" }),
       content: Type.String({ description: "The full markdown content of the artifact" }),
     }),
-    async execute(_toolCallId, params) {
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       const dbAvailable = await ensureDbOpen();
       if (!dbAvailable) {
         return {
           content: [{ type: "text" as const, text: "Error: GSD database is not available. Cannot save artifact." }],
-          isError: true,
-          details: { operation: "save_summary", error: "db_unavailable" },
+          details: { operation: "save_summary", error: "db_unavailable" } as any,
         };
       }
       const validTypes = ["SUMMARY", "RESEARCH", "CONTEXT", "ASSESSMENT"];
       if (!validTypes.includes(params.artifact_type)) {
         return {
           content: [{ type: "text" as const, text: `Error: Invalid artifact_type "${params.artifact_type}". Must be one of: ${validTypes.join(", ")}` }],
-          isError: true,
-          details: { operation: "save_summary", error: "invalid_artifact_type" },
+          details: { operation: "save_summary", error: "invalid_artifact_type" } as any,
         };
       }
       try {
@@ -191,15 +184,14 @@ export function registerDbTools(pi: ExtensionAPI): void {
         );
         return {
           content: [{ type: "text" as const, text: `Saved ${params.artifact_type} artifact to ${relativePath}` }],
-          details: { operation: "save_summary", path: relativePath, artifact_type: params.artifact_type },
+          details: { operation: "save_summary", path: relativePath, artifact_type: params.artifact_type } as any,
         };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         process.stderr.write(`gsd-db: gsd_save_summary tool failed: ${msg}\n`);
         return {
           content: [{ type: "text" as const, text: `Error saving artifact: ${msg}` }],
-          isError: true,
-          details: { operation: "save_summary", error: msg },
+          details: { operation: "save_summary", error: msg } as any,
         };
       }
     },
@@ -221,7 +213,7 @@ export function registerDbTools(pi: ExtensionAPI): void {
       "The tool returns the correct format based on project preferences (e.g. M001 or M001-r5jzab).",
     ],
     parameters: Type.Object({}),
-    async execute() {
+    async execute(_toolCallId, _params, _signal, _onUpdate, _ctx) {
       try {
         const basePath = process.cwd();
         const existingIds = findMilestoneIds(basePath);
@@ -231,14 +223,13 @@ export function registerDbTools(pi: ExtensionAPI): void {
         reservedMilestoneIds.add(newId);
         return {
           content: [{ type: "text" as const, text: newId }],
-          details: { operation: "generate_milestone_id", id: newId, existingCount: existingIds.length, reservedCount: reservedMilestoneIds.size, uniqueEnabled },
+          details: { operation: "generate_milestone_id", id: newId, existingCount: existingIds.length, reservedCount: reservedMilestoneIds.size, uniqueEnabled } as any,
         };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         return {
           content: [{ type: "text" as const, text: `Error generating milestone ID: ${msg}` }],
-          isError: true,
-          details: { operation: "generate_milestone_id", error: msg },
+          details: { operation: "generate_milestone_id", error: msg } as any,
         };
       }
     },
