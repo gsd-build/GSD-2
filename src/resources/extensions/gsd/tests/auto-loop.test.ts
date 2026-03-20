@@ -37,9 +37,6 @@ function makeMockSession(opts?: {
   const session = {
     active: true,
     verbose: false,
-    sessionSwitchInFlight: false,
-    pendingResolve: null,
-    pendingAgentEndQueue: [],
     cmdCtx: {
       newSession: () => {
         opts?.onNewSessionStart?.(session);
@@ -96,7 +93,6 @@ test("resolveAgentEnd resolves a pending runUnit promise", async () => {
   const ctx = makeMockCtx();
   const pi = makeMockPi();
   const s = makeMockSession();
-  _setActiveSession(s);
   const event = makeEvent();
 
   // Start runUnit — it will create the promise and send a message,
@@ -122,25 +118,21 @@ test("resolveAgentEnd resolves a pending runUnit promise", async () => {
   assert.deepEqual(result.event, event);
 });
 
-test("resolveAgentEnd queues event when no promise is pending", () => {
+test("resolveAgentEnd drops event when no promise is pending", () => {
   _resetPendingResolve();
-  const s = makeMockSession();
-  _setActiveSession(s);
 
-  // Should not throw — queues the event for the next runUnit
+  // Should not throw — event is dropped (logged as warning)
   assert.doesNotThrow(() => {
     resolveAgentEnd(makeEvent());
   });
-  assert.equal(s.pendingAgentEndQueue.length, 1, "event should be queued");
 });
 
-test("double resolveAgentEnd only resolves once (second is queued)", async () => {
+test("double resolveAgentEnd only resolves once (second is dropped)", async () => {
   _resetPendingResolve();
 
   const ctx = makeMockCtx();
   const pi = makeMockPi();
   const s = makeMockSession();
-  _setActiveSession(s);
   const event1 = makeEvent([{ id: 1 }]);
   const event2 = makeEvent([{ id: 2 }]);
 
@@ -151,15 +143,10 @@ test("double resolveAgentEnd only resolves once (second is queued)", async () =>
   // First resolve — should work
   resolveAgentEnd(event1);
 
-  // Second resolve — should be queued (no pending promise)
+  // Second resolve — should be dropped (no pending resolver)
   assert.doesNotThrow(() => {
     resolveAgentEnd(event2);
   });
-  assert.equal(
-    s.pendingAgentEndQueue.length,
-    1,
-    "second event should be queued",
-  );
 
   const result = await resultPromise;
   assert.equal(result.status, "completed");
@@ -211,29 +198,25 @@ test("runUnit returns cancelled when s.active is false before sendMessage", asyn
   assert.equal(pi.calls.length, 0);
 });
 
-test("runUnit only arms pendingResolve after newSession completes", async () => {
+test("runUnit only arms resolve after newSession completes", async () => {
   _resetPendingResolve();
 
   let sawSwitchFlag = false;
-  let sawPendingResolve: unknown = "unset";
 
   const ctx = makeMockCtx();
   const pi = makeMockPi();
   const s = makeMockSession({
     newSessionDelayMs: 20,
-    onNewSessionStart: (session) => {
-      sawSwitchFlag = session.sessionSwitchInFlight;
-      sawPendingResolve = session.pendingResolve;
+    onNewSessionStart: () => {
+      sawSwitchFlag = isSessionSwitchInFlight();
     },
   });
-  _setActiveSession(s);
 
   const resultPromise = runUnit(ctx, pi, s, "task", "T01", "prompt", undefined);
 
   await new Promise((r) => setTimeout(r, 30));
 
   assert.equal(sawSwitchFlag, true, "session switch guard should be active during newSession");
-  assert.equal(sawPendingResolve, null, "pendingResolve should not be armed before newSession completes");
   assert.equal(isSessionSwitchInFlight(), false, "session switch guard should clear after newSession settles");
 
   resolveAgentEnd(makeEvent());
@@ -275,24 +258,23 @@ test("auto-loop.ts contains a while keyword", () => {
   );
 });
 
-test("auto-loop.ts one-shot pattern: pendingResolve is nulled before calling resolver", () => {
+test("auto-loop.ts one-shot pattern: _currentResolve is nulled before calling resolver", () => {
   const src = readFileSync(
     resolve(import.meta.dirname, "..", "auto-loop.ts"),
     "utf-8",
   );
   // The one-shot pattern requires: save ref, null the variable, then call
-  // Look for the pattern: s.pendingResolve = null appearing before r(
   const resolveBlock = src.slice(
     src.indexOf("export function resolveAgentEnd"),
     src.indexOf("export function resolveAgentEnd") + 600,
   );
-  const nullIdx = resolveBlock.indexOf("pendingResolve = null");
+  const nullIdx = resolveBlock.indexOf("_currentResolve = null");
   const callIdx = resolveBlock.indexOf("r({");
-  assert.ok(nullIdx > 0, "should null pendingResolve in resolveAgentEnd");
+  assert.ok(nullIdx > 0, "should null _currentResolve in resolveAgentEnd");
   assert.ok(callIdx > 0, "should call resolver in resolveAgentEnd");
   assert.ok(
     nullIdx < callIdx,
-    "pendingResolve should be nulled before calling the resolver (one-shot)",
+    "_currentResolve should be nulled before calling the resolver (one-shot)",
   );
 });
 
@@ -462,8 +444,6 @@ function makeLoopSession(overrides?: Partial<Record<string, unknown>>) {
     pendingQuickTasks: [],
     sidecarQueue: [],
     autoModeStartModel: null,
-    pendingResolve: null,
-    pendingAgentEndQueue: [],
     unitDispatchCount: new Map<string, number>(),
     unitLifetimeDispatches: new Map<string, number>(),
     unitRecoveryCount: new Map<string, number>(),
