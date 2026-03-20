@@ -172,13 +172,20 @@ export async function postUnitPreVerification(pctx: PostUnitContext, opts?: PreV
         ctx.ui.notify(`Post-hook: applied ${report.fixesApplied.length} fix(es).`, "info");
       }
 
-      // Proactive health tracking
-      const summary = summarizeDoctorIssues(report.issues);
+      // Proactive health tracking — filter to current milestone to avoid
+      // cross-milestone stale errors inflating the escalation counter
+      const currentMilestoneId = s.currentUnit.id.split("/")[0];
+      const milestoneIssues = currentMilestoneId
+        ? report.issues.filter(i =>
+            i.unitId === currentMilestoneId ||
+            i.unitId.startsWith(`${currentMilestoneId}/`))
+        : report.issues;
+      const summary = summarizeDoctorIssues(milestoneIssues);
       recordHealthSnapshot(summary.errors, summary.warnings, report.fixesApplied.length);
 
       // Check if we should escalate to LLM-assisted heal
       if (summary.errors > 0) {
-        const unresolvedErrors = report.issues
+        const unresolvedErrors = milestoneIssues
           .filter(i => i.severity === "error" && !i.fixable)
           .map(i => ({ code: i.code, message: i.message, unitId: i.unitId }));
         const escalation = checkHealEscalation(summary.errors, unresolvedErrors);

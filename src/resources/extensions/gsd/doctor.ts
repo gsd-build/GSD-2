@@ -297,7 +297,7 @@ async function markSliceUndoneInRoadmap(basePath: string, milestoneId: string, s
 
 function matchesScope(unitId: string, scope?: string): boolean {
   if (!scope) return true;
-  return unitId === scope || unitId.startsWith(`${scope}/`) || unitId.startsWith(`${scope}`);
+  return unitId === scope || unitId.startsWith(`${scope}/`);
 }
 
 function auditRequirements(content: string | null): DoctorIssue[] {
