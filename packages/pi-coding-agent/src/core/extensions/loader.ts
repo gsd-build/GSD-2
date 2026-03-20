@@ -495,7 +495,13 @@ function resolveExtensionEntries(dir: string): string[] | null {
 	const packageJsonPath = path.join(dir, "package.json");
 	if (fs.existsSync(packageJsonPath)) {
 		const manifest = readPiManifest(packageJsonPath);
-		if (manifest?.extensions?.length) {
+		if (manifest) {
+			// When a pi manifest exists, it is authoritative — don't fall through
+			// to index.ts/index.js auto-detection. This allows library directories
+			// (like cmux) to opt out by declaring "pi": {} with no extensions.
+			if (!manifest.extensions?.length) {
+				return null;
+			}
 			const entries: string[] = [];
 			for (const extPath of manifest.extensions) {
 				const resolvedExtPath = path.resolve(dir, extPath);
@@ -503,9 +509,7 @@ function resolveExtensionEntries(dir: string): string[] | null {
 					entries.push(resolvedExtPath);
 				}
 			}
-			if (entries.length > 0) {
-				return entries;
-			}
+			return entries.length > 0 ? entries : null;
 		}
 	}
 

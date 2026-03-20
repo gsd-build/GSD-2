@@ -1,5 +1,8 @@
-import test from "node:test";
+import test, { describe } from "node:test";
 import assert from "node:assert/strict";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   buildCmuxProgress,
   buildCmuxStatusLabel,
@@ -95,4 +98,25 @@ test("buildCmuxStatusLabel and progress prefer deepest active unit", () => {
 
   assert.equal(buildCmuxStatusLabel(state), "M001 S02/T03 · executing");
   assert.deepEqual(buildCmuxProgress(state), { value: 0.4, label: "2/5 tasks" });
+});
+
+describe("cmux extension discovery opt-out", () => {
+  test("cmux directory has package.json with pi manifest to prevent auto-discovery as extension", () => {
+    const cmuxDir = path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      "../../cmux",
+    );
+    const pkgPath = path.join(cmuxDir, "package.json");
+    assert.ok(fs.existsSync(pkgPath), `${pkgPath} must exist`);
+
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+    assert.ok(
+      pkg.pi !== undefined && typeof pkg.pi === "object",
+      'package.json must have a "pi" field to opt out of extension auto-discovery',
+    );
+    assert.ok(
+      !pkg.pi.extensions?.length,
+      "pi.extensions must be empty or absent — cmux is a library, not an extension",
+    );
+  });
 });

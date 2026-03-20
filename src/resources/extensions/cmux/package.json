@@ -1,0 +1,7 @@
+{
+  "name": "@gsd/cmux",
+  "private": true,
+  "type": "module",
+  "description": "cmux integration library — used by other extensions, not an extension itself",
+  "pi": {}
+}
