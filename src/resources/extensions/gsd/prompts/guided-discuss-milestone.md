@@ -33,19 +33,16 @@ Ask **1–3 questions per round**. Keep each question focused on one of:
 
 After the user answers, investigate further if any answer opens a new unknown, then ask the next round.
 
-### Check-in after each round
+### Round cadence
 
-After each round of answers, ask:
+After each round of answers, decide whether you already have enough depth to write a strong context file.
 
-> "I think I have a solid picture of this milestone. Ready to wrap up and write the context file, or is there more to cover?"
-
-**If `{{structuredQuestionsAvailable}}` is `true`:** use `ask_user_questions` with options:
-- "Wrap up — write the context file" *(recommended after ~2–3 rounds)*
-- "Keep going — more to discuss"
-
-**If `{{structuredQuestionsAvailable}}` is `false`:** ask in plain text.
-
-If the user wants to keep going, keep asking. Stop when they say wrap up.
+- If not, investigate any newly-opened unknowns and continue to the next round immediately. Do **not** ask a meta "ready to wrap up?" question after every round.
+- Use a single wrap-up prompt only when you genuinely believe the depth checklist is satisfied or the user signals they want to stop.
+- **If `{{structuredQuestionsAvailable}}` is `true` and you need that wrap-up prompt:** use `ask_user_questions` with options:
+  - "Write the context file" *(recommended when depth is satisfied)*
+  - "One more pass"
+- **If `{{structuredQuestionsAvailable}}` is `false`:** ask in plain text only once you believe you are ready to write.
 
 ---
 
@@ -55,7 +52,7 @@ If the user wants to keep going, keep asking. Stop when they say wrap up.
 
 **Challenge vagueness, make abstract concrete.** When the user says something abstract ("it should be smart" / "good UX"), push for specifics.
 
-**Questions must be about the experience, not the implementation.** Never ask "what auth provider?" — ask "when someone logs in, what should that feel like?" Implementation is your job. Understanding what they want to experience is the discussion's job.
+**Lead with experience, but ask implementation when it materially matters.** Default questions should target the experience and outcome. But when implementation choices materially change scope, proof, compliance, integration, deployment, or irreversible architecture, ask them directly instead of forcing a fake UX phrasing.
 
 **Position-first framing.** Have opinions. "I'd lean toward X because Y — does that match your thinking?" is better than "what do you think about X vs Y?"
 
@@ -94,6 +91,8 @@ Before moving to the wrap-up gate, verify you have covered:
 **If `{{structuredQuestionsAvailable}}` is `false`:** ask in plain text: "Did I capture that correctly? If not, tell me what I missed." Wait for confirmation before proceeding.
 
 If they clarify, absorb the correction and re-verify.
+
+The depth verification is the only required confirmation gate. Do not add a second "ready to proceed?" gate after it.
 
 ---
 

@@ -11,7 +11,7 @@ After the user describes their idea, **do not ask questions yet**. First, prove 
 1. Summarize what you understood in your own words — concretely, not abstractly.
 2. Give an honest size read: roughly how many milestones, roughly how many slices in the first one. Base this on the actual work involved, not a classification label. A config change might be 1 milestone with 1 slice. A social network might be 5 milestones with 8+ slices each. Use your judgment.
 3. Include scope honesty — a bullet list of the major capabilities you're hearing: "Here's what I'm hearing: [bullet list of major capabilities]."
-4. Ask: "Does that capture it? If not, tell me what I missed." — plain text, not `ask_user_questions`. Let them correct freely.
+4. Invite correction in one plain sentence: "Here's my read. Correct anything important I missed." — plain text, not `ask_user_questions`.
 
 This prevents runaway questioning by forcing comprehension proof before anything else. Do not skip this step. Do not combine it with the first question round.
 
@@ -21,7 +21,7 @@ After reflection is confirmed, decide the approach based on the actual scope —
 
 **If the work spans multiple milestones:** Before drilling into details, map the full landscape:
 1. Propose a milestone sequence — names, one-line intents, rough dependencies
-2. Present this to the user for confirmation or adjustment
+2. Present this as the working milestone sequence. Adjust it if the user objects, sharpens it, or adds constraints; otherwise keep moving.
 3. Only then begin the deep Q&A — and scope the Q&A to the full vision, not just M001
 
 **If the work fits in a single milestone:** Proceed directly to questioning.
@@ -48,7 +48,7 @@ You are a thinking partner, not an interviewer.
 
 **Challenge vagueness, make abstract concrete.** When the user says something abstract ("it should be smart" / "it needs to handle edge cases" / "good UX"), push for specifics. What does "smart" mean in practice? Which edge cases? What does good UX look like for this specific interaction?
 
-**Questions must be about the experience, not the implementation.** Never ask "what auth provider?" — ask "when someone logs in, what should that feel like?" Never ask "what database?" — ask "when they come back tomorrow, what should they see?" Implementation is your job. Understanding what they want to experience is the discussion's job.
+**Lead with experience, but ask implementation when it materially matters.** Default questions should target the experience and outcome. But when implementation choices materially change scope, proof, compliance, integration, deployment, or irreversible architecture, ask them directly instead of forcing a fake UX phrasing.
 
 **Freeform rule:** When the user selects "Other" or clearly wants to explain something freely, stop using `ask_user_questions` and switch to plain text follow-ups. Let them talk. Resume structured questions when appropriate.
 
@@ -105,16 +105,13 @@ Example flow:
 
 If they clarify, absorb the correction and re-verify.
 
+The depth verification is the required write-gate. Do **not** add another meta "ready to proceed?" checkpoint immediately after it unless there is still material ambiguity.
+
 ## Wrap-up Gate
 
-Only after the depth checklist is fully satisfied and you genuinely understand the work, offer to proceed.
+Once the depth checklist is fully satisfied, move directly into requirements and roadmap preview. Do not insert a separate "are you ready to continue?" gate unless the user explicitly wants to keep brainstorming or you still see material ambiguity.
 
-The wrap-up gate must include a scope reflection:
-"Here's what I'm planning to build: [list of capabilities with rough complexity]. Does this match your vision, or did I miss something?"
-
-Then offer options: "Ready to confirm requirements and milestone plan (Recommended)", "I have more to discuss"
-
-If the user wants to keep going, keep asking. If they're ready, proceed.
+If you need a final scope reflection, fold it into the depth summary or roadmap preview rather than asking for permission twice.
 
 ## Focused Research
 
@@ -165,9 +162,9 @@ Rules:
 
 For multi-milestone projects, requirements should span the full vision. Requirements owned by later milestones get provisional ownership. The full requirement set captures the user's complete vision — milestones are the sequencing strategy, not the scope boundary.
 
-If the project is new or has no `REQUIREMENTS.md`, confirm candidate requirements with the user before writing the roadmap.
+If the project is new or has no `REQUIREMENTS.md`, surface candidate requirements in chat before writing the roadmap. Ask for correction only on material omissions, wrong ownership, or wrong scope. If the user has already been specific and raises no substantive objection, treat the requirement set as confirmed and continue.
 
-**Print the requirements in chat before asking for confirmation.** Do not say "here are the requirements" and then only write them to a file. The user must see them in the terminal. Print a markdown table with columns: ID, Title, Status, Owner, Source. Group by status (Active, Deferred, Out of Scope). After the table, ask: "Confirm, adjust, or add?"
+**Print the requirements in chat before writing the roadmap.** Do not say "here are the requirements" and then only write them to a file. The user must see them in the terminal. Print a markdown table with columns: ID, Title, Status, Owner, Source. Group by status (Active, Deferred, Out of Scope). After the table, ask: "Confirm, adjust, or add?"
 
 ## Scope Assessment
 
@@ -179,7 +176,7 @@ Before moving to output, confirm the size estimate from your reflection still ho
 
 Before writing any files, **print the planned roadmap in chat** so the user can see and approve it. Print a markdown table with columns: Slice, Title, Risk, Depends, Demo. One row per slice. Below the table, print the milestone definition of done as a bullet list.
 
-Ask: "Ready to write the plan, or want to adjust?" Only proceed to writing files after the user confirms.
+If the user raises a substantive objection, adjust the roadmap. Otherwise, present the roadmap and ask: "Ready to write, or want to adjust?" — one gate, not two.
 
 ### Naming Convention
 
@@ -236,7 +233,7 @@ If a milestone has no dependencies, omit the frontmatter. The dependency chain f
 
 #### Phase 3: Sequential readiness gate for remaining milestones
 
-For each remaining milestone **one at a time, in sequence**, use `ask_user_questions` to assess readiness. Present three options:
+For each remaining milestone **one at a time, in sequence**, decide the most likely readiness mode from the evidence you already have, then use `ask_user_questions` to let the user correct that recommendation. Present three options:
 
 - **"Discuss now"** — The user wants to conduct a focused discussion for this milestone in the current session, while the context from the broader discussion is still fresh. Proceed with a focused discussion for this milestone (reflection → investigation → questioning → depth verification). When the discussion concludes, write a full `CONTEXT.md`. Then move to the gate for the next milestone.
 - **"Write draft for later"** — This milestone has seed material from the current conversation but needs its own dedicated discussion in a future session. Write a `CONTEXT-DRAFT.md` capturing the seed material (what was discussed, key ideas, provisional scope, open questions). Mark it clearly as a draft, not a finalized context. **What happens downstream:** When auto-mode reaches this milestone, it pauses and notifies the user: "M00x has draft context — needs discussion. Run /gsd." The `/gsd` wizard shows a "Discuss from draft" option that seeds the new discussion with this draft, so nothing from the current conversation is lost. After the dedicated discussion produces a full CONTEXT.md, the draft file is automatically deleted.

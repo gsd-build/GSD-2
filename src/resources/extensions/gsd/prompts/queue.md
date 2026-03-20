@@ -36,15 +36,11 @@ Don't go deep — just enough that your next question reflects what's actually t
 - How the new work relates to existing milestones — overlap, dependencies, prerequisites
 - If `.gsd/REQUIREMENTS.md` exists: which unmet Active or Deferred requirements this queued work advances
 
-**Then use ask_user_questions** to dig into gray areas — architecture choices, scope boundaries, tech preferences, what's in vs out. 1-3 questions per round.
+**Then use ask_user_questions** to dig into gray areas — scope boundaries, proof expectations, integration choices, tech preferences when they materially matter, and what's in vs out. 1-3 questions per round.
 
 If a `GSD Skill Preferences` block is present in system context, use it to decide which skills to load and follow during discuss/planning work, but do not let it override the required discuss flow or artifact requirements.
 
-**Self-regulate:** After about 10-15 questions total (3-5 rounds), or when you feel you have a solid understanding, include a question like:
-"I think I have a good picture. Ready to queue this, or are there more things to discuss?"
-with options: "Ready to queue (Recommended)", "I have more to discuss"
-
-If the user wants to keep going, keep asking. If they're ready, proceed.
+**Self-regulate:** Do **not** ask a meta "ready to queue?" question after every round. Keep going until you have enough depth to write the context well, then use a single wrap-up prompt if needed. If the user clearly keeps adding detail instead of objecting, treat that as permission to continue.
 
 ## Existing Milestone Awareness
 
@@ -88,7 +84,7 @@ For EACH milestone you are about to write context for, investigate the codebase 
 1. **Read the actual code** — for every file or module you reference in "Existing Codebase / Prior Art", read enough to confirm your assumptions about what exists, what it does, and what it doesn't do. Do not guess from memory or training data.
 2. **Check for stale assumptions** — the codebase may have changed since the user's spec was written. Verify: do the APIs you reference still exist? Have modules been refactored? Has upstream merged features that change the landscape?
 3. **Identify phantom capabilities** — for every capability you list as "existing," confirm it actually works as described. Look for: functions that exist but are never called, fields that are set but never read, features that are piped but never connected.
-4. **Note what you found** — include verified findings in the context file's "Existing Codebase / Prior Art" section with "verified against v{version}" annotations.
+4. **Note what you found** — include verified findings in the context file's "Existing Codebase / Prior Art" section with annotations like "verified against current codebase state" or an actual concrete version/commit only if you truly have one.
 
 ### Step 2: Per-Milestone Depth Verification
 
@@ -103,7 +99,7 @@ This triggers the per-milestone write-gate. The question should present:
 - Key technical assumptions you verified (or couldn't verify)
 - Any risks or unknowns the investigation surfaced
 
-The user confirms or corrects before you write. One depth verification per milestone — not one for all milestones combined.
+The user confirms or corrects before you write. One depth verification per milestone — not one for all milestones combined. This is the required write-gate; do not add extra "ready to proceed?" prompts around it once you have enough signal.
 
 **If you skip this step, the system will block the CONTEXT.md write and return an error telling you to complete verification first.**
 
