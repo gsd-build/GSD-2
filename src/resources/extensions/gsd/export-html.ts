@@ -296,9 +296,58 @@ function buildHealthSection(data: VisualizerData): string {
       </tbody>
     </table>` : '';
 
+  // Progress score section
+  let progressHtml = '';
+  if (h.progressScore) {
+    const ps = h.progressScore;
+    const scoreColor = ps.level === 'green' ? '#22c55e' : ps.level === 'yellow' ? '#eab308' : '#ef4444';
+    const signalRows = ps.signals.map(s => {
+      const icon = s.kind === 'positive' ? '✓' : s.kind === 'negative' ? '✗' : '·';
+      const color = s.kind === 'positive' ? '#22c55e' : s.kind === 'negative' ? '#ef4444' : '#888';
+      return `<div style="margin-left:1em;color:${color}">${icon} ${esc(s.label)}</div>`;
+    }).join('');
+    progressHtml = `
+      <h3>Progress Score</h3>
+      <div style="font-size:1.1em;font-weight:bold;color:${scoreColor}">● ${esc(ps.summary)}</div>
+      ${signalRows}`;
+  }
+
+  // Doctor history section
+  let historyHtml = '';
+  if (h.doctorHistory.length > 0) {
+    const historyRows = h.doctorHistory.slice(0, 20).map(entry => {
+      const statusIcon = entry.ok ? '✓' : '✗';
+      const statusColor = entry.ok ? '#22c55e' : '#ef4444';
+      const ts = entry.ts.replace('T', ' ').slice(0, 19);
+      const issueDetails = (entry.issues ?? []).slice(0, 3).map(i => {
+        const iColor = i.severity === 'error' ? '#ef4444' : '#eab308';
+        return `<div style="margin-left:2em;color:${iColor};font-size:0.85em">${i.severity === 'error' ? '✗' : '⚠'} ${esc(i.message)}</div>`;
+      }).join('');
+      const fixDetails = (entry.fixDescriptions ?? []).slice(0, 2).map(f =>
+        `<div style="margin-left:2em;color:#22c55e;font-size:0.85em">↳ ${esc(f)}</div>`
+      ).join('');
+      return `<tr style="color:${statusColor}">
+        <td class="mono">${statusIcon}</td>
+        <td class="mono">${esc(ts)}</td>
+        <td>${entry.errors}E ${entry.warnings}W ${entry.fixes}F</td>
+        <td class="mono">${entry.codes.map(esc).join(', ')}</td>
+      </tr>
+      ${issueDetails || fixDetails ? `<tr><td colspan="4">${issueDetails}${fixDetails}</td></tr>` : ''}`;
+    }).join('');
+
+    historyHtml = `
+      <h3>Doctor Run History</h3>
+      <table class="tbl">
+        <thead><tr><th></th><th>Time</th><th>Summary</th><th>Codes</th></tr></thead>
+        <tbody>${historyRows}</tbody>
+      </table>`;
+  }
+
   return section('health', 'Health', `
     <table class="tbl tbl-kv"><tbody>${rows.join('')}</tbody></table>
     ${tierRows}
+    ${progressHtml}
+    ${historyHtml}
   `);
 }
 

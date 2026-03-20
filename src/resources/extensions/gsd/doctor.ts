@@ -387,11 +387,26 @@ function detectCircularDependencies(slices: RoadmapSliceEntry[]): string[][] {
 }
 
 // ── Helper: doctor run history ──────────────────────────────────────────────
-interface DoctorHistoryEntry { ts: string; ok: boolean; errors: number; warnings: number; fixes: number; codes: string[] }
+export interface DoctorHistoryEntry {
+  ts: string;
+  ok: boolean;
+  errors: number;
+  warnings: number;
+  fixes: number;
+  codes: string[];
+  /** Issue messages with severity and scope (added in Phase 2). */
+  issues?: Array<{ severity: string; code: string; message: string; unitId: string }>;
+  /** Fix descriptions applied during this run (added in Phase 2). */
+  fixDescriptions?: string[];
+}
 
 async function appendDoctorHistory(basePath: string, report: DoctorReport): Promise<void> {
   try {
     const historyPath = join(gsdRoot(basePath), "doctor-history.jsonl");
+    const issueDetails = report.issues
+      .filter(i => i.severity === "error" || i.severity === "warning")
+      .slice(0, 10) // cap to keep JSONL lines bounded
+      .map(i => ({ severity: i.severity, code: i.code, message: i.message, unitId: i.unitId }));
     const entry = JSON.stringify({
       ts: new Date().toISOString(),
       ok: report.ok,
@@ -399,6 +414,8 @@ async function appendDoctorHistory(basePath: string, report: DoctorReport): Prom
       warnings: report.issues.filter(i => i.severity === "warning").length,
       fixes: report.fixesApplied.length,
       codes: [...new Set(report.issues.map(i => i.code))],
+      issues: issueDetails.length > 0 ? issueDetails : undefined,
+      fixDescriptions: report.fixesApplied.length > 0 ? report.fixesApplied : undefined,
     } satisfies DoctorHistoryEntry);
     const existing = existsSync(historyPath) ? readFileSync(historyPath, "utf-8") : "";
     await saveFile(historyPath, existing + entry + "\n");
