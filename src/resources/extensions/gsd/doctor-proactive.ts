@@ -26,12 +26,24 @@ import { nativeBranchExists, nativeIsRepo } from "./native-git-bridge.js";
 
 // ── Health Score Tracking ──────────────────────────────────────────────────
 
+/** Compact issue detail stored per snapshot for real-time visibility. */
+export interface HealthIssueDetail {
+  code: string;
+  message: string;
+  severity: "error" | "warning" | "info";
+  unitId: string;
+}
+
 export interface HealthSnapshot {
   timestamp: number;
   errors: number;
   warnings: number;
   fixesApplied: number;
   unitIndex: number; // which unit dispatch triggered this snapshot
+  /** Top issues from the doctor run that produced this snapshot. */
+  issues: HealthIssueDetail[];
+  /** Fixes that were auto-applied during this snapshot's doctor run. */
+  fixes: string[];
 }
 
 /** In-memory health history for the current auto-mode session. */
@@ -45,9 +57,15 @@ let healthUnitIndex = 0;
 
 /**
  * Record a health snapshot after a doctor run.
- * Called from the post-unit hook in auto.ts.
+ * Called from the post-unit hook in auto-post-unit.ts.
  */
-export function recordHealthSnapshot(errors: number, warnings: number, fixesApplied: number): void {
+export function recordHealthSnapshot(
+  errors: number,
+  warnings: number,
+  fixesApplied: number,
+  issues?: HealthIssueDetail[],
+  fixes?: string[],
+): void {
   healthUnitIndex++;
   healthHistory.push({
     timestamp: Date.now(),
@@ -55,6 +73,8 @@ export function recordHealthSnapshot(errors: number, warnings: number, fixesAppl
     warnings,
     fixesApplied,
     unitIndex: healthUnitIndex,
+    issues: issues ?? [],
+    fixes: fixes ?? [],
   });
 
   // Keep only the last 50 snapshots to bound memory
@@ -102,6 +122,27 @@ export function getConsecutiveErrorUnits(): number {
  */
 export function getHealthHistory(): readonly HealthSnapshot[] {
   return healthHistory;
+}
+
+/**
+ * Get the latest health issues from the most recent snapshot.
+ * Returns issues from the last snapshot that had any, for real-time visibility.
+ */
+export function getLatestHealthIssues(): HealthIssueDetail[] {
+  for (let i = healthHistory.length - 1; i >= 0; i--) {
+    if (healthHistory[i]!.issues.length > 0) return healthHistory[i]!.issues;
+  }
+  return [];
+}
+
+/**
+ * Get the latest fixes applied from the most recent snapshot.
+ */
+export function getLatestHealthFixes(): string[] {
+  for (let i = healthHistory.length - 1; i >= 0; i--) {
+    if (healthHistory[i]!.fixes.length > 0) return healthHistory[i]!.fixes;
+  }
+  return [];
 }
 
 /**

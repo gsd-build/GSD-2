@@ -181,7 +181,11 @@ export async function postUnitPreVerification(pctx: PostUnitContext, opts?: PreV
             i.unitId.startsWith(`${currentMilestoneId}/`))
         : report.issues;
       const summary = summarizeDoctorIssues(milestoneIssues);
-      recordHealthSnapshot(summary.errors, summary.warnings, report.fixesApplied.length);
+      // Pass issue details for real-time visibility in the progress widget
+      const issueDetails = milestoneIssues
+        .filter(i => i.severity === "error" || i.severity === "warning")
+        .map(i => ({ code: i.code, message: i.message, severity: i.severity, unitId: i.unitId }));
+      recordHealthSnapshot(summary.errors, summary.warnings, report.fixesApplied.length, issueDetails, report.fixesApplied);
 
       // Check if we should escalate to LLM-assisted heal
       if (summary.errors > 0) {
