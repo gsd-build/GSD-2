@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
-# recover-gsd-1364.sh — Recovery script for issue #1364
+# recover-gsd-1364.sh — Recovery script for issue #1364 (Linux / macOS)
 #
-# CRITICAL DATA-LOSS BUG: GSD versions 2.33.x–2.35.x unconditionally added
+# For Windows use the PowerShell equivalent:
+#   powershell -ExecutionPolicy Bypass -File scripts\recover-gsd-1364.ps1 [-DryRun]
+#
+# CRITICAL DATA-LOSS BUG: GSD versions 2.30.0–2.35.x unconditionally added
 # ".gsd" to .gitignore via ensureGitignore(), causing git to report all
 # tracked .gsd/ files as deleted. Fixed in v2.36.0 (PR #1367).
+# Three residual vectors remain on v2.36.0–v2.38.0 — see PR #1635 for details.
 #
 # This script:
 #   1. Detects whether the repo was affected
