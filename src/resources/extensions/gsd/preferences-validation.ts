@@ -10,7 +10,7 @@ import type { GitPreferences } from "./git-service.js";
 import type { PostUnitHookConfig, PreDispatchHookConfig, TokenProfile, PhaseSkipPreferences } from "./types.js";
 import type { DynamicRoutingConfig } from "./model-router.js";
 import { VALID_BRANCH_NAME } from "./git-service.js";
-import { normalizeStringArray } from "../shared/mod.js";
+import { normalizeStringArray } from "../shared/format-utils.js";
 
 import {
   KNOWN_PREFERENCE_KEYS,

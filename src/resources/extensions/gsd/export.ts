@@ -11,7 +11,7 @@ import {
 } from "./metrics.js";
 import type { UnitMetrics } from "./metrics.js";
 import { gsdRoot } from "./paths.js";
-import { formatDuration, fileLink } from "../shared/mod.js";
+import { formatDuration, fileLink } from "../shared/format-utils.js";
 import { getErrorMessage } from "./error-utils.js";
 
 /**

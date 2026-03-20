@@ -3,7 +3,7 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { deriveState } from './state.js';
 import { parseRoadmap, parsePlan, parseSummary, loadFile } from './files.js';
-import { findMilestoneIds } from './guided-flow.js';
+import { findMilestoneIds } from './milestone-ids.js';
 import { resolveMilestoneFile, resolveSliceFile, resolveGsdRootFile } from './paths.js';
 import {
   getLedger,

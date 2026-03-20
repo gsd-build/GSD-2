@@ -7,7 +7,7 @@ import { promises as fs } from 'node:fs';
 import { resolve } from 'node:path';
 import { atomicWriteAsync } from './atomic-write.js';
 import { resolveMilestoneFile, relMilestoneFile, resolveGsdRootFile } from './paths.js';
-import { milestoneIdSort, findMilestoneIds } from './guided-flow.js';
+import { milestoneIdSort, findMilestoneIds } from './milestone-ids.js';
 
 import type {
   Roadmap, BoundaryMapEntry,
@@ -20,7 +20,7 @@ import type {
   ManifestStatus,
 } from './types.js';
 
-import { checkExistingEnvKeys } from '../get-secrets-from-user.js';
+import { checkExistingEnvKeys } from '../env-utils.js';
 import { parseRoadmapSlices } from './roadmap-slices.js';
 import { nativeParseRoadmap, nativeExtractSection, nativeParsePlanFile, nativeParseSummaryFile, NATIVE_UNAVAILABLE } from './native-parser-bridge.js';
 import { debugTime, debugCount } from './debug-logger.js';
