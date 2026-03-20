@@ -5,12 +5,14 @@ import { GripVertical } from "lucide-react"
 import { MainSessionTerminal } from "@/components/gsd/main-session-terminal"
 import { ShellTerminal } from "@/components/gsd/shell-terminal"
 import { useTerminalFontSize } from "@/lib/use-terminal-font-size"
+import { useGSDWorkspaceState } from "@/lib/gsd-workspace-store"
 
 export function DualTerminal() {
   const [splitPosition, setSplitPosition] = useState(50)
   const containerRef = useRef<HTMLDivElement>(null)
   const isDragging = useRef(false)
   const [terminalFontSize] = useTerminalFontSize()
+  const projectCwd = useGSDWorkspaceState().boot?.project.cwd
 
   const handleMouseDown = () => {
     isDragging.current = true
@@ -53,7 +55,7 @@ export function DualTerminal() {
       <div ref={containerRef} className="flex flex-1 overflow-hidden">
         {/* Left terminal - Main bridge native TUI */}
         <div style={{ width: `${splitPosition}%` }} className="flex h-full min-w-0 flex-col overflow-hidden bg-terminal">
-          <MainSessionTerminal className="min-h-0 flex-1" fontSize={terminalFontSize} />
+          <MainSessionTerminal className="min-h-0 flex-1" fontSize={terminalFontSize} projectCwd={projectCwd} />
         </div>
 
         {/* Divider */}
@@ -72,6 +74,7 @@ export function DualTerminal() {
             sessionPrefix="gsd-interactive"
             fontSize={terminalFontSize}
             hideInitialGsdHeader
+            projectCwd={projectCwd}
           />
         </div>
       </div>

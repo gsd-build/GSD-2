@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { useTheme } from "next-themes"
 import { Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { buildProjectAbsoluteUrl, buildProjectPath } from "@/lib/project-url"
 import "@xterm/xterm/css/xterm.css"
 
 type XTerminal = import("@xterm/xterm").Terminal
@@ -12,6 +13,7 @@ type XFitAddon = import("@xterm/addon-fit").FitAddon
 interface MainSessionTerminalProps {
   className?: string
   fontSize?: number
+  projectCwd?: string
 }
 
 const MIN_INITIAL_ATTACH_WIDTH = 180
@@ -146,7 +148,7 @@ async function settleTerminalLayout(
   return getAttachableTerminalSize(container, terminal)
 }
 
-export function MainSessionTerminal({ className, fontSize }: MainSessionTerminalProps) {
+export function MainSessionTerminal({ className, fontSize, projectCwd }: MainSessionTerminalProps) {
   const { resolvedTheme } = useTheme()
   const isDark = resolvedTheme !== "light"
   const containerRef = useRef<HTMLDivElement>(null)
@@ -165,7 +167,7 @@ export function MainSessionTerminal({ className, fontSize }: MainSessionTerminal
     while (inputQueueRef.current.length > 0) {
       const data = inputQueueRef.current.shift()!
       try {
-        await fetch("/api/bridge-terminal/input", {
+        await fetch(buildProjectPath("/api/bridge-terminal/input", projectCwd), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ data }),
@@ -176,7 +178,7 @@ export function MainSessionTerminal({ className, fontSize }: MainSessionTerminal
       }
     }
     flushingRef.current = false
-  }, [])
+  }, [projectCwd])
 
   const sendInput = useCallback((data: string) => {
     inputQueueRef.current.push(data)
@@ -186,13 +188,13 @@ export function MainSessionTerminal({ className, fontSize }: MainSessionTerminal
   const sendResize = useCallback((cols: number, rows: number) => {
     if (resizeTimeoutRef.current) clearTimeout(resizeTimeoutRef.current)
     resizeTimeoutRef.current = setTimeout(() => {
-      void fetch("/api/bridge-terminal/resize", {
+      void fetch(buildProjectPath("/api/bridge-terminal/resize", projectCwd), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cols, rows }),
       })
     }, 75)
-  }, [])
+  }, [projectCwd])
 
   useEffect(() => {
     if (termRef.current) {
@@ -246,7 +248,11 @@ export function MainSessionTerminal({ className, fontSize }: MainSessionTerminal
       })
 
       const connectStream = (preferredSize: { cols: number; rows: number } | null) => {
-        const streamUrl = new URL("/api/bridge-terminal/stream", window.location.origin)
+        const streamUrl = buildProjectAbsoluteUrl(
+          "/api/bridge-terminal/stream",
+          window.location.origin,
+          projectCwd,
+        )
         if (preferredSize) {
           streamUrl.searchParams.set("cols", String(preferredSize.cols))
           streamUrl.searchParams.set("rows", String(preferredSize.rows))
@@ -310,7 +316,7 @@ export function MainSessionTerminal({ className, fontSize }: MainSessionTerminal
       termRef.current = null
       fitAddonRef.current = null
     }
-  }, [fontSize, isDark, sendInput, sendResize])
+  }, [fontSize, isDark, projectCwd, sendInput, sendResize])
 
   const handleClick = useCallback(() => {
     termRef.current?.focus()

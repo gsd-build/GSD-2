@@ -361,7 +361,7 @@ function WorkspaceChrome() {
                 className="overflow-hidden"
                 style={{ height: isTerminalExpanded ? terminalHeight : 0, transition: terminalDragActive ? "none" : "height 200ms" }}
               >
-                <ShellTerminal className="h-full" />
+                <ShellTerminal className="h-full" projectCwd={workspace.boot?.project.cwd} />
               </div>
             </div>
           )}

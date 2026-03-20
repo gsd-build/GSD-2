@@ -16,6 +16,7 @@ import {
   buildPromptCommand,
   type CompletedToolExecution,
 } from "@/lib/gsd-workspace-store"
+import { buildProjectAbsoluteUrl, buildProjectPath } from "@/lib/project-url"
 import { deriveWorkflowAction } from "@/lib/workflow-actions"
 import { NewMilestoneDialog } from "@/components/gsd/new-milestone-dialog"
 import { useTerminalFontSize } from "@/lib/use-terminal-font-size"
@@ -397,6 +398,7 @@ function ActionPanel({
   config: ActionPanelConfig
   onClose: () => void
 }) {
+  const projectCwd = useGSDWorkspaceState().boot?.project.cwd
 
   // Unmount backstop: DELETE the session if ActionPanel unmounts without closePanel being called
   // (e.g., navigating away from Chat Mode while panel is open)
@@ -404,7 +406,9 @@ function ActionPanel({
     const { sessionId } = config
     return () => {
       console.log("[ActionPanel] unmount cleanup sessionId=%s", sessionId)
-      fetch(`/api/terminal/sessions?id=${encodeURIComponent(sessionId)}`, {
+      const deleteUrl = buildProjectAbsoluteUrl("/api/terminal/sessions", window.location.origin, projectCwd)
+      deleteUrl.searchParams.set("id", sessionId)
+      fetch(deleteUrl.toString(), {
         method: "DELETE",
       }).catch((err: unknown) => {
         console.error("[ActionPanel] unmount session DELETE failed sessionId=%s", sessionId, err)
@@ -412,7 +416,7 @@ function ActionPanel({
     }
   // config.sessionId is stable for a given panel instance; config object itself changes on replace
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config.sessionId])
+  }, [config.sessionId, projectCwd])
 
   // Subscribe to completion signal via ChatPane callback
   const handleCompletionSignal = useCallback(() => {
@@ -1898,6 +1902,7 @@ function StructuredTerminalActionPane({
   activityLabel: string
   onCompletionSignal?: () => void
 }) {
+  const projectCwd = useGSDWorkspaceState().boot?.project.cwd
   const terminalRef = useRef<HeadlessTerminal | null>(null)
   const hostElementRef = useRef<HTMLDivElement | null>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
@@ -1920,7 +1925,7 @@ function StructuredTerminalActionPane({
     while (inputQueueRef.current.length > 0) {
       const data = inputQueueRef.current.shift()!
       try {
-        await fetch("/api/terminal/input", {
+        await fetch(buildProjectPath("/api/terminal/input", projectCwd), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: sessionId, data }),
@@ -1931,7 +1936,7 @@ function StructuredTerminalActionPane({
       }
     }
     flushingRef.current = false
-  }, [sessionId])
+  }, [projectCwd, sessionId])
 
   const sendInput = useCallback((data: string) => {
     inputQueueRef.current.push(data)
@@ -2043,7 +2048,11 @@ function StructuredTerminalActionPane({
       hostElementRef.current = host
       terminal.open(host)
 
-      const streamUrl = new URL("/api/terminal/stream", window.location.origin)
+      const streamUrl = buildProjectAbsoluteUrl(
+        "/api/terminal/stream",
+        window.location.origin,
+        projectCwd,
+      )
       streamUrl.searchParams.set("id", sessionId)
       if (command) streamUrl.searchParams.set("command", command)
       for (const arg of commandArgs ?? []) {
@@ -2094,7 +2103,7 @@ function StructuredTerminalActionPane({
       hostElementRef.current?.remove()
       hostElementRef.current = null
     }
-  }, [sessionId, command, commandArgs, commandArgsKey, updateParsedScreen])
+  }, [sessionId, command, commandArgs, commandArgsKey, projectCwd, updateParsedScreen])
 
   useEffect(() => {
     if (commandInProgress || messages.length > 0) return

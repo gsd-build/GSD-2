@@ -6,6 +6,7 @@ import { Plus, X, TerminalSquare, Loader2, ImagePlus } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { validateImageFile } from "@/lib/image-utils"
 import { filterInitialGsdHeader } from "@/lib/initial-gsd-header-filter"
+import { buildProjectAbsoluteUrl, buildProjectPath } from "@/lib/project-url"
 import "@xterm/xterm/css/xterm.css"
 
 type XTerminal = import("@xterm/xterm").Terminal
@@ -32,6 +33,7 @@ interface ShellTerminalProps {
   hideSidebar?: boolean
   fontSize?: number
   hideInitialGsdHeader?: boolean
+  projectCwd?: string
 }
 
 // ─── xterm themes ─────────────────────────────────────────────────────────────
@@ -182,6 +184,7 @@ interface TerminalInstanceProps {
   isDark: boolean
   fontSize?: number
   hideInitialGsdHeader?: boolean
+  projectCwd?: string
   onConnectionChange: (connected: boolean) => void
 }
 
@@ -193,6 +196,7 @@ function TerminalInstance({
   isDark,
   fontSize,
   hideInitialGsdHeader = false,
+  projectCwd,
   onConnectionChange,
 }: TerminalInstanceProps) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -212,14 +216,14 @@ function TerminalInstance({
     (cols: number, rows: number) => {
       if (resizeTimeoutRef.current) clearTimeout(resizeTimeoutRef.current)
       resizeTimeoutRef.current = setTimeout(() => {
-        void fetch("/api/terminal/resize", {
+        void fetch(buildProjectPath("/api/terminal/resize", projectCwd), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: sessionId, cols, rows }),
         })
       }, 100)
     },
-    [sessionId],
+    [projectCwd, sessionId],
   )
 
   const flushInputQueue = useCallback(async () => {
@@ -228,7 +232,7 @@ function TerminalInstance({
     while (inputQueueRef.current.length > 0) {
       const data = inputQueueRef.current.shift()!
       try {
-        await fetch("/api/terminal/input", {
+        await fetch(buildProjectPath("/api/terminal/input", projectCwd), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: sessionId, data }),
@@ -239,7 +243,7 @@ function TerminalInstance({
       }
     }
     flushingRef.current = false
-  }, [sessionId])
+  }, [projectCwd, sessionId])
 
   const sendInput = useCallback(
     (data: string) => {
@@ -329,7 +333,11 @@ function TerminalInstance({
       terminal.onBinary((data) => sendInput(data))
 
       // SSE stream
-      const streamUrl = new URL(`/api/terminal/stream`, window.location.origin)
+      const streamUrl = buildProjectAbsoluteUrl(
+        "/api/terminal/stream",
+        window.location.origin,
+        projectCwd,
+      )
       streamUrl.searchParams.set("id", sessionId)
       if (command) streamUrl.searchParams.set("command", command)
       for (const arg of commandArgs ?? []) {
@@ -403,7 +411,7 @@ function TerminalInstance({
       termRef.current = null
       fitAddonRef.current = null
     }
-  }, [sessionId, command, commandArgs, commandArgsKey, fontSize, hideInitialGsdHeader, isDark, sendInput, sendResize])
+  }, [sessionId, command, commandArgs, commandArgsKey, fontSize, hideInitialGsdHeader, isDark, projectCwd, sendInput, sendResize])
 
   // Focus on click
   const handleClick = useCallback(() => {
@@ -459,7 +467,7 @@ const ALLOWED_IMAGE_TYPES = new Set([
  * - console.warn on client-side validation failure
  * - console.error on upload or inject failure
  */
-async function uploadAndInjectImage(file: File, sessionId: string): Promise<void> {
+async function uploadAndInjectImage(file: File, sessionId: string, projectCwd?: string): Promise<void> {
   // Client-side validation
   const validation = validateImageFile(file)
   if (!validation.valid) {
@@ -473,7 +481,7 @@ async function uploadAndInjectImage(file: File, sessionId: string): Promise<void
 
   let uploadPath: string
   try {
-    const res = await fetch("/api/terminal/upload", {
+    const res = await fetch(buildProjectPath("/api/terminal/upload", projectCwd), {
       method: "POST",
       body: formData,
     })
@@ -490,7 +498,7 @@ async function uploadAndInjectImage(file: File, sessionId: string): Promise<void
 
   // Inject @filepath into PTY stdin
   try {
-    const res = await fetch("/api/terminal/input", {
+    const res = await fetch(buildProjectPath("/api/terminal/input", projectCwd), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: sessionId, data: `@${uploadPath} ` }),
@@ -514,6 +522,7 @@ export function ShellTerminal({
   hideSidebar = false,
   fontSize,
   hideInitialGsdHeader = false,
+  projectCwd,
 }: ShellTerminalProps) {
   const { resolvedTheme } = useTheme()
   const isDark = resolvedTheme !== "light"
@@ -564,10 +573,10 @@ export function ShellTerminal({
       const files = Array.from(e.dataTransfer.files)
       const imageFile = files.find((f) => ALLOWED_IMAGE_TYPES.has(f.type))
       if (imageFile) {
-        void uploadAndInjectImage(imageFile, activeTabId)
+        void uploadAndInjectImage(imageFile, activeTabId, projectCwd)
       }
     },
-    [activeTabId],
+    [activeTabId, projectCwd],
   )
 
   // ── Paste handler for images ──────────────────────────────────────────────
@@ -584,7 +593,7 @@ export function ShellTerminal({
         e.preventDefault()
         e.stopPropagation()
         if (activeTabId) {
-          void uploadAndInjectImage(imageFile, activeTabId)
+          void uploadAndInjectImage(imageFile, activeTabId, projectCwd)
         }
       }
       // If no image files, don't prevent default — let xterm.js handle text paste
@@ -592,11 +601,11 @@ export function ShellTerminal({
 
     el.addEventListener("paste", handlePaste, true) // capture phase to fire before xterm
     return () => el.removeEventListener("paste", handlePaste, true)
-  }, [activeTabId])
+  }, [activeTabId, projectCwd])
 
   const createTab = useCallback(async () => {
     try {
-      const res = await fetch("/api/terminal/sessions", {
+      const res = await fetch(buildProjectPath("/api/terminal/sessions", projectCwd), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(command ? { command } : {}),
@@ -612,13 +621,15 @@ export function ShellTerminal({
     } catch {
       /* network error */
     }
-  }, [command, commandLabel])
+  }, [command, commandLabel, projectCwd])
 
   const closeTab = useCallback(
     (id: string) => {
       // Don't close the last tab
       if (tabs.length <= 1) return
-      void fetch(`/api/terminal/sessions?id=${encodeURIComponent(id)}`, {
+      const deleteUrl = buildProjectAbsoluteUrl("/api/terminal/sessions", window.location.origin, projectCwd)
+      deleteUrl.searchParams.set("id", id)
+      void fetch(deleteUrl.toString(), {
         method: "DELETE",
       })
       const remaining = tabs.filter((t) => t.id !== id)
@@ -627,7 +638,7 @@ export function ShellTerminal({
         setActiveTabId(remaining[remaining.length - 1]?.id ?? defaultId)
       }
     },
-    [tabs, activeTabId, defaultId],
+    [tabs, activeTabId, defaultId, projectCwd],
   )
 
   const updateConnection = useCallback(
@@ -660,6 +671,7 @@ export function ShellTerminal({
             isDark={isDark}
             fontSize={fontSize}
             hideInitialGsdHeader={hideInitialGsdHeader}
+            projectCwd={projectCwd}
             onConnectionChange={(c) => updateConnection(tab.id, c)}
           />
         ))}
