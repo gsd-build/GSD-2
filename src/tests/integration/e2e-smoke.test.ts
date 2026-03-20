@@ -518,7 +518,10 @@ test("gsd headless query returns JSON from the built CLI", async () => {
   try {
     mkdirSync(join(tmpDir, ".gsd", "milestones"), { recursive: true });
 
-    const result = await runGsd(["headless", "query"], 10_000, {}, tmpDir);
+    // Cold packaged startup in a fresh temp repo is now regularly >10s because
+    // the built CLI loads bundled TS resources through jiti before answering.
+    // This command is still healthy; it just needs a realistic timeout budget.
+    const result = await runGsd(["headless", "query"], 30_000, {}, tmpDir);
 
     assert.ok(!result.timedOut, "process should not hang");
     assert.strictEqual(result.code, 0, `expected exit 0, got ${result.code}`);
@@ -537,7 +540,9 @@ test("gsd worktree list loads the built worktree CLI without module errors", asy
   const tmpDir = createTempGitRepo("gsd-e2e-worktree-");
 
   try {
-    const result = await runGsd(["worktree", "list"], 10_000, {}, tmpDir);
+    // Cold packaged startup in a fresh temp repo is now regularly >10s because
+    // the built CLI loads bundled TS resources through jiti before listing.
+    const result = await runGsd(["worktree", "list"], 30_000, {}, tmpDir);
 
     assert.ok(!result.timedOut, "process should not hang");
     assert.strictEqual(result.code, 0, `expected exit 0, got ${result.code}`);

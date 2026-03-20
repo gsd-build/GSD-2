@@ -54,18 +54,25 @@ function parseCommandRequest(request: PlaywrightRequest): Record<string, unknown
   }
 }
 
-async function ensureBridgeTerminalVisible(page: Page): Promise<void> {
-  const field = page.locator('[data-testid="terminal-command-input"]')
-  const isVisible = await field.isVisible().catch(() => false)
-  if (isVisible) return
+async function resolveSlashInput(page: Page) {
+  const composer = page.locator('textarea[aria-label="Send message"]')
+  if (await composer.isVisible().catch(() => false)) {
+    return composer
+  }
 
-  await page.locator('button[title="Power Mode"]').click()
-  await page.waitForSelector('[data-testid="terminal-command-input"]', { state: "visible", timeout: 20_000 })
+  const chatNavButton = page.locator("button[title='Chat']")
+  const chatNavVisible = await chatNavButton.isVisible().catch(() => false)
+  if (chatNavVisible) {
+    await chatNavButton.click()
+    await composer.waitFor({ state: "visible", timeout: 20_000 })
+    return composer
+  }
+
+  assert.fail('expected the browser-native chat composer to be reachable for slash-command tests')
 }
 
 async function submitTerminalInput(page: Page, input: string): Promise<void> {
-  await ensureBridgeTerminalVisible(page)
-  const field = page.locator('[data-testid="terminal-command-input"]')
+  const field = await resolveSlashInput(page)
   await field.fill(input)
   await field.press("Enter")
 }
@@ -80,22 +87,6 @@ async function closeCommandSurfaceIfOpen(page: Page, label = "command surface"):
     const title = await page.locator('[data-testid="command-surface-title"]').textContent().catch(() => null)
     assert.fail(`${label}: expected the command surface to close, but it stayed visible with title ${title ?? "unknown"}`)
   })
-}
-
-async function waitForTerminalLine(page: Page, needle: string, label: string, timeoutMs = 20_000): Promise<void> {
-  try {
-    await page.waitForFunction(
-      ({ needle }) =>
-        Array.from(document.querySelectorAll('[data-testid="terminal-line"]')).some((node) =>
-          node.textContent?.includes(needle),
-        ),
-      { needle },
-      { timeout: timeoutMs },
-    )
-  } catch {
-    const lines = await page.locator('[data-testid="terminal-line"]').allTextContents().catch(() => [])
-    assert.fail(`${label}: expected a terminal line containing ${JSON.stringify(needle)}, got ${JSON.stringify(lines.slice(-12))}`)
-  }
 }
 
 async function waitForCommandResponse(
@@ -132,6 +123,30 @@ async function waitForCommandResponse(
   } catch {
     assert.fail(`${options.label}: never observed /api/session/command type=${options.type} status=${expectedStatus}`)
   }
+}
+
+async function collectCommandRequests(
+  page: Page,
+  action: () => Promise<void>,
+  settleMs = 750,
+): Promise<Array<Record<string, unknown> | null>> {
+  const requests: Array<Record<string, unknown> | null> = []
+
+  const onRequest = (request: PlaywrightRequest) => {
+    if (new URL(request.url()).pathname !== "/api/session/command") return
+    if (request.method() !== "POST") return
+    requests.push(parseCommandRequest(request))
+  }
+
+  page.on("request", onRequest)
+  try {
+    await action()
+    await page.waitForTimeout(settleMs)
+  } finally {
+    page.off("request", onRequest)
+  }
+
+  return requests
 }
 
 async function waitForGetResponse(
@@ -492,10 +507,16 @@ test("real packaged browser shell keeps daily-use slash and click controls live"
       type: "new_session",
       action: () => submitTerminalInput(page, "/new"),
     })
-    await waitForTerminalLine(page, "Started a new session", "/new built-in execution")
+    await page.waitForFunction(() => document.body.textContent?.includes("/new"), null, { timeout: 20_000 })
 
-    await submitTerminalInput(page, "/share")
-    await waitForTerminalLine(page, "blocked instead of falling through to the model", "/share reject notice")
+    const shareRequests = await collectCommandRequests(page, () => submitTerminalInput(page, "/share"))
+    assert.equal(shareRequests.length, 0, "/share reject notice: expected browser-native reject to avoid /api/session/command")
+    await page.waitForFunction(() => document.body.textContent?.includes("/share"), null, { timeout: 20_000 })
+    assert.equal(
+      await page.locator('[data-testid="command-surface"]').isVisible().catch(() => false),
+      false,
+      "/share reject notice: expected no command surface for a rejected built-in",
+    )
 
     await waitForCommandResponse(page, {
       label: "/model browser surface",

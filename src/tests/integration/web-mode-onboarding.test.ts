@@ -525,18 +525,27 @@ test("fresh gsd --web browser onboarding stays locked on failed validation and u
 
     await page.waitForSelector('[data-testid="onboarding-gate"]', { state: "detached", timeout: 30_000 })
 
-    await page.locator('button[title="Power Mode"]').click()
-    await page.waitForSelector('[data-testid="terminal-command-input"]', { state: "visible", timeout: 20_000 })
-    assert.equal(await page.locator('[data-testid="terminal-command-input"]').isDisabled(), false)
+    await page.locator("button[title='Chat']").click()
+    const composer = page.locator('textarea[aria-label="Send message"]')
+    await composer.waitFor({ state: "visible", timeout: 20_000 })
+    assert.equal(await composer.isDisabled(), false)
 
-    await page.locator('[data-testid="terminal-command-input"]').fill("/new")
-    await page.locator('[data-testid="terminal-command-input"]').press("Enter")
+    const newSessionResponse = page.waitForResponse((response) => {
+      if (new URL(response.url()).pathname !== "/api/session/command") return false
+      if (response.request().method() !== "POST" || response.status() !== 200) return false
+      const body = response.request().postData()
+      if (!body) return false
+      try {
+        return JSON.parse(body).type === "new_session"
+      } catch {
+        return false
+      }
+    }, { timeout: 20_000 })
 
-    await page.waitForFunction(() => {
-      return Array.from(document.querySelectorAll('[data-testid="terminal-line"]')).some((node) =>
-        node.textContent?.includes("Started a new session"),
-      )
-    })
+    await composer.fill("/new")
+    await composer.press("Enter")
+    await newSessionResponse
+    await page.waitForFunction(() => document.body.textContent?.includes("/new"), null, { timeout: 30_000 })
 
     const bootAfter = await fetch(`${launch.url}/api/boot`, {
       method: "GET",
