@@ -24,19 +24,19 @@ One command. Walk away. Come back to a built project with clean git history.
 
 ---
 
-## What's New in v2.33
+## What's New in v2.37
 
-- **Dispatch loop hardening** — defensive guards, reentrancy protection, and 125 new regression tests covering the full `deriveState → resolveDispatch` chain without an LLM
-- **Live regression test harness** — post-build pipeline validation that catches dispatch, parser, and lock lifecycle regressions before promotion
-- **Unified error handling** — `getErrorMessage()` helper replaces 65 inline duplicates across the codebase
-- **Centralized unit ID parsing** — `parseUnitId()` eliminates fragile regex patterns scattered across dispatch, recovery, and metrics code
-- **Milestone merge consolidation** — `tryMergeMilestone()` replaces 4 duplicate merge paths in the auto-mode loop
-- **Lock alignment fix** — retry lock path now matches primary lock settings, preventing `ECOMPROMISED` errors on resume
-- **NixOS/nix-darwin support** — symlinks in `.gsd/` are skipped during `makeTreeWritable` to prevent `EPERM` failures
-- **Windows EPERM fallback** — `.gsd/` migration uses copy+delete when NTFS blocks direct rename
-- **Worktree identity fix** — stable project hash resolved from main repo root, not worktree path
-- **Quick-task branch cleanup** — `/gsd quick` branches auto-merge back to the original branch after completion
-- **Crash recovery guidance** — actionable next-step messages based on what was interrupted and what state survived
+- **cmux integration** — sidebar status, progress bars, and notifications for [cmux](https://cmux.com) terminal multiplexer users
+- **Redesigned dashboard** — two-column layout with redesigned widget
+- **Search budget enforcement** — session-level search budget prevents unbounded native web search
+- **AGENTS.md support** — deprecated `agent-instructions.md` in favor of standard `AGENTS.md` / `CLAUDE.md`
+- **AI-powered triage** — automated issue and PR triage via Claude Haiku
+- **Auto-generated OpenRouter registry** — model registry built from OpenRouter API for always-current model support
+- **Extension manifest system** — user-managed enable/disable for bundled extensions
+- **Pipeline simplification (ADR-003)** — merged research into planning, mechanical completion
+- **Workflow templates** — right-sized workflows for every task type
+- **Health widget** — always-on environment health checks with progress scoring
+- **`/gsd changelog`** — LLM-summarized release notes for any version
 
 See the full [Changelog](./CHANGELOG.md) for details.
 
@@ -49,7 +49,7 @@ Full documentation is available in the [`docs/`](./docs/) directory:
 - **[Getting Started](./docs/getting-started.md)** — install, first run, basic usage
 - **[Auto Mode](./docs/auto-mode.md)** — autonomous execution deep-dive
 - **[Configuration](./docs/configuration.md)** — all preferences, models, git, and hooks
-- **[Token Optimization](./docs/token-optimization.md)** — profiles, context compression, complexity routing (v2.17)
+- **[Token Optimization](./docs/token-optimization.md)** — profiles, context compression, complexity routing
 - **[Cost Management](./docs/cost-management.md)** — budgets, tracking, projections
 - **[Git Strategy](./docs/git-strategy.md)** — worktree isolation, branching, merge behavior
 - **[Parallel Orchestration](./docs/parallel-orchestration.md)** — run multiple milestones simultaneously
@@ -463,9 +463,9 @@ Place an `AGENTS.md` file in any directory to provide persistent behavioral guid
 
 Start GSD with `gsd --debug` to enable structured JSONL diagnostic logging. Debug logs capture dispatch decisions, state transitions, and timing data for troubleshooting auto-mode issues.
 
-### Token Optimization (v2.17)
+### Token Optimization
 
-GSD 2.17 introduced a coordinated token optimization system that reduces usage by 40-60% on cost-sensitive workloads. Set a single preference to coordinate model selection, phase skipping, and context compression:
+GSD includes a coordinated token optimization system that reduces usage by 40-60% on cost-sensitive workloads. Set a single preference to coordinate model selection, phase skipping, and context compression:
 
 ```yaml
 token_profile: budget      # or balanced (default), quality
@@ -485,7 +485,7 @@ See the full [Token Optimization Guide](./docs/token-optimization.md) for detail
 
 ### Bundled Tools
 
-GSD ships with 18 extensions, all loaded automatically:
+GSD ships with 19 extensions, all loaded automatically:
 
 | Extension              | What it provides                                                                                                       |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------- |
@@ -495,12 +495,13 @@ GSD ships with 18 extensions, all loaded automatically:
 | **Google Search**      | Gemini-powered web search with AI-synthesized answers                                                                  |
 | **Context7**           | Up-to-date library/framework documentation                                                                             |
 | **Background Shell**   | Long-running process management with readiness detection                                                               |
+| **Async Jobs**         | Background bash commands with job tracking and cancellation                                                            |
 | **Subagent**           | Delegated tasks with isolated context windows                                                                          |
+| **GitHub**             | Full-suite GitHub issues and PR management via `/gh` command                                                           |
 | **Mac Tools**          | macOS native app automation via Accessibility APIs                                                                     |
 | **MCP Client**         | Native MCP server integration via @modelcontextprotocol/sdk                                                            |
 | **Voice**              | Real-time speech-to-text transcription (macOS, Linux — Ubuntu 22.04+)                                                  |
 | **Slash Commands**     | Custom command creation                                                                                                |
-| **LSP**                | Language Server Protocol integration — diagnostics, go-to-definition, references, hover, symbols, rename, code actions |
 | **Ask User Questions** | Structured user input with single/multi-select                                                                         |
 | **Secure Env Collect** | Masked secret collection without manual .env editing                                                                   |
 | **Remote Questions**   | Route decisions to Slack/Discord when human input is needed in headless/CI mode                                         |
@@ -591,7 +592,7 @@ gsd (CLI binary)
           ├─ resource-loader.ts  Syncs bundled extensions + agents to ~/.gsd/agent/
           └─ src/resources/
               ├─ extensions/gsd/    Core GSD extension (auto, state, commands, ...)
-              ├─ extensions/...     12 supporting extensions
+              ├─ extensions/...     18 supporting extensions
               ├─ agents/            scout, researcher, worker
               ├─ AGENTS.md          Agent routing instructions
               └─ GSD-WORKFLOW.md    Manual bootstrap protocol
