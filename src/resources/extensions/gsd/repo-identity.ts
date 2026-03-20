@@ -12,6 +12,8 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, s
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
+const gsdHome = process.env.GSD_HOME || join(homedir(), ".gsd");
+
 // ─── Repo Identity ──────────────────────────────────────────────────────────
 
 /**
@@ -113,7 +115,7 @@ export function repoIdentity(basePath: string): string {
  * otherwise `~/.gsd/projects/<hash>`.
  */
 export function externalGsdRoot(basePath: string): string {
-  const base = process.env.GSD_STATE_DIR || join(homedir(), ".gsd");
+  const base = process.env.GSD_STATE_DIR || gsdHome;
   return join(base, "projects", repoIdentity(basePath));
 }
 

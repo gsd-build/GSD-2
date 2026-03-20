@@ -10,13 +10,13 @@
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { homedir } from "node:os";
+import { appRoot } from "./app-paths.js";
 
 // Inlined from preferences.ts to avoid crossing the compiled/uncompiled
 // boundary — this file is compiled by tsc, but preferences.ts is loaded
 // via jiti at runtime. Importing it as .js fails because no .js exists
 // in dist/. See #592, #1110.
-const GLOBAL_PREFERENCES_PATH = join(homedir(), ".gsd", "preferences.md");
+const GLOBAL_PREFERENCES_PATH = join(appRoot, "preferences.md");
 
 export function saveRemoteQuestionsConfig(channel: "slack" | "discord" | "telegram", channelId: string): void {
   const prefsPath = GLOBAL_PREFERENCES_PATH;

@@ -13,6 +13,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+
+const gsdHome = process.env.GSD_HOME || join(homedir(), ".gsd");
 import { gsdRoot } from "./paths.js";
 import { parse as parseYaml } from "yaml";
 import type { PostUnitHookConfig, PreDispatchHookConfig, TokenProfile } from "./types.js";
@@ -82,14 +84,14 @@ export {
 
 // ─── Path Constants & Getters ───────────────────────────────────────────────
 
-const GLOBAL_PREFERENCES_PATH = join(homedir(), ".gsd", "preferences.md");
+const GLOBAL_PREFERENCES_PATH = join(gsdHome, "preferences.md");
 const LEGACY_GLOBAL_PREFERENCES_PATH = join(homedir(), ".pi", "agent", "gsd-preferences.md");
 function projectPreferencesPath(): string {
   return join(gsdRoot(process.cwd()), "preferences.md");
 }
 // Bootstrap in gitignore.ts historically created PREFERENCES.md (uppercase) by mistake.
 // Check uppercase as a fallback so those files aren't silently ignored.
-const GLOBAL_PREFERENCES_PATH_UPPERCASE = join(homedir(), ".gsd", "PREFERENCES.md");
+const GLOBAL_PREFERENCES_PATH_UPPERCASE = join(gsdHome, "PREFERENCES.md");
 function projectPreferencesPathUppercase(): string {
   return join(gsdRoot(process.cwd()), "PREFERENCES.md");
 }

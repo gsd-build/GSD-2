@@ -7,7 +7,7 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { appRoot } from "./app-paths.js";
 import { dirname, join } from "node:path";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -66,7 +66,7 @@ function isManifest(data: unknown): data is ExtensionManifest {
 // ─── Registry Path ──────────────────────────────────────────────────────────
 
 export function getRegistryPath(): string {
-  return join(homedir(), ".gsd", "extensions", "registry.json");
+  return join(appRoot, "extensions", "registry.json");
 }
 
 // ─── Registry I/O ───────────────────────────────────────────────────────────

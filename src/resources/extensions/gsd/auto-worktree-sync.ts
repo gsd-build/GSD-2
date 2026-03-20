@@ -22,6 +22,8 @@ import { join, sep as pathSep } from "node:path";
 import { homedir } from "node:os";
 import { safeCopy, safeCopyRecursive } from "./safe-fs.js";
 
+const gsdHome = process.env.GSD_HOME || join(homedir(), ".gsd");
+
 // ─── Project Root → Worktree Sync ─────────────────────────────────────────
 
 /**
@@ -111,7 +113,7 @@ export function syncStateToProjectRoot(
  */
 export function readResourceVersion(): string | null {
   const agentDir =
-    process.env.GSD_CODING_AGENT_DIR || join(homedir(), ".gsd", "agent");
+    process.env.GSD_CODING_AGENT_DIR || join(gsdHome, "agent");
   const manifestPath = join(agentDir, "managed-resources.json");
   try {
     const manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));

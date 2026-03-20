@@ -10,6 +10,8 @@ import { existsSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { gsdRoot } from "./paths.js";
+
+const gsdHome = process.env.GSD_HOME || join(homedir(), ".gsd");
 import { enableDebug } from "./debug-logger.js";
 import { deriveState } from "./state.js";
 import { GSDDashboardOverlay } from "./dashboard-overlay.js";
@@ -482,7 +484,7 @@ export function registerGSDCommand(pi: ExtensionAPI): void {
         if (parts.length === 3 && ["enable", "disable", "info"].includes(parts[1])) {
           const idPrefix = parts[2] ?? "";
           try {
-            const extDir = join(homedir(), ".gsd", "agent", "extensions");
+            const extDir = join(gsdHome, "agent", "extensions");
             const ids: { id: string; name: string }[] = [];
             for (const entry of readdirSync(extDir, { withFileTypes: true })) {
               if (!entry.isDirectory()) continue;

@@ -60,6 +60,8 @@ import { join } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { shortcutDesc } from "../shared/mod.js";
+
+const gsdHome = process.env.GSD_HOME || join(homedir(), ".gsd");
 import { Text } from "@gsd/pi-tui";
 import { pauseAutoForProviderError, classifyProviderError } from "./provider-error-pause.js";
 import { toPosixPath } from "../shared/mod.js";
@@ -73,7 +75,7 @@ import { markCmuxPromptShown, shouldPromptToEnableCmux } from "../cmux/index.js"
 
 function warnDeprecatedAgentInstructions(): void {
   const paths = [
-    join(homedir(), ".gsd", "agent-instructions.md"),
+    join(gsdHome, "agent-instructions.md"),
     join(process.cwd(), ".gsd", "agent-instructions.md"),
   ];
   for (const p of paths) {

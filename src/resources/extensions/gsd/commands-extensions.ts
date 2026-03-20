@@ -11,6 +11,8 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFile
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 
+const gsdHome = process.env.GSD_HOME || join(homedir(), ".gsd");
+
 // ─── Types (mirrored from extension-registry.ts) ────────────────────────────
 
 interface ExtensionManifest {
@@ -48,11 +50,11 @@ interface ExtensionRegistry {
 // ─── Registry I/O ───────────────────────────────────────────────────────────
 
 function getRegistryPath(): string {
-  return join(homedir(), ".gsd", "extensions", "registry.json");
+  return join(gsdHome, "extensions", "registry.json");
 }
 
 function getAgentExtensionsDir(): string {
-  return join(homedir(), ".gsd", "agent", "extensions");
+  return join(gsdHome, "agent", "extensions");
 }
 
 function loadRegistry(): ExtensionRegistry {
