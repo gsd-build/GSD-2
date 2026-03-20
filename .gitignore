@@ -4,6 +4,7 @@ package-lock.json
 .claude/
 RELEASE-GUIDE.md
 *.tgz
+*.tsbuildinfo
 .DS_Store
 Thumbs.db
 *.swp
