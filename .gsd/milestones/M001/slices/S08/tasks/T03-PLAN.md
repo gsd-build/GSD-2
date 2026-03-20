@@ -96,3 +96,10 @@ Individual slices (S05, S06, S07) proved isolated features. This task writes int
 ## Expected Output
 
 - `src/resources/extensions/gsd/tests/e2e-workflow-integration.test.ts` — new test file (~350-450 lines) with ≥8 tests covering: full lifecycle, context injection, verification outcomes, iteration expansion, param substitution, DisplayMetadata accuracy, dashboard unit type rendering, verify-retry/pause flows
+
+## Observability Impact
+
+- **New signals:** 12 integration tests covering the full engine lifecycle. Test failures surface via `node --test` exit code and structured output with assertion details.
+- **Inspection:** Run `node --import ./src/resources/extensions/gsd/tests/resolve-ts.mjs --test src/resources/extensions/gsd/tests/e2e-workflow-integration.test.ts` to verify all lifecycle paths. Each test exercises a specific feature (context injection, verification, iteration, params, DisplayMetadata) in isolation.
+- **Failure visibility:** Node's built-in test runner reports failed assertions with expected vs actual values and stack traces. Test names describe the exact feature being validated.
+- **Known limitation documented:** `substituteParams()` throws when `{{item}}` iterate placeholders coexist with real params, silently breaking all engine processing in `resolveDispatch()`. Tests are structured to avoid this cross-contamination. A future fix should make `substituteParams` skip `{{item}}` placeholders.
