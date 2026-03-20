@@ -16,7 +16,7 @@ import {
   loadDefinition,
   validateDefinition,
 } from "../definition-loader.ts";
-import type { WorkflowDefinition, StepDefinition, VerifyPolicy } from "../definition-loader.ts";
+import type { WorkflowDefinition, StepDefinition, VerifyPolicy, IterateConfig } from "../definition-loader.ts";
 import { graphFromDefinition } from "../graph.ts";
 import type { WorkflowGraph } from "../graph.ts";
 
@@ -258,6 +258,83 @@ steps:
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// ─── validateDefinition: iterate field validation ────────────────────────
+
+test("validateDefinition: valid iterate config accepted", () => {
+  const result = validateDefinition({
+    version: 1,
+    name: "test",
+    steps: [{
+      id: "a",
+      name: "A",
+      prompt: "do A",
+      iterate: { source: "outline.md", pattern: "^## (.+)" },
+    }],
+  });
+  assert.equal(result.valid, true);
+  assert.equal(result.errors.length, 0);
+});
+
+test("validateDefinition: iterate missing source → error", () => {
+  const result = validateDefinition({
+    version: 1,
+    name: "test",
+    steps: [{
+      id: "a",
+      name: "A",
+      prompt: "do A",
+      iterate: { pattern: "^## (.+)" },
+    }],
+  });
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some((e) => e.includes("source")));
+});
+
+test("validateDefinition: iterate source with .. → error", () => {
+  const result = validateDefinition({
+    version: 1,
+    name: "test",
+    steps: [{
+      id: "a",
+      name: "A",
+      prompt: "do A",
+      iterate: { source: "../escape.md", pattern: "(.+)" },
+    }],
+  });
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some((e) => e.includes("path traversal") || e.includes("..")));
+});
+
+test("validateDefinition: iterate invalid regex → error", () => {
+  const result = validateDefinition({
+    version: 1,
+    name: "test",
+    steps: [{
+      id: "a",
+      name: "A",
+      prompt: "do A",
+      iterate: { source: "f.md", pattern: "[invalid" },
+    }],
+  });
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some((e) => e.includes("regex")));
+});
+
+test("validateDefinition: iterate pattern without capture group → error", () => {
+  const result = validateDefinition({
+    version: 1,
+    name: "test",
+    steps: [{
+      id: "a",
+      name: "A",
+      prompt: "do A",
+      iterate: { source: "f.md", pattern: "^## .+" },
+    }],
+  });
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some((e) => e.includes("capture group")));
 });
 
 // ─── graphFromDefinition ─────────────────────────────────────────────────

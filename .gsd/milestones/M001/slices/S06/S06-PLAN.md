@@ -43,7 +43,7 @@
 
 ## Tasks
 
-- [ ] **T01: Type iterate schema and add validation to definition-loader** `est:20m`
+- [x] **T01: Type iterate schema and add validation to definition-loader** `est:20m`
   - Why: The `iterate` field is currently `unknown` on `StepDefinition`. It must be typed as `IterateConfig` with validation before T02 can consume it for expansion logic.
   - Files: `src/resources/extensions/gsd/definition-loader.ts`, `src/resources/extensions/gsd/tests/definition-loader.test.ts`
   - Do: Add `IterateConfig = { source: string; pattern: string }` interface. Change `iterate?: unknown` to `iterate?: IterateConfig`. Add validation in `validateDefinition()`: if iterate present, source must be string without `..`, pattern must be string that compiles as valid regex and contains at least one capture group `(...)`. Existing test fixture `{ source: "file.md", pattern: "^## (.+)" }` already conforms — verify it still passes. Add new tests: valid iterate config, missing source, invalid regex, no capture group, path traversal rejection.

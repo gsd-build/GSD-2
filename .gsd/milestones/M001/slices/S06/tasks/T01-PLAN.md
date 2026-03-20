@@ -70,3 +70,9 @@ The existing test fixture `{ source: "file.md", pattern: "^## (.+)" }` already c
 
 - `src/resources/extensions/gsd/definition-loader.ts` — `IterateConfig` exported, `StepDefinition.iterate` typed, validation added (~30 lines added)
 - `src/resources/extensions/gsd/tests/definition-loader.test.ts` — 5 new iterate-specific tests (~60 lines added)
+
+## Observability Impact
+
+- **Validation errors surfaced:** Malformed `iterate` configs now produce specific error messages (`iterate.source must be a non-empty string`, `iterate.pattern is not a valid regex`, `iterate.pattern must contain at least one capture group`, `iterate.source contains disallowed '..' path traversal`) instead of being silently accepted.
+- **Inspection:** A future agent can test iterate config validity by calling `validateDefinition()` with a parsed YAML object and inspecting the `errors[]` array for iterate-specific messages.
+- **Failure visibility:** Invalid iterate configs are caught at definition load time (before any engine dispatch), so bad configs fail fast with all errors collected in a single pass — no partial-state failures downstream.

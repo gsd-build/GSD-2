@@ -21,6 +21,13 @@ export type VerifyPolicy =
   | { policy: "prompt-verify"; prompt: string }
   | { policy: "human-review" };
 
+export interface IterateConfig {
+  /** Artifact path (relative to run dir) to read and match against. */
+  source: string;
+  /** Regex pattern string. Must contain at least one capture group. Applied with global flag. */
+  pattern: string;
+}
+
 export interface StepDefinition {
   /** Unique step identifier within the workflow. */
   id: string;
@@ -36,8 +43,8 @@ export interface StepDefinition {
   contextFrom?: string[];
   /** Verification policy for this step (S05 — typed + validated). */
   verify?: VerifyPolicy;
-  /** Iteration config for this step (S06 — accepted, not processed). */
-  iterate?: unknown;
+  /** Iteration config for this step (S06 — typed + validated). */
+  iterate?: IterateConfig;
 }
 
 export interface WorkflowDefinition {
@@ -142,6 +149,37 @@ export function validateDefinition(parsed: unknown): { valid: boolean; errors: s
         }
       }
 
+      // iterate: optional, but if present must conform to IterateConfig shape
+      if (step.iterate !== undefined) {
+        const it = step.iterate;
+        const sid = typeof step.id === "string" ? step.id : `index ${i}`;
+        if (it == null || typeof it !== "object" || Array.isArray(it)) {
+          errors.push(`Step "${sid}" iterate must be an object with "source" and "pattern" fields`);
+        } else {
+          const itObj = it as Record<string, unknown>;
+          if (typeof itObj.source !== "string" || (itObj.source as string).trim() === "") {
+            errors.push(`Step "${sid}" iterate.source must be a non-empty string`);
+          } else if ((itObj.source as string).includes("..")) {
+            errors.push(`Step "${sid}" iterate.source contains disallowed '..' path traversal`);
+          }
+          if (typeof itObj.pattern !== "string" || (itObj.pattern as string).trim() === "") {
+            errors.push(`Step "${sid}" iterate.pattern must be a non-empty string`);
+          } else {
+            const pat = itObj.pattern as string;
+            let regexValid = true;
+            try {
+              new RegExp(pat);
+            } catch {
+              regexValid = false;
+              errors.push(`Step "${sid}" iterate.pattern is not a valid regex: ${pat}`);
+            }
+            if (regexValid && !/\((?!\?)/.test(pat)) {
+              errors.push(`Step "${sid}" iterate.pattern must contain at least one capture group`);
+            }
+          }
+        }
+      }
+
       // verify: optional, but if present must conform to VerifyPolicy shape
       if (step.verify !== undefined) {
         const v = step.verify;
@@ -231,7 +269,9 @@ export function loadDefinition(defsDir: string, name: string): WorkflowDefinitio
       produces: Array.isArray(s.produces) ? (s.produces as string[]) : [],
       contextFrom: Array.isArray(s.context_from) ? (s.context_from as string[]) : undefined,
       verify: s.verify as VerifyPolicy | undefined,
-      iterate: s.iterate,
+      iterate: (s.iterate != null && typeof s.iterate === "object")
+        ? s.iterate as IterateConfig
+        : undefined,
     })),
   };
 }
