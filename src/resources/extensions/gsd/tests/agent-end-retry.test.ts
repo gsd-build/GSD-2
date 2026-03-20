@@ -1,9 +1,9 @@
 /**
- * agent-end-retry.test.ts — Regression checks for the post-#1419 agent_end model.
+ * agent-end-retry.test.ts — Regression checks for the agent_end model.
  *
- * The old recursive handleAgentEnd retry path is gone. The loop now keeps
- * pendingResolve + pendingAgentEndQueue on AutoSession, and handleAgentEnd is
- * only a thin compatibility wrapper around resolveAgentEnd().
+ * The per-unit one-shot resolve function lives at module level in auto-loop.ts
+ * (_currentResolve). handleAgentEnd is a thin compatibility wrapper around
+ * resolveAgentEnd().
  */
 
 import test from "node:test";
@@ -14,40 +14,43 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const AUTO_TS_PATH = join(__dirname, "..", "auto.ts");
+const AUTO_LOOP_TS_PATH = join(__dirname, "..", "auto-loop.ts");
 const SESSION_TS_PATH = join(__dirname, "..", "auto", "session.ts");
 
 function getAutoTsSource(): string {
   return readFileSync(AUTO_TS_PATH, "utf-8");
 }
 
+function getAutoLoopTsSource(): string {
+  return readFileSync(AUTO_LOOP_TS_PATH, "utf-8");
+}
+
 function getSessionTsSource(): string {
   return readFileSync(SESSION_TS_PATH, "utf-8");
 }
 
-test("AutoSession declares pending agent_end queue state", () => {
-  const source = getSessionTsSource();
+test("auto-loop.ts declares _currentResolve for per-unit one-shot promises", () => {
+  const source = getAutoLoopTsSource();
   assert.ok(
-    source.includes("pendingResolve"),
-    "AutoSession must declare pendingResolve for the in-flight unit promise",
+    source.includes("_currentResolve"),
+    "auto-loop.ts must declare _currentResolve for the per-unit resolve function",
   );
   assert.ok(
-    source.includes("pendingAgentEndQueue"),
-    "AutoSession must declare pendingAgentEndQueue for between-iteration agent_end events",
+    source.includes("_sessionSwitchInFlight"),
+    "auto-loop.ts must declare _sessionSwitchInFlight guard",
   );
 });
 
-test("AutoSession reset clears pending agent_end queue state", () => {
+test("AutoSession no longer holds promise state (moved to auto-loop.ts module scope)", () => {
   const source = getSessionTsSource();
-  const resetIdx = source.indexOf("reset(): void");
-  assert.ok(resetIdx > -1, "AutoSession must have a reset() method");
-  const resetBlock = source.slice(resetIdx, resetIdx + 4000);
+  // Properties should NOT exist as class fields
   assert.ok(
-    resetBlock.includes("this.pendingResolve = null"),
-    "reset() must clear pendingResolve",
+    !source.includes("pendingResolve:"),
+    "AutoSession must not declare pendingResolve (moved to auto-loop.ts)",
   );
   assert.ok(
-    resetBlock.includes("this.pendingAgentEndQueue = []"),
-    "reset() must clear pendingAgentEndQueue",
+    !source.includes("pendingAgentEndQueue:"),
+    "AutoSession must not declare pendingAgentEndQueue (removed — events are dropped)",
   );
 });
 

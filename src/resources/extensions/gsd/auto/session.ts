@@ -137,27 +137,8 @@ export class AutoSession {
   sigtermHandler: (() => void) | null = null;
 
   // ── Loop promise state ──────────────────────────────────────────────────
-  /**
-   * True only while runUnit is rotating into a fresh session. agent_end events
-   * emitted from the previous session's abort during this window must be
-   * ignored; they do not belong to the new unit.
-   */
-  sessionSwitchInFlight = false;
-
-  /**
-   * One-shot resolver for the current unit's agent_end promise.
-   * Non-null only while a unit is in-flight (between sendMessage and agent_end).
-   * Scoped to the session to prevent concurrent session corruption.
-   */
-  pendingResolve: ((result: { status: "completed" | "cancelled" | "error"; event?: { messages: unknown[] } }) => void) | null = null;
-
-  /**
-   * Queue for agent_end events that arrive when no pendingResolve exists.
-   * This happens when error-recovery sendMessage retries produce agent_end
-   * events between loop iterations. The next runUnit drains this queue
-   * instead of waiting for a new event.
-   */
-  pendingAgentEndQueue: Array<{ messages: unknown[]; unitId?: string }> = [];
+  // Per-unit resolve function and session-switch guard live at module level
+  // in auto-loop.ts (_currentResolve, _sessionSwitchInFlight).
 
   // ── Methods ──────────────────────────────────────────────────────────────
 
@@ -236,10 +217,7 @@ export class AutoSession {
     // Signal handler
     this.sigtermHandler = null;
 
-    // Loop promise state
-    this.sessionSwitchInFlight = false;
-    this.pendingResolve = null;
-    this.pendingAgentEndQueue = [];
+    // Loop promise state lives in auto-loop.ts module scope
   }
 
   toJSON(): Record<string, unknown> {
