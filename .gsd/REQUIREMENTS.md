@@ -100,7 +100,7 @@ This file is the explicit capability and coverage contract for the project.
 - Source: user
 - Primary owning slice: M001/S08
 - Supporting slices: none
-- Validation: unmapped
+- Validation: S08 T02: "custom-step" in UNIT_TYPE_INFO, DisplayMetadata parameter on updateProgressWidget, overlay loadData() detects custom engine. S08 T03: unitVerb/unitPhaseLabel tests verify rendering.
 - Notes: Reuses existing TUI patterns from the dev workflow dashboard.
 
 ### R015 — The full user journey works: describe a workflow → LLM builds YAML → run it → steps execute with verification and context continuity → workflow completes. This is the integration test.
@@ -111,7 +111,7 @@ This file is the explicit capability and coverage contract for the project.
 - Source: user
 - Primary owning slice: M001/S08
 - Supporting slices: M001/S04, M001/S05, M001/S06, M001/S07
-- Validation: unmapped
+- Validation: S08 T03: e2e-workflow-integration.test.ts walks full engine lifecycle with context_from, verify, iterate, params. S08 T01: handleAgentEnd custom branch wires reconcile+verify into auto-loop.
 - Notes: Must exercise iteration, context_from, at least two verification policy types, and dashboard progress.
 
 ### R017 — The `/gsd start` command, `registry.json`, workflow-templates `.md` files, and `STATE.json` tracking continue to work exactly as before. The two systems coexist.
@@ -302,8 +302,8 @@ This file is the explicit capability and coverage contract for the project.
 | R011 | core-capability | validated | M001/S06 | none | S06 T01: IterateConfig typed with source+pattern, validateDefinition() enforces valid regex with capture group and no path traversal (5 new tests). S06 T02: expandIteration() pure function materializes instances with deterministic zero-padded IDs (<parentId>--001), "expanded" status, parentStepId lineage, downstream dep rewriting. YAML roundtrip preserves all fields (11 unit tests). S06 T03: resolveDispatch() triggers lazy expansion from source artifact regex, idempotency guard prevents double-expansion, getDisplayMetadata() excludes expanded steps, deriveState()/reconcile() handle expanded status for completion detection. Integration test proves 5-dispatch fan-out (outline + 3 chapter instances + review). Determinism proof: byte-identical GRAPH.yaml from identical input. 15/15 iteration tests + 11/11 engine tests + 25/25 definition-loader tests pass. Zero type errors. |
 | R012 | primary-user-loop | active | M001/S07 | none | S07 T02: handleWorkflow("new", ...) loads workflow-builder prompt via loadPrompt() and dispatches with triggerTurn. Auto-mode conflict guard prevents new during active workflows. S07 T03: workflow-builder.md prompt embeds V1 schema rules, all four verification policies, iterate/context_from syntax, and a complete 4-step blog-post-pipeline example. loadPrompt("workflow-builder", {defsDir, schemaVersion}) resolves to 7869 chars with zero unresolved variables. Builder prompt quality is partially proven by structure checks; full conversation quality deferred to S08 end-to-end validation. |
 | R013 | launchability | active | M001/S07 | M001/S08 | S07 T02: commands-workflow.ts implements all six subcommands: new (loads builder prompt with triggerTurn), run (createRun + setActiveEngineId + startAuto with --param parsing), list (scans workflow-defs/ and workflow-runs/ with graph step counts), pause (delegates to pauseAuto), resume (re-derives engine ID from most recent incomplete run), validate (structured validateDefinition() error output). Routing wired in commands.ts with completions and help text. Auto-mode conflict guard on run and new. 15 integration tests pass covering validate, list, run param parsing, PARAMS.json creation, conflict guard, completions, resume engine-ID derivation, and routing wiring. Full runtime validation deferred to S08. |
-| R014 | primary-user-loop | active | M001/S08 | none | unmapped |
-| R015 | launchability | active | M001/S08 | M001/S04, M001/S05, M001/S06, M001/S07 | unmapped |
+| R014 | primary-user-loop | active | M001/S08 | none | S08 T02: "custom-step" in UNIT_TYPE_INFO, DisplayMetadata parameter on updateProgressWidget, overlay loadData() detects custom engine. S08 T03: unitVerb/unitPhaseLabel tests verify rendering. |
+| R015 | launchability | active | M001/S08 | M001/S04, M001/S05, M001/S06, M001/S07 | S08 T03: e2e-workflow-integration.test.ts walks full engine lifecycle with context_from, verify, iterate, params. S08 T01: handleAgentEnd custom branch wires reconcile+verify into auto-loop. |
 | R016 | constraint | validated | M001/S01 | M001/S02 | S01: 1862 unit tests pass (1 pre-existing macOS symlink fail — L001), 23 integration tests pass (6 pre-existing version mismatch fails — L002). Zero new failures. All S01 files are additive types with no behavioral changes. Typecheck passes with 0 errors. |
 | R017 | constraint | active | M001/S02 | none | unmapped |
 | R018 | core-capability | deferred | none | none | unmapped |
