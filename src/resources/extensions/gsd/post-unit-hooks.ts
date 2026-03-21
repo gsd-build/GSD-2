@@ -206,21 +206,21 @@ function handleHookCompletion(basePath: string): HookDispatchResult | null {
 /**
  * Resolve the path where a hook artifact is expected to be written.
  * Uses the trigger unit's directory context:
- *   - Task-level (M001/S01/T01): .gsd/M001/slices/S01/tasks/T01-{artifact}
- *   - Slice-level (M001/S01):    .gsd/M001/slices/S01/{artifact}
- *   - Milestone-level (M001):    .gsd/M001/{artifact}
+ *   - Task-level (M001/S01/T01): .gsd/milestones/M001/slices/S01/tasks/T01-{artifact}
+ *   - Slice-level (M001/S01):    .gsd/milestones/M001/slices/S01/{artifact}
+ *   - Milestone-level (M001):    .gsd/milestones/M001/{artifact}
  */
 export function resolveHookArtifactPath(basePath: string, unitId: string, artifactName: string): string {
   const parts = unitId.split("/");
   if (parts.length === 3) {
     const [mid, sid, tid] = parts;
-    return join(basePath, ".gsd", mid, "slices", sid, "tasks", `${tid}-${artifactName}`);
+    return join(basePath, ".gsd", "milestones", mid, "slices", sid, "tasks", `${tid}-${artifactName}`);
   }
   if (parts.length === 2) {
     const [mid, sid] = parts;
-    return join(basePath, ".gsd", mid, "slices", sid, artifactName);
+    return join(basePath, ".gsd", "milestones", mid, "slices", sid, artifactName);
   }
-  return join(basePath, ".gsd", parts[0], artifactName);
+  return join(basePath, ".gsd", "milestones", parts[0], artifactName);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

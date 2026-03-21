@@ -24,13 +24,8 @@ function createRetryFixture(): { base: string; cleanup: () => void } {
   const base = mkdtempSync(join(tmpdir(), "gsd-retry-reset-"));
 
   // Create the .gsd structure for M001/S01/T01
-  // Plan/Summary resolution uses .gsd/milestones/M001/slices/S01/...
   const milestonesTasksDir = join(base, ".gsd", "milestones", "M001", "slices", "S01", "tasks");
   mkdirSync(milestonesTasksDir, { recursive: true });
-
-  // Hook artifact resolution uses .gsd/M001/slices/S01/tasks/...
-  const hookTasksDir = join(base, ".gsd", "M001", "slices", "S01", "tasks");
-  mkdirSync(hookTasksDir, { recursive: true });
 
   // Write a PLAN.md with T01 checked [x] (as doctor would do)
   const planFile = join(base, ".gsd", "milestones", "M001", "slices", "S01", "S01-PLAN.md");
@@ -57,7 +52,7 @@ function createRetryFixture(): { base: string; cleanup: () => void } {
   );
 
   // Write the retry_on artifact in the hook artifact path
-  const retryArtifact = join(hookTasksDir, "T01-NEEDS-REWORK.md");
+  const retryArtifact = join(milestonesTasksDir, "T01-NEEDS-REWORK.md");
   writeFileSync(retryArtifact, "Rework needed: test coverage insufficient.", "utf-8");
 
   return {
@@ -325,7 +320,7 @@ console.log("\n=== resolveHookArtifactPath: correct path for retry artifacts ===
   const path = resolveHookArtifactPath(base, "M001/S01/T01", "NEEDS-REWORK.md");
   assertEq(
     path,
-    join(base, ".gsd", "M001", "slices", "S01", "tasks", "T01-NEEDS-REWORK.md"),
+    join(base, ".gsd", "milestones", "M001", "slices", "S01", "tasks", "T01-NEEDS-REWORK.md"),
     "retry artifact path resolves to task directory with task prefix",
   );
 }
