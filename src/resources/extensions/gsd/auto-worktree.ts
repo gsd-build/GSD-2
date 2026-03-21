@@ -229,8 +229,20 @@ export function syncGsdStateToWorktree(
  * Called before milestone merge to ensure completion artifacts (SUMMARY, VALIDATION,
  * updated ROADMAP) are visible from the project root (#1412).
  *
- * Only syncs .gsd/milestones/ content — root-level files (DECISIONS, REQUIREMENTS, etc.)
- * are handled by the merge itself.
+ * Syncs:
+ *   1. Root-level .gsd/ files (REQUIREMENTS, PROJECT, DECISIONS, KNOWLEDGE,
+ *      OVERRIDES) — the worktree's versions overwrite main's because the
+ *      worktree is the authoritative execution context.
+ *   2. ALL milestone directories found in the worktree — not just the
+ *      current milestoneId. The complete-milestone unit may create artifacts
+ *      for the *next* milestone (CONTEXT, ROADMAP, new requirements) which
+ *      must survive worktree teardown.
+ *
+ * History: Originally only synced milestones/<milestoneId>/ and assumed
+ * root-level files would be carried by the squash merge. In practice,
+ * .gsd/ files are often untracked (gitignored or never committed), so the
+ * squash merge carries nothing. This caused next-milestone artifacts and
+ * updated REQUIREMENTS/PROJECT to be silently lost on teardown.
  */
 export function syncWorktreeStateBack(
   mainBasePath: string,
@@ -250,10 +262,67 @@ export function syncWorktreeStateBack(
     // Can't resolve — proceed with sync
   }
 
-  const wtMilestoneDir = join(wtGsd, "milestones", milestoneId);
-  const mainMilestoneDir = join(mainGsd, "milestones", milestoneId);
+  if (!existsSync(wtGsd) || !existsSync(mainGsd)) return { synced };
 
-  if (!existsSync(wtMilestoneDir)) return { synced };
+  // ── 1. Sync root-level .gsd/ files back ──────────────────────────────
+  // The worktree is authoritative — complete-milestone updates REQUIREMENTS,
+  // PROJECT, etc. These must overwrite main's copies so they survive teardown.
+  const rootFiles = [
+    "DECISIONS.md",
+    "REQUIREMENTS.md",
+    "PROJECT.md",
+    "KNOWLEDGE.md",
+    "OVERRIDES.md",
+  ];
+  for (const f of rootFiles) {
+    const src = join(wtGsd, f);
+    const dst = join(mainGsd, f);
+    if (existsSync(src)) {
+      try {
+        cpSync(src, dst, { force: true });
+        synced.push(f);
+      } catch {
+        /* non-fatal */
+      }
+    }
+  }
+
+  // ── 2. Sync ALL milestone directories ────────────────────────────────
+  // The complete-milestone unit may create next-milestone artifacts (e.g.
+  // M007 setup while closing M006). We must sync every milestone directory
+  // in the worktree, not just the current one.
+  const wtMilestonesDir = join(wtGsd, "milestones");
+  if (!existsSync(wtMilestonesDir)) return { synced };
+
+  try {
+    const wtMilestones = readdirSync(wtMilestonesDir, { withFileTypes: true })
+      .filter((d) => d.isDirectory() && /^M\d{3}/.test(d.name))
+      .map((d) => d.name);
+
+    for (const mid of wtMilestones) {
+      syncMilestoneDir(wtGsd, mainGsd, mid, synced);
+    }
+  } catch {
+    /* non-fatal */
+  }
+
+  return { synced };
+}
+
+/**
+ * Sync a single milestone directory from worktree to main.
+ * Copies milestone-level .md files, slice-level files, and task summaries.
+ */
+function syncMilestoneDir(
+  wtGsd: string,
+  mainGsd: string,
+  mid: string,
+  synced: string[],
+): void {
+  const wtMilestoneDir = join(wtGsd, "milestones", mid);
+  const mainMilestoneDir = join(mainGsd, "milestones", mid);
+
+  if (!existsSync(wtMilestoneDir)) return;
   mkdirSync(mainMilestoneDir, { recursive: true });
 
   // Sync milestone-level files (SUMMARY, VALIDATION, ROADMAP, CONTEXT)
@@ -264,7 +333,7 @@ export function syncWorktreeStateBack(
         const dst = join(mainMilestoneDir, entry.name);
         try {
           cpSync(src, dst, { force: true });
-          synced.push(`milestones/${milestoneId}/${entry.name}`);
+          synced.push(`milestones/${mid}/${entry.name}`);
         } catch {
           /* non-fatal */
         }
@@ -297,7 +366,7 @@ export function syncWorktreeStateBack(
             try {
               cpSync(src, dst, { force: true });
               synced.push(
-                `milestones/${milestoneId}/slices/${sid}/${fileEntry.name}`,
+                `milestones/${mid}/slices/${sid}/${fileEntry.name}`,
               );
             } catch {
               /* non-fatal */
@@ -317,7 +386,7 @@ export function syncWorktreeStateBack(
                   try {
                     cpSync(taskSrc, taskDst, { force: true });
                     synced.push(
-                      `milestones/${milestoneId}/slices/${sid}/tasks/${taskEntry.name}`,
+                      `milestones/${mid}/slices/${sid}/tasks/${taskEntry.name}`,
                     );
                   } catch {
                     /* non-fatal */
@@ -334,8 +403,6 @@ export function syncWorktreeStateBack(
       /* non-fatal */
     }
   }
-
-  return { synced };
 }
 // ─── Worktree Post-Create Hook (#597) ────────────────────────────────────────
 

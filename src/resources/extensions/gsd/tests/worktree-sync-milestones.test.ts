@@ -16,9 +16,12 @@
  *   - No-op when milestoneId is null
  *   - Non-existent directories handled gracefully
  *   - syncWorktreeStateBack recurses into tasks/ subdirectory (#1678)
+ *   - syncWorktreeStateBack syncs root-level .gsd/ files (REQUIREMENTS, PROJECT, etc.)
+ *   - syncWorktreeStateBack syncs ALL milestone directories, not just the current one
+ *   - syncWorktreeStateBack handles next-milestone artifacts created during completion
  */
 
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -222,6 +225,227 @@ async function main(): Promise<void> {
       assertTrue(
         synced.some((p) => p.includes('tasks/T01-SUMMARY.md')),
         '#1678: task summary appears in synced list',
+      );
+    } finally {
+      rmSync(mainBase, { recursive: true, force: true });
+      rmSync(wtBase, { recursive: true, force: true });
+    }
+  }
+
+  // ─── 9. syncWorktreeStateBack syncs root-level .gsd/ files ──────────
+  console.log('\n=== 9. syncWorktreeStateBack syncs root-level files (REQUIREMENTS, PROJECT) ===');
+  {
+    const mainBase = mkdtempSync(join(tmpdir(), 'gsd-wt-back-root-main-'));
+    const wtBase = mkdtempSync(join(tmpdir(), 'gsd-wt-back-root-wt-'));
+
+    try {
+      mkdirSync(join(mainBase, '.gsd', 'milestones', 'M001'), { recursive: true });
+      mkdirSync(join(wtBase, '.gsd', 'milestones', 'M001'), { recursive: true });
+
+      // Main has original REQUIREMENTS and PROJECT
+      writeFileSync(join(mainBase, '.gsd', 'REQUIREMENTS.md'), '# Requirements\n## R001');
+      writeFileSync(join(mainBase, '.gsd', 'PROJECT.md'), '# Project\n## Milestone: M001');
+
+      // Worktree has updated versions (complete-milestone added M002 refs)
+      writeFileSync(join(wtBase, '.gsd', 'REQUIREMENTS.md'), '# Requirements\n## R001\n## R002 — New req');
+      writeFileSync(join(wtBase, '.gsd', 'PROJECT.md'), '# Project\n## Milestone: M001\n## Milestone: M002');
+      writeFileSync(join(wtBase, '.gsd', 'KNOWLEDGE.md'), '# Knowledge\nLearned something.');
+
+      const { synced } = syncWorktreeStateBack(mainBase, wtBase, 'M001');
+
+      // Root-level files should be overwritten with worktree versions
+      const reqContent = readFileSync(join(mainBase, '.gsd', 'REQUIREMENTS.md'), 'utf-8');
+      assertTrue(
+        reqContent.includes('R002'),
+        'REQUIREMENTS.md updated with worktree content',
+      );
+
+      const projContent = readFileSync(join(mainBase, '.gsd', 'PROJECT.md'), 'utf-8');
+      assertTrue(
+        projContent.includes('M002'),
+        'PROJECT.md updated with worktree content',
+      );
+
+      assertTrue(
+        existsSync(join(mainBase, '.gsd', 'KNOWLEDGE.md')),
+        'KNOWLEDGE.md synced from worktree',
+      );
+
+      assertTrue(
+        synced.includes('REQUIREMENTS.md'),
+        'REQUIREMENTS.md appears in synced list',
+      );
+      assertTrue(
+        synced.includes('PROJECT.md'),
+        'PROJECT.md appears in synced list',
+      );
+    } finally {
+      rmSync(mainBase, { recursive: true, force: true });
+      rmSync(wtBase, { recursive: true, force: true });
+    }
+  }
+
+  // ─── 10. syncWorktreeStateBack syncs ALL milestone directories ─────
+  console.log('\n=== 10. syncWorktreeStateBack syncs all milestone dirs, not just current ===');
+  {
+    const mainBase = mkdtempSync(join(tmpdir(), 'gsd-wt-back-all-main-'));
+    const wtBase = mkdtempSync(join(tmpdir(), 'gsd-wt-back-all-wt-'));
+
+    try {
+      mkdirSync(join(mainBase, '.gsd', 'milestones'), { recursive: true });
+      mkdirSync(join(wtBase, '.gsd', 'milestones'), { recursive: true });
+
+      // Worktree has M001 (current) AND M002 (next, created by complete-milestone)
+      const wtM001Dir = join(wtBase, '.gsd', 'milestones', 'M001');
+      mkdirSync(wtM001Dir, { recursive: true });
+      writeFileSync(join(wtM001Dir, 'M001-SUMMARY.md'), '# M001 Summary');
+
+      const wtM002Dir = join(wtBase, '.gsd', 'milestones', 'M002-abc123');
+      mkdirSync(wtM002Dir, { recursive: true });
+      writeFileSync(join(wtM002Dir, 'M002-abc123-CONTEXT.md'), '# M002 Context');
+      writeFileSync(join(wtM002Dir, 'M002-abc123-ROADMAP.md'), '# M002 Roadmap');
+
+      // Main has neither
+      assertTrue(
+        !existsSync(join(mainBase, '.gsd', 'milestones', 'M001')),
+        'M001 missing in main before sync',
+      );
+      assertTrue(
+        !existsSync(join(mainBase, '.gsd', 'milestones', 'M002-abc123')),
+        'M002 missing in main before sync',
+      );
+
+      // Sync with milestoneId = M001 (the current milestone)
+      const { synced } = syncWorktreeStateBack(mainBase, wtBase, 'M001');
+
+      // M001 should be synced (current milestone — always synced)
+      assertTrue(
+        existsSync(join(mainBase, '.gsd', 'milestones', 'M001', 'M001-SUMMARY.md')),
+        'M001 SUMMARY synced to main',
+      );
+
+      // M002 should ALSO be synced (next milestone — the fix)
+      assertTrue(
+        existsSync(join(mainBase, '.gsd', 'milestones', 'M002-abc123', 'M002-abc123-CONTEXT.md')),
+        'M002 CONTEXT synced to main (next-milestone fix)',
+      );
+      assertTrue(
+        existsSync(join(mainBase, '.gsd', 'milestones', 'M002-abc123', 'M002-abc123-ROADMAP.md')),
+        'M002 ROADMAP synced to main (next-milestone fix)',
+      );
+
+      assertTrue(
+        synced.some((p) => p.includes('M002-abc123')),
+        'M002 appears in synced list',
+      );
+    } finally {
+      rmSync(mainBase, { recursive: true, force: true });
+      rmSync(wtBase, { recursive: true, force: true });
+    }
+  }
+
+  // ─── 11. Full M006→M007 transition scenario ───────────────────────────
+  console.log('\n=== 11. complete-milestone creates next-milestone artifacts that survive sync ===');
+  {
+    const mainBase = mkdtempSync(join(tmpdir(), 'gsd-wt-transition-main-'));
+    const wtBase = mkdtempSync(join(tmpdir(), 'gsd-wt-transition-wt-'));
+
+    try {
+      mkdirSync(join(mainBase, '.gsd', 'milestones'), { recursive: true });
+      mkdirSync(join(wtBase, '.gsd', 'milestones'), { recursive: true });
+
+      // Main starts with M006 context + existing REQUIREMENTS
+      const mainM006 = join(mainBase, '.gsd', 'milestones', 'M006-589wvh');
+      mkdirSync(mainM006, { recursive: true });
+      writeFileSync(join(mainM006, 'M006-589wvh-CONTEXT.md'), '# M006 Context');
+      writeFileSync(join(mainBase, '.gsd', 'REQUIREMENTS.md'), '# Requirements\n## R001 through R089');
+      writeFileSync(join(mainBase, '.gsd', 'PROJECT.md'), '# Project\nMilestones: M001-M006');
+
+      // Worktree (M006 execution context) has:
+      // - M006 SUMMARY + VALIDATION (created by complete-milestone)
+      // - M007 setup (created by complete-milestone for next milestone)
+      // - Updated REQUIREMENTS with R090-R094
+      // - Updated PROJECT with M007
+      const wtM006 = join(wtBase, '.gsd', 'milestones', 'M006-589wvh');
+      mkdirSync(join(wtM006, 'slices', 'S01'), { recursive: true });
+      writeFileSync(join(wtM006, 'M006-589wvh-CONTEXT.md'), '# M006 Context');
+      writeFileSync(join(wtM006, 'M006-589wvh-SUMMARY.md'), '# M006 Complete');
+      writeFileSync(join(wtM006, 'M006-589wvh-VALIDATION.md'), '# Validated');
+      writeFileSync(join(wtM006, 'slices', 'S01', 'S01-SUMMARY.md'), '# S01 done');
+
+      const wtM007 = join(wtBase, '.gsd', 'milestones', 'M007-wortc8');
+      mkdirSync(wtM007, { recursive: true });
+      writeFileSync(join(wtM007, 'M007-wortc8-CONTEXT.md'), '# M007 Enterprise Security');
+      writeFileSync(join(wtM007, 'M007-wortc8-ROADMAP.md'), '# M007 Roadmap\n10 phases');
+
+      writeFileSync(join(wtBase, '.gsd', 'REQUIREMENTS.md'), '# Requirements\n## R001-R089\n## R090 — SCIM\n## R091 — WebAuthn');
+      writeFileSync(join(wtBase, '.gsd', 'PROJECT.md'), '# Project\nMilestones: M001-M007');
+
+      // Sync with milestoneId = M006 (the completing milestone)
+      const { synced } = syncWorktreeStateBack(mainBase, wtBase, 'M006-589wvh');
+
+      // Verify M006 artifacts synced
+      assertTrue(
+        existsSync(join(mainBase, '.gsd', 'milestones', 'M006-589wvh', 'M006-589wvh-SUMMARY.md')),
+        'M006 SUMMARY synced',
+      );
+      assertTrue(
+        existsSync(join(mainBase, '.gsd', 'milestones', 'M006-589wvh', 'slices', 'S01', 'S01-SUMMARY.md')),
+        'M006 S01 SUMMARY synced',
+      );
+
+      // Verify M007 artifacts synced (the critical fix)
+      assertTrue(
+        existsSync(join(mainBase, '.gsd', 'milestones', 'M007-wortc8', 'M007-wortc8-CONTEXT.md')),
+        'M007 CONTEXT synced to main (next-milestone)',
+      );
+      assertTrue(
+        existsSync(join(mainBase, '.gsd', 'milestones', 'M007-wortc8', 'M007-wortc8-ROADMAP.md')),
+        'M007 ROADMAP synced to main (next-milestone)',
+      );
+
+      // Verify root-level files updated
+      const reqContent = readFileSync(join(mainBase, '.gsd', 'REQUIREMENTS.md'), 'utf-8');
+      assertTrue(
+        reqContent.includes('R090'),
+        'REQUIREMENTS.md has R090 from worktree',
+      );
+
+      const projContent = readFileSync(join(mainBase, '.gsd', 'PROJECT.md'), 'utf-8');
+      assertTrue(
+        projContent.includes('M007'),
+        'PROJECT.md has M007 from worktree',
+      );
+    } finally {
+      rmSync(mainBase, { recursive: true, force: true });
+      rmSync(wtBase, { recursive: true, force: true });
+    }
+  }
+
+  // ─── 12. syncWorktreeStateBack no-op for root files that don't exist ──
+  console.log('\n=== 12. root files not in worktree are not created in main ===');
+  {
+    const mainBase = mkdtempSync(join(tmpdir(), 'gsd-wt-back-noroot-main-'));
+    const wtBase = mkdtempSync(join(tmpdir(), 'gsd-wt-back-noroot-wt-'));
+
+    try {
+      mkdirSync(join(mainBase, '.gsd', 'milestones', 'M001'), { recursive: true });
+      mkdirSync(join(wtBase, '.gsd', 'milestones', 'M001'), { recursive: true });
+
+      // Main has REQUIREMENTS, worktree does not
+      writeFileSync(join(mainBase, '.gsd', 'REQUIREMENTS.md'), '# Original');
+
+      const { synced } = syncWorktreeStateBack(mainBase, wtBase, 'M001');
+
+      // Main's REQUIREMENTS should be untouched (worktree had nothing to sync)
+      const content = readFileSync(join(mainBase, '.gsd', 'REQUIREMENTS.md'), 'utf-8');
+      assertTrue(
+        content === '# Original',
+        'REQUIREMENTS.md unchanged when worktree has no copy',
+      );
+      assertTrue(
+        !synced.includes('REQUIREMENTS.md'),
+        'REQUIREMENTS.md not in synced list',
       );
     } finally {
       rmSync(mainBase, { recursive: true, force: true });
