@@ -24,7 +24,23 @@ Then:
 3. Run all slice-level verification checks defined in the slice plan. All must pass before marking the slice done. If any fail, fix them first.
 4. If the slice plan includes observability/diagnostic surfaces, confirm they work. Skip this for simple slices that don't have observability sections.
 5. If `.gsd/REQUIREMENTS.md` exists, update it based on what this slice actually proved. Move requirements between Active, Validated, Deferred, Blocked, or Out of Scope only when the evidence from execution supports that change.
+<<<<<<< HEAD
 6. Call the `gsd_slice_complete` tool (alias: `gsd_complete_slice`) to record the slice as complete. The tool validates all tasks are complete, writes the slice summary to `{{sliceSummaryPath}}`, UAT to `{{sliceUatPath}}`, and toggles the `{{sliceId}}` checkbox in `{{roadmapPath}}` — all atomically. Read the summary and UAT templates at `~/.gsd/agent/extensions/gsd/templates/` to understand the expected structure, then pass the following parameters:
+=======
+6. **Unknowns resolution check.** If the slice plan or research doc included an Unknowns Inventory:
+   - Check each unknown's resolution status from task summaries. Which were verified? Which were refuted? Which remain inconclusive?
+   - Report the resolution in the slice summary: "Unknowns resolved: N/M. Remaining: [list]."
+   - If a training-data claim was REFUTED during execution and the implementation adjusted, note the adjustment.
+   - If unknowns remain unresolved, note what was attempted and why resolution failed.
+7. Write `{{sliceSummaryPath}}` (compress all task summaries).
+8. Write `{{sliceUatPath}}` — a concrete UAT script with real test cases derived from the slice plan and task summaries. Include preconditions, numbered steps with expected outcomes, and edge cases. This must NOT be a placeholder or generic template — tailor every test case to what this slice actually built.
+9. Review task summaries for `key_decisions`. Append any significant decisions to `.gsd/DECISIONS.md` if missing.
+10. Review task summaries for patterns, gotchas, or non-obvious lessons learned. If any would save future agents from repeating investigation or hitting the same issues, append them to `.gsd/KNOWLEDGE.md`. Only add entries that are genuinely useful — don't pad with obvious observations.
+11. Mark {{sliceId}} done in `{{roadmapPath}}` (change `[ ]` to `[x]`)
+12. Do not run git commands — the system auto-commits your changes and handles the merge after this unit succeeds.
+13. Update `.gsd/PROJECT.md` if it exists — refresh current state if needed.
+14. Update `.gsd/STATE.md`
+>>>>>>> 8524093e (feat(gsd): evidence-grounded prompt contract — unknowns inventory, verification protocol, and factcheck reroute)
 
    **Identity:** `sliceId`, `milestoneId`, `sliceTitle`
 

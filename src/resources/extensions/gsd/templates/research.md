@@ -77,3 +77,32 @@
 <!-- Include when external docs, articles, or references informed the research. -->
 
 - {{whatWasLearned}} (source: [{{title}}]({{url}}))
+
+## Unknowns Inventory
+
+<!-- REQUIRED. List every implementation-affecting claim that is not directly observed
+     this session. Training data recall (version numbers, API signatures, CLI flags,
+     config schemas, magic numbers) is NOT observed — it needs verification.
+
+     If there are no unknowns, write: "None identified — all implementation-affecting
+     claims were verified by reading project files and running commands this session."
+
+     Evidence basis values:
+       observed     — verified this session via file read, command output, tool result (no entry needed)
+       training-data — recalled from model training, not verified against current state
+       inferred     — working theory from indirect evidence
+       assumption   — believed true, no evidence either way
+       unknown      — gap identified, no information available
+
+     Resolution strategy types:
+       check-docs     — read official documentation or repo README
+       read-code      — read actual source files in this project
+       experiment     — run a command, test an API, try the thing
+       ask-user       — present findings, ask for confirmation or input
+       fetch-reference — retrieve external resource (screenshot, clone repo, scrape)
+       search         — web search for current information
+-->
+
+| # | Claim | Basis | Affects | Resolution | Status |
+|---|-------|-------|---------|------------|--------|
+| {{N}} | {{specificClaim}} | {{basis}} | {{whatDecisionThisAffects}} | {{strategyType}}: {{specificAction}} | unresolved |

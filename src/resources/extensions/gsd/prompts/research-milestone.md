@@ -25,9 +25,18 @@ Then research the codebase and relevant technologies. Narrate key findings and s
 2. **Skill Discovery ({{skillDiscoveryMode}}):**{{skillDiscoveryInstructions}}
 3. Explore relevant code. For small/familiar codebases, use `rg`, `find`, and targeted reads. For large or unfamiliar codebases, use `scout` to build a broad map efficiently before diving in.
 4. Use `resolve_library` / `get_library_docs` for unfamiliar libraries — skip this for libraries already used in the codebase
-5. **Web search budget:** You have a limited budget of web searches (max ~15 per session). Use them strategically — prefer `resolve_library` / `get_library_docs` for library documentation. Do NOT repeat the same or similar queries. If a search didn't find what you need, rephrase once or move on. Target 3-5 total web searches for a typical research unit.
-6. Use the **Research** output template from the inlined context above — include only sections that have real content
-7. If `.gsd/REQUIREMENTS.md` exists, research against it. Identify which Active requirements are table stakes, likely omissions, overbuilt risks, or domain-standard behaviors the user may or may not want.
+5. Use the **Research** output template from the inlined context above — include only sections that have real content
+6. If `.gsd/REQUIREMENTS.md` exists, research against it. Identify which Active requirements are table stakes, likely omissions, overbuilt risks, or domain-standard behaviors the user may or may not want.
+7. **Unknowns Inventory (required).** As you research, track every implementation-affecting claim that you have NOT directly verified this session. Specifically:
+   - **Version numbers** you recall but didn't check (library versions, action versions, runtime versions)
+   - **API signatures** you recall but didn't read in source or docs (function names, parameters, return types)
+   - **CLI flags and options** you recall but didn't run `--help` or read docs for
+   - **Config formats and schemas** you recall but didn't read a spec or example for
+   - **Magic numbers and constants** without official attribution
+   - **External tool behavior** you assert but didn't verify ("ruff supports X", "gh can do Y")
+   - **Any statement about something you haven't read or run this session**
+   Training data recall is not observation. If you haven't read the file, run the command, or fetched the URL in this session, the claim goes in the inventory with its evidence basis and a resolution path.
+   If everything is verified: write "None identified — all implementation-affecting claims verified by reading project files and running commands this session."
 8. Write `{{outputPath}}`
 
 ## Strategic Questions to Answer

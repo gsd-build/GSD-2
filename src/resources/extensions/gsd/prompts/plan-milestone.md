@@ -48,7 +48,12 @@ Then:
 3. Create the roadmap: decompose into demoable vertical slices — as many as the work genuinely needs, no more. A simple feature might be 1 slice. Don't decompose for decomposition's sake.
 4. Order by risk (high-risk first)
 5. Write `{{outputPath}}` with checkboxes, risk, depends, demo sentences, proof strategy, verification classes, milestone definition of done, **requirement coverage**, and a boundary map. Write success criteria as observable truths, not implementation tasks. If the milestone crosses multiple runtime boundaries, include an explicit final integration slice that proves the assembled system works end-to-end in a real environment
-6. If planning produced structural decisions (e.g. slice ordering rationale, technology choices, scope exclusions), append them to `.gsd/DECISIONS.md` (use the **Decisions** output template from the inlined context above if the file doesn't exist yet)
+6. **Read the Unknowns Inventory** from the milestone research doc (if present). For each unresolved unknown:
+   - Map it to the slice where it will be resolved.
+   - If a claim marked `training-data` affects the approach for a slice, note that the slice must verify it.
+   - Do not silently drop unresolved unknowns. Every unresolved item must be assigned to a slice.
+7. If planning produced structural decisions (e.g. slice ordering rationale, technology choices, scope exclusions), append them to `.gsd/DECISIONS.md` (use the **Decisions** output template from the inlined context above if the file doesn't exist yet)
+8. Update `.gsd/STATE.md`
 
 ## Requirement Mapping Rules
 

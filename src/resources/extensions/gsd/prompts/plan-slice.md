@@ -63,18 +63,25 @@ Then:
    - a matching task plan file with description, steps, must-haves, verification, inputs, and expected output
    - **Inputs and Expected Output must list concrete backtick-wrapped file paths** (e.g. `` `src/types.ts` ``). These are machine-parsed to derive task dependencies — vague prose without paths breaks parallel execution. Every task must have at least one output file path.
    - Observability Impact section **only if the task touches runtime boundaries, async flows, or error paths** — omit it otherwise
-6. Write `{{outputPath}}`
-7. Write individual task plans in `{{slicePath}}/tasks/`: `T01-PLAN.md`, `T02-PLAN.md`, etc.
-8. **Self-audit the plan.** Walk through each check — if any fail, fix the plan files before moving on:
-    - **Completion semantics:** If every task were completed exactly as written, the slice goal/demo should actually be true.
-    - **Requirement coverage:** Every must-have in the slice maps to at least one task. No must-have is orphaned. If `REQUIREMENTS.md` exists, every Active requirement this slice owns maps to at least one task.
-    - **Task completeness:** Every task has steps, must-haves, verification, inputs, and expected output — none are blank or vague. Inputs and Expected Output list backtick-wrapped file paths, not prose descriptions.
-    - **Dependency correctness:** Task ordering is consistent. No task references work from a later task.
-    - **Key links planned:** For every pair of artifacts that must connect, there is an explicit step that wires them.
-    - **Scope sanity:** Target 2–5 steps and 3–8 files per task. 10+ steps or 12+ files — must split. Each task must be completable in a single fresh context window.
-    - **Feature completeness:** Every task produces real, user-facing progress — not just internal scaffolding.
-9. If planning produced structural decisions, append them to `.gsd/DECISIONS.md`
-10. {{commitInstruction}}
+6. **Read the Unknowns Inventory** from the research doc (if present). For each unresolved unknown:
+   - If the resolution is trivial (read a file, run `--help`) — include it as a sub-step in the relevant task.
+   - If the resolution requires research or experimentation — make it an explicit task step or a dedicated task.
+   - If the resolution is `ask-user` — note it as a potential blocker in the task plan.
+   - If a claim is marked `training-data` and affects the task's approach, the task MUST verify it before acting on it. Add a verification step.
+   - Do not silently drop unresolved unknowns. Every unresolved item from the inventory must appear as a resolution step in a task, or be explicitly noted as resolved during research.
+7. Write `{{outputPath}}`
+8. Write individual task plans in `{{slicePath}}/tasks/`: `T01-PLAN.md`, `T02-PLAN.md`, etc.
+9. **Self-audit the plan.** Walk through each check — if any fail, fix the plan files before moving on:
+   - **Completion semantics:** If every task were completed exactly as written, the slice goal/demo should actually be true.
+   - **Requirement coverage:** Every must-have in the slice maps to at least one task. No must-have is orphaned. If `REQUIREMENTS.md` exists, every Active requirement this slice owns maps to at least one task.
+   - **Task completeness:** Every task has steps, must-haves, verification, inputs, and expected output — none are blank or vague. Inputs and Expected Output list backtick-wrapped file paths, not prose descriptions.
+   - **Dependency correctness:** Task ordering is consistent. No task references work from a later task.
+   - **Key links planned:** For every pair of artifacts that must connect, there is an explicit step that wires them.
+   - **Scope sanity:** Target 2–5 steps and 3–8 files per task. 10+ steps or 12+ files — must split. Each task must be completable in a single fresh context window.
+   - **Feature completeness:** Every task produces real, user-facing progress — not just internal scaffolding.
+10. If planning produced structural decisions, append them to `.gsd/DECISIONS.md`
+11. {{commitInstruction}}
+12. Update `.gsd/STATE.md`
 
 The slice directory and tasks/ subdirectory already exist. Do NOT mkdir. All work stays in your working directory: `{{workingDirectory}}`.
 
