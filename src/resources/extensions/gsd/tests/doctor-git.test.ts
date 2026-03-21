@@ -8,7 +8,7 @@
  *   integration_branch_missing, worktree_directory_orphaned
  */
 
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, realpathSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, realpathSync, readFileSync, symlinkSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execSync } from "node:child_process";
@@ -493,6 +493,32 @@ async function main(): Promise<void> {
       const result = await runGSDDoctor(dir, { isolationMode: "none" });
       const trackedIssues = result.issues.filter(i => i.code === "tracked_runtime_files");
       assertTrue(trackedIssues.length > 0, "none-mode: tracked runtime files IS detected");
+    }
+
+    // ─── Test: Symlinked .gsd does not cause false orphan detection ────
+    if (process.platform !== "win32") {
+    console.log("\n=== worktree_directory_orphaned (symlinked .gsd not false-positive) ===");
+    {
+      const dir = createRepoWithActiveMilestone();
+      cleanups.push(dir);
+
+      // Move .gsd to an external location and replace with a symlink.
+      // This simulates the ~/.gsd/projects/<hash> layout where .gsd is a symlink.
+      const externalGsd = join(realpathSync(mkdtempSync(join(tmpdir(), "doc-git-symlink-"))), "gsd-data");
+      cleanups.push(externalGsd);
+      renameSync(join(dir, ".gsd"), externalGsd);
+      symlinkSync(externalGsd, join(dir, ".gsd"));
+
+      // Create a real registered worktree under the (now symlinked) .gsd/worktrees/
+      mkdirSync(join(dir, ".gsd", "worktrees"), { recursive: true });
+      run("git worktree add -b worktree/symlink-test .gsd/worktrees/symlink-test", dir);
+
+      const detect = await runGSDDoctor(dir);
+      const orphanDirIssues = detect.issues.filter(i => i.code === "worktree_directory_orphaned");
+      assertEq(orphanDirIssues.length, 0, "registered worktree via symlinked .gsd NOT flagged as orphaned");
+    }
+    } else {
+      console.log("\n=== worktree_directory_orphaned (symlinked .gsd — skipped on Windows) ===");
     }
 
   } finally {

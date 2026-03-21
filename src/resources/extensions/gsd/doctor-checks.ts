@@ -267,15 +267,23 @@ export async function checkGitHealth(
   try {
     const wtDir = worktreesDir(basePath);
     if (existsSync(wtDir)) {
+      // Resolve symlinks and normalize separators so that symlinked .gsd
+      // paths (e.g. ~/.gsd/projects/<hash>/worktrees/…) match the paths
+      // returned by `git worktree list`.
+      const normalizePath = (p: string): string => {
+        try { p = realpathSync(p); } catch { /* path may not exist */ }
+        return p.replaceAll("\\", "/");
+      };
       const registeredPaths = new Set(
-        nativeWorktreeList(basePath).map(entry => entry.path),
+        nativeWorktreeList(basePath).map(entry => normalizePath(entry.path)),
       );
       for (const entry of readdirSync(wtDir)) {
         const fullPath = join(wtDir, entry);
         try {
           if (!statSync(fullPath).isDirectory()) continue;
         } catch { continue; }
-        if (!registeredPaths.has(fullPath)) {
+        const normalizedFullPath = normalizePath(fullPath);
+        if (!registeredPaths.has(normalizedFullPath)) {
           issues.push({
             severity: "warning",
             code: "worktree_directory_orphaned",
