@@ -1,6 +1,6 @@
-# GSD Command Reference & How-To Guide
+# GSD2 Command Reference & How-To Guide
 
-A complete reference for all `/gsd` subcommands available inside a GSD session.
+A complete reference for all `/gsd` subcommands available inside a GSD2 session.
 
 ---
 
@@ -25,7 +25,7 @@ A complete reference for all `/gsd` subcommands available inside a GSD session.
 
 ## Core Concepts
 
-GSD organizes work into a three-level hierarchy stored in `.gsd/`:
+GSD2 organizes work into a three-level hierarchy stored in `.gsd/`:
 
 ```
 Milestone (M001, M002…)  →  a shippable version (4–10 slices, 1–4 weeks)
@@ -99,7 +99,7 @@ Autonomous mode — research, plan, execute, commit, and repeat continuously unt
 /gsd auto --debug
 ```
 
-Walk away and let GSD handle everything. Pauses only when it needs a decision from you (blockers, ambiguous choices).
+Walk away and let GSD2 handle everything. Pauses only when it needs a decision from you (blockers, ambiguous choices).
 
 **Flags:**
 
@@ -302,7 +302,7 @@ View execution history.
 
 ### `/gsd changelog`
 
-Show categorized release notes for GSD itself.
+Show categorized release notes for GSD2 itself.
 
 **Usage:**
 ```
@@ -340,7 +340,7 @@ Apply a hard override to active planning or execution documents.
 /gsd steer Auth should use JWT, not sessions
 ```
 
-Writes the override to `.gsd/OVERRIDES.md`. GSD picks it up at the next phase boundary and adjusts plan documents accordingly.
+Writes the override to `.gsd/OVERRIDES.md`. GSD2 picks it up at the next phase boundary and adjusts plan documents accordingly.
 
 ---
 
@@ -658,7 +658,7 @@ Manually trigger a specific post-unit hook.
 
 ### `/gsd extensions`
 
-Manage GSD extensions.
+Manage GSD2 extensions.
 
 **Usage:**
 ```
@@ -817,7 +817,7 @@ Migrate a v1 `.planning/` directory to the v2 `.gsd/` format.
 /gsd migrate
 ```
 
-Run once in a project that was using GSD v1. Converts the directory structure and state files to the v2 schema. Non-destructive — backs up `.planning/` before migrating.
+Run once in a project that was using GSD2 v1. Converts the directory structure and state files to the v2 schema. Non-destructive — backs up `.planning/` before migrating.
 
 ---
 
@@ -836,14 +836,14 @@ Useful for debugging state corruption issues. Shows the raw DB state including t
 
 ### `/gsd update`
 
-Update GSD to the latest version without leaving the session.
+Update GSD2 to the latest version without leaving the session.
 
 **Usage:**
 ```
 /gsd update
 ```
 
-Checks npm for a newer version of `gsd-pi` and installs it in-session. Reports the version change. Restart GSD after updating to load the new version.
+Checks npm for a newer version of `gsd-pi` and installs it in-session. Reports the version change. Restart GSD2 after updating to load the new version.
 
 ---
 
@@ -851,7 +851,7 @@ Checks npm for a newer version of `gsd-pi` and installs it in-session. Reports t
 
 ### `/gsd remote`
 
-Control remote auto-mode — run GSD as a background worker triggered by Slack or Discord.
+Control remote auto-mode — run GSD2 as a background worker triggered by Slack or Discord.
 
 **Usage:**
 ```
@@ -922,7 +922,7 @@ Rate the last unit's model tier to improve adaptive model routing.
 | `ok` | Model choice was appropriate |
 | `under` | Model struggled — this task needs a more capable model |
 
-GSD uses these ratings to refine automatic model selection for similar tasks.
+GSD2 uses these ratings to refine automatic model selection for similar tasks.
 
 ---
 
@@ -979,7 +979,7 @@ Show categorized command reference.
 ### Start a new project from scratch
 
 ```
-gsd                    # launch GSD in project directory
+gsd                    # launch GSD2 in project directory
 /gsd init              # set up .gsd/ structure
 /gsd                   # step through discussion → research → plan → execute
 ```
@@ -1042,7 +1042,7 @@ gsd                    # launch GSD in project directory
 /gsd parallel merge M001   # merge completed work back to main
 ```
 
-### Run GSD headlessly (CI/scripts)
+### Run GSD2 headlessly (CI/scripts)
 
 ```bash
 # Run one unit and exit
