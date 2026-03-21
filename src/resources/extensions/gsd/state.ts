@@ -177,18 +177,6 @@ export async function deriveState(basePath: string): Promise<GSDState> {
   return result;
 }
 
-/**
- * Extract milestone title from CONTEXT.md or CONTEXT-DRAFT.md heading.
- * Falls back to the provided fallback (usually the milestone ID).
- */
-function extractContextTitle(content: string | null, fallback: string): string {
-  if (!content) return fallback;
-  const h1 = content.split('\n').find(line => line.startsWith('# '));
-  if (!h1) return fallback;
-  // Extract title from "# M005: Platform Foundation & Separation" format
-  return h1.slice(2).trim().replace(/^M\d+(?:-[a-z0-9]{6})?[^:]*:\s*/, '') || fallback;
-}
-
 async function _deriveStateImpl(basePath: string): Promise<GSDState> {
   const milestoneIds = findMilestoneIds(basePath);
 
