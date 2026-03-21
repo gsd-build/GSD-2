@@ -984,20 +984,32 @@ export function mergeMilestoneToMain(
   }
 
   // 10. Remove worktree directory first (must happen before branch deletion)
-  try {
-    removeWorktree(originalBasePath_, milestoneId, {
-      branch: null as unknown as string,
-      deleteBranch: false,
-    });
-  } catch {
-    // Best-effort -- worktree dir may already be gone
-  }
+  //     ONLY when a commit was actually produced — if nativeCommit returned null
+  //     (nothing to commit), tearing down the worktree would destroy source code
+  //     that was never merged (#1672).
+  if (nothingToCommit) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[GSD] Warning: squash merge of ${milestoneBranch} produced nothing to commit. ` +
+        "Worktree and branch preserved to prevent data loss. " +
+        "Inspect the worktree manually and retry.",
+    );
+  } else {
+    try {
+      removeWorktree(originalBasePath_, milestoneId, {
+        branch: null as unknown as string,
+        deleteBranch: false,
+      });
+    } catch {
+      // Best-effort -- worktree dir may already be gone
+    }
 
-  // 11. Delete milestone branch (after worktree removal so ref is unlocked)
-  try {
-    nativeBranchDelete(originalBasePath_, milestoneBranch);
-  } catch {
-    // Best-effort
+    // 11. Delete milestone branch (after worktree removal so ref is unlocked)
+    try {
+      nativeBranchDelete(originalBasePath_, milestoneBranch);
+    } catch {
+      // Best-effort
+    }
   }
 
   // 12. Clear module state

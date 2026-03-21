@@ -17,6 +17,7 @@ import {
   getAutoWorktreeOriginalBase,
 } from "../auto-worktree.ts";
 import { getSliceBranchName } from "../worktree.ts";
+import { nativeMergeSquash } from "../native-git-bridge.ts";
 
 import { createTestContext } from "./test-helpers.ts";
 
@@ -387,6 +388,90 @@ async function main(): Promise<void> {
       assertTrue(existsSync(join(dir, "master-feature.ts")), "feature merged to master");
       const branches = run("git branch", dir);
       assertTrue(!branches.includes("milestone/M070"), "milestone branch deleted after merge");
+    }
+
+    // ─── Test 8: Worktree preserved when commit is empty (#1672) ──────
+    console.log("\n=== worktree preserved when commit is empty (#1672) ===");
+    {
+      const repo = freshRepo();
+      const wtPath = createAutoWorktree(repo, "M080");
+
+      // Do NOT add any slices/changes — milestone branch is identical to main.
+      // This simulates the WSL stat-cache bug where autoCommitCurrentBranch
+      // skips commits, leaving the milestone branch identical to main.
+      const roadmap = makeRoadmap("M080", "Empty milestone", []);
+
+      // Capture console.warn to verify the warning is emitted
+      const warnings: string[] = [];
+      const origWarn = console.warn;
+      console.warn = (...args: unknown[]) => {
+        warnings.push(args.map(String).join(" "));
+      };
+
+      try {
+        mergeMilestoneToMain(repo, "M080", roadmap);
+      } finally {
+        console.warn = origWarn;
+      }
+
+      // Milestone branch must still exist (not deleted)
+      const branches = run("git branch", repo);
+      assertTrue(
+        branches.includes("milestone/M080"),
+        "milestone branch preserved when nothing was committed (#1672)",
+      );
+
+      // A warning should have been emitted
+      assertTrue(
+        warnings.some((w) => w.includes("nothing to commit")),
+        "emits warning about empty merge (#1672)",
+      );
+    }
+
+    // ─── Test 9: Worktree removed when commit succeeds (#1672) ──────
+    console.log("\n=== worktree removed when commit succeeds (#1672) ===");
+    {
+      const repo = freshRepo();
+      const wtPath = createAutoWorktree(repo, "M090");
+
+      addSliceToMilestone(repo, wtPath, "M090", "S01", "Teardown test", [
+        { file: "teardown.ts", content: "export const teardown = true;\n", message: "add teardown file" },
+      ]);
+
+      const roadmap = makeRoadmap("M090", "Teardown verification", [
+        { id: "S01", title: "Teardown test" },
+      ]);
+
+      mergeMilestoneToMain(repo, "M090", roadmap);
+
+      // Milestone branch must be deleted
+      const branches = run("git branch", repo);
+      assertTrue(
+        !branches.includes("milestone/M090"),
+        "milestone branch deleted after successful commit (#1672)",
+      );
+
+      // Worktree directory must be removed
+      const worktreeDir = join(repo, ".gsd", "worktrees", "M090");
+      assertTrue(!existsSync(worktreeDir), "worktree directory removed after successful commit (#1672)");
+
+      // File should be on main
+      assertTrue(existsSync(join(repo, "teardown.ts")), "teardown.ts merged to main (#1672)");
+    }
+
+    // ─── Test 10: nativeMergeSquash throws on non-conflict failures (#1672) ─
+    console.log("\n=== nativeMergeSquash throws on non-conflict failures (#1672) ===");
+    {
+      const repo = freshRepo();
+
+      // Merge a nonexistent branch — a non-conflict failure that must throw
+      let threw = false;
+      try {
+        nativeMergeSquash(repo, "nonexistent-branch");
+      } catch {
+        threw = true;
+      }
+      assertTrue(threw, "nativeMergeSquash throws on nonexistent branch (#1672)");
     }
 
   } finally {
