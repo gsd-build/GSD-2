@@ -31,6 +31,7 @@ import {
 } from "./worktree.js";
 import {
   verifyExpectedArtifact,
+  resolveExpectedArtifactPath,
 } from "./auto-recovery.js";
 import { writeUnitRuntimeRecord, clearUnitRuntimeRecord } from "./unit-runtime.js";
 import { runGSDDoctor, rebuildState, summarizeDoctorIssues } from "./doctor.js";
@@ -84,9 +85,12 @@ export interface PostUnitContext {
  * Pre-verification processing: parallel worker signal check, cache invalidation,
  * auto-commit, doctor run, state rebuild, worktree sync, artifact verification.
  *
- * Returns "dispatched" if a signal caused stop/pause, "continue" to proceed.
+ * Returns:
+ * - "dispatched" — a signal caused stop/pause
+ * - "continue" — proceed normally
+ * - "retry" — artifact verification failed, s.pendingVerificationRetry set for loop re-iteration
  */
-export async function postUnitPreVerification(pctx: PostUnitContext, opts?: PreVerificationOpts): Promise<"dispatched" | "continue"> {
+export async function postUnitPreVerification(pctx: PostUnitContext, opts?: PreVerificationOpts): Promise<"dispatched" | "continue" | "retry"> {
   const { s, ctx, pi, buildSnapshotOpts, stopAuto, pauseAuto } = pctx;
 
   // ── Parallel worker signal check ──
@@ -334,6 +338,29 @@ export async function postUnitPreVerification(pctx: PostUnitContext, opts?: PreV
         }
       } catch (e) {
         debugLog("postUnit", { phase: "artifact-verify", error: String(e) });
+      }
+
+      // When artifact verification fails for a unit type that has a known expected
+      // artifact, return "retry" so the caller re-dispatches with failure context
+      // instead of blindly re-dispatching the same unit (#1571).
+      if (!triggerArtifactVerified) {
+        const hasExpectedArtifact = resolveExpectedArtifactPath(s.currentUnit.type, s.currentUnit.id, s.basePath) !== null;
+        if (hasExpectedArtifact) {
+          const retryKey = `${s.currentUnit.type}:${s.currentUnit.id}`;
+          const attempt = (s.verificationRetryCount.get(retryKey) ?? 0) + 1;
+          s.verificationRetryCount.set(retryKey, attempt);
+          s.pendingVerificationRetry = {
+            unitId: s.currentUnit.id,
+            failureContext: `Artifact verification failed: expected artifact for ${s.currentUnit.type} "${s.currentUnit.id}" was not found on disk after unit execution (attempt ${attempt}).`,
+            attempt,
+          };
+          debugLog("postUnit", { phase: "artifact-verify-retry", unitType: s.currentUnit.type, unitId: s.currentUnit.id, attempt });
+          ctx.ui.notify(
+            `Artifact missing for ${s.currentUnit.type} ${s.currentUnit.id} — retrying (attempt ${attempt})`,
+            "warning",
+          );
+          return "retry";
+        }
       }
     } else {
       // Hook unit completed — finalize its runtime record

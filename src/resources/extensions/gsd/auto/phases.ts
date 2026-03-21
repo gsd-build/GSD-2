@@ -1112,6 +1112,17 @@ export async function runFinalize(
     });
     return { action: "break", reason: "pre-verification-dispatched" };
   }
+  if (preResult === "retry") {
+    if (sidecarItem) {
+      // Sidecar artifact retries are skipped — just continue
+      debugLog("autoLoop", { phase: "sidecar-artifact-retry-skipped", iteration: ic.iteration });
+    } else {
+      // s.pendingVerificationRetry was set by postUnitPreVerification.
+      // Continue the loop — next iteration will inject the retry context into the prompt.
+      debugLog("autoLoop", { phase: "artifact-verification-retry", iteration: ic.iteration });
+      return { action: "continue" };
+    }
+  }
 
   if (pauseAfterUatDispatch) {
     ctx.ui.notify(

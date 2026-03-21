@@ -1762,3 +1762,81 @@ test("resolveAgentEndCancelled prevents orphaned promise after abort path", asyn
   const result = await resultPromise;
   assert.equal(result.status, "cancelled");
 });
+
+// ─── #1571: artifact verification retry ──────────────────────────────────────
+
+test("autoLoop re-iterates when postUnitPreVerification returns retry (#1571)", async () => {
+  _resetPendingResolve();
+
+  const ctx = makeMockCtx();
+  ctx.ui.setStatus = () => {};
+  const pi = makeMockPi();
+  const s = makeLoopSession();
+
+  let preVerifyCallCount = 0;
+
+  const deps = makeMockDeps({
+    deriveState: async () => {
+      deps.callLog.push("deriveState");
+      return {
+        phase: "executing",
+        activeMilestone: { id: "M001", title: "Test", status: "active" },
+        activeSlice: { id: "S01", title: "Slice 1" },
+        activeTask: { id: "T01" },
+        registry: [{ id: "M001", status: "active" }],
+        blockers: [],
+      } as any;
+    },
+    postUnitPreVerification: async () => {
+      deps.callLog.push("postUnitPreVerification");
+      preVerifyCallCount++;
+      // First call returns "retry" (artifact missing), second returns "continue"
+      if (preVerifyCallCount === 1) {
+        return "retry" as const;
+      }
+      return "continue" as const;
+    },
+    postUnitPostVerification: async () => {
+      deps.callLog.push("postUnitPostVerification");
+      // After the retry succeeds (second iteration), stop the loop
+      s.active = false;
+      return "continue" as const;
+    },
+  });
+
+  const loopPromise = autoLoop(ctx, pi, s, deps);
+
+  // First iteration: runUnit completes → preVerification returns "retry" → loop continues
+  await new Promise((r) => setTimeout(r, 50));
+  resolveAgentEnd(makeEvent());
+
+  // Second iteration: runUnit completes → preVerification returns "continue" → full finalize
+  await new Promise((r) => setTimeout(r, 50));
+  resolveAgentEnd(makeEvent());
+
+  await loopPromise;
+
+  // preVerification should have been called twice (retry + success)
+  assert.equal(preVerifyCallCount, 2, "preVerification should be called twice");
+
+  // When preVerification returns "retry", runPostUnitVerification and
+  // postUnitPostVerification should be skipped for that iteration.
+  // So we expect 1 call each (only the second iteration proceeds past pre-verification).
+  const postVerifyCalls = deps.callLog.filter(
+    (c: string) => c === "runPostUnitVerification",
+  );
+  const postPostVerifyCalls = deps.callLog.filter(
+    (c: string) => c === "postUnitPostVerification",
+  );
+
+  assert.equal(
+    postVerifyCalls.length,
+    1,
+    "runPostUnitVerification should only be called once (skipped on retry iteration)",
+  );
+  assert.equal(
+    postPostVerifyCalls.length,
+    1,
+    "postUnitPostVerification should only be called once (skipped on retry iteration)",
+  );
+});

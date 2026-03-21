@@ -268,7 +268,7 @@ export interface LoopDeps {
   postUnitPreVerification: (
     pctx: PostUnitContext,
     opts?: PreVerificationOpts,
-  ) => Promise<"dispatched" | "continue">;
+  ) => Promise<"dispatched" | "continue" | "retry">;
   runPostUnitVerification: (
     vctx: VerificationContext,
     pauseAuto: (ctx?: ExtensionContext, pi?: ExtensionAPI) => Promise<void>,
