@@ -1,0 +1,64 @@
+name: PR Risk Report
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  risk-check:
+    name: Classify changed files and assess risk
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Get changed files
+        id: changed
+        run: |
+          git fetch origin ${{ github.base_ref }} --depth=1
+          git diff --name-only origin/${{ github.base_ref }}...HEAD > /tmp/changed-files.txt
+          echo "count=$(wc -l < /tmp/changed-files.txt | tr -d ' ')" >> $GITHUB_OUTPUT
+          cat /tmp/changed-files.txt
+
+      - name: Run risk check
+        id: risk
+        run: |
+          REPORT=$(cat /tmp/changed-files.txt | node scripts/pr-risk-check.mjs --github || true)
+          echo "report<<EOF" >> $GITHUB_OUTPUT
+          echo "$REPORT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          # Extract risk level for the PR label step
+          RISK_LEVEL=$(cat /tmp/changed-files.txt | node scripts/pr-risk-check.mjs --json 2>/dev/null | node -e "process.stdin.resume(); let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>console.log(JSON.parse(d).risk))" || echo "low")
+          echo "level=$RISK_LEVEL" >> $GITHUB_OUTPUT
+
+      - name: Write step summary
+        run: echo "${{ steps.risk.outputs.report }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Find existing risk comment
+        id: find-comment
+        uses: peter-evans/find-comment@v3
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: github-actions[bot]
+          body-includes: PR Risk Report
+
+      - name: Post or update risk comment
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{ steps.find-comment.outputs.comment-id }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body: ${{ steps.risk.outputs.report }}
+          edit-mode: replace
