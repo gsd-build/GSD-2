@@ -8,11 +8,58 @@
 
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 
 const gsdHome = process.env.GSD_HOME || join(homedir(), ".gsd");
+
+// ─── Repo Metadata ───────────────────────────────────────────────────────────
+
+export interface RepoMeta {
+  version: number;
+  hash: string;
+  gitRoot: string;
+  remoteUrl: string;
+  createdAt: string;
+}
+
+/**
+ * Write repo metadata into the external state directory if not already present.
+ * Called once when the external directory is first created (or on re-open if missing).
+ * Non-fatal: a metadata write failure must never block project setup.
+ */
+function writeRepoMeta(externalPath: string, remoteUrl: string, gitRoot: string): void {
+  const metaPath = join(externalPath, "repo-meta.json");
+  if (existsSync(metaPath)) return;
+  try {
+    const meta: RepoMeta = {
+      version: 1,
+      hash: basename(externalPath),
+      gitRoot,
+      remoteUrl,
+      createdAt: new Date().toISOString(),
+    };
+    writeFileSync(metaPath, JSON.stringify(meta, null, 2) + "\n", "utf-8");
+  } catch {
+    // Non-fatal — metadata write failure should not block project setup
+  }
+}
+
+/**
+ * Read repo metadata from the external state directory.
+ * Returns null if the file doesn't exist or can't be parsed.
+ */
+export function readRepoMeta(externalPath: string): RepoMeta | null {
+  const metaPath = join(externalPath, "repo-meta.json");
+  try {
+    if (!existsSync(metaPath)) return null;
+    const raw = readFileSync(metaPath, "utf-8");
+    return JSON.parse(raw) as RepoMeta;
+  } catch {
+    return null;
+  }
+}
 
 // ─── Repo Identity ──────────────────────────────────────────────────────────
 
@@ -155,6 +202,9 @@ export function ensureGsdSymlink(projectPath: string): string {
 
   // Ensure external directory exists
   mkdirSync(externalPath, { recursive: true });
+
+  // Write repo metadata once so cleanup commands can identify this directory later.
+  writeRepoMeta(externalPath, getRemoteUrl(projectPath), resolveGitRoot(projectPath));
 
   const replaceWithSymlink = (): string => {
     rmSync(localGsd, { recursive: true, force: true });
