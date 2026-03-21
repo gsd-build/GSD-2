@@ -1,11 +1,12 @@
 import { execFile, execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
+import * as os from "node:os";
 import { promisify } from "node:util";
 import type { GSDPreferences } from "../gsd/preferences.js";
 import type { GSDState, Phase } from "../gsd/types.js";
 
 const execFileAsync = promisify(execFile);
-const DEFAULT_SOCKET_PATH = "/tmp/cmux.sock";
+const DEFAULT_SOCKET_PATH = `${os.tmpdir()}/cmux.sock`;
 const STATUS_KEY = "gsd";
 const lastSidebarSnapshots = new Map<string, string>();
 let cmuxPromptedThisSession = false;
