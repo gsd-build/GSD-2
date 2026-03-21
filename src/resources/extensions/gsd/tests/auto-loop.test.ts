@@ -247,20 +247,20 @@ test("auto-loop.ts exports autoLoop, runUnit, resolveAgentEnd", async () => {
   );
 });
 
-test("auto-loop.ts contains a while keyword", () => {
+test("auto/loop.ts contains a while keyword", () => {
   const src = readFileSync(
-    resolve(import.meta.dirname, "..", "auto-loop.ts"),
+    resolve(import.meta.dirname, "..", "auto", "loop.ts"),
     "utf-8",
   );
   assert.ok(
     src.includes("while"),
-    "auto-loop.ts should contain a while keyword (loop or placeholder)",
+    "auto/loop.ts should contain a while keyword (loop or placeholder)",
   );
 });
 
-test("auto-loop.ts one-shot pattern: _currentResolve is nulled before calling resolver", () => {
+test("auto/resolve.ts one-shot pattern: _currentResolve is nulled before calling resolver", () => {
   const src = readFileSync(
-    resolve(import.meta.dirname, "..", "auto-loop.ts"),
+    resolve(import.meta.dirname, "..", "auto", "resolve.ts"),
     "utf-8",
   );
   // The one-shot pattern requires: save ref, null the variable, then call
@@ -893,18 +893,18 @@ test("autoLoop exits when no active milestone found", async (t) => {
 
 test("autoLoop exports LoopDeps type", async () => {
   const src = readFileSync(
-    resolve(import.meta.dirname, "..", "auto-loop.ts"),
+    resolve(import.meta.dirname, "..", "auto", "loop-deps.ts"),
     "utf-8",
   );
   assert.ok(
     src.includes("export interface LoopDeps"),
-    "auto-loop.ts should export LoopDeps interface",
+    "auto/loop-deps.ts should export LoopDeps interface",
   );
 });
 
 test("autoLoop signature accepts deps parameter", async () => {
   const src = readFileSync(
-    resolve(import.meta.dirname, "..", "auto-loop.ts"),
+    resolve(import.meta.dirname, "..", "auto", "loop.ts"),
     "utf-8",
   );
   assert.ok(
@@ -915,7 +915,7 @@ test("autoLoop signature accepts deps parameter", async () => {
 
 test("autoLoop contains while (s.active) loop", () => {
   const src = readFileSync(
-    resolve(import.meta.dirname, "..", "auto-loop.ts"),
+    resolve(import.meta.dirname, "..", "auto", "loop.ts"),
     "utf-8",
   );
   assert.ok(
@@ -926,22 +926,47 @@ test("autoLoop contains while (s.active) loop", () => {
 
 // ── T03: End-to-end wiring structural assertions ─────────────────────────────
 
-test("auto-loop.ts exports autoLoop, runUnit, and resolveAgentEnd", () => {
-  const src = readFileSync(
+test("auto-loop.ts barrel re-exports autoLoop, runUnit, and resolveAgentEnd", () => {
+  const barrel = readFileSync(
     resolve(import.meta.dirname, "..", "auto-loop.ts"),
     "utf-8",
   );
   assert.ok(
-    src.includes("export async function autoLoop"),
-    "must export autoLoop",
+    barrel.includes("autoLoop"),
+    "barrel must re-export autoLoop",
   );
   assert.ok(
-    src.includes("export async function runUnit"),
-    "must export runUnit",
+    barrel.includes("runUnit"),
+    "barrel must re-export runUnit",
   );
   assert.ok(
-    src.includes("export function resolveAgentEnd"),
-    "must export resolveAgentEnd",
+    barrel.includes("resolveAgentEnd"),
+    "barrel must re-export resolveAgentEnd",
+  );
+  // Verify the actual function declarations exist in the submodules
+  const loopSrc = readFileSync(
+    resolve(import.meta.dirname, "..", "auto", "loop.ts"),
+    "utf-8",
+  );
+  assert.ok(
+    loopSrc.includes("export async function autoLoop"),
+    "auto/loop.ts must define autoLoop",
+  );
+  const runUnitSrc = readFileSync(
+    resolve(import.meta.dirname, "..", "auto", "run-unit.ts"),
+    "utf-8",
+  );
+  assert.ok(
+    runUnitSrc.includes("export async function runUnit"),
+    "auto/run-unit.ts must define runUnit",
+  );
+  const resolveSrc = readFileSync(
+    resolve(import.meta.dirname, "..", "auto", "resolve.ts"),
+    "utf-8",
+  );
+  assert.ok(
+    resolveSrc.includes("export function resolveAgentEnd"),
+    "auto/resolve.ts must define resolveAgentEnd",
   );
 });
 
@@ -1341,23 +1366,23 @@ test("detectStuck: truncates long error strings", () => {
 });
 
 test("stuck detection: logs debug output with stuck-detected phase", () => {
-  // Structural test: verify the auto-loop.ts source contains
+  // Structural test: verify auto/phases.ts contains
   // stuck-detected and stuck-counter-reset debug log phases, plus detectStuck
   const src = readFileSync(
-    resolve(import.meta.dirname, "..", "auto-loop.ts"),
+    resolve(import.meta.dirname, "..", "auto", "phases.ts"),
     "utf-8",
   );
   assert.ok(
     src.includes('"stuck-detected"'),
-    "auto-loop.ts must log phase: 'stuck-detected' when stuck detection fires",
+    "auto/phases.ts must log phase: 'stuck-detected' when stuck detection fires",
   );
   assert.ok(
     src.includes('"stuck-counter-reset"'),
-    "auto-loop.ts must log phase: 'stuck-counter-reset' when recovery resets on new unit",
+    "auto/phases.ts must log phase: 'stuck-counter-reset' when recovery resets on new unit",
   );
   assert.ok(
     src.includes("detectStuck"),
-    "auto-loop.ts must use detectStuck for sliding window analysis",
+    "auto/phases.ts must use detectStuck for sliding window analysis",
   );
 });
 

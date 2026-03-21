@@ -122,23 +122,23 @@ test("worktree swap on milestone transition: merge old, create new", () => {
 
 // ─── Verify the transition code path exists in auto.ts ──────────────────────
 
-test("auto-loop.ts milestone transition block contains worktree lifecycle", () => {
-  const autoSrc = readFileSync(
-    join(__dirname, "..", "auto-loop.ts"),
+test("auto/phases.ts milestone transition block contains worktree lifecycle", () => {
+  const phasesSrc = readFileSync(
+    join(__dirname, "..", "auto", "phases.ts"),
     "utf-8",
   );
 
   // The resolver handles worktree merge + enter inside the milestone transition block
   assert.ok(
-    autoSrc.includes("Worktree lifecycle on milestone transition"),
-    "auto-loop.ts should contain the worktree lifecycle comment marker",
+    phasesSrc.includes("Worktree lifecycle on milestone transition"),
+    "auto/phases.ts should contain the worktree lifecycle comment marker",
   );
   assert.ok(
-    autoSrc.includes("resolver.mergeAndExit") && autoSrc.includes("mid !== s.currentMilestoneId"),
-    "auto-loop.ts should call resolver.mergeAndExit during milestone transition",
+    phasesSrc.includes("resolver.mergeAndExit") && phasesSrc.includes("mid !== s.currentMilestoneId"),
+    "auto/phases.ts should call resolver.mergeAndExit during milestone transition",
   );
   assert.ok(
-    autoSrc.includes("resolver.enterMilestone"),
-    "auto-loop.ts should call resolver.enterMilestone for incoming milestone",
+    phasesSrc.includes("resolver.enterMilestone"),
+    "auto/phases.ts should call resolver.enterMilestone for incoming milestone",
   );
 });
