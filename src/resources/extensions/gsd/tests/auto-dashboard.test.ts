@@ -8,6 +8,7 @@ import {
   formatAutoElapsed,
   formatWidgetTokens,
   estimateTimeRemaining,
+  extractUatSliceId,
 } from "../auto-dashboard.ts";
 
 // ─── unitVerb ─────────────────────────────────────────────────────────────
@@ -177,4 +178,18 @@ test("formatAutoElapsed returns empty string for negative autoStartTime", () => 
   // handle it gracefully via its falsy check.
   assert.equal(formatAutoElapsed(-1), "");
   assert.equal(formatAutoElapsed(NaN), "");
+});
+
+// ─── extractUatSliceId ───────────────────────────────────────────────────
+
+test("extractUatSliceId extracts slice ID from M001/S01 format", () => {
+  assert.equal(extractUatSliceId("M001/S01"), "S01");
+  assert.equal(extractUatSliceId("M002/S03"), "S03");
+  assert.equal(extractUatSliceId("M001/S12"), "S12");
+});
+
+test("extractUatSliceId returns null for invalid formats", () => {
+  assert.equal(extractUatSliceId("M001"), null);
+  assert.equal(extractUatSliceId(""), null);
+  assert.equal(extractUatSliceId("M001/T01"), null);
 });

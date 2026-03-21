@@ -24,6 +24,18 @@ import { computeProgressScore } from "./progress-score.js";
 import { getActiveWorktreeName } from "./worktree-command.js";
 import { loadEffectiveGSDPreferences, getGlobalGSDPreferencesPath } from "./preferences.js";
 
+// ─── UAT Slice Extraction ─────────────────────────────────────────────────────
+
+/**
+ * Extract the target slice ID from a run-uat unit ID (e.g. "M001/S01" → "S01").
+ * Returns null if the format doesn't match.
+ */
+export function extractUatSliceId(unitId: string): string | null {
+  const parts = unitId.split("/");
+  if (parts.length >= 2 && parts[1]!.startsWith("S")) return parts[1]!;
+  return null;
+}
+
 // ─── Dashboard Data ───────────────────────────────────────────────────────────
 
 /** Dashboard data for the overlay */
@@ -408,9 +420,16 @@ export function updateProgressWidget(
   const verb = unitVerb(unitType);
   const phaseLabel = unitPhaseLabel(unitType);
   const mid = state.activeMilestone;
-  const slice = state.activeSlice;
-  const task = state.activeTask;
   const isHook = unitType.startsWith("hook/");
+
+  // When run-uat is executing for a just-completed slice (e.g. S01),
+  // deriveState() has already advanced activeSlice to the next one (S02).
+  // Override the displayed slice to match the UAT target from the unit ID.
+  const uatTargetSliceId = unitType === "run-uat" ? extractUatSliceId(unitId) : null;
+  const slice = uatTargetSliceId
+    ? { id: uatTargetSliceId, title: state.activeSlice?.title ?? "" }
+    : state.activeSlice;
+  const task = state.activeTask;
 
   // Cache git branch at widget creation time (not per render)
   let cachedBranch: string | null = null;
