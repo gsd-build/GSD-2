@@ -323,11 +323,13 @@ function pruneRemovedBundledExtensions(
     for (const prevFile of manifest.installedExtensionRootFiles) {
       removeIfStale(prevFile)
     }
-  } else {
-    // Fallback: explicitly remove known stale files from pre-manifest-tracking versions
-    // env-utils.js was moved from extensions/ root → gsd/ in v2.39.x (#1634)
-    removeIfStale('env-utils.js')
   }
+
+  // Always remove known stale files regardless of manifest state.
+  // These were installed by pre-manifest versions so they may not appear in
+  // installedExtensionRootFiles even when a manifest exists.
+  // env-utils.js was moved from extensions/ root → gsd/ in v2.39.x (#1634)
+  removeIfStale('env-utils.js')
 }
 
 /**
