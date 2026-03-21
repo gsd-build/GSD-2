@@ -115,6 +115,7 @@ import {
   formatHealthSummary,
   getConsecutiveErrorUnits,
 } from "./doctor-proactive.js";
+import { selfHealRuntimeRecords } from "./auto-recovery.js";
 import { clearSkillSnapshot } from "./skill-discovery.js";
 import {
   captureAvailableSkills,
@@ -1052,6 +1053,9 @@ export async function startAuto(
     );
     logCmuxEvent(loadEffectiveGSDPreferences()?.preferences, s.stepMode ? "Step-mode resumed." : "Auto-mode resumed.", "progress");
 
+    // Clear orphaned runtime records from prior process deaths before entering the loop
+    await selfHealRuntimeRecords(s.basePath, ctx);
+
     await autoLoop(ctx, pi, s, buildLoopDeps());
     return;
   }
@@ -1081,6 +1085,9 @@ export async function startAuto(
     // Best-effort only — sidebar sync must never block auto-mode startup
   }
   logCmuxEvent(loadEffectiveGSDPreferences()?.preferences, requestedStepMode ? "Step-mode started." : "Auto-mode started.", "progress");
+
+  // Clear orphaned runtime records from prior process deaths before entering the loop
+  await selfHealRuntimeRecords(s.basePath, ctx);
 
   // Dispatch the first unit
   await autoLoop(ctx, pi, s, buildLoopDeps());

@@ -1098,6 +1098,32 @@ test("auto.ts startAuto calls autoLoop (not dispatchNextUnit as first dispatch)"
   );
 });
 
+test("startAuto calls selfHealRuntimeRecords before autoLoop (#1727)", () => {
+  const src = readFileSync(
+    resolve(import.meta.dirname, "..", "auto.ts"),
+    "utf-8",
+  );
+  const fnIdx = src.indexOf("export async function startAuto");
+  assert.ok(fnIdx > -1, "startAuto must exist in auto.ts");
+  const fnEnd = src.indexOf("\n// ─── ", fnIdx + 100);
+  const fnBlock =
+    fnEnd > -1 ? src.slice(fnIdx, fnEnd) : src.slice(fnIdx, fnIdx + 5000);
+
+  // Both autoLoop call sites must be preceded by selfHealRuntimeRecords
+  const healIdx = fnBlock.indexOf("selfHealRuntimeRecords");
+  const loopIdx = fnBlock.indexOf("autoLoop(");
+  assert.ok(healIdx > -1, "startAuto must call selfHealRuntimeRecords");
+  assert.ok(healIdx < loopIdx, "selfHealRuntimeRecords must be called before autoLoop");
+
+  // Verify the second autoLoop call site also has selfHeal before it
+  const secondLoopIdx = fnBlock.indexOf("autoLoop(", loopIdx + 1);
+  if (secondLoopIdx > -1) {
+    const secondHealIdx = fnBlock.indexOf("selfHealRuntimeRecords", healIdx + 1);
+    assert.ok(secondHealIdx > -1, "second autoLoop call must also have selfHealRuntimeRecords");
+    assert.ok(secondHealIdx < secondLoopIdx, "second selfHealRuntimeRecords must precede second autoLoop");
+  }
+});
+
 test("agent_end handler calls resolveAgentEnd (not handleAgentEnd)", () => {
   const hooksSrc = readFileSync(
     resolve(import.meta.dirname, "..", "bootstrap", "register-hooks.ts"),
