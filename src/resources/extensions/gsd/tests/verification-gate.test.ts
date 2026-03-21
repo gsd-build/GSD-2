@@ -18,8 +18,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { discoverCommands, runVerificationGate, formatFailureContext, captureRuntimeErrors, runDependencyAudit, isLikelyCommand } from "../verification-gate.ts";
 import type { CaptureRuntimeErrorsOptions, DependencyAuditOptions } from "../verification-gate.ts";
 import { validatePreferences } from "../preferences.ts";
@@ -239,6 +241,47 @@ test("verification-gate: command not found → exit code 127", () => {
     assert.equal(result.checks.length, 1);
     assert.ok(result.checks[0].exitCode !== 0, "should have non-zero exit code");
     assert.ok(result.checks[0].durationMs >= 0);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("verification-gate: no DEP0190 deprecation warning when running commands", () => {
+  const tmp = makeTempDir("vg-dep0190");
+  try {
+    // Run a subprocess with --throw-deprecation so any DeprecationWarning
+    // becomes a thrown error (non-zero exit). The fix passes the command
+    // string to sh -c explicitly instead of using spawnSync(cmd, {shell:true}).
+    const thisDir = dirname(fileURLToPath(import.meta.url));
+    const gatePath = join(thisDir, "..", "verification-gate.ts");
+    const resolverPath = join(thisDir, "resolve-ts.mjs");
+    const script = [
+      `import { runVerificationGate } from ${JSON.stringify("file://" + gatePath)};`,
+      `runVerificationGate({`,
+      `  basePath: ${JSON.stringify(tmp)},`,
+      `  unitId: "T-DEP",`,
+      `  cwd: ${JSON.stringify(tmp)},`,
+      `  preferenceCommands: ["echo dep0190-check"],`,
+      `});`,
+    ].join("\n");
+    const child = spawnSync(
+      process.execPath,
+      [
+        "--throw-deprecation",
+        "--experimental-strip-types",
+        "--import", resolverPath,
+        "--input-type=module",
+        "-e", script,
+      ],
+      { encoding: "utf-8", timeout: 15_000 },
+    );
+    // With --throw-deprecation, any DeprecationWarning becomes a thrown error
+    // causing a non-zero exit. Exit 0 proves no deprecation was emitted.
+    assert.equal(
+      child.status,
+      0,
+      `Expected exit 0 (no deprecation) but got ${child.status}. stderr: ${child.stderr}`,
+    );
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
