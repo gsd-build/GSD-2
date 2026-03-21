@@ -278,7 +278,7 @@ describe("buildCmuxTabTitle", () => {
     blockers: [],
     nextAction: "",
     registry: [],
-    progress: null,
+    progress: undefined,
   };
 
   test("no active milestone → gsd · <phase>", () => {
