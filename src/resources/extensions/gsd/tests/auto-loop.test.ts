@@ -481,6 +481,106 @@ test("autoLoop exits when s.active is set to false", async (t) => {
   );
 });
 
+test("autoLoop refreshes widget after finalize with updated state (#1878)", async () => {
+  _resetPendingResolve();
+
+  const ctx = makeMockCtx();
+  ctx.ui.setStatus = () => {};
+  ctx.sessionManager = { getSessionFile: () => "/tmp/session.json" };
+  const pi = makeMockPi();
+
+  let loopCount = 0;
+  const s = makeLoopSession();
+
+  // Track all updateProgressWidget calls with the state they receive
+  const widgetCalls: Array<{ unitType: string; phase: string; callIndex: number }> = [];
+  let callCounter = 0;
+
+  // deriveState returns "researching" first (dispatch), then "planning" (post-finalize)
+  let deriveCallCount = 0;
+  const deps = makeMockDeps({
+    deriveState: async () => {
+      deriveCallCount++;
+      deps.callLog.push("deriveState");
+      // First call (pre-dispatch): researching phase
+      // Second call (post-finalize refresh): planning phase — state has advanced
+      if (deriveCallCount <= 1) {
+        return {
+          phase: "executing",
+          activeMilestone: { id: "M001", title: "Test", status: "active" },
+          activeSlice: { id: "S01", title: "Slice 1" },
+          activeTask: { id: "T01" },
+          registry: [{ id: "M001", status: "active" }],
+          blockers: [],
+        } as any;
+      }
+      return {
+        phase: "planning",
+        activeMilestone: { id: "M001", title: "Test", status: "active" },
+        activeSlice: { id: "S02", title: "Slice 2" },
+        activeTask: null,
+        registry: [{ id: "M001", status: "active" }],
+        blockers: [],
+      } as any;
+    },
+    resolveDispatch: async () => {
+      deps.callLog.push("resolveDispatch");
+      return {
+        action: "dispatch" as const,
+        unitType: "research-slice",
+        unitId: "M001/S01",
+        prompt: "research the slice",
+      };
+    },
+    updateProgressWidget: (_ctx: any, unitType: string, _unitId: string, state: any) => {
+      callCounter++;
+      widgetCalls.push({ unitType, phase: state.phase, callIndex: callCounter });
+      deps.callLog.push("updateProgressWidget");
+    },
+    postUnitPostVerification: async () => {
+      deps.callLog.push("postUnitPostVerification");
+      loopCount++;
+      if (loopCount >= 1) {
+        s.active = false;
+      }
+      return "continue" as const;
+    },
+  });
+
+  const loopPromise = autoLoop(ctx, pi, s, deps);
+  await new Promise((r) => setTimeout(r, 50));
+  resolveAgentEnd(makeEvent());
+  await loopPromise;
+
+  // The widget should have been updated at least twice:
+  // 1. At dispatch time with the research-slice unitType
+  // 2. After finalize with the updated state (planning phase)
+  assert.ok(
+    widgetCalls.length >= 2,
+    `widget should be updated after finalize, got ${widgetCalls.length} call(s): ${JSON.stringify(widgetCalls)}`,
+  );
+
+  // The first call should be at dispatch time
+  const dispatchCall = widgetCalls[0];
+  assert.equal(dispatchCall.unitType, "research-slice", "first widget update should show dispatch unitType");
+
+  // The last call (post-finalize) should reflect the NEW state
+  const postFinalizeCall = widgetCalls[widgetCalls.length - 1];
+  assert.equal(
+    postFinalizeCall.phase,
+    "planning",
+    "post-finalize widget update should show advanced state phase",
+  );
+
+  // Post-finalize widget call must come AFTER postUnitPostVerification
+  const lastWidgetIdx = deps.callLog.lastIndexOf("updateProgressWidget");
+  const postVerIdx = deps.callLog.lastIndexOf("postUnitPostVerification");
+  assert.ok(
+    lastWidgetIdx > postVerIdx,
+    "widget refresh must come after post-verification completes",
+  );
+});
+
 test("autoLoop exits on terminal complete state", async (t) => {
   _resetPendingResolve();
 
@@ -1604,9 +1704,26 @@ test("autoLoop lifecycle: advances through research → plan → execute → ver
       deriveCallCount++;
       deps.callLog.push("deriveState");
 
-      const terminalPhases: Record<string, string> = { complete: "complete" };
-      s.active = p.phase !== "complete";
-      const milestoneStatus = terminalPhases[p.phase] ?? "active";
+      // Use dispatch count to determine phase: each pre-dispatch derive
+      // should return the phase for the upcoming dispatch. Post-finalize
+      // derive calls (#1878 widget refresh) return the same phase since
+      // they occur between dispatches.
+      const phaseIdx = dispatchCallCount;
+      if (phaseIdx >= phases.length) {
+        // Past all phases: deactivate to exit the loop
+        s.active = false;
+        return {
+          phase: "complete",
+          activeMilestone: { id: "M001", title: "Test", status: "complete" },
+          activeSlice: null,
+          activeTask: null,
+          registry: [{ id: "M001", status: "complete" }],
+          blockers: [],
+        } as any;
+      }
+
+      const p = phases[phaseIdx];
+      const milestoneStatus = p.phase === "complete" ? "complete" : "active";
       return {
         phase: p.phase,
         activeMilestone: { id: "M001", title: "Test", status: milestoneStatus },

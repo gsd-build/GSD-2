@@ -1277,5 +1277,37 @@ export async function runFinalize(
     return { action: "break", reason: "step-wizard" };
   }
 
+  // ── Refresh widget with post-finalize state (#1878) ────────────────
+  // After a unit completes, deriveState may return a new phase (e.g.
+  // research → planning). Without this refresh, the widget keeps showing
+  // the dispatch-time unit type until the next iteration's runDispatch,
+  // causing a visible desync between the dashboard and disk state.
+  try {
+    const freshState = await deps.deriveState(ic.s.basePath);
+    const nextDesc = freshState.phase ?? "idle";
+    const mid = freshState.activeMilestone?.id;
+    if (mid) {
+      deps.updateSliceProgressCache(ic.s.basePath, mid, freshState.activeSlice?.id);
+    }
+    // Use a synthetic "idle" unitType when no unit is running, so the
+    // widget shows the current phase rather than the completed unit.
+    deps.updateProgressWidget(
+      ctx,
+      iterData.unitType,
+      iterData.unitId,
+      freshState,
+    );
+    debugLog("autoLoop", {
+      phase: "widget-refreshed-post-finalize",
+      newPhase: nextDesc,
+    });
+  } catch (e) {
+    // Non-fatal — stale widget is better than a crashed loop
+    debugLog("autoLoop", {
+      phase: "widget-refresh-error",
+      error: e instanceof Error ? e.message : String(e),
+    });
+  }
+
   return { action: "next", data: undefined as void };
 }
