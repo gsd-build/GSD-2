@@ -207,7 +207,9 @@ export function nativeDetectMainBranch(basePath: string): string {
 /**
  * Check if a local branch exists.
  * Native: checks refs/heads/<name> via libgit2.
- * Fallback: `git show-ref --verify`.
+ * Fallback: `git show-ref --verify`, with unborn-branch detection
+ * so that the current branch in a zero-commit repo is treated as
+ * existing (fixes #1771).
  */
 export function nativeBranchExists(basePath: string, branch: string): boolean {
   const native = loadNative();
@@ -215,7 +217,12 @@ export function nativeBranchExists(basePath: string, branch: string): boolean {
     return native.gitBranchExists(basePath, branch);
   }
   const result = gitExec(basePath, ["show-ref", "--verify", `refs/heads/${branch}`], true);
-  return result !== "";
+  if (result !== "") return true;
+
+  // show-ref fails for unborn branches (zero commits). Fall back to checking
+  // whether the requested branch is the current (unborn) branch.
+  const current = gitExec(basePath, ["branch", "--show-current"], true);
+  return current === branch;
 }
 
 /**
