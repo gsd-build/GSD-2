@@ -451,6 +451,7 @@ export class WorktreeResolver {
           // have already removed the worktree.
         }
 
+
         if (mergeResult.codeFilesChanged) {
           ctx.notify(
             `Milestone ${milestoneId} merged to main.${mergeResult.pushed ? " Pushed to remote." : ""}`,
