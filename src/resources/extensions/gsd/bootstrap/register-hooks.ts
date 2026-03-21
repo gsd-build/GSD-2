@@ -136,7 +136,8 @@ export function registerHooks(pi: ExtensionAPI): void {
   pi.on("tool_result", async (event) => {
     if (event.toolName !== "ask_user_questions") return;
     const milestoneId = getDiscussionMilestoneId();
-    if (!milestoneId) return;
+    const queueActive = isQueuePhaseActive();
+    if (!milestoneId && !queueActive) return;
 
     const details = event.details as any;
     if (details?.cancelled || !details?.response) return;
@@ -148,6 +149,8 @@ export function registerHooks(pi: ExtensionAPI): void {
         break;
       }
     }
+
+    if (!milestoneId) return;
 
     const basePath = process.cwd();
     const milestoneDir = resolveMilestonePath(basePath, milestoneId);
