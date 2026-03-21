@@ -27,10 +27,23 @@ export function markSliceDoneInRoadmap(basePath: string, mid: string, sid: strin
     return false;
   }
 
-  const updated = content.replace(
+  // Try checkbox format first: "- [ ] **S01: Title**"
+  let updated = content.replace(
     new RegExp(`^(\\s*-\\s+)\\[ \\]\\s+\\*\\*${sid}:`, "m"),
     `$1[x] **${sid}:`,
   );
+
+  // If checkbox format didn't match, try prose format: "## S01: Title" -> "## S01: \u2713 Title"
+  if (updated === content) {
+    updated = content.replace(
+      new RegExp(`^(#{1,4}\\s+(?:\\*{0,2})(?:Slice\\s+)?${sid}\\*{0,2}[:\\s.\\u2014\\u2013-]+\\s*)(.+)`, "m"),
+      (match, prefix, title) => {
+        // Already marked done — no-op
+        if (/^\u2713/.test(title) || /\(Complete\)\s*$/i.test(title)) return match;
+        return `${prefix}\u2713 ${title}`;
+      },
+    );
+  }
 
   if (updated === content) return false;
 

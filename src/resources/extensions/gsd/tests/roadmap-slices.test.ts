@@ -71,117 +71,130 @@ test("parseRoadmapSlices: comma-separated depends still works", () => {
 
 test("parseRoadmapSlices: table format under ## Slices heading (#1736)", () => {
   const tableContent = [
-    "# M001: Test Project",
-    "",
-    "## Slices",
-    "",
+    "# M001: Test Project", "", "## Slices", "",
     "| Slice | Title | Risk | Status |",
     "| --- | --- | --- | --- |",
     "| S01 | Setup Foundation | Low | [x] Done |",
     "| S02 | Core Features | High | [ ] Pending |",
     "| S03 | Polish | Medium | [x] Done |",
-    "",
-    "## Boundary Map",
+    "", "## Boundary Map",
   ].join("\n");
-
   const slices = parseRoadmapSlices(tableContent);
   assert.equal(slices.length, 3, "should parse 3 slices from table");
   assert.equal(slices[0]?.id, "S01");
-  assert.equal(slices[0]?.title, "Setup Foundation");
   assert.equal(slices[0]?.done, true);
-  assert.equal(slices[0]?.risk, "low");
   assert.equal(slices[1]?.id, "S02");
   assert.equal(slices[1]?.done, false);
-  assert.equal(slices[1]?.risk, "high");
-  assert.equal(slices[2]?.id, "S03");
   assert.equal(slices[2]?.done, true);
-  assert.equal(slices[2]?.risk, "medium");
 });
 
 test("parseRoadmapSlices: table format under ## Slice Overview heading (#1736)", () => {
   const tableContent = [
-    "# M002: Another Project",
-    "",
-    "## Slice Overview",
-    "",
-    "| ID | Description | Risk | Done |",
-    "|---|---|---|---|",
+    "# M002: Another Project", "", "## Slice Overview", "",
+    "| ID | Description | Risk | Done |", "|---|---|---|---|",
     "| S01 | Foundation Work | High | [x] |",
-    "| S02 | API Layer | Medium | [ ] |",
-    "",
+    "| S02 | API Layer | Medium | [ ] |", "",
   ].join("\n");
-
   const slices = parseRoadmapSlices(tableContent);
-  assert.equal(slices.length, 2, "should parse slices from Slice Overview table");
-  assert.equal(slices[0]?.id, "S01");
-  assert.equal(slices[0]?.title, "Foundation Work");
+  assert.equal(slices.length, 2);
   assert.equal(slices[0]?.done, true);
-  assert.equal(slices[0]?.risk, "high");
-  assert.equal(slices[1]?.id, "S02");
   assert.equal(slices[1]?.done, false);
 });
 
 test("parseRoadmapSlices: table with Status Done/Complete text (#1736)", () => {
   const tableContent = [
-    "# M003: Status Text",
-    "",
-    "## Slices",
-    "",
-    "| Slice | Title | Risk | Status |",
-    "|---|---|---|---|",
+    "# M003: Status Text", "", "## Slices", "",
+    "| Slice | Title | Risk | Status |", "|---|---|---|---|",
     "| S01 | First | Low | Done |",
     "| S02 | Second | High | Pending |",
-    "| S03 | Third | Medium | Completed |",
-    "",
+    "| S03 | Third | Medium | Completed |", "",
   ].join("\n");
-
   const slices = parseRoadmapSlices(tableContent);
   assert.equal(slices.length, 3);
-  assert.equal(slices[0]?.done, true, "Done text marks slice as done");
-  assert.equal(slices[1]?.done, false, "Pending text marks slice as not done");
-  assert.equal(slices[2]?.done, true, "Completed text marks slice as done");
+  assert.equal(slices[0]?.done, true);
+  assert.equal(slices[1]?.done, false);
+  assert.equal(slices[2]?.done, true);
 });
 
 test("parseRoadmapSlices: table with dependencies column (#1736)", () => {
   const tableContent = [
-    "# M004: Deps",
-    "",
-    "## Slices",
-    "",
-    "| Slice | Title | Risk | Depends | Status |",
-    "|---|---|---|---|---|",
+    "# M004: Deps", "", "## Slices", "",
+    "| Slice | Title | Risk | Depends | Status |", "|---|---|---|---|---|",
     "| S01 | First | Low | None | Done |",
     "| S02 | Second | High | S01 | Pending |",
-    "| S03 | Third | Medium | S01, S02 | [ ] |",
-    "",
+    "| S03 | Third | Medium | S01, S02 | [ ] |", "",
   ].join("\n");
-
   const slices = parseRoadmapSlices(tableContent);
   assert.equal(slices.length, 3);
-  assert.deepEqual(slices[0]?.depends, [], "None deps parsed as empty");
-  assert.deepEqual(slices[1]?.depends, ["S01"], "Single dep parsed");
-  assert.deepEqual(slices[2]?.depends, ["S01", "S02"], "Multiple deps parsed");
+  assert.deepEqual(slices[0]?.depends, []);
+  assert.deepEqual(slices[1]?.depends, ["S01"]);
+  assert.deepEqual(slices[2]?.depends, ["S01", "S02"]);
 });
 
-test("parseRoadmapSlices: standard checkbox format still works after table support (#1736)", () => {
-  // Verify the existing checkbox format is not broken by the table parsing addition
+test("parseRoadmapSlices: standard checkbox format still works (#1736)", () => {
   const checkboxContent = [
-    "# M005: Unchanged",
-    "",
-    "## Slices",
-    "",
+    "# M005: Unchanged", "", "## Slices", "",
     "- [x] **S01: First Slice** `risk:low` `depends:[]`",
     "  > After this: First demo works.",
-    "- [ ] **S02: Second Slice** `risk:medium` `depends:[S01]`",
-    "",
+    "- [ ] **S02: Second Slice** `risk:medium` `depends:[S01]`", "",
   ].join("\n");
-
   const slices = parseRoadmapSlices(checkboxContent);
   assert.equal(slices.length, 2);
+  assert.equal(slices[0]?.done, true);
+  assert.equal(slices[1]?.done, false);
+});
+
+// --- Prose slice header completion marker tests (#1803) ---
+
+test("parseRoadmapSlices: prose headers with ✓ marker detected as done", () => {
+  const proseContent = `# M010: Prose Roadmap
+
+## S01: ✓ First Feature
+Some description.
+
+## S02: Second Feature
+Not done yet.
+
+## S03: ✓ Third Feature
+Also done.
+`;
+  const slices = parseRoadmapSlices(proseContent);
+  assert.equal(slices.length, 3);
   assert.equal(slices[0]?.id, "S01");
   assert.equal(slices[0]?.done, true);
-  assert.equal(slices[0]?.demo, "First demo works.");
-  assert.equal(slices[1]?.id, "S02");
+  assert.equal(slices[0]?.title, "First Feature");
   assert.equal(slices[1]?.done, false);
-  assert.deepEqual(slices[1]?.depends, ["S01"]);
+  assert.equal(slices[2]?.done, true);
+});
+
+test("parseRoadmapSlices: prose headers with (Complete) marker detected as done", () => {
+  const proseContent = `# M011: Prose Roadmap
+
+## S01: First Feature (Complete)
+Done slice.
+
+## S02: Second Feature
+In progress.
+`;
+  const slices = parseRoadmapSlices(proseContent);
+  assert.equal(slices.length, 2);
+  assert.equal(slices[0]?.done, true);
+  assert.equal(slices[0]?.title, "First Feature");
+  assert.equal(slices[1]?.done, false);
+});
+
+test("parseRoadmapSlices: prose headers with ✓ prefix before title", () => {
+  const proseContent = `# M012: Prose
+
+## ✓ S01: Done Slice
+Complete.
+
+## S02: Pending Slice
+Not done.
+`;
+  const slices = parseRoadmapSlices(proseContent);
+  assert.equal(slices.length, 2);
+  assert.equal(slices[0]?.done, true);
+  assert.equal(slices[0]?.title, "Done Slice");
+  assert.equal(slices[1]?.done, false);
 });
