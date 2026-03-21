@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 
 import {
   resolveAgentEnd,
+  resolveAgentEndCancelled,
   runUnit,
   autoLoop,
   detectStuck,
@@ -1713,4 +1714,51 @@ test("autoLoop lifecycle: advances through research → plan → execute → ver
     ],
     "dispatched unit types should follow the full lifecycle sequence",
   );
+});
+
+// ─── resolveAgentEndCancelled tests ──────────────────────────────────────────
+
+test("resolveAgentEndCancelled resolves a pending promise with cancelled status", async () => {
+  _resetPendingResolve();
+
+  const ctx = makeMockCtx();
+  const pi = makeMockPi();
+  const s = makeMockSession();
+
+  const resultPromise = runUnit(ctx, pi, s, "task", "T01", "prompt");
+
+  await new Promise((r) => setTimeout(r, 10));
+
+  resolveAgentEndCancelled();
+
+  const result = await resultPromise;
+  assert.equal(result.status, "cancelled");
+  assert.equal(result.event, undefined);
+});
+
+test("resolveAgentEndCancelled is a no-op when no promise is pending", () => {
+  _resetPendingResolve();
+
+  assert.doesNotThrow(() => {
+    resolveAgentEndCancelled();
+  });
+});
+
+test("resolveAgentEndCancelled prevents orphaned promise after abort path", async () => {
+  _resetPendingResolve();
+
+  const ctx = makeMockCtx();
+  const pi = makeMockPi();
+  const s = makeMockSession();
+
+  const resultPromise = runUnit(ctx, pi, s, "task", "T01", "prompt");
+
+  await new Promise((r) => setTimeout(r, 10));
+
+  // Simulate abort: deactivate session then cancel
+  s.active = false;
+  resolveAgentEndCancelled();
+
+  const result = await resultPromise;
+  assert.equal(result.status, "cancelled");
 });

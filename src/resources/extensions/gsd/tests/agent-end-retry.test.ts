@@ -81,3 +81,63 @@ test("handleAgentEnd is a thin compatibility wrapper", () => {
     "handleAgentEnd must not dispatch recursively",
   );
 });
+
+test("handleAgentEnd early return calls resolveAgentEndCancelled", () => {
+  const source = getAutoTsSource();
+  const fnIdx = source.indexOf("export async function handleAgentEnd");
+  assert.ok(fnIdx > -1, "handleAgentEnd must exist in auto.ts");
+  const fnBlock = source.slice(fnIdx, source.indexOf("\n// ─── ", fnIdx + 100));
+
+  assert.ok(
+    fnBlock.includes("resolveAgentEndCancelled()"),
+    "handleAgentEnd must call resolveAgentEndCancelled on early return to prevent orphaned promises",
+  );
+});
+
+test("pauseAuto calls resolveAgentEndCancelled to unblock the loop", () => {
+  const source = getAutoTsSource();
+  const fnIdx = source.indexOf("export async function pauseAuto");
+  assert.ok(fnIdx > -1, "pauseAuto must exist in auto.ts");
+  // Extract the function body (up to the next export or top-level function)
+  const fnBlock = source.slice(fnIdx, source.indexOf("\n/**\n * Build", fnIdx + 100));
+
+  assert.ok(
+    fnBlock.includes("resolveAgentEndCancelled()"),
+    "pauseAuto must call resolveAgentEndCancelled to unblock the auto-loop promise",
+  );
+});
+
+test("auto-timers.ts idle watchdog catch calls resolveAgentEndCancelled", () => {
+  const TIMERS_PATH = join(__dirname, "..", "auto-timers.ts");
+  const source = readFileSync(TIMERS_PATH, "utf-8");
+
+  const idleCatchIdx = source.indexOf("[idle-watchdog] Unhandled error");
+  assert.ok(idleCatchIdx > -1, "idle watchdog catch block must exist");
+  // Check that resolveAgentEndCancelled is called near this catch
+  const catchRegion = source.slice(Math.max(0, idleCatchIdx - 200), idleCatchIdx + 200);
+  assert.ok(
+    catchRegion.includes("resolveAgentEndCancelled()"),
+    "idle watchdog catch block must call resolveAgentEndCancelled",
+  );
+});
+
+test("auto-timers.ts hard timeout catch calls resolveAgentEndCancelled", () => {
+  const TIMERS_PATH = join(__dirname, "..", "auto-timers.ts");
+  const source = readFileSync(TIMERS_PATH, "utf-8");
+
+  const hardCatchIdx = source.indexOf("[hard-timeout] Unhandled error");
+  assert.ok(hardCatchIdx > -1, "hard timeout catch block must exist");
+  const catchRegion = source.slice(Math.max(0, hardCatchIdx - 200), hardCatchIdx + 200);
+  assert.ok(
+    catchRegion.includes("resolveAgentEndCancelled()"),
+    "hard timeout catch block must call resolveAgentEndCancelled",
+  );
+});
+
+test("resolveAgentEndCancelled is exported from auto/resolve.ts", () => {
+  const source = getAutoResolveTsSource();
+  assert.ok(
+    source.includes("export function resolveAgentEndCancelled"),
+    "auto/resolve.ts must export resolveAgentEndCancelled",
+  );
+});

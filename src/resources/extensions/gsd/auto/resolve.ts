@@ -68,6 +68,24 @@ export function isSessionSwitchInFlight(): boolean {
   return _sessionSwitchInFlight;
 }
 
+// ─── resolveAgentEndCancelled ─────────────────────────────────────────────────
+
+/**
+ * Force-resolve the pending unit promise with { status: "cancelled" }.
+ *
+ * Used by pauseAuto, handleAgentEnd early-return, and supervision catch
+ * blocks to ensure the autoLoop is never stuck awaiting a promise that
+ * will never resolve. Safe to call when no resolver is pending (no-op).
+ */
+export function resolveAgentEndCancelled(): void {
+  if (_currentResolve) {
+    debugLog("resolveAgentEndCancelled", { status: "resolving-cancelled" });
+    const r = _currentResolve;
+    _currentResolve = null;
+    r({ status: "cancelled" });
+  }
+}
+
 // ─── resetPendingResolve (test helper) ───────────────────────────────────────
 
 /**
