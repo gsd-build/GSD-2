@@ -210,70 +210,22 @@ export function Dashboard({ onSwitchView, onExpandTerminal }: DashboardProps = {
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <div className="flex items-center justify-between border-b border-border px-6 py-3">
-        <div>
+        <div className="flex items-center gap-2">
           <h1 className="text-lg font-semibold">Dashboard</h1>
-          <div className="mt-1 text-sm text-muted-foreground">
-            {isConnecting ? <Skeleton className="h-4 w-40" /> : <ScopeBadge label={scopeLabel} size="sm" />}
-          </div>
+          {!isConnecting && scopeLabel && (
+            <>
+              <span className="text-lg font-thin text-muted-foreground/40 select-none">/</span>
+              <ScopeBadge label={scopeLabel} size="sm" />
+            </>
+          )}
+          {isConnecting && <Skeleton className="h-4 w-40" />}
         </div>
         <div className="flex items-center gap-3" data-testid="dashboard-action-bar">
           {isConnecting ? (
             <>
-              <Skeleton className="h-8 w-36 rounded-md" />
-              <Skeleton className="h-8 w-16 rounded-md" />
-              <div className="h-4 w-px bg-border" />
               <Skeleton className="h-8 w-40 rounded-md" />
             </>
           ) : null}
-          {!isConnecting && workflowAction.primary && (
-            <button
-              onClick={handlePrimaryAction}
-              disabled={workflowAction.disabled}
-              className={cn(
-                "inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-                workflowAction.primary.variant === "destructive"
-                  ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                  : "bg-primary text-primary-foreground hover:bg-primary/90",
-                workflowAction.disabled && "cursor-not-allowed opacity-50",
-              )}
-              title={workflowAction.disabledReason}
-            >
-              {state.commandInFlight ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : workflowAction.isNewMilestone ? (
-                <Milestone className="h-3.5 w-3.5" />
-              ) : (
-                <Play className="h-3.5 w-3.5" />
-              )}
-              {workflowAction.primary.label}
-            </button>
-          )}
-          {!isConnecting && workflowAction.secondaries.map((action) => (
-            <button
-              key={action.command}
-              onClick={() => handleWorkflowAction(action.command)}
-              disabled={workflowAction.disabled}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium transition-colors hover:bg-accent",
-                workflowAction.disabled && "cursor-not-allowed opacity-50",
-              )}
-              title={workflowAction.disabledReason}
-            >
-              {action.label}
-            </button>
-          ))}
-          {!isConnecting && state.commandInFlight && (
-            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Loader2 className="h-3 w-3 animate-spin" />
-              Sending…
-            </span>
-          )}
-          {!isConnecting && workflowAction.disabledReason && !state.commandInFlight && (
-            <span className="text-xs text-muted-foreground">
-              {workflowAction.disabledReason}
-            </span>
-          )}
-          {!isConnecting && <div className="h-4 w-px bg-border" />}
           {!isConnecting && (
             <div className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5 text-sm">
               <span

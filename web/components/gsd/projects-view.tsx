@@ -1041,37 +1041,30 @@ export function ProjectSelectionGate() {
 
   return (
     <div className="flex h-screen flex-col bg-background text-foreground" data-testid="project-selection-gate">
-      {/* ─── Header bar — matches the app shell ─── */}
-      <header className="flex h-12 shrink-0 items-center justify-between border-b border-border bg-card px-4">
-        <div className="flex items-center gap-2">
-          <Image
-            src="/logo-black.svg"
-            alt="GSD"
-            width={57}
-            height={16}
-            className="shrink-0 h-4 w-auto dark:hidden"
-          />
-          <Image
-            src="/logo-white.svg"
-            alt="GSD"
-            width={57}
-            height={16}
-            className="shrink-0 h-4 w-auto hidden dark:block"
-          />
-        </div>
-        {devRoot && !loading && (
-          <span className="text-xs text-muted-foreground font-mono">{devRoot}</span>
-        )}
-      </header>
-
       {/* ─── Main content ─── */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Left gutter — mimics the nav rail width */}
-        <div className="hidden md:flex w-12 shrink-0 border-r border-border bg-sidebar" />
+      <div className="flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-2xl px-6 pt-16 pb-10 md:px-10 lg:pt-24">
 
-        {/* Project area */}
-        <div className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-2xl px-6 py-10 md:px-10 lg:py-14">
+          {/* ─── Logo + subtitle ─── */}
+          <div className="flex flex-col items-center text-center mb-10">
+            <Image
+              src="/logo-black.svg"
+              alt="GSD"
+              width={100}
+              height={28}
+              className="h-7 w-auto dark:hidden"
+            />
+            <Image
+              src="/logo-white.svg"
+              alt="GSD"
+              width={100}
+              height={28}
+              className="h-7 w-auto hidden dark:block"
+            />
+            <p className="mt-3 text-sm text-muted-foreground">
+              Select a project to get started
+            </p>
+          </div>
 
             {/* Loading */}
             {loading && (
@@ -1126,16 +1119,11 @@ export function ProjectSelectionGate() {
             {/* ─── Project list ─── */}
             {hasProjects && (
               <div className="space-y-5">
-                {/* Section header with count + filter */}
-                <div className="flex items-end justify-between gap-4">
-                  <div>
-                    <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                      Projects
-                    </p>
-                    <p className="mt-0.5 text-xs text-muted-foreground/60 tabular-nums">
-                      {sortedProjects.length} project{sortedProjects.length !== 1 ? "s" : ""}
-                    </p>
-                  </div>
+                {/* Filter + count */}
+                <div className="flex items-center justify-between gap-4">
+                  <p className="text-xs text-muted-foreground/60 tabular-nums">
+                    {sortedProjects.length} project{sortedProjects.length !== 1 ? "s" : ""}
+                  </p>
                   {showFilter && (
                     <div className="relative w-48">
                       <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/50" />
@@ -1251,11 +1239,7 @@ export function ProjectSelectionGate() {
                 )}
               </div>
             )}
-          </div>
         </div>
-
-        {/* Right gutter — mimics the milestone sidebar width */}
-        <div className="hidden lg:flex w-64 shrink-0 border-l border-border bg-sidebar" />
       </div>
     </div>
   )
