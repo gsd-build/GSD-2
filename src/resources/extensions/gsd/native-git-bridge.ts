@@ -843,9 +843,22 @@ export function nativeMergeSquash(basePath: string, branch: string): GitMergeRes
     });
     return { success: true, conflicts: [] };
   } catch (err: unknown) {
-    // Check for conflicts — only treat as recoverable if actual conflict
-    // markers are present. Other failures (bad ref, corrupt repo, etc.)
-    // must propagate so callers don't assume the merge succeeded (#1672).
+    // Distinguish pre-merge rejections (dirty working tree) from actual
+    // content conflicts.  When git rejects the merge before staging
+    // ("local changes would be overwritten"), there are no conflict markers
+    // to detect, so the old --diff-filter=U check would return an empty
+    // list and incorrectly report success (#1672, #1738).
+    const stderr =
+      err instanceof Error ? (err as Error & { stderr?: string }).stderr ?? err.message : String(err);
+    if (
+      stderr.includes("local changes would be overwritten") ||
+      stderr.includes("not possible because you have unmerged files") ||
+      stderr.includes("overwritten by merge")
+    ) {
+      return { success: false, conflicts: ["__dirty_working_tree__"] };
+    }
+
+    // Check for real content conflicts
     const conflictOutput = gitExec(basePath, ["diff", "--name-only", "--diff-filter=U"], true);
     const conflicts = conflictOutput ? conflictOutput.split("\n").filter(Boolean) : [];
     if (conflicts.length > 0) {

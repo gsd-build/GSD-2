@@ -13,6 +13,7 @@ import {
   readdirSync,
   mkdirSync,
   realpathSync,
+  rmSync,
   unlinkSync,
   lstatSync as lstatSyncFn,
 } from "node:fs";
@@ -75,6 +76,41 @@ function clearProjectRootStateFiles(basePath: string, milestoneId: string): void
       unlinkSync(file);
     } catch {
       /* non-fatal — file may not exist */
+    }
+  }
+
+  // Clean up entire synced milestone directory and runtime/units.
+  // syncStateToProjectRoot() copies these into the project root during
+  // execution.  If they remain as untracked files when we attempt
+  // `git merge --squash`, git rejects the merge with "local changes would
+  // be overwritten", causing silent data loss (#1738).
+  const syncedDirs = [
+    join(gsdDir, "milestones", milestoneId),
+    join(gsdDir, "runtime", "units"),
+  ];
+
+  for (const dir of syncedDirs) {
+    try {
+      if (existsSync(dir)) {
+        // Only remove files that are untracked by git — tracked files are
+        // managed by the branch checkout and should not be deleted.
+        const untrackedOutput = execFileSync(
+          "git",
+          ["ls-files", "--others", "--exclude-standard", dir],
+          { cwd: basePath, stdio: ["ignore", "pipe", "pipe"], encoding: "utf-8" },
+        ).trim();
+        if (untrackedOutput) {
+          for (const f of untrackedOutput.split("\n").filter(Boolean)) {
+            try {
+              unlinkSync(join(basePath, f));
+            } catch {
+              /* non-fatal */
+            }
+          }
+        }
+      }
+    } catch {
+      /* non-fatal — git command may fail if not in repo */
     }
   }
 }
@@ -962,6 +998,19 @@ export function mergeMilestoneToMain(
   const mergeResult = nativeMergeSquash(originalBasePath_, milestoneBranch);
 
   if (!mergeResult.success) {
+    // Dirty working tree — the merge was rejected before it started (e.g.
+    // untracked .gsd/ files left by syncStateToProjectRoot).  Preserve the
+    // milestone branch so commits are not lost.
+    if (mergeResult.conflicts.includes("__dirty_working_tree__")) {
+      // Restore cwd so the caller is not stranded on the integration branch
+      process.chdir(previousCwd);
+      throw new GSDError(
+        GSD_GIT_ERROR,
+        `Squash merge of ${milestoneBranch} rejected: working tree has dirty or untracked files that conflict with the merge. ` +
+          `Clean the project root .gsd/ directory and retry.`,
+      );
+    }
+
     // Check for conflicts — use merge result first, fall back to nativeConflictFiles
     const conflictedFiles =
       mergeResult.conflicts.length > 0
@@ -1052,36 +1101,36 @@ export function mergeMilestoneToMain(
     }
   }
 
-  // 10. Remove worktree directory first (must happen before branch deletion)
-  //     ONLY when a commit was actually produced — if nativeCommit returned null
-  //     (nothing to commit), tearing down the worktree would destroy source code
-  //     that was never merged (#1672).
+  // 10. Guard: if squash produced nothing to commit, the milestone branch has
+  //     changes that were not merged.  Preserve the branch and worktree so
+  //     commits are not silently lost (#1672, #1738).
   if (nothingToCommit) {
-    // eslint-disable-next-line no-console
-    console.warn(
-      `[GSD] Warning: squash merge of ${milestoneBranch} produced nothing to commit. ` +
-        "Worktree and branch preserved to prevent data loss. " +
-        "Inspect the worktree manually and retry.",
+    process.chdir(previousCwd);
+    throw new GSDError(
+      GSD_GIT_ERROR,
+      `Squash merge of ${milestoneBranch} produced an empty commit — milestone branch preserved to prevent data loss. ` +
+        `Inspect the branch manually and retry.`,
     );
-  } else {
-    try {
-      removeWorktree(originalBasePath_, milestoneId, {
-        branch: null as unknown as string,
-        deleteBranch: false,
-      });
-    } catch {
-      // Best-effort -- worktree dir may already be gone
-    }
-
-    // 11. Delete milestone branch (after worktree removal so ref is unlocked)
-    try {
-      nativeBranchDelete(originalBasePath_, milestoneBranch);
-    } catch {
-      // Best-effort
-    }
   }
 
-  // 12. Clear module state
+  // 11. Remove worktree directory first (must happen before branch deletion)
+  try {
+    removeWorktree(originalBasePath_, milestoneId, {
+      branch: null as unknown as string,
+      deleteBranch: false,
+    });
+  } catch {
+    // Best-effort -- worktree dir may already be gone
+  }
+
+  // 12. Delete milestone branch (after worktree removal so ref is unlocked)
+  try {
+    nativeBranchDelete(originalBasePath_, milestoneBranch);
+  } catch {
+    // Best-effort
+  }
+
+  // 13. Clear module state
   originalBase = null;
   nudgeGitBranchCache(previousCwd);
 
