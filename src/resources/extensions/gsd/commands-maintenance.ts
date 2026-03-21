@@ -1,7 +1,7 @@
 /**
  * GSD Maintenance — cleanup, skip, and dry-run handlers.
  *
- * Contains: handleCleanupBranches, handleCleanupSnapshots, handleSkip, handleDryRun
+ * Contains: handleCleanupBranches, handleCleanupSnapshots, handleCleanupWorktrees, handleSkip, handleDryRun
  */
 
 import type { ExtensionCommandContext } from "@gsd/pi-coding-agent";
@@ -81,6 +81,81 @@ export async function handleCleanupSnapshots(ctx: ExtensionCommandContext, baseP
   }
 
   ctx.ui.notify(`Pruned ${pruned} old snapshot refs. ${refs.length - pruned} remain.`, "success");
+}
+
+export async function handleCleanupWorktrees(ctx: ExtensionCommandContext, basePath: string): Promise<void> {
+  const { getAllWorktreeHealth, formatWorktreeStatusLine } = await import("./worktree-health.js");
+  const { removeWorktree } = await import("./worktree-manager.js");
+  const { sep } = await import("node:path");
+
+  let statuses;
+  try {
+    statuses = getAllWorktreeHealth(basePath);
+  } catch {
+    ctx.ui.notify("Failed to inspect worktrees.", "error");
+    return;
+  }
+
+  if (statuses.length === 0) {
+    ctx.ui.notify("No GSD worktrees found.", "info");
+    return;
+  }
+
+  const safeToRemove = statuses.filter(s => s.safeToRemove);
+  const stale = statuses.filter(s => s.stale && !s.safeToRemove);
+  const active = statuses.filter(s => !s.safeToRemove && !s.stale);
+
+  const lines: string[] = [];
+  lines.push(`${statuses.length} worktree${statuses.length === 1 ? "" : "s"} found.`);
+  lines.push("");
+
+  if (safeToRemove.length > 0) {
+    lines.push(`Safe to remove (${safeToRemove.length}) — merged into main, clean:`);
+    const cwd = process.cwd();
+    let removed = 0;
+    for (const s of safeToRemove) {
+      const wt = s.worktree;
+      const isCwd = wt.path === cwd || cwd.startsWith(wt.path + sep);
+      if (isCwd) {
+        lines.push(`  ⊘ ${wt.name}  (skipped — current working directory)`);
+        continue;
+      }
+      try {
+        removeWorktree(basePath, wt.name, { deleteBranch: true });
+        lines.push(`  ✓ ${wt.name}  removed (branch ${wt.branch} deleted)`);
+        removed++;
+      } catch {
+        lines.push(`  ✗ ${wt.name}  failed to remove`);
+      }
+    }
+    if (removed > 0) {
+      lines.push("");
+      lines.push(`Removed ${removed} merged worktree${removed === 1 ? "" : "s"}.`);
+    }
+    lines.push("");
+  }
+
+  if (stale.length > 0) {
+    lines.push(`Stale (${stale.length}) — no recent commits, not merged (review manually):`);
+    for (const s of stale) {
+      lines.push(`  ⚠ ${s.worktree.name}  ${formatWorktreeStatusLine(s)}`);
+    }
+    lines.push("");
+  }
+
+  if (active.length > 0) {
+    lines.push(`Active (${active.length}) — in progress:`);
+    for (const s of active) {
+      lines.push(`  ● ${s.worktree.name}  ${formatWorktreeStatusLine(s)}`);
+    }
+    lines.push("");
+  }
+
+  if (safeToRemove.length === 0 && stale.length === 0) {
+    lines.push("All worktrees are active — nothing to clean up.");
+  }
+
+  ctx.ui.notify(lines.join("\n"), safeToRemove.length > 0 ? "success" : "info");
 }
 
 export async function handleSkip(unitArg: string, ctx: ExtensionCommandContext, basePath: string): Promise<void> {

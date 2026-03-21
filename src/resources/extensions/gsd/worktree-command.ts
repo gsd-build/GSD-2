@@ -512,6 +512,14 @@ async function handleList(
       return;
     }
 
+    // Compute health status for each worktree
+    const { getAllWorktreeHealth, formatWorktreeStatusLine } = await import("./worktree-health.js");
+    const healthMap = new Map<string, ReturnType<typeof getAllWorktreeHealth>[number]>();
+    try {
+      const statuses = getAllWorktreeHealth(mainBase);
+      for (const s of statuses) healthMap.set(s.worktree.name, s);
+    } catch { /* health check failed — show list without status */ }
+
     const cwd = process.cwd();
     const lines = [CLR.header("GSD Worktrees"), ""];
     for (const wt of worktrees) {
@@ -528,6 +536,19 @@ async function handleList(
       lines.push(`  ${styledName}${badge}`);
       lines.push(`    ${CLR.label("branch")}  ${CLR.branch(wt.branch)}`);
       lines.push(`    ${CLR.label("path")}    ${CLR.path(wt.path)}`);
+
+      // Show health status line
+      const health = healthMap.get(wt.name);
+      if (health) {
+        const statusLine = formatWorktreeStatusLine(health);
+        const statusColor = health.safeToRemove
+          ? CLR.ok(statusLine)
+          : health.stale || health.dirty
+            ? CLR.warn(statusLine)
+            : CLR.muted(statusLine);
+        lines.push(`    ${CLR.label("status")}  ${statusColor}`);
+      }
+
       lines.push("");
     }
 
