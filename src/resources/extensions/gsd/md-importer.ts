@@ -25,6 +25,8 @@ import { findMilestoneIds } from './guided-flow.js';
 
 // ─── DECISIONS.md Parser ───────────────────────────────────────────────────
 
+const VALID_MADE_BY = new Set(['human', 'agent', 'collaborative']);
+
 /**
  * Parse a DECISIONS.md markdown table into Decision objects (without seq).
  * Detects `(amends DXXX)` in the Decision column to build supersession info.
@@ -65,7 +67,6 @@ export function parseDecisionsTable(content: string): Omit<Decision, 'seq'>[] {
     const rationale = cells[5].trim();
     const revisable = cells[6].trim();
     // Made By column is optional for backward compatibility — defaults to 'agent'
-    const VALID_MADE_BY = new Set(['human', 'agent', 'collaborative']);
     const rawMadeBy = cells.length >= 8 ? cells[7].trim().toLowerCase() : 'agent';
     const made_by = (VALID_MADE_BY.has(rawMadeBy) ? rawMadeBy : 'agent') as import('./types.js').DecisionMadeBy;
 

@@ -366,6 +366,12 @@ function migrateSchema(db: DbAdapter): void {
       // Add made_by column — default 'agent' for existing rows (pre-attribution decisions)
       db.exec(`ALTER TABLE decisions ADD COLUMN made_by TEXT NOT NULL DEFAULT 'agent'`);
 
+      // Recreate views to pick up new columns (SQLite expands SELECT * at view creation time)
+      db.exec("DROP VIEW IF EXISTS active_decisions");
+      db.exec(
+        "CREATE VIEW active_decisions AS SELECT * FROM decisions WHERE superseded_by IS NULL",
+      );
+
       db.prepare(
         "INSERT INTO schema_version (version, applied_at) VALUES (:version, :applied_at)",
       ).run({ ":version": 4, ":applied_at": new Date().toISOString() });
@@ -798,9 +804,15 @@ export function reconcileWorktreeDb(
   try {
     adapter.exec(`ATTACH DATABASE '${worktreeDbPath}' AS wt`);
     try {
+      // Check if attached wt database has the made_by column (legacy v3 worktrees won't)
+      const wtInfo = adapter.prepare("PRAGMA wt.table_info('decisions')").all();
+      const hasMadeBy = wtInfo.some((col) => col["name"] === "made_by");
+
       const decConf = adapter
         .prepare(
-          `SELECT m.id FROM decisions m INNER JOIN wt.decisions w ON m.id = w.id WHERE m.decision != w.decision OR m.choice != w.choice OR m.rationale != w.rationale OR m.made_by != w.made_by OR m.superseded_by IS NOT w.superseded_by`,
+          `SELECT m.id FROM decisions m INNER JOIN wt.decisions w ON m.id = w.id WHERE m.decision != w.decision OR m.choice != w.choice OR m.rationale != w.rationale OR ${
+            hasMadeBy ? "m.made_by != w.made_by" : "'agent' != 'agent'"
+          } OR m.superseded_by IS NOT w.superseded_by`,
         )
         .all();
       for (const row of decConf)
@@ -826,7 +838,9 @@ export function reconcileWorktreeDb(
             id, when_context, scope, decision, choice, rationale, revisable, made_by, superseded_by
           )
           SELECT
-            id, when_context, scope, decision, choice, rationale, revisable, made_by, superseded_by
+            id, when_context, scope, decision, choice, rationale, revisable, ${
+              hasMadeBy ? "made_by" : "'agent'"
+            }, superseded_by
           FROM wt.decisions
         `,
           )
