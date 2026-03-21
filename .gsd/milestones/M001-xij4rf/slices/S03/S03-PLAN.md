@@ -27,7 +27,7 @@
 
 ## Tasks
 
-- [ ] **T01: Add rule filter to queryJournal and test it** `est:15m`
+- [x] **T01: Add rule filter to queryJournal and test it** `est:15m`
   - Why: R011 requires a `rule` filter, but `JournalQueryFilters` doesn't have one yet. This closes the gap so the tool in T02 can expose all required filters.
   - Files: `src/resources/extensions/gsd/journal.ts`, `src/resources/extensions/gsd/tests/journal.test.ts`
   - Do: Add `rule?: string` to `JournalQueryFilters`. Add `if (filters.rule && e.rule !== filters.rule) return false;` to the filter chain in `queryJournal()`. Add a unit test for the rule filter in `journal.test.ts`.
@@ -48,3 +48,10 @@
 - `src/resources/extensions/gsd/bootstrap/register-extension.ts`
 - `src/resources/extensions/gsd/tests/journal.test.ts`
 - `src/resources/extensions/gsd/tests/journal-query-tool.test.ts` (new)
+
+## Observability / Diagnostics
+
+- **Runtime signals:** `queryJournal()` returns an empty array on any error (missing directory, corrupt files). The absence of results — rather than thrown errors — is the failure signal. The `rule` filter is a pure equality check on `JournalEntry.rule`, so a mismatch silently yields no results (consistent with all other filters).
+- **Inspection surfaces:** The `gsd_journal_query` tool (T02) will return JSON-serialized entries or a "No matching journal entries found" message, giving the LLM agent direct visibility into what the journal contains for a given filter combination.
+- **Failure visibility:** If journal JSONL files are missing, empty, or corrupt, `queryJournal()` returns `[]` without throwing. The tool layer (T02) converts this to a user-visible "no entries found" message. Malformed lines are silently skipped per existing behavior.
+- **Redaction constraints:** Journal entries may contain unitId paths and rule names but no secrets. No redaction is needed for the query path.

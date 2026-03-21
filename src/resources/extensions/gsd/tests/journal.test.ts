@@ -357,3 +357,30 @@ test("queryJournal reads across multiple daily files", () => {
     cleanup(base);
   }
 });
+
+test("queryJournal filters by rule", () => {
+  const base = makeTmpBase();
+  try {
+    emitJournalEvent(
+      base,
+      makeEntry({ seq: 0, eventType: "dispatch-match", rule: "dispatch-task" }),
+    );
+    emitJournalEvent(
+      base,
+      makeEntry({ seq: 1, eventType: "post-unit-hook", rule: "post-unit-hook" }),
+    );
+    emitJournalEvent(
+      base,
+      makeEntry({ seq: 2, eventType: "dispatch-match", rule: "dispatch-task" }),
+    );
+
+    const results = queryJournal(base, { rule: "dispatch-task" });
+    assert.equal(results.length, 2, "Should return only dispatch-task entries");
+    assert.ok(
+      results.every(e => e.rule === "dispatch-task"),
+      "All results should have rule === 'dispatch-task'",
+    );
+  } finally {
+    cleanup(base);
+  }
+});

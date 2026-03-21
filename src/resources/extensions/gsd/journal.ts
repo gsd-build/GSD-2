@@ -57,6 +57,8 @@ export interface JournalQueryFilters {
   flowId?: string;
   eventType?: string;
   unitId?: string;
+  /** Filter by the rule name that produced the event */
+  rule?: string;
   /** ISO-8601 lower bound (inclusive) */
   after?: string;
   /** ISO-8601 upper bound (inclusive) */
@@ -119,6 +121,7 @@ export function queryJournal(
     return entries.filter(e => {
       if (filters.flowId && e.flowId !== filters.flowId) return false;
       if (filters.eventType && e.eventType !== filters.eventType) return false;
+      if (filters.rule && e.rule !== filters.rule) return false;
       if (filters.unitId && (e.data as Record<string, unknown> | undefined)?.unitId !== filters.unitId) return false;
       if (filters.after && e.ts < filters.after) return false;
       if (filters.before && e.ts > filters.before) return false;

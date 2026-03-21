@@ -43,3 +43,9 @@ The `JournalQueryFilters` interface in `journal.ts` is missing the `rule` filter
 
 - `src/resources/extensions/gsd/journal.ts` — modified with `rule` filter support
 - `src/resources/extensions/gsd/tests/journal.test.ts` — modified with new `rule` filter test
+
+## Observability Impact
+
+- **Signals changed:** `queryJournal()` now supports a `rule` filter — agents can narrow journal queries to entries produced by a specific rule name (e.g. `"dispatch-task"`). No new logs or metrics; the signal is the filtered result set itself.
+- **Inspection surface:** A future agent can call `queryJournal(base, { rule: "X" })` and receive only entries where `entry.rule === "X"`. Empty results indicate either no matching events were emitted or the rule name is incorrect.
+- **Failure visibility:** Same as all other filters — returns `[]` on error or mismatch, never throws. The absence of expected entries is the diagnostic signal.
