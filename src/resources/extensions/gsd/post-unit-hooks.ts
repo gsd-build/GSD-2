@@ -34,7 +34,7 @@ const cycleCounts = new Map<string, number>();
 let retryPending = false;
 
 /** Stores the trigger unit info for pending retries so caller knows what to re-run. */
-let retryTrigger: { unitType: string; unitId: string } | null = null;
+let retryTrigger: { unitType: string; unitId: string; retryArtifact: string } | null = null;
 
 // ─── Public API ────────────────────────────────────────────────────────────
 
@@ -99,7 +99,7 @@ export function isRetryPending(): boolean {
  * Returns the trigger unit info for a pending retry, or null.
  * Clears the retry state after reading.
  */
-export function consumeRetryTrigger(): { unitType: string; unitId: string } | null {
+export function consumeRetryTrigger(): { unitType: string; unitId: string; retryArtifact: string } | null {
   if (!retryPending || !retryTrigger) return null;
   const trigger = { ...retryTrigger };
   retryPending = false;
@@ -191,7 +191,7 @@ function handleHookCompletion(basePath: string): HookDispatchResult | null {
         activeHook = null;
         hookQueue = [];
         retryPending = true;
-        retryTrigger = { unitType: hook.triggerUnitType, unitId: hook.triggerUnitId };
+        retryTrigger = { unitType: hook.triggerUnitType, unitId: hook.triggerUnitId, retryArtifact: config.retry_on };
         return null;
       }
       // Max cycles reached — fall through to normal completion
