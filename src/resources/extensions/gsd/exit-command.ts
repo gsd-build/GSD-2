@@ -21,7 +21,7 @@ export function registerExitCommand(
         const msg = e instanceof Error ? e.message : String(e);
         ctx.ui?.notify?.(
           `Auto-mode cleanup skipped (module version mismatch): ${msg}`,
-          "warn",
+          "warning",
         );
       }
       ctx.shutdown();
