@@ -967,16 +967,28 @@ export async function startAuto(
       if (existsSync(pausedPath)) {
         const meta = JSON.parse(readFileSync(pausedPath, "utf-8"));
         if (meta.milestoneId) {
-          s.currentMilestoneId = meta.milestoneId;
-          s.originalBasePath = meta.originalBasePath || base;
-          s.stepMode = meta.stepMode ?? requestedStepMode;
-          s.paused = true;
-          // Clean up the persisted file — we're consuming it
-          try { unlinkSync(pausedPath); } catch { /* non-fatal */ }
-          ctx.ui.notify(
-            `Resuming paused session for ${meta.milestoneId}${meta.worktreePath ? ` (worktree)` : ""}.`,
-            "info",
-          );
+          // Validate the milestone still exists and isn't already complete (#1664).
+          const mDir = resolveMilestonePath(base, meta.milestoneId);
+          const summaryFile = resolveMilestoneFile(base, meta.milestoneId, "SUMMARY");
+          if (!mDir || summaryFile) {
+            // Stale milestone — clean up and fall through to fresh bootstrap
+            try { unlinkSync(pausedPath); } catch { /* non-fatal */ }
+            ctx.ui.notify(
+              `Paused milestone ${meta.milestoneId} is ${!mDir ? "missing" : "already complete"}. Starting fresh.`,
+              "info",
+            );
+          } else {
+            s.currentMilestoneId = meta.milestoneId;
+            s.originalBasePath = meta.originalBasePath || base;
+            s.stepMode = meta.stepMode ?? requestedStepMode;
+            s.paused = true;
+            // Clean up the persisted file — we're consuming it
+            try { unlinkSync(pausedPath); } catch { /* non-fatal */ }
+            ctx.ui.notify(
+              `Resuming paused session for ${meta.milestoneId}${meta.worktreePath ? ` (worktree)` : ""}.`,
+              "info",
+            );
+          }
         }
       }
     } catch {
