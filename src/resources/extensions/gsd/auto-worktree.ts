@@ -302,19 +302,19 @@ export function syncWorktreeStateBack(
               /* non-fatal */
             }
           } else if (fileEntry.isDirectory() && fileEntry.name === "tasks") {
-            // Recurse into tasks/ to sync task-level summaries (#1678)
+            // Recurse into tasks/ subdirectory to sync task summaries (#1678).
+            // Without this, T01-SUMMARY.md etc. are silently dropped on
+            // worktree teardown because the loop only processes isFile() entries.
             const wtTasksDir = join(wtSliceDir, "tasks");
             const mainTasksDir = join(mainSliceDir, "tasks");
+            mkdirSync(mainTasksDir, { recursive: true });
             try {
-              mkdirSync(mainTasksDir, { recursive: true });
-              for (const taskEntry of readdirSync(wtTasksDir, {
-                withFileTypes: true,
-              })) {
+              for (const taskEntry of readdirSync(wtTasksDir, { withFileTypes: true })) {
                 if (taskEntry.isFile() && taskEntry.name.endsWith(".md")) {
-                  const src = join(wtTasksDir, taskEntry.name);
-                  const dst = join(mainTasksDir, taskEntry.name);
+                  const taskSrc = join(wtTasksDir, taskEntry.name);
+                  const taskDst = join(mainTasksDir, taskEntry.name);
                   try {
-                    cpSync(src, dst, { force: true });
+                    cpSync(taskSrc, taskDst, { force: true });
                     synced.push(
                       `milestones/${milestoneId}/slices/${sid}/tasks/${taskEntry.name}`,
                     );
@@ -324,7 +324,7 @@ export function syncWorktreeStateBack(
                 }
               }
             } catch {
-              /* non-fatal */
+              /* non-fatal: tasks dir read failure */
             }
           }
         }
