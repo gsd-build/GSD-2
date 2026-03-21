@@ -197,7 +197,7 @@ import {
   postUnitPostVerification,
 } from "./auto-post-unit.js";
 import { bootstrapAutoSession, type BootstrapDeps } from "./auto-start.js";
-import { autoLoop, resolveAgentEnd, resolveAgentEndCancelled, isSessionSwitchInFlight, type LoopDeps } from "./auto-loop.js";
+import { autoLoop, resolveAgentEnd, resolveAgentEndCancelled, _resetPendingResolve, isSessionSwitchInFlight, type LoopDeps } from "./auto-loop.js";
 import {
   WorktreeResolver,
   type WorktreeResolverDeps,
@@ -688,6 +688,17 @@ export async function stopAuto(
     } catch (e) {
       debugLog("stop-cleanup-model", { error: e instanceof Error ? e.message : String(e) });
     }
+
+    // ── Step 14: Unblock pending unitPromise (#1799) ──
+    // resolveAgentEnd unblocks autoLoop's `await unitPromise` so it can see
+    // s.active === false and exit cleanly. Without this, autoLoop hangs
+    // forever and the interactive loop is blocked.
+    try {
+      resolveAgentEnd({ messages: [] });
+      _resetPendingResolve();
+    } catch (e) {
+      debugLog("stop-cleanup-pending-resolve", { error: e instanceof Error ? e.message : String(e) });
+    }
   } finally {
     // ── Critical invariants: these MUST execute regardless of errors ──
     // Browser teardown — prevent orphaned Chrome processes across retries (#1733)
@@ -775,6 +786,10 @@ export async function pauseAuto(
   }
 
   deregisterSigtermHandler();
+
+  // Unblock pending unitPromise so autoLoop exits cleanly (#1799)
+  resolveAgentEnd({ messages: [] });
+  _resetPendingResolve();
 
   s.active = false;
   s.paused = true;

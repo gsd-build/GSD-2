@@ -1757,7 +1757,6 @@ test("resolveAgentEndCancelled prevents orphaned promise after abort path", asyn
 
   await new Promise((r) => setTimeout(r, 10));
 
-  // Simulate abort: deactivate session then cancel
   s.active = false;
   resolveAgentEndCancelled();
 
@@ -1792,7 +1791,6 @@ test("autoLoop re-iterates when postUnitPreVerification returns retry (#1571)", 
     postUnitPreVerification: async () => {
       deps.callLog.push("postUnitPreVerification");
       preVerifyCallCount++;
-      // First call returns "retry" (artifact missing), second returns "continue"
       if (preVerifyCallCount === 1) {
         return "retry" as const;
       }
@@ -1800,7 +1798,6 @@ test("autoLoop re-iterates when postUnitPreVerification returns retry (#1571)", 
     },
     postUnitPostVerification: async () => {
       deps.callLog.push("postUnitPostVerification");
-      // After the retry succeeds (second iteration), stop the loop
       s.active = false;
       return "continue" as const;
     },
@@ -1808,22 +1805,16 @@ test("autoLoop re-iterates when postUnitPreVerification returns retry (#1571)", 
 
   const loopPromise = autoLoop(ctx, pi, s, deps);
 
-  // First iteration: runUnit completes → preVerification returns "retry" → loop continues
   await new Promise((r) => setTimeout(r, 50));
   resolveAgentEnd(makeEvent());
 
-  // Second iteration: runUnit completes → preVerification returns "continue" → full finalize
   await new Promise((r) => setTimeout(r, 50));
   resolveAgentEnd(makeEvent());
 
   await loopPromise;
 
-  // preVerification should have been called twice (retry + success)
   assert.equal(preVerifyCallCount, 2, "preVerification should be called twice");
 
-  // When preVerification returns "retry", runPostUnitVerification and
-  // postUnitPostVerification should be skipped for that iteration.
-  // So we expect 1 call each (only the second iteration proceeds past pre-verification).
   const postVerifyCalls = deps.callLog.filter(
     (c: string) => c === "runPostUnitVerification",
   );
@@ -1831,14 +1822,27 @@ test("autoLoop re-iterates when postUnitPreVerification returns retry (#1571)", 
     (c: string) => c === "postUnitPostVerification",
   );
 
-  assert.equal(
-    postVerifyCalls.length,
-    1,
-    "runPostUnitVerification should only be called once (skipped on retry iteration)",
-  );
-  assert.equal(
-    postPostVerifyCalls.length,
-    1,
-    "postUnitPostVerification should only be called once (skipped on retry iteration)",
-  );
+  assert.equal(postVerifyCalls.length, 1, "runPostUnitVerification should only be called once");
+  assert.equal(postPostVerifyCalls.length, 1, "postUnitPostVerification should only be called once");
+});
+
+// ─── stopAuto unitPromise leak regression (#1799) ────────────────────────────
+
+test("resolveAgentEnd unblocks pending runUnit when called before session reset (#1799)", async () => {
+  _resetPendingResolve();
+
+  const ctx = makeMockCtx();
+  const pi = makeMockPi();
+  const s = makeMockSession();
+
+  const resultPromise = runUnit(ctx, pi, s, "task", "T01", "do work");
+
+  await new Promise((r) => setTimeout(r, 10));
+
+  resolveAgentEnd({ messages: [] });
+  _resetPendingResolve();
+  s.active = false;
+
+  const result = await resultPromise;
+  assert.equal(result.status, "completed", "runUnit should resolve, not hang");
 });
