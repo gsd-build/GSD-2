@@ -11,6 +11,59 @@ Read [VISION.md](VISION.md) before contributing. It defines what GSD-2 is, what 
 3. **No issue? Create one first** for new features. Bug fixes for obvious problems can skip this step.
 4. **Architectural changes require an RFC.** If your change touches core systems (auto-mode, agent-core, orchestration), open an issue describing your approach and get approval before writing code. We use Architecture Decision Records (ADRs) for significant decisions.
 
+## Branching and commits
+
+Always work on a dedicated branch. Never push directly to `main`.
+
+**Branch naming:** `<type>/<short-description>`
+
+| Type | When to use |
+|------|-------------|
+| `feat/` | New functionality |
+| `fix/` | Bug or defect correction |
+| `refactor/` | Code restructuring, no behavior change |
+| `test/` | Adding or updating tests |
+| `docs/` | Documentation only |
+| `chore/` | Dependencies, tooling, housekeeping |
+| `ci/` | CI/CD configuration |
+
+**Commit messages** must follow [Conventional Commits](https://www.conventionalcommits.org/). The commit-msg hook enforces this locally; CI enforces it on push.
+
+```
+<type>(<scope>): <short summary>
+```
+
+Valid types: `feat` `fix` `docs` `chore` `refactor` `test` `infra` `ci` `perf` `build` `revert`
+
+```
+feat(pi-agent-core): add streaming output for long-running tasks
+fix(pi-ai): resolve null pointer on empty provider response
+chore(deps): bump typescript from 5.3.0 to 5.4.2
+```
+
+Keep branches current by rebasing onto `main` — do not merge `main` into your feature branch:
+
+```bash
+git fetch origin
+git rebase origin/main
+```
+
+## Working with GSD (team workflow)
+
+GSD uses worktree-based isolation for multi-developer work. If you're contributing with GSD running, enable team mode in your project preferences:
+
+```yaml
+# .gsd/preferences.md
+---
+version: 1
+mode: team
+---
+```
+
+This enables unique milestone IDs, branch pushing, and pre-merge checks — preventing milestone ID collisions when multiple contributors run auto-mode simultaneously. Each developer gets their own isolated worktree; squash merges to `main` happen independently.
+
+For full details see [docs/working-in-teams.md](docs/working-in-teams.md) and [docs/git-strategy.md](docs/git-strategy.md).
+
 ## Opening a pull request
 
 ### PR description format
@@ -65,9 +118,11 @@ If your PR changes any public API, CLI behavior, config format, or file structur
 
 AI-generated PRs are first-class citizens here. We welcome them. We just ask for transparency:
 
-- **Disclose it.** Note that the PR is AI-assisted in your description.
+- **Disclose it.** Note that the PR is AI-assisted in your description. Do not credit the AI tool as an author or co-author in the commit or PR.
 - **Test it.** AI-generated code must be tested to the same standard as human-written code. "The AI said it works" is not a test plan.
 - **Understand it.** You should be able to explain what the code does and why. If a reviewer asks a question, "I'll ask the AI" is not an answer.
+
+AI agents opening PRs must follow the same workflow as human contributors: clean working tree, new branch per task, CI passing before requesting review. Multi-phase work should start as a Draft PR and only move to Ready when complete.
 
 AI PRs go through the same review process as any other PR. No special treatment in either direction.
 
@@ -109,6 +164,9 @@ PRs go through automated review first, then human review. To help us review effi
 # Install dependencies
 npm ci
 
+# Install git hooks (secret scanning + commit message validation)
+npm run secret-scan:install-hook
+
 # Build
 npm run build
 
@@ -118,6 +176,10 @@ npm test
 # Type check
 npx tsc --noEmit
 ```
+
+Run `npm run secret-scan:install-hook` once after cloning. It installs two hooks:
+- **pre-commit** — blocks commits containing hardcoded secrets or credentials
+- **commit-msg** — validates Conventional Commits format before the commit lands
 
 CI must pass before your PR will be reviewed. Run these locally to save time.
 
