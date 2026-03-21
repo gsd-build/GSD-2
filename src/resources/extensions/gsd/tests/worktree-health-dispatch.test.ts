@@ -57,7 +57,7 @@ import { existsSync } from "node:fs";
 
 test("PROJECT_FILES is exported and contains expected multi-ecosystem entries", () => {
   assert.ok(Array.isArray(PROJECT_FILES), "PROJECT_FILES is an array");
-  assert.ok(PROJECT_FILES.length >= 17, `expected >= 17 entries, got ${PROJECT_FILES.length}`);
+  assert.ok(PROJECT_FILES.length >= 18, `expected >= 18 entries, got ${PROJECT_FILES.length}`);
   // Spot-check key ecosystems
   assert.ok(PROJECT_FILES.includes("Cargo.toml"), "includes Rust marker");
   assert.ok(PROJECT_FILES.includes("go.mod"), "includes Go marker");
@@ -167,6 +167,21 @@ test("health check fails for directory with no .git", () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("health check passes for xcodegen project (project.yml, no Package.swift)", () => {
+  const dir = createGitRepo();
+  try {
+    writeFileSync(join(dir, "project.yml"), "name: MyApp\ntargets:\n  MyApp:\n    type: application\n");
+    assert.ok(wouldPassHealthCheck(dir, existsSync), "xcodegen project should pass health check");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Note: .xcodeproj and .xcworkspace are detected via directory listing in
+// phases.ts (not PROJECT_FILES) because they have project-specific names.
+// These tests verify the detection.ts PROJECT_FILES path only.
+// The phases.ts Xcode bundle detection is tested via the auto-loop integration tests.
 
 test("health check fails for empty git repo with no project files", () => {
   const dir = createGitRepo();

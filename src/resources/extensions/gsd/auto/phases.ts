@@ -8,6 +8,7 @@
  */
 
 import { importExtensionModule, type ExtensionAPI, type ExtensionContext } from "@gsd/pi-coding-agent";
+import { readdirSync } from "node:fs";
 
 import type { AutoSession, SidecarItem } from "./session.js";
 import type { LoopDeps } from "./loop-deps.js";
@@ -828,7 +829,13 @@ export async function runUnitPhase(
     }
     const hasProjectFile = PROJECT_FILES.some((f) => deps.existsSync(join(s.basePath, f)));
     const hasSrcDir = deps.existsSync(join(s.basePath, "src"));
-    if (!hasProjectFile && !hasSrcDir) {
+    // Xcode bundles have project-specific names (*.xcodeproj, *.xcworkspace)
+    let hasXcodeBundle = false;
+    try {
+      const entries = deps.existsSync(s.basePath) ? readdirSync(s.basePath) : [];
+      hasXcodeBundle = entries.some((e: string) => e.endsWith(".xcodeproj") || e.endsWith(".xcworkspace"));
+    } catch { /* best-effort */ }
+    if (!hasProjectFile && !hasSrcDir && !hasXcodeBundle) {
       const msg = `Worktree health check failed: ${s.basePath} has no recognized project files — refusing to dispatch ${unitType} ${unitId}`;
       debugLog("runUnitPhase", { phase: "worktree-health-fail", basePath: s.basePath, hasProjectFile, hasSrcDir });
       ctx.ui.notify(msg, "error");

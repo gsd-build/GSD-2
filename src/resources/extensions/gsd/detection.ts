@@ -84,6 +84,7 @@ export const PROJECT_FILES = [
   "composer.json",
   "pubspec.yaml",
   "Package.swift",
+  "project.yml",        // xcodegen
   "mix.exs",
   "deno.json",
   "deno.jsonc",
@@ -103,6 +104,7 @@ const LANGUAGE_MAP: Record<string, string> = {
   "composer.json": "php",
   "pubspec.yaml": "dart/flutter",
   "Package.swift": "swift",
+  "project.yml": "swift",
   "mix.exs": "elixir",
   "deno.json": "typescript/deno",
   "deno.jsonc": "typescript/deno",
