@@ -70,6 +70,11 @@ docker run --rm -v $(pwd):/workspace ghcr.io/gsd-build/gsd-pi:latest --version
 
 **CI optimization (v2.38):** GitHub Actions minutes were reduced ~60-70% (~10k → ~3-4k/month) through workflow consolidation and caching improvements.
 
+**Pipeline optimization (v2.41):**
+- **Shallow clones** — CI lint and build jobs use `fetch-depth: 1` or `fetch-depth: 2` instead of full history, saving ~30-60s per job
+- **npm cache in pipeline** — dev-publish, test-verify, and prod-release now use `cache: 'npm'` on setup-node, saving ~1-2 min per job on repeat runs
+- **Exponential backoff** — npm registry propagation waits in `build-native.yml` replaced hardcoded `sleep 30` + fixed 15s retries with exponential backoff (5s → 10s → 20s → 30s cap), typically finishing in <15s when the registry is fast
+- **Security hardening** — pipeline.yml moved `${{ }}` expressions from `run:` blocks to `env:` variables to prevent command injection vectors
 ### Docs-Only PR Detection (v2.41)
 
 CI automatically detects when a PR contains only documentation changes (`.md` files and `docs/` content). When docs-only:
