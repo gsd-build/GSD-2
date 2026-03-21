@@ -14,30 +14,30 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const AUTO_TS_PATH = join(__dirname, "..", "auto.ts");
-const AUTO_LOOP_TS_PATH = join(__dirname, "..", "auto-loop.ts");
+const AUTO_RESOLVE_TS_PATH = join(__dirname, "..", "auto", "resolve.ts");
 const SESSION_TS_PATH = join(__dirname, "..", "auto", "session.ts");
 
 function getAutoTsSource(): string {
   return readFileSync(AUTO_TS_PATH, "utf-8");
 }
 
-function getAutoLoopTsSource(): string {
-  return readFileSync(AUTO_LOOP_TS_PATH, "utf-8");
+function getAutoResolveTsSource(): string {
+  return readFileSync(AUTO_RESOLVE_TS_PATH, "utf-8");
 }
 
 function getSessionTsSource(): string {
   return readFileSync(SESSION_TS_PATH, "utf-8");
 }
 
-test("auto-loop.ts declares _currentResolve for per-unit one-shot promises", () => {
-  const source = getAutoLoopTsSource();
+test("auto/resolve.ts declares _currentResolve for per-unit one-shot promises", () => {
+  const source = getAutoResolveTsSource();
   assert.ok(
     source.includes("_currentResolve"),
-    "auto-loop.ts must declare _currentResolve for the per-unit resolve function",
+    "auto/resolve.ts must declare _currentResolve for the per-unit resolve function",
   );
   assert.ok(
     source.includes("_sessionSwitchInFlight"),
-    "auto-loop.ts must declare _sessionSwitchInFlight guard",
+    "auto/resolve.ts must declare _sessionSwitchInFlight guard",
   );
 });
 
