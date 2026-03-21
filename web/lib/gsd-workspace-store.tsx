@@ -514,6 +514,17 @@ export interface CompletedToolExecution {
   }
 }
 
+/**
+ * A chronologically-ordered segment within a single assistant turn.
+ * The sequence `thinking → text → tool → thinking → text → tool …`
+ * is captured as separate segments so the chat UI can render them
+ * in the correct interleaved order.
+ */
+export type TurnSegment =
+  | { kind: "thinking"; content: string }
+  | { kind: "text"; content: string }
+  | { kind: "tool"; tool: CompletedToolExecution }
+
 export interface WidgetContent {
   lines: string[] | undefined
   placement?: "aboveEditor" | "belowEditor"
@@ -539,8 +550,21 @@ export interface WorkspaceStoreState {
   streamingAssistantText: string
   streamingThinkingText: string
   liveTranscript: string[]
+  /** Thinking text for each liveTranscript block (parallel array — same length) */
+  liveThinkingTranscript: string[]
   completedToolExecutions: CompletedToolExecution[]
   activeToolExecution: ActiveToolExecution | null
+  /**
+   * Ordered segments within the current streaming turn.
+   * Captures the chronological sequence: thinking → text → tool → thinking → text → ...
+   * Flushed to `completedTurnSegments` on turn boundary.
+   */
+  currentTurnSegments: TurnSegment[]
+  /**
+   * Segment history for completed turns. Each entry is a full turn's segments.
+   * Parallel to `liveTranscript` (same index = same turn).
+   */
+  completedTurnSegments: TurnSegment[][]
   /** User messages in chat — persisted in store so they survive component unmount/remount */
   chatUserMessages: ChatMessage[]
   statusTexts: Record<string, string>
@@ -1791,8 +1815,11 @@ function createInitialState(): WorkspaceStoreState {
     streamingAssistantText: "",
     streamingThinkingText: "",
     liveTranscript: [],
+    liveThinkingTranscript: [],
     completedToolExecutions: [],
     activeToolExecution: null,
+    currentTurnSegments: [],
+    completedTurnSegments: [],
     chatUserMessages: [],
     statusTexts: {},
     widgetContents: {},
@@ -4954,39 +4981,108 @@ export class GSDWorkspaceStore {
     const assistantEvent = event.assistantMessageEvent
     if (!assistantEvent) return
     if (assistantEvent.type === "text_delta" && typeof assistantEvent.delta === "string") {
+      // If we were accumulating thinking and now text arrives, finalize the thinking segment
+      if (this.state.streamingThinkingText.length > 0) {
+        this.patchState({
+          currentTurnSegments: [...this.state.currentTurnSegments, { kind: "thinking", content: this.state.streamingThinkingText }],
+          streamingThinkingText: "",
+        })
+      }
       this.patchState({
         streamingAssistantText: this.state.streamingAssistantText + assistantEvent.delta,
       })
     } else if (assistantEvent.type === "thinking_delta" && typeof assistantEvent.delta === "string") {
+      // If we were accumulating text and now thinking arrives, finalize the text segment
+      if (this.state.streamingAssistantText.length > 0) {
+        this.patchState({
+          currentTurnSegments: [...this.state.currentTurnSegments, { kind: "text", content: this.state.streamingAssistantText }],
+          streamingAssistantText: "",
+        })
+      }
       this.patchState({
         streamingThinkingText: this.state.streamingThinkingText + assistantEvent.delta,
       })
     } else if (assistantEvent.type === "thinking_end") {
-      // Thinking block complete — keep the accumulated text, it'll be moved on turn boundary
+      // Finalize thinking segment
+      if (this.state.streamingThinkingText.length > 0) {
+        this.patchState({
+          currentTurnSegments: [...this.state.currentTurnSegments, { kind: "thinking", content: this.state.streamingThinkingText }],
+          streamingThinkingText: "",
+        })
+      }
     }
   }
 
   private handleTurnBoundary(): void {
+    // Finalize any remaining streaming content into segments
+    const pendingSegments: TurnSegment[] = []
+    if (this.state.streamingThinkingText.length > 0) {
+      pendingSegments.push({ kind: "thinking", content: this.state.streamingThinkingText })
+    }
     if (this.state.streamingAssistantText.length > 0) {
-      const next = [...this.state.liveTranscript, this.state.streamingAssistantText]
+      pendingSegments.push({ kind: "text", content: this.state.streamingAssistantText })
+    }
+
+    const finalSegments = pendingSegments.length > 0
+      ? [...this.state.currentTurnSegments, ...pendingSegments]
+      : this.state.currentTurnSegments
+
+    // Build the flat transcript text (backward-compat for terminal.tsx / files-view.tsx)
+    const fullText = finalSegments
+      .filter((s): s is TurnSegment & { kind: "text" } => s.kind === "text")
+      .map((s) => s.content)
+      .join("")
+
+    if (fullText.length > 0 || finalSegments.length > 0) {
+      const nextTranscript = [...this.state.liveTranscript, fullText]
+      const nextThinking = [...this.state.liveThinkingTranscript, ""]
+      const nextSegments = [...this.state.completedTurnSegments, finalSegments]
+      const overflow = nextTranscript.length > MAX_TRANSCRIPT_BLOCKS ? nextTranscript.length - MAX_TRANSCRIPT_BLOCKS : 0
       this.patchState({
-        liveTranscript: next.length > MAX_TRANSCRIPT_BLOCKS ? next.slice(next.length - MAX_TRANSCRIPT_BLOCKS) : next,
+        liveTranscript: overflow > 0 ? nextTranscript.slice(overflow) : nextTranscript,
+        liveThinkingTranscript: overflow > 0 ? nextThinking.slice(overflow) : nextThinking,
+        completedTurnSegments: overflow > 0 ? nextSegments.slice(overflow) : nextSegments,
         streamingAssistantText: "",
         streamingThinkingText: "",
+        currentTurnSegments: [],
+        completedToolExecutions: [],
       })
     } else if (this.state.streamingThinkingText.length > 0) {
-      // Turn ended with only thinking, no visible text — clear thinking
-      this.patchState({ streamingThinkingText: "" })
+      // Turn ended with only thinking, no visible text — clear
+      this.patchState({
+        streamingThinkingText: "",
+        currentTurnSegments: [],
+        completedToolExecutions: [],
+      })
+    } else {
+      // Empty turn — just reset
+      this.patchState({
+        currentTurnSegments: [],
+        completedToolExecutions: [],
+      })
     }
   }
 
   private handleToolExecutionStart(event: ToolExecutionStartEvent): void {
+    // Finalize any in-flight streaming content into segments before the tool runs
+    const pendingSegments: TurnSegment[] = []
+    if (this.state.streamingThinkingText.length > 0) {
+      pendingSegments.push({ kind: "thinking", content: this.state.streamingThinkingText })
+    }
+    if (this.state.streamingAssistantText.length > 0) {
+      pendingSegments.push({ kind: "text", content: this.state.streamingAssistantText })
+    }
     this.patchState({
       activeToolExecution: {
         id: event.toolCallId,
         name: event.toolName,
         args: (event as Record<string, unknown>).args as Record<string, unknown> | undefined,
       },
+      ...(pendingSegments.length > 0 ? {
+        currentTurnSegments: [...this.state.currentTurnSegments, ...pendingSegments],
+        streamingAssistantText: "",
+        streamingThinkingText: "",
+      } : {}),
     })
   }
 
@@ -5007,6 +5103,8 @@ export class GSDWorkspaceStore {
       this.patchState({
         activeToolExecution: null,
         completedToolExecutions: next.length > 50 ? next.slice(next.length - 50) : next,
+        // Also push tool segment into chronological order
+        currentTurnSegments: [...this.state.currentTurnSegments, { kind: "tool", tool: completed }],
       })
     } else {
       this.patchState({ activeToolExecution: null })

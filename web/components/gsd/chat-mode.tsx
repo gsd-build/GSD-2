@@ -16,6 +16,7 @@ import {
   type CompletedToolExecution,
   type ActiveToolExecution,
   type PendingUiRequest,
+  type TurnSegment,
 } from "@/lib/gsd-workspace-store"
 import { deriveWorkflowAction } from "@/lib/workflow-actions"
 import { useTerminalFontSize } from "@/lib/use-terminal-font-size"
@@ -304,20 +305,7 @@ function getChatHighlighter(): Promise<ShikiHighlighter> {
 function MarkdownContent({ content }: { content: string }) {
   const [rendered, setRendered] = useState<React.ReactNode | null>(null)
   const [ready, setReady] = useState(false)
-  const [isDark, setIsDark] = useState(() =>
-    typeof document !== "undefined" && document.documentElement.classList.contains("dark"),
-  )
-
-  // Watch for theme changes via MutationObserver on <html> class
-  useEffect(() => {
-    if (typeof document === "undefined") return
-    const el = document.documentElement
-    const observer = new MutationObserver(() => {
-      setIsDark(el.classList.contains("dark"))
-    })
-    observer.observe(el, { attributes: true, attributeFilter: ["class"] })
-    return () => observer.disconnect()
-  }, [])
+  const isDark = useIsDark()
 
   useEffect(() => {
     let cancelled = false
@@ -857,55 +845,122 @@ function createLocalMessageId(): string {
   return `msg-${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
+/* ─── Theme detection hook ─── */
+
+function useIsDark(): boolean {
+  const [isDark, setIsDark] = useState(() =>
+    typeof document !== "undefined" && document.documentElement.classList.contains("dark"),
+  )
+  useEffect(() => {
+    if (typeof document === "undefined") return
+    const el = document.documentElement
+    const observer = new MutationObserver(() => {
+      setIsDark(el.classList.contains("dark"))
+    })
+    observer.observe(el, { attributes: true, attributeFilter: ["class"] })
+    return () => observer.disconnect()
+  }, [])
+  return isDark
+}
+
+/* ─── PlatformLogoIcon ─── */
+
+/**
+ * Renders the platform logo icon, dynamically switching between
+ * light and dark variants based on the current theme.
+ */
+function PlatformLogoIcon({ className }: { className?: string }) {
+  const isDark = useIsDark()
+  return (
+    <Image
+      src={isDark ? "/logo-icon-white.svg" : "/logo-icon-black.svg"}
+      alt=""
+      width={24}
+      height={32}
+      unoptimized
+      className={cn("h-4 w-auto", className)}
+    />
+  )
+}
+
 /* ─── InlineThinking ─── */
 
 /**
- * Compact thinking indicator rendered inline inside an assistant bubble.
- * Shows a collapsible preview of the LLM's reasoning with a toggle.
+ * Thinking indicator rendered inline inside an assistant bubble.
+ * Shows a collapsible preview of the LLM's reasoning with a visible,
+ * well-styled block that shows more context lines.
  */
 function InlineThinking({ content, isStreaming }: { content: string; isStreaming: boolean }) {
   const [expanded, setExpanded] = useState(false)
+  const scrollRef = useRef<HTMLDivElement>(null)
   const lines = content.split("\n").filter((l) => l.trim())
-  const previewLines = lines.slice(-2)
-  const hasMore = lines.length > 2
+  const previewLines = lines.slice(-5)
+  const hasMore = lines.length > 5
+
+  // Auto-scroll the expanded view to the bottom when streaming
+  useEffect(() => {
+    if (expanded && isStreaming && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    }
+  }, [expanded, isStreaming, content])
 
   return (
-    <div className="mb-2">
+    <div className="mb-3">
       <button
         onClick={() => setExpanded((e) => !e)}
-        className="w-full rounded-lg border border-border/40 bg-muted/20 px-3 py-1.5 text-left transition-colors hover:bg-muted/30"
+        className={cn(
+          "group w-full rounded-xl border px-3.5 py-2.5 text-left transition-all",
+          "border-border/40 bg-muted/20 hover:bg-muted/30",
+        )}
       >
+        {/* Header row */}
         <div className="flex items-center gap-2">
-          {isStreaming && (
-            <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-warning/60" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-warning" />
+          {isStreaming ? (
+            <span className="relative flex h-2 w-2 flex-shrink-0">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-muted-foreground/30" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-muted-foreground/50" />
+            </span>
+          ) : (
+            <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded bg-muted-foreground/10">
+              <span className="text-[9px] text-muted-foreground/50">💭</span>
             </span>
           )}
-          <span className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-wider">
+          <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/50">
             {isStreaming ? "Thinking…" : "Thought process"}
           </span>
           {hasMore && !expanded && (
-            <span className="text-[10px] text-muted-foreground/40">
-              ▶ {lines.length} lines
+            <span className="ml-1 rounded-full bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground/40">
+              {lines.length} lines
             </span>
           )}
-          {expanded && (
-            <span className="text-[10px] text-muted-foreground/40">▼</span>
-          )}
+          <span className="ml-auto flex-shrink-0">
+            {expanded
+              ? <ChevronDown className="h-3 w-3 text-muted-foreground/40 transition-transform" />
+              : <ChevronRight className="h-3 w-3 text-muted-foreground/40 transition-transform group-hover:text-muted-foreground/60" />
+            }
+          </span>
         </div>
+
+        {/* Collapsed preview — show 5 lines */}
         {!expanded && (
-          <div className="mt-1 space-y-0.5">
+          <div className="mt-2 space-y-0.5 border-l-2 border-muted-foreground/10 pl-3">
             {previewLines.map((line, i) => (
-              <p key={i} className="text-xs leading-relaxed text-muted-foreground/50 italic truncate">
+              <p key={i} className="text-[12px] leading-relaxed text-muted-foreground/50 line-clamp-1">
                 {line}
               </p>
             ))}
+            {isStreaming && <StreamingCursor />}
           </div>
         )}
+
+        {/* Expanded view — scrollable with more space */}
         {expanded && (
-          <div className="mt-1 max-h-[200px] overflow-y-auto text-xs leading-relaxed text-muted-foreground/50 italic whitespace-pre-wrap">
+          <div
+            ref={scrollRef}
+            className="mt-2 max-h-[400px] overflow-y-auto overscroll-contain rounded-lg border border-border/30 bg-background/40 p-3 text-[12px] leading-[1.7] text-muted-foreground/60 whitespace-pre-wrap scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent"
+          >
             {content}
+            {isStreaming && <StreamingCursor />}
           </div>
         )}
       </button>
@@ -927,12 +982,10 @@ function InlineThinking({ content, isStreaming }: { content: string; isStreaming
 function ChatBubble({
   message,
   onSubmitPrompt,
-  thinkingContent,
   isThinking,
 }: {
   message: ChatMessage
   onSubmitPrompt?: (data: string) => void
-  thinkingContent?: string
   isThinking?: boolean
 }) {
   if (message.role === "system") {
@@ -992,21 +1045,17 @@ function ChatBubble({
   return (
     <div className="flex justify-start gap-3">
       <div className="mt-1 flex-shrink-0 flex h-7 w-7 items-center justify-center rounded-full bg-card border border-border">
-        <MessagesSquare className="h-3.5 w-3.5 text-muted-foreground" />
+        <PlatformLogoIcon className="h-3.5 w-auto" />
       </div>
       <div className="max-w-[82%] min-w-0 rounded-2xl rounded-tl-md border border-border/60 bg-card px-4 py-3 shadow-sm">
-        {/* Inline thinking block — shown inside the bubble when thinking content exists */}
-        {thinkingContent != null && thinkingContent.trim().length > 0 && (
-          <InlineThinking content={thinkingContent} isStreaming={isThinking ?? false} />
-        )}
-        {/* Streaming-only thinking indicator with no text yet */}
-        {isThinking && (!thinkingContent || thinkingContent.trim().length === 0) && !message.content && (
+        {/* Minimal waiting indicator — shown when streaming starts but no content yet */}
+        {isThinking && !message.content && (
           <div className="flex items-center gap-2 py-1">
             <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-warning/60" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-warning" />
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-muted-foreground/30" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-muted-foreground/50" />
             </span>
-            <span className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-wider">
+            <span className="text-[10px] font-medium text-muted-foreground/40 uppercase tracking-wider">
               Thinking…
             </span>
           </div>
@@ -1557,7 +1606,7 @@ function InlineUiRequest({ request }: { request: PendingUiRequest }) {
   return (
     <div className="flex justify-start gap-3" data-testid="inline-ui-request" data-request-id={request.id}>
       <div className="mt-1 flex-shrink-0 flex h-7 w-7 items-center justify-center rounded-full bg-card border border-border">
-        <MessagesSquare className="h-3.5 w-3.5 text-muted-foreground" />
+        <PlatformLogoIcon className="h-3.5 w-auto" />
       </div>
       <div className="max-w-[82%] min-w-0 rounded-2xl rounded-tl-md border border-border/60 bg-card px-4 py-3 shadow-sm">
         {request.title && (
@@ -2031,46 +2080,82 @@ export function ChatPane({ className, onOpenAction }: ChatPaneProps) {
   }, [submitInput, pushChatUserMessage])
 
   // Build unified timeline from store state.
-  // Interleaves messages, tool executions, and UI requests in chronological order
-  // so tool calls appear inline where they happened, not stacked at the bottom.
+  // Uses the segment-ordered data to render thinking/text/tool blocks
+  // in their actual chronological order within each turn.
   type TimelineItem =
+    | { kind: "thinking"; content: string; id: string }
     | { kind: "message"; message: ChatMessage }
     | { kind: "tool"; tool: CompletedToolExecution }
     | { kind: "active-tool"; tool: ActiveToolExecution }
+    | { kind: "streaming-thinking"; content: string }
+    | { kind: "streaming-message"; content: string; isThinking: boolean }
     | { kind: "ui-request"; request: PendingUiRequest }
 
   const timeline = useMemo((): TimelineItem[] => {
     const items: TimelineItem[] = []
     const transcriptBlocks = state.liveTranscript
+    const segmentBlocks = state.completedTurnSegments
     const userMsgs = state.chatUserMessages
-    const latestUserTimestamp = userMsgs.at(-1)?.timestamp ?? 0
 
-    // Interleave: turns alternate user → assistant.
-    // Each transcript block is one completed assistant turn.
+    // Interleave: user messages alternate with assistant turns.
+    // For completed turns, render from segments to preserve chronological order.
     for (let i = 0; i < Math.max(userMsgs.length, transcriptBlocks.length); i++) {
       if (i < userMsgs.length) {
         items.push({ kind: "message", message: userMsgs[i] })
       }
-      if (i < transcriptBlocks.length) {
-        const block = transcriptBlocks[i]
-        if (block.trim()) {
-          items.push({
-            kind: "message",
-            message: {
-              id: `transcript-${i}`,
-              role: "assistant",
-              content: block,
-              complete: true,
-              timestamp: i + 1,
-            },
-          })
+      if (i < segmentBlocks.length && segmentBlocks[i].length > 0) {
+        // Render each segment in order
+        for (const seg of segmentBlocks[i]) {
+          if (seg.kind === "thinking") {
+            items.push({ kind: "thinking", content: seg.content, id: `turn-${i}-thinking-${items.length}` })
+          } else if (seg.kind === "text") {
+            items.push({
+              kind: "message",
+              message: {
+                id: `turn-${i}-text-${items.length}`,
+                role: "assistant",
+                content: seg.content,
+                complete: true,
+                timestamp: i + 1,
+              },
+            })
+          } else if (seg.kind === "tool") {
+            items.push({ kind: "tool", tool: seg.tool })
+          }
         }
+      } else if (i < transcriptBlocks.length && transcriptBlocks[i].trim()) {
+        // Fallback: no segments stored yet (shouldn't happen for new turns, but safe)
+        items.push({
+          kind: "message",
+          message: {
+            id: `transcript-${i}`,
+            role: "assistant",
+            content: transcriptBlocks[i],
+            complete: true,
+            timestamp: i + 1,
+          },
+        })
       }
     }
 
-    // Tool executions for the current turn — after the last completed message
-    for (const tool of state.completedToolExecutions) {
-      items.push({ kind: "tool", tool })
+    // Current turn: render finalized segments, then any in-flight content
+    for (const seg of state.currentTurnSegments) {
+      if (seg.kind === "thinking") {
+        items.push({ kind: "thinking", content: seg.content, id: `current-thinking-${items.length}` })
+      } else if (seg.kind === "text") {
+        items.push({
+          kind: "message",
+          message: {
+            id: `current-text-${items.length}`,
+            role: "assistant",
+            content: seg.content,
+            complete: true,
+            timestamp: Date.now(),
+          },
+        })
+      } else if (seg.kind === "tool") {
+        items.push({ kind: "tool", tool: seg.tool })
+      }
     }
 
     // Active tool execution indicator
@@ -2078,21 +2163,30 @@ export function ChatPane({ className, onOpenAction }: ChatPaneProps) {
       items.push({ kind: "active-tool", tool: state.activeToolExecution })
     }
 
-    // Currently streaming content — after tool executions
-    const hasStreaming = state.streamingAssistantText.length > 0
-    const hasThinking = state.streamingThinkingText.length > 0
+    // Currently streaming thinking (live, not yet finalized into a segment)
+    if (state.streamingThinkingText.length > 0) {
+      items.push({ kind: "streaming-thinking", content: state.streamingThinkingText })
+    }
 
-    if (hasStreaming || hasThinking) {
+    // Currently streaming text (live)
+    if (state.streamingAssistantText.length > 0) {
       items.push({
-        kind: "message",
-        message: {
-          id: "streaming-current",
-          role: "assistant",
-          content: state.streamingAssistantText || "",
-          complete: false,
-          timestamp: latestUserTimestamp + transcriptBlocks.length + 1,
-        },
+        kind: "streaming-message",
+        content: state.streamingAssistantText,
+        isThinking: false,
       })
+    }
+
+    // If only thinking is happening (no text yet, no tool), show a minimal indicator
+    if (
+      state.streamingThinkingText.length === 0 &&
+      state.streamingAssistantText.length === 0 &&
+      !state.activeToolExecution &&
+      isStreaming &&
+      state.currentTurnSegments.length === 0
+    ) {
+      // Pure waiting state — streaming started but nothing produced yet
+      items.push({ kind: "streaming-message", content: "", isThinking: true })
     }
 
     // Pending UI requests — at the end
@@ -2101,7 +2195,7 @@ export function ChatPane({ className, onOpenAction }: ChatPaneProps) {
     }
 
     return items
-  }, [state.liveTranscript, state.streamingAssistantText, state.streamingThinkingText, state.completedToolExecutions, state.activeToolExecution, state.pendingUiRequests, state.chatUserMessages])
+  }, [state.liveTranscript, state.completedTurnSegments, state.currentTurnSegments, state.streamingAssistantText, state.streamingThinkingText, state.activeToolExecution, state.pendingUiRequests, state.chatUserMessages, isStreaming])
 
   // Prompt submit handler for TUI prompts (select/text/password)
   const handlePromptSubmit = useCallback((data: string) => {
@@ -2156,8 +2250,38 @@ export function ChatPane({ className, onOpenAction }: ChatPaneProps) {
                       key={item.message.id}
                       message={item.message}
                       onSubmitPrompt={handlePromptSubmit}
-                      thinkingContent={item.message.id === "streaming-current" ? state.streamingThinkingText : undefined}
-                      isThinking={item.message.id === "streaming-current" ? (isStreaming && !state.activeToolExecution) : undefined}
+                    />
+                  )
+                case "thinking":
+                  return (
+                    <div key={item.id} className="flex justify-start gap-3">
+                      <div className="w-7 flex-shrink-0" />
+                      <div className="max-w-[82%] min-w-0">
+                        <InlineThinking content={item.content} isStreaming={false} />
+                      </div>
+                    </div>
+                  )
+                case "streaming-thinking":
+                  return (
+                    <div key="streaming-thinking" className="flex justify-start gap-3">
+                      <div className="w-7 flex-shrink-0" />
+                      <div className="max-w-[82%] min-w-0">
+                        <InlineThinking content={item.content} isStreaming={true} />
+                      </div>
+                    </div>
+                  )
+                case "streaming-message":
+                  return (
+                    <ChatBubble
+                      key="streaming-message"
+                      message={{
+                        id: "streaming-current",
+                        role: "assistant",
+                        content: item.content,
+                        complete: false,
+                        timestamp: Date.now(),
+                      }}
+                      isThinking={item.isThinking}
                     />
                   )
                 case "tool":
