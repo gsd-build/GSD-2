@@ -70,6 +70,29 @@ docker run --rm -v $(pwd):/workspace ghcr.io/gsd-build/gsd-pi:latest --version
 
 **CI optimization (v2.38):** GitHub Actions minutes were reduced ~60-70% (~10k → ~3-4k/month) through workflow consolidation and caching improvements.
 
+### Docs-Only PR Detection (v2.41)
+
+CI automatically detects when a PR contains only documentation changes (`.md` files and `docs/` content). When docs-only:
+
+- **Skipped:** `build`, `windows-portability` (no code to compile or test)
+- **Still runs:** `lint` (secret scanning, `.gsd/` check), `docs-check` (prompt injection scan)
+
+This saves CI minutes on documentation PRs while still enforcing security checks.
+
+### Prompt Injection Scan (v2.41)
+
+The `docs-check` job runs `scripts/docs-prompt-injection-scan.sh` on every PR that touches markdown files. It scans documentation prose (excluding fenced code blocks) for patterns that could manipulate LLM behavior when docs are ingested as context:
+
+- **System prompt markers** — `<system-prompt>`, `<|im_start|>system`, `[SYSTEM]:`
+- **Role/instruction overrides** — `ignore previous instructions`, `you are now`, `new instructions:`
+- **Hidden HTML directives** — `<!-- PROMPT:`, `<!-- INSTRUCTION:`
+- **Tool call injection** — `<tool_call>`, `<function_call>`, `<invoke`
+- **Invisible Unicode** — zero-width character sequences that hide directives
+
+Content inside fenced code blocks (` ``` `) is excluded — patterns in code examples are expected and legitimate.
+
+**False positives:** Add exceptions to `.prompt-injection-scanignore` using the same format as `.secretscanignore` (one pattern per line, `file:regex` for file-scoped exceptions).
+
 ### Gating Tests
 
 The pipeline only triggers after `ci.yml` passes. Key gating tests include:
