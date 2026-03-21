@@ -2122,7 +2122,7 @@ test("autoLoop stops when worktree has no project files for execute-task (#1833)
     "should stop auto-mode when worktree has no project files",
   );
   const healthNotification = notifications.find(
-    (n) => n.includes("Worktree health check failed") && n.includes("no package.json or src/"),
+    (n) => n.includes("Worktree health check failed") && n.includes("no recognized project files"),
   );
   assert.ok(
     healthNotification,
