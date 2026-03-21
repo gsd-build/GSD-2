@@ -835,11 +835,18 @@ export function nativeMergeSquash(basePath: string, branch: string): GitMergeRes
       encoding: "utf-8",
     });
     return { success: true, conflicts: [] };
-  } catch {
-    // Check for conflicts
+  } catch (err: unknown) {
+    // Check for conflicts — only treat as recoverable if actual conflict
+    // markers are present. Other failures (bad ref, corrupt repo, etc.)
+    // must propagate so callers don't assume the merge succeeded (#1672).
     const conflictOutput = gitExec(basePath, ["diff", "--name-only", "--diff-filter=U"], true);
     const conflicts = conflictOutput ? conflictOutput.split("\n").filter(Boolean) : [];
-    return { success: conflicts.length === 0, conflicts };
+    if (conflicts.length > 0) {
+      return { success: false, conflicts };
+    }
+    // No conflicts detected — this is a non-conflict failure; re-throw
+    // so the caller knows the merge did not succeed.
+    throw err;
   }
 }
 
