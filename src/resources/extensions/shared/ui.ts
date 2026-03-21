@@ -28,8 +28,23 @@
  * individual methods don't need it.
  */
 
+import { createRequire } from "node:module";
 import { type Theme } from "@gsd/pi-coding-agent";
-import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@gsd/pi-tui";
+
+// ─── Lazy @gsd/pi-tui resolution ─────────────────────────────────────────────
+// Deferred to first makeUI() call so that importing this module (via the
+// shared/mod barrel) does not blow up when @gsd/pi-tui cannot be resolved —
+// e.g. for commands like /exit that never render TUI components.
+
+type PiTuiFns = typeof import("@gsd/pi-tui");
+let _piTui: PiTuiFns | undefined;
+function piTui(): PiTuiFns {
+	if (!_piTui) {
+		const esmRequire = createRequire(import.meta.url);
+		_piTui = esmRequire("@gsd/pi-tui") as PiTuiFns;
+	}
+	return _piTui;
+}
 
 // ─── Glyphs ───────────────────────────────────────────────────────────────────
 // Change these to restyle every cursor, checkbox, and indicator at once.
@@ -202,6 +217,7 @@ export function makeUI(theme: Theme, width: number): UI {
 	// ── Internal helpers ───────────────────────────────────────────────────────
 
 
+	const { truncateToWidth, visibleWidth, wrapTextWithAnsi } = piTui();
 	const add = (s: string): string => truncateToWidth(s, width);
 	const wrap = (s: string): string[] => wrapTextWithAnsi(s, width);
 
