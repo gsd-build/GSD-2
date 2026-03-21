@@ -792,6 +792,7 @@ export async function runGSDDoctor(basePath: string, options?: { fix?: boolean; 
       } catch { /* non-fatal */ }
 
       let allTasksDone = plan.tasks.length > 0;
+      let taskUncheckedByDoctor = false;
       for (const task of plan.tasks) {
         const taskUnitId = `${unitId}/${task.id}`;
         const summaryPath = resolveTaskFile(basePath, milestoneId, slice.id, task.id, "SUMMARY");
@@ -810,6 +811,7 @@ export async function runGSDDoctor(basePath: string, options?: { fix?: boolean; 
           dryRunCanFix("task_done_missing_summary", `uncheck ${task.id} in plan for ${taskUnitId}`);
           if (shouldFix("task_done_missing_summary")) {
             await markTaskUndoneInPlan(basePath, milestoneId, slice.id, task.id, fixesApplied);
+            taskUncheckedByDoctor = true;
           }
         }
 
@@ -871,6 +873,15 @@ export async function runGSDDoctor(basePath: string, options?: { fix?: boolean; 
         }
 
         allTasksDone = allTasksDone && task.done;
+      }
+
+      // ── #1850: cascade slice uncheck when task_done_missing_summary fires ──
+      // When doctor unchecks tasks inside a done slice, the slice must also be
+      // unchecked so the state machine re-enters the executing phase. Without
+      // this, state.ts skips done slices and the unchecked tasks never run,
+      // causing doctor to fire again on every start (infinite loop).
+      if (taskUncheckedByDoctor && slice.done) {
+        await markSliceUndoneInRoadmap(basePath, milestoneId, slice.id, fixesApplied);
       }
 
       // Blocker-without-replan detection
