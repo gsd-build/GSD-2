@@ -626,7 +626,7 @@ async function main(): Promise<void> {
 
       // Verify branches are gone
       const remaining = run("git branch --list gsd/*/*", dir);
-      assertEq(remaining, "  gsd/quick/1-fix-typo", "quick branch preserved; legacy branches removed");
+      assertEq(remaining, "gsd/quick/1-fix-typo", "quick branch preserved; legacy branches removed");
     }
     } else {
       console.log("\n=== legacy_slice_branches (fixable — skipped on Windows) ===");
