@@ -52,7 +52,7 @@ function makeDeps(
         fn: "mergeMilestoneToMain",
         args: [basePath, milestoneId, roadmapContent],
       });
-      return { pushed: false };
+      return { pushed: false, codeFilesChanged: true };
     },
     syncWorktreeStateBack: (
       mainBasePath: string,
@@ -424,7 +424,7 @@ test("mergeAndExit in worktree mode shows pushed status", () => {
   const deps = makeDeps({
     isInAutoWorktree: () => true,
     getIsolationMode: () => "worktree",
-    mergeMilestoneToMain: () => ({ pushed: true }),
+    mergeMilestoneToMain: () => ({ pushed: true, codeFilesChanged: true }),
   });
   const ctx = makeNotifyCtx();
   const resolver = new WorktreeResolver(s, deps);
@@ -659,6 +659,81 @@ test("mergeAndExit in none mode is a no-op", () => {
   assert.equal(ctx.messages.length, 0);
 });
 
+// ─── #1906 — metadata-only merge warning ────────────────────────────────────
+
+test("mergeAndExit warns when merge contains no code changes (#1906)", () => {
+  const s = makeSession({
+    basePath: "/project/.gsd/worktrees/M001",
+    originalBasePath: "/project",
+  });
+  const deps = makeDeps({
+    isInAutoWorktree: () => true,
+    getIsolationMode: () => "worktree",
+    mergeMilestoneToMain: () => ({ pushed: false, codeFilesChanged: false }),
+  });
+  const ctx = makeNotifyCtx();
+  const resolver = new WorktreeResolver(s, deps);
+
+  resolver.mergeAndExit("M001", ctx);
+
+  assert.ok(
+    ctx.messages.some((m) => m.msg.includes("NO code changes") && m.level === "warning"),
+    "must emit warning when only .gsd/ metadata was merged",
+  );
+  assert.ok(
+    !ctx.messages.some((m) => m.msg.includes("merged to main") && m.level === "info"),
+    "must NOT emit success-style info notification for metadata-only merge",
+  );
+});
+
+test("mergeAndExit emits info when merge contains code changes (#1906)", () => {
+  const s = makeSession({
+    basePath: "/project/.gsd/worktrees/M001",
+    originalBasePath: "/project",
+  });
+  const deps = makeDeps({
+    isInAutoWorktree: () => true,
+    getIsolationMode: () => "worktree",
+    mergeMilestoneToMain: () => ({ pushed: false, codeFilesChanged: true }),
+  });
+  const ctx = makeNotifyCtx();
+  const resolver = new WorktreeResolver(s, deps);
+
+  resolver.mergeAndExit("M001", ctx);
+
+  assert.ok(
+    ctx.messages.some((m) => m.msg.includes("merged to main") && m.level === "info"),
+    "must emit info notification when code files were merged",
+  );
+  assert.ok(
+    !ctx.messages.some((m) => m.msg.includes("NO code changes")),
+    "must NOT emit metadata-only warning when code files were merged",
+  );
+});
+
+test("mergeAndExit branch mode warns when merge contains no code changes (#1906)", () => {
+  const s = makeSession({
+    basePath: "/project",
+    originalBasePath: "/project",
+  });
+  const deps = makeDeps({
+    isInAutoWorktree: () => false,
+    getIsolationMode: () => "branch",
+    getCurrentBranch: () => "milestone/M001",
+    autoWorktreeBranch: () => "milestone/M001",
+    mergeMilestoneToMain: () => ({ pushed: false, codeFilesChanged: false }),
+  });
+  const ctx = makeNotifyCtx();
+  const resolver = new WorktreeResolver(s, deps);
+
+  resolver.mergeAndExit("M001", ctx);
+
+  assert.ok(
+    ctx.messages.some((m) => m.msg.includes("NO code changes") && m.level === "warning"),
+    "branch mode must emit warning when only .gsd/ metadata was merged",
+  );
+});
+
 // ─── mergeAndEnterNext Tests ─────────────────────────────────────────────────
 
 test("mergeAndEnterNext calls mergeAndExit then enterMilestone", () => {
@@ -677,7 +752,7 @@ test("mergeAndEnterNext calls mergeAndExit then enterMilestone", () => {
       _roadmap: string,
     ) => {
       callOrder.push(`merge:${milestoneId}`);
-      return { pushed: false };
+      return { pushed: false, codeFilesChanged: true };
     },
     getAutoWorktreePath: () => null,
     createAutoWorktree: (basePath: string, milestoneId: string) => {

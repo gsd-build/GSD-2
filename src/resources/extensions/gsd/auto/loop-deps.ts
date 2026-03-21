@@ -102,7 +102,7 @@ export interface LoopDeps {
     basePath: string,
     milestoneId: string,
     roadmapContent: string,
-  ) => { pushed: boolean };
+  ) => { pushed: boolean; codeFilesChanged: boolean };
   teardownAutoWorktree: (basePath: string, milestoneId: string) => void;
   createAutoWorktree: (basePath: string, milestoneId: string) => string;
   captureIntegrationBranch: (

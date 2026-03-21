@@ -723,6 +723,54 @@ async function main(): Promise<void> {
       );
     }
 
+    // ─── Test 18: #1906 — codeFilesChanged false when only .gsd/ metadata merged ──
+    console.log("\n=== #1906: codeFilesChanged=false when only .gsd/ metadata merged ===");
+    {
+      const repo = freshRepo();
+      const wtPath = createAutoWorktree(repo, "M180");
+
+      // Only add .gsd/ metadata files — no actual code
+      mkdirSync(join(wtPath, ".gsd", "milestones", "M180"), { recursive: true });
+      writeFileSync(
+        join(wtPath, ".gsd", "milestones", "M180", "SUMMARY.md"),
+        "# M180 Summary\n\nThis milestone was planned but not implemented.\n",
+      );
+      run("git add .", wtPath);
+      run('git commit -m "chore: add milestone summary"', wtPath);
+
+      const roadmap = makeRoadmap("M180", "Metadata-only milestone", []);
+
+      const result = mergeMilestoneToMain(repo, "M180", roadmap);
+      assertEq(
+        result.codeFilesChanged,
+        false,
+        "#1906: codeFilesChanged must be false when only .gsd/ files were merged",
+      );
+    }
+
+    // ─── Test 19: #1906 — codeFilesChanged true when real code is merged ──
+    console.log("\n=== #1906: codeFilesChanged=true when real code is merged ===");
+    {
+      const repo = freshRepo();
+      const wtPath = createAutoWorktree(repo, "M190");
+
+      addSliceToMilestone(repo, wtPath, "M190", "S01", "Real code", [
+        { file: "real-code.ts", content: "export const real = true;\n", message: "add real code" },
+      ]);
+
+      const roadmap = makeRoadmap("M190", "Code milestone", [
+        { id: "S01", title: "Real code" },
+      ]);
+
+      const result = mergeMilestoneToMain(repo, "M190", roadmap);
+      assertEq(
+        result.codeFilesChanged,
+        true,
+        "#1906: codeFilesChanged must be true when real code files were merged",
+      );
+      assertTrue(existsSync(join(repo, "real-code.ts")), "real-code.ts merged to main");
+    }
+
   } finally {
     process.chdir(savedCwd);
     for (const d of tempDirs) {
