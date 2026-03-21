@@ -158,6 +158,7 @@ export async function postUnitPreVerification(pctx: PostUnitContext, opts?: PreV
       }
     } catch (e) {
       debugLog("postUnit", { phase: "auto-commit", error: String(e) });
+      ctx.ui.notify(`Auto-commit failed: ${String(e).split("\n")[0]}`, "warning");
     }
 
     // GitHub sync (non-blocking, opt-in)

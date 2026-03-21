@@ -698,10 +698,17 @@ export function nativeAddAllWithExclusions(basePath: string, exclusions: readonl
       env: GIT_NO_PROMPT_ENV,
     });
   } catch (err: unknown) {
+    const stderr = (err as { stderr?: string })?.stderr ?? "";
     // git exits 1 when pathspec exclusions reference paths already covered
     // by .gitignore. The staging itself succeeds — only suppress that case.
-    const stderr = (err as { stderr?: string })?.stderr ?? "";
     if (stderr.includes("ignored by one of your .gitignore files")) {
+      return;
+    }
+    // When .gsd is a symlink, git rejects `:!.gsd/...` pathspecs with
+    // "beyond a symbolic link". Fall back to plain `git add -A` which
+    // respects .gitignore (where .gsd/ is listed by default).
+    if (stderr.includes("beyond a symbolic link")) {
+      nativeAddAll(basePath);
       return;
     }
     throw new GSDError(GSD_GIT_ERROR, `git add -A with exclusions failed in ${basePath}: ${getErrorMessage(err)}`);

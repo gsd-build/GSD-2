@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, symlinkSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { execSync } from "node:child_process";
@@ -18,6 +18,7 @@ import {
   type PreMergeCheckResult,
   type TaskCommitContext,
 } from "../git-service.ts";
+import { nativeAddAllWithExclusions } from "../native-git-bridge.ts";
 import { createTestContext } from './test-helpers.ts';
 
 const { assertEq, assertTrue, report } = createTestContext();
@@ -1228,6 +1229,76 @@ async function main(): Promise<void> {
     // Idempotent — calling again doesn't add duplicates
     const modified2 = ensureGitignore(repo);
     assertTrue(!modified2, "ensureGitignore: second call is idempotent");
+
+    rmSync(repo, { recursive: true, force: true });
+  }
+
+  // ─── nativeAddAllWithExclusions: symlinked .gsd fallback ───────────────
+
+  console.log("\n=== nativeAddAllWithExclusions: symlinked .gsd fallback ===");
+
+  {
+    // When .gsd is a symlink, git rejects `:!.gsd/...` pathspecs with
+    // "fatal: pathspec '...' is beyond a symbolic link". The fix falls
+    // back to plain `git add -A`, which respects .gitignore.
+    const repo = initTempRepo();
+
+    // Create the real .gsd directory outside the repo, then symlink it
+    const externalGsd = mkdtempSync(join(tmpdir(), "gsd-external-"));
+    mkdirSync(join(externalGsd, "activity"), { recursive: true });
+    writeFileSync(join(externalGsd, "activity", "log.jsonl"), "log data");
+    writeFileSync(join(externalGsd, "STATE.md"), "# State");
+
+    // Symlink .gsd -> external directory
+    symlinkSync(externalGsd, join(repo, ".gsd"));
+
+    // Add .gitignore so git add -A fallback skips .gsd/
+    writeFileSync(join(repo, ".gitignore"), ".gsd\n");
+
+    // Create a real file that should be staged
+    createFile(repo, "src/app.ts", "export const x = 1;");
+
+    // nativeAddAllWithExclusions should NOT throw despite .gsd being a symlink
+    let threw = false;
+    try {
+      nativeAddAllWithExclusions(repo, RUNTIME_EXCLUSION_PATHS);
+    } catch (e) {
+      threw = true;
+      console.error("  unexpected error:", e);
+    }
+    assertTrue(!threw, "nativeAddAllWithExclusions does not throw with symlinked .gsd");
+
+    // Verify the real file was staged
+    const staged = run("git diff --cached --name-only", repo);
+    assertTrue(staged.includes("src/app.ts"), "real file staged despite symlinked .gsd");
+    assertTrue(!staged.includes(".gsd"), ".gsd content not staged");
+
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(externalGsd, { recursive: true, force: true });
+  }
+
+  // ─── nativeAddAllWithExclusions: non-symlinked .gsd still works ───────
+
+  console.log("\n=== nativeAddAllWithExclusions: non-symlinked .gsd still works ===");
+
+  {
+    // Verify the normal (non-symlink) case still works with pathspec exclusions
+    const repo = initTempRepo();
+
+    createFile(repo, ".gsd/activity/log.jsonl", "log data");
+    createFile(repo, ".gsd/STATE.md", "# State");
+    createFile(repo, "src/code.ts", "export const y = 2;");
+
+    let threw = false;
+    try {
+      nativeAddAllWithExclusions(repo, RUNTIME_EXCLUSION_PATHS);
+    } catch {
+      threw = true;
+    }
+    assertTrue(!threw, "nativeAddAllWithExclusions works with normal .gsd directory");
+
+    const staged = run("git diff --cached --name-only", repo);
+    assertTrue(staged.includes("src/code.ts"), "real file staged with normal .gsd");
 
     rmSync(repo, { recursive: true, force: true });
   }

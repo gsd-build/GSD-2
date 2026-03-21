@@ -38,6 +38,7 @@ import {
   nudgeGitBranchCache,
 } from "./worktree.js";
 import { MergeConflictError, readIntegrationBranch, RUNTIME_EXCLUSION_PATHS } from "./git-service.js";
+import { debugLog } from "./debug-logger.js";
 import { parseRoadmap } from "./files.js";
 import { loadEffectiveGSDPreferences } from "./preferences.js";
 import {
@@ -800,7 +801,8 @@ function autoCommitDirtyState(cwd: string): boolean {
       "chore: auto-commit before milestone merge",
     );
     return result !== null;
-  } catch {
+  } catch (e) {
+    debugLog("autoCommitDirtyState", { error: String(e) });
     return false;
   }
 }
