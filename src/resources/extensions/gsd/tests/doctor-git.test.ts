@@ -521,6 +521,117 @@ async function main(): Promise<void> {
       console.log("\n=== worktree_directory_orphaned (symlinked .gsd — skipped on Windows) ===");
     }
 
+    // ─── Test: worktree_branch_merged detection & fix ──────────────────
+    if (process.platform !== "win32") {
+    console.log("\n=== worktree_branch_merged ===");
+    {
+      const dir = createRepoWithActiveMilestone();
+      cleanups.push(dir);
+
+      // Create a worktree, make a commit, then merge the branch into main
+      mkdirSync(join(dir, ".gsd", "worktrees"), { recursive: true });
+      run("git worktree add -b worktree/merged-feature .gsd/worktrees/merged-feature", dir);
+      const wtPath = join(dir, ".gsd", "worktrees", "merged-feature");
+      writeFileSync(join(wtPath, "feature.txt"), "feature\n");
+      run("git add -A", wtPath);
+      run("git -c user.email=test@test.com -c user.name=Test commit -m \"feature work\"", wtPath);
+
+      // Merge the worktree branch into main
+      run("git merge worktree/merged-feature --no-edit", dir);
+
+      const detect = await runGSDDoctor(dir);
+      const mergedIssues = detect.issues.filter(i => i.code === "worktree_branch_merged");
+      assertTrue(mergedIssues.length > 0, "detects merged worktree branch");
+      assertTrue(mergedIssues[0]?.message.includes("safe to remove"), "message says safe to remove");
+      assertTrue(mergedIssues[0]?.fixable === true, "merged worktree is fixable");
+
+      // Fix should remove the worktree
+      const fixed = await runGSDDoctor(dir, { fix: true });
+      assertTrue(fixed.fixesApplied.some(f => f.includes("removed merged worktree")), "fix removes merged worktree");
+      assertTrue(!existsSync(wtPath), "worktree directory removed after fix");
+    }
+    } else {
+      console.log("\n=== worktree_branch_merged (skipped on Windows) ===");
+    }
+
+    // ─── Test: merged milestone/* worktree removes milestone branch ────
+    if (process.platform !== "win32") {
+    console.log("\n=== worktree_branch_merged (milestone branch cleanup) ===");
+    {
+      const dir = createRepoWithActiveMilestone();
+      cleanups.push(dir);
+
+      mkdirSync(join(dir, ".gsd", "worktrees"), { recursive: true });
+      run("git worktree add -b milestone/M001 .gsd/worktrees/M001", dir);
+      const wtPath = join(dir, ".gsd", "worktrees", "M001");
+      writeFileSync(join(wtPath, "feature.txt"), "feature\n");
+      run("git add -A", wtPath);
+      run("git -c user.email=test@test.com -c user.name=Test commit -m \"feature work\"", wtPath);
+      run("git merge milestone/M001 --no-edit", dir);
+
+      const fixed = await runGSDDoctor(dir, { fix: true });
+      assertTrue(fixed.fixesApplied.some(f => f.includes("removed merged worktree")), "fix removes merged milestone worktree");
+      assertTrue(!existsSync(wtPath), "milestone worktree directory removed after fix");
+
+      const branches = run("git branch --list milestone/M001", dir);
+      assertEq(branches, "", "milestone/M001 branch deleted after merged worktree cleanup");
+    }
+    } else {
+      console.log("\n=== worktree_branch_merged (milestone branch cleanup — skipped on Windows) ===");
+    }
+
+    // ─── Test: worktree_branch_merged NOT flagged for unmerged worktree ─
+    if (process.platform !== "win32") {
+    console.log("\n=== worktree_branch_merged (no false positive) ===");
+    {
+      const dir = createRepoWithActiveMilestone();
+      cleanups.push(dir);
+
+      mkdirSync(join(dir, ".gsd", "worktrees"), { recursive: true });
+      run("git worktree add -b worktree/active-feature .gsd/worktrees/active-feature", dir);
+      const wtPath = join(dir, ".gsd", "worktrees", "active-feature");
+      writeFileSync(join(wtPath, "wip.txt"), "work in progress\n");
+      run("git add -A", wtPath);
+      run("git -c user.email=test@test.com -c user.name=Test commit -m \"wip\"", wtPath);
+
+      // Do NOT merge — branch is ahead of main
+      const detect = await runGSDDoctor(dir);
+      const mergedIssues = detect.issues.filter(i => i.code === "worktree_branch_merged");
+      assertEq(mergedIssues.length, 0, "unmerged worktree NOT flagged as merged");
+    }
+    } else {
+      console.log("\n=== worktree_branch_merged (no false positive — skipped on Windows) ===");
+    }
+
+    // ─── Test: legacy_slice_branches now fixable ───────────────────────
+    if (process.platform !== "win32") {
+    console.log("\n=== legacy_slice_branches (fixable) ===");
+    {
+      const dir = createRepoWithActiveMilestone();
+      cleanups.push(dir);
+
+      // Create legacy gsd/M001/S01 branches
+      run("git branch gsd/M001/S01", dir);
+      run("git branch gsd/M001/S02", dir);
+      // Active quick branches share gsd/*/* shape and must NOT be deleted.
+      run("git branch gsd/quick/1-fix-typo", dir);
+
+      const detect = await runGSDDoctor(dir);
+      const legacyIssues = detect.issues.filter(i => i.code === "legacy_slice_branches");
+      assertTrue(legacyIssues.length > 0, "detects legacy slice branches");
+      assertTrue(legacyIssues[0]?.fixable === true, "legacy branches are fixable");
+
+      const fixed = await runGSDDoctor(dir, { fix: true });
+      assertTrue(fixed.fixesApplied.some(f => f.includes("legacy slice branch")), "fix deletes legacy branches");
+
+      // Verify branches are gone
+      const remaining = run("git branch --list gsd/*/*", dir);
+      assertEq(remaining, "gsd/quick/1-fix-typo", "quick branch preserved; legacy branches removed");
+    }
+    } else {
+      console.log("\n=== legacy_slice_branches (fixable — skipped on Windows) ===");
+    }
+
   } finally {
     for (const dir of cleanups) {
       try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }

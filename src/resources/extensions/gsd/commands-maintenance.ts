@@ -1,7 +1,7 @@
 /**
  * GSD Maintenance — cleanup, skip, and dry-run handlers.
  *
- * Contains: handleCleanupBranches, handleCleanupSnapshots, handleSkip, handleDryRun
+ * Contains: handleCleanupBranches, handleCleanupSnapshots, handleCleanupWorktrees, handleSkip, handleDryRun
  */
 
 import type { ExtensionCommandContext } from "@gsd/pi-coding-agent";
@@ -13,17 +13,13 @@ export async function handleCleanupBranches(ctx: ExtensionCommandContext, basePa
   try {
     branches = nativeBranchList(basePath, "gsd/*");
   } catch {
-    ctx.ui.notify("No GSD branches found.", "info");
-    return;
-  }
-
-  if (branches.length === 0) {
     ctx.ui.notify("No GSD branches to clean up.", "info");
     return;
   }
 
-  const mainBranch = nativeDetectMainBranch(basePath);
+  const quickBranches = branches.filter((b) => b.startsWith("gsd/quick/"));
 
+  const mainBranch = nativeDetectMainBranch(basePath);
   let merged: string[];
   try {
     merged = nativeBranchListMerged(basePath, mainBranch, "gsd/*");
@@ -31,20 +27,77 @@ export async function handleCleanupBranches(ctx: ExtensionCommandContext, basePa
     merged = [];
   }
 
-  if (merged.length === 0) {
-    ctx.ui.notify(`${branches.length} GSD branches found, none are merged into ${mainBranch} yet.`, "info");
+  const mergedNonQuick = merged.filter((b) => !b.startsWith("gsd/quick/"));
+  let deletedMerged = 0;
+  for (const branch of mergedNonQuick) {
+    try {
+      nativeBranchDelete(basePath, branch, false);
+      deletedMerged++;
+    } catch {
+      /* skip branches that cannot be deleted */
+    }
+  }
+
+  // Also delete stale milestone branches for completed milestones when detached
+  // from any registered worktree.
+  let deletedStaleMilestones = 0;
+  try {
+    const { listWorktrees } = await import("./worktree-manager.js");
+    const { resolveMilestoneFile } = await import("./paths.js");
+    const { loadFile, parseRoadmap } = await import("./files.js");
+    const { isMilestoneComplete } = await import("./state.js");
+
+    const attachedBranches = new Set(
+      listWorktrees(basePath).map((wt) => wt.branch),
+    );
+    const milestoneBranches = nativeBranchList(basePath, "milestone/*");
+    for (const branch of milestoneBranches) {
+      if (attachedBranches.has(branch)) continue;
+      const milestoneId = branch.replace(/^milestone\//, "");
+      const roadmapPath = resolveMilestoneFile(basePath, milestoneId, "ROADMAP");
+      if (!roadmapPath) continue;
+      let roadmapContent: string | null = null;
+      try {
+        roadmapContent = await loadFile(roadmapPath);
+      } catch {
+        roadmapContent = null;
+      }
+      if (!roadmapContent) continue;
+      if (!isMilestoneComplete(parseRoadmap(roadmapContent))) continue;
+      try {
+        nativeBranchDelete(basePath, branch, true);
+        deletedStaleMilestones++;
+      } catch {
+        /* non-fatal */
+      }
+    }
+  } catch {
+    /* non-fatal */
+  }
+
+  const summary: string[] = [];
+  if (deletedMerged > 0) {
+    summary.push(`Cleaned up ${deletedMerged} merged branch${deletedMerged === 1 ? "" : "es"}.`);
+  }
+  if (deletedStaleMilestones > 0) {
+    summary.push(`Deleted ${deletedStaleMilestones} stale milestone branch${deletedStaleMilestones === 1 ? "" : "es"}.`);
+  }
+  if (quickBranches.length > 0) {
+    summary.push(`Skipped ${quickBranches.length} quick branch${quickBranches.length === 1 ? "" : "es"} (gsd/quick/*).`);
+  }
+
+  if (summary.length === 0) {
+    const nonQuickCount = branches.filter((b) => !b.startsWith("gsd/quick/")).length;
+    ctx.ui.notify(
+      nonQuickCount > 0
+        ? `${nonQuickCount} GSD branch${nonQuickCount === 1 ? "" : "es"} found, none merged into ${mainBranch} yet.`
+        : "No non-quick GSD branches to clean up.",
+      "info",
+    );
     return;
   }
 
-  let deleted = 0;
-  for (const branch of merged) {
-    try {
-      nativeBranchDelete(basePath, branch, false);
-      deleted++;
-    } catch { /* skip branches that can't be deleted */ }
-  }
-
-  ctx.ui.notify(`Cleaned up ${deleted} merged branches. ${branches.length - deleted} remain.`, "success");
+  ctx.ui.notify(summary.join(" "), "success");
 }
 
 export async function handleCleanupSnapshots(ctx: ExtensionCommandContext, basePath: string): Promise<void> {
@@ -52,7 +105,7 @@ export async function handleCleanupSnapshots(ctx: ExtensionCommandContext, baseP
   try {
     refs = nativeForEachRef(basePath, "refs/gsd/snapshots/");
   } catch {
-    ctx.ui.notify("No snapshot refs found.", "info");
+    ctx.ui.notify("No snapshot refs to clean up.", "info");
     return;
   }
 
@@ -76,11 +129,88 @@ export async function handleCleanupSnapshots(ctx: ExtensionCommandContext, baseP
       try {
         nativeUpdateRef(basePath, old);
         pruned++;
-      } catch { /* skip */ }
+      } catch {
+        /* skip individual failures */
+      }
     }
   }
 
   ctx.ui.notify(`Pruned ${pruned} old snapshot refs. ${refs.length - pruned} remain.`, "success");
+}
+
+export async function handleCleanupWorktrees(ctx: ExtensionCommandContext, basePath: string): Promise<void> {
+  const { getAllWorktreeHealth, formatWorktreeStatusLine } = await import("./worktree-health.js");
+  const { removeWorktree } = await import("./worktree-manager.js");
+  const { sep } = await import("node:path");
+
+  let statuses;
+  try {
+    statuses = getAllWorktreeHealth(basePath);
+  } catch {
+    ctx.ui.notify("Failed to inspect worktrees.", "error");
+    return;
+  }
+
+  if (statuses.length === 0) {
+    ctx.ui.notify("No GSD worktrees found.", "info");
+    return;
+  }
+
+  const safeToRemove = statuses.filter(s => s.safeToRemove);
+  const stale = statuses.filter(s => s.stale && !s.safeToRemove);
+  const active = statuses.filter(s => !s.safeToRemove && !s.stale);
+
+  const lines: string[] = [];
+  lines.push(`${statuses.length} worktree${statuses.length === 1 ? "" : "s"} found.`);
+  lines.push("");
+
+  if (safeToRemove.length > 0) {
+    lines.push(`Safe to remove (${safeToRemove.length}) — merged into main, clean:`);
+    const cwd = process.cwd();
+    let removed = 0;
+    for (const s of safeToRemove) {
+      const wt = s.worktree;
+      const isCwd = wt.path === cwd || cwd.startsWith(wt.path + sep);
+      if (isCwd) {
+        lines.push(`  ⊘ ${wt.name}  (skipped — current working directory)`);
+        continue;
+      }
+      try {
+        removeWorktree(basePath, wt.name, { deleteBranch: true });
+        lines.push(`  ✓ ${wt.name}  removed (branch ${wt.branch} deleted)`);
+        removed++;
+      } catch {
+        lines.push(`  ✗ ${wt.name}  failed to remove`);
+      }
+    }
+    if (removed > 0) {
+      lines.push("");
+      lines.push(`Removed ${removed} merged worktree${removed === 1 ? "" : "s"}.`);
+    }
+    lines.push("");
+  }
+
+  if (stale.length > 0) {
+    lines.push(`Stale (${stale.length}) — no recent commits, not merged (review manually):`);
+    for (const s of stale) {
+      lines.push(`  ⚠ ${s.worktree.name}  ${formatWorktreeStatusLine(s)}`);
+    }
+    lines.push("");
+  }
+
+  if (active.length > 0) {
+    lines.push(`Active (${active.length}) — in progress:`);
+    for (const s of active) {
+      lines.push(`  ● ${s.worktree.name}  ${formatWorktreeStatusLine(s)}`);
+    }
+    lines.push("");
+  }
+
+  if (safeToRemove.length === 0 && stale.length === 0) {
+    lines.push("All worktrees are active — nothing to clean up.");
+  }
+
+  ctx.ui.notify(lines.join("\n"), safeToRemove.length > 0 ? "success" : "info");
 }
 
 export async function handleSkip(unitArg: string, ctx: ExtensionCommandContext, basePath: string): Promise<void> {

@@ -61,6 +61,13 @@ export type DoctorIssueCode =
   | "task_file_not_in_plan"
   | "stale_replan_file"
   | "future_timestamp"
+  // Worktree lifecycle checks
+  | "worktree_branch_merged"
+  | "worktree_stale"
+  | "worktree_dirty"
+  | "worktree_unpushed"
+  // Snapshot ref bloat
+  | "snapshot_ref_bloat"
   // Runtime data integrity
   | "orphaned_project_state"
   | "metrics_ledger_bloat"

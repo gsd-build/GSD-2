@@ -1086,6 +1086,62 @@ export function isNativeGitAvailable(): boolean {
   return loadNative() !== null;
 }
 
+/**
+ * Check if a commit/branch is an ancestor of another.
+ * Returns true if `ancestor` is reachable from `descendant`.
+ * Fallback: `git merge-base --is-ancestor`.
+ */
+export function nativeIsAncestor(basePath: string, ancestor: string, descendant: string): boolean {
+  try {
+    execFileSync("git", ["merge-base", "--is-ancestor", ancestor, descendant], {
+      cwd: basePath,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: GIT_NO_PROMPT_ENV,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Get the Unix epoch (seconds) of the latest commit on a ref.
+ * Returns 0 if the ref doesn't exist or has no commits.
+ * Fallback: `git log -1 --format=%ct <ref>`.
+ */
+export function nativeLastCommitEpoch(basePath: string, ref: string): number {
+  try {
+    const result = execFileSync("git", ["log", "-1", "--format=%ct", ref], {
+      cwd: basePath,
+      stdio: ["ignore", "pipe", "pipe"],
+      encoding: "utf-8",
+      env: GIT_NO_PROMPT_ENV,
+    }).trim();
+    return parseInt(result, 10) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Count commits on `branch` that are not on any remote tracking branch.
+ * Returns the count of unpushed commits, or -1 if the branch has no upstream.
+ * Fallback: `git rev-list <branch> --not --remotes`.
+ */
+export function nativeUnpushedCount(basePath: string, branch: string): number {
+  try {
+    const result = execFileSync("git", ["rev-list", branch, "--not", "--remotes", "--count"], {
+      cwd: basePath,
+      stdio: ["ignore", "pipe", "pipe"],
+      encoding: "utf-8",
+      env: GIT_NO_PROMPT_ENV,
+    }).trim();
+    return parseInt(result, 10) || 0;
+  } catch {
+    return -1;
+  }
+}
+
 // ─── Re-exports for type consumers ──────────────────────────────────────
 
 export type {

@@ -143,8 +143,9 @@ const NESTED_COMPLETIONS: CompletionMap = {
     { cmd: "--html --all", desc: "Export all milestones as HTML" },
   ],
   cleanup: [
-    { cmd: "branches", desc: "Remove merged milestone branches" },
+    { cmd: "branches", desc: "Remove merged milestone and legacy branches" },
     { cmd: "snapshots", desc: "Remove old execution snapshots" },
+    { cmd: "worktrees", desc: "Remove merged/safe-to-delete worktrees" },
     { cmd: "projects", desc: "Audit orphaned ~/.gsd/projects/ state directories" },
     { cmd: "projects --fix", desc: "Delete orphaned project state directories (cannot be undone)" },
   ],
