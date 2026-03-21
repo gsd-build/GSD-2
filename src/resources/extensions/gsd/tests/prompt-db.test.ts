@@ -43,6 +43,7 @@ console.log('\n=== prompt-db: scoped decisions from DB ===');
       choice: `choice ${i}`,
       rationale: `rationale ${i}`,
       revisable: 'yes',
+      made_by: 'agent',
       superseded_by: null,
     });
   }
@@ -201,6 +202,7 @@ console.log('\n=== prompt-db: scoped filtering reduces content ===');
       choice: `choice ${i}`,
       rationale: `rationale ${i} with additional context`,
       revisable: 'yes',
+      made_by: 'agent',
       superseded_by: null,
     });
   }
@@ -269,7 +271,7 @@ console.log('\n=== prompt-db: DB helpers wrapper format matches expected pattern
   insertDecision({
     id: 'D001', when_context: 'M001/S01', scope: 'architecture',
     decision: 'use SQLite', choice: 'better-sqlite3', rationale: 'fast',
-    revisable: 'yes', superseded_by: null,
+    revisable: 'yes', made_by: 'agent', superseded_by: null,
   });
 
   insertRequirement({

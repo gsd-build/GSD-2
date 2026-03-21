@@ -59,6 +59,7 @@ const SAMPLE_DECISIONS: Decision[] = [
     choice: 'better-sqlite3',
     rationale: 'Sync API',
     revisable: 'No',
+    made_by: 'collaborative',
     superseded_by: null,
   },
   {
@@ -70,6 +71,7 @@ const SAMPLE_DECISIONS: Decision[] = [
     choice: '.gsd/gsd.db',
     rationale: 'Derived state',
     revisable: 'No',
+    made_by: 'agent',
     superseded_by: null,
   },
   {
@@ -81,6 +83,7 @@ const SAMPLE_DECISIONS: Decision[] = [
     choice: 'node:sqlite fallback',
     rationale: 'Zero deps',
     revisable: 'Yes',
+    made_by: 'human',
     superseded_by: null,
   },
 ];
@@ -166,6 +169,7 @@ console.log('\n── generateDecisionsMd round-trip ──');
     assertEq(rt.choice, orig.choice, `decision ${orig.id} choice round-trips`);
     assertEq(rt.rationale, orig.rationale, `decision ${orig.id} rationale round-trips`);
     assertEq(rt.revisable, orig.revisable, `decision ${orig.id} revisable round-trips`);
+    assertEq(rt.made_by, orig.made_by, `decision ${orig.id} made_by round-trips`);
   }
 }
 
@@ -177,6 +181,7 @@ console.log('\n── generateDecisionsMd format ──');
   assertTrue(md.includes('<!-- Append-only'), 'contains HTML comment block');
   assertTrue(md.includes('| # | When | Scope'), 'contains table header');
   assertTrue(md.includes('|---|------|-------'), 'contains separator row');
+  assertTrue(md.includes('| Made By |'), 'contains Made By column header');
 }
 
 console.log('\n── generateDecisionsMd empty input ──');
@@ -200,6 +205,7 @@ console.log('\n── generateDecisionsMd pipe escaping ──');
     choice: 'A',
     rationale: 'Better',
     revisable: 'No',
+    made_by: 'agent',
     superseded_by: null,
   };
   const md = generateDecisionsMd([withPipe]);
@@ -291,6 +297,7 @@ console.log('\n── nextDecisionId ──');
     choice: 'test choice',
     rationale: 'test',
     revisable: 'No',
+    made_by: 'agent',
     superseded_by: null,
   });
   upsertDecision({
@@ -301,6 +308,7 @@ console.log('\n── nextDecisionId ──');
     choice: 'test choice',
     rationale: 'test',
     revisable: 'No',
+    made_by: 'agent',
     superseded_by: null,
   });
 
@@ -520,6 +528,7 @@ console.log('\n── Full DB round-trip: decisions ──');
       choice: d.choice,
       rationale: d.rationale,
       revisable: d.revisable,
+      made_by: d.made_by,
       superseded_by: d.superseded_by,
     });
   }
@@ -536,6 +545,7 @@ console.log('\n── Full DB round-trip: decisions ──');
     choice: row['choice'] as string,
     rationale: row['rationale'] as string,
     revisable: row['revisable'] as string,
+    made_by: (row['made_by'] as string as import('../types.js').DecisionMadeBy) ?? 'agent',
     superseded_by: (row['superseded_by'] as string) ?? null,
   }));
 

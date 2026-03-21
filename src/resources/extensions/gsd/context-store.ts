@@ -57,6 +57,7 @@ export function queryDecisions(opts?: DecisionQueryOpts): Decision[] {
       choice: row['choice'] as string,
       rationale: row['rationale'] as string,
       revisable: row['revisable'] as string,
+      made_by: (row['made_by'] as string as import('./types.js').DecisionMadeBy) ?? 'agent',
       superseded_by: null,
     }));
   } catch {
@@ -121,10 +122,10 @@ export function queryRequirements(opts?: RequirementQueryOpts): Requirement[] {
 export function formatDecisionsForPrompt(decisions: Decision[]): string {
   if (decisions.length === 0) return '';
 
-  const header = '| # | When | Scope | Decision | Choice | Rationale | Revisable? |';
-  const separator = '|---|------|-------|----------|--------|-----------|------------|';
+  const header = '| # | When | Scope | Decision | Choice | Rationale | Revisable? | Made By |';
+  const separator = '|---|------|-------|----------|--------|-----------|------------|---------|';
   const rows = decisions.map(d =>
-    `| ${d.id} | ${d.when_context} | ${d.scope} | ${d.decision} | ${d.choice} | ${d.rationale} | ${d.revisable} |`,
+    `| ${d.id} | ${d.when_context} | ${d.scope} | ${d.decision} | ${d.choice} | ${d.rationale} | ${d.revisable} | ${d.made_by ?? 'agent'} |`,
   );
 
   return [header, separator, ...rows].join('\n');

@@ -86,16 +86,17 @@ describe("structured-data-formatter: formatDecisionCompact", () => {
     const result = formatDecisionCompact(sampleDecision);
     assert.equal(
       result,
-      "D001 | M001/S01 | architecture | Use SQLite for storage | WAL mode, single-writer | Built-in, no external deps | yes",
+      "D001 | M001/S01 | architecture | Use SQLite for storage | WAL mode, single-writer | Built-in, no external deps | yes | agent",
     );
   });
 
   it("includes all fields in the correct order", () => {
     const result = formatDecisionCompact(sampleDecision);
     const parts = result.split(" | ");
-    assert.equal(parts.length, 7);
+    assert.equal(parts.length, 8);
     assert.equal(parts[0], "D001");
     assert.equal(parts[6], "yes");
+    assert.equal(parts[7], "agent");
   });
 });
 
@@ -107,7 +108,7 @@ describe("structured-data-formatter: formatDecisionsCompact", () => {
   it("includes Fields header line", () => {
     const result = formatDecisionsCompact([sampleDecision]);
     assert.ok(result.startsWith("# Decisions (compact)"));
-    assert.ok(result.includes("Fields: id | when | scope | decision | choice | rationale | revisable"));
+    assert.ok(result.includes("Fields: id | when | scope | decision | choice | rationale | revisable | made_by"));
   });
 
   it("formats multiple decisions on separate lines", () => {

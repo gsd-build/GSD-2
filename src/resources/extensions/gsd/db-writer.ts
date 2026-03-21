@@ -35,8 +35,8 @@ export function generateDecisionsMd(decisions: Decision[]): string {
   lines.push('     To reverse a decision, add a new row that supersedes it.');
   lines.push('     Read this file at the start of any planning or research phase. -->');
   lines.push('');
-  lines.push('| # | When | Scope | Decision | Choice | Rationale | Revisable? |');
-  lines.push('|---|------|-------|----------|--------|-----------|------------|');
+  lines.push('| # | When | Scope | Decision | Choice | Rationale | Revisable? | Made By |');
+  lines.push('|---|------|-------|----------|--------|-----------|------------|---------|');
 
   for (const d of decisions) {
     // Escape pipe characters within cell values to preserve table structure
@@ -48,6 +48,7 @@ export function generateDecisionsMd(decisions: Decision[]): string {
       d.choice,
       d.rationale,
       d.revisable,
+      d.made_by ?? 'agent',
     ].map(cell => (cell ?? '').replace(/\|/g, '\\|'));
 
     lines.push(`| ${cells.join(' | ')} |`);
@@ -181,6 +182,7 @@ export interface SaveDecisionFields {
   rationale: string;
   revisable?: string;
   when_context?: string;
+  made_by?: import('./types.js').DecisionMadeBy;
 }
 
 /**
@@ -205,6 +207,7 @@ export async function saveDecisionToDb(
       choice: fields.choice,
       rationale: fields.rationale,
       revisable: fields.revisable ?? 'Yes',
+      made_by: fields.made_by ?? 'agent',
       superseded_by: null,
     });
 
@@ -222,6 +225,7 @@ export async function saveDecisionToDb(
         choice: row['choice'] as string,
         rationale: row['rationale'] as string,
         revisable: row['revisable'] as string,
+        made_by: (row['made_by'] as string as import('./types.js').DecisionMadeBy) ?? 'agent',
         superseded_by: (row['superseded_by'] as string) ?? null,
       }));
     }

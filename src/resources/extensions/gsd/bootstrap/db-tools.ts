@@ -16,8 +16,9 @@ export function registerDbTools(pi: ExtensionAPI): void {
     promptGuidelines: [
       "Use gsd_save_decision when recording an architectural, pattern, library, or observability decision.",
       "Decision IDs are auto-assigned (D001, D002, ...) — never guess or provide an ID.",
-      "All fields except revisable and when_context are required.",
+      "All fields except revisable, when_context, and made_by are required.",
       "The tool writes to the DB and regenerates .gsd/DECISIONS.md automatically.",
+      "Set made_by to 'human' when the user explicitly directed the decision, 'agent' when the LLM chose autonomously (default), or 'collaborative' when it was discussed and agreed together.",
     ],
     parameters: Type.Object({
       scope: Type.String({ description: "Scope of the decision (e.g. 'architecture', 'library', 'observability')" }),
@@ -26,6 +27,11 @@ export function registerDbTools(pi: ExtensionAPI): void {
       rationale: Type.String({ description: "Why this choice was made" }),
       revisable: Type.Optional(Type.String({ description: "Whether this can be revisited (default: 'Yes')" })),
       when_context: Type.Optional(Type.String({ description: "When/context for the decision (e.g. milestone ID)" })),
+      made_by: Type.Optional(Type.Union([
+        Type.Literal("human"),
+        Type.Literal("agent"),
+        Type.Literal("collaborative"),
+      ], { description: "Who made this decision: 'human' (user directed), 'agent' (LLM decided autonomously), or 'collaborative' (discussed and agreed). Default: 'agent'" })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       const dbAvailable = await ensureDbOpen();
@@ -45,6 +51,7 @@ export function registerDbTools(pi: ExtensionAPI): void {
             rationale: params.rationale,
             revisable: params.revisable,
             when_context: params.when_context,
+            made_by: params.made_by,
           },
           process.cwd(),
         );
