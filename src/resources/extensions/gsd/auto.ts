@@ -512,16 +512,19 @@ function handleLostSessionLock(
   clearUnitTimeout();
   deregisterSigtermHandler();
   clearCmuxSidebar(loadEffectiveGSDPreferences()?.preferences);
+  const base = lockBase();
+  const lockFilePath = base ? join(gsdRoot(base), "auto.lock") : "unknown";
+  const recoverySuggestion = "\nTo recover, run: gsd doctor --fix";
   const message =
     lockStatus?.failureReason === "pid-mismatch"
       ? lockStatus.existingPid
-        ? `Session lock moved to PID ${lockStatus.existingPid} — another GSD process appears to have taken over. Stopping gracefully.`
-        : "Session lock moved to a different process — another GSD process appears to have taken over. Stopping gracefully."
+        ? `Session lock (${lockFilePath}) moved to PID ${lockStatus.existingPid} — another GSD process appears to have taken over. Stopping gracefully.${recoverySuggestion}`
+        : `Session lock (${lockFilePath}) moved to a different process — another GSD process appears to have taken over. Stopping gracefully.${recoverySuggestion}`
       : lockStatus?.failureReason === "missing-metadata"
-        ? "Session lock metadata disappeared, so ownership could not be confirmed. Stopping gracefully."
+        ? `Session lock metadata (${lockFilePath}) disappeared, so ownership could not be confirmed. Stopping gracefully.${recoverySuggestion}`
         : lockStatus?.failureReason === "compromised"
-          ? "Session lock was compromised or invalidated during heartbeat checks; takeover was not confirmed. Stopping gracefully."
-          : "Session lock lost. Stopping gracefully.";
+          ? `Session lock (${lockFilePath}) was compromised during heartbeat checks (PID ${process.pid}). This can happen after long event loop stalls during subagent execution.${recoverySuggestion}`
+          : `Session lock lost (${lockFilePath}). Stopping gracefully.${recoverySuggestion}`;
   ctx?.ui.notify(
     message,
     "error",
