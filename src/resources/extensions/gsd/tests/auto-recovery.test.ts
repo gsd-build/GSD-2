@@ -12,6 +12,8 @@ import {
   buildLoopRemediationSteps,
   selfHealRuntimeRecords,
   hasImplementationArtifacts,
+  writeBlockerPlaceholder,
+  skipExecuteTask,
 } from "../auto-recovery.ts";
 import { parseRoadmap, parsePlan } from "../parsers-legacy.ts";
 import { parseTaskPlanFile, clearParseCache } from "../files.ts";
@@ -792,4 +794,436 @@ test("verifyExpectedArtifact complete-milestone passes with impl files (#1703)",
 
   const result = verifyExpectedArtifact("complete-milestone", "M001", base);
   assert.equal(result, true, "complete-milestone should pass verification with implementation files");
+});
+
+// ─── verifyExpectedArtifact: execute-task ─────────────────────────────────
+
+test("verifyExpectedArtifact execute-task fails when summary is missing", () => {
+  const base = makeTmpBase();
+  try {
+    const sliceDir = join(base, ".gsd", "milestones", "M001", "slices", "S01");
+    mkdirSync(sliceDir, { recursive: true });
+    // PLAN exists with [x] but no SUMMARY file
+    writeFileSync(join(sliceDir, "S01-PLAN.md"), [
+      "# S01: Test Slice",
+      "",
+      "## Tasks",
+      "",
+      "- [x] **T01: Implement feature** `est:2h`",
+    ].join("\n"));
+
+    const result = verifyExpectedArtifact("execute-task", "M001/S01/T01", base);
+    assert.equal(result, false, "should fail when T01-SUMMARY.md is missing");
+  } finally {
+    cleanup(base);
+  }
+});
+
+test("verifyExpectedArtifact execute-task fails when task not checked in plan", () => {
+  const base = makeTmpBase();
+  try {
+    const sliceDir = join(base, ".gsd", "milestones", "M001", "slices", "S01");
+    const tasksDir = join(sliceDir, "tasks");
+    mkdirSync(tasksDir, { recursive: true });
+    // SUMMARY exists but task is unchecked in PLAN
+    writeFileSync(join(tasksDir, "T01-SUMMARY.md"), "# T01 Summary\nDone.");
+    writeFileSync(join(sliceDir, "S01-PLAN.md"), [
+      "# S01: Test Slice",
+      "",
+      "## Tasks",
+      "",
+      "- [ ] **T01: Implement feature** `est:2h`",
+    ].join("\n"));
+
+    const result = verifyExpectedArtifact("execute-task", "M001/S01/T01", base);
+    assert.equal(result, false, "should fail when task checkbox is not checked in PLAN");
+  } finally {
+    cleanup(base);
+  }
+});
+
+test("verifyExpectedArtifact execute-task passes when summary exists and task checked", () => {
+  const base = makeTmpBase();
+  try {
+    const sliceDir = join(base, ".gsd", "milestones", "M001", "slices", "S01");
+    const tasksDir = join(sliceDir, "tasks");
+    mkdirSync(tasksDir, { recursive: true });
+    // Both SUMMARY and [x] in PLAN
+    writeFileSync(join(tasksDir, "T01-SUMMARY.md"), "# T01 Summary\nDone.");
+    writeFileSync(join(sliceDir, "S01-PLAN.md"), [
+      "# S01: Test Slice",
+      "",
+      "## Tasks",
+      "",
+      "- [x] **T01: Implement feature** `est:2h`",
+    ].join("\n"));
+
+    const result = verifyExpectedArtifact("execute-task", "M001/S01/T01", base);
+    assert.equal(result, true, "should pass when summary exists and task is checked in PLAN");
+  } finally {
+    cleanup(base);
+  }
+});
+
+// ─── verifyExpectedArtifact: complete-slice failure cases ─────────────────
+
+test("verifyExpectedArtifact complete-slice fails when UAT file is missing", () => {
+  const base = makeTmpBase();
+  try {
+    const milestoneDir = join(base, ".gsd", "milestones", "M001");
+    const sliceDir = join(milestoneDir, "slices", "S01");
+    mkdirSync(sliceDir, { recursive: true });
+
+    // Write SUMMARY
+    writeFileSync(join(sliceDir, "S01-SUMMARY.md"), "# S01 Summary\nDone.");
+    // Write roadmap with [x]
+    writeFileSync(join(milestoneDir, "M001-ROADMAP.md"), [
+      "# M001: Test Milestone",
+      "",
+      "## Slices",
+      "",
+      "- [x] **S01: First slice** `risk:low`",
+    ].join("\n"));
+    // No UAT file
+
+    const result = verifyExpectedArtifact("complete-slice", "M001/S01", base);
+    assert.equal(result, false, "should fail when UAT file is missing");
+  } finally {
+    cleanup(base);
+  }
+});
+
+test("verifyExpectedArtifact complete-slice fails when roadmap slice not marked done", () => {
+  const base = makeTmpBase();
+  try {
+    const milestoneDir = join(base, ".gsd", "milestones", "M001");
+    const sliceDir = join(milestoneDir, "slices", "S01");
+    mkdirSync(sliceDir, { recursive: true });
+
+    // Write SUMMARY and UAT
+    writeFileSync(join(sliceDir, "S01-SUMMARY.md"), "# S01 Summary\nDone.");
+    writeFileSync(join(sliceDir, "S01-UAT.md"), "# UAT\nPassed.");
+    // Roadmap still shows [ ] — slice not marked done
+    writeFileSync(join(milestoneDir, "M001-ROADMAP.md"), [
+      "# M001: Test Milestone",
+      "",
+      "## Slices",
+      "",
+      "- [ ] **S01: First slice** `risk:low`",
+    ].join("\n"));
+
+    const result = verifyExpectedArtifact("complete-slice", "M001/S01", base);
+    assert.equal(result, false, "should fail when roadmap slice is not marked done");
+  } finally {
+    cleanup(base);
+  }
+});
+
+// ─── verifyExpectedArtifact: reactive-execute ─────────────────────────────
+
+test("verifyExpectedArtifact reactive-execute legacy format passes when any summary exists", () => {
+  const base = makeTmpBase();
+  try {
+    const tasksDir = join(base, ".gsd", "milestones", "M001", "slices", "S01", "tasks");
+    mkdirSync(tasksDir, { recursive: true });
+    writeFileSync(join(tasksDir, "T01-SUMMARY.md"), "# T01 Summary\nDone.");
+
+    // Legacy format: no "+" in batchPart
+    const result = verifyExpectedArtifact("reactive-execute", "M001/S01/reactive", base);
+    assert.equal(result, true, "legacy format should pass when at least one summary exists");
+  } finally {
+    cleanup(base);
+  }
+});
+
+test("verifyExpectedArtifact reactive-execute legacy format fails when no summaries", () => {
+  const base = makeTmpBase();
+  try {
+    // tasks dir exists but no summary files
+    const tasksDir = join(base, ".gsd", "milestones", "M001", "slices", "S01", "tasks");
+    mkdirSync(tasksDir, { recursive: true });
+
+    const result = verifyExpectedArtifact("reactive-execute", "M001/S01/reactive", base);
+    assert.equal(result, false, "legacy format should fail when no summary files exist");
+  } finally {
+    cleanup(base);
+  }
+});
+
+test("verifyExpectedArtifact reactive-execute batch passes when all task summaries exist", () => {
+  const base = makeTmpBase();
+  try {
+    const tasksDir = join(base, ".gsd", "milestones", "M001", "slices", "S01", "tasks");
+    mkdirSync(tasksDir, { recursive: true });
+    writeFileSync(join(tasksDir, "T01-SUMMARY.md"), "# T01 Summary\nDone.");
+    writeFileSync(join(tasksDir, "T02-SUMMARY.md"), "# T02 Summary\nDone.");
+
+    const result = verifyExpectedArtifact("reactive-execute", "M001/S01/reactive+T01,T02", base);
+    assert.equal(result, true, "batch should pass when all task summaries exist");
+  } finally {
+    cleanup(base);
+  }
+});
+
+test("verifyExpectedArtifact reactive-execute batch fails when a task summary is missing", () => {
+  const base = makeTmpBase();
+  try {
+    const tasksDir = join(base, ".gsd", "milestones", "M001", "slices", "S01", "tasks");
+    mkdirSync(tasksDir, { recursive: true });
+    // Only T01 summary — T02 is missing
+    writeFileSync(join(tasksDir, "T01-SUMMARY.md"), "# T01 Summary\nDone.");
+
+    const result = verifyExpectedArtifact("reactive-execute", "M001/S01/reactive+T01,T02", base);
+    assert.equal(result, false, "batch should fail when T02-SUMMARY.md is missing");
+  } finally {
+    cleanup(base);
+  }
+});
+
+// ─── verifyExpectedArtifact: rewrite-docs ────────────────────────────────
+
+test("verifyExpectedArtifact rewrite-docs passes when no OVERRIDES file exists", () => {
+  const base = makeTmpBase();
+  try {
+    const result = verifyExpectedArtifact("rewrite-docs", "M001", base);
+    assert.equal(result, true, "should pass when OVERRIDES.md does not exist");
+  } finally {
+    cleanup(base);
+  }
+});
+
+test("verifyExpectedArtifact rewrite-docs fails when OVERRIDES has active scope", () => {
+  const base = makeTmpBase();
+  try {
+    const gsdDir = join(base, ".gsd");
+    mkdirSync(gsdDir, { recursive: true });
+    writeFileSync(join(gsdDir, "OVERRIDES.md"), [
+      "# Overrides",
+      "",
+      "**Scope:** active",
+      "",
+      "Some override content.",
+    ].join("\n"));
+
+    const result = verifyExpectedArtifact("rewrite-docs", "M001", base);
+    assert.equal(result, false, "should fail when OVERRIDES.md contains '**Scope:** active'");
+  } finally {
+    cleanup(base);
+  }
+});
+
+test("verifyExpectedArtifact rewrite-docs passes when OVERRIDES has no active scope", () => {
+  const base = makeTmpBase();
+  try {
+    const gsdDir = join(base, ".gsd");
+    mkdirSync(gsdDir, { recursive: true });
+    writeFileSync(join(gsdDir, "OVERRIDES.md"), [
+      "# Overrides",
+      "",
+      "**Scope:** resolved",
+      "",
+      "All overrides have been resolved.",
+    ].join("\n"));
+
+    const result = verifyExpectedArtifact("rewrite-docs", "M001", base);
+    assert.equal(result, true, "should pass when OVERRIDES.md exists but has no active scope");
+  } finally {
+    cleanup(base);
+  }
+});
+
+// ─── verifyExpectedArtifact: validate-milestone ──────────────────────────
+
+test("verifyExpectedArtifact validate-milestone fails when file missing", () => {
+  const base = makeTmpBase();
+  try {
+    const result = verifyExpectedArtifact("validate-milestone", "M001", base);
+    assert.equal(result, false, "should fail when VALIDATION file does not exist");
+  } finally {
+    cleanup(base);
+  }
+});
+
+test("verifyExpectedArtifact validate-milestone fails when verdict is not terminal", () => {
+  const base = makeTmpBase();
+  try {
+    const milestoneDir = join(base, ".gsd", "milestones", "M001");
+    mkdirSync(milestoneDir, { recursive: true });
+    // Non-terminal verdict: in-progress
+    writeFileSync(join(milestoneDir, "M001-VALIDATION.md"), [
+      "---",
+      "verdict: in-progress",
+      "---",
+      "",
+      "# Validation Report",
+      "",
+      "Still running.",
+    ].join("\n"));
+
+    const result = verifyExpectedArtifact("validate-milestone", "M001", base);
+    assert.equal(result, false, "should fail when verdict is non-terminal (in-progress)");
+  } finally {
+    cleanup(base);
+  }
+});
+
+test("verifyExpectedArtifact validate-milestone passes when verdict is terminal", () => {
+  const base = makeTmpBase();
+  try {
+    const milestoneDir = join(base, ".gsd", "milestones", "M001");
+    mkdirSync(milestoneDir, { recursive: true });
+    writeFileSync(join(milestoneDir, "M001-VALIDATION.md"), [
+      "---",
+      "verdict: pass",
+      "---",
+      "",
+      "# Validation Report",
+      "",
+      "All checks passed.",
+    ].join("\n"));
+
+    const result = verifyExpectedArtifact("validate-milestone", "M001", base);
+    assert.equal(result, true, "should pass when verdict is terminal (pass)");
+  } finally {
+    cleanup(base);
+  }
+});
+
+// ─── writeBlockerPlaceholder ─────────────────────────────────────────────
+
+test("writeBlockerPlaceholder returns null for unknown unit type", () => {
+  const base = makeTmpBase();
+  try {
+    const result = writeBlockerPlaceholder("unknown-type", "M001", base, "test reason");
+    assert.equal(result, null, "should return null for unknown unit types");
+  } finally {
+    cleanup(base);
+  }
+});
+
+test("writeBlockerPlaceholder creates file and returns diagnosis for known type", () => {
+  const base = makeTmpBase();
+  try {
+    const result = writeBlockerPlaceholder("research-milestone", "M001", base, "exhausted retries");
+    assert.ok(result !== null, "should return a non-null diagnosis string");
+    assert.ok(typeof result === "string", "diagnosis should be a string");
+
+    // Verify the file was actually written
+    const milestoneDir = join(base, ".gsd", "milestones", "M001");
+    const researchFile = join(milestoneDir, "M001-RESEARCH.md");
+    assert.ok(existsSync(researchFile), "RESEARCH.md blocker placeholder should exist on disk");
+
+    const content = readFileSync(researchFile, "utf-8");
+    assert.ok(content.includes("BLOCKER"), "file should contain BLOCKER marker");
+    assert.ok(content.includes("exhausted retries"), "file should contain the reason");
+  } finally {
+    cleanup(base);
+  }
+});
+
+// ─── skipExecuteTask ─────────────────────────────────────────────────────
+
+test("skipExecuteTask writes summary and checks task when both missing", () => {
+  const base = makeTmpBase();
+  try {
+    const sliceDir = join(base, ".gsd", "milestones", "M001", "slices", "S01");
+    const tasksDir = join(sliceDir, "tasks");
+    mkdirSync(tasksDir, { recursive: true });
+
+    // PLAN has unchecked T01
+    writeFileSync(join(sliceDir, "S01-PLAN.md"), [
+      "# S01: Test Slice",
+      "",
+      "## Tasks",
+      "",
+      "- [ ] **T01: Implement feature** `est:2h`",
+    ].join("\n"));
+
+    const result = skipExecuteTask(
+      base, "M001", "S01", "T01",
+      { summaryExists: false, taskChecked: false },
+      "idle", 3,
+    );
+
+    assert.equal(result, true, "should return true when both summary and checkbox update succeed");
+
+    // Summary file should be created
+    assert.ok(existsSync(join(tasksDir, "T01-SUMMARY.md")), "T01-SUMMARY.md should be created");
+
+    // PLAN should now have [x]
+    const planContent = readFileSync(join(sliceDir, "S01-PLAN.md"), "utf-8");
+    assert.ok(/- \[x\] \*\*T01:/.test(planContent), "PLAN should have T01 checked with [x]");
+  } finally {
+    cleanup(base);
+  }
+});
+
+test("skipExecuteTask skips summary write when already exists", () => {
+  const base = makeTmpBase();
+  try {
+    const sliceDir = join(base, ".gsd", "milestones", "M001", "slices", "S01");
+    const tasksDir = join(sliceDir, "tasks");
+    mkdirSync(tasksDir, { recursive: true });
+
+    // Pre-existing summary with known content
+    const originalSummaryContent = "# Existing Summary\nDone.";
+    writeFileSync(join(tasksDir, "T01-SUMMARY.md"), originalSummaryContent);
+
+    writeFileSync(join(sliceDir, "S01-PLAN.md"), [
+      "# S01: Test Slice",
+      "",
+      "## Tasks",
+      "",
+      "- [ ] **T01: Implement feature** `est:2h`",
+    ].join("\n"));
+
+    const result = skipExecuteTask(
+      base, "M001", "S01", "T01",
+      { summaryExists: true, taskChecked: false },
+      "idle", 3,
+    );
+
+    assert.equal(result, true, "should return true when plan update succeeds");
+
+    // Summary should remain unchanged (not overwritten)
+    const summaryContent = readFileSync(join(tasksDir, "T01-SUMMARY.md"), "utf-8");
+    assert.equal(summaryContent, originalSummaryContent, "existing summary should not be overwritten");
+
+    // PLAN should now have [x]
+    const planContent = readFileSync(join(sliceDir, "S01-PLAN.md"), "utf-8");
+    assert.ok(/- \[x\] \*\*T01:/.test(planContent), "PLAN should have T01 checked with [x]");
+  } finally {
+    cleanup(base);
+  }
+});
+
+test("skipExecuteTask returns false when plan regex doesn't match", () => {
+  const base = makeTmpBase();
+  try {
+    const sliceDir = join(base, ".gsd", "milestones", "M001", "slices", "S01");
+    const tasksDir = join(sliceDir, "tasks");
+    mkdirSync(tasksDir, { recursive: true });
+
+    // Pre-existing summary so summaryExists=true skips that branch
+    writeFileSync(join(tasksDir, "T01-SUMMARY.md"), "# Existing Summary\nDone.");
+
+    // PLAN does NOT contain the expected "- [ ] **T01:" pattern
+    writeFileSync(join(sliceDir, "S01-PLAN.md"), [
+      "# S01: Test Slice",
+      "",
+      "## Tasks",
+      "",
+      "No tasks here.",
+    ].join("\n"));
+
+    const result = skipExecuteTask(
+      base, "M001", "S01", "T01",
+      { summaryExists: true, taskChecked: false },
+      "idle", 3,
+    );
+
+    assert.equal(result, false, "should return false when plan does not match the expected T01 pattern");
+  } finally {
+    cleanup(base);
+  }
 });
