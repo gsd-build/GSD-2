@@ -161,6 +161,7 @@ export interface LoopDeps {
     action: string;
     prompt?: string;
     unitType?: string;
+    model?: string;
   };
   getPriorSliceCompletionBlocker: (
     basePath: string,

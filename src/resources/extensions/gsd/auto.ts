@@ -116,7 +116,6 @@ import {
   formatHealthSummary,
   getConsecutiveErrorUnits,
 } from "./doctor-proactive.js";
-import { selfHealRuntimeRecords } from "./auto-recovery.js";
 import { clearSkillSnapshot } from "./skill-discovery.js";
 import {
   captureAvailableSkills,
