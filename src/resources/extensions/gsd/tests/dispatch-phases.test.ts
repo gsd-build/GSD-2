@@ -43,18 +43,18 @@ function makeContext(
   };
 }
 
-// ─── Test 1: needs-discussion → stop warning ───────────────────────────────
+// ─── Test 1: needs-discussion → discuss-milestone ──────────────────────────
 
-test("dispatch: needs-discussion phase → stop warning", async () => {
+test("dispatch: needs-discussion phase → discuss-milestone", async () => {
   const tmp = mkdtempSync(join(tmpdir(), "gsd-phases-"));
   try {
     const ctx = makeContext(tmp, { phase: "needs-discussion" });
     const result = await resolveDispatch(ctx);
 
-    assert.equal(result.action, "stop", "should stop");
+    assert.equal(result.action, "dispatch", "should dispatch");
     assert.ok(
-      result.action === "stop" && result.level === "warning",
-      `level should be warning, got: ${result.action === "stop" ? result.level : "(dispatch)"}`,
+      result.action === "dispatch" && result.unitType === "discuss-milestone",
+      `unitType should be discuss-milestone, got: ${result.action === "dispatch" ? result.unitType : "(stop)"}`,
     );
   } finally {
     rmSync(tmp, { recursive: true, force: true });
@@ -105,9 +105,9 @@ test("dispatch: unhandled phase → stop info with 'Unhandled phase'", async () 
   }
 });
 
-// ─── Test 4: pre-planning with no context → stop warning ──────────────────
+// ─── Test 4: pre-planning with no context → discuss-milestone ─────────────
 
-test("dispatch: pre-planning with no CONTEXT file → stop warning mentioning discuss", async () => {
+test("dispatch: pre-planning with no CONTEXT file → discuss-milestone", async () => {
   const tmp = mkdtempSync(join(tmpdir(), "gsd-phases-"));
   try {
     // Create the milestone directory but no CONTEXT file
@@ -116,14 +116,10 @@ test("dispatch: pre-planning with no CONTEXT file → stop warning mentioning di
     const ctx = makeContext(tmp, { phase: "pre-planning" });
     const result = await resolveDispatch(ctx);
 
-    assert.equal(result.action, "stop", "should stop");
+    assert.equal(result.action, "dispatch", "should dispatch");
     assert.ok(
-      result.action === "stop" && result.level === "warning",
-      `level should be warning, got: ${result.action === "stop" ? result.level : "(dispatch)"}`,
-    );
-    assert.ok(
-      result.action === "stop" && result.reason.toLowerCase().includes("discuss"),
-      `reason should mention discuss, got: ${result.action === "stop" ? result.reason : "(dispatch)"}`,
+      result.action === "dispatch" && result.unitType === "discuss-milestone",
+      `unitType should be discuss-milestone, got: ${result.action === "dispatch" ? result.unitType : "(stop)"}`,
     );
   } finally {
     rmSync(tmp, { recursive: true, force: true });
