@@ -730,6 +730,14 @@ export async function pauseAuto(
   // Unblock any pending unit promise so the auto-loop is not orphaned.
   resolveAgentEndCancelled();
 
+  // Abort any in-flight agent operation so isStreaming resets to false before
+  // returning control to the interactive loop. Without this, input-controller
+  // routes all user input as "steer" messages (never calling onInputCallback),
+  // leaving getUserInput() pending indefinitely and the TUI appearing frozen.
+  if (ctx && !ctx.isIdle()) {
+    ctx.abort();
+  }
+
   s.pausedSessionFile = ctx?.sessionManager?.getSessionFile() ?? null;
 
   // Persist paused-session metadata so resume survives /exit (#1383).
