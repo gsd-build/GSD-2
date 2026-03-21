@@ -27,6 +27,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { hasImplementationArtifacts } from "./auto-recovery.js";
 import {
+  buildDiscussMilestonePrompt,
   buildResearchMilestonePrompt,
   buildPlanMilestonePrompt,
   buildResearchSlicePrompt,
@@ -210,27 +211,29 @@ const DISPATCH_RULES: DispatchRule[] = [
     },
   },
   {
-    name: "needs-discussion → stop",
-    match: async ({ state, mid, midTitle }) => {
+    name: "needs-discussion → discuss-milestone",
+    match: async ({ state, mid, midTitle, basePath }) => {
       if (state.phase !== "needs-discussion") return null;
       return {
-        action: "stop",
-        reason: `${mid}: ${midTitle} has draft context from a prior discussion — needs its own discussion before planning.\nRun /gsd to discuss.`,
-        level: "warning",
+        action: "dispatch",
+        unitType: "discuss-milestone",
+        unitId: mid,
+        prompt: await buildDiscussMilestonePrompt(mid, midTitle, basePath),
       };
     },
   },
   {
-    name: "pre-planning (no context) → stop",
-    match: async ({ state, mid, basePath }) => {
+    name: "pre-planning (no context) → discuss-milestone",
+    match: async ({ state, mid, midTitle, basePath }) => {
       if (state.phase !== "pre-planning") return null;
       const contextFile = resolveMilestoneFile(basePath, mid, "CONTEXT");
       const hasContext = !!(contextFile && (await loadFile(contextFile)));
       if (hasContext) return null; // fall through to next rule
       return {
-        action: "stop",
-        reason: "No context or roadmap yet. Run /gsd to discuss first.",
-        level: "warning",
+        action: "dispatch",
+        unitType: "discuss-milestone",
+        unitId: mid,
+        prompt: await buildDiscussMilestonePrompt(mid, midTitle, basePath),
       };
     },
   },

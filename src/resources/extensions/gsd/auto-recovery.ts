@@ -63,6 +63,10 @@ export function resolveExpectedArtifactPath(
   const mid = parts[0]!;
   const sid = parts[1];
   switch (unitType) {
+    case "discuss-milestone": {
+      const dir = resolveMilestonePath(base, mid);
+      return dir ? join(dir, buildMilestoneFileName(mid, "CONTEXT")) : null;
+    }
     case "research-milestone": {
       const dir = resolveMilestonePath(base, mid);
       return dir ? join(dir, buildMilestoneFileName(mid, "RESEARCH")) : null;
@@ -441,6 +445,8 @@ export function diagnoseExpectedArtifact(
   const mid = parts[0];
   const sid = parts[1];
   switch (unitType) {
+    case "discuss-milestone":
+      return `${relMilestoneFile(base, mid!, "CONTEXT")} (milestone context from discussion)`;
     case "research-milestone":
       return `${relMilestoneFile(base, mid!, "RESEARCH")} (milestone research)`;
     case "plan-milestone":

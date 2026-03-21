@@ -67,6 +67,7 @@ export interface AutoDashboardData {
 export function unitVerb(unitType: string): string {
   if (unitType.startsWith("hook/")) return `hook: ${unitType.slice(5)}`;
   switch (unitType) {
+    case "discuss-milestone": return "discussing";
     case "research-milestone":
     case "research-slice": return "researching";
     case "plan-milestone":
@@ -84,6 +85,7 @@ export function unitVerb(unitType: string): string {
 export function unitPhaseLabel(unitType: string): string {
   if (unitType.startsWith("hook/")) return "HOOK";
   switch (unitType) {
+    case "discuss-milestone": return "DISCUSS";
     case "research-milestone": return "RESEARCH";
     case "research-slice": return "RESEARCH";
     case "plan-milestone": return "PLAN";
@@ -108,6 +110,7 @@ function peekNext(unitType: string, state: GSDState): string {
   const sid = state.activeSlice?.id ?? "";
   if (unitType.startsWith("hook/")) return `continue ${sid}`;
   switch (unitType) {
+    case "discuss-milestone": return "research or plan milestone";
     case "research-milestone": return "plan milestone roadmap";
     case "plan-milestone": return "plan or execute first slice";
     case "research-slice": return `plan ${sid}`;
