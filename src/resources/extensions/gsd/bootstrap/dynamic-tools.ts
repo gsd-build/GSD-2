@@ -10,10 +10,37 @@ export async function ensureDbOpen(): Promise<boolean> {
   try {
     const db = await import("../gsd-db.js");
     if (db.isDbAvailable()) return true;
-    const dbPath = join(process.cwd(), ".gsd", "gsd.db");
+
+    const basePath = process.cwd();
+    const gsdDir = join(basePath, ".gsd");
+    const dbPath = join(gsdDir, "gsd.db");
+
+    // Open existing DB file
     if (existsSync(dbPath)) {
       return db.openDatabase(dbPath);
     }
+
+    // No DB file — create + migrate from Markdown if .gsd/ has content
+    if (existsSync(gsdDir)) {
+      const hasDecisions = existsSync(join(gsdDir, "DECISIONS.md"));
+      const hasRequirements = existsSync(join(gsdDir, "REQUIREMENTS.md"));
+      const hasMilestones = existsSync(join(gsdDir, "milestones"));
+      if (hasDecisions || hasRequirements || hasMilestones) {
+        const opened = db.openDatabase(dbPath);
+        if (opened) {
+          try {
+            const { migrateFromMarkdown } = await import("../md-importer.js");
+            migrateFromMarkdown(basePath);
+          } catch (err) {
+            process.stderr.write(
+              `gsd-db: ensureDbOpen auto-migration failed: ${(err as Error).message}\n`,
+            );
+          }
+        }
+        return opened;
+      }
+    }
+
     return false;
   } catch {
     return false;
