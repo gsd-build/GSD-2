@@ -475,7 +475,11 @@ export async function bootstrapAutoSession(
     s.autoStartTime = Date.now();
     s.resourceVersionOnStart = readResourceVersion();
     s.completedUnits = [];
-    s.pendingQuickTasks = [];
+    // Seed pendingQuickTasks from CAPTURES.md — resolved quick-tasks triaged
+    // in a prior session would otherwise be stranded (#1904).
+    const { loadActionableCaptures } = await import("./captures.js");
+    s.pendingQuickTasks = loadActionableCaptures(base)
+      .filter(c => c.classification === "quick-task");
     s.currentUnit = null;
     s.currentMilestoneId = state.activeMilestone?.id ?? null;
     s.originalModelId = ctx.model?.id ?? null;

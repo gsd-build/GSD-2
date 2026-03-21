@@ -331,10 +331,36 @@ test("dispatch: quick-task excluded from post-unit hook triggering", () => {
 
 // ─── pendingQuickTasks queue lifecycle ────────────────────────────────────────
 
-test("dispatch: pendingQuickTasks queue is reset on auto-mode start/stop", () => {
-  const resetMatches = autoSrc.match(/s\.pendingQuickTasks = \[\]/g);
+test("dispatch: pendingQuickTasks queue is reset on auto-mode stop", () => {
+  // Stop path should still hard-reset to []
+  const autoStopSrc = [
+    readFileSync(join(__dirname, "..", "auto.ts"), "utf-8"),
+    readFileSync(join(__dirname, "..", "auto-post-unit.ts"), "utf-8"),
+  ].join("\n");
   assert.ok(
-    resetMatches && resetMatches.length >= 2,
-    "s.pendingQuickTasks should be reset in start and stop paths",
+    autoStopSrc.includes("s.pendingQuickTasks = []"),
+    "s.pendingQuickTasks should be reset in stop path",
+  );
+});
+
+// ─── Startup: load resolved quick-tasks from CAPTURES.md (#1904) ────────────
+
+test("startup: auto-start loads resolved quick-task captures into pendingQuickTasks", () => {
+  const startSrc = readFileSync(join(__dirname, "..", "auto-start.ts"), "utf-8");
+  assert.ok(
+    startSrc.includes("loadActionableCaptures"),
+    "auto-start.ts should call loadActionableCaptures to seed pendingQuickTasks",
+  );
+  assert.ok(
+    startSrc.includes('c.classification === "quick-task"'),
+    "auto-start.ts should filter actionable captures to quick-task classification",
+  );
+});
+
+test("startup: auto-start imports loadActionableCaptures from captures module", () => {
+  const startSrc = readFileSync(join(__dirname, "..", "auto-start.ts"), "utf-8");
+  assert.ok(
+    startSrc.includes("loadActionableCaptures") && startSrc.includes("captures"),
+    "auto-start.ts should import loadActionableCaptures from captures",
   );
 });
