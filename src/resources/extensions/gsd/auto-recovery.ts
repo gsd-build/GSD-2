@@ -319,10 +319,15 @@ export function verifyExpectedArtifact(
   // plan has no tasks, creating an infinite skip loop (#699).
   if (unitType === "plan-slice") {
     const planContent = readFileSync(absPath, "utf-8");
-    if (!/^- \[[xX ]\] \*\*T\d+:/m.test(planContent)) return false;
+    // Accept checkbox-style (- [x] **T01: ...) or heading-style (### T01 -- / ### T01: / ### T01 —)
+    const hasCheckboxTask = /^- \[[xX ]\] \*\*T\d+:/m.test(planContent);
+    const hasHeadingTask = /^#{2,4}\s+T\d+\s*(?:--|—|:)/m.test(planContent);
+    if (!hasCheckboxTask && !hasHeadingTask) return false;
   }
 
-  // execute-task must also have its checkbox marked [x] in the slice plan
+  // execute-task must also have its checkbox marked [x] in the slice plan.
+  // Heading-style plans (### T01 -- Title) have no checkbox — the task summary
+  // file existence (checked above via resolveExpectedArtifactPath) is sufficient.
   if (unitType === "execute-task") {
     const parts = unitId.split("/");
     const mid = parts[0];
@@ -333,8 +338,11 @@ export function verifyExpectedArtifact(
       if (planAbs && existsSync(planAbs)) {
         const planContent = readFileSync(planAbs, "utf-8");
         const escapedTid = tid.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        const re = new RegExp(`^- \\[[xX]\\] \\*\\*${escapedTid}:`, "m");
-        if (!re.test(planContent)) return false;
+        const cbRe = new RegExp(`^- \\[[xX]\\] \\*\\*${escapedTid}:`, "m");
+        const hdRe = new RegExp(`^#{2,4}\\s+${escapedTid}\\s*(?:--|—|:)`, "m");
+        // Heading-style entries count as verified (no checkbox to toggle);
+        // checkbox-style entries require [x].
+        if (!cbRe.test(planContent) && !hdRe.test(planContent)) return false;
       }
     }
   }

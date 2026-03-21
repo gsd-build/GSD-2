@@ -386,6 +386,91 @@ test("verifyExpectedArtifact plan-slice fails for plan with no tasks (#699)", ()
   }
 });
 
+// ─── verifyExpectedArtifact: heading-style plan tasks (#1691) ─────────────
+
+test("verifyExpectedArtifact accepts plan-slice with heading-style tasks (### T01 --)", () => {
+  const base = makeTmpBase();
+  try {
+    const sliceDir = join(base, ".gsd", "milestones", "M001", "slices", "S01");
+    const tasksDir = join(sliceDir, "tasks");
+    mkdirSync(tasksDir, { recursive: true });
+    writeFileSync(join(sliceDir, "S01-PLAN.md"), [
+      "# S01: Test Slice",
+      "",
+      "## Tasks",
+      "",
+      "### T01 -- Implement feature",
+      "",
+      "Feature description.",
+      "",
+      "### T02 -- Write tests",
+      "",
+      "Test description.",
+    ].join("\n"));
+    writeFileSync(join(tasksDir, "T01-PLAN.md"), "# T01 Plan");
+    writeFileSync(join(tasksDir, "T02-PLAN.md"), "# T02 Plan");
+    assert.strictEqual(
+      verifyExpectedArtifact("plan-slice", "M001/S01", base),
+      true,
+      "Heading-style plan with task entries should be treated as completed artifact",
+    );
+  } finally {
+    cleanup(base);
+  }
+});
+
+test("verifyExpectedArtifact accepts plan-slice with colon-style heading tasks (### T01:)", () => {
+  const base = makeTmpBase();
+  try {
+    const sliceDir = join(base, ".gsd", "milestones", "M001", "slices", "S01");
+    const tasksDir = join(sliceDir, "tasks");
+    mkdirSync(tasksDir, { recursive: true });
+    writeFileSync(join(sliceDir, "S01-PLAN.md"), [
+      "# S01: Test Slice",
+      "",
+      "## Tasks",
+      "",
+      "### T01: Implement feature",
+      "",
+      "Feature description.",
+    ].join("\n"));
+    writeFileSync(join(tasksDir, "T01-PLAN.md"), "# T01 Plan");
+    assert.strictEqual(
+      verifyExpectedArtifact("plan-slice", "M001/S01", base),
+      true,
+      "Colon heading-style plan should be treated as completed artifact",
+    );
+  } finally {
+    cleanup(base);
+  }
+});
+
+test("verifyExpectedArtifact execute-task passes for heading-style plan entry (#1691)", () => {
+  const base = makeTmpBase();
+  try {
+    const sliceDir = join(base, ".gsd", "milestones", "M001", "slices", "S01");
+    const tasksDir = join(sliceDir, "tasks");
+    mkdirSync(tasksDir, { recursive: true });
+    writeFileSync(join(sliceDir, "S01-PLAN.md"), [
+      "# S01: Test Slice",
+      "",
+      "## Tasks",
+      "",
+      "### T01 -- Implement feature",
+      "",
+      "Feature description.",
+    ].join("\n"));
+    writeFileSync(join(tasksDir, "T01-SUMMARY.md"), "# T01 Summary\n\nDone.");
+    assert.strictEqual(
+      verifyExpectedArtifact("execute-task", "M001/S01/T01", base),
+      true,
+      "execute-task should pass for heading-style plan entry when summary exists",
+    );
+  } finally {
+    cleanup(base);
+  }
+});
+
 // ─── selfHealRuntimeRecords — worktree base path (#769) ──────────────────
 
 test("selfHealRuntimeRecords clears stale dispatched records (#769)", async () => {

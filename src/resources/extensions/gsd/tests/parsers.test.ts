@@ -652,6 +652,116 @@ console.log('\n=== parsePlan: new-format task entries with Files and Verify subl
   assertTrue(p.tasks[0].description.includes('Why: because we need typed plan entries'), 'Why line accumulates into description');
 }
 
+console.log('\n=== parsePlan: heading-style task entries (### T01 -- Title) ===');
+{
+  const content = `# S11: Heading Style
+
+**Goal:** Test heading-style task parsing.
+**Demo:** Parser handles heading-style task entries.
+
+## Tasks
+
+### T01 -- Implement feature
+
+- Why: the feature is needed
+- Files: \`src/feature.ts\`
+- Verify: npm test
+
+### T02 -- Write tests \`est:1h\`
+
+Some description for the second task.
+`;
+
+  const p = parsePlan(content);
+  assertEq(p.tasks.length, 2, 'heading-style task count');
+  assertEq(p.tasks[0].id, 'T01', 'heading T01 id');
+  assertEq(p.tasks[0].title, 'Implement feature', 'heading T01 title');
+  assertEq(p.tasks[0].done, false, 'heading T01 not done (headings have no checkbox)');
+  assertEq(p.tasks[0].files![0], 'src/feature.ts', 'heading T01 files extracted');
+  assertEq(p.tasks[0].verify, 'npm test', 'heading T01 verify extracted');
+  assertEq(p.tasks[1].id, 'T02', 'heading T02 id');
+  assertEq(p.tasks[1].title, 'Write tests', 'heading T02 title');
+  assertEq(p.tasks[1].estimate, '1h', 'heading T02 estimate');
+  assertTrue(p.tasks[1].description.includes('Some description'), 'heading T02 description');
+}
+
+console.log('\n=== parsePlan: heading-style with colon separator (### T01: Title) ===');
+{
+  const content = `# S12: Heading Colon Style
+
+**Goal:** Test colon-separated heading tasks.
+**Demo:** Parser handles colon separator.
+
+## Tasks
+
+### T01: Setup project
+  Basic project setup steps.
+
+### T02: Add CI pipeline \`est:30m\`
+  Configure CI.
+`;
+
+  const p = parsePlan(content);
+  assertEq(p.tasks.length, 2, 'colon heading task count');
+  assertEq(p.tasks[0].id, 'T01', 'colon heading T01 id');
+  assertEq(p.tasks[0].title, 'Setup project', 'colon heading T01 title');
+  assertEq(p.tasks[1].id, 'T02', 'colon heading T02 id');
+  assertEq(p.tasks[1].title, 'Add CI pipeline', 'colon heading T02 title');
+  assertEq(p.tasks[1].estimate, '30m', 'colon heading T02 estimate');
+}
+
+console.log('\n=== parsePlan: heading-style with em-dash separator (### T01 — Title) ===');
+{
+  const content = `# S13: Em-Dash Style
+
+**Goal:** Test em-dash separated heading tasks.
+**Demo:** Parser handles em-dash separator.
+
+## Tasks
+
+### T01 — Build the widget
+
+Widget description.
+`;
+
+  const p = parsePlan(content);
+  assertEq(p.tasks.length, 1, 'em-dash heading task count');
+  assertEq(p.tasks[0].id, 'T01', 'em-dash heading T01 id');
+  assertEq(p.tasks[0].title, 'Build the widget', 'em-dash heading T01 title');
+}
+
+console.log('\n=== parsePlan: mixed checkbox and heading-style tasks ===');
+{
+  const content = `# S14: Mixed Format
+
+**Goal:** Test mixed formats.
+**Demo:** Parser handles both styles in one plan.
+
+## Tasks
+
+- [ ] **T01: Checkbox task** \`est:20m\`
+  A checkbox-style task.
+
+### T02 -- Heading task \`est:15m\`
+
+A heading-style task.
+
+- [x] **T03: Done checkbox task** \`est:10m\`
+  Already completed.
+`;
+
+  const p = parsePlan(content);
+  assertEq(p.tasks.length, 3, 'mixed format task count');
+  assertEq(p.tasks[0].id, 'T01', 'mixed T01 id');
+  assertEq(p.tasks[0].done, false, 'mixed T01 not done');
+  assertEq(p.tasks[1].id, 'T02', 'mixed T02 id');
+  assertEq(p.tasks[1].title, 'Heading task', 'mixed T02 title');
+  assertEq(p.tasks[1].estimate, '15m', 'mixed T02 estimate');
+  assertEq(p.tasks[1].done, false, 'mixed T02 not done (heading style)');
+  assertEq(p.tasks[2].id, 'T03', 'mixed T03 id');
+  assertEq(p.tasks[2].done, true, 'mixed T03 done');
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // parseSummary tests
 // ═══════════════════════════════════════════════════════════════════════════
