@@ -1,5 +1,7 @@
 const ROOT = new URL("../../../../../", import.meta.url);
-const MAIN_REPO = new URL("file:///home/ubuntulinuxqa2/repos/gsd-2/");
+const MAIN_REPO = process.env.GSD_MAIN_REPO
+  ? new URL(`file://${process.env.GSD_MAIN_REPO}/`)
+  : ROOT;
 
 export function resolve(specifier, context, nextResolve) {
   // 1. Direct redirects to dist/ for specific packages

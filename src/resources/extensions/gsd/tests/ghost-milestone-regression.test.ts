@@ -1,11 +1,9 @@
-// Regression test: ghost milestone directories should not become active.
+// Regression test: ghost milestone directories must never become active.
 //
-// Issue: When empty "ghost" milestone directories (M001, M002) exist alongside
-// a real milestone with actual content (M005), deriveState() incorrectly
-// activates the ghost M001 instead of the real M005.
-//
-// This test should FAIL against the current codebase, proving the bug exists.
-// After T02 implements ghost rejection, this test should PASS.
+// Ghost milestones are empty directories (or directories with only non-milestone
+// files) under .gsd/milestones/. The isSubstantiveMilestone() filter and
+// findMilestoneIds() ensure these are excluded from state derivation, so
+// deriveState() always selects the real in-flight milestone.
 
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';

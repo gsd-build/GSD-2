@@ -117,7 +117,8 @@ export function clearReservedMilestoneIds(): void {
  * filtered out so they never become the active milestone.
  */
 export function isSubstantiveMilestone(basePath: string, milestoneId: string): boolean {
-  const milestoneDir = join(basePath, ".gsd", "milestones", milestoneId);
+  const mDir = milestonesDir(basePath);
+  const milestoneDir = join(mDir, milestoneId);
 
   const artifactFiles = [
     `${milestoneId}-ROADMAP.md`,
