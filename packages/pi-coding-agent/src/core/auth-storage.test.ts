@@ -263,6 +263,74 @@ describe("AuthStorage — areAllCredentialsBackedOff", () => {
 	});
 });
 
+// ─── mismatched oauth credential for non-OAuth provider (#2083) ───────────────
+
+describe("AuthStorage — oauth credential for non-OAuth provider (#2083)", () => {
+	it("returns undefined when openrouter has type:oauth (no registered OAuth provider)", async () => {
+		// Simulates the bug: OpenRouter credential stored as type:"oauth"
+		// but OpenRouter is not a registered OAuth provider.
+		const storage = inMemory({
+			openrouter: {
+				type: "oauth",
+				access_token: "sk-or-v1-fake",
+				refresh_token: "rt-fake",
+				expires: Date.now() + 3_600_000,
+			},
+		});
+
+		// Before the fix, getApiKey returns undefined because
+		// resolveCredentialApiKey calls getOAuthProvider("openrouter") → null → undefined.
+		// The key in the oauth credential is never extracted.
+		const key = await storage.getApiKey("openrouter");
+		// After the fix, the oauth credential with an unrecognised provider
+		// should be skipped, and getApiKey should fall through to env / fallback.
+		assert.equal(key, undefined);
+	});
+
+	it("falls through to env var when openrouter has type:oauth credential", async () => {
+		const storage = inMemory({
+			openrouter: {
+				type: "oauth",
+				access_token: "sk-or-v1-fake",
+				refresh_token: "rt-fake",
+				expires: Date.now() + 3_600_000,
+			},
+		});
+
+		// Simulate OPENROUTER_API_KEY being set via env
+		const origEnv = process.env.OPENROUTER_API_KEY;
+		try {
+			process.env.OPENROUTER_API_KEY = "sk-or-v1-env-key";
+			const key = await storage.getApiKey("openrouter");
+			assert.equal(key, "sk-or-v1-env-key");
+		} finally {
+			if (origEnv === undefined) {
+				delete process.env.OPENROUTER_API_KEY;
+			} else {
+				process.env.OPENROUTER_API_KEY = origEnv;
+			}
+		}
+	});
+
+	it("falls through to fallback resolver when openrouter has type:oauth credential", async () => {
+		const storage = inMemory({
+			openrouter: {
+				type: "oauth",
+				access_token: "sk-or-v1-fake",
+				refresh_token: "rt-fake",
+				expires: Date.now() + 3_600_000,
+			},
+		});
+
+		storage.setFallbackResolver((provider) =>
+			provider === "openrouter" ? "sk-or-v1-fallback" : undefined,
+		);
+
+		const key = await storage.getApiKey("openrouter");
+		assert.equal(key, "sk-or-v1-fallback");
+	});
+});
+
 // ─── getAll truncation ────────────────────────────────────────────────────────
 
 describe("AuthStorage — getAll()", () => {

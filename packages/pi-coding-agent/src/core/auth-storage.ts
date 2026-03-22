@@ -731,9 +731,12 @@ export class AuthStorage {
 		if (credentials.length > 0) {
 			const index = this.selectCredentialIndex(providerId, credentials, sessionId);
 			if (index >= 0) {
-				return this.resolveCredentialApiKey(providerId, credentials[index]);
+				const resolved = await this.resolveCredentialApiKey(providerId, credentials[index]);
+				if (resolved) return resolved;
+				// Credential unresolvable (e.g. type:"oauth" for a non-OAuth provider) —
+				// fall through to env / fallback instead of returning undefined (#2083)
 			}
-			// All credentials backed off - fall through to env/fallback
+			// All credentials backed off or unresolvable - fall through to env/fallback
 		}
 
 		// Fall back to environment variable
