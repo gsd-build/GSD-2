@@ -173,7 +173,7 @@ export async function handleForensics(
   if (effectivePrefs?.forensics_dedup === undefined) {
     const choice = await showNextAction(ctx, {
       title: "Duplicate detection available",
-      summary: "Before filing a GitHub issue, forensics can search existing issues and PRs to avoid duplicates. This uses additional AI tokens.",
+      summary: ["Before filing a GitHub issue, forensics can search existing issues and PRs to avoid duplicates.", "This uses additional AI tokens for analysis."],
       actions: [
         { id: "enable", label: "Enable duplicate detection", description: "Search issues/PRs before filing (recommended)", recommended: true },
         { id: "skip", label: "Skip for now", description: "File without checking for duplicates" },
