@@ -1,36 +1,35 @@
-/**
- * Worktree ↔ project root state synchronization for auto-mode.
- *
- * When auto-mode runs inside a worktree, dispatch-critical state files
- * (.gsd/ metadata) diverge between the worktree (where work happens)
- * and the project root (where startAutoMode reads initial state on restart).
- * Without syncing, restarting auto-mode reads stale state from the project
- * root and re-dispatches already-completed units.
- *
- * Also contains resource staleness detection and stale worktree escape.
- */
+// GSD-2 Single-Writer State Architecture — Worktree Sync
+// Syncs state between worktree and project root using snapshot/restore (engine
+// projects) or file-copy (legacy projects without state-manifest.json).
+// Copyright (c) 2026 Jeremy McSpadden <jeremy@fluxlabs.net>
 
 import {
   existsSync,
-  mkdirSync,
   readFileSync,
-  cpSync,
   unlinkSync,
   readdirSync,
 } from "node:fs";
 import { join, sep as pathSep } from "node:path";
 import { homedir } from "node:os";
 import { safeCopy, safeCopyRecursive } from "./safe-fs.js";
+import { restore, writeManifest } from "./workflow-manifest.js";
+import type { StateManifest } from "./workflow-manifest.js";
+import { renderAllProjections } from "./workflow-projections.js";
+import { acquireSyncLock, releaseSyncLock } from "./sync-lock.js";
+import { _getAdapter } from "./gsd-db.js";
 
 const gsdHome = process.env.GSD_HOME || join(homedir(), ".gsd");
 
 // ─── Project Root → Worktree Sync ─────────────────────────────────────────
 
 /**
- * Sync milestone artifacts from project root INTO worktree before deriveState.
- * Covers the case where the LLM wrote artifacts to the main repo filesystem
- * (e.g. via absolute paths) but the worktree has stale data. Also deletes
- * gsd.db in the worktree so it rebuilds from fresh disk state (#853).
+ * Sync state from project root INTO worktree before deriveState.
+ *
+ * Engine projects (state-manifest.json exists): reads manifest from projectRoot,
+ * calls restore() to load into worktree DB, then renderAllProjections.
+ * Legacy projects: falls through to file-copy + DB delete path.
+ * Runtime artifacts (units/) are always file-copied (D-02 hybrid).
+ *
  * Non-fatal — sync failure should never block dispatch.
  */
 export function syncProjectRootToWorktree(
@@ -41,34 +40,61 @@ export function syncProjectRootToWorktree(
   if (!worktreePath || !projectRoot || worktreePath === projectRoot) return;
   if (!milestoneId) return;
 
-  const prGsd = join(projectRoot, ".gsd");
-  const wtGsd = join(worktreePath, ".gsd");
+  const prManifest = join(projectRoot, ".gsd", "state-manifest.json");
 
-  // Copy milestone directory from project root to worktree if the project root
-  // has newer artifacts (e.g. slices that don't exist in the worktree yet)
-  safeCopyRecursive(
-    join(prGsd, "milestones", milestoneId),
-    join(wtGsd, "milestones", milestoneId),
-  );
+  // D-03: capability check — legacy project fallback
+  if (!existsSync(prManifest)) {
+    // Legacy path: file copy + DB delete (kept for projects without engine)
+    const prGsd = join(projectRoot, ".gsd");
+    const wtGsd = join(worktreePath, ".gsd");
+    safeCopyRecursive(
+      join(prGsd, "milestones", milestoneId),
+      join(wtGsd, "milestones", milestoneId),
+    );
+    try {
+      const wtDb = join(wtGsd, "gsd.db");
+      if (existsSync(wtDb)) unlinkSync(wtDb);
+    } catch { /* non-fatal */ }
+    return;
+  }
 
-  // Delete worktree gsd.db so it rebuilds from the freshly synced files.
-  // Stale DB rows are the root cause of the infinite skip loop (#853).
+  // D-01: snapshot/restore path
+  const lock = acquireSyncLock(worktreePath);
+  if (!lock.acquired) {
+    process.stderr.write("[gsd] sync project→worktree skipped: lock held\n");
+    return;
+  }
   try {
-    const wtDb = join(wtGsd, "gsd.db");
-    if (existsSync(wtDb)) {
-      unlinkSync(wtDb);
+    // Pitfall #1: read manifest from projectRoot, restore into worktree DB
+    const manifest = JSON.parse(readFileSync(prManifest, "utf-8")) as StateManifest;
+    const db = _getAdapter();
+    if (db) {
+      restore(db, manifest);
+      renderAllProjections(worktreePath, milestoneId);
     }
-  } catch {
-    /* non-fatal */
+    // D-02: runtime artifacts still file-copied
+    safeCopyRecursive(
+      join(projectRoot, ".gsd", "runtime", "units"),
+      join(worktreePath, ".gsd", "runtime", "units"),
+    );
+  } catch (err) {
+    process.stderr.write(`[gsd] sync project→worktree failed (non-fatal): ${(err as Error).message}\n`);
+  } finally {
+    releaseSyncLock(worktreePath);
   }
 }
 
 // ─── Worktree → Project Root Sync ─────────────────────────────────────────
 
 /**
- * Sync dispatch-critical .gsd/ state files from worktree to project root.
- * Only runs when inside an auto-worktree (worktreePath differs from projectRoot).
- * Copies: STATE.md + active milestone directory (roadmap, slice plans, task summaries).
+ * Sync state from worktree to project root after mutations.
+ *
+ * Engine projects (state-manifest.json exists): calls writeManifest() to
+ * snapshot DB state into projectRoot/.gsd/state-manifest.json, then
+ * renderAllProjections at projectRoot.
+ * Legacy projects: falls through to file-copy path (STATE.md + milestone dir).
+ * Runtime artifacts (units/) are always file-copied with force (D-02 hybrid).
+ *
  * Non-fatal — sync failure should never block dispatch.
  */
 export function syncStateToProjectRoot(
@@ -79,29 +105,49 @@ export function syncStateToProjectRoot(
   if (!worktreePath || !projectRoot || worktreePath === projectRoot) return;
   if (!milestoneId) return;
 
-  const wtGsd = join(worktreePath, ".gsd");
-  const prGsd = join(projectRoot, ".gsd");
+  const wtManifest = join(worktreePath, ".gsd", "state-manifest.json");
 
-  // 1. STATE.md — the quick-glance status used by initial deriveState()
-  safeCopy(join(wtGsd, "STATE.md"), join(prGsd, "STATE.md"), { force: true });
+  // D-03: capability check — legacy fallback
+  if (!existsSync(wtManifest)) {
+    const wtGsd = join(worktreePath, ".gsd");
+    const prGsd = join(projectRoot, ".gsd");
+    safeCopy(join(wtGsd, "STATE.md"), join(prGsd, "STATE.md"), { force: true });
+    safeCopyRecursive(
+      join(wtGsd, "milestones", milestoneId),
+      join(prGsd, "milestones", milestoneId),
+      { force: true },
+    );
+    safeCopyRecursive(
+      join(wtGsd, "runtime", "units"),
+      join(prGsd, "runtime", "units"),
+      { force: true },
+    );
+    return;
+  }
 
-  // 2. Milestone directory — ROADMAP, slice PLANs, task summaries
-  // Copy the entire milestone .gsd subtree so deriveState reads current checkboxes
-  safeCopyRecursive(
-    join(wtGsd, "milestones", milestoneId),
-    join(prGsd, "milestones", milestoneId),
-    { force: true },
-  );
-
-  // 4. Runtime records — unit dispatch state used by selfHealRuntimeRecords().
-  // Without this, a crash during a unit leaves the runtime record only in the
-  // worktree. If the next session resolves basePath before worktree re-entry,
-  // selfHeal can't find or clear the stale record (#769).
-  safeCopyRecursive(
-    join(wtGsd, "runtime", "units"),
-    join(prGsd, "runtime", "units"),
-    { force: true },
-  );
+  // D-01: snapshot → writeManifest → renderAllProjections
+  const lock = acquireSyncLock(projectRoot);
+  if (!lock.acquired) {
+    process.stderr.write("[gsd] sync worktree→project skipped: lock held\n");
+    return;
+  }
+  try {
+    const db = _getAdapter();
+    if (db) {
+      writeManifest(projectRoot, db);
+      renderAllProjections(projectRoot, milestoneId);
+    }
+    // D-02: runtime artifacts still file-copied
+    safeCopyRecursive(
+      join(worktreePath, ".gsd", "runtime", "units"),
+      join(projectRoot, ".gsd", "runtime", "units"),
+      { force: true },
+    );
+  } catch (err) {
+    process.stderr.write(`[gsd] sync worktree→project failed (non-fatal): ${(err as Error).message}\n`);
+  } finally {
+    releaseSyncLock(projectRoot);
+  }
 }
 
 // ─── Resource Staleness ───────────────────────────────────────────────────
