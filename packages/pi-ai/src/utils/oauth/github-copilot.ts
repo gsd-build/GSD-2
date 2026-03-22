@@ -338,7 +338,7 @@ async function fetchCopilotModelLimits(
 		for (const m of data.data || []) {
 			const ctx = m.capabilities?.limits?.max_context_window_tokens;
 			const out = m.capabilities?.limits?.max_output_tokens;
-			if (ctx && out) {
+			if (typeof ctx === "number" && typeof out === "number" && ctx > 0 && out > 0 && Number.isFinite(ctx) && Number.isFinite(out)) {
 				limits[m.id] = { contextWindow: ctx, maxTokens: out };
 			}
 		}
@@ -421,9 +421,13 @@ export const githubCopilotOAuthProvider: OAuthProviderInterface = {
 	async refreshToken(credentials: OAuthCredentials): Promise<OAuthCredentials> {
 		const creds = credentials as CopilotCredentials;
 		const refreshed = await refreshGitHubCopilotToken(creds.refresh, creds.enterpriseUrl);
-		const modelLimits = await fetchCopilotModelLimits(refreshed.access, creds.enterpriseUrl);
-		if (Object.keys(modelLimits).length > 0) {
-			(refreshed as CopilotCredentials).modelLimits = modelLimits;
+		try {
+			const modelLimits = await fetchCopilotModelLimits(refreshed.access, creds.enterpriseUrl);
+			if (Object.keys(modelLimits).length > 0) {
+				(refreshed as CopilotCredentials).modelLimits = modelLimits;
+			}
+		} catch {
+			// Model limits fetch is best-effort; don't block token refresh
 		}
 		return refreshed;
 	},
