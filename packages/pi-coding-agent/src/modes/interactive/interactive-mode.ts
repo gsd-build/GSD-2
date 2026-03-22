@@ -29,6 +29,7 @@ import {
 	matchesKey,
 	ProcessTerminal,
 	Spacer,
+	type Terminal as TuiTerminal,
 	Text,
 	TruncatedText,
 	TUI,
@@ -144,6 +145,14 @@ export interface InteractiveModeOptions {
 	initialMessages?: string[];
 	/** Force verbose startup (overrides quietStartup setting) */
 	verbose?: boolean;
+	/** Override the terminal implementation used by the TUI. */
+	terminal?: TuiTerminal;
+	/** When false, reuse the session's existing extension bindings instead of rebinding them for TUI mode. */
+	bindExtensions?: boolean;
+	/** Submit editor prompts directly to AgentSession instead of using the interactive prompt loop. */
+	submitPromptsDirectly?: boolean;
+	/** Control what happens when the user requests shutdown from the TUI. */
+	shutdownBehavior?: "exit_process" | "stop_ui" | "ignore";
 }
 
 export class InteractiveMode {
@@ -257,7 +266,7 @@ export class InteractiveMode {
 	) {
 		this.session = session;
 		this.version = VERSION;
-		this.ui = new TUI(new ProcessTerminal(), this.settingsManager.getShowHardwareCursor());
+		this.ui = new TUI(options.terminal ?? new ProcessTerminal(), this.settingsManager.getShowHardwareCursor());
 		this.ui.setClearOnShrink(this.settingsManager.getClearOnShrink());
 		this.headerContainer = new Container();
 		this.chatContainer = new Container();
@@ -1086,89 +1095,91 @@ export class InteractiveMode {
 	 * Initialize the extension system with TUI-based UI context.
 	 */
 	private async initExtensions(): Promise<void> {
-		const uiContext = this.createExtensionUIContext();
-		await this.session.bindExtensions({
-			uiContext,
-			commandContextActions: {
-				waitForIdle: () => this.session.agent.waitForIdle(),
-				newSession: async (options) => {
-					if (this.loadingAnimation) {
-						this.loadingAnimation.stop();
-						this.loadingAnimation = undefined;
-					}
-					this.statusContainer.clear();
+		if (this.options.bindExtensions !== false) {
+			const uiContext = this.createExtensionUIContext();
+			await this.session.bindExtensions({
+				uiContext,
+				commandContextActions: {
+					waitForIdle: () => this.session.agent.waitForIdle(),
+					newSession: async (options) => {
+						if (this.loadingAnimation) {
+							this.loadingAnimation.stop();
+							this.loadingAnimation = undefined;
+						}
+						this.statusContainer.clear();
 
-					// Delegate to AgentSession (handles setup + agent state sync)
-					const success = await this.session.newSession(options);
-					if (!success) {
-						return { cancelled: true };
-					}
+						// Delegate to AgentSession (handles setup + agent state sync)
+						const success = await this.session.newSession(options);
+						if (!success) {
+							return { cancelled: true };
+						}
 
-					// Clear UI state
-					this.chatContainer.clear();
-					this.pendingMessagesContainer.clear();
-					this.compactionQueuedMessages = [];
-					this.streamingComponent = undefined;
-					this.streamingMessage = undefined;
-					this.pendingTools.clear();
+						// Clear UI state
+						this.chatContainer.clear();
+						this.pendingMessagesContainer.clear();
+						this.compactionQueuedMessages = [];
+						this.streamingComponent = undefined;
+						this.streamingMessage = undefined;
+						this.pendingTools.clear();
 
-					// Render any messages added via setup, or show empty session
-					this.renderInitialMessages();
-					this.ui.requestRender();
+						// Render any messages added via setup, or show empty session
+						this.renderInitialMessages();
+						this.ui.requestRender();
 
-					return { cancelled: false };
+						return { cancelled: false };
+					},
+					fork: async (entryId) => {
+						const result = await this.session.fork(entryId);
+						if (result.cancelled) {
+							return { cancelled: true };
+						}
+
+						this.chatContainer.clear();
+						this.renderInitialMessages();
+						this.editor.setText(result.selectedText);
+						this.showStatus("Forked to new session");
+
+						return { cancelled: false };
+					},
+					navigateTree: async (targetId, options) => {
+						const result = await this.session.navigateTree(targetId, {
+							summarize: options?.summarize,
+							customInstructions: options?.customInstructions,
+							replaceInstructions: options?.replaceInstructions,
+							label: options?.label,
+						});
+						if (result.cancelled) {
+							return { cancelled: true };
+						}
+
+						this.chatContainer.clear();
+						this.renderInitialMessages();
+						if (result.editorText && !this.editor.getText().trim()) {
+							this.editor.setText(result.editorText);
+						}
+						this.showStatus("Navigated to selected point");
+
+						return { cancelled: false };
+					},
+					switchSession: async (sessionPath) => {
+						await this.handleResumeSession(sessionPath);
+						return { cancelled: false };
+					},
+					reload: async () => {
+						await this.handleReloadCommand();
+					},
 				},
-				fork: async (entryId) => {
-					const result = await this.session.fork(entryId);
-					if (result.cancelled) {
-						return { cancelled: true };
+				shutdownHandler: () => {
+					this.shutdownRequested = true;
+					if (!this.session.isStreaming) {
+						void this.shutdown();
 					}
-
-					this.chatContainer.clear();
-					this.renderInitialMessages();
-					this.editor.setText(result.selectedText);
-					this.showStatus("Forked to new session");
-
-					return { cancelled: false };
 				},
-				navigateTree: async (targetId, options) => {
-					const result = await this.session.navigateTree(targetId, {
-						summarize: options?.summarize,
-						customInstructions: options?.customInstructions,
-						replaceInstructions: options?.replaceInstructions,
-						label: options?.label,
-					});
-					if (result.cancelled) {
-						return { cancelled: true };
-					}
-
-					this.chatContainer.clear();
-					this.renderInitialMessages();
-					if (result.editorText && !this.editor.getText().trim()) {
-						this.editor.setText(result.editorText);
-					}
-					this.showStatus("Navigated to selected point");
-
-					return { cancelled: false };
+				onError: (error) => {
+					this.showExtensionError(error.extensionPath, error.error, error.stack);
 				},
-				switchSession: async (sessionPath) => {
-					await this.handleResumeSession(sessionPath);
-					return { cancelled: false };
-				},
-				reload: async () => {
-					await this.handleReloadCommand();
-				},
-			},
-			shutdownHandler: () => {
-				this.shutdownRequested = true;
-				if (!this.session.isStreaming) {
-					void this.shutdown();
-				}
-			},
-			onError: (error) => {
-				this.showExtensionError(error.extensionPath, error.error, error.stack);
-			},
-		});
+			});
+		}
 
 		setRegisteredThemes(this.session.resourceLoader.getThemes().themes);
 		this.setupAutocomplete();
@@ -1494,6 +1505,10 @@ export class InteractiveMode {
 	 */
 	private createExtensionUIContext(): ExtensionUIContext {
 		return buildExtensionUIContext(this);
+	}
+
+	getExtensionUIContext(): ExtensionUIContext {
+		return this.createExtensionUIContext();
 	}
 
 	/**
@@ -2262,6 +2277,12 @@ export class InteractiveMode {
 	private isShuttingDown = false;
 
 	private async shutdown(): Promise<void> {
+		const shutdownBehavior = this.options.shutdownBehavior ?? "exit_process";
+		if (shutdownBehavior === "ignore") {
+			this.showStatus("Quit is unavailable in the browser-attached terminal");
+			return;
+		}
+
 		if (this.isShuttingDown) return;
 		this.isShuttingDown = true;
 
@@ -2285,6 +2306,9 @@ export class InteractiveMode {
 		await this.ui.terminal.drainInput(1000);
 
 		this.stop();
+		if (shutdownBehavior === "stop_ui") {
+			return;
+		}
 		process.exit(0);
 	}
 
@@ -3759,6 +3783,11 @@ export class InteractiveMode {
 		}
 		void this.flushCompactionQueue({ willRetry: false });
 		return result;
+	}
+
+	requestRender(force = false): void {
+		if (!this.isInitialized) return;
+		this.ui.requestRender(force);
 	}
 
 	stop(): void {

@@ -172,11 +172,23 @@ export async function dispatchDirectPhase(
 
     case "uat":
     case "run-uat": {
-      const sid = state.activeSlice?.id;
-      if (!sid) {
-        ctx.ui.notify("Cannot dispatch run-uat: no active slice.", "warning");
+      // UAT targets the most recently completed slice, not the active (next
+      // incomplete) slice. After slice completion, state.activeSlice advances
+      // to the next incomplete slice, so we find the last done slice from the
+      // roadmap instead (#1693).
+      const roadmapFile = resolveMilestoneFile(base, mid, "ROADMAP");
+      const roadmapContent = roadmapFile ? await loadFile(roadmapFile) : null;
+      if (!roadmapContent) {
+        ctx.ui.notify("Cannot dispatch run-uat: no roadmap found.", "warning");
         return;
       }
+      const roadmap = parseRoadmap(roadmapContent);
+      const completedSlices = roadmap.slices.filter(s => s.done);
+      if (completedSlices.length === 0) {
+        ctx.ui.notify("Cannot dispatch run-uat: no completed slices.", "warning");
+        return;
+      }
+      const sid = completedSlices[completedSlices.length - 1].id;
       const uatFile = resolveSliceFile(base, mid, sid, "UAT");
       if (!uatFile) {
         ctx.ui.notify("Cannot dispatch run-uat: no UAT file found.", "warning");

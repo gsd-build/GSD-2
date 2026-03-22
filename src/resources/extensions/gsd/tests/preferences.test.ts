@@ -249,19 +249,41 @@ test("all wizard fields together produce no errors", () => {
 
 // ── Hook config ──────────────────────────────────────────────────────────────
 
-test("post-unit hook max_cycles clamping", () => {
-  assert.equal(Math.max(1, Math.min(10, Math.round(15))), 10);
-  assert.equal(Math.max(1, Math.min(10, Math.round(0))), 1);
-  assert.equal(Math.max(1, Math.min(10, Math.round(-5))), 1);
-  assert.equal(Math.max(1, Math.min(10, Math.round(3))), 3);
+test("post-unit hook max_cycles clamping via validatePreferences", () => {
+  const base = { name: "h", after: ["execute-task"], prompt: "do something" };
+
+  const { preferences: p1 } = validatePreferences({ post_unit_hooks: [{ ...base, max_cycles: 15 }] } as any);
+  assert.equal(p1.post_unit_hooks![0].max_cycles, 10, "clamps to 10");
+
+  const { preferences: p2 } = validatePreferences({ post_unit_hooks: [{ ...base, max_cycles: 0 }] } as any);
+  assert.equal(p2.post_unit_hooks![0].max_cycles, 1, "clamps to 1");
+
+  const { preferences: p3 } = validatePreferences({ post_unit_hooks: [{ ...base, max_cycles: -5 }] } as any);
+  assert.equal(p3.post_unit_hooks![0].max_cycles, 1, "negative clamps to 1");
+
+  const { preferences: p4 } = validatePreferences({ post_unit_hooks: [{ ...base, max_cycles: 3 }] } as any);
+  assert.equal(p4.post_unit_hooks![0].max_cycles, 3, "valid value passes through");
 });
 
-test("pre-dispatch hook action validation", () => {
-  const valid = new Set(["modify", "skip", "replace"]);
-  assert.ok(valid.has("modify"));
-  assert.ok(valid.has("skip"));
-  assert.ok(valid.has("replace"));
-  assert.ok(!valid.has("delete"));
+test("pre-dispatch hook action validation via validatePreferences", () => {
+  const base = { name: "h", before: ["execute-task"] };
+
+  const { preferences, errors: e1 } = validatePreferences({
+    pre_dispatch_hooks: [{ ...base, action: "skip" }],
+  } as any);
+  assert.equal(e1.length, 0);
+  assert.equal(preferences.pre_dispatch_hooks![0].action, "skip");
+
+  const { preferences: p2, errors: e2 } = validatePreferences({
+    pre_dispatch_hooks: [{ ...base, action: "modify", prepend: "note: " }],
+  } as any);
+  assert.equal(e2.length, 0);
+  assert.equal(p2.pre_dispatch_hooks![0].action, "modify");
+
+  const { errors: e3 } = validatePreferences({
+    pre_dispatch_hooks: [{ ...base, action: "delete" }],
+  } as any);
+  assert.ok(e3.some(e => e.includes("invalid action")));
 });
 
 // ── Model config parsing ─────────────────────────────────────────────────────
@@ -269,8 +291,8 @@ test("pre-dispatch hook action validation", () => {
 test("parses OpenRouter model config with org/model IDs and fallbacks", () => {
   const content = `---\nversion: 1\nmodels:\n  research:\n    model: moonshotai/kimi-k2.5\n    fallbacks:\n      - qwen/qwen3.5-397b-a17b\n  planning:\n    model: deepseek/deepseek-r1-0528\n    fallbacks:\n      - moonshotai/kimi-k2.5\n      - deepseek/deepseek-v3.2\n  execution:\n    model: qwen/qwen3-coder\n    fallbacks:\n      - qwen/qwen3-coder-next\n---\n`;
   const prefs = parsePreferencesMarkdown(content);
-  assert.ok(prefs);
-  const models = prefs.models as GSDModelConfigV2;
+  assert.notEqual(prefs, null);
+  const models = prefs!.models as GSDModelConfigV2;
   const research = models.research as GSDPhaseModelConfig;
   assert.equal(research.model, "moonshotai/kimi-k2.5");
   assert.deepEqual(research.fallbacks, ["qwen/qwen3.5-397b-a17b"]);
@@ -281,8 +303,8 @@ test("parses OpenRouter model config with org/model IDs and fallbacks", () => {
 test("parses model IDs with colons (OpenRouter :free, :exacto)", () => {
   const content = `---\nmodels:\n  execution:\n    model: qwen/qwen3-coder\n    fallbacks:\n      - qwen/qwen3-coder:free\n      - qwen/qwen3-coder:exacto\n---\n`;
   const prefs = parsePreferencesMarkdown(content);
-  assert.ok(prefs);
-  const models = prefs.models as GSDModelConfigV2;
+  assert.notEqual(prefs, null);
+  const models = prefs!.models as GSDModelConfigV2;
   const execution = models.execution as GSDPhaseModelConfig;
   assert.deepEqual(execution.fallbacks, ["qwen/qwen3-coder:free", "qwen/qwen3-coder:exacto"]);
 });
@@ -290,8 +312,8 @@ test("parses model IDs with colons (OpenRouter :free, :exacto)", () => {
 test("parses legacy string-per-phase model config", () => {
   const content = `---\nmodels:\n  research: claude-opus-4-6\n  execution: claude-sonnet-4-6\n---\n`;
   const prefs = parsePreferencesMarkdown(content);
-  assert.ok(prefs);
-  const models = prefs.models as GSDModelConfigV2;
+  assert.notEqual(prefs, null);
+  const models = prefs!.models as GSDModelConfigV2;
   assert.equal(models.research, "claude-opus-4-6");
   assert.equal(models.execution, "claude-sonnet-4-6");
 });
@@ -299,8 +321,8 @@ test("parses legacy string-per-phase model config", () => {
 test("strips inline YAML comments from values", () => {
   const content = `---\nmodels:\n  execution:\n    model: qwen/qwen3-coder  # fast\n    fallbacks:\n      - minimax/minimax-m2.5  # backup\n---\n`;
   const prefs = parsePreferencesMarkdown(content);
-  assert.ok(prefs);
-  const models = prefs.models as GSDModelConfigV2;
+  assert.notEqual(prefs, null);
+  const models = prefs!.models as GSDModelConfigV2;
   const execution = models.execution as GSDPhaseModelConfig;
   assert.equal(execution.model, "qwen/qwen3-coder");
   assert.deepEqual(execution.fallbacks, ["minimax/minimax-m2.5"]);
@@ -309,8 +331,8 @@ test("strips inline YAML comments from values", () => {
 test("handles Windows CRLF line endings", () => {
   const content = "---\r\nmodels:\r\n  execution:\r\n    model: qwen/qwen3-coder\r\n---\r\n";
   const prefs = parsePreferencesMarkdown(content);
-  assert.ok(prefs);
-  const models = prefs.models as GSDModelConfigV2;
+  assert.notEqual(prefs, null);
+  const models = prefs!.models as GSDModelConfigV2;
   const execution = models.execution as GSDPhaseModelConfig;
   assert.equal(execution.model, "qwen/qwen3-coder");
 });
@@ -318,8 +340,8 @@ test("handles Windows CRLF line endings", () => {
 test("handles model config with explicit provider field", () => {
   const content = `---\nmodels:\n  execution:\n    model: claude-opus-4-6\n    provider: bedrock\n    fallbacks:\n      - claude-sonnet-4-6\n---\n`;
   const prefs = parsePreferencesMarkdown(content);
-  assert.ok(prefs);
-  const models = prefs.models as GSDModelConfigV2;
+  assert.notEqual(prefs, null);
+  const models = prefs!.models as GSDModelConfigV2;
   const execution = models.execution as GSDPhaseModelConfig;
   assert.equal(execution.model, "claude-opus-4-6");
   assert.equal(execution.provider, "bedrock");
@@ -327,6 +349,6 @@ test("handles model config with explicit provider field", () => {
 
 test("handles empty models config", () => {
   const prefs = parsePreferencesMarkdown("---\nversion: 1\n---\n");
-  assert.ok(prefs);
-  assert.equal(prefs.models, undefined);
+  assert.notEqual(prefs, null);
+  assert.equal(prefs!.models, undefined);
 });

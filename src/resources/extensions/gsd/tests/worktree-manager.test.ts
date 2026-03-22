@@ -1,4 +1,6 @@
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync, readFileSync } from "node:fs";
+import test from "node:test";
+import assert from "node:assert/strict";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execSync } from "node:child_process";
@@ -13,82 +15,42 @@ import {
   worktreeBranchName,
   worktreePath,
 } from "../worktree-manager.ts";
-import { createTestContext } from './test-helpers.ts';
 
-const { assertEq, assertTrue, report } = createTestContext();
 function run(command: string, cwd: string): string {
   return execSync(command, { cwd, stdio: ["ignore", "pipe", "pipe"], encoding: "utf-8" }).trim();
 }
 
-// Set up a test repo
-const base = mkdtempSync(join(tmpdir(), "gsd-worktree-mgr-test-"));
-run("git init -b main", base);
-run('git config user.name "Pi Test"', base);
-run('git config user.email "pi@example.com"', base);
+function makeBaseRepo(): string {
+  const base = mkdtempSync(join(tmpdir(), "gsd-wt-test-"));
+  run("git init -b main", base);
+  run('git config user.name "Test User"', base);
+  run('git config user.email "test@example.com"', base);
+  mkdirSync(join(base, ".gsd", "milestones", "M001"), { recursive: true });
+  writeFileSync(join(base, "README.md"), "# Test Project\n", "utf-8");
+  writeFileSync(
+    join(base, ".gsd", "milestones", "M001", "M001-ROADMAP.md"),
+    "# M001: Demo\n\n## Slices\n- [ ] **S01: First** `risk:low` `depends:[]`\n  > After this: it works\n",
+    "utf-8",
+  );
+  run("git add .", base);
+  run('git commit -m "chore: init"', base);
+  return base;
+}
 
-// Create initial project structure
-mkdirSync(join(base, ".gsd", "milestones", "M001"), { recursive: true });
-writeFileSync(join(base, "README.md"), "# Test Project\n", "utf-8");
-writeFileSync(
-  join(base, ".gsd", "milestones", "M001", "M001-ROADMAP.md"),
-  "# M001: Demo\n\n## Slices\n- [ ] **S01: First** `risk:low` `depends:[]`\n  > After this: it works\n",
-  "utf-8",
-);
-run("git add .", base);
-run('git commit -m "chore: init"', base);
+function makeRepoWithWorktree(worktreeName: string): { base: string; wtPath: string } {
+  const base = makeBaseRepo();
+  createWorktree(base, worktreeName);
+  return { base, wtPath: worktreePath(base, worktreeName) };
+}
 
-async function main(): Promise<void> {
-  console.log("\n=== worktreeBranchName ===");
-  assertEq(worktreeBranchName("feature-x"), "worktree/feature-x", "branch name format");
-
-  console.log("\n=== createWorktree ===");
-  const info = createWorktree(base, "feature-x");
-  assertTrue(info.name === "feature-x", "name matches");
-  assertTrue(info.branch === "worktree/feature-x", "branch matches");
-  assertTrue(info.exists, "worktree exists");
-  assertTrue(existsSync(info.path), "worktree path exists on disk");
-  assertTrue(existsSync(join(info.path, "README.md")), "README.md copied to worktree");
-  assertTrue(existsSync(join(info.path, ".gsd", "milestones", "M001", "M001-ROADMAP.md")), ".gsd files copied");
-
-  // Branch was created
-  const branches = run("git branch", base);
-  assertTrue(branches.includes("worktree/feature-x"), "branch was created");
-
-  console.log("\n=== createWorktree — duplicate ===");
-  let duplicateError = "";
-  try {
-    createWorktree(base, "feature-x");
-  } catch (e) {
-    duplicateError = (e as Error).message;
-  }
-  assertTrue(duplicateError.includes("already exists"), "duplicate creation fails");
-
-  console.log("\n=== createWorktree — invalid name ===");
-  let invalidError = "";
-  try {
-    createWorktree(base, "bad name!");
-  } catch (e) {
-    invalidError = (e as Error).message;
-  }
-  assertTrue(invalidError.includes("Invalid worktree name"), "invalid name rejected");
-
-  console.log("\n=== listWorktrees ===");
-  const list = listWorktrees(base);
-  assertEq(list.length, 1, "one worktree listed");
-  assertEq(list[0]!.name, "feature-x", "correct name");
-  assertEq(list[0]!.branch, "worktree/feature-x", "correct branch");
-  assertTrue(list[0]!.exists, "exists flag is true");
-
-  console.log("\n=== make changes in worktree ===");
-  const wtPath = worktreePath(base, "feature-x");
-  // Add a new GSD artifact in the worktree
+function makeRepoWithChanges(worktreeName: string): { base: string; wtPath: string } {
+  const { base, wtPath } = makeRepoWithWorktree(worktreeName);
   mkdirSync(join(wtPath, ".gsd", "milestones", "M002"), { recursive: true });
   writeFileSync(
     join(wtPath, ".gsd", "milestones", "M002", "M002-ROADMAP.md"),
     "# M002: New Feature\n\n## Slices\n- [ ] **S01: Setup** `risk:low` `depends:[]`\n  > After this: new feature ready\n",
     "utf-8",
   );
-  // Modify an existing artifact
   writeFileSync(
     join(wtPath, ".gsd", "milestones", "M001", "M001-ROADMAP.md"),
     "# M001: Demo (updated)\n\n## Slices\n- [x] **S01: First** `risk:low` `depends:[]`\n  > Done\n",
@@ -96,46 +58,174 @@ async function main(): Promise<void> {
   );
   run("git add .", wtPath);
   run('git commit -m "feat: add M002 and update M001"', wtPath);
-
-  console.log("\n=== diffWorktreeGSD ===");
-  const diff = diffWorktreeGSD(base, "feature-x");
-  assertTrue(diff.added.length > 0, "has added files");
-  assertTrue(diff.added.some(f => f.includes("M002")), "M002 roadmap is in added");
-  assertTrue(diff.modified.length > 0, "has modified files");
-  assertTrue(diff.modified.some(f => f.includes("M001")), "M001 roadmap is in modified");
-  assertEq(diff.removed.length, 0, "no removed files");
-
-  console.log("\n=== getWorktreeGSDDiff ===");
-  const fullDiff = getWorktreeGSDDiff(base, "feature-x");
-  assertTrue(fullDiff.includes("M002"), "full diff mentions M002");
-  assertTrue(fullDiff.includes("updated"), "full diff mentions update");
-
-  console.log("\n=== getWorktreeLog ===");
-  const log = getWorktreeLog(base, "feature-x");
-  assertTrue(log.includes("add M002"), "log shows commit message");
-
-  console.log("\n=== removeWorktree ===");
-  removeWorktree(base, "feature-x", { deleteBranch: true });
-  assertTrue(!existsSync(wtPath), "worktree directory removed");
-  const branchesAfter = run("git branch", base);
-  assertTrue(!branchesAfter.includes("worktree/feature-x"), "branch deleted");
-
-  console.log("\n=== listWorktrees after removal ===");
-  const listAfter = listWorktrees(base);
-  assertEq(listAfter.length, 0, "no worktrees after removal");
-
-  console.log("\n=== removeWorktree — already gone ===");
-  // Should not throw
-  removeWorktree(base, "feature-x", { deleteBranch: true });
-  assertTrue(true, "removeWorktree on missing worktree does not throw");
-
-  // Cleanup
-  rmSync(base, { recursive: true, force: true });
-
-  report();
+  return { base, wtPath };
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
+// ─── worktreeBranchName ───────────────────────────────────────────────────────
+
+test("worktreeBranchName formats branch name", () => {
+  assert.strictEqual(
+    worktreeBranchName("feature-x"),
+    "worktree/feature-x",
+    "should prefix with worktree/",
+  );
+});
+
+// ─── createWorktree ───────────────────────────────────────────────────────────
+
+test("createWorktree creates worktree with correct metadata", () => {
+  const base = makeBaseRepo();
+  try {
+    const info = createWorktree(base, "feature-x");
+    assert.strictEqual(info.name, "feature-x", "name should match");
+    assert.strictEqual(info.branch, "worktree/feature-x", "branch should be prefixed");
+    assert.ok(info.exists, "exists flag should be true");
+    assert.ok(existsSync(info.path), "worktree path should exist on disk");
+    assert.ok(existsSync(join(info.path, "README.md")), "README.md should be in worktree");
+    assert.ok(
+      existsSync(join(info.path, ".gsd", "milestones", "M001", "M001-ROADMAP.md")),
+      ".gsd files should be in worktree",
+    );
+    const branches = run("git branch", base);
+    assert.ok(branches.includes("worktree/feature-x"), "branch should be created in base repo");
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("createWorktree rejects duplicate name", () => {
+  const { base } = makeRepoWithWorktree("feature-x");
+  try {
+    assert.throws(
+      () => createWorktree(base, "feature-x"),
+      (err: Error) => {
+        assert.ok(
+          err.message.includes("already exists"),
+          `expected "already exists" in error, got: ${err.message}`,
+        );
+        return true;
+      },
+      "should throw on duplicate worktree name",
+    );
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("createWorktree rejects invalid name", () => {
+  const base = makeBaseRepo();
+  try {
+    assert.throws(
+      () => createWorktree(base, "bad name!"),
+      (err: Error) => {
+        assert.ok(
+          err.message.includes("Invalid worktree name"),
+          `expected "Invalid worktree name" in error, got: ${err.message}`,
+        );
+        return true;
+      },
+      "should throw on invalid worktree name",
+    );
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+// ─── listWorktrees ────────────────────────────────────────────────────────────
+
+test("listWorktrees returns active worktrees", () => {
+  const { base } = makeRepoWithWorktree("feature-x");
+  try {
+    const list = listWorktrees(base);
+    assert.strictEqual(list.length, 1, "should list exactly one worktree");
+    assert.strictEqual(list[0]!.name, "feature-x", "name should match");
+    assert.strictEqual(list[0]!.branch, "worktree/feature-x", "branch should match");
+    assert.ok(list[0]!.exists, "exists flag should be true");
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("listWorktrees returns empty after removal", () => {
+  const { base } = makeRepoWithWorktree("feature-x");
+  try {
+    removeWorktree(base, "feature-x");
+    const list = listWorktrees(base);
+    assert.strictEqual(list.length, 0, "should have no worktrees after removal");
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+// ─── diffWorktreeGSD ─────────────────────────────────────────────────────────
+
+test("diffWorktreeGSD detects added and modified GSD files", () => {
+  const { base } = makeRepoWithChanges("feature-x");
+  try {
+    const diff = diffWorktreeGSD(base, "feature-x");
+    assert.ok(diff.added.length > 0, "should have added files");
+    assert.ok(
+      diff.added.some((f) => f.includes("M002")),
+      "M002 roadmap should be in added files",
+    );
+    assert.ok(diff.modified.length > 0, "should have modified files");
+    assert.ok(
+      diff.modified.some((f) => f.includes("M001")),
+      "M001 roadmap should be in modified files",
+    );
+    assert.strictEqual(diff.removed.length, 0, "should have no removed files");
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+// ─── getWorktreeGSDDiff ───────────────────────────────────────────────────────
+
+test("getWorktreeGSDDiff returns patch content", () => {
+  const { base } = makeRepoWithChanges("feature-x");
+  try {
+    const fullDiff = getWorktreeGSDDiff(base, "feature-x");
+    assert.ok(fullDiff.includes("M002"), "diff should mention M002");
+    assert.ok(fullDiff.includes("updated"), "diff should mention the update");
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+// ─── getWorktreeLog ───────────────────────────────────────────────────────────
+
+test("getWorktreeLog shows commits", () => {
+  const { base } = makeRepoWithChanges("feature-x");
+  try {
+    const log = getWorktreeLog(base, "feature-x");
+    assert.ok(log.includes("add M002"), "log should include the commit message");
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+// ─── removeWorktree ───────────────────────────────────────────────────────────
+
+test("removeWorktree removes directory and branch", () => {
+  const { base, wtPath } = makeRepoWithWorktree("feature-x");
+  try {
+    removeWorktree(base, "feature-x", { deleteBranch: true });
+    assert.ok(!existsSync(wtPath), "worktree directory should be gone");
+    const branches = run("git branch", base);
+    assert.ok(!branches.includes("worktree/feature-x"), "branch should be deleted");
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("removeWorktree on missing worktree does not throw", () => {
+  const base = makeBaseRepo();
+  try {
+    assert.doesNotThrow(
+      () => removeWorktree(base, "nonexistent"),
+      "should not throw when worktree does not exist",
+    );
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
 });

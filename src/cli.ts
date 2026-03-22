@@ -9,7 +9,7 @@ import {
   runPrintMode,
   runRpcMode,
 } from '@gsd/pi-coding-agent'
-import { existsSync, readdirSync, renameSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { agentDir, sessionsDir, authFilePath } from './app-paths.js'
 import { initResources, buildResourceLoader, getNewerManagedResourceVersion } from './resource-loader.js'
@@ -20,6 +20,13 @@ import { shouldRunOnboarding, runOnboarding } from './onboarding.js'
 import chalk from 'chalk'
 import { checkForUpdates } from './update-check.js'
 import { printHelp, printSubcommandHelp } from './help-text.js'
+import {
+  parseCliArgs as parseWebCliArgs,
+  runWebCliBranch,
+  migrateLegacyFlatSessions,
+} from './cli-web-branch.js'
+import { stopWebMode } from './web-mode.js'
+import { getProjectSessionsDir } from './project-sessions.js'
 import { markStartup, printStartupTimings } from './startup-timings.js'
 
 // ---------------------------------------------------------------------------
@@ -37,6 +44,9 @@ interface CliFlags {
   appendSystemPrompt?: string
   tools?: string[]
   messages: string[]
+  web?: boolean
+  webPath?: string
+
   /** Set by `gsd sessions` when the user picks a specific session to resume */
   _selectedSessionPath?: string
 }
@@ -93,6 +103,12 @@ function parseCliArgs(argv: string[]): CliFlags {
     } else if (arg === '--help' || arg === '-h') {
       printHelp(process.env.GSD_VERSION || '0.0.0')
       process.exit(0)
+    } else if (arg === '--web') {
+      flags.web = true
+      // Capture optional project path after --web (not a flag)
+      if (i + 1 < args.length && !args[i + 1].startsWith('-')) {
+        flags.webPath = args[++i]
+      }
     } else if (!arg.startsWith('--') && !arg.startsWith('-')) {
       flags.messages.push(arg)
     }
@@ -110,7 +126,7 @@ exitIfManagedResourcesAreNewer(agentDir)
 // Early TTY check — must come before heavy initialization to avoid dangling
 // handles that prevent process.exit() from completing promptly.
 const hasSubcommand = cliFlags.messages.length > 0
-if (!process.stdin.isTTY && !isPrintMode && !hasSubcommand && !cliFlags.listModels) {
+if (!process.stdin.isTTY && !isPrintMode && !hasSubcommand && !cliFlags.listModels && !cliFlags.web) {
   process.stderr.write('[gsd] Error: Interactive mode requires a terminal (TTY).\n')
   process.stderr.write('[gsd] Non-interactive alternatives:\n')
   process.stderr.write('[gsd]   gsd --print "your message"     Single-shot prompt\n')
@@ -142,6 +158,34 @@ if (cliFlags.messages[0] === 'update') {
   await runUpdate()
   process.exit(0)
 }
+
+// `gsd web stop [path|all]` — stop web server before anything else
+if (cliFlags.messages[0] === 'web' && cliFlags.messages[1] === 'stop') {
+  const webFlags = parseWebCliArgs(process.argv)
+  const webBranch = await runWebCliBranch(webFlags, {
+    stopWebMode,
+    stderr: process.stderr,
+    baseSessionsDir: sessionsDir,
+    agentDir,
+  })
+  if (webBranch.handled) {
+    process.exit(webBranch.exitCode)
+  }
+}
+
+// `gsd --web [path]` or `gsd web [start] [path]` — launch browser-only web mode
+if (cliFlags.web || (cliFlags.messages[0] === 'web' && cliFlags.messages[1] !== 'stop')) {
+  const webFlags = parseWebCliArgs(process.argv)
+  const webBranch = await runWebCliBranch(webFlags, {
+    stderr: process.stderr,
+    baseSessionsDir: sessionsDir,
+    agentDir,
+  })
+  if (webBranch.handled) {
+    process.exit(webBranch.exitCode)
+  }
+}
+
 
 // `gsd sessions` — list past sessions and pick one to resume
 if (cliFlags.messages[0] === 'sessions') {
@@ -478,31 +522,12 @@ if (!cliFlags.worktree && !isPrintMode) {
 // Per-directory session storage — same encoding as the upstream SDK so that
 // /resume only shows sessions from the current working directory.
 const cwd = process.cwd()
-const safePath = `--${cwd.replace(/^[/\\]/, '').replace(/[/\\:]/g, '-')}--`
-const projectSessionsDir = join(sessionsDir, safePath)
+const projectSessionsDir = getProjectSessionsDir(cwd)
 
 // Migrate legacy flat sessions: before per-directory scoping, all .jsonl session
 // files lived directly in ~/.gsd/sessions/. Move them into the correct per-cwd
 // subdirectory so /resume can find them.
-if (existsSync(sessionsDir)) {
-  try {
-    const entries = readdirSync(sessionsDir)
-    const flatJsonl = entries.filter(f => f.endsWith('.jsonl'))
-    if (flatJsonl.length > 0) {
-      const { mkdirSync } = await import('node:fs')
-      mkdirSync(projectSessionsDir, { recursive: true })
-      for (const file of flatJsonl) {
-        const src = join(sessionsDir, file)
-        const dst = join(projectSessionsDir, file)
-        if (!existsSync(dst)) {
-          renameSync(src, dst)
-        }
-      }
-    }
-  } catch {
-    // Non-fatal — don't block startup if migration fails
-  }
-}
+migrateLegacyFlatSessions(sessionsDir, projectSessionsDir)
 
 const sessionManager = cliFlags._selectedSessionPath
   ? SessionManager.open(cliFlags._selectedSessionPath, projectSessionsDir)
@@ -575,6 +600,17 @@ if (enabledModelPatterns && enabledModelPatterns.length > 0) {
   if (scopedModels.length > 0 && scopedModels.length < availableModels.length) {
     session.setScopedModels(scopedModels)
   }
+}
+
+if (!process.stdin.isTTY) {
+  process.stderr.write('[gsd] Error: Interactive mode requires a terminal (TTY).\n')
+  process.stderr.write('[gsd] Non-interactive alternatives:\n')
+  process.stderr.write('[gsd]   gsd --print "your message"     Single-shot prompt\n')
+  process.stderr.write('[gsd]   gsd --web [path]               Browser-only web mode\n')
+  process.stderr.write('[gsd]   gsd --mode rpc                 JSON-RPC over stdin/stdout\n')
+  process.stderr.write('[gsd]   gsd --mode mcp                 MCP server over stdin/stdout\n')
+  process.stderr.write('[gsd]   gsd --mode text "message"      Text output mode\n')
+  process.exit(1)
 }
 
 // Welcome screen — shown on every fresh interactive session before TUI takes over

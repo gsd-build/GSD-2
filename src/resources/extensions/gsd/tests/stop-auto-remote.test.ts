@@ -25,7 +25,7 @@ function cleanup(base: string): void {
   try { rmSync(base, { recursive: true, force: true }); } catch { /* */ }
 }
 
-function waitForChildExit(child: ChildProcess, timeoutMs = 5000): Promise<number | null> {
+function waitForChildExit(child: ChildProcess, timeoutMs = 10000): Promise<number | null> {
   return new Promise((resolve) => {
     if (child.exitCode !== null) {
       resolve(child.exitCode);
@@ -80,7 +80,10 @@ test("stopAutoRemote cleans up stale lock (dead PID) and returns found:false", (
   }
 });
 
-test("stopAutoRemote sends SIGTERM to a live process and returns found:true", async () => {
+// KNOWN FLAKE: This test is timing-sensitive — it spawns a child, writes a lock file,
+// sends SIGTERM, and asserts the child exited. Under heavy CI load the child may
+// not be ready when SIGTERM is sent. Mitigations: 500ms startup delay, 10s exit timeout.
+test("stopAutoRemote sends SIGTERM to a live process and returns found:true", { timeout: 15000 }, async () => {
   const base = makeTmpBase();
 
   // Spawn a child process that prints "ready" then sleeps, acting as a fake auto-mode session

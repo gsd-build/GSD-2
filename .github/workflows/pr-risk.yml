@@ -1,0 +1,73 @@
+name: PR Risk Report
+
+# pull_request_target runs in the base repo context so the token has
+# pull-requests: write even for cross-fork PRs. We never execute code
+# from the fork — changed files are fetched via the GitHub API only.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  risk-check:
+    name: Classify changed files and assess risk
+    runs-on: ubuntu-latest
+
+    steps:
+      # Checkout the BASE branch — our trusted script and map, not fork code.
+      - name: Checkout base
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.base_ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Use the GitHub API to get changed files — no fork code is executed.
+      - name: Get changed files
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api \
+            repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files \
+            --paginate \
+            --jq '.[].filename' > /tmp/changed-files.txt
+          echo "Changed files:"
+          cat /tmp/changed-files.txt
+
+      - name: Run risk check
+        id: risk
+        run: |
+          REPORT=$(cat /tmp/changed-files.txt | node scripts/pr-risk-check.mjs --github || true)
+          echo "report<<EOF" >> $GITHUB_OUTPUT
+          echo "$REPORT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          RISK_LEVEL=$(cat /tmp/changed-files.txt | node scripts/pr-risk-check.mjs --json 2>/dev/null \
+            | node -e "let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{ try { console.log(JSON.parse(d).risk) } catch { console.log('low') } })" \
+            || echo "low")
+          echo "level=$RISK_LEVEL" >> $GITHUB_OUTPUT
+
+      - name: Write step summary
+        run: echo "${{ steps.risk.outputs.report }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Find existing risk comment
+        id: find-comment
+        uses: peter-evans/find-comment@v3
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: github-actions[bot]
+          body-includes: PR Risk Report
+
+      - name: Post or update risk comment
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{ steps.find-comment.outputs.comment-id }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body: ${{ steps.risk.outputs.report }}
+          edit-mode: replace

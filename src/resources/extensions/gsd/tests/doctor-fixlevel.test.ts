@@ -63,7 +63,7 @@ Done.
 `);
 }
 
-test("fixLevel:task — detects completion issues but does NOT create summary stub or mark roadmap", async () => {
+test("fixLevel:task — defers summary stub and roadmap checkbox, fixes UAT immediately (#1808, #1910)", async () => {
   const tmp = makeTmp("task-level");
   try {
     buildScaffold(tmp);
@@ -75,17 +75,18 @@ test("fixLevel:task — detects completion issues but does NOT create summary st
     assert.ok(codes.includes("all_tasks_done_missing_slice_summary"), "should detect missing summary");
     assert.ok(codes.includes("all_tasks_done_roadmap_not_checked"), "should detect unchecked roadmap");
 
-    // Should NOT have fixed them
+    // Summary should NOT be created (still deferred — needs LLM content)
     const sliceSummaryPath = join(tmp, ".gsd", "milestones", "M001", "slices", "S01", "S01-SUMMARY.md");
     assert.ok(!existsSync(sliceSummaryPath), "should NOT have created summary stub");
 
+    // Roadmap must NOT be checked without summary on disk (#1910)
     const roadmapContent = readFileSync(join(tmp, ".gsd", "milestones", "M001", "M001-ROADMAP.md"), "utf8");
-    assert.ok(roadmapContent.includes("- [ ] **S01"), "roadmap should still show S01 as unchecked");
+    assert.ok(roadmapContent.includes("- [ ] **S01"), "roadmap must NOT be checked without summary (#1910)");
 
-    // Fixes applied should NOT include completion artifacts
+    // Fixes applied should NOT include summary or roadmap
     for (const f of report.fixesApplied) {
       assert.ok(!f.includes("SUMMARY"), `should not have fixed summary: ${f}`);
-      assert.ok(!f.includes("roadmap"), `should not have fixed roadmap: ${f}`);
+      assert.ok(!f.includes("ROADMAP") && !f.includes("roadmap"), `should not have fixed roadmap: ${f}`);
     }
   } finally {
     rmSync(tmp, { recursive: true, force: true });

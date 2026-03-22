@@ -7,7 +7,7 @@
  */
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@gsd/pi-coding-agent";
-import { showNextAction } from "../shared/mod.js";
+import { showNextAction } from "../shared/tui.js";
 import { setQueuePhaseActive } from "./index.js";
 import { loadFile } from "./files.js";
 import { loadPrompt, inlineTemplate } from "./prompt-loader.js";
@@ -170,7 +170,7 @@ export async function showQueueAdd(
   const existingContext = await buildExistingMilestonesContext(basePath, milestoneIds, state);
 
   // ── Determine next milestone ID ─────────────────────────────────────
-  // Note: the LLM will use the gsd_generate_milestone_id tool to get IDs
+  // Note: the LLM will use the gsd_milestone_generate_id tool to get IDs
   // at creation time, but we still mention the next ID in the preamble
   // for context about where the sequence is.
   const uniqueEnabled = !!loadEffectiveGSDPreferences()?.preferences?.unique_milestone_ids;

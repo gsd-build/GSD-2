@@ -25,6 +25,7 @@ interface DecisionInput {
   choice: string;
   rationale: string;
   revisable: string;
+  made_by?: string;
 }
 
 interface RequirementInput {
@@ -61,6 +62,7 @@ export function formatDecisionCompact(decision: DecisionInput): string {
     decision.choice,
     decision.rationale,
     decision.revisable,
+    decision.made_by ?? 'agent',
   ].join(" | ");
 }
 
@@ -70,7 +72,7 @@ export function formatDecisionsCompact(decisions: DecisionInput[]): string {
     return "# Decisions (compact)\n(none)";
   }
 
-  const header = "# Decisions (compact)\nFields: id | when | scope | decision | choice | rationale | revisable";
+  const header = "# Decisions (compact)\nFields: id | when | scope | decision | choice | rationale | revisable | made_by";
   const lines = decisions.map(formatDecisionCompact);
   return `${header}\n\n${lines.join("\n")}`;
 }

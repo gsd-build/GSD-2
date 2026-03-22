@@ -187,6 +187,36 @@ console.log('=== md-importer: malformed/empty rows skipped ===');
   assertEq(decisions[1].id, 'D003', 'second valid row (skipping malformed)');
 }
 
+console.log('=== md-importer: made_by backward compatibility (old 7-column format) ===');
+
+{
+  const decisions = parseDecisionsTable(DECISIONS_MD);
+  // Old format has no Made By column — should default to 'agent'
+  for (const d of decisions) {
+    assertEq(d.made_by, 'agent', `${d.id} made_by defaults to agent for legacy format`);
+  }
+}
+
+console.log('=== md-importer: made_by column parsing (new 8-column format) ===');
+
+{
+  const newFormatMd = `# Decisions Register
+
+| # | When | Scope | Decision | Choice | Rationale | Revisable? | Made By |
+|---|------|-------|----------|--------|-----------|------------|---------|
+| D001 | M001 | library | SQLite library | better-sqlite3 | Sync API | No | human |
+| D002 | M001 | arch | DB location | .gsd/gsd.db | Derived state | No | agent |
+| D003 | M002 | impl | Config format | JSON | Simple | Yes | collaborative |
+| D004 | M002 | impl | Cache strategy | LRU | Predictable | No | bogus |
+`;
+  const decisions = parseDecisionsTable(newFormatMd);
+  assertEq(decisions.length, 4, 'should parse 4 decisions with new format');
+  assertEq(decisions[0].made_by, 'human', 'D001 made_by = human');
+  assertEq(decisions[1].made_by, 'agent', 'D002 made_by = agent');
+  assertEq(decisions[2].made_by, 'collaborative', 'D003 made_by = collaborative');
+  assertEq(decisions[3].made_by, 'agent', 'D004 invalid made_by defaults to agent');
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // md-importer: parseRequirementsSections
 // ═══════════════════════════════════════════════════════════════════════════
@@ -354,7 +384,7 @@ console.log('=== md-importer: schema v1→v2 migration ===');
   openDatabase(':memory:');
   const adapter = _getAdapter();
   const version = adapter?.prepare('SELECT MAX(version) as v FROM schema_version').get();
-  assertEq(version?.v, 3, 'new DB should be at schema version 3');
+  assertEq(version?.v, 4, 'new DB should be at schema version 4');
 
   // Artifacts table should exist
   const tableCheck = adapter?.prepare("SELECT count(*) as c FROM sqlite_master WHERE type='table' AND name='artifacts'").get();

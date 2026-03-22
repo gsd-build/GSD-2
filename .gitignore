@@ -4,6 +4,7 @@ package-lock.json
 .claude/
 RELEASE-GUIDE.md
 *.tgz
+*.tsbuildinfo
 .DS_Store
 Thumbs.db
 *.swp
@@ -58,3 +59,6 @@ docs/coherence-audit/
 # ── Stale lock files (npm is canonical) ──
 pnpm-lock.yaml
 bun.lock
+
+# ── GSD baseline (auto-generated) ──
+.gsd

@@ -122,6 +122,7 @@ function mockData(overrides: Partial<VisualizerData> = {}): VisualizerData {
       providers: [],
       skillSummary: { total: 0, warningCount: 0, criticalCount: 0, topIssue: null },
       environmentIssues: [],
+
     },
     discussion: [],
     stats: { missingCount: 0, missingSlices: [], updatedCount: 0, updatedSlices: [], recentEntries: [] },

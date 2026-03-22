@@ -6,7 +6,7 @@ import { handleConfig } from "../../commands-config.js";
 import { handleDoctor, handleCapture, handleKnowledge, handleRunHook, handleSkillHealth, handleSteer, handleTriage, handleUpdate } from "../../commands-handlers.js";
 import { handleInspect } from "../../commands-inspect.js";
 import { handleLogs } from "../../commands-logs.js";
-import { handleCleanupBranches, handleCleanupSnapshots, handleSkip } from "../../commands-maintenance.js";
+import { handleCleanupBranches, handleCleanupSnapshots, handleSkip, handleCleanupProjects, handleCleanupWorktrees } from "../../commands-maintenance.js";
 import { handleExport } from "../../export.js";
 import { handleHistory } from "../../history.js";
 import { handleUndo } from "../../undo.js";
@@ -57,12 +57,24 @@ export async function handleOpsCommand(trimmed: string, ctx: ExtensionCommandCon
     await handleUndo(trimmed.replace(/^undo\s*/, "").trim(), ctx, pi, projectRoot());
     return true;
   }
+  if (trimmed === "skip") {
+    ctx.ui.notify("Usage: /gsd skip <unit-id>  Example: /gsd skip M001/S01/T03", "warning");
+    return true;
+  }
   if (trimmed.startsWith("skip ")) {
     await handleSkip(trimmed.replace(/^skip\s*/, "").trim(), ctx, projectRoot());
     return true;
   }
   if (trimmed === "export" || trimmed.startsWith("export ")) {
     await handleExport(trimmed.replace(/^export\s*/, "").trim(), ctx, projectRoot());
+    return true;
+  }
+  if (trimmed === "cleanup projects" || trimmed.startsWith("cleanup projects ")) {
+    await handleCleanupProjects(trimmed.replace(/^cleanup projects\s*/, "").trim(), ctx);
+    return true;
+  }
+  if (trimmed === "cleanup worktrees") {
+    await handleCleanupWorktrees(ctx, projectRoot());
     return true;
   }
   if (trimmed === "cleanup") {
@@ -158,6 +170,11 @@ Examples:
   }
   if (trimmed === "update") {
     await handleUpdate(ctx);
+    return true;
+  }
+  if (trimmed === "fast" || trimmed.startsWith("fast ")) {
+    const { handleFast } = await import("../../service-tier.js");
+    await handleFast(trimmed.replace(/^fast\s*/, "").trim(), ctx);
     return true;
   }
   if (trimmed === "extensions" || trimmed.startsWith("extensions ")) {

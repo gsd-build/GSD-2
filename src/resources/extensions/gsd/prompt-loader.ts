@@ -17,12 +17,36 @@
  * that aren't read until the end of a long auto-mode run.
  */
 
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { GSDError, GSD_PARSE_ERROR } from "./errors.js";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { homedir } from "node:os";
 
-const __extensionDir = dirname(fileURLToPath(import.meta.url));
+/**
+ * Resolve the GSD extension directory.
+ *
+ * `import.meta.url` resolves to whichever copy of this module is executing.
+ * On Windows (npm global install via MSYS2 / Git Bash) this can resolve to
+ * the npm-global `AppData/Roaming/npm/…` path, which does NOT contain the
+ * prompts/ and templates/ subtrees that initResources() copies to
+ * `~/.gsd/agent/extensions/gsd/`. Detect the mismatch and fall back to
+ * the user-local agent directory.
+ */
+function resolveExtensionDir(): string {
+  const moduleDir = dirname(fileURLToPath(import.meta.url));
+  if (existsSync(join(moduleDir, "prompts"))) return moduleDir;
+
+  // Fallback: user-local agent directory
+  const gsdHome = process.env.GSD_HOME || join(homedir(), ".gsd");
+  const agentGsdDir = join(gsdHome, "agent", "extensions", "gsd");
+  if (existsSync(join(agentGsdDir, "prompts"))) return agentGsdDir;
+
+  // Last resort: return the module dir (warmCache will silently handle the miss)
+  return moduleDir;
+}
+
+const __extensionDir = resolveExtensionDir();
 const promptsDir = join(__extensionDir, "prompts");
 const templatesDir = join(__extensionDir, "templates");
 
@@ -45,7 +69,11 @@ function warmCache(): void {
       }
     }
   } catch {
-    // prompts/ may not exist in test environments — lazy loading still works
+    // prompts/ may not exist in test environments — lazy loading still works.
+    // Emit a diagnostic when running outside tests so wrong-path bugs are visible.
+    if (!process.env.VITEST && !process.env.NODE_TEST) {
+      process.stderr.write(`[gsd:prompt-loader] warmCache: prompts dir not found: ${promptsDir}\n`);
+    }
   }
 
   try {
@@ -57,7 +85,10 @@ function warmCache(): void {
       }
     }
   } catch {
-    // templates/ may not exist in test environments — lazy loading still works
+    // templates/ may not exist in test environments — lazy loading still works.
+    if (!process.env.VITEST && !process.env.NODE_TEST) {
+      process.stderr.write(`[gsd:prompt-loader] warmCache: templates dir not found: ${templatesDir}\n`);
+    }
   }
 }
 

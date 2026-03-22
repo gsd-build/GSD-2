@@ -13,13 +13,31 @@ import { loadFile, saveFile, formatContinue } from "../files.js";
 import { deriveState } from "../state.js";
 import { getAutoDashboardData, isAutoActive, isAutoPaused, markToolEnd, markToolStart } from "../auto.js";
 import { isParallelActive, shutdownParallel } from "../parallel-orchestrator.js";
+import { checkToolCallLoop, resetToolCallLoopGuard } from "./tool-call-loop-guard.js";
 import { saveActivityLog } from "../activity-log.js";
-import { maybeRenderGsdHeader } from "./register-shortcuts.js";
+
+// Skip the welcome screen on the very first session_start — cli.ts already
+// printed it before the TUI launched. Only re-print on /clear (subsequent sessions).
+let isFirstSession = true;
 
 export function registerHooks(pi: ExtensionAPI): void {
   pi.on("session_start", async (_event, ctx) => {
     resetWriteGateState();
-    maybeRenderGsdHeader(ctx);
+    resetToolCallLoopGuard();
+    if (isFirstSession) {
+      isFirstSession = false;
+    } else {
+      try {
+        const gsdBinPath = process.env.GSD_BIN_PATH;
+        if (gsdBinPath) {
+          const { dirname } = await import('node:path');
+          const { printWelcomeScreen } = await import(
+            join(dirname(gsdBinPath), 'welcome-screen.js')
+          ) as { printWelcomeScreen: (opts: { version: string; modelName?: string; provider?: string }) => void };
+          printWelcomeScreen({ version: process.env.GSD_VERSION || '0.0.0' });
+        }
+      } catch { /* non-fatal */ }
+    }
     loadToolApiKeys();
     try {
       const [{ getRemoteConfigStatus }, { getLatestPromptSummary }] = await Promise.all([
@@ -42,6 +60,7 @@ export function registerHooks(pi: ExtensionAPI): void {
   });
 
   pi.on("agent_end", async (event, ctx: ExtensionContext) => {
+    resetToolCallLoopGuard();
     await handleAgentEnd(pi, event, ctx);
   });
 
@@ -97,6 +116,12 @@ export function registerHooks(pi: ExtensionAPI): void {
   });
 
   pi.on("tool_call", async (event) => {
+    // ── Loop guard: block repeated identical tool calls ──
+    const loopCheck = checkToolCallLoop(event.toolName, event.input as Record<string, unknown>);
+    if (loopCheck.block) {
+      return { block: true, reason: loopCheck.reason };
+    }
+
     if (!isToolCallEventType("write", event)) return;
     const result = shouldBlockContextWrite(
       event.toolName,
@@ -111,7 +136,8 @@ export function registerHooks(pi: ExtensionAPI): void {
   pi.on("tool_result", async (event) => {
     if (event.toolName !== "ask_user_questions") return;
     const milestoneId = getDiscussionMilestoneId();
-    if (!milestoneId) return;
+    const queueActive = isQueuePhaseActive();
+    if (!milestoneId && !queueActive) return;
 
     const details = event.details as any;
     if (details?.cancelled || !details?.response) return;
@@ -123,6 +149,8 @@ export function registerHooks(pi: ExtensionAPI): void {
         break;
       }
     }
+
+    if (!milestoneId) return;
 
     const basePath = process.cwd();
     const milestoneDir = resolveMilestonePath(basePath, milestoneId);
@@ -162,6 +190,19 @@ export function registerHooks(pi: ExtensionAPI): void {
 
   pi.on("tool_execution_end", async (event) => {
     markToolEnd(event.toolCallId);
+  });
+
+  pi.on("before_provider_request", async (event) => {
+    if (!isAutoActive()) return;
+    const modelId = event.model?.id;
+    if (!modelId) return;
+    const { getEffectiveServiceTier, supportsServiceTier } = await import("../service-tier.js");
+    const tier = getEffectiveServiceTier();
+    if (!tier || !supportsServiceTier(modelId)) return;
+    const payload = event.payload as Record<string, unknown> | null;
+    if (!payload || typeof payload !== "object") return;
+    payload.service_tier = tier;
+    return payload;
   });
 }
 

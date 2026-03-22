@@ -1,0 +1,7 @@
+{
+  "auth": {
+    "strategy": "credentials",
+    "email": "<provided>",
+    "password": "<provided>"
+  }
+}

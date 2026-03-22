@@ -28,7 +28,7 @@ export interface WorktreeResolverDeps {
     basePath: string,
     milestoneId: string,
     roadmapContent: string,
-  ) => { pushed: boolean };
+  ) => { pushed: boolean; codeFilesChanged: boolean };
   syncWorktreeStateBack: (
     mainBasePath: string,
     worktreePath: string,
@@ -338,11 +338,31 @@ export class WorktreeResolver {
         });
       }
 
-      const roadmapPath = this.deps.resolveMilestoneFile(
+      // Resolve roadmap — try project root first, then worktree path as fallback.
+      // The worktree may hold the only copy when syncWorktreeStateBack fails
+      // silently or .gsd/ is not symlinked. Without the fallback, a missing
+      // roadmap triggers bare teardown which deletes the branch and orphans all
+      // milestone commits (#1573).
+      let roadmapPath = this.deps.resolveMilestoneFile(
         originalBase,
         milestoneId,
         "ROADMAP",
       );
+      if (!roadmapPath && this.s.basePath !== originalBase) {
+        roadmapPath = this.deps.resolveMilestoneFile(
+          this.s.basePath,
+          milestoneId,
+          "ROADMAP",
+        );
+        if (roadmapPath) {
+          debugLog("WorktreeResolver", {
+            action: "mergeAndExit",
+            milestoneId,
+            phase: "roadmap-fallback",
+            note: "resolved from worktree path",
+          });
+        }
+      }
 
       // Fallback: if roadmap isn't found at the project root (e.g. .gsd/ is
       // gitignored or syncWorktreeStateBack failed), try the worktree path
@@ -357,13 +377,26 @@ export class WorktreeResolver {
           milestoneId,
           roadmapContent,
         );
-        ctx.notify(
-          `Milestone ${milestoneId} merged to main.${mergeResult.pushed ? " Pushed to remote." : ""}`,
-          "info",
-        );
+        if (mergeResult.codeFilesChanged) {
+          ctx.notify(
+            `Milestone ${milestoneId} merged to main.${mergeResult.pushed ? " Pushed to remote." : ""}`,
+            "info",
+          );
+        } else {
+          // (#1906) Milestone produced only .gsd/ metadata — no actual code was
+          // merged. This typically means the LLM wrote planning artifacts
+          // (summaries, roadmaps) but never implemented the code. Surface this
+          // clearly so the user knows the milestone is not truly complete.
+          ctx.notify(
+            `WARNING: Milestone ${milestoneId} merged to main but contained NO code changes — only .gsd/ metadata files. ` +
+              `The milestone summary may describe planned work that was never implemented. ` +
+              `Review the milestone output and re-run if code is missing.`,
+            "warning",
+          );
+        }
       } else {
-        // No roadmap anywhere — preserve the branch so work isn't lost (#2003).
-        // Only tear down the worktree directory, keep the branch for manual recovery.
+        // No roadmap at either location — teardown but PRESERVE the branch so
+        // commits are not orphaned. The user can merge manually later (#1573, #2003).
         this.deps.teardownAutoWorktree(originalBase, milestoneId, {
           preserveBranch: true,
         });
@@ -483,10 +516,18 @@ export class WorktreeResolver {
       // Rebuild GitService after merge (branch HEAD changed)
       this.rebuildGitService();
 
-      ctx.notify(
-        `Milestone ${milestoneId} merged (branch mode).${mergeResult.pushed ? " Pushed to remote." : ""}`,
-        "info",
-      );
+      if (mergeResult.codeFilesChanged) {
+        ctx.notify(
+          `Milestone ${milestoneId} merged (branch mode).${mergeResult.pushed ? " Pushed to remote." : ""}`,
+          "info",
+        );
+      } else {
+        ctx.notify(
+          `WARNING: Milestone ${milestoneId} merged (branch mode) but contained NO code changes — only .gsd/ metadata. ` +
+            `Review the milestone output and re-run if code is missing.`,
+          "warning",
+        );
+      }
       debugLog("WorktreeResolver", {
         action: "mergeAndExit",
         milestoneId,

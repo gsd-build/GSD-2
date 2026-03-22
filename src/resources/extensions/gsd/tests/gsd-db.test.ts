@@ -66,7 +66,7 @@ console.log('\n=== gsd-db: fresh DB schema init (memory) ===');
   // Check schema_version table
   const adapter = _getAdapter()!;
   const version = adapter.prepare('SELECT MAX(version) as version FROM schema_version').get();
-  assertEq(version?.['version'], 3, 'schema version should be 3');
+  assertEq(version?.['version'], 4, 'schema version should be 4');
 
   // Check tables exist by querying them
   const dRows = adapter.prepare('SELECT count(*) as cnt FROM decisions').get();
@@ -93,6 +93,7 @@ console.log('\n=== gsd-db: double-init idempotency ===');
     choice: 'option A',
     rationale: 'because',
     revisable: 'yes',
+    made_by: 'agent',
     superseded_by: null,
   });
 
@@ -123,6 +124,7 @@ console.log('\n=== gsd-db: insert + get decision ===');
     choice: 'node:sqlite',
     rationale: 'built-in, zero deps',
     revisable: 'yes, if perf insufficient',
+    made_by: 'agent',
     superseded_by: null,
   });
 
@@ -186,6 +188,7 @@ console.log('\n=== gsd-db: active_decisions view excludes superseded ===');
     choice: 'JSON',
     rationale: 'simple',
     revisable: 'yes',
+    made_by: 'agent',
     superseded_by: 'D002',  // superseded!
   });
 
@@ -197,6 +200,7 @@ console.log('\n=== gsd-db: active_decisions view excludes superseded ===');
     choice: 'SQLite',
     rationale: 'better querying',
     revisable: 'yes',
+    made_by: 'agent',
     superseded_by: null,  // active
   });
 
@@ -208,6 +212,7 @@ console.log('\n=== gsd-db: active_decisions view excludes superseded ===');
     choice: 'WAL',
     rationale: 'concurrent reads',
     revisable: 'no',
+    made_by: 'agent',
     superseded_by: null,  // active
   });
 
@@ -294,6 +299,7 @@ console.log('\n=== gsd-db: transaction rollback on error ===');
     choice: 'test',
     rationale: 'test',
     revisable: 'test',
+    made_by: 'agent',
     superseded_by: null,
   });
 
@@ -309,6 +315,7 @@ console.log('\n=== gsd-db: transaction rollback on error ===');
         choice: 'test',
         rationale: 'test',
         revisable: 'test',
+        made_by: 'agent',
         superseded_by: null,
       });
       throw new Error('intentional failure');

@@ -57,11 +57,21 @@ export type DoctorIssueCode =
   // GSD state structural checks
   | "circular_slice_dependency"
   | "orphaned_slice_directory"
+  | "missing_slice_dir"
   | "duplicate_task_id"
   | "task_file_not_in_plan"
   | "stale_replan_file"
   | "future_timestamp"
+  // Worktree lifecycle checks
+  | "worktree_branch_merged"
+  | "worktree_stale"
+  | "worktree_dirty"
+  | "worktree_unpushed"
+  // Snapshot ref bloat
+  | "snapshot_ref_bloat"
   // Runtime data integrity
+  | "orphaned_project_state"
+  | "metrics_ledger_bloat"
   | "metrics_ledger_corrupt"
   | "large_planning_file"
   // Slow environment checks (opt-in via --build / --test flags)
@@ -74,11 +84,30 @@ export type DoctorIssueCode =
  * they are resolved by the complete-slice/complete-milestone dispatch units.
  * Consumers (e.g. auto-post-unit health tracking) should exclude these from
  * error counts when running at task fixLevel to avoid false escalation.
+ *
+ * Only the slice summary is deferred here because it requires LLM-generated
+ * content.  Roadmap checkbox and UAT stub are mechanical bookkeeping and are
+ * fixed immediately to avoid inconsistent state if the session stops before
+ * complete-slice runs (#1808).
  */
 export const COMPLETION_TRANSITION_CODES = new Set<DoctorIssueCode>([
   "all_tasks_done_missing_slice_summary",
-  "all_tasks_done_missing_slice_uat",
-  "all_tasks_done_roadmap_not_checked",
+]);
+
+/**
+ * Issue codes that represent global or completion-critical state.
+ * These must NOT be auto-fixed when fixLevel is "task" — automated
+ * post-task health checks must never delete external project state directories
+ * or remove completed-unit keys (which causes state reversion / data loss).
+ *
+ * orphaned_completed_units: Removing completed-unit keys causes deriveState to
+ * consider those tasks incomplete, reverting the user to an earlier slice and
+ * effectively discarding all work past that point (#1809). This must only be
+ * fixed by an explicit manual doctor run (fixLevel="all").
+ */
+export const GLOBAL_STATE_CODES = new Set<DoctorIssueCode>([
+  "orphaned_project_state",
+  "orphaned_completed_units",
 ]);
 
 export interface DoctorIssue {

@@ -967,13 +967,19 @@ export class Editor implements Component, Focusable {
 				this.tryTriggerAutocomplete();
 			}
 			// Auto-trigger for "@" file reference (fuzzy search)
+			// Debounced: the bare "@" triggers a fuzzyFind call that does a
+			// synchronous filesystem walk via the native addon. Firing it
+			// immediately on the keystroke blocks the event loop and freezes
+			// the TUI on large repos. Debouncing lets subsequent keystrokes
+			// cancel the pending search so the walk only runs once the user
+			// pauses typing.
 			else if (char === "@") {
 				const currentLine = this.state.lines[this.state.cursorLine] || "";
 				const textBeforeCursor = currentLine.slice(0, this.state.cursorCol);
 				// Only trigger if @ is after whitespace or at start of line
 				const charBeforeAt = textBeforeCursor[textBeforeCursor.length - 2];
 				if (textBeforeCursor.length === 1 || charBeforeAt === " " || charBeforeAt === "\t") {
-					this.tryTriggerAutocomplete();
+					this.debouncedTriggerAutocomplete();
 				}
 			}
 			// Also auto-trigger when typing letters in a slash command context
@@ -2115,6 +2121,15 @@ https://github.com/EsotericSoftware/spine-runtimes/actions/runs/19536643416/job/
 
 	private applyAutocompleteSuggestions(): void {
 		if (!this.autocompleteProvider) return;
+
+		// Deduplicate: skip the (potentially expensive synchronous) lookup
+		// when the prefix hasn't changed since the last call.
+		const currentLine = this.state.lines[this.state.cursorLine] || "";
+		const textBeforeCursor = currentLine.slice(0, this.state.cursorCol);
+		if (this.lastAutocompleteLookupPrefix !== null && this.lastAutocompleteLookupPrefix === textBeforeCursor) {
+			return;
+		}
+		this.lastAutocompleteLookupPrefix = textBeforeCursor;
 
 		const suggestions = this.autocompleteProvider.getSuggestions(
 			this.state.lines,

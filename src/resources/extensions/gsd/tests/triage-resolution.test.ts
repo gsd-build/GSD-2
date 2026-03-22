@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { appendCapture, markCaptureResolved, markCaptureExecuted, loadAllCaptures, loadActionableCaptures } from "../captures.ts";
 // Import only the functions that don't depend on @gsd/pi-coding-agent
 // (triage-ui.ts imports next-action-ui.ts which imports the unavailable package)
-import { executeInject, executeReplan, detectFileOverlap, loadDeferredCaptures, loadReplanCaptures, buildQuickTaskPrompt, executeTriageResolutions } from "../triage-resolution.ts";
+import { executeInject, executeReplan, detectFileOverlap, loadDeferredCaptures, loadReplanCaptures, buildQuickTaskPrompt, executeTriageResolutions, ensureDeferMilestoneDir } from "../triage-resolution.ts";
 
 function makeTempDir(prefix: string): string {
   const dir = join(
@@ -410,6 +410,145 @@ test("resolution: executeTriageResolutions returns empty result when no actionab
     assert.strictEqual(result.replanned, 0);
     assert.strictEqual(result.quickTasks.length, 0);
     assert.strictEqual(result.actions.length, 0);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+// ─── ensureDeferMilestoneDir ─────────────────────────────────────────────────
+
+test("resolution: ensureDeferMilestoneDir creates milestone directory with CONTEXT-DRAFT.md", () => {
+  const tmp = makeTempDir("res-defer-create");
+  try {
+    mkdirSync(join(tmp, ".gsd", "milestones"), { recursive: true });
+
+    const captures = [
+      { id: "CAP-aaa111", text: "add performance monitoring", timestamp: "2026-03-15T20:00:00Z", status: "resolved" as const, classification: "defer" as const },
+      { id: "CAP-bbb222", text: "optimize database queries", timestamp: "2026-03-15T20:01:00Z", status: "resolved" as const, classification: "defer" as const },
+    ];
+
+    const created = ensureDeferMilestoneDir(tmp, "M005", captures);
+    assert.strictEqual(created, true, "should return true");
+
+    const msDir = join(tmp, ".gsd", "milestones", "M005");
+    assert.ok(existsSync(msDir), "milestone directory should exist");
+
+    const draftPath = join(msDir, "M005-CONTEXT-DRAFT.md");
+    assert.ok(existsSync(draftPath), "CONTEXT-DRAFT.md should exist");
+
+    const content = readFileSync(draftPath, "utf-8");
+    assert.ok(content.includes("# M005:"), "should have milestone heading");
+    assert.ok(content.includes("CAP-aaa111"), "should list first capture");
+    assert.ok(content.includes("CAP-bbb222"), "should list second capture");
+    assert.ok(content.includes("add performance monitoring"), "should include capture text");
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("resolution: ensureDeferMilestoneDir returns true without overwriting existing directory", () => {
+  const tmp = makeTempDir("res-defer-exists");
+  try {
+    const msDir = join(tmp, ".gsd", "milestones", "M003");
+    mkdirSync(msDir, { recursive: true });
+    writeFileSync(join(msDir, "M003-CONTEXT.md"), "# M003: Existing\n", "utf-8");
+
+    const created = ensureDeferMilestoneDir(tmp, "M003", []);
+    assert.strictEqual(created, true, "should return true for existing dir");
+    // Original file should still be there
+    assert.ok(existsSync(join(msDir, "M003-CONTEXT.md")), "existing files should be preserved");
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("resolution: ensureDeferMilestoneDir rejects invalid milestone IDs", () => {
+  const tmp = makeTempDir("res-defer-invalid");
+  try {
+    mkdirSync(join(tmp, ".gsd", "milestones"), { recursive: true });
+    assert.strictEqual(ensureDeferMilestoneDir(tmp, "S03", []), false, "should reject slice IDs");
+    assert.strictEqual(ensureDeferMilestoneDir(tmp, "not-a-milestone", []), false, "should reject arbitrary strings");
+    assert.strictEqual(ensureDeferMilestoneDir(tmp, "", []), false, "should reject empty string");
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("resolution: ensureDeferMilestoneDir handles unique milestone IDs (M005-abc123)", () => {
+  const tmp = makeTempDir("res-defer-unique");
+  try {
+    mkdirSync(join(tmp, ".gsd", "milestones"), { recursive: true });
+
+    const created = ensureDeferMilestoneDir(tmp, "M005-abc123", [
+      { id: "CAP-ccc333", text: "future work", timestamp: "2026-03-15T20:00:00Z", status: "resolved" as const, classification: "defer" as const },
+    ]);
+    assert.strictEqual(created, true);
+
+    const msDir = join(tmp, ".gsd", "milestones", "M005-abc123");
+    assert.ok(existsSync(msDir), "milestone directory should exist");
+    assert.ok(
+      existsSync(join(msDir, "M005-abc123-CONTEXT-DRAFT.md")),
+      "CONTEXT-DRAFT.md should use full milestone ID",
+    );
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+// ─── executeTriageResolutions + defer ────────────────────────────────────────
+
+test("resolution: executeTriageResolutions creates milestone dir for deferred captures", () => {
+  const tmp = makeTempDir("res-exec-defer");
+  try {
+    mkdirSync(join(tmp, ".gsd", "milestones"), { recursive: true });
+
+    const id1 = appendCapture(tmp, "add caching layer");
+    const id2 = appendCapture(tmp, "optimize queries");
+    markCaptureResolved(tmp, id1, "defer", "deferred to M005", "future perf work");
+    markCaptureResolved(tmp, id2, "defer", "deferred to M005", "future perf work");
+
+    const result = executeTriageResolutions(tmp, "M001", "S01");
+
+    assert.strictEqual(result.deferredMilestones, 1, "should create 1 milestone");
+    assert.ok(
+      existsSync(join(tmp, ".gsd", "milestones", "M005")),
+      "M005 directory should exist",
+    );
+    assert.ok(
+      existsSync(join(tmp, ".gsd", "milestones", "M005", "M005-CONTEXT-DRAFT.md")),
+      "CONTEXT-DRAFT.md should exist",
+    );
+
+    // Deferred captures should be marked as executed
+    const all = loadAllCaptures(tmp);
+    assert.strictEqual(all[0].executed, true, "first defer should be marked executed");
+    assert.strictEqual(all[1].executed, true, "second defer should be marked executed");
+
+    // Verify the draft content includes both captures
+    const draft = readFileSync(join(tmp, ".gsd", "milestones", "M005", "M005-CONTEXT-DRAFT.md"), "utf-8");
+    assert.ok(draft.includes("add caching layer"), "should include first capture text");
+    assert.ok(draft.includes("optimize queries"), "should include second capture text");
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("resolution: executeTriageResolutions skips defer when milestone already exists", () => {
+  const tmp = makeTempDir("res-exec-defer-exists");
+  try {
+    // Pre-create M005
+    const msDir = join(tmp, ".gsd", "milestones", "M005");
+    mkdirSync(msDir, { recursive: true });
+    writeFileSync(join(msDir, "M005-CONTEXT.md"), "# M005: Already Planned\n", "utf-8");
+
+    const id = appendCapture(tmp, "defer this");
+    markCaptureResolved(tmp, id, "defer", "deferred to M005", "later");
+
+    const result = executeTriageResolutions(tmp, "M001", "S01");
+
+    assert.strictEqual(result.deferredMilestones, 0, "should not count existing milestone");
+    // Original file should be preserved
+    assert.ok(existsSync(join(msDir, "M005-CONTEXT.md")), "existing files should be preserved");
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

@@ -18,6 +18,9 @@ export async function handleAgentEvent(host: InteractiveModeStateHost & {
 	showStatus: (message: string) => void;
 	showError: (message: string) => void;
 	updatePendingMessagesDisplay: () => void;
+	updateTerminalTitle: () => void;
+	updateEditorBorderColor: () => void;
+	pendingMessagesContainer: { clear: () => void };
 }, event: InteractiveModeEvent): Promise<void> {
 	if (!host.isInitialized) {
 		await host.init();
@@ -26,6 +29,35 @@ export async function handleAgentEvent(host: InteractiveModeStateHost & {
 	host.footer.invalidate();
 
 	switch (event.type) {
+		case "session_state_changed":
+			switch (event.reason) {
+				case "new_session":
+				case "switch_session":
+				case "fork":
+					host.streamingComponent = undefined;
+					host.streamingMessage = undefined;
+					host.pendingTools.clear();
+					host.pendingMessagesContainer.clear();
+					host.compactionQueuedMessages = [];
+					host.rebuildChatFromMessages();
+					host.updatePendingMessagesDisplay();
+					host.updateTerminalTitle();
+					host.updateEditorBorderColor();
+					host.ui.requestRender();
+					return;
+				case "set_session_name":
+					host.updateTerminalTitle();
+					host.ui.requestRender();
+					return;
+				case "set_model":
+				case "set_thinking_level":
+					host.updateEditorBorderColor();
+					host.ui.requestRender();
+					return;
+				default:
+					host.ui.requestRender();
+					return;
+			}
 		case "agent_start":
 			if (host.retryEscapeHandler) {
 				host.defaultEditor.onEscape = host.retryEscapeHandler;

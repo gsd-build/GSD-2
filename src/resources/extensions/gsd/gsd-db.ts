@@ -168,7 +168,7 @@ function openRawDb(path: string): unknown {
 
 // ─── Schema ────────────────────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 function initSchema(db: DbAdapter, fileBacked: boolean): void {
   // WAL mode for file-backed databases (must be outside transaction)
@@ -195,6 +195,7 @@ function initSchema(db: DbAdapter, fileBacked: boolean): void {
         choice TEXT NOT NULL DEFAULT '',
         rationale TEXT NOT NULL DEFAULT '',
         revisable TEXT NOT NULL DEFAULT '',
+        made_by TEXT NOT NULL DEFAULT 'agent',
         superseded_by TEXT DEFAULT NULL
       )
     `);
@@ -360,6 +361,22 @@ function migrateSchema(db: DbAdapter): void {
       ).run({ ":version": 3, ":applied_at": new Date().toISOString() });
     }
 
+    // v3 → v4: add made_by column to decisions table
+    if (currentVersion < 4) {
+      // Add made_by column — default 'agent' for existing rows (pre-attribution decisions)
+      db.exec(`ALTER TABLE decisions ADD COLUMN made_by TEXT NOT NULL DEFAULT 'agent'`);
+
+      // Recreate views to pick up new columns (SQLite expands SELECT * at view creation time)
+      db.exec("DROP VIEW IF EXISTS active_decisions");
+      db.exec(
+        "CREATE VIEW active_decisions AS SELECT * FROM decisions WHERE superseded_by IS NULL",
+      );
+
+      db.prepare(
+        "INSERT INTO schema_version (version, applied_at) VALUES (:version, :applied_at)",
+      ).run({ ":version": 4, ":applied_at": new Date().toISOString() });
+    }
+
     db.exec("COMMIT");
   } catch (err) {
     db.exec("ROLLBACK");
@@ -471,8 +488,8 @@ export function insertDecision(d: Omit<Decision, "seq">): void {
     throw new GSDError(GSD_STALE_STATE, "gsd-db: No database open");
   currentDb
     .prepare(
-      `INSERT INTO decisions (id, when_context, scope, decision, choice, rationale, revisable, superseded_by)
-     VALUES (:id, :when_context, :scope, :decision, :choice, :rationale, :revisable, :superseded_by)`,
+      `INSERT INTO decisions (id, when_context, scope, decision, choice, rationale, revisable, made_by, superseded_by)
+     VALUES (:id, :when_context, :scope, :decision, :choice, :rationale, :revisable, :made_by, :superseded_by)`,
     )
     .run({
       ":id": d.id,
@@ -482,6 +499,7 @@ export function insertDecision(d: Omit<Decision, "seq">): void {
       ":choice": d.choice,
       ":rationale": d.rationale,
       ":revisable": d.revisable,
+      ":made_by": d.made_by ?? "agent",
       ":superseded_by": d.superseded_by,
     });
 }
@@ -502,6 +520,7 @@ export function getDecisionById(id: string): Decision | null {
     choice: row["choice"] as string,
     rationale: row["rationale"] as string,
     revisable: row["revisable"] as string,
+    made_by: (row["made_by"] as string as import("./types.js").DecisionMadeBy) ?? "agent",
     superseded_by: (row["superseded_by"] as string) ?? null,
   };
 }
@@ -521,6 +540,7 @@ export function getActiveDecisions(): Decision[] {
     choice: row["choice"] as string,
     rationale: row["rationale"] as string,
     revisable: row["revisable"] as string,
+    made_by: (row["made_by"] as string as import("./types.js").DecisionMadeBy) ?? "agent",
     superseded_by: null,
   }));
 }
@@ -644,8 +664,8 @@ export function upsertDecision(d: Omit<Decision, "seq">): void {
     throw new GSDError(GSD_STALE_STATE, "gsd-db: No database open");
   currentDb
     .prepare(
-      `INSERT OR REPLACE INTO decisions (id, when_context, scope, decision, choice, rationale, revisable, superseded_by)
-     VALUES (:id, :when_context, :scope, :decision, :choice, :rationale, :revisable, :superseded_by)`,
+      `INSERT OR REPLACE INTO decisions (id, when_context, scope, decision, choice, rationale, revisable, made_by, superseded_by)
+     VALUES (:id, :when_context, :scope, :decision, :choice, :rationale, :revisable, :made_by, :superseded_by)`,
     )
     .run({
       ":id": d.id,
@@ -655,6 +675,7 @@ export function upsertDecision(d: Omit<Decision, "seq">): void {
       ":choice": d.choice,
       ":rationale": d.rationale,
       ":revisable": d.revisable,
+      ":made_by": d.made_by ?? "agent",
       ":superseded_by": d.superseded_by ?? null,
     });
 }
@@ -783,9 +804,15 @@ export function reconcileWorktreeDb(
   try {
     adapter.exec(`ATTACH DATABASE '${worktreeDbPath}' AS wt`);
     try {
+      // Check if attached wt database has the made_by column (legacy v3 worktrees won't)
+      const wtInfo = adapter.prepare("PRAGMA wt.table_info('decisions')").all();
+      const hasMadeBy = wtInfo.some((col) => col["name"] === "made_by");
+
       const decConf = adapter
         .prepare(
-          `SELECT m.id FROM decisions m INNER JOIN wt.decisions w ON m.id = w.id WHERE m.decision != w.decision OR m.choice != w.choice OR m.rationale != w.rationale OR m.superseded_by IS NOT w.superseded_by`,
+          `SELECT m.id FROM decisions m INNER JOIN wt.decisions w ON m.id = w.id WHERE m.decision != w.decision OR m.choice != w.choice OR m.rationale != w.rationale OR ${
+            hasMadeBy ? "m.made_by != w.made_by" : "'agent' != 'agent'"
+          } OR m.superseded_by IS NOT w.superseded_by`,
         )
         .all();
       for (const row of decConf)
@@ -808,10 +835,12 @@ export function reconcileWorktreeDb(
           .prepare(
             `
           INSERT OR REPLACE INTO decisions (
-            id, when_context, scope, decision, choice, rationale, revisable, superseded_by
+            id, when_context, scope, decision, choice, rationale, revisable, made_by, superseded_by
           )
           SELECT
-            id, when_context, scope, decision, choice, rationale, revisable, superseded_by
+            id, when_context, scope, decision, choice, rationale, revisable, ${
+              hasMadeBy ? "made_by" : "'agent'"
+            }, superseded_by
           FROM wt.decisions
         `,
           )

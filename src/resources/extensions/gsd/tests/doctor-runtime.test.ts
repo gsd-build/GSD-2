@@ -346,6 +346,46 @@ node_modules/
       console.log("\n=== stranded_lock_directory (skipped on Windows) ===");
     }
 
+    // ─── Test: orphaned_completed_units NOT auto-fixed at fixLevel="task" (#1809) ──
+    // Regression: task-level doctor was removing completed-unit keys whose artifacts
+    // were temporarily missing, causing deriveState to revert the user to S01 and
+    // effectively discarding hours of work.
+    console.log("\n=== orphaned_completed_units protected at fixLevel=task (#1809) ===");
+    {
+      const dir = createMinimalProject();
+      cleanups.push(dir);
+
+      // Write completed-units.json with keys that reference non-existent artifacts.
+      // At fixLevel="task" (auto-mode post-unit), these must NOT be removed.
+      const completedKeys = [
+        "execute-task/M001/S01/T99",  // artifact missing
+        "complete-slice/M001/S99",     // artifact missing
+      ];
+      writeFileSync(join(dir, ".gsd", "completed-units.json"), JSON.stringify(completedKeys));
+
+      // fixLevel="task" — the level used by auto-post-unit after every task
+      const taskLevelFix = await runGSDDoctor(dir, { fix: true, fixLevel: "task" });
+      const taskLevelOrphan = taskLevelFix.issues.filter(i => i.code === "orphaned_completed_units");
+      assertTrue(taskLevelOrphan.length > 0, "orphaned_completed_units detected at task fixLevel");
+
+      // Verify keys were NOT removed — the fix must be suppressed at task level
+      const afterTaskFix = JSON.parse(readFileSync(join(dir, ".gsd", "completed-units.json"), "utf-8"));
+      assertEq(afterTaskFix.length, 2, "completed-unit keys preserved at fixLevel=task (data loss prevention)");
+      assertTrue(
+        !taskLevelFix.fixesApplied.some(f => f.includes("orphaned")),
+        "no orphaned-units fix applied at fixLevel=task",
+      );
+
+      // fixLevel="all" (explicit manual doctor) — fix SHOULD apply
+      const allLevelFix = await runGSDDoctor(dir, { fix: true, fixLevel: "all" });
+      assertTrue(
+        allLevelFix.fixesApplied.some(f => f.includes("orphaned")),
+        "orphaned-units fix applied at fixLevel=all (manual doctor)",
+      );
+      const afterAllFix = JSON.parse(readFileSync(join(dir, ".gsd", "completed-units.json"), "utf-8"));
+      assertEq(afterAllFix.length, 0, "orphaned keys removed at fixLevel=all");
+    }
+
   } finally {
     for (const dir of cleanups) {
       try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }

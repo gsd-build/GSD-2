@@ -89,39 +89,39 @@ test("publishedDateToAge returns correct relative strings for various offsets", 
 
   // Seconds ago → "just now"
   const secondsAgo = new Date(now - 30 * 1000).toISOString();
-  assert.equal(publishedDateToAge(secondsAgo), "just now");
+  assert.equal(publishedDateToAge(secondsAgo), "just now", "30 seconds ago → just now");
 
   // Minutes ago
   const minutesAgo = new Date(now - 5 * 60 * 1000).toISOString();
-  assert.equal(publishedDateToAge(minutesAgo), "5 minutes ago");
+  assert.equal(publishedDateToAge(minutesAgo), "5 minutes ago", "5 minutes ago → plural");
 
   // 1 minute ago (singular)
   const oneMinAgo = new Date(now - 60 * 1000).toISOString();
-  assert.equal(publishedDateToAge(oneMinAgo), "1 minute ago");
+  assert.equal(publishedDateToAge(oneMinAgo), "1 minute ago", "1 minute ago → singular");
 
   // Hours ago
   const hoursAgo = new Date(now - 7 * 60 * 60 * 1000).toISOString();
-  assert.equal(publishedDateToAge(hoursAgo), "7 hours ago");
+  assert.equal(publishedDateToAge(hoursAgo), "7 hours ago", "7 hours ago → plural");
 
   // 1 hour ago (singular)
   const oneHourAgo = new Date(now - 60 * 60 * 1000).toISOString();
-  assert.equal(publishedDateToAge(oneHourAgo), "1 hour ago");
+  assert.equal(publishedDateToAge(oneHourAgo), "1 hour ago", "1 hour ago → singular");
 
   // Days ago
   const daysAgo = new Date(now - 10 * 24 * 60 * 60 * 1000).toISOString();
-  assert.equal(publishedDateToAge(daysAgo), "10 days ago");
+  assert.equal(publishedDateToAge(daysAgo), "10 days ago", "10 days ago → plural");
 
   // 1 day ago (singular)
   const oneDayAgo = new Date(now - 24 * 60 * 60 * 1000).toISOString();
-  assert.equal(publishedDateToAge(oneDayAgo), "1 day ago");
+  assert.equal(publishedDateToAge(oneDayAgo), "1 day ago", "1 day ago → singular");
 
   // Months ago (35 days → 1 month)
   const monthsAgo = new Date(now - 65 * 24 * 60 * 60 * 1000).toISOString();
-  assert.equal(publishedDateToAge(monthsAgo), "2 months ago");
+  assert.equal(publishedDateToAge(monthsAgo), "2 months ago", "65 days ago → 2 months ago");
 
   // Years ago
   const yearsAgo = new Date(now - 400 * 24 * 60 * 60 * 1000).toISOString();
-  assert.equal(publishedDateToAge(yearsAgo), "1 year ago");
+  assert.equal(publishedDateToAge(yearsAgo), "1 year ago", "400 days ago → 1 year ago");
 });
 
 test("publishedDateToAge returns undefined for invalid date string", () => {

@@ -10,9 +10,10 @@
  */
 
 import type { ExtensionCommandContext } from "@gsd/pi-coding-agent";
-import { showNextAction } from "../shared/mod.js";
+import { showNextAction } from "../shared/tui.js";
 import type { CaptureEntry, Classification, TriageResult } from "./captures.js";
 import { markCaptureResolved } from "./captures.js";
+import { ensureDeferMilestoneDir } from "./triage-resolution.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -96,6 +97,12 @@ export async function showTriageConfirmation(
         result.rationale,
       );
 
+      // Create the milestone directory when deferring to a milestone that
+      // doesn't exist yet, so deriveState() discovers it.
+      if (result.classification === "defer" && result.targetSlice) {
+        ensureDeferMilestoneDir(basePath, result.targetSlice, [capture]);
+      }
+
       confirmed.push({
         captureId: result.captureId,
         classification: result.classification,
@@ -160,6 +167,11 @@ export async function showTriageConfirmation(
       resolution,
       userOverride ? `User override: ${result.rationale}` : result.rationale,
     );
+
+    // Create the milestone directory when user confirms/overrides to defer
+    if (finalClassification === "defer" && result.targetSlice) {
+      ensureDeferMilestoneDir(basePath, result.targetSlice, [capture]);
+    }
 
     confirmed.push({
       captureId: result.captureId,

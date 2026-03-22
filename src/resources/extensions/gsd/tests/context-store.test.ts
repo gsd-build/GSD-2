@@ -51,17 +51,17 @@ console.log('\n=== context-store: query all active decisions ===');
   insertDecision({
     id: 'D001', when_context: 'M001/S01', scope: 'architecture',
     decision: 'use SQLite', choice: 'node:sqlite', rationale: 'built-in',
-    revisable: 'yes', superseded_by: 'D003', // superseded!
+    revisable: 'yes', made_by: 'agent', superseded_by: 'D003', // superseded!
   });
   insertDecision({
     id: 'D002', when_context: 'M001/S01', scope: 'architecture',
     decision: 'use WAL mode', choice: 'WAL', rationale: 'concurrent reads',
-    revisable: 'no', superseded_by: null,
+    revisable: 'no', made_by: 'agent', superseded_by: null,
   });
   insertDecision({
     id: 'D003', when_context: 'M002/S01', scope: 'performance',
     decision: 'use better-sqlite3', choice: 'better-sqlite3', rationale: 'faster',
-    revisable: 'yes', superseded_by: null,
+    revisable: 'yes', made_by: 'agent', superseded_by: null,
   });
 
   const all = queryDecisions();
@@ -81,11 +81,13 @@ console.log('\n=== context-store: query decisions by milestone ===');
   insertDecision({
     id: 'D001', when_context: 'M001/S01', scope: 'architecture',
     decision: 'decision A', choice: 'A', rationale: 'r', revisable: 'yes',
+    made_by: 'agent',
     superseded_by: null,
   });
   insertDecision({
     id: 'D002', when_context: 'M002/S02', scope: 'architecture',
     decision: 'decision B', choice: 'B', rationale: 'r', revisable: 'yes',
+    made_by: 'agent',
     superseded_by: null,
   });
 
@@ -107,11 +109,13 @@ console.log('\n=== context-store: query decisions by scope ===');
   insertDecision({
     id: 'D001', when_context: 'M001/S01', scope: 'architecture',
     decision: 'decision A', choice: 'A', rationale: 'r', revisable: 'yes',
+    made_by: 'agent',
     superseded_by: null,
   });
   insertDecision({
     id: 'D002', when_context: 'M001/S01', scope: 'performance',
     decision: 'decision B', choice: 'B', rationale: 'r', revisable: 'yes',
+    made_by: 'agent',
     superseded_by: null,
   });
 
@@ -248,12 +252,12 @@ console.log('\n=== context-store: formatDecisionsForPrompt ===');
     {
       seq: 1, id: 'D001', when_context: 'M001/S01', scope: 'architecture',
       decision: 'use SQLite', choice: 'node:sqlite', rationale: 'built-in',
-      revisable: 'yes', superseded_by: null,
+      revisable: 'yes', made_by: 'agent', superseded_by: null,
     },
     {
       seq: 2, id: 'D002', when_context: 'M001/S02', scope: 'performance',
       decision: 'use WAL', choice: 'WAL', rationale: 'concurrent',
-      revisable: 'no', superseded_by: null,
+      revisable: 'no', made_by: 'human', superseded_by: null,
     },
   ]);
 
@@ -323,6 +327,7 @@ console.log('\n=== context-store: sub-5ms query timing ===');
       choice: `choice ${i}`,
       rationale: `rationale ${i}`,
       revisable: i % 3 === 0 ? 'no' : 'yes',
+      made_by: 'agent',
       superseded_by: null,
     });
   }

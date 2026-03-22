@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, symlinkSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { execSync } from "node:child_process";
@@ -7,16 +7,19 @@ import {
   inferCommitType,
   buildTaskCommitMessage,
   GitServiceImpl,
+  MergeConflictError,
   RUNTIME_EXCLUSION_PATHS,
   VALID_BRANCH_NAME,
   runGit,
   readIntegrationBranch,
+  resolveMilestoneIntegrationBranch,
   writeIntegrationBranch,
   type GitPreferences,
   type CommitOptions,
   type PreMergeCheckResult,
   type TaskCommitContext,
 } from "../git-service.ts";
+import { nativeAddAllWithExclusions } from "../native-git-bridge.ts";
 import { createTestContext } from './test-helpers.ts';
 
 const { assertEq, assertTrue, report } = createTestContext();
@@ -991,6 +994,65 @@ async function main(): Promise<void> {
     rmSync(repo, { recursive: true, force: true });
   }
 
+  // ─── resolveMilestoneIntegrationBranch: recorded branch wins when it exists ───
+
+  console.log("\n=== Integration branch: resolver prefers recorded branch ===");
+
+  {
+    const repo = initBranchTestRepo();
+    run("git checkout -b feature/live", repo);
+    run("git checkout main", repo);
+    writeIntegrationBranch(repo, "M001", "feature/live");
+
+    const resolved = resolveMilestoneIntegrationBranch(repo, "M001");
+    assertEq(resolved.status, "recorded", "resolver reports recorded branch when metadata branch exists");
+    assertEq(resolved.recordedBranch, "feature/live", "resolver includes recorded branch");
+    assertEq(resolved.effectiveBranch, "feature/live", "resolver uses recorded branch as effective branch");
+
+    rmSync(repo, { recursive: true, force: true });
+  }
+
+  // ─── resolveMilestoneIntegrationBranch: falls back to detected default ────────
+
+  console.log("\n=== Integration branch: resolver falls back to detected default ===");
+
+  {
+    const repo = initBranchTestRepo();
+    writeIntegrationBranch(repo, "M001", "deleted-branch");
+
+    const resolved = resolveMilestoneIntegrationBranch(repo, "M001");
+    assertEq(resolved.status, "fallback", "resolver reports fallback when recorded branch is stale");
+    assertEq(resolved.recordedBranch, "deleted-branch", "resolver preserves stale recorded branch for diagnostics");
+    assertEq(resolved.effectiveBranch, "main", "resolver falls back to detected default branch");
+    assertTrue(
+      resolved.reason.includes("deleted-branch") && resolved.reason.includes("main"),
+      "resolver reason mentions stale recorded branch and fallback branch",
+    );
+
+    rmSync(repo, { recursive: true, force: true });
+  }
+
+  // ─── resolveMilestoneIntegrationBranch: configured main_branch is fallback ─────
+
+  console.log("\n=== Integration branch: resolver uses configured fallback branch ===");
+
+  {
+    const repo = initBranchTestRepo();
+    run("git checkout -b trunk", repo);
+    run("git checkout main", repo);
+    writeIntegrationBranch(repo, "M001", "deleted-branch");
+
+    const resolved = resolveMilestoneIntegrationBranch(repo, "M001", { main_branch: "trunk" });
+    assertEq(resolved.status, "fallback", "resolver reports fallback when using configured main_branch");
+    assertEq(resolved.effectiveBranch, "trunk", "resolver prefers configured main_branch as fallback");
+    assertTrue(
+      resolved.reason.includes("deleted-branch") && resolved.reason.includes("trunk"),
+      "configured fallback reason mentions stale branch and configured branch",
+    );
+
+    rmSync(repo, { recursive: true, force: true });
+  }
+
   // ─── Per-milestone isolation: different milestones, different targets ──
 
   console.log("\n=== Integration branch: per-milestone isolation ===");
@@ -1168,6 +1230,183 @@ async function main(): Promise<void> {
     // Idempotent — calling again doesn't add duplicates
     const modified2 = ensureGitignore(repo);
     assertTrue(!modified2, "ensureGitignore: second call is idempotent");
+
+    rmSync(repo, { recursive: true, force: true });
+  }
+
+  // ─── nativeAddAllWithExclusions: symlinked .gsd fallback ───────────────
+
+  console.log("\n=== nativeAddAllWithExclusions: symlinked .gsd fallback ===");
+
+  {
+    // When .gsd is a symlink, git rejects `:!.gsd/...` pathspecs with
+    // "fatal: pathspec '...' is beyond a symbolic link". The fix falls
+    // back to plain `git add -A`, which respects .gitignore.
+    const repo = initTempRepo();
+
+    // Create the real .gsd directory outside the repo, then symlink it
+    const externalGsd = mkdtempSync(join(tmpdir(), "gsd-external-"));
+    mkdirSync(join(externalGsd, "activity"), { recursive: true });
+    writeFileSync(join(externalGsd, "activity", "log.jsonl"), "log data");
+    writeFileSync(join(externalGsd, "STATE.md"), "# State");
+
+    // Symlink .gsd -> external directory
+    symlinkSync(externalGsd, join(repo, ".gsd"));
+
+    // Add .gitignore so git add -A fallback skips .gsd/
+    writeFileSync(join(repo, ".gitignore"), ".gsd\n");
+
+    // Create a real file that should be staged
+    createFile(repo, "src/app.ts", "export const x = 1;");
+
+    // nativeAddAllWithExclusions should NOT throw despite .gsd being a symlink
+    let threw = false;
+    try {
+      nativeAddAllWithExclusions(repo, RUNTIME_EXCLUSION_PATHS);
+    } catch (e) {
+      threw = true;
+      console.error("  unexpected error:", e);
+    }
+    assertTrue(!threw, "nativeAddAllWithExclusions does not throw with symlinked .gsd");
+
+    // Verify the real file was staged
+    const staged = run("git diff --cached --name-only", repo);
+    assertTrue(staged.includes("src/app.ts"), "real file staged despite symlinked .gsd");
+    assertTrue(!staged.includes(".gsd"), ".gsd content not staged");
+
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(externalGsd, { recursive: true, force: true });
+  }
+
+  // ─── nativeAddAllWithExclusions: non-symlinked .gsd still works ───────
+
+  console.log("\n=== nativeAddAllWithExclusions: non-symlinked .gsd still works ===");
+
+  {
+    // Verify the normal (non-symlink) case still works with pathspec exclusions
+    const repo = initTempRepo();
+
+    createFile(repo, ".gsd/activity/log.jsonl", "log data");
+    createFile(repo, ".gsd/STATE.md", "# State");
+    createFile(repo, "src/code.ts", "export const y = 2;");
+
+    let threw = false;
+    try {
+      nativeAddAllWithExclusions(repo, RUNTIME_EXCLUSION_PATHS);
+    } catch {
+      threw = true;
+    }
+    assertTrue(!threw, "nativeAddAllWithExclusions works with normal .gsd directory");
+
+    const staged = run("git diff --cached --name-only", repo);
+    assertTrue(staged.includes("src/code.ts"), "real file staged with normal .gsd");
+
+    rmSync(repo, { recursive: true, force: true });
+  }
+
+  // ─── MergeConflictError: constructor fields ───────────────────────────────
+
+  console.log("\n=== MergeConflictError: constructor fields ===");
+  {
+    const err = new MergeConflictError(
+      ["src/foo.ts", "src/bar.ts"],
+      "squash",
+      "gsd/M001/S01",
+      "main",
+    );
+    assertEq(err.conflictedFiles, ["src/foo.ts", "src/bar.ts"], "MergeConflictError.conflictedFiles populated");
+    assertEq(err.strategy, "squash", "MergeConflictError.strategy set");
+    assertEq(err.branch, "gsd/M001/S01", "MergeConflictError.branch set");
+    assertEq(err.mainBranch, "main", "MergeConflictError.mainBranch set");
+    assertEq(err.name, "MergeConflictError", "MergeConflictError.name is MergeConflictError");
+    assertTrue(err.message.includes("src/foo.ts"), "MergeConflictError message lists conflicted files");
+    assertTrue(err.message.toLowerCase().includes("squash"), "MergeConflictError message mentions strategy");
+    assertTrue(err instanceof MergeConflictError, "MergeConflictError is an instanceof MergeConflictError");
+    assertTrue(err instanceof Error, "MergeConflictError is an Error instance");
+  }
+
+  // ─── Integration branch: rejects gsd/quick/* branches ────────────────────
+
+  console.log("\n=== Integration branch: rejects gsd/quick/* branches ===");
+  {
+    const repo = initBranchTestRepo();
+
+    writeIntegrationBranch(repo, "M001", "gsd/quick/1234-some-task");
+    assertEq(readIntegrationBranch(repo, "M001"), null, "gsd/quick/* branches are not recorded as integration branch");
+
+    rmSync(repo, { recursive: true, force: true });
+  }
+
+  // ─── Integration branch: resolver returns missing when no metadata ────────
+
+  console.log("\n=== Integration branch: resolver returns missing when no metadata ===");
+  {
+    const repo = initBranchTestRepo();
+
+    // No writeIntegrationBranch call — no metadata file exists
+    const resolved = resolveMilestoneIntegrationBranch(repo, "M999");
+    assertEq(resolved.status, "missing", "resolver reports missing when no metadata file");
+    assertEq(resolved.recordedBranch, null, "resolver recordedBranch is null when no metadata");
+    assertEq(resolved.effectiveBranch, null, "resolver effectiveBranch is null when no metadata");
+    assertTrue(resolved.reason.includes("M999"), "resolver reason mentions the milestone ID");
+
+    rmSync(repo, { recursive: true, force: true });
+  }
+
+  // ─── Integration branch: resolver missing when both recorded and configured branches gone ───
+
+  console.log("\n=== Integration branch: resolver missing when both recorded and configured branches gone ===");
+  {
+    const repo = initBranchTestRepo();
+
+    // Record a branch that doesn't exist
+    writeIntegrationBranch(repo, "M001", "deleted-feature");
+    // configured main_branch also doesn't exist
+    const resolved = resolveMilestoneIntegrationBranch(repo, "M001", { main_branch: "nonexistent-branch" });
+    assertEq(resolved.status, "missing", "resolver reports missing when recorded branch and configured main_branch both absent");
+    assertEq(resolved.recordedBranch, "deleted-feature", "resolver preserves stale recorded branch");
+    assertEq(resolved.effectiveBranch, null, "resolver effectiveBranch is null when no safe fallback");
+    assertTrue(
+      resolved.reason.includes("deleted-feature") && resolved.reason.includes("nonexistent-branch"),
+      "reason mentions both stale branch and unavailable configured branch",
+    );
+
+    rmSync(repo, { recursive: true, force: true });
+  }
+
+  // ─── buildTaskCommitMessage: issueNumber appends Resolves trailer ─────────
+
+  console.log("\n=== buildTaskCommitMessage: issueNumber appends Resolves trailer ===");
+  {
+    const msg = buildTaskCommitMessage({
+      taskId: "S01/T03",
+      taskTitle: "fix login redirect",
+      issueNumber: 42,
+    });
+    assertTrue(msg.includes("Resolves #42"), "buildTaskCommitMessage includes Resolves #N trailer when issueNumber is set");
+    assertTrue(msg.startsWith("fix(S01/T03):"), "buildTaskCommitMessage infers fix type");
+  }
+
+  {
+    // No issueNumber — no Resolves trailer
+    const msg = buildTaskCommitMessage({
+      taskId: "S01/T04",
+      taskTitle: "add dashboard widget",
+    });
+    assertTrue(!msg.includes("Resolves"), "buildTaskCommitMessage omits Resolves trailer when issueNumber is absent");
+  }
+
+  // ─── runPreMergeCheck: skips when no package.json ────────────────────────
+
+  console.log("\n=== runPreMergeCheck: skips when no package.json ===");
+  {
+    const repo = initBranchTestRepo();
+    // No package.json created — auto-detect should skip gracefully
+    const svc = new GitServiceImpl(repo, { pre_merge_check: true });
+    const result: PreMergeCheckResult = svc.runPreMergeCheck();
+
+    assertEq(result.passed, true, "runPreMergeCheck passes when no package.json (skip)");
+    assertEq(result.skipped, true, "runPreMergeCheck skips when no package.json found");
 
     rmSync(repo, { recursive: true, force: true });
   }

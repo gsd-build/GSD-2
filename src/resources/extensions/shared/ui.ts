@@ -201,6 +201,7 @@ export interface UI {
 export function makeUI(theme: Theme, width: number): UI {
 	// ── Internal helpers ───────────────────────────────────────────────────────
 
+
 	const add = (s: string): string => truncateToWidth(s, width);
 	const wrap = (s: string): string[] => wrapTextWithAnsi(s, width);
 

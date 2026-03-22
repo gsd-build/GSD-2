@@ -18,9 +18,11 @@ import type {
 	ExtensionUIDialogOptions,
 	ExtensionWidgetOptions,
 } from "../../core/extensions/index.js";
+import { InteractiveMode } from "../interactive/interactive-mode.js";
 import { type Theme, theme } from "../interactive/theme/theme.js";
 import { createDefaultCommandContextActions } from "../shared/command-context-actions.js";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.js";
+import { RemoteTerminal } from "./remote-terminal.js";
 import type {
 	RpcCommand,
 	RpcExtensionUIRequest,
@@ -71,6 +73,84 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 
 	// Shutdown request flag
 	let shutdownRequested = false;
+
+	const embeddedTerminalEnabled = process.env.GSD_WEB_BRIDGE_TUI === "1";
+	const remoteTerminal = embeddedTerminalEnabled
+		? new RemoteTerminal({
+				onWrite: (data) => {
+					output({ type: "terminal_output", data });
+				},
+			})
+		: null;
+	let embeddedInteractiveMode: InteractiveMode | null = null;
+	let embeddedInteractiveInitPromise: Promise<void> | null = null;
+	const startupNotifications: Array<{ message: string; type?: "info" | "warning" | "error" | "success" }> = [];
+	const statusState = new Map<string, string | undefined>();
+	const widgetState = new Map<string, { content: unknown; options?: ExtensionWidgetOptions }>();
+	let footerFactory: Parameters<ExtensionUIContext["setFooter"]>[0] | undefined;
+	let headerFactory: Parameters<ExtensionUIContext["setHeader"]>[0] | undefined;
+	let workingMessageState: string | undefined;
+	let titleState: string | undefined;
+	let editorTextState: string | undefined;
+
+	const withEmbeddedUiContext = async (apply: (ui: ExtensionUIContext) => void | Promise<void>): Promise<void> => {
+		if (!embeddedInteractiveMode) {
+			return;
+		}
+		await apply(embeddedInteractiveMode.getExtensionUIContext());
+	};
+
+	const replayEmbeddedUiState = async (interactiveMode: InteractiveMode): Promise<void> => {
+		const ui = interactiveMode.getExtensionUIContext();
+		ui.setHeader(headerFactory);
+		ui.setFooter(footerFactory);
+		for (const [key, text] of statusState.entries()) {
+			ui.setStatus(key, text);
+		}
+		for (const [key, widget] of widgetState.entries()) {
+			ui.setWidget(key, widget.content as any, widget.options);
+		}
+		ui.setWorkingMessage(workingMessageState);
+		if (titleState) {
+			ui.setTitle(titleState);
+		}
+		if (editorTextState !== undefined) {
+			ui.setEditorText(editorTextState);
+		}
+		for (const { message, type } of startupNotifications) {
+			ui.notify(message, type);
+		}
+	};
+
+	const ensureEmbeddedInteractiveMode = async (): Promise<InteractiveMode> => {
+		if (!embeddedTerminalEnabled || !remoteTerminal) {
+			throw new Error("Embedded terminal is not enabled for this RPC host");
+		}
+
+		if (embeddedInteractiveMode) {
+			return embeddedInteractiveMode;
+		}
+
+		if (!embeddedInteractiveInitPromise) {
+			embeddedInteractiveMode = new InteractiveMode(session, {
+				terminal: remoteTerminal,
+				bindExtensions: false,
+				submitPromptsDirectly: true,
+				shutdownBehavior: "ignore",
+			});
+			embeddedInteractiveInitPromise = embeddedInteractiveMode.init().then(async () => {
+				await replayEmbeddedUiState(embeddedInteractiveMode!);
+			}).catch((error) => {
+				embeddedInteractiveMode = null;
+				throw error;
+			}).finally(() => {
+				embeddedInteractiveInitPromise = null;
+			});
+		}
+
+		await embeddedInteractiveInitPromise;
+		return embeddedInteractiveMode!;
+	};
 
 	/** Helper for dialog methods with signal/timeout support */
 	function createDialogPromise<T>(
@@ -135,6 +215,10 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			),
 
 		notify(message: string, type?: "info" | "warning" | "error" | "success"): void {
+			startupNotifications.push({ message, type });
+			if (startupNotifications.length > 20) {
+				startupNotifications.splice(0, startupNotifications.length - 20);
+			}
 			// Fire and forget - no response needed
 			output({
 				type: "extension_ui_request",
@@ -143,6 +227,9 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 				message,
 				notifyType: type,
 			} as RpcExtensionUIRequest);
+			void withEmbeddedUiContext((ui) => {
+				ui.notify(message, type);
+			});
 		},
 
 		onTerminalInput(): () => void {
@@ -151,6 +238,7 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 		},
 
 		setStatus(key: string, text: string | undefined): void {
+			statusState.set(key, text);
 			// Fire and forget - no response needed
 			output({
 				type: "extension_ui_request",
@@ -159,13 +247,20 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 				statusKey: key,
 				statusText: text,
 			} as RpcExtensionUIRequest);
+			void withEmbeddedUiContext((ui) => {
+				ui.setStatus(key, text);
+			});
 		},
 
-		setWorkingMessage(_message?: string): void {
-			// Working message not supported in RPC mode - requires TUI loader access
+		setWorkingMessage(message?: string): void {
+			workingMessageState = message;
+			void withEmbeddedUiContext((ui) => {
+				ui.setWorkingMessage(message);
+			});
 		},
 
 		setWidget(key: string, content: unknown, options?: ExtensionWidgetOptions): void {
+			widgetState.set(key, { content, options });
 			if (content === undefined || Array.isArray(content)) {
 				output({
 					type: "extension_ui_request",
@@ -187,17 +282,27 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 					widgetPlacement: options?.placement,
 				} as RpcExtensionUIRequest);
 			}
+			void withEmbeddedUiContext((ui) => {
+				ui.setWidget(key, content as any, options);
+			});
 		},
 
-		setFooter(_factory: unknown): void {
-			// Custom footer not supported in RPC mode - requires TUI access
+		setFooter(factory: Parameters<ExtensionUIContext["setFooter"]>[0]): void {
+			footerFactory = factory;
+			void withEmbeddedUiContext((ui) => {
+				ui.setFooter(factory);
+			});
 		},
 
-		setHeader(_factory: unknown): void {
-			// Custom header not supported in RPC mode - requires TUI access
+		setHeader(factory: Parameters<ExtensionUIContext["setHeader"]>[0]): void {
+			headerFactory = factory;
+			void withEmbeddedUiContext((ui) => {
+				ui.setHeader(factory);
+			});
 		},
 
 		setTitle(title: string): void {
+			titleState = title;
 			// Fire and forget - host can implement terminal title control
 			output({
 				type: "extension_ui_request",
@@ -205,6 +310,9 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 				method: "setTitle",
 				title,
 			} as RpcExtensionUIRequest);
+			void withEmbeddedUiContext((ui) => {
+				ui.setTitle(title);
+			});
 		},
 
 		async custom() {
@@ -218,6 +326,7 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 		},
 
 		setEditorText(text: string): void {
+			editorTextState = text;
 			// Fire and forget - host can implement editor control
 			output({
 				type: "extension_ui_request",
@@ -225,6 +334,9 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 				method: "set_editor_text",
 				text,
 			} as RpcExtensionUIRequest);
+			void withEmbeddedUiContext((ui) => {
+				ui.setEditorText(text);
+			});
 		},
 
 		getEditorText(): string {
@@ -283,8 +395,13 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 		},
 	});
 
-	// Set up extensions with RPC-based UI context
-	await session.bindExtensions({
+	// Set up extensions with RPC-based UI context.
+	// Do not block the initial RPC handshake on extension session_start hooks:
+	// browser boot only needs get_state, and several startup-only notifications
+	// (MCP availability, web-search status, etc.) can complete in the background.
+	// Track readiness so consumers can know when extension commands are available.
+	let extensionsReady = false;
+	const extensionsReadyPromise = session.bindExtensions({
 		uiContext: createExtensionUIContext(),
 		commandContextActions: createDefaultCommandContextActions(session),
 		shutdownHandler: () => {
@@ -293,7 +410,18 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 		onError: (err) => {
 			output({ type: "extension_error", extensionPath: err.extensionPath, event: err.event, error: err.error });
 		},
+	}).then(() => {
+		extensionsReady = true;
+		output({ type: "extensions_ready" });
+	}).catch((error) => {
+		extensionsReady = true; // Mark ready even on failure so consumers don't wait forever
+		output({
+			type: "extension_error",
+			event: "session_start",
+			error: error instanceof Error ? error.message : String(error),
+		});
 	});
+	void extensionsReadyPromise;
 
 	// Output all agent events as JSON
 	session.subscribe((event) => {
@@ -360,8 +488,12 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 					sessionId: session.sessionId,
 					sessionName: session.sessionName,
 					autoCompactionEnabled: session.autoCompactionEnabled,
+					autoRetryEnabled: session.autoRetryEnabled,
+					retryInProgress: session.isRetrying,
+					retryAttempt: session.retryAttempt,
 					messageCount: session.messages.length,
 					pendingMessageCount: session.pendingMessageCount,
+					extensionsReady,
 				};
 				return success(id, "get_state", state);
 			}
@@ -559,6 +691,24 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 				return success(id, "get_commands", { commands });
 			}
 
+			case "terminal_input": {
+				await ensureEmbeddedInteractiveMode();
+				remoteTerminal!.pushInput(command.data);
+				return success(id, "terminal_input");
+			}
+
+			case "terminal_resize": {
+				await ensureEmbeddedInteractiveMode();
+				remoteTerminal!.resize(command.cols, command.rows);
+				return success(id, "terminal_resize");
+			}
+
+			case "terminal_redraw": {
+				const interactiveMode = await ensureEmbeddedInteractiveMode();
+				interactiveMode.requestRender(true);
+				return success(id, "terminal_redraw");
+			}
+
 			default: {
 				const unknownCommand = command as { type: string };
 				return error(undefined, unknownCommand.type, `Unknown command: ${unknownCommand.type}`);
@@ -580,6 +730,7 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			await currentRunner.emit({ type: "session_shutdown" });
 		}
 
+		embeddedInteractiveMode?.stop();
 		detachInput();
 		process.stdin.pause();
 		process.exit(0);

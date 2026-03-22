@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -37,12 +37,9 @@ test("recordOutcome tracks success and failure counts", () => {
     recordOutcome("execute-task", "standard", true);
     recordOutcome("execute-task", "standard", false);
 
-    const history = getRoutingHistory();
-    assert.ok(history);
-    const pattern = history.patterns["execute-task"];
-    assert.ok(pattern);
-    assert.equal(pattern.standard.success, 2);
-    assert.equal(pattern.standard.fail, 1);
+    const history = getRoutingHistory()!;
+    assert.equal(history.patterns["execute-task"].standard.success, 2);
+    assert.equal(history.patterns["execute-task"].standard.fail, 1);
   } finally {
     cleanup(dir);
   }
@@ -54,9 +51,7 @@ test("recordOutcome tracks tag-specific patterns", () => {
     initRoutingHistory(dir);
     recordOutcome("execute-task", "light", true, ["docs"]);
 
-    const history = getRoutingHistory();
-    assert.ok(history);
-    assert.ok(history.patterns["execute-task:docs"]);
+    const history = getRoutingHistory()!;
     assert.equal(history.patterns["execute-task:docs"].light.success, 1);
   } finally {
     cleanup(dir);
@@ -72,8 +67,7 @@ test("recordOutcome applies rolling window", () => {
       recordOutcome("execute-task", "standard", true);
     }
 
-    const history = getRoutingHistory();
-    assert.ok(history);
+    const history = getRoutingHistory()!;
     const total = history.patterns["execute-task"].standard.success +
                   history.patterns["execute-task"].standard.fail;
     assert.ok(total <= 50, `total ${total} should be <= 50`);
@@ -161,8 +155,7 @@ test("recordFeedback stores feedback entries", () => {
     initRoutingHistory(dir);
     recordFeedback("execute-task", "M001/S01/T01", "standard", "over");
 
-    const history = getRoutingHistory();
-    assert.ok(history);
+    const history = getRoutingHistory()!;
     assert.equal(history.feedback.length, 1);
     assert.equal(history.feedback[0].rating, "over");
     assert.equal(history.feedback[0].tier, "standard");
@@ -177,8 +170,7 @@ test("recordFeedback 'under' increases failure count at tier", () => {
     initRoutingHistory(dir);
     recordFeedback("execute-task", "M001/S01/T01", "light", "under");
 
-    const history = getRoutingHistory();
-    assert.ok(history);
+    const history = getRoutingHistory()!;
     // "under" adds 2 (FEEDBACK_WEIGHT) failures
     assert.equal(history.patterns["execute-task"].light.fail, 2);
   } finally {
@@ -192,8 +184,7 @@ test("recordFeedback 'over' increases success count at lower tier", () => {
     initRoutingHistory(dir);
     recordFeedback("execute-task", "M001/S01/T01", "standard", "over");
 
-    const history = getRoutingHistory();
-    assert.ok(history);
+    const history = getRoutingHistory()!;
     // "over" at standard → adds 2 successes at light
     assert.equal(history.patterns["execute-task"].light.success, 2);
   } finally {
@@ -210,8 +201,7 @@ test("clearRoutingHistory resets all data", () => {
     recordOutcome("execute-task", "light", true);
     clearRoutingHistory(dir);
 
-    const history = getRoutingHistory();
-    assert.ok(history);
+    const history = getRoutingHistory()!;
     assert.deepEqual(history.patterns, {});
     assert.deepEqual(history.feedback, []);
   } finally {
@@ -231,8 +221,7 @@ test("routing history persists to disk and reloads", () => {
 
     // Reload from disk
     initRoutingHistory(dir);
-    const history = getRoutingHistory();
-    assert.ok(history);
+    const history = getRoutingHistory()!;
     assert.equal(history.patterns["execute-task"].standard.success, 2);
   } finally {
     cleanup(dir);

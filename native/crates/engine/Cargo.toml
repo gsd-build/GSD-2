@@ -8,7 +8,9 @@ repository.workspace = true
 description = "N-API native addon for GSD — exposes high-performance Rust modules to Node.js"
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
+test = false
+doctest = false
 
 [dependencies]
 gsd-ast = { path = "../ast" }

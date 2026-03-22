@@ -192,8 +192,9 @@ async function main(): Promise<void> {
       // M002: draft only — should become active with needs-discussion
       writeContextDraft(base, 'M002', '# M002 Draft\n\nSeed.');
 
-      // M003: blank milestone directory — should be pending
+      // M003: milestone directory with CONTEXT — should be pending
       mkdirSync(join(base, '.gsd', 'milestones', 'M003'), { recursive: true });
+      writeFileSync(join(base, '.gsd', 'milestones', 'M003', 'M003-CONTEXT.md'), '# M003\n\nPending milestone.');
 
       const state = await deriveState(base);
 
@@ -247,19 +248,19 @@ async function main(): Promise<void> {
     }
   }
 
-  // ─── Test 7: Empty milestone dir (no files at all) → pre-planning ─────
-  console.log('\n=== empty milestone dir (no files) → pre-planning ===');
+  // ─── Test 7: Empty milestone dir (ghost — no files at all) → skipped ───
+  console.log('\n=== empty milestone dir (ghost) → skipped, pre-planning ===');
   {
     const base = createFixtureBase();
     try {
-      // M001: just a directory, no files at all
+      // M001: just a directory, no files at all — ghost milestone, skipped
       mkdirSync(join(base, '.gsd', 'milestones', 'M001'), { recursive: true });
 
       const state = await deriveState(base);
 
-      assertEq(state.phase, 'pre-planning', 'phase is pre-planning for blank milestone');
-      assertEq(state.activeMilestone?.id, 'M001', 'activeMilestone is M001');
-      assertEq(state.registry[0]?.status, 'active', 'registry[0] status is active');
+      assertEq(state.phase, 'pre-planning', 'phase is pre-planning for ghost milestone');
+      assertEq(state.activeMilestone, null, 'activeMilestone is null (ghost skipped)');
+      assertEq(state.registry.length, 0, 'registry is empty (ghost skipped)');
     } finally {
       cleanup(base);
     }
@@ -272,8 +273,9 @@ async function main(): Promise<void> {
   {
     const base = createFixtureBase();
     try {
-      // M001: blank (no roadmap, no summary) → becomes active first
+      // M001: has CONTEXT but no roadmap/summary → becomes active first
       mkdirSync(join(base, '.gsd', 'milestones', 'M001'), { recursive: true });
+      writeFileSync(join(base, '.gsd', 'milestones', 'M001', 'M001-CONTEXT.md'), '# M001\n\nFirst milestone.');
 
       // M002: has CONTEXT-DRAFT but isn't active (M001 is first)
       writeContextDraft(base, 'M002', '# M002 Draft\n\nSeed.');

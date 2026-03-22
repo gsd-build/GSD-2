@@ -573,8 +573,17 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 	private getFuzzyFileSuggestions(query: string, options: { isQuotedPrefix: boolean }): AutocompleteItem[] {
 		try {
 			const scopedQuery = this.resolveScopedFuzzyQuery(query);
-			const searchPath = scopedQuery?.baseDir ?? this.basePath;
 			const searchQuery = scopedQuery?.query ?? query;
+
+			// Skip the expensive filesystem walk when the query is empty.
+			// An empty query (bare "@" with nothing typed yet) would walk the
+			// entire directory tree via the native fuzzyFind call, blocking
+			// the event loop and freezing the TUI on large repos.
+			if (searchQuery.length === 0 && !scopedQuery) {
+				return [];
+			}
+
+			const searchPath = scopedQuery?.baseDir ?? this.basePath;
 
 			const result = fuzzyFind({
 				query: searchQuery,

@@ -11,7 +11,17 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { shouldBlockContextWrite } from '../index.ts';
+import {
+  shouldBlockContextWrite,
+  isDepthVerified,
+  isQueuePhaseActive,
+  setQueuePhaseActive,
+} from '../index.ts';
+import {
+  markDepthVerified,
+  clearDiscussionFlowState,
+  resetWriteGateState,
+} from '../bootstrap/write-gate.ts';
 
 // ─── Scenario 1: Blocks CONTEXT.md write during discussion without depth verification (absolute path) ──
 
@@ -119,4 +129,65 @@ test('write-gate: blocked reason contains depth_verification keyword', () => {
   assert.strictEqual(result.block, true);
   assert.ok(result.reason!.includes('depth_verification'), 'reason should mention depth_verification question id');
   assert.ok(result.reason!.includes('ask_user_questions'), 'reason should mention ask_user_questions tool');
+});
+
+// ─── Scenario 8: Queue mode blocks CONTEXT.md write without depth verification ──
+
+test('write-gate: blocks CONTEXT.md write in queue mode without depth verification', () => {
+  const result = shouldBlockContextWrite(
+    'write',
+    '.gsd/milestones/M001/M001-CONTEXT.md',
+    null,   // no milestoneId in queue mode
+    false,  // not depth-verified
+    true,   // queue phase active
+  );
+  assert.strictEqual(result.block, true, 'should block in queue mode without depth verification');
+  assert.ok(result.reason, 'should provide a reason');
+});
+
+// ─── Scenario 9: Queue mode allows CONTEXT.md write after depth verification ──
+
+test('write-gate: allows CONTEXT.md write in queue mode after depth verification', () => {
+  const result = shouldBlockContextWrite(
+    'write',
+    '.gsd/milestones/M001/M001-CONTEXT.md',
+    null,   // no milestoneId in queue mode
+    true,   // depth-verified
+    true,   // queue phase active
+  );
+  assert.strictEqual(result.block, false, 'should not block in queue mode after depth verification');
+});
+
+// ─── Scenario 10: markDepthVerified works in queue-only mode (no milestoneId) ──
+// This is the core regression for #1812: in queue mode, the tool_result handler
+// must call markDepthVerified() even when getDiscussionMilestoneId() is null.
+
+test('write-gate: markDepthVerified unblocks queue-mode writes when milestoneId is null', () => {
+  clearDiscussionFlowState();
+  setQueuePhaseActive(true);
+
+  // Before marking: should block
+  const blocked = shouldBlockContextWrite(
+    'write',
+    '.gsd/milestones/M001/M001-CONTEXT.md',
+    null,
+    isDepthVerified(),
+    isQueuePhaseActive(),
+  );
+  assert.strictEqual(blocked.block, true, 'should block before markDepthVerified');
+
+  // Simulate what the fixed tool_result handler does
+  markDepthVerified();
+
+  // After marking: should pass
+  const allowed = shouldBlockContextWrite(
+    'write',
+    '.gsd/milestones/M001/M001-CONTEXT.md',
+    null,
+    isDepthVerified(),
+    isQueuePhaseActive(),
+  );
+  assert.strictEqual(allowed.block, false, 'should allow after markDepthVerified in queue mode');
+
+  clearDiscussionFlowState();
 });

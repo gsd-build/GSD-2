@@ -6,6 +6,7 @@
 //! ```
 
 #![allow(clippy::needless_pass_by_value)]
+#![cfg_attr(test, allow(dead_code))]
 
 mod ast;
 mod clipboard;

@@ -101,8 +101,8 @@ test('secrets gate: pending keys exist — gate triggers collection, manifest up
     const status = await getManifestStatus(tmp, 'M001');
     assert.notStrictEqual(status, null, 'manifest should exist');
     assert.ok(status!.pending.length > 0, 'should have pending keys');
-    assert.deepStrictEqual(status!.pending, ['GSD_GATE_TEST_PEND_A', 'GSD_GATE_TEST_PEND_B']);
-    assert.deepStrictEqual(status!.existing, ['GSD_GATE_TEST_EXISTING']);
+    assert.deepStrictEqual(status!.pending, ['GSD_GATE_TEST_PEND_A', 'GSD_GATE_TEST_PEND_B'], 'pending keys');
+    assert.deepStrictEqual(status!.existing, ['GSD_GATE_TEST_EXISTING'], 'existing keys');
 
     // (b) Call collectSecretsFromManifest with no-UI context
     // With hasUI: false, collectOneSecret returns null → pending keys become "skipped"

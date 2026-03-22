@@ -12,6 +12,7 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@gsd/pi-coding-agent
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { homedir } from "node:os";
 
 import { extractTrace, type ExecutionTrace } from "./session-forensics.js";
 import { nativeParseJsonlTail } from "./native-parser-bridge.js";
@@ -102,9 +103,14 @@ export async function handleForensics(
   const report = await buildForensicReport(basePath);
   const savedPath = saveForensicReport(basePath, report, problemDescription);
 
-  // Derive GSD source dir for prompt
-  const __extensionDir = dirname(fileURLToPath(import.meta.url));
-  const gsdSourceDir = __extensionDir;
+  // Derive GSD source dir for prompt — fall back to ~/.gsd/agent/extensions/gsd/
+  // when import.meta.url resolves to the npm-global install path (Windows).
+  let gsdSourceDir = dirname(fileURLToPath(import.meta.url));
+  if (!existsSync(join(gsdSourceDir, "prompts"))) {
+    const gsdHome = process.env.GSD_HOME || join(homedir(), ".gsd");
+    const fallback = join(gsdHome, "agent", "extensions", "gsd");
+    if (existsSync(join(fallback, "prompts"))) gsdSourceDir = fallback;
+  }
 
   const forensicData = formatReportForPrompt(report);
   const content = loadPrompt("forensics", {
@@ -123,7 +129,7 @@ export async function handleForensics(
 
 // ─── Report Builder ───────────────────────────────────────────────────────────
 
-async function buildForensicReport(basePath: string): Promise<ForensicReport> {
+export async function buildForensicReport(basePath: string): Promise<ForensicReport> {
   const anomalies: ForensicAnomaly[] = [];
 
   // 1. Derive current state

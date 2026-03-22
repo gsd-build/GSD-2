@@ -38,6 +38,20 @@ import { join, resolve } from 'path';
 import { existsSync, readdirSync } from 'node:fs';
 import { debugCount, debugTime } from './debug-logger.js';
 
+/**
+ * A "ghost" milestone directory contains only META.json (and no substantive
+ * files like CONTEXT, CONTEXT-DRAFT, ROADMAP, or SUMMARY).  These appear when
+ * a milestone is created but never initialised.  Treating them as active causes
+ * auto-mode to stall or falsely declare completion.
+ */
+export function isGhostMilestone(basePath: string, mid: string): boolean {
+  const context   = resolveMilestoneFile(basePath, mid, "CONTEXT");
+  const draft     = resolveMilestoneFile(basePath, mid, "CONTEXT-DRAFT");
+  const roadmap   = resolveMilestoneFile(basePath, mid, "ROADMAP");
+  const summary   = resolveMilestoneFile(basePath, mid, "SUMMARY");
+  return !context && !draft && !roadmap && !summary;
+}
+
 // ─── Query Functions ───────────────────────────────────────────────────────
 
 /**
@@ -121,6 +135,7 @@ export async function getActiveMilestoneId(basePath: string): Promise<string | n
       // No roadmap — but if a summary exists, the milestone is already complete
       const summaryFile = resolveMilestoneFile(basePath, mid, "SUMMARY");
       if (summaryFile) continue; // completed milestone, skip
+      if (isGhostMilestone(basePath, mid)) continue; // ghost dir — skip
       return mid; // No roadmap and no summary — milestone is incomplete
       // Note: draft-awareness (CONTEXT-DRAFT.md) is handled in deriveState(), not here.
       // A draft milestone is still "active" — this function only determines which milestone is current.
@@ -161,6 +176,18 @@ export async function deriveState(basePath: string): Promise<GSDState> {
   debugCount("deriveStateCalls");
   _stateCache = { basePath, result, timestamp: Date.now() };
   return result;
+}
+
+/**
+ * Extract milestone title from CONTEXT.md or CONTEXT-DRAFT.md heading.
+ * Falls back to the provided fallback (usually the milestone ID).
+ */
+function extractContextTitle(content: string | null, fallback: string): string {
+  if (!content) return fallback;
+  const h1 = content.split('\n').find(line => line.startsWith('# '));
+  if (!h1) return fallback;
+  // Extract title from "# M005: Platform Foundation & Separation" format
+  return h1.slice(2).trim().replace(/^M\d+(?:-[a-z0-9]{6})?[^:]*:\s*/, '') || fallback;
 }
 
 async function _deriveStateImpl(basePath: string): Promise<GSDState> {
@@ -306,32 +333,43 @@ async function _deriveStateImpl(basePath: string): Promise<GSDState> {
         completeMilestoneIds.add(mid);
         continue;
       }
+      // Ghost milestone (only META.json, no CONTEXT/ROADMAP/SUMMARY) — skip entirely
+      if (isGhostMilestone(basePath, mid)) continue;
+
       // No roadmap and no summary — treat as incomplete/active
       if (!activeMilestoneFound) {
         // Check for CONTEXT-DRAFT.md to distinguish draft-seeded from blank milestones.
         // A draft seed means the milestone has discussion material but no full context yet.
         const contextFile = resolveMilestoneFile(basePath, mid, "CONTEXT");
-        if (!contextFile) {
-          const draftFile = resolveMilestoneFile(basePath, mid, "CONTEXT-DRAFT");
-          if (draftFile) activeMilestoneHasDraft = true;
-        }
+        const draftFile = resolveMilestoneFile(basePath, mid, "CONTEXT-DRAFT");
+        if (!contextFile && draftFile) activeMilestoneHasDraft = true;
+
+        // Extract title from CONTEXT.md or CONTEXT-DRAFT.md heading before falling back to mid.
+        const contextContent = contextFile ? await cachedLoadFile(contextFile) : null;
+        const draftContent = draftFile && !contextContent ? await cachedLoadFile(draftFile) : null;
+        const title = extractContextTitle(contextContent || draftContent, mid);
 
         // Check milestone-level dependencies before promoting to active.
         // Without this, a queued milestone with depends_on in its CONTEXT
-        // frontmatter would be promoted to active even when its deps are unmet
-        // (the dep check only existed in the has-roadmap path previously).
-        const contextContent = contextFile ? await cachedLoadFile(contextFile) : null;
-        const deps = parseContextDependsOn(contextContent);
+        // or CONTEXT-DRAFT frontmatter would be promoted to active even when
+        // its deps are unmet. Fall back to CONTEXT-DRAFT.md when absent (#1724).
+        const deps = parseContextDependsOn(contextContent ?? draftContent);
         const depsUnmet = deps.some(dep => !completeMilestoneIds.has(dep));
         if (depsUnmet) {
-          registry.push({ id: mid, title: mid, status: 'pending', dependsOn: deps });
+          registry.push({ id: mid, title, status: 'pending', dependsOn: deps });
         } else {
-          activeMilestone = { id: mid, title: mid };
+          activeMilestone = { id: mid, title };
           activeMilestoneFound = true;
-          registry.push({ id: mid, title: mid, status: 'active', ...(deps.length > 0 ? { dependsOn: deps } : {}) });
+          registry.push({ id: mid, title, status: 'active', ...(deps.length > 0 ? { dependsOn: deps } : {}) });
         }
       } else {
-        registry.push({ id: mid, title: mid, status: 'pending' });
+        // For milestones after the active one, also try to extract title from context files.
+        const contextFile = resolveMilestoneFile(basePath, mid, "CONTEXT");
+        const draftFile = resolveMilestoneFile(basePath, mid, "CONTEXT-DRAFT");
+        const contextContent = contextFile ? await cachedLoadFile(contextFile) : null;
+        const draftContent = draftFile && !contextContent ? await cachedLoadFile(draftFile) : null;
+        const title = extractContextTitle(contextContent || draftContent, mid);
+        registry.push({ id: mid, title, status: 'pending' });
       }
       continue;
     }
@@ -375,10 +413,13 @@ async function _deriveStateImpl(basePath: string): Promise<GSDState> {
       if (summaryFile) {
         registry.push({ id: mid, title, status: 'complete' });
       } else if (!activeMilestoneFound) {
-        // Check milestone-level dependencies before promoting to active
+        // Check milestone-level dependencies before promoting to active.
+        // Fall back to CONTEXT-DRAFT.md when CONTEXT.md is absent (#1724).
         const contextFile = resolveMilestoneFile(basePath, mid, "CONTEXT");
+        const draftFile = resolveMilestoneFile(basePath, mid, "CONTEXT-DRAFT");
         const contextContent = contextFile ? await cachedLoadFile(contextFile) : null;
-        const deps = parseContextDependsOn(contextContent);
+        const draftContent = draftFile && !contextContent ? await cachedLoadFile(draftFile) : null;
+        const deps = parseContextDependsOn(contextContent ?? draftContent);
         const depsUnmet = deps.some(dep => !completeMilestoneIds.has(dep));
         if (depsUnmet) {
           registry.push({ id: mid, title, status: 'pending', dependsOn: deps });
@@ -391,8 +432,11 @@ async function _deriveStateImpl(basePath: string): Promise<GSDState> {
         }
       } else {
         const contextFile2 = resolveMilestoneFile(basePath, mid, "CONTEXT");
-        const contextContent2 = contextFile2 ? await cachedLoadFile(contextFile2) : null;
-        const deps2 = parseContextDependsOn(contextContent2);
+        const draftFileForDeps3 = resolveMilestoneFile(basePath, mid, "CONTEXT-DRAFT");
+        const contextOrDraftContent3 = contextFile2
+            ? await cachedLoadFile(contextFile2)
+            : (draftFileForDeps3 ? await cachedLoadFile(draftFileForDeps3) : null);
+        const deps2 = parseContextDependsOn(contextOrDraftContent3);
         registry.push({ id: mid, title, status: 'pending', ...(deps2.length > 0 ? { dependsOn: deps2 } : {}) });
       }
     }
@@ -447,8 +491,29 @@ async function _deriveStateImpl(basePath: string): Promise<GSDState> {
         },
       };
     }
+    // All real milestones were ghosts (empty registry) → treat as pre-planning
+    if (registry.length === 0) {
+      return {
+        activeMilestone: null,
+        activeSlice: null,
+        activeTask: null,
+        phase: 'pre-planning',
+        recentDecisions: [],
+        blockers: [],
+        nextAction: 'No milestones found. Run /gsd to create one.',
+        registry: [],
+        requirements,
+        progress: {
+          milestones: { done: 0, total: 0 },
+        },
+      };
+    }
     // All milestones complete
     const lastEntry = registry[registry.length - 1];
+    const activeReqs = requirements.active ?? 0;
+    const completionNote = activeReqs > 0
+      ? `All milestones complete. ${activeReqs} active requirement${activeReqs === 1 ? '' : 's'} in REQUIREMENTS.md ${activeReqs === 1 ? 'has' : 'have'} not been mapped to a milestone.`
+      : 'All milestones complete.';
     return {
       activeMilestone: lastEntry ? { id: lastEntry.id, title: lastEntry.title } : null,
       activeSlice: null,
@@ -456,7 +521,7 @@ async function _deriveStateImpl(basePath: string): Promise<GSDState> {
       phase: 'complete',
       recentDecisions: [],
       blockers: [],
-      nextAction: 'All milestones complete.',
+      nextAction: completionNote,
       registry,
       requirements,
       progress: {
@@ -485,6 +550,30 @@ async function _deriveStateImpl(basePath: string): Promise<GSDState> {
       requirements,
       progress: {
         milestones: milestoneProgress,
+      },
+    };
+  }
+
+  // ── Zero-slice roadmap guard (#1785) ─────────────────────────────────
+  // A stub roadmap (placeholder text, no slice definitions) has a truthy
+  // roadmap object but an empty slices array. Without this check the
+  // slice-finding loop below finds nothing and returns phase: "blocked".
+  // An empty slices array means the roadmap still needs slice definitions,
+  // so the correct phase is pre-planning.
+  if (activeRoadmap.slices.length === 0) {
+    return {
+      activeMilestone,
+      activeSlice: null,
+      activeTask: null,
+      phase: 'pre-planning',
+      recentDecisions: [],
+      blockers: [],
+      nextAction: `Milestone ${activeMilestone.id} has a roadmap but no slices defined. Add slices to the roadmap.`,
+      registry,
+      requirements,
+      progress: {
+        milestones: milestoneProgress,
+        slices: { done: 0, total: 0 },
       },
     };
   }
@@ -716,6 +805,39 @@ async function _deriveStateImpl(basePath: string): Promise<GSDState> {
       };
     }
     // REPLAN.md exists — loop protection: fall through to normal executing
+  }
+
+  // ── REPLAN-TRIGGER detection: triage-initiated replan ──────────────────
+  // Manual `/gsd triage` writes REPLAN-TRIGGER.md when a capture is classified
+  // as "replan". Detect it here and transition to replanning-slice so the
+  // dispatch loop picks it up (instead of silently advancing past it).
+  if (!blockerTaskId) {
+    const replanTriggerFile = resolveSliceFile(basePath, activeMilestone.id, activeSlice.id, "REPLAN-TRIGGER");
+    if (replanTriggerFile) {
+      // Same loop protection: if REPLAN.md already exists, a replan was
+      // already performed — skip further replanning and continue executing.
+      const replanFile = resolveSliceFile(basePath, activeMilestone.id, activeSlice.id, "REPLAN");
+      if (!replanFile) {
+        return {
+          activeMilestone,
+          activeSlice,
+          activeTask,
+          phase: 'replanning-slice',
+          recentDecisions: [],
+          blockers: ['Triage replan trigger detected — slice replan required'],
+          nextAction: `Triage replan triggered for slice ${activeSlice.id}. Replan before continuing.`,
+
+          activeWorkspace: undefined,
+          registry,
+          requirements,
+          progress: {
+            milestones: milestoneProgress,
+            slices: sliceProgress,
+            tasks: taskProgress,
+          },
+        };
+      }
+    }
   }
 
   // Check for interrupted work

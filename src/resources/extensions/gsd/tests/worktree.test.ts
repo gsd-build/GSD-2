@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, symlinkSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execSync } from "node:child_process";
@@ -20,6 +20,18 @@ import { _resetHasChangesCache } from "../native-git-bridge.ts";
 import { createTestContext } from './test-helpers.ts';
 
 const { assertEq, assertTrue, report } = createTestContext();
+
+/**
+ * Normalize a path for reliable comparison on Windows CI runners.
+ * `os.tmpdir()` may return the 8.3 short-path form (e.g. `C:\Users\RUNNER~1`)
+ * while `realpathSync` and git resolve to the long form (`C:\Users\runneradmin`).
+ * Apply `realpathSync` and lowercase on Windows to eliminate both discrepancies.
+ */
+function normalizePath(p: string): string {
+  const resolved = process.platform === "win32" ? realpathSync.native(p) : realpathSync(p);
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+}
+
 function run(command: string, cwd: string): string {
   return execSync(command, { cwd, stdio: ["ignore", "pipe", "pipe"], encoding: "utf-8" }).trim();
 }
@@ -191,11 +203,30 @@ async function main(): Promise<void> {
 
   // ── resolveProjectRoot: symlink-resolved paths ──────────────────────────
   console.log("\n=== resolveProjectRoot (symlink-resolved paths) ===");
+
+  // BUG FIX: symlink-resolved paths that land inside ~/.gsd should NOT
+  // resolve to the home directory. When the .git file fallback can't find
+  // the real project root (no git worktree metadata in these synthetic paths),
+  // resolveProjectRoot returns the input unchanged rather than returning ~.
+  
+  // With GSD_PROJECT_ROOT env var set (layer 1 — coordinator passes it)
+  process.env.GSD_PROJECT_ROOT = "/real/project";
   assertEq(
     resolveProjectRoot("/Users/fran/.gsd/projects/89e1c9ad49bf/worktrees/M001"),
-    "/Users/fran",
-    "resolves to user home for symlink-resolved path",
+    "/real/project",
+    "uses GSD_PROJECT_ROOT when set",
   );
+  delete process.env.GSD_PROJECT_ROOT;
+
+  // Without GSD_PROJECT_ROOT, direct layout still works (no ~/.gsd collision)
+  assertEq(
+    resolveProjectRoot("/some/repo"),
+    "/some/repo",
+    "ignores GSD_PROJECT_ROOT override for non-worktree paths",
+  );
+  delete process.env.GSD_PROJECT_ROOT;
+
+  // Without GSD_PROJECT_ROOT, direct layout still works (no ~/.gsd collision)
   assertEq(
     resolveProjectRoot("/foo/.gsd/worktrees/M001"),
     "/foo",
@@ -206,11 +237,43 @@ async function main(): Promise<void> {
     "/some/repo",
     "returns unchanged for non-worktree path",
   );
+
+  // Without GSD_PROJECT_ROOT, direct layout with nested subdirs
   assertEq(
-    resolveProjectRoot("/data/.gsd/projects/deadbeef/worktrees/M003/nested"),
+    resolveProjectRoot("/data/.gsd/worktrees/M003/nested"),
     "/data",
-    "resolves correctly with nested subdirs after worktree name",
+    "resolves correctly with nested subdirs after worktree name (direct layout)",
   );
+
+  // Real symlink + git worktree scenario, with deep nested path from cwd
+  {
+    const fakeHome = mkdtempSync(join(tmpdir(), "gsd-home-"));
+    const project = realpathSync(mkdtempSync(join(tmpdir(), "gsd-proj-")));
+    const storage = join(fakeHome, ".gsd", "projects", "abc123def456");
+    mkdirSync(storage, { recursive: true });
+    symlinkSync(storage, join(project, ".gsd"));
+
+    run("git init -b main", project);
+    run("git config user.name 'Pi Test'", project);
+    run("git config user.email 'pi@example.com'", project);
+    writeFileSync(join(project, "README.md"), "init\n");
+    run("git add -A && git commit -m init", project);
+    run("git worktree add .gsd/worktrees/M001 -b worktree/M001", project);
+
+    const deep = join(project, ".gsd", "worktrees", "M001", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k");
+    mkdirSync(deep, { recursive: true });
+
+    process.env.GSD_HOME = join(fakeHome, ".gsd");
+    assertEq(
+      normalizePath(resolveProjectRoot(realpathSync(deep))),
+      normalizePath(project),
+      "resolves to real project root from deep symlink-resolved worktree path",
+    );
+    delete process.env.GSD_HOME;
+
+    rmSync(project, { recursive: true, force: true });
+    rmSync(fakeHome, { recursive: true, force: true });
+  }
 
   rmSync(base, { recursive: true, force: true });
   report();

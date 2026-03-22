@@ -17,6 +17,7 @@ import assert from "node:assert/strict";
 import { resolveSearchProvider } from "../resources/extensions/search-the-web/provider.ts";
 import { normalizeQuery } from "../resources/extensions/search-the-web/url-utils.ts";
 import { mapFreshnessToTavily } from "../resources/extensions/search-the-web/tavily.ts";
+import { normalizeHeaders, parseJsonBody } from "./fetch-test-helpers.ts";
 
 // =============================================================================
 // Helpers for mocking global fetch
@@ -64,24 +65,9 @@ function mockFetch(responseBody: unknown, status = 200) {
   globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
     captured.url = url;
-    captured.method = init?.method || "GET";
-
-    // Capture headers
-    if (init?.headers) {
-      if (init.headers instanceof Headers) {
-        captured.headers = {};
-        init.headers.forEach((v, k) => { captured.headers![k] = v; });
-      } else if (Array.isArray(init.headers)) {
-        captured.headers = Object.fromEntries(init.headers);
-      } else {
-        captured.headers = init.headers as Record<string, string>;
-      }
-    }
-
-    // Capture body
-    if (init?.body && typeof init.body === "string") {
-      try { captured.body = JSON.parse(init.body); } catch { /* ignore */ }
-    }
+    captured.method = init?.method ?? "GET";
+    captured.headers = normalizeHeaders(init?.headers);
+    captured.body = parseJsonBody(init?.body);
 
     return new Response(JSON.stringify(responseBody), {
       status,
@@ -133,11 +119,11 @@ test("executeTavilySearch sends POST to Tavily API and produces CachedSearchResu
     const data = await response.json() as { results: Array<{ title: string; url: string; content: string; score: number; published_date?: string }> };
 
     // Verify request shape
-    assert.equal(captured.url, "https://api.tavily.com/search");
-    assert.equal(captured.method, "POST");
-    assert.equal(captured.headers?.["Content-Type"], "application/json");
-    assert.equal(captured.headers?.["Authorization"], "Bearer tvly-test-key-12345");
-    assert.deepEqual(captured.body, requestBody);
+    assert.equal(captured.url, "https://api.tavily.com/search", "request URL");
+    assert.equal(captured.method, "POST", "HTTP method");
+    assert.equal(captured.headers?.["Content-Type"], "application/json", "Content-Type header");
+    assert.equal(captured.headers?.["Authorization"], "Bearer tvly-test-key-12345", "Authorization header");
+    assert.deepEqual(captured.body, requestBody, "request body");
 
     // Verify response mapping
     const mapped = data.results.map(normalizeTavilyResult);

@@ -138,6 +138,7 @@ async function main(): Promise<void> {
         choice: "reconcile on merge",
         rationale: "test coverage",
         revisable: "no",
+        made_by: 'agent',
         superseded_by: null,
       });
       closeDatabase();

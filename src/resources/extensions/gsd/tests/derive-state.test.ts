@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-import { deriveState, isSliceComplete, isMilestoneComplete } from '../state.ts';
+import { deriveState, isSliceComplete, isMilestoneComplete, isGhostMilestone } from '../state.ts';
 import { createTestContext } from './test-helpers.ts';
 
 const { assertEq, assertTrue, report } = createTestContext();
@@ -91,8 +91,9 @@ async function main(): Promise<void> {
   {
     const base = createFixtureBase();
     try {
-      // Create M001 directory but no roadmap file
+      // Create M001 directory with CONTEXT but no roadmap file
       mkdirSync(join(base, '.gsd', 'milestones', 'M001'), { recursive: true });
+      writeFileSync(join(base, '.gsd', 'milestones', 'M001', 'M001-CONTEXT.md'), '# First Milestone\n\nContext for M001.');
 
       const state = await deriveState(base);
 
@@ -319,6 +320,89 @@ Continue from step 2.
     }
   }
 
+  // ─── Test 7b: complete with active requirements → surfaces unmapped reqs ──
+  console.log('\n=== complete with active requirements → surfaces unmapped reqs ===');
+  {
+    const base = createFixtureBase();
+    try {
+      writeRoadmap(base, 'M001', `# M001: Test Milestone
+
+**Vision:** Test complete phase with unmapped requirements.
+
+## Slices
+
+- [x] **S01: Done Slice** \`risk:low\` \`depends:[]\`
+  > After this: Done.
+`);
+
+      writeMilestoneValidation(base, 'M001');
+      writeMilestoneSummary(base, 'M001', `# M001 Summary\n\nMilestone complete.`);
+      writeRequirements(base, `# Requirements
+
+## Active
+
+### REQ01 — First active requirement
+- Status: active
+
+### REQ02 — Second active requirement
+- Status: active
+
+## Validated
+
+### REQ03 — Validated requirement
+- Status: validated
+`);
+
+      const state = await deriveState(base);
+
+      assertEq(state.phase, 'complete', 'complete-with-reqs: phase is complete');
+      assertTrue(
+        state.nextAction.includes('2 active requirements'),
+        'complete-with-reqs: nextAction mentions 2 active requirements'
+      );
+      assertTrue(
+        state.nextAction.includes('REQUIREMENTS.md'),
+        'complete-with-reqs: nextAction mentions REQUIREMENTS.md'
+      );
+    } finally {
+      cleanup(base);
+    }
+  }
+
+  // ─── Test 7c: complete with no active requirements → standard message ──
+  console.log('\n=== complete with no active requirements → standard message ===');
+  {
+    const base = createFixtureBase();
+    try {
+      writeRoadmap(base, 'M001', `# M001: Test Milestone
+
+**Vision:** Test complete phase with all requirements validated.
+
+## Slices
+
+- [x] **S01: Done Slice** \`risk:low\` \`depends:[]\`
+  > After this: Done.
+`);
+
+      writeMilestoneValidation(base, 'M001');
+      writeMilestoneSummary(base, 'M001', `# M001 Summary\n\nMilestone complete.`);
+      writeRequirements(base, `# Requirements
+
+## Validated
+
+### REQ01 — Validated requirement
+- Status: validated
+`);
+
+      const state = await deriveState(base);
+
+      assertEq(state.phase, 'complete', 'complete-no-active-reqs: phase is complete');
+      assertEq(state.nextAction, 'All milestones complete.', 'complete-no-active-reqs: standard completion message');
+    } finally {
+      cleanup(base);
+    }
+  }
+
   // ─── Test 8: blocked dependencies ──────────────────────────────────────
   console.log('\n=== blocked dependencies ===');
   {
@@ -411,8 +495,9 @@ Continue from step 2.
   > After this: Done.
 `);
 
-      // M003: just a dir (no roadmap → pending since M002 is already active)
+      // M003: dir with CONTEXT but no roadmap → pending since M002 is already active
       mkdirSync(join(base, '.gsd', 'milestones', 'M003'), { recursive: true });
+      writeFileSync(join(base, '.gsd', 'milestones', 'M003', 'M003-CONTEXT.md'), '# Third Milestone\n\nContext for M003.');
 
       const state = await deriveState(base);
 
@@ -817,6 +902,78 @@ slice: S01
       assertEq(state.activeMilestone?.id, 'M002', 'M002 is active — M001 dependency satisfied via summary');
       const m002Entry = state.registry.find(e => e.id === 'M002');
       assertEq(m002Entry?.status, 'active', 'M002 status is active, not pending');
+    } finally {
+      cleanup(base);
+    }
+  }
+
+  // ─── Test: ghost milestone (only META.json) is skipped ───────────────
+  console.log('\n=== ghost milestone (only META.json) is skipped ===');
+  {
+    const base = createFixtureBase();
+    try {
+      // Create a ghost milestone directory with only META.json
+      const ghostDir = join(base, '.gsd', 'milestones', 'M001');
+      mkdirSync(ghostDir, { recursive: true });
+      writeFileSync(join(ghostDir, 'META.json'), JSON.stringify({ id: 'M001' }));
+
+      // isGhostMilestone should detect it
+      assertTrue(isGhostMilestone(base, 'M001'), 'M001 is a ghost milestone');
+
+      // deriveState should treat this as pre-planning (no real milestones)
+      const state = await deriveState(base);
+      assertEq(state.phase, 'pre-planning', 'ghost-only: phase is pre-planning');
+      assertEq(state.activeMilestone, null, 'ghost-only: no active milestone');
+      assertEq(state.registry.length, 0, 'ghost-only: registry is empty');
+    } finally {
+      cleanup(base);
+    }
+  }
+
+  // ─── Test: ghost milestone skipped when real milestones exist ──────────
+  console.log('\n=== ghost milestone skipped alongside real milestones ===');
+  {
+    const base = createFixtureBase();
+    try {
+      // M001: ghost (only META.json)
+      const ghostDir = join(base, '.gsd', 'milestones', 'M001');
+      mkdirSync(ghostDir, { recursive: true });
+      writeFileSync(join(ghostDir, 'META.json'), JSON.stringify({ id: 'M001' }));
+
+      // M002: real milestone with a CONTEXT file
+      const realDir = join(base, '.gsd', 'milestones', 'M002');
+      mkdirSync(realDir, { recursive: true });
+      writeFileSync(join(realDir, 'M002-CONTEXT.md'), '# Real Milestone\n\nThis has content.');
+
+      const state = await deriveState(base);
+      assertEq(state.activeMilestone?.id, 'M002', 'ghost+real: active milestone is M002');
+      // Ghost M001 should not appear in the registry
+      const m001Entry = state.registry.find(e => e.id === 'M001');
+      assertEq(m001Entry, undefined, 'ghost+real: M001 not in registry');
+      assertEq(state.registry.length, 1, 'ghost+real: registry has 1 entry');
+      assertEq(state.registry[0]?.status, 'active', 'ghost+real: M002 is active');
+    } finally {
+      cleanup(base);
+    }
+  }
+
+  // ─── Test: zero-slice roadmap → pre-planning, not blocked (#1785) ────
+  console.log('\n=== zero-slice roadmap → pre-planning, not blocked (#1785) ===');
+  {
+    const base = createFixtureBase();
+    try {
+      // Write a stub roadmap with zero slices (placeholder text, no slice definitions)
+      writeRoadmap(base, 'M001', `# M001: Stub Milestone\n\n**Vision:** Placeholder.\n\n## Slices\n\n_No slices defined yet._\n`);
+
+      const state = await deriveState(base);
+
+      assertEq(state.phase, 'pre-planning', 'phase is pre-planning when roadmap has zero slices');
+      assertTrue(state.activeMilestone !== null, 'activeMilestone is set');
+      assertEq(state.activeMilestone?.id, 'M001', 'activeMilestone is M001');
+      assertEq(state.activeSlice, null, 'activeSlice is null');
+      assertEq(state.activeTask, null, 'activeTask is null');
+      assertEq(state.blockers.length, 0, 'no blockers reported');
+      assertTrue(state.nextAction.includes('M001'), 'nextAction references M001');
     } finally {
       cleanup(base);
     }

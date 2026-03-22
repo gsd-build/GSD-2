@@ -8,9 +8,9 @@ import { invalidateAllCaches } from "./cache.js";
 import { loadEffectiveGSDPreferences, type GSDPreferences } from "./preferences.js";
 
 import type { DoctorIssue, DoctorIssueCode, DoctorReport } from "./doctor-types.js";
-import { COMPLETION_TRANSITION_CODES } from "./doctor-types.js";
+import { COMPLETION_TRANSITION_CODES, GLOBAL_STATE_CODES } from "./doctor-types.js";
 import type { RoadmapSliceEntry } from "./types.js";
-import { checkGitHealth, checkRuntimeHealth } from "./doctor-checks.js";
+import { checkGitHealth, checkRuntimeHealth, checkGlobalHealth } from "./doctor-checks.js";
 import { checkEnvironmentHealth } from "./doctor-environment.js";
 import { runProviderChecks } from "./doctor-providers.js";
 
@@ -265,6 +265,21 @@ async function markTaskDoneInPlan(basePath: string, milestoneId: string, sliceId
   }
 }
 
+async function markTaskUndoneInPlan(basePath: string, milestoneId: string, sliceId: string, taskId: string, fixesApplied: string[]): Promise<void> {
+  const planPath = resolveSliceFile(basePath, milestoneId, sliceId, "PLAN");
+  if (!planPath) return;
+  const content = await loadFile(planPath);
+  if (!content) return;
+  const updated = content.replace(
+    new RegExp(`^(\\s*-\\s+)\\[x\\]\\s+\\*\\*${taskId}:`, "mi"),
+    `$1[ ] **${taskId}:`,
+  );
+  if (updated !== content) {
+    await saveFile(planPath, updated);
+    fixesApplied.push(`unchecked ${taskId} in ${planPath} (missing summary — task will re-execute)`);
+  }
+}
+
 async function markSliceDoneInRoadmap(basePath: string, milestoneId: string, sliceId: string, fixesApplied: string[]): Promise<void> {
   const roadmapPath = resolveMilestoneFile(basePath, milestoneId, "ROADMAP");
   if (!roadmapPath) return;
@@ -476,6 +491,7 @@ export async function runGSDDoctor(basePath: string, options?: { fix?: boolean; 
   const shouldFix = (code: DoctorIssueCode): boolean => {
     if (!fix || dryRun) return false;
     if (fixLevel === "task" && COMPLETION_TRANSITION_CODES.has(code)) return false;
+    if (fixLevel === "task" && GLOBAL_STATE_CODES.has(code)) return false;
     return true;
   };
 
@@ -514,6 +530,9 @@ export async function runGSDDoctor(basePath: string, options?: { fix?: boolean; 
   const t0runtime = Date.now();
   await checkRuntimeHealth(basePath, issues, fixesApplied, shouldFix);
   const runtimeMs = Date.now() - t0runtime;
+
+  // Global health checks — cross-project state (e.g. orphaned project state dirs)
+  await checkGlobalHealth(issues, fixesApplied, shouldFix);
 
   // Environment health checks — timed
   const t0env = Date.now();
@@ -578,15 +597,33 @@ export async function runGSDDoctor(basePath: string, options?: { fix?: boolean; 
     // Validate milestone title for delimiter characters that break state documents.
     const milestoneTitleIssue = validateTitle(milestone.title);
     if (milestoneTitleIssue) {
-      issues.push({
-        severity: "warning",
-        code: "delimiter_in_title",
-        scope: "milestone",
-        unitId: milestoneId,
-        message: `Milestone ${milestoneId} ${milestoneTitleIssue}. Rename the milestone to remove these characters to prevent state corruption.`,
-        file: relMilestoneFile(basePath, milestoneId, "ROADMAP"),
-        fixable: false,
-      });
+      const roadmapFile = resolveMilestoneFile(basePath, milestoneId, "ROADMAP");
+      let wasFixed = false;
+      if (shouldFix("delimiter_in_title") && roadmapFile) {
+        try {
+          const raw = readFileSync(roadmapFile, "utf-8");
+          // Replace em/en dashes with " - " in the H1 title line only
+          const sanitized = raw.replace(/^(# .*)$/m, (line) =>
+            line.replace(/[\u2014\u2013]/g, "-"),
+          );
+          if (sanitized !== raw) {
+            await saveFile(roadmapFile, sanitized);
+            fixesApplied.push(`sanitized delimiter characters in ${milestoneId} title`);
+            wasFixed = true;
+          }
+        } catch { /* non-fatal — report the warning below */ }
+      }
+      if (!wasFixed) {
+        issues.push({
+          severity: "warning",
+          code: "delimiter_in_title",
+          scope: "milestone",
+          unitId: milestoneId,
+          message: `Milestone ${milestoneId} ${milestoneTitleIssue}. Rename the milestone to remove these characters to prevent state corruption.`,
+          file: relMilestoneFile(basePath, milestoneId, "ROADMAP"),
+          fixable: true,
+        });
+      }
     }
 
     const roadmapPath = resolveMilestoneFile(basePath, milestoneId, "ROADMAP");
@@ -638,6 +675,9 @@ export async function runGSDDoctor(basePath: string, options?: { fix?: boolean; 
       // Validate slice title for delimiter characters.
       const sliceTitleIssue = validateTitle(slice.title);
       if (sliceTitleIssue) {
+        // Slice titles live inside the roadmap H1/checkbox lines — the milestone-level
+        // fix above already sanitizes the roadmap file. For slices we only report, because
+        // the title comes from the checkbox text and requires careful regex to fix safely.
         issues.push({
           severity: "warning",
           code: "delimiter_in_title",
@@ -666,7 +706,26 @@ export async function runGSDDoctor(basePath: string, options?: { fix?: boolean; 
       }
 
       const slicePath = resolveSlicePath(basePath, milestoneId, slice.id);
-      if (!slicePath) continue;
+      if (!slicePath) {
+        const expectedPath = relSlicePath(basePath, milestoneId, slice.id);
+        issues.push({
+          severity: slice.done ? "warning" : "error",
+          code: "missing_slice_dir",
+          scope: "slice",
+          unitId,
+          message: slice.done
+            ? `Missing slice directory for ${unitId} (slice is complete — cosmetic only)`
+            : `Missing slice directory for ${unitId}`,
+          file: expectedPath,
+          fixable: true,
+        });
+        if (fix) {
+          const absoluteSliceDir = join(milestonePath, "slices", slice.id);
+          mkdirSync(absoluteSliceDir, { recursive: true });
+          fixesApplied.push(`created ${absoluteSliceDir}`);
+        }
+        continue;
+      }
 
       const tasksDir = resolveTasksDir(basePath, milestoneId, slice.id);
       if (!tasksDir) {
@@ -733,6 +792,7 @@ export async function runGSDDoctor(basePath: string, options?: { fix?: boolean; 
       } catch { /* non-fatal */ }
 
       let allTasksDone = plan.tasks.length > 0;
+      let taskUncheckedByDoctor = false;
       for (const task of plan.tasks) {
         const taskUnitId = `${unitId}/${task.id}`;
         const summaryPath = resolveTaskFile(basePath, milestoneId, slice.id, task.id, "SUMMARY");
@@ -744,30 +804,14 @@ export async function runGSDDoctor(basePath: string, options?: { fix?: boolean; 
             code: "task_done_missing_summary",
             scope: "task",
             unitId: taskUnitId,
-            message: `Task ${task.id} is marked done but summary is missing`,
-            file: relTaskFile(basePath, milestoneId, slice.id, task.id, "SUMMARY"),
+            message: `Task ${task.id} is marked done but summary is missing — unchecking so it re-executes`,
+            file: relSliceFile(basePath, milestoneId, slice.id, "PLAN"),
             fixable: true,
           });
-          dryRunCanFix("task_done_missing_summary", `create stub summary for ${taskUnitId}`);
+          dryRunCanFix("task_done_missing_summary", `uncheck ${task.id} in plan for ${taskUnitId}`);
           if (shouldFix("task_done_missing_summary")) {
-            const stubPath = join(
-              basePath, ".gsd", "milestones", milestoneId, "slices", slice.id, "tasks",
-              `${task.id}-SUMMARY.md`,
-            );
-            const stubContent = [
-              `---`,
-              `status: done`,
-              `result: unknown`,
-              `doctor_generated: true`,
-              `---`,
-              ``,
-              `# ${task.id}: ${task.title || "Unknown"}`,
-              ``,
-              `Summary stub generated by \`/gsd doctor\` \u2014 task was marked done but no summary existed.`,
-              ``,
-            ].join("\n");
-            await saveFile(stubPath, stubContent);
-            fixesApplied.push(`created stub summary for ${taskUnitId}`);
+            await markTaskUndoneInPlan(basePath, milestoneId, slice.id, task.id, fixesApplied);
+            taskUncheckedByDoctor = true;
           }
         }
 
@@ -829,6 +873,15 @@ export async function runGSDDoctor(basePath: string, options?: { fix?: boolean; 
         }
 
         allTasksDone = allTasksDone && task.done;
+      }
+
+      // ── #1850: cascade slice uncheck when task_done_missing_summary fires ──
+      // When doctor unchecks tasks inside a done slice, the slice must also be
+      // unchecked so the state machine re-enters the executing phase. Without
+      // this, state.ts skips done slices and the unchecked tasks never run,
+      // causing doctor to fire again on every start (infinite loop).
+      if (taskUncheckedByDoctor && slice.done) {
+        await markSliceUndoneInRoadmap(basePath, milestoneId, slice.id, fixesApplied);
       }
 
       // Blocker-without-replan detection
@@ -907,7 +960,7 @@ export async function runGSDDoctor(basePath: string, options?: { fix?: boolean; 
           fixable: true,
         });
         dryRunCanFix("all_tasks_done_roadmap_not_checked", `mark ${slice.id} done in roadmap`);
-        if (shouldFix("all_tasks_done_roadmap_not_checked") && (hasSliceSummary || issues.some(issue => issue.code === "all_tasks_done_missing_slice_summary" && issue.unitId === unitId))) {
+        if (shouldFix("all_tasks_done_roadmap_not_checked") && (hasSliceSummary || existsSync(join(slicePath, `${slice.id}-SUMMARY.md`)))) {
           await markSliceDoneInRoadmap(basePath, milestoneId, slice.id, fixesApplied);
         }
       }

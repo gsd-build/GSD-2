@@ -1,12 +1,23 @@
-import { mkdtempSync, rmSync, writeFileSync, existsSync, lstatSync, realpathSync, mkdirSync, symlinkSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, existsSync, lstatSync, realpathSync, mkdirSync, symlinkSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execSync } from "node:child_process";
 
-import { repoIdentity, externalGsdRoot, ensureGsdSymlink, validateProjectId } from "../repo-identity.ts";
+import { repoIdentity, externalGsdRoot, ensureGsdSymlink, validateProjectId, readRepoMeta, isInheritedRepo } from "../repo-identity.ts";
 import { createTestContext } from "./test-helpers.ts";
 
 const { assertEq, assertTrue, report } = createTestContext();
+
+/**
+ * Normalize a path for reliable comparison on Windows CI runners.
+ * `os.tmpdir()` may return the 8.3 short-path form (e.g. `C:\Users\RUNNER~1`)
+ * while `realpathSync` and git resolve to the long form (`C:\Users\runneradmin`).
+ * Apply `realpathSync` and lowercase on Windows to eliminate both discrepancies.
+ */
+function normalizePath(p: string): string {
+  const resolved = process.platform === "win32" ? realpathSync.native(p) : realpathSync(p);
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+}
 
 function run(command: string, cwd: string): string {
   return execSync(command, { cwd, stdio: ["ignore", "pipe", "pipe"], encoding: "utf-8" }).trim();
@@ -68,6 +79,105 @@ async function main(): Promise<void> {
     const hashIdentity = repoIdentity(base);
     assertTrue(/^[0-9a-f]{12}$/.test(hashIdentity), "repoIdentity returns 12-char hex hash when GSD_PROJECT_ID is unset");
 
+    console.log("\n=== readRepoMeta returns null for malformed metadata ===");
+    {
+      const malformedPath = join(stateDir, "projects", "malformed");
+      mkdirSync(malformedPath, { recursive: true });
+      writeFileSync(join(malformedPath, "repo-meta.json"), JSON.stringify({ version: 1 }) + "\n", "utf-8");
+      assertEq(readRepoMeta(malformedPath), null, "malformed repo-meta.json is treated as unknown metadata");
+    }
+
+    console.log("\n=== ensureGsdSymlink refreshes repo-meta gitRoot after repo move with fixed project id ===");
+    {
+      const moveRepo = realpathSync(mkdtempSync(join(tmpdir(), "gsd-repo-identity-move-")));
+      run("git init -b main", moveRepo);
+      run('git config user.name "Pi Test"', moveRepo);
+      run('git config user.email "pi@example.com"', moveRepo);
+      writeFileSync(join(moveRepo, "README.md"), "# Move Test Repo\n", "utf-8");
+      run("git add README.md", moveRepo);
+      run('git commit -m "chore: init move repo"', moveRepo);
+
+      process.env.GSD_PROJECT_ID = "fixed-project";
+      const fixedExternal = ensureGsdSymlink(moveRepo);
+      const before = readRepoMeta(fixedExternal);
+      assertTrue(before !== null, "repo metadata exists before repo move");
+      assertEq(normalizePath(before!.gitRoot), normalizePath(moveRepo), "repo metadata tracks current git root before move");
+
+      const movedBaseRaw = join(tmpdir(), `gsd-repo-identity-moved-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+      renameSync(moveRepo, movedBaseRaw);
+      const movedBase = realpathSync(movedBaseRaw);
+      const movedExternal = ensureGsdSymlink(movedBase);
+      assertEq(realpathSync(movedExternal), realpathSync(fixedExternal), "fixed project id keeps the same external state dir");
+
+      const after = readRepoMeta(movedExternal);
+      assertTrue(after !== null, "repo metadata exists after repo move");
+      assertEq(normalizePath(after!.gitRoot), normalizePath(movedBase), "repo metadata gitRoot is refreshed to moved repo path");
+      assertEq(after!.createdAt, before!.createdAt, "repo metadata preserves createdAt on refresh");
+
+      rmSync(movedBase, { recursive: true, force: true });
+      delete process.env.GSD_PROJECT_ID;
+    }
+
+    console.log("\n=== isInheritedRepo detects subdirectory of parent repo without .gsd (#1639) ===");
+    {
+      const parentRepo = realpathSync(mkdtempSync(join(tmpdir(), "gsd-inherited-parent-")));
+      run("git init -b main", parentRepo);
+      run('git config user.name "Pi Test"', parentRepo);
+      run('git config user.email "pi@example.com"', parentRepo);
+      writeFileSync(join(parentRepo, "README.md"), "# Parent\n", "utf-8");
+      run("git add README.md", parentRepo);
+      run('git commit -m "init"', parentRepo);
+
+      // Create a subdirectory — no .gsd at parent
+      const subdir = join(parentRepo, "newproject");
+      mkdirSync(subdir, { recursive: true });
+      assertTrue(isInheritedRepo(subdir), "subdirectory of parent repo without .gsd is inherited");
+
+      // After adding .gsd at parent, subdirectory is a legitimate child
+      mkdirSync(join(parentRepo, ".gsd"), { recursive: true });
+      assertTrue(!isInheritedRepo(subdir), "subdirectory of parent repo WITH .gsd is NOT inherited");
+
+      // The git root itself is never inherited
+      assertTrue(!isInheritedRepo(parentRepo), "git root is not inherited");
+
+      // A standalone repo (not a subdir) is not inherited
+      const standaloneRepo = realpathSync(mkdtempSync(join(tmpdir(), "gsd-inherited-standalone-")));
+      run("git init -b main", standaloneRepo);
+      run('git config user.name "Pi Test"', standaloneRepo);
+      run('git config user.email "pi@example.com"', standaloneRepo);
+      assertTrue(!isInheritedRepo(standaloneRepo), "standalone repo is not inherited");
+
+      rmSync(parentRepo, { recursive: true, force: true });
+      rmSync(standaloneRepo, { recursive: true, force: true });
+    }
+
+    console.log("\n=== subdirectory of parent repo gets unique identity after git init (#1639) ===");
+    {
+      const parentRepo = realpathSync(mkdtempSync(join(tmpdir(), "gsd-identity-parent-")));
+      run("git init -b main", parentRepo);
+      run('git config user.name "Pi Test"', parentRepo);
+      run('git config user.email "pi@example.com"', parentRepo);
+      run('git remote add origin git@github.com:example/parent-project.git', parentRepo);
+      writeFileSync(join(parentRepo, "README.md"), "# Parent\n", "utf-8");
+      run("git add README.md", parentRepo);
+      run('git commit -m "init"', parentRepo);
+
+      const subdir = join(parentRepo, "childproject");
+      mkdirSync(subdir, { recursive: true });
+
+      // Before git init, subdirectory shares parent's identity
+      const parentIdentity = repoIdentity(parentRepo);
+      const subdirIdentityBefore = repoIdentity(subdir);
+      assertEq(subdirIdentityBefore, parentIdentity, "subdirectory shares parent identity before its own git init");
+
+      // After git init, subdirectory gets its own identity
+      run("git init -b main", subdir);
+      const subdirIdentityAfter = repoIdentity(subdir);
+      assertTrue(subdirIdentityAfter !== parentIdentity, "subdirectory gets unique identity after git init");
+
+      rmSync(parentRepo, { recursive: true, force: true });
+    }
+
     console.log("\n=== validateProjectId rejects invalid values ===");
     for (const invalid of ["has spaces", "path/traversal", "dot..dot", "back\\slash"]) {
       assertTrue(!validateProjectId(invalid), `validateProjectId rejects invalid value: "${invalid}"`);
@@ -78,6 +188,7 @@ async function main(): Promise<void> {
       assertTrue(validateProjectId(valid), `validateProjectId accepts valid value: "${valid}"`);
     }
   } finally {
+    delete process.env.GSD_PROJECT_ID;
     delete process.env.GSD_STATE_DIR;
     rmSync(base, { recursive: true, force: true });
     rmSync(stateDir, { recursive: true, force: true });

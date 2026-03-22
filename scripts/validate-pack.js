@@ -66,6 +66,7 @@ try {
     'dist/loader.js',
     'packages/pi-coding-agent/dist/index.js',
     'scripts/link-workspace-packages.cjs',
+    'dist/web/standalone/server.js',
   ];
 
   let missing = false;

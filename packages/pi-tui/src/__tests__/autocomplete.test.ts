@@ -119,6 +119,21 @@ describe("CombinedAutocompleteProvider — @ file prefix extraction", () => {
 		const result = provider.getSuggestions(["check @nonexistent_xyz"], 0, 22);
 		assert.ok(result === null || result.items.length >= 0);
 	});
+
+	it("returns null for bare @ with no query to avoid full tree walk (#1824)", () => {
+		const provider = makeProvider([], process.cwd());
+		// A bare "@" produces an empty rawPrefix after stripping the "@".
+		// This must return null to avoid a synchronous full filesystem walk
+		// via the native fuzzyFind addon, which freezes the TUI on large repos.
+		const result = provider.getSuggestions(["@"], 0, 1);
+		assert.equal(result, null, "bare @ should not trigger fuzzy file search");
+	});
+
+	it("returns null for @ after space with no query (#1824)", () => {
+		const provider = makeProvider([], process.cwd());
+		const result = provider.getSuggestions(["look at @"], 0, 9);
+		assert.equal(result, null, "@ after space with no query should not trigger fuzzy file search");
+	});
 });
 
 describe("CombinedAutocompleteProvider — applyCompletion", () => {

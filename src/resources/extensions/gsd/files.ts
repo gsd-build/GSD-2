@@ -374,20 +374,37 @@ function _parsePlanImpl(content: string): SlicePlan {
 
     for (const line of taskLines) {
       const cbMatch = line.match(/^-\s+\[([ xX])\]\s+\*\*([\w.]+):\s+(.+?)\*\*\s*(.*)/);
-      if (cbMatch) {
+      // Heading-style: ### T01 -- Title, ### T01: Title, ### T01 — Title
+      const hdMatch = !cbMatch ? line.match(/^#{2,4}\s+([\w.]+)\s*(?:--|—|:)\s*(.+)/) : null;
+      if (cbMatch || hdMatch) {
         if (currentTask) tasks.push(currentTask);
 
-        const rest = cbMatch[4] || '';
-        const estMatch = rest.match(/`est:([^`]+)`/);
-        const estimate = estMatch ? estMatch[1] : '';
+        if (cbMatch) {
+          const rest = cbMatch[4] || '';
+          const estMatch = rest.match(/`est:([^`]+)`/);
+          const estimate = estMatch ? estMatch[1] : '';
 
-        currentTask = {
-          id: cbMatch[2],
-          title: cbMatch[3],
-          description: '',
-          done: cbMatch[1].toLowerCase() === 'x',
-          estimate,
-        };
+          currentTask = {
+            id: cbMatch[2],
+            title: cbMatch[3],
+            description: '',
+            done: cbMatch[1].toLowerCase() === 'x',
+            estimate,
+          };
+        } else {
+          const rest = hdMatch![2] || '';
+          const titleEstMatch = rest.match(/^(.+?)\s*`est:([^`]+)`\s*$/);
+          const title = titleEstMatch ? titleEstMatch[1].trim() : rest.trim();
+          const estimate = titleEstMatch ? titleEstMatch[2] : '';
+
+          currentTask = {
+            id: hdMatch![1],
+            title,
+            description: '',
+            done: false,
+            estimate,
+          };
+        }
       } else if (currentTask && line.match(/^\s*-\s+Files:\s*(.*)/)) {
         const filesMatch = line.match(/^\s*-\s+Files:\s*(.*)/);
         if (filesMatch) {

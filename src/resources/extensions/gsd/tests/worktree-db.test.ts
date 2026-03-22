@@ -47,6 +47,7 @@ function seedMainDb(dbPath: string): void {
     choice: 'node:sqlite',
     rationale: 'Built-in',
     revisable: 'yes',
+    made_by: 'agent',
     superseded_by: null,
   });
   insertRequirement({
@@ -182,6 +183,7 @@ console.log('\n=== worktree-db: reconcileWorktreeDb ===');
     choice: 'WAL',
     rationale: 'Performance',
     revisable: 'yes',
+    made_by: 'agent',
     superseded_by: null,
   });
   closeDatabase();
@@ -357,6 +359,7 @@ console.log('\n=== worktree-db: reconcileWorktreeDb ===');
     choice: 'yes',
     rationale: 'Robustness',
     revisable: 'no',
+    made_by: 'agent',
     superseded_by: null,
   });
   closeDatabase();
@@ -395,6 +398,7 @@ console.log('\n=== worktree-db: reconcileWorktreeDb ===');
     choice: 'works',
     rationale: 'Verify DETACH cleanup',
     revisable: 'no',
+    made_by: 'agent',
     superseded_by: null,
   });
 

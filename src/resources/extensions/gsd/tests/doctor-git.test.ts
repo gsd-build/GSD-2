@@ -8,7 +8,7 @@
  *   integration_branch_missing, worktree_directory_orphaned
  */
 
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, realpathSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, realpathSync, readFileSync, symlinkSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execSync } from "node:child_process";
@@ -318,8 +318,8 @@ async function main(): Promise<void> {
         missingBranchIssues[0]?.message.includes("feat/does-not-exist"),
         "message includes the missing branch name",
       );
-      assertEq(missingBranchIssues[0]?.fixable, false, "integration_branch_missing is not auto-fixable");
-      assertEq(missingBranchIssues[0]?.severity, "error", "severity is error");
+      assertEq(missingBranchIssues[0]?.fixable, true, "integration_branch_missing is auto-fixable via fallback");
+      assertEq(missingBranchIssues[0]?.severity, "warning", "severity is warning (fallback available)");
     }
     } else {
       console.log("\n=== integration_branch_missing (skipped on Windows) ===");
@@ -345,6 +345,73 @@ async function main(): Promise<void> {
     }
 
     // ─── Test: Orphaned worktree directory ─────────────────────────────
+    console.log("\n=== integration_branch_missing: stale metadata with detected fallback ===");
+    {
+      const dir = createRepoWithActiveMilestone();
+      cleanups.push(dir);
+
+      const metaPath = join(dir, ".gsd", "milestones", "M001", "M001-META.json");
+      writeFileSync(metaPath, JSON.stringify({ integrationBranch: "feat/does-not-exist" }, null, 2));
+
+      const detect = await runGSDDoctor(dir);
+      const missingBranchIssues = detect.issues.filter(i => i.code === "integration_branch_missing");
+      assertEq(missingBranchIssues.length, 1, "reports one stale integration branch issue");
+      assertEq(missingBranchIssues[0]?.severity, "warning", "stale metadata is warning when a fallback branch exists");
+      assertEq(missingBranchIssues[0]?.fixable, true, "stale metadata becomes auto-fixable when fallback exists");
+      assertTrue(
+        missingBranchIssues[0]?.message.includes("feat/does-not-exist") &&
+        missingBranchIssues[0]?.message.includes("main"),
+        "warning mentions stale recorded branch and detected fallback branch",
+      );
+
+      const fixed = await runGSDDoctor(dir, { fix: true });
+      assertTrue(
+        fixed.fixesApplied.some(f => f.includes('updated integration branch for M001 to "main"')),
+        "doctor fix rewrites stale integration branch metadata to detected fallback branch",
+      );
+
+      const repairedMeta = JSON.parse(readFileSync(metaPath, "utf-8"));
+      assertEq(repairedMeta.integrationBranch, "main", "metadata rewritten to detected fallback branch");
+    }
+
+    console.log("\n=== integration_branch_missing: stale metadata with configured fallback ===");
+    {
+      const dir = createRepoWithActiveMilestone();
+      cleanups.push(dir);
+
+      run("git branch trunk", dir);
+      writeFileSync(join(dir, ".gsd", "preferences.md"), `---\ngit:\n  isolation: "worktree"\n  main_branch: "trunk"\n---\n`);
+
+      const metaPath = join(dir, ".gsd", "milestones", "M001", "M001-META.json");
+      writeFileSync(metaPath, JSON.stringify({ integrationBranch: "feat/does-not-exist" }, null, 2));
+
+      const previousCwd = process.cwd();
+      process.chdir(dir);
+      try {
+        const detect = await runGSDDoctor(dir);
+        const missingBranchIssues = detect.issues.filter(i => i.code === "integration_branch_missing");
+        assertEq(missingBranchIssues.length, 1, "configured fallback still reports one stale integration branch issue");
+        assertEq(missingBranchIssues[0]?.severity, "warning", "configured fallback keeps stale metadata at warning severity");
+        assertEq(missingBranchIssues[0]?.fixable, true, "configured fallback remains auto-fixable");
+        assertTrue(
+          missingBranchIssues[0]?.message.includes("feat/does-not-exist") &&
+          missingBranchIssues[0]?.message.includes("trunk"),
+          "warning mentions stale recorded branch and configured fallback branch",
+        );
+
+        const fixed = await runGSDDoctor(dir, { fix: true });
+        assertTrue(
+          fixed.fixesApplied.some(f => f.includes('updated integration branch for M001 to "trunk"')),
+          "doctor fix rewrites stale metadata to configured fallback branch",
+        );
+      } finally {
+        process.chdir(previousCwd);
+      }
+
+      const repairedMeta = JSON.parse(readFileSync(metaPath, "utf-8"));
+      assertEq(repairedMeta.integrationBranch, "trunk", "metadata rewritten to configured fallback branch");
+    }
+
     if (process.platform !== "win32") {
     console.log("\n=== worktree_directory_orphaned ===");
     {
@@ -426,6 +493,143 @@ async function main(): Promise<void> {
       const result = await runGSDDoctor(dir, { isolationMode: "none" });
       const trackedIssues = result.issues.filter(i => i.code === "tracked_runtime_files");
       assertTrue(trackedIssues.length > 0, "none-mode: tracked runtime files IS detected");
+    }
+
+    // ─── Test: Symlinked .gsd does not cause false orphan detection ────
+    if (process.platform !== "win32") {
+    console.log("\n=== worktree_directory_orphaned (symlinked .gsd not false-positive) ===");
+    {
+      const dir = createRepoWithActiveMilestone();
+      cleanups.push(dir);
+
+      // Move .gsd to an external location and replace with a symlink.
+      // This simulates the ~/.gsd/projects/<hash> layout where .gsd is a symlink.
+      const externalGsd = join(realpathSync(mkdtempSync(join(tmpdir(), "doc-git-symlink-"))), "gsd-data");
+      cleanups.push(externalGsd);
+      renameSync(join(dir, ".gsd"), externalGsd);
+      symlinkSync(externalGsd, join(dir, ".gsd"));
+
+      // Create a real registered worktree under the (now symlinked) .gsd/worktrees/
+      mkdirSync(join(dir, ".gsd", "worktrees"), { recursive: true });
+      run("git worktree add -b worktree/symlink-test .gsd/worktrees/symlink-test", dir);
+
+      const detect = await runGSDDoctor(dir);
+      const orphanDirIssues = detect.issues.filter(i => i.code === "worktree_directory_orphaned");
+      assertEq(orphanDirIssues.length, 0, "registered worktree via symlinked .gsd NOT flagged as orphaned");
+    }
+    } else {
+      console.log("\n=== worktree_directory_orphaned (symlinked .gsd — skipped on Windows) ===");
+    }
+
+    // ─── Test: worktree_branch_merged detection & fix ──────────────────
+    if (process.platform !== "win32") {
+    console.log("\n=== worktree_branch_merged ===");
+    {
+      const dir = createRepoWithActiveMilestone();
+      cleanups.push(dir);
+
+      // Create a worktree, make a commit, then merge the branch into main
+      mkdirSync(join(dir, ".gsd", "worktrees"), { recursive: true });
+      run("git worktree add -b worktree/merged-feature .gsd/worktrees/merged-feature", dir);
+      const wtPath = join(dir, ".gsd", "worktrees", "merged-feature");
+      writeFileSync(join(wtPath, "feature.txt"), "feature\n");
+      run("git add -A", wtPath);
+      run("git -c user.email=test@test.com -c user.name=Test commit -m \"feature work\"", wtPath);
+
+      // Merge the worktree branch into main
+      run("git merge worktree/merged-feature --no-edit", dir);
+
+      const detect = await runGSDDoctor(dir);
+      const mergedIssues = detect.issues.filter(i => i.code === "worktree_branch_merged");
+      assertTrue(mergedIssues.length > 0, "detects merged worktree branch");
+      assertTrue(mergedIssues[0]?.message.includes("safe to remove"), "message says safe to remove");
+      assertTrue(mergedIssues[0]?.fixable === true, "merged worktree is fixable");
+
+      // Fix should remove the worktree
+      const fixed = await runGSDDoctor(dir, { fix: true });
+      assertTrue(fixed.fixesApplied.some(f => f.includes("removed merged worktree")), "fix removes merged worktree");
+      assertTrue(!existsSync(wtPath), "worktree directory removed after fix");
+    }
+    } else {
+      console.log("\n=== worktree_branch_merged (skipped on Windows) ===");
+    }
+
+    // ─── Test: merged milestone/* worktree removes milestone branch ────
+    if (process.platform !== "win32") {
+    console.log("\n=== worktree_branch_merged (milestone branch cleanup) ===");
+    {
+      const dir = createRepoWithActiveMilestone();
+      cleanups.push(dir);
+
+      mkdirSync(join(dir, ".gsd", "worktrees"), { recursive: true });
+      run("git worktree add -b milestone/M001 .gsd/worktrees/M001", dir);
+      const wtPath = join(dir, ".gsd", "worktrees", "M001");
+      writeFileSync(join(wtPath, "feature.txt"), "feature\n");
+      run("git add -A", wtPath);
+      run("git -c user.email=test@test.com -c user.name=Test commit -m \"feature work\"", wtPath);
+      run("git merge milestone/M001 --no-edit", dir);
+
+      const fixed = await runGSDDoctor(dir, { fix: true });
+      assertTrue(fixed.fixesApplied.some(f => f.includes("removed merged worktree")), "fix removes merged milestone worktree");
+      assertTrue(!existsSync(wtPath), "milestone worktree directory removed after fix");
+
+      const branches = run("git branch --list milestone/M001", dir);
+      assertEq(branches, "", "milestone/M001 branch deleted after merged worktree cleanup");
+    }
+    } else {
+      console.log("\n=== worktree_branch_merged (milestone branch cleanup — skipped on Windows) ===");
+    }
+
+    // ─── Test: worktree_branch_merged NOT flagged for unmerged worktree ─
+    if (process.platform !== "win32") {
+    console.log("\n=== worktree_branch_merged (no false positive) ===");
+    {
+      const dir = createRepoWithActiveMilestone();
+      cleanups.push(dir);
+
+      mkdirSync(join(dir, ".gsd", "worktrees"), { recursive: true });
+      run("git worktree add -b worktree/active-feature .gsd/worktrees/active-feature", dir);
+      const wtPath = join(dir, ".gsd", "worktrees", "active-feature");
+      writeFileSync(join(wtPath, "wip.txt"), "work in progress\n");
+      run("git add -A", wtPath);
+      run("git -c user.email=test@test.com -c user.name=Test commit -m \"wip\"", wtPath);
+
+      // Do NOT merge — branch is ahead of main
+      const detect = await runGSDDoctor(dir);
+      const mergedIssues = detect.issues.filter(i => i.code === "worktree_branch_merged");
+      assertEq(mergedIssues.length, 0, "unmerged worktree NOT flagged as merged");
+    }
+    } else {
+      console.log("\n=== worktree_branch_merged (no false positive — skipped on Windows) ===");
+    }
+
+    // ─── Test: legacy_slice_branches now fixable ───────────────────────
+    if (process.platform !== "win32") {
+    console.log("\n=== legacy_slice_branches (fixable) ===");
+    {
+      const dir = createRepoWithActiveMilestone();
+      cleanups.push(dir);
+
+      // Create legacy gsd/M001/S01 branches
+      run("git branch gsd/M001/S01", dir);
+      run("git branch gsd/M001/S02", dir);
+      // Active quick branches share gsd/*/* shape and must NOT be deleted.
+      run("git branch gsd/quick/1-fix-typo", dir);
+
+      const detect = await runGSDDoctor(dir);
+      const legacyIssues = detect.issues.filter(i => i.code === "legacy_slice_branches");
+      assertTrue(legacyIssues.length > 0, "detects legacy slice branches");
+      assertTrue(legacyIssues[0]?.fixable === true, "legacy branches are fixable");
+
+      const fixed = await runGSDDoctor(dir, { fix: true });
+      assertTrue(fixed.fixesApplied.some(f => f.includes("legacy slice branch")), "fix deletes legacy branches");
+
+      // Verify branches are gone
+      const remaining = run("git branch --list gsd/*/*", dir);
+      assertEq(remaining, "gsd/quick/1-fix-typo", "quick branch preserved; legacy branches removed");
+    }
+    } else {
+      console.log("\n=== legacy_slice_branches (fixable — skipped on Windows) ===");
     }
 
   } finally {

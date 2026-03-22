@@ -119,12 +119,23 @@ test("captures: loadPendingCaptures filters resolved entries", () => {
     const id1 = appendCapture(tmp, "pending one");
     appendCapture(tmp, "pending two");
 
-    // Resolve the first one
     markCaptureResolved(tmp, id1, "note", "acknowledged", "just a note");
 
     const pending = loadPendingCaptures(tmp);
     assert.strictEqual(pending.length, 1, "should have 1 pending");
     assert.strictEqual(pending[0].text, "pending two");
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("captures: loadAllCaptures preserves resolved entries", () => {
+  const tmp = makeTempDir("cap-all-resolved");
+  try {
+    const id1 = appendCapture(tmp, "pending one");
+    appendCapture(tmp, "pending two");
+
+    markCaptureResolved(tmp, id1, "note", "acknowledged", "just a note");
 
     const all = loadAllCaptures(tmp);
     assert.strictEqual(all.length, 2, "all should still have 2");

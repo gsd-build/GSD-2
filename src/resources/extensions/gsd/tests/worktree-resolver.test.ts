@@ -52,7 +52,7 @@ function makeDeps(
         fn: "mergeMilestoneToMain",
         args: [basePath, milestoneId, roadmapContent],
       });
-      return { pushed: false };
+      return { pushed: false, codeFilesChanged: true };
     },
     syncWorktreeStateBack: (
       mainBasePath: string,
@@ -424,7 +424,7 @@ test("mergeAndExit in worktree mode shows pushed status", () => {
   const deps = makeDeps({
     isInAutoWorktree: () => true,
     getIsolationMode: () => "worktree",
-    mergeMilestoneToMain: () => ({ pushed: true }),
+    mergeMilestoneToMain: () => ({ pushed: true, codeFilesChanged: true }),
   });
   const ctx = makeNotifyCtx();
   const resolver = new WorktreeResolver(s, deps);
@@ -434,7 +434,7 @@ test("mergeAndExit in worktree mode shows pushed status", () => {
   assert.ok(ctx.messages.some((m) => m.msg.includes("Pushed to remote")));
 });
 
-test("mergeAndExit falls back to teardown when roadmap is missing", () => {
+test("mergeAndExit falls back to teardown with preserveBranch when roadmap is missing (#1573)", () => {
   const s = makeSession({
     basePath: "/project/.gsd/worktrees/M001",
     originalBasePath: "/project",
@@ -449,27 +449,27 @@ test("mergeAndExit falls back to teardown when roadmap is missing", () => {
 
   resolver.mergeAndExit("M001", ctx);
 
-  // Should tear down worktree but preserve branch for manual recovery (#2003)
-  assert.equal(findCalls(deps.calls, "teardownAutoWorktree").length, 1);
-  const teardownCall = findCalls(deps.calls, "teardownAutoWorktree")[0];
-  assert.deepEqual(teardownCall.args[2], { preserveBranch: true });
+  // Branch must be preserved so commits are not orphaned (#1573, #2003)
+  const teardownCalls = findCalls(deps.calls, "teardownAutoWorktree");
+  assert.equal(teardownCalls.length, 1);
+  assert.deepEqual(teardownCalls[0].args[2], { preserveBranch: true });
   assert.equal(findCalls(deps.calls, "mergeMilestoneToMain").length, 0);
   assert.equal(s.basePath, "/project"); // restored
   assert.ok(ctx.messages.some((m) => m.msg.includes("branch preserved")));
 });
 
-test("mergeAndExit falls back to worktree path when roadmap missing from project root (#2003)", () => {
+test("mergeAndExit resolves roadmap from worktree when missing at project root (#1573, #2003)", () => {
   const s = makeSession({
     basePath: "/project/.gsd/worktrees/M001",
     originalBasePath: "/project",
   });
-  // resolveMilestoneFile returns null for project root, non-null for worktree path
+  // resolveMilestoneFile returns null for project root, returns path for worktree
   const deps = makeDeps({
     isInAutoWorktree: () => true,
     getIsolationMode: () => "worktree",
     resolveMilestoneFile: (basePath: string) => {
-      // Only find roadmap in the worktree, not in project root
-      if (basePath.includes("worktrees")) {
+      if (basePath === "/project") return null; // missing at project root
+      if (basePath === "/project/.gsd/worktrees/M001") {
         return "/project/.gsd/worktrees/M001/.gsd/milestones/M001/M001-ROADMAP.md";
       }
       return null;
@@ -480,7 +480,7 @@ test("mergeAndExit falls back to worktree path when roadmap missing from project
 
   resolver.mergeAndExit("M001", ctx);
 
-  // Should have found the roadmap via fallback and merged
+  // Should have called mergeMilestoneToMain, not bare teardown
   assert.equal(findCalls(deps.calls, "mergeMilestoneToMain").length, 1);
   assert.equal(findCalls(deps.calls, "teardownAutoWorktree").length, 0);
   assert.equal(s.basePath, "/project"); // restored
@@ -515,6 +515,43 @@ test("mergeAndExit in worktree mode restores to project root on merge failure", 
   assert.equal(teardownCalls.length, 1);
   assert.deepEqual(teardownCalls[0].args[2], { preserveBranch: true });
   assert.equal(findCalls(deps.calls, "GitServiceImpl").length, 1); // rebuilt after recovery
+});
+
+test("mergeAndExit failure message tells user worktree and branch are preserved (#1668)", () => {
+  // Regression test: before the fix, the failure message was a bare
+  // "Milestone merge failed: <reason>" with no recovery guidance. Users were
+  // left confused about whether their code had been deleted. The new message
+  // explicitly states that the worktree and branch are preserved and what to do.
+  const s = makeSession({
+    basePath: "/project/.gsd/worktrees/M001",
+    originalBasePath: "/project",
+  });
+  const deps = makeDeps({
+    isInAutoWorktree: () => true,
+    getIsolationMode: () => "worktree",
+    mergeMilestoneToMain: () => {
+      throw new Error("pathspec 'main' did not match any file(s) known to git");
+    },
+  });
+  const ctx = makeNotifyCtx();
+  const resolver = new WorktreeResolver(s, deps);
+
+  resolver.mergeAndExit("M001", ctx);
+
+  const warning = ctx.messages.find((m) => m.level === "error");
+  assert.ok(warning, "an error message is emitted");
+  // Must contain the original error
+  assert.ok(warning!.msg.includes("pathspec 'main' did not match"), "error includes the original error");
+  // Must tell the user their work is safe
+  assert.ok(
+    warning!.msg.includes("preserved"),
+    "error tells user the milestone branch is preserved",
+  );
+  // Must suggest a recovery action
+  assert.ok(
+    warning!.msg.includes("retry") || warning!.msg.includes("manually"),
+    "error suggests a recovery action",
+  );
 });
 
 // ─── mergeAndExit Tests (branch mode) ────────────────────────────────────────
@@ -626,6 +663,81 @@ test("mergeAndExit in none mode is a no-op", () => {
   assert.equal(ctx.messages.length, 0);
 });
 
+// ─── #1906 — metadata-only merge warning ────────────────────────────────────
+
+test("mergeAndExit warns when merge contains no code changes (#1906)", () => {
+  const s = makeSession({
+    basePath: "/project/.gsd/worktrees/M001",
+    originalBasePath: "/project",
+  });
+  const deps = makeDeps({
+    isInAutoWorktree: () => true,
+    getIsolationMode: () => "worktree",
+    mergeMilestoneToMain: () => ({ pushed: false, codeFilesChanged: false }),
+  });
+  const ctx = makeNotifyCtx();
+  const resolver = new WorktreeResolver(s, deps);
+
+  resolver.mergeAndExit("M001", ctx);
+
+  assert.ok(
+    ctx.messages.some((m) => m.msg.includes("NO code changes") && m.level === "warning"),
+    "must emit warning when only .gsd/ metadata was merged",
+  );
+  assert.ok(
+    !ctx.messages.some((m) => m.msg.includes("merged to main") && m.level === "info"),
+    "must NOT emit success-style info notification for metadata-only merge",
+  );
+});
+
+test("mergeAndExit emits info when merge contains code changes (#1906)", () => {
+  const s = makeSession({
+    basePath: "/project/.gsd/worktrees/M001",
+    originalBasePath: "/project",
+  });
+  const deps = makeDeps({
+    isInAutoWorktree: () => true,
+    getIsolationMode: () => "worktree",
+    mergeMilestoneToMain: () => ({ pushed: false, codeFilesChanged: true }),
+  });
+  const ctx = makeNotifyCtx();
+  const resolver = new WorktreeResolver(s, deps);
+
+  resolver.mergeAndExit("M001", ctx);
+
+  assert.ok(
+    ctx.messages.some((m) => m.msg.includes("merged to main") && m.level === "info"),
+    "must emit info notification when code files were merged",
+  );
+  assert.ok(
+    !ctx.messages.some((m) => m.msg.includes("NO code changes")),
+    "must NOT emit metadata-only warning when code files were merged",
+  );
+});
+
+test("mergeAndExit branch mode warns when merge contains no code changes (#1906)", () => {
+  const s = makeSession({
+    basePath: "/project",
+    originalBasePath: "/project",
+  });
+  const deps = makeDeps({
+    isInAutoWorktree: () => false,
+    getIsolationMode: () => "branch",
+    getCurrentBranch: () => "milestone/M001",
+    autoWorktreeBranch: () => "milestone/M001",
+    mergeMilestoneToMain: () => ({ pushed: false, codeFilesChanged: false }),
+  });
+  const ctx = makeNotifyCtx();
+  const resolver = new WorktreeResolver(s, deps);
+
+  resolver.mergeAndExit("M001", ctx);
+
+  assert.ok(
+    ctx.messages.some((m) => m.msg.includes("NO code changes") && m.level === "warning"),
+    "branch mode must emit warning when only .gsd/ metadata was merged",
+  );
+});
+
 // ─── mergeAndEnterNext Tests ─────────────────────────────────────────────────
 
 test("mergeAndEnterNext calls mergeAndExit then enterMilestone", () => {
@@ -644,7 +756,7 @@ test("mergeAndEnterNext calls mergeAndExit then enterMilestone", () => {
       _roadmap: string,
     ) => {
       callOrder.push(`merge:${milestoneId}`);
-      return { pushed: false };
+      return { pushed: false, codeFilesChanged: true };
     },
     getAutoWorktreePath: () => null,
     createAutoWorktree: (basePath: string, milestoneId: string) => {

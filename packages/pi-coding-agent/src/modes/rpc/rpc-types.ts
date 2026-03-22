@@ -64,7 +64,12 @@ export type RpcCommand =
 	| { id?: string; type: "get_messages" }
 
 	// Commands (available for invocation via prompt)
-	| { id?: string; type: "get_commands" };
+	| { id?: string; type: "get_commands" }
+
+	// Bridge-hosted native terminal
+	| { id?: string; type: "terminal_input"; data: string }
+	| { id?: string; type: "terminal_resize"; cols: number; rows: number }
+	| { id?: string; type: "terminal_redraw" };
 
 // ============================================================================
 // RPC Slash Command (for get_commands response)
@@ -99,8 +104,13 @@ export interface RpcSessionState {
 	sessionId: string;
 	sessionName?: string;
 	autoCompactionEnabled: boolean;
+	autoRetryEnabled: boolean;
+	retryInProgress: boolean;
+	retryAttempt: number;
 	messageCount: number;
 	pendingMessageCount: number;
+	/** Whether extension loading has completed. Commands from `get_commands` may be incomplete until true. */
+	extensionsReady: boolean;
 }
 
 // ============================================================================
@@ -200,6 +210,11 @@ export type RpcResponse =
 			success: true;
 			data: { commands: RpcSlashCommand[] };
 	  }
+
+	// Bridge-hosted native terminal
+	| { id?: string; type: "response"; command: "terminal_input"; success: true }
+	| { id?: string; type: "response"; command: "terminal_resize"; success: true }
+	| { id?: string; type: "response"; command: "terminal_redraw"; success: true }
 
 	// Error response (any command can fail)
 	| { id?: string; type: "response"; command: string; success: false; error: string };

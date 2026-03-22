@@ -18,6 +18,7 @@ import { publishedDateToAge } from "../resources/extensions/search-the-web/tavil
 import type { TavilyResult } from "../resources/extensions/search-the-web/tavily.ts";
 import { resolveSearchProvider } from "../resources/extensions/search-the-web/provider.ts";
 import { normalizeQuery } from "../resources/extensions/search-the-web/url-utils.ts";
+import { normalizeHeaders, parseJsonBody } from "./fetch-test-helpers.ts";
 
 // =============================================================================
 // Helpers
@@ -78,21 +79,8 @@ function mockFetch(responseBody: unknown, status = 200) {
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
     captured.url = url;
     captured.method = init?.method || "GET";
-
-    if (init?.headers) {
-      if (init.headers instanceof Headers) {
-        captured.headers = {};
-        init.headers.forEach((v, k) => { captured.headers![k] = v; });
-      } else if (Array.isArray(init.headers)) {
-        captured.headers = Object.fromEntries(init.headers);
-      } else {
-        captured.headers = init.headers as Record<string, string>;
-      }
-    }
-
-    if (init?.body && typeof init.body === "string") {
-      try { captured.body = JSON.parse(init.body); } catch { /* ignore */ }
-    }
+    captured.headers = normalizeHeaders(init?.headers);
+    captured.body = parseJsonBody(init?.body);
 
     return new Response(JSON.stringify(responseBody), {
       status,
