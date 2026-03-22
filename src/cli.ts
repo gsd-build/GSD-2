@@ -187,61 +187,350 @@ if (cliFlags.web || (cliFlags.messages[0] === 'web' && cliFlags.messages[1] !== 
 }
 
 
-// `gsd sessions` — list past sessions and pick one to resume
-if (cliFlags.messages[0] === 'sessions') {
+// ---------------------------------------------------------------------------
+// Session picker — shared by `gsd sessions` subcommand and startup-without-args
+// ---------------------------------------------------------------------------
+/**
+ * Display an interactive session picker for the current working directory.
+ *
+ * `exitOnCancel=true`  — used by `gsd sessions`: q/invalid/empty exits the process.
+ * `exitOnCancel=false` — used at startup: q/empty/0 means "start a new session".
+ *
+ * On a valid pick, sets `cliFlags._selectedSessionPath` so the session manager
+ * below opens that specific file instead of creating a new one.
+ */
+async function runSessionPicker(exitOnCancel: boolean): Promise<void> {
   const cwd = process.cwd()
-  const safePath = `--${cwd.replace(/^[/\\]/, '').replace(/[/\\:]/g, '-')}--`
-  const projectSessionsDir = join(sessionsDir, safePath)
+  const pickerSessionsDir = getProjectSessionsDir(cwd)
 
-  process.stderr.write(chalk.dim(`Loading sessions for ${cwd}...\n`))
-  const sessions = await SessionManager.list(cwd, projectSessionsDir)
+  const sessions = await SessionManager.list(cwd, pickerSessionsDir)
 
   if (sessions.length === 0) {
-    process.stderr.write(chalk.yellow('No sessions found for this directory.\n'))
-    process.exit(0)
+    if (exitOnCancel) {
+      process.stderr.write(chalk.yellow('No sessions found for this directory.\n'))
+      process.exit(0)
+    }
+    return
   }
 
-  process.stderr.write(chalk.bold(`\n  Sessions (${sessions.length}):\n\n`))
-
-  const maxShow = 20
+  const maxShow = exitOnCancel ? 20 : 10
   const toShow = sessions.slice(0, maxShow)
+
+  // ── Layout helpers ────────────────────────────────────────────────────────
+  // Sample a long date to get the real max width for this locale
+  const _sampleDate = new Date(2026, 11, 31, 23, 59)
+  function formatDate(d: Date): string {
+    return d.toLocaleString(undefined, {
+      month: 'short', day: 'numeric', year: 'numeric',
+      hour: 'numeric', minute: '2-digit',
+    })
+  }
+
+  // Fixed column widths (never change regardless of terminal size)
+  const COL_NUM  = 3   // right-aligned number: " 1" .. "10"
+  const COL_MSGS = 4   // right-aligned: "  30"
+  const COL_DATE = Math.max(formatDate(_sampleDate).length, 20)
+
+  // getLayout() — reads terminal width at call time so resize is instant
+  function getLayout() {
+    const termWidth = process.stderr.columns || 80
+    // Table row structure:
+    //   "  │ " + NUM + " │ " + DATE + " │ " + MSGS + " │ " + TOPIC + " │"
+    const TABLE_OVERHEAD = 2 + 1 + (COL_NUM + 2) + 1 + (COL_DATE + 2) + 1 + (COL_MSGS + 2) + 1 + 2
+    const MIN_TABLE_WIDTH = TABLE_OVERHEAD + COL_NUM + COL_DATE + COL_MSGS + 12
+    const useWide = termWidth >= MIN_TABLE_WIDTH
+    const COL_TOPIC = Math.max(12, termWidth - TABLE_OVERHEAD - COL_NUM - COL_DATE - COL_MSGS)
+    const compactWidth = Math.max(10, termWidth - 8)
+    return { termWidth, useWide, COL_TOPIC, compactWidth }
+  }
+
+  const ESC = '\x1B'
+  const HIDE_CURSOR  = `${ESC}[?25l`
+  const SHOW_CURSOR  = `${ESC}[?25h`
+  const CLEAR_LINE   = `${ESC}[2K\r`
+  const MOVE_UP      = (n: number) => `${ESC}[${n}A`
+  const ALT_SCREEN_ON  = `${ESC}[?1049h`
+  const ALT_SCREEN_OFF = `${ESC}[?1049l`
+  const CLEAR_SCREEN   = `${ESC}[2J${ESC}[H`
+
+  /** Strip ANSI escape codes to get visible length. */
+  function visLen(s: string): number {
+    return s.replace(/\x1B\[[0-9;]*m/g, '').length
+  }
+
+  /** Pad/truncate to exact visible width. */
+  function cell(text: string, len: number, align: 'left' | 'right' = 'left'): string {
+    const vl = visLen(text)
+    const diff = len - vl
+    if (diff < 0) {
+      let result = ''
+      let count = 0
+      for (const ch of text.replace(/\x1B\[[0-9;]*m/g, '')) {
+        if (count >= len - 1) { result += '…'; break }
+        result += ch; count++
+      }
+      return result
+    }
+    if (align === 'right') return ' '.repeat(diff) + text
+    return text + ' '.repeat(diff)
+  }
+
+  // Wide layout: full table with 4 columns — uses live layout values
+  function tableRow(num: string, date: string, msgs: string, topic: string, COL_TOPIC: number): string {
+    return (
+      '  │ ' + cell(num, COL_NUM, 'right') +
+      ' │ ' + cell(date, COL_DATE) +
+      ' │ ' + cell(msgs, COL_MSGS, 'right') +
+      ' │ ' + cell(topic, COL_TOPIC) +
+      ' │'
+    )
+  }
+
+  function divider(l: string, m: string, r: string, COL_TOPIC: number): string {
+    return (
+      '  ' + l +
+      '─'.repeat(COL_NUM + 2) + m +
+      '─'.repeat(COL_DATE + 2) + m +
+      '─'.repeat(COL_MSGS + 2) + m +
+      '─'.repeat(COL_TOPIC + 2) + r
+    )
+  }
+
+  // compactWidth is now derived inside getLayout() — placeholder kept for compactRow
+  // compactWidth is derived from getLayout() on every render
+
+  function compactRow(num: string | null, date: string, msgs: string, topic: string, isSelected: boolean, cw: number): string[] {
+    const selector = isSelected ? chalk.cyan('▶') : ' '
+    const numStr = num !== null ? chalk.bold(num.padStart(2)) : ' 0'
+    const meta = `${date}  ${chalk.dim(`(${msgs} msgs)`)}`
+    const topicLine = cell(topic, cw)
+    const line1 = `  ${selector} ${numStr}  ${meta}`
+    const line2 = `      ${chalk.dim('└─')} ${isSelected ? chalk.white(topicLine) : chalk.dim(topicLine)}`
+    return [line1, line2]
+  }
+
+
+  // ── Build rows list ───────────────────────────────────────────────────────
+  type PickerRow = { label: string; sessionIdx: number | null }
+  const rows: PickerRow[] = []
+
+  if (!exitOnCancel) {
+    rows.push({ label: '[ new conversation ]', sessionIdx: null })
+  }
   for (let i = 0; i < toShow.length; i++) {
     const s = toShow[i]
-    const date = s.modified.toLocaleString()
-    const msgs = s.messageCount
-    const name = s.name ? ` ${chalk.cyan(s.name)}` : ''
-    const preview = s.firstMessage
-      ? s.firstMessage.replace(/\n/g, ' ').substring(0, 80)
-      : chalk.dim('(empty)')
-    const num = String(i + 1).padStart(3)
-    process.stderr.write(`  ${chalk.bold(num)}. ${chalk.green(date)} ${chalk.dim(`(${msgs} msgs)`)}${name}\n`)
-    process.stderr.write(`       ${chalk.dim(preview)}\n\n`)
+    const topic = s.name || (s.firstMessage ? s.firstMessage.replace(/\n/g, ' ') : '(empty)')
+    rows.push({ label: topic, sessionIdx: i })
   }
 
-  if (sessions.length > maxShow) {
-    process.stderr.write(chalk.dim(`  ... and ${sessions.length - maxShow} more\n\n`))
+  // ── Render ────────────────────────────────────────────────────────────────
+  function renderTable(selectedIdx: number): string {
+    // Re-read terminal dimensions on every render — picks up resize events instantly
+    const { termWidth, useWide, COL_TOPIC, compactWidth } = getLayout()
+    const out: string[] = []
+    out.push(chalk.bold(`\n  Sessions for ${chalk.cyan(cwd)}\n`))
+
+    if (useWide) {
+      // ── Wide: full table ──
+      out.push(divider('┌', '┬', '┐', COL_TOPIC))
+      out.push(tableRow(chalk.bold(' # '), chalk.bold('Date'), chalk.bold('Msgs'), chalk.bold('Topic'), COL_TOPIC))
+      out.push(divider('├', '┼', '┤', COL_TOPIC))
+
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i]
+        const isSelected = i === selectedIdx
+
+        if (r.sessionIdx === null) {
+          const line = tableRow(' 0 ', '[ new conversation ]', '', '', COL_TOPIC)
+          out.push(isSelected ? chalk.bgBlue(chalk.white(line)) : chalk.dim(line))
+          out.push(divider('├', '┼', '┤', COL_TOPIC))
+        } else {
+          const s = toShow[r.sessionIdx]
+          const numStr   = String(r.sessionIdx + 1)
+          const dateStr  = formatDate(s.modified)
+          const msgsStr  = String(s.messageCount)
+          // Truncate/pad topic BEFORE applying chalk — cell() can't see through ANSI codes
+          const topicRaw = cell(r.label, COL_TOPIC)
+          const topicStr = isSelected ? topicRaw : (s.name ? chalk.cyan(topicRaw) : chalk.white(topicRaw))
+          const dateColored  = isSelected ? dateStr : chalk.green(dateStr)
+          const msgsColored  = isSelected ? msgsStr : chalk.cyan(msgsStr)
+          const line = tableRow(numStr, dateColored, msgsColored, topicStr, COL_TOPIC)
+          out.push(isSelected ? chalk.bgBlue(chalk.white(line)) : line)
+        }
+      }
+
+      out.push(divider('└', '┴', '┘', COL_TOPIC))
+
+    } else {
+      // ── Compact: 2 lines per row ──
+      out.push('  ' + '─'.repeat(Math.max(10, termWidth - 4)))
+
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i]
+        const isSelected = i === selectedIdx
+
+        if (r.sessionIdx === null) {
+          const selector = isSelected ? chalk.cyan('▶') : ' '
+          const line = `  ${selector}  0  ${isSelected ? chalk.white('[ new conversation ]') : chalk.dim('[ new conversation ]')}`
+          out.push(line)
+          out.push('  ' + '─'.repeat(Math.max(10, termWidth - 4)))
+        } else {
+          const s = toShow[r.sessionIdx]
+          const lines = compactRow(
+            String(r.sessionIdx + 1),
+            isSelected ? formatDate(s.modified) : chalk.green(formatDate(s.modified)),
+            String(s.messageCount),
+            r.label,
+            isSelected,
+            compactWidth,
+          )
+          out.push(...lines)
+        }
+      }
+
+      out.push('  ' + '─'.repeat(Math.max(10, termWidth - 4)))
+    }
+
+    if (sessions.length > maxShow) {
+      const extra = sessions.length - maxShow
+      const hint = exitOnCancel ? '' : `  · ${chalk.bold('gsd sessions')} to see all`
+      out.push(chalk.dim(`\n  ... and ${extra} more${hint}`))
+    }
+
+    const hint = exitOnCancel
+      ? chalk.dim('  ↑↓ navigate  ·  Enter select  ·  Esc/q quit')
+      : chalk.dim('  ↑↓ navigate  ·  Enter select  ·  Esc = new conversation')
+    out.push('\n' + hint + '\n')
+
+    return out.join('\n')
   }
 
-  // Interactive selection
-  const readline = await import('node:readline')
-  const rl = readline.createInterface({ input: process.stdin, output: process.stderr })
-  const answer = await new Promise<string>((resolve) => {
-    rl.question(chalk.bold('  Enter session number to resume (or q to quit): '), resolve)
-  })
-  rl.close()
+  // ── Interactive key loop ──────────────────────────────────────────────────
+  // Returns: { chosen: selected row index or -1 }
+  async function interactiveSelect(): Promise<{ chosen: number }> {
+    return new Promise((resolve) => {
+      let selected = 0
+      // Enter alternate screen: picker lives here, original terminal is untouched
+      process.stderr.write(ALT_SCREEN_ON + HIDE_CURSOR)
 
-  const choice = parseInt(answer, 10)
-  if (isNaN(choice) || choice < 1 || choice > toShow.length) {
-    process.stderr.write(chalk.dim('Cancelled.\n'))
-    process.exit(0)
+      function paint() {
+        // Always clear from top and redraw — no line counting, no wrap math
+        process.stderr.write(CLEAR_SCREEN + renderTable(selected))
+      }
+
+      paint()
+
+      const stdin = process.stdin as NodeJS.ReadStream
+      if (stdin.setRawMode) stdin.setRawMode(true)
+      stdin.resume()
+      stdin.setEncoding('utf8')
+
+      function onKey(key: string) {
+        if (key === '\x1B[A' || key === '\x1B[D') {
+          // Up or Left
+          selected = (selected - 1 + rows.length) % rows.length
+          paint()
+        } else if (key === '\x1B[B' || key === '\x1B[C') {
+          // Down or Right
+          selected = (selected + 1) % rows.length
+          paint()
+        } else if (key === '\r' || key === '\n') {
+          // Enter — select
+          cleanup()
+          resolve({ chosen: selected })
+        } else if (key === '\x1B' || key === 'q' || key === 'Q') {
+          // Esc or q — cancel
+          cleanup()
+          resolve({ chosen: -1 })
+        } else if (key === '\x03') {
+          // Ctrl+C
+          cleanup()
+          process.stderr.write('\n')
+          process.exit(0)
+        }
+      }
+
+      // Polling fallback: Windows Terminal doesn't fire resize on maximize/restore
+      let lastCols = process.stderr.columns || 80
+      const resizePoll = setInterval(() => {
+        const cols = process.stderr.columns || 80
+        if (cols !== lastCols) {
+          lastCols = cols
+          paint()
+        }
+      }, 150)
+
+      function onResize() { paint() }
+
+      // Listen on both — Windows Terminal fires on stderr, others on stdout
+      process.stdout.on('resize', onResize)
+      process.stderr.on('resize', onResize)
+
+      function cleanup() {
+        clearInterval(resizePoll)
+        process.stdout.removeListener('resize', onResize)
+        process.stderr.removeListener('resize', onResize)
+        stdin.removeListener('data', onKey)
+        if (stdin.setRawMode) stdin.setRawMode(false)
+        stdin.pause()
+        process.stderr.write(ALT_SCREEN_OFF + SHOW_CURSOR)
+      }
+
+      stdin.on('data', onKey)
+    })
   }
 
-  const selected = toShow[choice - 1]
-  process.stderr.write(chalk.green(`\nResuming session from ${selected.modified.toLocaleString()}...\n\n`))
+  const { chosen } = await interactiveSelect()
 
-  // Mark for the interactive session below to open this specific session
+  // Alt screen already exited in cleanup() — terminal is restored automatically
+
+  // Restore stdin for TUI
+  process.stdin.removeAllListeners('data')
+  process.stdin.removeAllListeners('keypress')
+  if ((process.stdin as NodeJS.ReadStream).setRawMode) {
+    (process.stdin as NodeJS.ReadStream).setRawMode(false)
+  }
+  process.stdin.pause()
+
+  if (chosen === -1) {
+    // Cancelled
+    if (exitOnCancel) {
+      process.stderr.write(chalk.dim('  Cancelled.\n\n'))
+      process.exit(0)
+    }
+    // ESC at startup = start fresh silently
+    return
+  }
+
+  const row = rows[chosen]
+
+  if (row.sessionIdx === null) {
+    // "New conversation" row selected
+    process.stderr.write(chalk.dim('  Starting new conversation...\n\n'))
+    return
+  }
+
+  const selected = toShow[row.sessionIdx]
+  process.stderr.write(chalk.green(`  Resuming session from ${formatDate(selected.modified)}...\n\n`))
   cliFlags.continue = true
   cliFlags._selectedSessionPath = selected.path
+}
+
+// `gsd sessions` — explicit subcommand: show full picker, exit process on cancel
+if (cliFlags.messages[0] === 'sessions') {
+  await runSessionPicker(true)
+}
+
+// Startup without arguments — show compact picker so the user can choose a
+// previous session or start fresh. Skip in non-interactive / subagent / print modes.
+if (
+  cliFlags.messages.length === 0 &&
+  !cliFlags.continue &&
+  !cliFlags.noSession &&
+  !isPrintMode &&
+  process.stdin.isTTY
+) {
+  await runSessionPicker(false)
 }
 
 // `gsd headless` — run auto-mode without TUI
