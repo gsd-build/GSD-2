@@ -6,6 +6,7 @@
 import { createHash } from "node:crypto";
 import { appendFileSync, readFileSync, existsSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
+import { atomicWriteSync } from "./atomic-write.js";
 
 // ─── Event Types ─────────────────────────────────────────────────────────
 
@@ -89,4 +90,51 @@ export function findForkPoint(
   }
 
   return lastCommon;
+}
+
+// ─── compactMilestoneEvents ─────────────────────────────────────────────────
+
+/**
+ * Archive a milestone's events from the active log to a separate file.
+ * Active log retains only events from other milestones.
+ * Archived file is kept on disk for forensics (D-17, EVT-03).
+ *
+ * @param basePath - Project root (parent of .gsd/)
+ * @param milestoneId - The milestone whose events should be archived
+ * @returns { archived: number } — count of events moved to archive
+ */
+export function compactMilestoneEvents(
+  basePath: string,
+  milestoneId: string,
+): { archived: number } {
+  const logPath = join(basePath, ".gsd", "event-log.jsonl");
+  const archivePath = join(basePath, ".gsd", `event-log-${milestoneId}.jsonl.archived`);
+
+  const allEvents = readEvents(logPath);
+  const toArchive = allEvents.filter(
+    (e) => (e.params as { milestoneId?: string }).milestoneId === milestoneId,
+  );
+  const remaining = allEvents.filter(
+    (e) => (e.params as { milestoneId?: string }).milestoneId !== milestoneId,
+  );
+
+  if (toArchive.length === 0) {
+    return { archived: 0 };
+  }
+
+  // Write archived events to .jsonl.archived file (crash-safe)
+  atomicWriteSync(
+    archivePath,
+    toArchive.map((e) => JSON.stringify(e)).join("\n") + "\n",
+  );
+
+  // Truncate active log to remaining events only
+  atomicWriteSync(
+    logPath,
+    remaining.length > 0
+      ? remaining.map((e) => JSON.stringify(e)).join("\n") + "\n"
+      : "",
+  );
+
+  return { archived: toArchive.length };
 }
