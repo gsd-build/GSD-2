@@ -582,7 +582,9 @@ function cleanupAfterLoopExit(ctx: ExtensionContext): void {
   // Do NOT clear auto-resume timers here — a provider-error pause may have
   // scheduled an auto-resume timer that should fire after the loop exits.
   // Timers are properly cleared in pauseAuto() and stopAuto() instead.
-  resetProviderRecoveryState();
+  // Only clear network retry counters — preserve consecutiveTransientErrors
+  // so MAX_TRANSIENT_AUTO_RESUMES escalation works across pause/resume cycles.
+  clearNetworkRetryCounts();
   clearUnitTimeout();
 
   ctx.ui.setStatus("gsd-auto", undefined);
@@ -1113,7 +1115,9 @@ export async function startAuto(
     }
 
     clearAutoResumeTimers();
-    resetProviderRecoveryState();
+    // Only clear network retry counters — preserve consecutiveTransientErrors
+    // so MAX_TRANSIENT_AUTO_RESUMES escalation works across pause/resume cycles.
+    clearNetworkRetryCounts();
     s.paused = false;
     s.active = true;
     s.verbose = verboseMode;
