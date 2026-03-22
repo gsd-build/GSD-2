@@ -133,6 +133,7 @@ import { join } from "node:path";
 import { readFileSync, existsSync, mkdirSync, writeFileSync, unlinkSync } from "node:fs";
 import { atomicWriteSync } from "./atomic-write.js";
 import { clearAutoResumeTimers } from "./auto-resume-timers.js";
+import { resetProviderRecoveryState } from "./provider-recovery-state.js";
 import {
   autoCommitCurrentBranch,
   captureIntegrationBranch,
@@ -527,6 +528,7 @@ function handleLostSessionLock(
   s.active = false;
   s.paused = false;
   clearAutoResumeTimers();
+  resetProviderRecoveryState();
   clearUnitTimeout();
   deregisterSigtermHandler();
   clearCmuxSidebar(loadEffectiveGSDPreferences()?.preferences);
@@ -563,6 +565,7 @@ function cleanupAfterLoopExit(ctx: ExtensionContext): void {
   s.currentUnit = null;
   s.active = false;
   clearAutoResumeTimers();
+  resetProviderRecoveryState();
   clearUnitTimeout();
 
   ctx.ui.setStatus("gsd-auto", undefined);
@@ -593,6 +596,7 @@ export async function stopAuto(
     // ── Step 1: Timers and locks ──
     try {
       clearAutoResumeTimers();
+      resetProviderRecoveryState();
       clearUnitTimeout();
       if (lockBase()) clearLock(lockBase());
       if (lockBase()) releaseSessionLock(lockBase());
@@ -784,6 +788,7 @@ export async function pauseAuto(
 ): Promise<void> {
   if (!s.active) return;
   clearAutoResumeTimers();
+  resetProviderRecoveryState();
   clearUnitTimeout();
   // Unblock any pending unit promise so the auto-loop is not orphaned.
   resolveAgentEndCancelled();
@@ -1074,6 +1079,7 @@ export async function startAuto(
     }
 
     clearAutoResumeTimers();
+    resetProviderRecoveryState();
     s.paused = false;
     s.active = true;
     s.verbose = verboseMode;

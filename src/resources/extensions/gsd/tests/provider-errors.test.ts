@@ -262,11 +262,12 @@ test("pauseAutoForProviderError falls back to indefinite pause when not rate lim
 // ── Escalating backoff for transient errors (#1166) ─────────────────────────
 
 test("agent-end-recovery.ts tracks consecutive transient errors for escalating backoff", () => {
+  const stateSrc = readFileSync(join(__dirname, "..", "provider-recovery-state.ts"), "utf-8");
   const src = readFileSync(join(__dirname, "..", "bootstrap", "agent-end-recovery.ts"), "utf-8");
 
   assert.ok(
-    src.includes("consecutiveTransientErrors"),
-    "agent-end-recovery.ts must track consecutiveTransientErrors for escalating backoff (#1166)",
+    stateSrc.includes("consecutiveTransientErrors"),
+    "provider-recovery-state.ts must track consecutiveTransientErrors for escalating backoff (#1166)",
   );
   assert.ok(
     src.includes("MAX_TRANSIENT_AUTO_RESUMES"),
@@ -277,12 +278,9 @@ test("agent-end-recovery.ts tracks consecutive transient errors for escalating b
 test("agent-end-recovery.ts resets consecutive transient error counter on success", () => {
   const src = readFileSync(join(__dirname, "..", "bootstrap", "agent-end-recovery.ts"), "utf-8");
 
-  // After successful agent_end (before resolveAgentEnd), the counter must be reset.
-  // Use a regex across the success block so CRLF checkouts on Windows do not
-  // push the reset line outside a fixed substring window.
   assert.ok(
-    /consecutiveTransientErrors\s*=\s*0\s*;[\s\S]{0,250}resolveAgentEnd/.test(src),
-    "consecutive transient error counter must be reset before resolveAgentEnd on the success path (#1166)",
+    src.includes("resetProviderRecoveryState();") && src.includes("resolveAgentEnd(event)"),
+    "provider recovery state must be reset before resolveAgentEnd on the success path (#1166)",
   );
 });
 
@@ -291,8 +289,16 @@ test("agent-end-recovery.ts applies escalating delay for repeated transient erro
 
   // Must contain the exponential backoff formula (may span multiple lines)
   assert.ok(
-    src.includes("2 ** Math.max(0, consecutiveTransientErrors"),
+    src.includes("2 ** Math.max(0, getConsecutiveTransientErrors()"),
     "agent-end-recovery.ts must escalate retryAfterMs exponentially for consecutive transient errors (#1166)",
+  );
+});
+
+test("auto.ts resets provider recovery state across lifecycle teardown", () => {
+  const autoSource = readFileSync(join(__dirname, "..", "auto.ts"), "utf-8");
+  assert.ok(
+    autoSource.includes("resetProviderRecoveryState()"),
+    "auto.ts must reset provider recovery state during pause/stop/resume lifecycle transitions",
   );
 });
 

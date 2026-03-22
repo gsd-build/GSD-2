@@ -1071,11 +1071,12 @@ export async function runUnitPhase(
   deps.clearUnitRuntimeRecord(s.basePath, unitType, unitId);
   emitUnitEnd(unitResult.status, false);
     ctx.ui.notify(
-    `Session creation timed out or was cancelled for ${unitType} ${unitId}. Retrying.`,
+    `Session creation timed out or was cancelled for ${unitType} ${unitId}. Auto-mode stopped to avoid a stale session switch. Resume manually once the session is healthy.`,
       "warning",
     );
-  debugLog("autoLoop", { phase: "continue", reason: "session-failed-retry" });
-  return { action: "continue" };
+  await deps.stopAuto(ctx, pi, "Session creation failed");
+  debugLog("autoLoop", { phase: "exit", reason: "session-failed" });
+  return { action: "break", reason: "session-failed" };
   }
 
   // Now that runUnit has called newSession(), the session file path is correct.

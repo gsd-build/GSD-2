@@ -4,13 +4,11 @@ import { checkAutoStartAfterDiscuss } from "../guided-flow.js";
 import { getAutoDashboardData, getAutoModeStartModel, isAutoActive, isAutoPaused, pauseAuto, resumeAutoAfterDelay } from "../auto.js";
 import { scheduleAutoResumeTimer } from "../auto-resume-timers.js";
 import { getNextFallbackModel, isTransientNetworkError, resolveModelWithFallbacksForUnit } from "../preferences.js";
+import { clearNetworkRetryCounts, deleteNetworkRetryCount, getConsecutiveTransientErrors, getNetworkRetryCount, resetProviderRecoveryState, setConsecutiveTransientErrors, setNetworkRetryCount } from "../provider-recovery-state.js";
 import { classifyProviderError, pauseAutoForProviderError } from "../provider-error-pause.js";
 import { isSessionSwitchInFlight, resolveAgentEnd } from "../auto-loop.js";
 import { clearDiscussionFlowState } from "./write-gate.js";
-
-const networkRetryCounters = new Map<string, number>();
 const MAX_TRANSIENT_AUTO_RESUMES = 3;
-let consecutiveTransientErrors = 0;
 
 export async function handleAgentEnd(
   pi: ExtensionAPI,
@@ -36,10 +34,10 @@ export async function handleAgentEnd(
     if (isTransientNetworkError(errorMsg)) {
       const currentModelId = ctx.model?.id ?? "unknown";
       const retryKey = `network-retry:${currentModelId}`;
-      const currentRetries = networkRetryCounters.get(retryKey) ?? 0;
+      const currentRetries = getNetworkRetryCount(retryKey);
       const maxRetries = 2;
       if (currentRetries < maxRetries) {
-        networkRetryCounters.set(retryKey, currentRetries + 1);
+        setNetworkRetryCount(retryKey, currentRetries + 1);
         const attempt = currentRetries + 1;
         const delayMs = attempt * 3000;
         ctx.ui.notify(`Network error on ${currentModelId}${errorDetail}. Retry ${attempt}/${maxRetries} in ${delayMs / 1000}s...`, "warning");
@@ -52,7 +50,7 @@ export async function handleAgentEnd(
         });
         return;
       }
-      networkRetryCounters.delete(retryKey);
+      deleteNetworkRetryCount(retryKey);
       ctx.ui.notify(`Network retries exhausted for ${currentModelId}. Attempting model fallback.`, "warning");
     }
 
@@ -63,7 +61,7 @@ export async function handleAgentEnd(
         const availableModels = ctx.modelRegistry.getAvailable();
         const nextModelId = getNextFallbackModel(ctx.model?.id, modelConfig);
         if (nextModelId) {
-          networkRetryCounters.clear();
+          clearNetworkRetryCounts();
           const slashIdx = nextModelId.indexOf("/");
           const modelToSet = slashIdx !== -1
             ? availableModels.find((m) => m.provider.toLowerCase() === nextModelId.substring(0, slashIdx).toLowerCase() && m.id.toLowerCase() === nextModelId.substring(slashIdx + 1).toLowerCase())
@@ -87,7 +85,7 @@ export async function handleAgentEnd(
         if (startModel) {
           const ok = await pi.setModel(startModel, { persist: false });
           if (ok) {
-            networkRetryCounters.clear();
+            clearNetworkRetryCounts();
             ctx.ui.notify(`Model error${errorDetail}. Restored session model: ${sessionModel.provider}/${sessionModel.id} and resuming.`, "warning");
             pi.sendMessage({ customType: "gsd-auto-timeout-recovery", content: "Continue execution.", display: false }, { triggerTurn: true });
             return;
@@ -99,15 +97,15 @@ export async function handleAgentEnd(
     const classification = classifyProviderError(errorMsg);
     const explicitRetryAfterMs = ("retryAfterMs" in lastMsg && typeof lastMsg.retryAfterMs === "number") ? lastMsg.retryAfterMs : undefined;
     if (classification.isTransient) {
-      consecutiveTransientErrors += 1;
+      setConsecutiveTransientErrors(getConsecutiveTransientErrors() + 1);
     } else {
-      consecutiveTransientErrors = 0;
+      setConsecutiveTransientErrors(0);
     }
     const baseRetryAfterMs = explicitRetryAfterMs ?? classification.suggestedDelayMs;
     const retryAfterMs = classification.isTransient
-      ? baseRetryAfterMs * 2 ** Math.max(0, consecutiveTransientErrors - 1)
+      ? baseRetryAfterMs * 2 ** Math.max(0, getConsecutiveTransientErrors() - 1)
       : baseRetryAfterMs;
-    const allowAutoResume = classification.isTransient && consecutiveTransientErrors <= MAX_TRANSIENT_AUTO_RESUMES;
+    const allowAutoResume = classification.isTransient && getConsecutiveTransientErrors() <= MAX_TRANSIENT_AUTO_RESUMES;
     if (classification.isTransient && !allowAutoResume) {
       ctx.ui.notify(`Transient provider errors persisted after ${MAX_TRANSIENT_AUTO_RESUMES} auto-resume attempts. Pausing for manual review.`, "warning");
     }
@@ -126,8 +124,7 @@ export async function handleAgentEnd(
   }
 
   try {
-    consecutiveTransientErrors = 0;
-    networkRetryCounters.clear();
+    resetProviderRecoveryState();
     resolveAgentEnd(event);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

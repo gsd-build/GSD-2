@@ -422,7 +422,8 @@ test("runUnitPhase emits unit-end with cancelled status when session creation fa
   const loopState: LoopState = { recentUnits: [{ key: "execute-task/M001/S01/T01" }], stuckRecoveryAttempts: 0 };
 
   const result = await runUnitPhase(ic, iterData, loopState);
-  assert.equal(result.action, "continue");
+  assert.equal(result.action, "break");
+  assert.equal(result.reason, "session-failed");
 
   const startEvents = capture.events.filter(e => e.eventType === "unit-start");
   const endEvents = capture.events.filter(e => e.eventType === "unit-end");
