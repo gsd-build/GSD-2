@@ -220,11 +220,11 @@ function parseProseSliceHeaders(content: string): RoadmapSliceEntry[] {
   // Match H1-H4 headers containing S<digits> with optional "Slice" prefix, bold markers,
   // and optional checkmark completion marker before the slice ID.
   // Separator after the ID is flexible: colon, dash, em/en dash, dot, or just whitespace.
-  const headerPattern = /^#{1,4}\s+\*{0,2}(?:\u2713\s+)?(?:Slice\s+)?(S\d+)\*{0,2}[:\s.\u2014\u2013-]*\s*(.+)/gm;
+  const headerPattern = /^#{1,4}\s+\*{0,2}(?:[\u2713\u2705]\s+)?(?:Slice\s+)?(S\d+)\*{0,2}[:\s.\u2014\u2013-]*\s*(.+)/gm;
   let match: RegExpExecArray | null;
 
   // Check for checkmark before the slice ID (e.g., "## checkmark S01: Title")
-  const prefixCheckPattern = /^#{1,4}\s+\*{0,2}\u2713\s+/;
+  const prefixCheckPattern = /^#{1,4}\s+\*{0,2}[\u2713\u2705]\s+/;
 
   while ((match = headerPattern.exec(content)) !== null) {
     const id = match[1]!;
@@ -238,9 +238,14 @@ function parseProseSliceHeaders(content: string): RoadmapSliceEntry[] {
     const line = match[0];
     let done = prefixCheckPattern.test(line);
 
-    if (!done && title.startsWith("\u2713")) {
+    if (!done && /^[\u2713\u2705]/.test(title)) {
       done = true;
-      title = title.replace(/^\u2713\s*/, "");
+      title = title.replace(/^[\u2713\u2705]\s*/, "");
+    }
+
+    if (!done && /[\u2705]\s*$/.test(title)) {
+      done = true;
+      title = title.replace(/\s*[\u2705]\s*$/, "");
     }
 
     if (!done && /\(Complete\)\s*$/i.test(title)) {

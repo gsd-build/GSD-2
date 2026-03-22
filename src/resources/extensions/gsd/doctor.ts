@@ -285,10 +285,23 @@ async function markSliceDoneInRoadmap(basePath: string, milestoneId: string, sli
   if (!roadmapPath) return;
   const content = await loadFile(roadmapPath);
   if (!content) return;
-  const updated = content.replace(
+  let updated = content.replace(
     new RegExp(`^(\\s*-\\s+)\\[ \\]\\s+\\*\\*${sliceId}:`, "m"),
     `$1[x] **${sliceId}:`,
   );
+
+  // If checkbox format didn't match, try prose format: "## S01: Title" -> "## S01: ✓ Title"
+  if (updated === content) {
+    updated = content.replace(
+      new RegExp(`^(#{1,4}\\s+(?:\\*{0,2})(?:Slice\\s+)?${sliceId}\\*{0,2}[:\\s.\\u2014\\u2013-]+\\s*)(.+)`, "m"),
+      (match, prefix, title) => {
+        // Already marked done — no-op
+        if (/^[\u2713\u2705]/.test(title) || /[\u2705]\s*$/.test(title) || /\(Complete\)\s*$/i.test(title)) return match;
+        return `${prefix}\u2713 ${title}`;
+      },
+    );
+  }
+
   if (updated !== content) {
     await saveFile(roadmapPath, updated);
     fixesApplied.push(`marked ${sliceId} done in ${roadmapPath}`);
