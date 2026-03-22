@@ -251,6 +251,60 @@ if (cliFlags.messages[0] === 'headless') {
   process.exit(0)
 }
 
+// `gsd mobile` — start mobile socket server or connect to remote
+if (cliFlags.messages[0] === 'mobile') {
+  const { runMobileCLI } = await import('./mobile/cli.js')
+  const args = process.argv.slice(2)
+  const mobileCommand = cliFlags.messages[1]
+
+  // Parse mobile-specific flags
+  const mobileFlags: Record<string, string | boolean | undefined> = {}
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]
+    if (a === '--port' && args[i + 1]) mobileFlags.port = args[++i]
+    else if (a === '--host' && args[i + 1]) mobileFlags.host = args[++i]
+    else if (a === '--tls') mobileFlags.tls = true
+    else if (a === '--tls-cert' && args[i + 1]) mobileFlags.tlsCert = args[++i]
+    else if (a === '--tls-key' && args[i + 1]) mobileFlags.tlsKey = args[++i]
+    else if (a === '--expose' && args[i + 1]) mobileFlags.expose = args[++i]
+    else if (a === '--remote-host' && args[i + 1]) mobileFlags.remoteHost = args[++i]
+    else if (a === '--remote-port' && args[i + 1]) mobileFlags.remotePort = args[++i]
+    else if (a === '--code' && args[i + 1]) mobileFlags.code = args[++i]
+  }
+
+  const cwd = process.cwd()
+  const projectSessionsDir = getProjectSessionsDir(cwd)
+
+  await runMobileCLI({
+    command: mobileCommand === 'connect' ? 'connect'
+      : mobileCommand === 'setup' ? 'setup'
+      : mobileCommand === 'pair' ? 'pair'
+      : mobileCommand === 'devices' ? 'devices'
+      : mobileCommand === 'revoke' ? 'revoke'
+      : mobileCommand === 'revoke-all' ? 'revoke-all'
+      : 'start',
+    port: mobileFlags.port ? parseInt(mobileFlags.port as string, 10) : undefined,
+    host: mobileFlags.host as string | undefined,
+    tls: mobileFlags.tls as boolean | undefined,
+    tlsCert: mobileFlags.tlsCert as string | undefined,
+    tlsKey: mobileFlags.tlsKey as string | undefined,
+    expose: mobileFlags.expose as any,
+    remoteHost: mobileFlags.remoteHost as string | undefined,
+    remotePort: mobileFlags.remotePort ? parseInt(mobileFlags.remotePort as string, 10) : undefined,
+    connectUrl: mobileCommand === 'connect' ? cliFlags.messages[2] : undefined,
+    connectCode: mobileFlags.code as string | undefined,
+    revokeDeviceId: mobileCommand === 'revoke' ? cliFlags.messages[2] : undefined,
+    projectCwd: cwd,
+    version: process.env.GSD_VERSION || '1.0.0',
+    createBridge: () => {
+      // Lazy-import bridge service to avoid circular deps
+      const { getProjectBridgeService } = require('./web/bridge-service.js')
+      return getProjectBridgeService(cwd, projectSessionsDir)
+    },
+  })
+  process.exit(0)
+}
+
 // Pi's tool bootstrap can mis-detect already-installed fd/rg on some systems
 // because spawnSync(..., ["--version"]) returns EPERM despite a zero exit code.
 // Provision local managed binaries first so Pi sees them without probing PATH.

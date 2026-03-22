@@ -1,0 +1,19 @@
+<svg width="192" height="192" viewBox="0 0 192 192" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect width="192" height="192" rx="32" fill="#161616"/>
+<g transform="translate(30, 50) scale(0.09)">
+<rect y="115" width="115" height="370" fill="white"/>
+<rect x="58" y="600" width="115" height="324" transform="rotate(-90 58 600)" fill="white"/>
+<rect x="58" y="115" width="115" height="324" transform="rotate(-90 58 115)" fill="white"/>
+<rect x="624" y="115" width="115" height="290" transform="rotate(-90 624 115)" fill="white"/>
+<rect x="547" y="360" width="115" height="367" transform="rotate(-90 547 360)" fill="white"/>
+<rect x="547" y="600" width="115" height="290" transform="rotate(-90 547 600)" fill="white"/>
+<rect x="1053" y="600" width="115" height="324" transform="rotate(-90 1053 600)" fill="white"/>
+<rect x="1053" y="116" width="115" height="324" transform="rotate(-90 1053 116)" fill="white"/>
+<rect x="662" y="331" width="115" height="331" transform="rotate(180 662 331)" fill="white"/>
+<rect x="1130" y="600" width="115" height="600" transform="rotate(180 1130 600)" fill="white"/>
+<rect x="1435" y="485" width="115" height="369" transform="rotate(180 1435 485)" fill="white"/>
+<rect x="914" y="600" width="115" height="355" transform="rotate(180 914 600)" fill="white"/>
+<rect x="310" y="485" width="115" height="123" transform="rotate(-90 310 485)" fill="white"/>
+<rect x="216" y="370" width="115" height="217" transform="rotate(-90 216 370)" fill="white"/>
+</g>
+</svg>

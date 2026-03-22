@@ -106,6 +106,52 @@ const SUBCOMMAND_HELP: Record<string, string> = {
     '',
     'Exit codes: 0 = complete, 1 = error/timeout, 2 = blocked',
   ].join('\n'),
+
+  mobile: [
+    'Usage: gsd mobile [command] [flags]',
+    '',
+    'Start a self-hosted mobile socket server for accessing GSD sessions',
+    'from your phone. Includes a branded admin dashboard and installable PWA.',
+    '',
+    'Commands:',
+    '  (default)            Start the mobile socket server',
+    '  setup                Show configuration and setup instructions',
+    '  pair                 Generate a new pairing code',
+    '  devices              List paired mobile devices',
+    '  revoke <id>          Revoke a paired device',
+    '  revoke-all           Revoke all paired devices',
+    '  connect <url>        Connect this GSD instance to a remote server',
+    '',
+    'Server flags:',
+    '  --port <n>           Port to listen on (default: 3001)',
+    '  --host <addr>        Bind address (default: 0.0.0.0)',
+    '  --tls                Enable TLS with auto-generated self-signed cert',
+    '  --tls-cert <path>    Use a custom TLS certificate',
+    '  --tls-key <path>     Use a custom TLS key',
+    '',
+    'Expose flags (make server accessible from the internet):',
+    '  --expose ssh         SSH remote port forward (requires --remote-host)',
+    '  --expose cloudflare  Cloudflare Tunnel (requires cloudflared)',
+    '  --expose lan         Show LAN connection info (same WiFi only)',
+    '  --expose manual      Print manual port forwarding instructions',
+    '  --remote-host <h>    SSH host for --expose ssh (e.g., user@server.com)',
+    '  --remote-port <n>    Remote port for SSH forwarding',
+    '',
+    'Connect flags:',
+    '  --code <code>        Pairing code for first-time connection',
+    '',
+    'Examples:',
+    '  gsd mobile                                    Start server on LAN',
+    '  gsd mobile --tls                              Start with TLS encryption',
+    '  gsd mobile --expose ssh --remote-host me@vps  Expose via SSH tunnel',
+    '  gsd mobile --expose cloudflare                Expose via Cloudflare',
+    '  gsd mobile connect 192.168.1.50:3001          Connect to remote server',
+    '  gsd mobile connect ws://vps:3001/mobile --code 123456',
+    '',
+    'After starting, open the dashboard in your browser or install the PWA:',
+    '  Dashboard: http://<ip>:3001/dashboard  (login: admin / gsd-mobile)',
+    '  Mobile:    http://<ip>:3001/app        (install to home screen)',
+  ].join('\n'),
 }
 
 // Alias: `gsd wt --help` → same as `gsd worktree --help`
@@ -132,6 +178,7 @@ export function printHelp(version: string): void {
   process.stdout.write('  sessions                 List and resume a past session\n')
   process.stdout.write('  worktree <cmd>           Manage worktrees (list, merge, clean, remove)\n')
   process.stdout.write('  headless [cmd] [args]    Run /gsd commands without TUI (default: auto)\n')
+  process.stdout.write('  mobile [cmd] [flags]     Start mobile socket server or connect to remote\n')
   process.stdout.write('\nRun gsd <subcommand> --help for subcommand-specific help.\n')
 }
 
