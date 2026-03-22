@@ -26,8 +26,9 @@ import { runUnit } from "./run-unit.js";
 import { debugLog } from "../debug-logger.js";
 import { gsdRoot } from "../paths.js";
 import { atomicWriteSync } from "../atomic-write.js";
-import { PROJECT_FILES } from "../detection.js";
+import { PROJECT_FILES, PROJECT_FILE_EXTENSIONS } from "../detection.js";
 import { join } from "node:path";
+import { readdirSync } from "node:fs";
 
 // ─── generateMilestoneReport ──────────────────────────────────────────────────
 
@@ -834,7 +835,14 @@ export async function runUnitPhase(
     }
     const hasProjectFile = PROJECT_FILES.some((f) => deps.existsSync(join(s.basePath, f)));
     const hasSrcDir = deps.existsSync(join(s.basePath, "src"));
-    if (!hasProjectFile && !hasSrcDir) {
+    // Check for extension-based project files (e.g., .sln, .csproj for C#/.NET)
+    const hasExtensionMatch = !hasProjectFile && !hasSrcDir && (() => {
+      try {
+        const entries = readdirSync(s.basePath);
+        return entries.some((e) => PROJECT_FILE_EXTENSIONS.some((ext) => e.endsWith(ext)));
+      } catch { return false; }
+    })();
+    if (!hasProjectFile && !hasSrcDir && !hasExtensionMatch) {
       const msg = `Worktree health check failed: ${s.basePath} has no recognized project files — refusing to dispatch ${unitType} ${unitId}`;
       debugLog("runUnitPhase", { phase: "worktree-health-fail", basePath: s.basePath, hasProjectFile, hasSrcDir });
       ctx.ui.notify(msg, "error");

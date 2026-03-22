@@ -9,12 +9,12 @@
 
 import { describe, test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execSync } from "node:child_process";
 
-import { PROJECT_FILES } from "../detection.js";
+import { PROJECT_FILES, PROJECT_FILE_EXTENSIONS } from "../detection.ts";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -37,7 +37,8 @@ function createGitRepo(): string {
  * proceeds), false when it would FAIL (dispatch blocked).
  *
  * This mirrors the fixed logic: .git must exist, AND at least one
- * PROJECT_FILES entry or a src/ directory must exist.
+ * PROJECT_FILES entry, a src/ directory, or a file matching
+ * PROJECT_FILE_EXTENSIONS must exist.
  */
 function wouldPassHealthCheck(basePath: string, existsSyncFn: (p: string) => boolean): boolean {
   const hasGit = existsSyncFn(join(basePath, ".git"));
@@ -48,6 +49,12 @@ function wouldPassHealthCheck(basePath: string, existsSyncFn: (p: string) => boo
   }
   if (existsSyncFn(join(basePath, "src"))) return true;
 
+  // Extension-based detection (e.g., .sln, .csproj for C#/.NET)
+  try {
+    const entries = readdirSync(basePath);
+    if (entries.some((e) => PROJECT_FILE_EXTENSIONS.some((ext) => e.endsWith(ext)))) return true;
+  } catch { /* ignore */ }
+
   return false;
 }
 
@@ -57,7 +64,7 @@ import { existsSync } from "node:fs";
 
 test("PROJECT_FILES is exported and contains expected multi-ecosystem entries", () => {
   assert.ok(Array.isArray(PROJECT_FILES), "PROJECT_FILES is an array");
-  assert.ok(PROJECT_FILES.length >= 17, `expected >= 17 entries, got ${PROJECT_FILES.length}`);
+  assert.ok(PROJECT_FILES.length >= 19, `expected >= 19 entries, got ${PROJECT_FILES.length}`);
   // Spot-check key ecosystems
   assert.ok(PROJECT_FILES.includes("Cargo.toml"), "includes Rust marker");
   assert.ok(PROJECT_FILES.includes("go.mod"), "includes Go marker");
@@ -131,5 +138,56 @@ describe("health check without git repo", () => {
   test("health check fails for directory with no .git", () => {
     writeFileSync(join(dir, "Cargo.toml"), "[package]\nname = \"test\"\n");
     assert.ok(!wouldPassHealthCheck(dir, existsSync), "no-git directory should fail health check");
-  });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ─── C# / .NET ecosystem (#2106) ─────────────────────────────────────────────
+
+test("health check passes for C# project (.sln file, no package.json)", () => {
+  const dir = createGitRepo();
+  try {
+    writeFileSync(join(dir, "MyApp.sln"), "Microsoft Visual Studio Solution File\n");
+    assert.ok(wouldPassHealthCheck(dir, existsSync), "C# solution should pass health check");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("health check passes for C# project (.csproj file, no package.json)", () => {
+  const dir = createGitRepo();
+  try {
+    mkdirSync(join(dir, "MyApp"), { recursive: true });
+    writeFileSync(join(dir, "MyApp", "MyApp.csproj"), "<Project Sdk=\"Microsoft.NET.Sdk\">\n</Project>\n");
+    // The .csproj is nested, but Directory.Build.props at root is the typical root marker.
+    // This test checks that a root-level .csproj also works.
+    writeFileSync(join(dir, "MyApp.csproj"), "<Project Sdk=\"Microsoft.NET.Sdk\">\n</Project>\n");
+    assert.ok(wouldPassHealthCheck(dir, existsSync), "C# .csproj project should pass health check");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("health check passes for .NET project (Directory.Build.props, no package.json)", () => {
+  const dir = createGitRepo();
+  try {
+    writeFileSync(join(dir, "Directory.Build.props"), "<Project>\n</Project>\n");
+    assert.ok(wouldPassHealthCheck(dir, existsSync), ".NET Directory.Build.props should pass health check");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("PROJECT_FILES includes C#/.NET markers", () => {
+  assert.ok(PROJECT_FILES.includes("Directory.Build.props"), "includes Directory.Build.props");
+});
+
+test("health check fails for empty git repo with no project files", () => {
+  const dir = createGitRepo();
+  try {
+    assert.ok(!wouldPassHealthCheck(dir, existsSync), "empty git repo should fail health check");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
