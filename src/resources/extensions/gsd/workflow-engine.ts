@@ -7,6 +7,9 @@
 import type { DbAdapter } from "./gsd-db.js";
 import { _getAdapter, isDbAvailable } from "./gsd-db.js";
 import type { GSDState, ActiveRef, Phase, MilestoneRegistryEntry } from "./types.js";
+import { writeManifest } from "./workflow-manifest.js";
+import { appendEvent } from "./workflow-events.js";
+import { renderAllProjections } from "./workflow-projections.js";
 import {
   completeTask as _completeTask,
   completeSlice as _completeSlice,
@@ -158,34 +161,78 @@ export class WorkflowEngine {
       .all(milestoneId, sliceId) as unknown as TaskRow[];
   }
 
+  // ── Post-command hook (manifest, event log, projections) ────────────
+
+  /**
+   * Called after every command to render projections, write manifest,
+   * and append event log entry. All operations are non-fatal.
+   */
+  private afterCommand(cmd: string, params: Record<string, unknown>): void {
+    // Render projections after every command (ENG-04, PROJ-01..05)
+    const milestoneId = (params as { milestoneId?: string }).milestoneId;
+    if (milestoneId) {
+      try {
+        renderAllProjections(this.basePath, milestoneId);
+      } catch (err) {
+        process.stderr.write(`workflow-engine: projection render failed (non-fatal): ${(err as Error).message}\n`);
+      }
+    }
+    // Write manifest after every command (MAN-03, D-08)
+    try {
+      writeManifest(this.basePath, this.db);
+    } catch (err) {
+      process.stderr.write(`workflow-engine: manifest write failed (non-fatal): ${(err as Error).message}\n`);
+    }
+    // Append event (EVT-01, D-09)
+    try {
+      appendEvent(this.basePath, { cmd, params, ts: new Date().toISOString(), actor: "agent" });
+    } catch (err) {
+      process.stderr.write(`workflow-engine: event append failed (non-fatal): ${(err as Error).message}\n`);
+    }
+  }
+
   // ── Command handlers (delegated to workflow-commands.ts) ───────────
 
   completeTask(params: CompleteTaskParams): CompleteTaskResult {
-    return _completeTask(this.db, params);
+    const result = _completeTask(this.db, params);
+    this.afterCommand("complete_task", params as unknown as Record<string, unknown>);
+    return result;
   }
 
   completeSlice(params: CompleteSliceParams): CompleteSliceResult {
-    return _completeSlice(this.db, params);
+    const result = _completeSlice(this.db, params);
+    this.afterCommand("complete_slice", params as unknown as Record<string, unknown>);
+    return result;
   }
 
   planSlice(params: PlanSliceParams): PlanSliceResult {
-    return _planSlice(this.db, params);
+    const result = _planSlice(this.db, params);
+    this.afterCommand("plan_slice", params as unknown as Record<string, unknown>);
+    return result;
   }
 
   saveDecision(params: SaveDecisionParams): SaveDecisionResult {
-    return _saveDecision(this.db, params);
+    const result = _saveDecision(this.db, params);
+    this.afterCommand("save_decision", params as unknown as Record<string, unknown>);
+    return result;
   }
 
   startTask(params: StartTaskParams): StartTaskResult {
-    return _startTask(this.db, params);
+    const result = _startTask(this.db, params);
+    this.afterCommand("start_task", params as unknown as Record<string, unknown>);
+    return result;
   }
 
   recordVerification(params: RecordVerificationParams): RecordVerificationResult {
-    return _recordVerification(this.db, params);
+    const result = _recordVerification(this.db, params);
+    this.afterCommand("record_verification", params as unknown as Record<string, unknown>);
+    return result;
   }
 
   reportBlocker(params: ReportBlockerParams): ReportBlockerResult {
-    return _reportBlocker(this.db, params);
+    const result = _reportBlocker(this.db, params);
+    this.afterCommand("report_blocker", params as unknown as Record<string, unknown>);
+    return result;
   }
 
   // ── State derivation ───────────────────────────────────────────────
