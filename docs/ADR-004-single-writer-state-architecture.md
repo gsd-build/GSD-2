@@ -2,7 +2,7 @@
 
 **Status:** Proposed
 **Date:** 2026-03-22
-**Deciders:** Jeremy McSwain
+**Deciders:** Jeremy McSpadden
 **Related:** [Issue #2041](https://github.com/gsd-build/gsd-2/issues/2041), ADR-001
 
 ## Context
