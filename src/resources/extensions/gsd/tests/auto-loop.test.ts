@@ -9,13 +9,12 @@ import {
   runUnit,
   autoLoop,
   detectStuck,
-  _resetPendingResolve,
   isSessionSwitchInFlight,
   type UnitResult,
   type AgentEndEvent,
   type LoopDeps,
 } from "../auto-loop.js";
-import { _beginSessionSwitch, _endSessionSwitch } from "../auto/resolve.js";
+import { _beginSessionSwitch, _endSessionSwitch, _resetPendingResolve } from "../auto/resolve.js";
 import { NEW_SESSION_TIMEOUT_MS } from "../auto/session.js";
 import type { SessionLockStatus } from "../session-lock.js";
 
@@ -176,7 +175,8 @@ test("runUnit returns cancelled when session creation times out", async () => {
 
   const ctx = makeMockCtx();
   const pi = makeMockPi();
-  const s = makeMockSession({ newSessionDelayMs: 10 });
+  const s = makeMockSession();
+  s.cmdCtx.newSession = () => new Promise<{ cancelled: boolean }>(() => {});
   const originalSetTimeout = globalThis.setTimeout;
   (globalThis as typeof globalThis & { setTimeout: typeof setTimeout }).setTimeout =
     ((callback: Parameters<typeof setTimeout>[0], delay?: number, ...args: unknown[]) =>
@@ -196,6 +196,9 @@ test("runUnit returns cancelled when session creation times out", async () => {
   assert.equal(result.status, "cancelled");
   assert.equal(result.event, undefined);
   assert.equal(pi.calls.length, 0);
+  assert.equal(isSessionSwitchInFlight(), true, "hung session should keep the switch guard active until explicit reset or a newer switch");
+
+  _resetPendingResolve();
 });
 
 test("runUnit returns cancelled when s.active is false before sendMessage", async () => {

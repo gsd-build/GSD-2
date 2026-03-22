@@ -1119,6 +1119,7 @@ export async function runUnitPhase(
           `${unitType} ${unitId} completed with 0 tool calls — hallucinated summary, will retry`,
           "warning",
         );
+        deps.emitJournalEvent({ ts: new Date().toISOString(), flowId: ic.flowId, seq: ic.nextSeq(), eventType: "unit-end", data: { unitType, unitId, status: unitResult.status, artifactVerified: false }, causedBy: { flowId: ic.flowId, seq: unitStartSeq } });
         // Do NOT add to completedUnits — fall through to next iteration
         // where dispatch will re-derive and re-dispatch this task.
         return { action: "next", data: { unitStartedAt: s.currentUnit.startedAt } };

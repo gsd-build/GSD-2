@@ -289,8 +289,8 @@ test("runUnitPhase emits unit-start and unit-end with causedBy reference", async
   // Instead, we test that unit-start is emitted at the right point by examining
   // the event immediately after calling runUnitPhase with a session where
   // newSession resolves quickly, and we resolve the agent_end externally.
-  const { resolveAgentEnd, _resetPendingResolve } = await import("../auto-loop.js");
-  const { _hasPendingResolve } = await import("../auto/resolve.js");
+  const { resolveAgentEnd } = await import("../auto-loop.js");
+  const { _hasPendingResolve, _resetPendingResolve } = await import("../auto/resolve.js");
   _resetPendingResolve();
 
   const deps = makeMockDeps(capture);
@@ -344,8 +344,8 @@ test("runUnitPhase emits unit-start and unit-end with causedBy reference", async
 
 test("all events from a mock iteration have monotonically increasing seq and same flowId", async () => {
   const capture = createEventCapture();
-  const { resolveAgentEnd, _resetPendingResolve } = await import("../auto-loop.js");
-  const { _hasPendingResolve } = await import("../auto/resolve.js");
+  const { resolveAgentEnd } = await import("../auto-loop.js");
+  const { _hasPendingResolve, _resetPendingResolve } = await import("../auto/resolve.js");
   _resetPendingResolve();
 
   const deps = makeMockDeps(capture, {
@@ -422,6 +422,56 @@ test("runUnitPhase emits unit-end with cancelled status when session creation fa
   assert.equal(startEvents.length, 1, "should emit exactly one unit-start");
   assert.equal(endEvents.length, 1, "should emit exactly one unit-end for cancelled unit");
   assert.equal((endEvents[0].data as any).status, "cancelled");
+  assert.equal((endEvents[0].data as any).artifactVerified, false);
+  assert.equal(endEvents[0].causedBy?.seq, startEvents[0].seq);
+});
+
+test("runUnitPhase emits unit-end when zero-tool-call guard triggers a retry", async () => {
+  const capture = createEventCapture();
+  const deps = makeMockDeps(capture);
+  const ic = makeIC(deps);
+  deps.getLedger = () => ({
+    units: [
+      {
+        type: "execute-task",
+        id: "M001/S01/T01",
+        startedAt: ic.s.currentUnit?.startedAt ?? 0,
+        toolCalls: 0,
+      },
+    ],
+  });
+
+  const { resolveAgentEnd } = await import("../auto-loop.js");
+  const { _hasPendingResolve, _resetPendingResolve } = await import("../auto/resolve.js");
+  _resetPendingResolve();
+
+  const iterData: IterationData = {
+    unitType: "execute-task",
+    unitId: "M001/S01/T01",
+    prompt: "do stuff",
+    finalPrompt: "do stuff",
+    pauseAfterUatDispatch: false,
+    observabilityIssues: [],
+    state: { phase: "executing", activeMilestone: { id: "M001" }, activeSlice: { id: "S01" }, registry: [], blockers: [] } as any,
+    mid: "M001",
+    midTitle: "Test",
+    isRetry: false,
+    previousTier: undefined,
+  };
+  const loopState: LoopState = { recentUnits: [{ key: "execute-task/M001/S01/T01" }], stuckRecoveryAttempts: 0 };
+
+  const unitPromise = runUnitPhase(ic, iterData, loopState);
+  await waitForPendingResolve(_hasPendingResolve);
+  resolveAgentEnd({ messages: [{ role: "assistant" }] });
+
+  const result = await unitPromise;
+  assert.equal(result.action, "next");
+
+  const startEvents = capture.events.filter(e => e.eventType === "unit-start");
+  const endEvents = capture.events.filter(e => e.eventType === "unit-end");
+  assert.equal(startEvents.length, 1, "should emit exactly one unit-start");
+  assert.equal(endEvents.length, 1, "should emit exactly one unit-end for zero-tool retry path");
+  assert.equal((endEvents[0].data as any).status, "completed");
   assert.equal((endEvents[0].data as any).artifactVerified, false);
   assert.equal(endEvents[0].causedBy?.seq, startEvents[0].seq);
 });

@@ -199,7 +199,8 @@ import {
   postUnitPostVerification,
 } from "./auto-post-unit.js";
 import { bootstrapAutoSession, type BootstrapDeps } from "./auto-start.js";
-import { autoLoop, resolveAgentEnd, resolveAgentEndCancelled, _resetPendingResolve, isSessionSwitchInFlight, type LoopDeps } from "./auto-loop.js";
+import { autoLoop, resolveAgentEnd, resolveAgentEndCancelled, isSessionSwitchInFlight, type LoopDeps } from "./auto-loop.js";
+import { _resetPendingResolve } from "./auto/resolve.js";
 import {
   WorktreeResolver,
   type WorktreeResolverDeps,
