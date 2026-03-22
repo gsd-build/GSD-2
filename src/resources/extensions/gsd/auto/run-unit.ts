@@ -30,6 +30,20 @@ export async function runUnit(
 ): Promise<UnitResult> {
   debugLog("runUnit", { phase: "start", unitType, unitId });
 
+  // ── Clear stale follow-up messages from the previous unit (#2060) ──
+  // When the previous unit used async_bash/bg_shell, completed background job
+  // results can arrive as follow-up messages that trigger additional LLM turns.
+  // Clearing the queue BEFORE creating a new session ensures those stale
+  // follow-ups cannot generate agent_end events that race with the new unit.
+  try {
+    const cmdCtxAny = s.cmdCtx as Record<string, unknown> | null;
+    if (typeof cmdCtxAny?.clearQueue === "function") {
+      (cmdCtxAny.clearQueue as () => unknown)();
+    }
+  } catch {
+    // Non-fatal — clearQueue may not be available in all contexts
+  }
+
   // ── Session creation with timeout ──
   debugLog("runUnit", { phase: "session-create", unitType, unitId });
 
@@ -74,6 +88,14 @@ export async function runUnit(
   // This happens after newSession completes so session-switch agent_end events
   // from the previous session cannot resolve the new unit.
   _setSessionSwitchInFlight(false);
+
+  // Yield to the event loop to drain any stale agent_end events that were
+  // queued before the session switch completed (#2060). Without this drain,
+  // a stale agent_end from async follow-up turns in the previous unit can
+  // fire between _setSessionSwitchInFlight(false) and _setCurrentResolve(),
+  // resolving the new unit's promise immediately.
+  await new Promise<void>((r) => setImmediate(r));
+
   const unitPromise = new Promise<UnitResult>((resolve) => {
     _setCurrentResolve(resolve);
   });
@@ -104,20 +126,6 @@ export async function runUnit(
     unitId,
     status: result.status,
   });
-
-  // Discard trailing follow-up messages (e.g. async_job_result notifications)
-  // from the completed unit. Without this, queued follow-ups trigger wasteful
-  // LLM turns before the next session can start (#1642).
-  // clearQueue() lives on AgentSession but isn't part of the typed
-  // ExtensionCommandContext interface — call it via runtime check.
-  try {
-    const cmdCtxAny = s.cmdCtx as Record<string, unknown> | null;
-    if (typeof cmdCtxAny?.clearQueue === "function") {
-      (cmdCtxAny.clearQueue as () => unknown)();
-    }
-  } catch {
-    // Non-fatal — clearQueue may not be available in all contexts
-  }
 
   return result;
 }

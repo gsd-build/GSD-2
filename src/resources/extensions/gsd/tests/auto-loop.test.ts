@@ -2112,3 +2112,98 @@ test("autoLoop stops when worktree has no project files for execute-task (#1833)
     "should notify about missing project files in worktree",
   );
 });
+
+// ─── Stale agent_end race condition (issue #2060) ──────────────────────────
+
+test("stale agent_end from previous unit must not resolve next unit's promise (#2060)", async () => {
+  _resetPendingResolve();
+
+  const ctx = makeMockCtx();
+  const pi = makeMockPi();
+  const staleEvent = makeEvent([{ id: "stale-from-unit-A" }]);
+  const freshEvent = makeEvent([{ id: "fresh-from-unit-B" }]);
+
+  // Unit A: normal execution
+  const sessionA = makeMockSession();
+  const unitAPromise = runUnit(ctx, pi, sessionA, "execute-task", "T03", "task A prompt");
+  await new Promise((r) => setTimeout(r, 10));
+  resolveAgentEnd(staleEvent); // Primary agent_end resolves unit A
+  const resultA = await unitAPromise;
+  assert.equal(resultA.status, "completed");
+
+  // Simulate stale follow-up: after unit A resolved, a delayed agent_end fires
+  // (from async job results arriving late). This must NOT resolve unit B.
+  // Schedule the stale event to fire on the next microtask — simulating the
+  // race window between _setSessionSwitchInFlight(false) and _setCurrentResolve.
+  const staleFollowUp = makeEvent([{ id: "stale-followup-from-unit-A" }]);
+
+  const sessionB = makeMockSession({
+    onNewSessionSettle: () => {
+      // When newSession resolves, the session switch flag clears.
+      // In the buggy code, a stale agent_end arriving right after this
+      // but before the new resolver is set would resolve the new promise.
+      // Schedule a stale event to fire during the drain window.
+      setImmediate(() => {
+        resolveAgentEnd(staleFollowUp);
+      });
+    },
+  });
+
+  const unitBPromise = runUnit(ctx, pi, sessionB, "complete-slice", "S01", "slice B prompt");
+
+  // Give unit B time to set up its promise and send the message
+  await new Promise((r) => setTimeout(r, 50));
+
+  // The fresh event should be needed to resolve unit B — if the stale one
+  // already resolved it, this test will detect the mismatch.
+  resolveAgentEnd(freshEvent);
+
+  const resultB = await unitBPromise;
+  assert.equal(resultB.status, "completed");
+  assert.deepEqual(
+    resultB.event,
+    freshEvent,
+    "Unit B must resolve with its own agent_end, not a stale event from unit A",
+  );
+});
+
+test("clearQueue runs before new session creation to cancel in-flight follow-ups (#2060)", async () => {
+  _resetPendingResolve();
+
+  const ctx = makeMockCtx();
+  const pi = makeMockPi();
+  let clearQueueCalledBeforeNewSession = false;
+  let clearQueueCallOrder = -1;
+  let newSessionCallOrder = -1;
+  let callCounter = 0;
+
+  const session = {
+    active: true,
+    verbose: false,
+    basePath: process.cwd(),
+    cmdCtx: {
+      clearQueue: () => {
+        clearQueueCallOrder = ++callCounter;
+      },
+      newSession: () => {
+        newSessionCallOrder = ++callCounter;
+        return Promise.resolve({ cancelled: false });
+      },
+    },
+    clearTimers: () => {},
+  } as any;
+
+  const resultPromise = runUnit(ctx, pi, session, "complete-slice", "S01", "prompt");
+  await new Promise((r) => setTimeout(r, 10));
+  resolveAgentEnd(makeEvent());
+  await resultPromise;
+
+  assert.ok(
+    clearQueueCallOrder > 0,
+    "clearQueue should have been called",
+  );
+  assert.ok(
+    clearQueueCallOrder < newSessionCallOrder,
+    "clearQueue must run before newSession to discard stale follow-up messages",
+  );
+});
