@@ -253,7 +253,7 @@ function parseProseSliceHeaders(content: string): RoadmapSliceEntry[] {
     const nextHeader = afterHeader.search(/^#{1,4}\s/m);
     const section = nextHeader !== -1 ? afterHeader.slice(0, nextHeader) : afterHeader.slice(0, 500);
 
-    const depsMatch = section.match(/\*{0,2}Depends\s+on:?\*{0,2}\s*(.+)/i);
+    const depsMatch = section.match(/\*{0,2}Depends(?:\s+on)?:?\*{0,2}\s*(.+)/i);
     let depends: string[] = [];
     if (depsMatch) {
       const rawDeps = depsMatch[1]!.replace(/none/i, "").trim();

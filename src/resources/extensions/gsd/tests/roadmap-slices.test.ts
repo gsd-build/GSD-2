@@ -236,6 +236,36 @@ test("parseRoadmapSlices: ## Slices with valid checkboxes does NOT invoke prose 
   assert.equal(slices[0]?.done, true);
 });
 
+// ── Regression test for #1931 ─────────────────────────────────────────────
+
+test("parseRoadmapSlices: prose 'Depends:' without 'on' parses dependencies (#1931)", () => {
+  const proseContent = `# M030: Depends Without On
+
+## Slices
+
+### S01 — Foundation
+Set up the base.
+
+### S02 — Core Logic
+Build the core.
+**Depends:** S01
+
+### S03 — Integration
+Wire it together.
+**Depends:** S01, S02
+
+### S04 — Polish
+Final polish.
+Depends: S02, S03
+`;
+  const slices = parseRoadmapSlices(proseContent);
+  assert.equal(slices.length, 4, "should find 4 slices");
+  assert.deepEqual(slices[0]?.depends, [], "S01 has no depends");
+  assert.deepEqual(slices[1]?.depends, ["S01"], "S02 depends on S01");
+  assert.deepEqual(slices[2]?.depends, ["S01", "S02"], "S03 depends on S01, S02");
+  assert.deepEqual(slices[3]?.depends, ["S02", "S03"], "S04 depends on S02, S03");
+});
+
 test("parseRoadmapSlices: ## Slices with only non-matching lines returns prose fallback results", () => {
   const weirdContent = `# M020: Odd
 
