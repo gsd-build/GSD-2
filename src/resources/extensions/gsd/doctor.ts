@@ -149,6 +149,205 @@ export async function rebuildState(basePath: string): Promise<void> {
   await saveFile(path, buildStateMarkdown(state));
 }
 
+async function ensureSliceSummaryStub(basePath: string, milestoneId: string, sliceId: string, fixesApplied: string[]): Promise<void> {
+  const path = join(resolveSlicePath(basePath, milestoneId, sliceId) ?? relSlicePath(basePath, milestoneId, sliceId), `${sliceId}-SUMMARY.md`);
+  const absolute = resolveSliceFile(basePath, milestoneId, sliceId, "SUMMARY") ?? join(resolveSlicePath(basePath, milestoneId, sliceId)!, `${sliceId}-SUMMARY.md`);
+  const content = [
+    "---",
+    `id: ${sliceId}`,
+    `parent: ${milestoneId}`,
+    `milestone: ${milestoneId}`,
+    "provides: []",
+    "requires: []",
+    "affects: []",
+    "key_files: []",
+    "key_decisions: []",
+    "patterns_established: []",
+    "observability_surfaces:",
+    "  - none yet \u2014 doctor created placeholder summary; replace with real diagnostics before treating as complete",
+    "drill_down_paths: []",
+    "duration: unknown",
+    "verification_result: unknown",
+    `completed_at: ${new Date().toISOString()}`,
+    "---",
+    "",
+    `# ${sliceId}: Recovery placeholder summary`,
+    "",
+    "**Doctor-created placeholder.**",
+    "",
+    "## What Happened",
+    "Doctor detected that all tasks were complete but the slice summary was missing. Replace this with a real compressed slice summary before relying on it.",
+    "",
+    "## Verification",
+    "Not re-run by doctor.",
+    "",
+    "## Deviations",
+    "Recovery placeholder created to restore required artifact shape.",
+    "",
+    "## Known Limitations",
+    "This file is intentionally incomplete and should be replaced by a real summary.",
+    "",
+    "## Follow-ups",
+    "- Regenerate this summary from task summaries.",
+    "",
+    "## Files Created/Modified",
+    `- \`${relSliceFile(basePath, milestoneId, sliceId, "SUMMARY")}\` \u2014 doctor-created placeholder summary`,
+    "",
+    "## Forward Intelligence",
+    "",
+    "### What the next slice should know",
+    "- Doctor had to reconstruct completion artifacts; inspect task summaries before continuing.",
+    "",
+    "### What's fragile",
+    "- Placeholder summary exists solely to unblock invariant checks.",
+    "",
+    "### Authoritative diagnostics",
+    "- Task summaries in the slice tasks/ directory \u2014 they are the actual authoritative source until this summary is rewritten.",
+    "",
+    "### What assumptions changed",
+    "- The system assumed completion would always write a slice summary; in practice doctor may need to restore missing artifacts.",
+    "",
+  ].join("\n");
+  await saveFile(absolute, content);
+  fixesApplied.push(`created placeholder ${absolute}`);
+}
+
+async function ensureSliceUatStub(basePath: string, milestoneId: string, sliceId: string, fixesApplied: string[]): Promise<void> {
+  const sDir = resolveSlicePath(basePath, milestoneId, sliceId);
+  if (!sDir) return;
+  const absolute = join(sDir, `${sliceId}-UAT.md`);
+  const content = [
+    `# ${sliceId}: Recovery placeholder UAT`,
+    "",
+    `**Milestone:** ${milestoneId}`,
+    `**Written:** ${new Date().toISOString()}`,
+    "",
+    "## Preconditions",
+    "- Doctor created this placeholder because the expected UAT file was missing.",
+    "",
+    "## Smoke Test",
+    "- Re-run the slice verification from the slice plan before shipping.",
+    "",
+    "## Test Cases",
+    "### 1. Replace this placeholder",
+    "1. Read the slice plan and task summaries.",
+    "2. Write a real UAT script.",
+    "3. **Expected:** This placeholder is replaced with meaningful human checks.",
+    "",
+    "## Edge Cases",
+    "### Missing completion artifacts",
+    "1. Confirm the summary, roadmap checkbox, and state file are coherent.",
+    "2. **Expected:** GSD doctor reports no remaining completion drift for this slice.",
+    "",
+    "## Failure Signals",
+    "- Placeholder content still present when treating the slice as done",
+    "",
+    "## Notes for Tester",
+    "Doctor created this file only to restore the required artifact shape. Replace it with a real UAT script.",
+    "",
+  ].join("\n");
+  await saveFile(absolute, content);
+  fixesApplied.push(`created placeholder ${absolute}`);
+}
+
+async function markTaskDoneInPlan(basePath: string, milestoneId: string, sliceId: string, taskId: string, fixesApplied: string[]): Promise<void> {
+  const planPath = resolveSliceFile(basePath, milestoneId, sliceId, "PLAN");
+  if (!planPath) return;
+  const content = await loadFile(planPath);
+  if (!content) return;
+  const updated = content.replace(
+    new RegExp(`^(\\s*-\\s+)\\[ \\]\\s+\\*\\*${taskId}:`, "m"),
+    `$1[x] **${taskId}:`,
+  );
+  if (updated !== content) {
+    await saveFile(planPath, updated);
+    fixesApplied.push(`marked ${taskId} done in ${planPath}`);
+  }
+}
+
+async function markTaskUndoneInPlan(basePath: string, milestoneId: string, sliceId: string, taskId: string, fixesApplied: string[]): Promise<void> {
+  const planPath = resolveSliceFile(basePath, milestoneId, sliceId, "PLAN");
+  if (!planPath) return;
+  const content = await loadFile(planPath);
+  if (!content) return;
+  const updated = content.replace(
+    new RegExp(`^(\\s*-\\s+)\\[x\\]\\s+\\*\\*${taskId}:`, "mi"),
+    `$1[ ] **${taskId}:`,
+  );
+  if (updated !== content) {
+    await saveFile(planPath, updated);
+    fixesApplied.push(`unchecked ${taskId} in ${planPath} (missing summary — task will re-execute)`);
+  }
+}
+
+async function markSliceDoneInRoadmap(basePath: string, milestoneId: string, sliceId: string, fixesApplied: string[]): Promise<void> {
+  const roadmapPath = resolveMilestoneFile(basePath, milestoneId, "ROADMAP");
+  if (!roadmapPath) return;
+  const content = await loadFile(roadmapPath);
+  if (!content) return;
+  const updated = content.replace(
+    new RegExp(`^(\\s*-\\s+)\\[ \\]\\s+\\*\\*${sliceId}:`, "m"),
+    `$1[x] **${sliceId}:`,
+  );
+  if (updated !== content) {
+    await saveFile(roadmapPath, updated);
+    fixesApplied.push(`marked ${sliceId} done in ${roadmapPath}`);
+
+    // Also patch the worktree copy so syncStateToProjectRoot doesn't revert the fix (#1925)
+    const wtBase = join(basePath, ".gsd", "worktrees", milestoneId);
+    if (existsSync(wtBase)) {
+      const wtRoadmapPath = resolveMilestoneFile(wtBase, milestoneId, "ROADMAP");
+      if (wtRoadmapPath) {
+        const wtContent = await loadFile(wtRoadmapPath);
+        if (wtContent) {
+          const wtUpdated = wtContent.replace(
+            new RegExp(`^(\\s*-\\s+)\\[ \\]\\s+\\*\\*${sliceId}:`, "m"),
+            `$1[x] **${sliceId}:`,
+          );
+          if (wtUpdated !== wtContent) {
+            await saveFile(wtRoadmapPath, wtUpdated);
+            fixesApplied.push(`marked ${sliceId} done in worktree roadmap`);
+          }
+        }
+      }
+    }
+  }
+}
+
+async function markSliceUndoneInRoadmap(basePath: string, milestoneId: string, sliceId: string, fixesApplied: string[]): Promise<void> {
+  const roadmapPath = resolveMilestoneFile(basePath, milestoneId, "ROADMAP");
+  if (!roadmapPath) return;
+  const content = await loadFile(roadmapPath);
+  if (!content) return;
+  const updated = content.replace(
+    new RegExp(`^(\\s*-\\s+)\\[x\\]\\s+\\*\\*${sliceId}:`, "m"),
+    `$1[ ] **${sliceId}:`,
+  );
+  if (updated !== content) {
+    await saveFile(roadmapPath, updated);
+    fixesApplied.push(`unmarked ${sliceId} in ${roadmapPath} (premature completion)`);
+
+    // Also patch the worktree copy so syncStateToProjectRoot doesn't revert the fix (#1925)
+    const wtBase = join(basePath, ".gsd", "worktrees", milestoneId);
+    if (existsSync(wtBase)) {
+      const wtRoadmapPath = resolveMilestoneFile(wtBase, milestoneId, "ROADMAP");
+      if (wtRoadmapPath) {
+        const wtContent = await loadFile(wtRoadmapPath);
+        if (wtContent) {
+          const wtUpdated = wtContent.replace(
+            new RegExp(`^(\\s*-\\s+)\\[x\\]\\s+\\*\\*${sliceId}:`, "m"),
+            `$1[ ] **${sliceId}:`,
+          );
+          if (wtUpdated !== wtContent) {
+            await saveFile(wtRoadmapPath, wtUpdated);
+            fixesApplied.push(`unmarked ${sliceId} in worktree roadmap`);
+          }
+        }
+      }
+    }
+  }
+}
+
 function matchesScope(unitId: string, scope?: string): boolean {
   if (!scope) return true;
   return unitId === scope || unitId.startsWith(`${scope}/`);
