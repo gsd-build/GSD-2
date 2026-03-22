@@ -457,6 +457,8 @@ export class Agent {
 		const model = this._state.model;
 		if (!model) throw new Error("No model configured");
 
+		this._state.activeInferenceModel = model;
+
 		this.runningPrompt = new Promise<void>((resolve) => {
 			this.resolveRunningPrompt = resolve;
 		});
@@ -581,6 +583,7 @@ export class Agent {
 			this._state.isStreaming = false;
 			this._state.streamMessage = null;
 			this._state.pendingToolCalls = new Set<string>();
+			this._state.activeInferenceModel = undefined;
 			this.abortController = undefined;
 			this.resolveRunningPrompt?.();
 			this.runningPrompt = undefined;

@@ -239,6 +239,12 @@ export interface AgentState {
 	streamMessage: AgentMessage | null;
 	pendingToolCalls: Set<string>;
 	error?: string;
+	/**
+	 * The model currently being used for inference. Set at _runLoop() start,
+	 * cleared when the loop ends. When present, UI should display this instead
+	 * of `model` to avoid showing a stale value after a mid-turn model switch.
+	 */
+	activeInferenceModel?: Model<any>;
 }
 
 export interface AgentToolResult<T> {
