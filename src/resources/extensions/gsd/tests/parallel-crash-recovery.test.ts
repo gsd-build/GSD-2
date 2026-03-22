@@ -213,11 +213,11 @@ function makePersistedState(overrides: Partial<PersistedState> = {}): PersistedS
   }
 }
 
-// Test 6: orphan detection finds stale sessions
+// Test 6: orphan detection finds stale running sessions but preserves completed stopped sessions
 {
   const basePath = makeTempDir();
   try {
-    // Write a session status with a dead PID
+    // Write a running session with a dead PID
     mkdirSync(join(basePath, ".gsd", "parallel"), { recursive: true });
     writeSessionStatus(basePath, {
       milestoneId: "M001",
@@ -231,7 +231,20 @@ function makePersistedState(overrides: Partial<PersistedState> = {}): PersistedS
       worktreePath: "/tmp/wt-M001",
     });
 
-    // Write a session status with alive PID
+    // Write a completed stopped session with a dead PID — should be kept for merge recovery
+    writeSessionStatus(basePath, {
+      milestoneId: "M003",
+      pid: 99999998,
+      state: "stopped",
+      currentUnit: null,
+      completedUnits: 2,
+      cost: 0.20,
+      lastHeartbeat: Date.now(),
+      startedAt: Date.now(),
+      worktreePath: "/tmp/wt-M003",
+    });
+
+    // Write a live running session
     writeSessionStatus(basePath, {
       milestoneId: "M002",
       pid: process.pid,
@@ -244,13 +257,11 @@ function makePersistedState(overrides: Partial<PersistedState> = {}): PersistedS
       worktreePath: "/tmp/wt-M002",
     });
 
-    // Read all sessions — both should exist initially
     const before = readAllSessionStatuses(basePath);
-    assertEq(before.length, 2, "orphan: both sessions exist before detection");
+    assertEq(before.length, 3, "orphan: all sessions exist before detection");
 
-    // Now simulate orphan detection logic (same as prepareParallelStart)
     const sessions = readAllSessionStatuses(basePath);
-    const orphans: Array<{ milestoneId: string; pid: number; alive: boolean }> = [];
+    const orphans: Array<{ milestoneId: string; pid: number; alive: boolean; state: string }> = [];
     for (const session of sessions) {
       let alive: boolean;
       try {
@@ -259,22 +270,24 @@ function makePersistedState(overrides: Partial<PersistedState> = {}): PersistedS
       } catch {
         alive = false;
       }
-      orphans.push({ milestoneId: session.milestoneId, pid: session.pid, alive });
-      if (!alive) {
+      orphans.push({ milestoneId: session.milestoneId, pid: session.pid, alive, state: session.state });
+      if (!alive && !(session.state === "stopped" && session.completedUnits > 0)) {
         removeSessionStatus(basePath, session.milestoneId);
       }
     }
 
-    assertTrue(orphans.length === 2, "orphan: detected both sessions");
-    const deadOrphan = orphans.find(o => o.milestoneId === "M001");
-    assertTrue(deadOrphan !== undefined && !deadOrphan.alive, "orphan: M001 detected as dead");
-    const aliveOrphan = orphans.find(o => o.milestoneId === "M002");
-    assertTrue(aliveOrphan !== undefined && aliveOrphan.alive, "orphan: M002 detected as alive");
+    assertTrue(orphans.length === 3, "orphan: detected all sessions");
+    const deadRunning = orphans.find(o => o.milestoneId === "M001");
+    assertTrue(deadRunning !== undefined && !deadRunning.alive, "orphan: dead running session detected");
+    const deadStopped = orphans.find(o => o.milestoneId === "M003");
+    assertTrue(deadStopped !== undefined && !deadStopped.alive, "orphan: dead stopped session detected");
+    const aliveRunning = orphans.find(o => o.milestoneId === "M002");
+    assertTrue(aliveRunning !== undefined && aliveRunning.alive, "orphan: live running session detected");
 
-    // Dead session should be cleaned up
     const after = readAllSessionStatuses(basePath);
-    assertEq(after.length, 1, "orphan: dead session cleaned up");
-    assertEq(after[0].milestoneId, "M002", "orphan: alive session remains");
+    assertEq(after.length, 2, "orphan: dead running session cleaned up, completed stopped session preserved");
+    assertTrue(after.some((s) => s.milestoneId === "M002"), "orphan: alive running session remains");
+    assertTrue(after.some((s) => s.milestoneId === "M003"), "orphan: completed stopped session remains");
   } finally {
     rmSync(basePath, { recursive: true, force: true });
   }

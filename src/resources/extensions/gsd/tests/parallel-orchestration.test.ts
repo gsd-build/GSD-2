@@ -284,7 +284,7 @@ describe("parallel-orchestrator: lifecycle", () => {
     assert.equal(isParallelActive(), false);
   });
 
-  it("getWorkerStatuses restores persisted workers from disk", async () => {
+  it("getWorkerStatuses restores persisted workers only when a live session status exists", async () => {
     const base = makeTmpBase();
     try {
       const persisted = {
@@ -306,6 +306,17 @@ describe("parallel-orchestrator: lifecycle", () => {
         configSnapshot: { max_workers: 2 },
       };
       writeFileSync(join(base, ".gsd", "orchestrator.json"), JSON.stringify(persisted, null, 2), "utf-8");
+      writeSessionStatus(base, {
+        milestoneId: "M001",
+        pid: process.pid,
+        state: "running",
+        currentUnit: null,
+        completedUnits: 2,
+        cost: 0.25,
+        lastHeartbeat: Date.now(),
+        startedAt: Date.now(),
+        worktreePath: "/tmp/wt-M001",
+      });
       const workers = getWorkerStatuses(base);
       assert.equal(workers.length, 1);
       assert.equal(workers[0].milestoneId, "M001");
@@ -343,6 +354,64 @@ describe("parallel-orchestrator: lifecycle", () => {
     // State is "running" if spawn succeeds, "error" if binary not found (CI)
     assert.ok(status.state === "running" || status.state === "error",
       `expected running or error, got ${status.state}`);
+  });
+
+  it("pauseWorker persists paused state for recovery", async () => {
+    await startParallel(base, ["M001"], undefined);
+    const orch = getOrchestratorState();
+    const worker = orch?.workers.get("M001");
+    assert.ok(worker, "worker should exist");
+
+    worker.state = "running";
+    worker.pid = process.pid;
+    worker.process = null;
+    writeSessionStatus(base, {
+      milestoneId: "M001",
+      pid: process.pid,
+      state: "running",
+      currentUnit: null,
+      completedUnits: Math.max(worker.completedUnits, 1),
+      cost: worker.cost,
+      lastHeartbeat: Date.now(),
+      startedAt: worker.startedAt,
+      worktreePath: worker.worktreePath,
+    });
+
+    pauseWorker(base, "M001");
+    resetOrchestrator();
+
+    const restored = getWorkerStatuses(base);
+    assert.equal(restored[0]?.state, "paused");
+  });
+
+  it("resumeWorker persists resumed state for recovery", async () => {
+    await startParallel(base, ["M001"], undefined);
+    const orch = getOrchestratorState();
+    const worker = orch?.workers.get("M001");
+    assert.ok(worker, "worker should exist");
+
+    worker.state = "paused";
+    worker.pid = process.pid;
+    worker.process = null;
+    writeSessionStatus(base, {
+      milestoneId: "M001",
+      pid: process.pid,
+      state: "paused",
+      currentUnit: null,
+      completedUnits: Math.max(worker.completedUnits, 1),
+      cost: worker.cost,
+      lastHeartbeat: Date.now(),
+      startedAt: worker.startedAt,
+      worktreePath: worker.worktreePath,
+    });
+    resetOrchestrator();
+    getWorkerStatuses(base);
+
+    resumeWorker(base, "M001");
+    resetOrchestrator();
+
+    const restored = getWorkerStatuses(base);
+    assert.equal(restored[0]?.state, "running");
   });
 
   it("stopParallel stops all workers", async () => {

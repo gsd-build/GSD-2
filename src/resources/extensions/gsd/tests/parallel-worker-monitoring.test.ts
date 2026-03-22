@@ -144,10 +144,10 @@ describe("parallel-worker-monitoring", () => {
       "--mode comes before json");
   });
 
-  it("refreshWorkerStatuses restores persisted workers from disk", () => {
+  it("refreshWorkerStatuses restores persisted workers only when a live session status exists", () => {
     const base = mkdtempSync(join(tmpdir(), "gsd-parallel-monitoring-"));
     try {
-      mkdirSync(join(base, ".gsd"), { recursive: true });
+      mkdirSync(join(base, ".gsd", "parallel"), { recursive: true });
       writeFileSync(join(base, ".gsd", "orchestrator.json"), JSON.stringify({
         active: true,
         workers: [
@@ -166,10 +166,21 @@ describe("parallel-worker-monitoring", () => {
         startedAt: Date.now(),
         configSnapshot: { max_workers: 2 },
       }, null, 2));
+      writeFileSync(join(base, ".gsd", "parallel", "M001.status.json"), JSON.stringify({
+        milestoneId: "M001",
+        pid: process.pid,
+        state: "running",
+        currentUnit: null,
+        completedUnits: 1,
+        cost: 0.1,
+        lastHeartbeat: Date.now(),
+        startedAt: Date.now(),
+        worktreePath: "/tmp/wt-M001",
+      }, null, 2));
       refreshWorkerStatuses(base, { restoreIfNeeded: true });
       const workers = getWorkerStatuses();
       assertEq(workers.length, 1, "restored one worker");
-      assertEq(workers[0].milestoneId, "M001", "worker restored from persisted state");
+      assertEq(workers[0].milestoneId, "M001", "worker restored from persisted state + status file");
     } finally {
       resetOrchestrator();
       rmSync(base, { recursive: true, force: true });

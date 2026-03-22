@@ -150,6 +150,7 @@ export function isSessionStale(
   status: SessionStatus,
   timeoutMs: number = DEFAULT_STALE_TIMEOUT_MS,
 ): boolean {
+  if (status.state === "stopped" && status.completedUnits > 0) return false;
   if (!isPidAlive(status.pid)) return true;
   const elapsed = Date.now() - status.lastHeartbeat;
   return elapsed > timeoutMs;

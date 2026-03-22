@@ -18,6 +18,7 @@ import {
   mkdtempSync,
   mkdirSync,
   writeFileSync,
+  readFileSync,
   rmSync,
   existsSync,
   realpathSync,
@@ -293,6 +294,71 @@ test("mergeCompletedMilestone — clean merge, session status cleaned up", async
     // Verify milestone branch deleted
     const branches = run("git branch", repo);
     assert.ok(!branches.includes("milestone/M010"), "milestone branch should be deleted");
+  } finally {
+    process.chdir(savedCwd);
+    cleanup(repo);
+  }
+});
+
+test("mergeCompletedMilestone — keeps other persisted workers after cleaning up merged worker", async () => {
+  const savedCwd = process.cwd();
+  const repo = createTempRepo();
+
+  try {
+    createMilestoneBranch(repo, "M011", [
+      { name: "feature.ts", content: "export const feature = true;\n" },
+    ]);
+    setupRoadmap(repo, "M011", "Feature", ["S01: Feature module"]);
+
+    writeFileSync(join(repo, ".gsd", "orchestrator.json"), JSON.stringify({
+      active: true,
+      workers: [
+        {
+          milestoneId: "M011",
+          title: "M011",
+          pid: process.pid,
+          worktreePath: join(repo, ".gsd", "worktrees", "M011"),
+          startedAt: Date.now() - 60000,
+          state: "stopped",
+          completedUnits: 2,
+          cost: 0.9,
+        },
+        {
+          milestoneId: "M099",
+          title: "M099",
+          pid: process.pid,
+          worktreePath: "/tmp/wt-M099",
+          startedAt: Date.now() - 30000,
+          state: "stopped",
+          completedUnits: 1,
+          cost: 0.4,
+        },
+      ],
+      totalCost: 1.3,
+      startedAt: Date.now() - 60000,
+      configSnapshot: { max_workers: 2 },
+    }, null, 2));
+    writeSessionStatus(repo, {
+      milestoneId: "M011",
+      pid: process.pid,
+      state: "stopped",
+      currentUnit: null,
+      completedUnits: 2,
+      cost: 0.9,
+      lastHeartbeat: Date.now(),
+      startedAt: Date.now() - 60000,
+      worktreePath: join(repo, ".gsd", "worktrees", "M011"),
+    });
+
+    process.chdir(repo);
+    const result = await mergeCompletedMilestone(repo, "M011");
+
+    assert.equal(result.success, true, `merge should succeed: ${result.error}`);
+    const persisted = JSON.parse(readFileSync(join(repo, ".gsd", "orchestrator.json"), "utf-8"));
+    assert.equal(persisted.workers.length, 1, "only unmerged worker should remain persisted");
+    assert.equal(persisted.workers[0].milestoneId, "M099");
+    assert.equal(persisted.workers[0].state, "stopped");
+    assert.equal(persisted.workers[0].completedUnits, 1);
   } finally {
     process.chdir(savedCwd);
     cleanup(repo);

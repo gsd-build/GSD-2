@@ -141,6 +141,13 @@ function removeStateFile(basePath: string): void {
   } catch { /* non-fatal */ }
 }
 
+function writePersistedStateFile(basePath: string, persisted: PersistedState): void {
+  const dest = stateFilePath(basePath);
+  const tmp = dest + TMP_SUFFIX;
+  writeFileSync(tmp, JSON.stringify(persisted, null, 2), "utf-8");
+  renameSync(tmp, dest);
+}
+
 function isPidAlive(pid: number): boolean {
   if (!Number.isInteger(pid) || pid <= 0) return false;
   try {
@@ -149,6 +156,15 @@ function isPidAlive(pid: number): boolean {
   } catch {
     return false;
   }
+}
+
+function isRecoveryRelevantState(
+  stateValue: "running" | "paused" | "stopped" | "error",
+  completedUnits: number,
+): boolean {
+  return stateValue === "running"
+    || stateValue === "paused"
+    || (stateValue === "stopped" && completedUnits > 0);
 }
 
 /**
@@ -197,37 +213,87 @@ function appendWorkerLog(basePath: string, milestoneId: string, chunk: string): 
   }
 }
 
+function readLiveSessionStatusMap(basePath: string): Map<string, SessionStatus> {
+  cleanupStaleSessions(basePath);
+  const statuses = readAllSessionStatuses(basePath);
+  const map = new Map<string, SessionStatus>();
+  for (const status of statuses) {
+    if (status.state === "error") continue;
+    if (status.state === "running" || status.state === "paused") {
+      if (!isPidAlive(status.pid)) continue;
+      map.set(status.milestoneId, status);
+      continue;
+    }
+    if (status.state === "stopped" && status.completedUnits > 0) {
+      map.set(status.milestoneId, status);
+    }
+  }
+  return map;
+}
+
+function restoreWorkersFromPersistedState(
+  basePath: string,
+  milestoneIds?: string[],
+): { workers: WorkerInfo[]; totalCost: number; startedAt: number } | null {
+  const p = stateFilePath(basePath);
+  if (!existsSync(p)) return null;
+
+  let persisted: PersistedState;
+  try {
+    persisted = JSON.parse(readFileSync(p, "utf-8")) as PersistedState;
+  } catch {
+    return null;
+  }
+
+  const allowedMilestones = milestoneIds ? new Set(milestoneIds) : null;
+  const liveStatusMap = readLiveSessionStatusMap(basePath);
+  const workers: WorkerInfo[] = [];
+
+  for (const worker of persisted.workers) {
+    if (allowedMilestones && !allowedMilestones.has(worker.milestoneId)) continue;
+    if (!isRecoveryRelevantState(worker.state, worker.completedUnits)) continue;
+
+    const diskStatus = liveStatusMap.get(worker.milestoneId);
+    if (!diskStatus) continue;
+
+    workers.push({
+      milestoneId: worker.milestoneId,
+      title: worker.title,
+      pid: diskStatus.pid,
+      process: null,
+      worktreePath: diskStatus.worktreePath,
+      startedAt: worker.startedAt,
+      state: diskStatus.state,
+      completedUnits: diskStatus.completedUnits,
+      cost: diskStatus.cost,
+    });
+  }
+
+  if (workers.length === 0) return null;
+
+  return {
+    workers,
+    totalCost: workers.reduce((sum, worker) => sum + worker.cost, 0),
+    startedAt: Math.min(...workers.map((worker) => worker.startedAt)),
+  };
+}
+
 function restoreRuntimeState(basePath: string): boolean {
   if (state?.active) return true;
 
-  const restored = restoreState(basePath);
+  const restored = restoreWorkersFromPersistedState(basePath);
   if (restored && restored.workers.length > 0) {
     const config = resolveParallelConfig(undefined);
     state = {
-      active: restored.active,
+      active: true,
       workers: new Map(),
-      config: {
-        ...config,
-        max_workers: restored.configSnapshot.max_workers,
-        budget_ceiling: restored.configSnapshot.budget_ceiling,
-      },
+      config,
       totalCost: restored.totalCost,
       startedAt: restored.startedAt,
     };
 
-    for (const w of restored.workers) {
-      const diskStatus = readSessionStatus(basePath, w.milestoneId);
-      state.workers.set(w.milestoneId, {
-        milestoneId: w.milestoneId,
-        title: w.title,
-        pid: diskStatus?.pid ?? w.pid,
-        process: null,
-        worktreePath: diskStatus?.worktreePath ?? w.worktreePath,
-        startedAt: w.startedAt,
-        state: diskStatus?.state ?? w.state,
-        completedUnits: diskStatus?.completedUnits ?? w.completedUnits,
-        cost: diskStatus?.cost ?? w.cost,
-      });
+    for (const worker of restored.workers) {
+      state.workers.set(worker.milestoneId, worker);
     }
 
     return true;
@@ -236,8 +302,8 @@ function restoreRuntimeState(basePath: string): boolean {
   // Fallback: rebuild coordinator state from live session status files.
   // This covers cases where orchestrator.json is missing/corrupt but workers are
   // still running and writing heartbeats under .gsd/parallel/.
-  cleanupStaleSessions(basePath);
-  const statuses = readAllSessionStatuses(basePath);
+  const liveStatusMap = readLiveSessionStatusMap(basePath);
+  const statuses = [...liveStatusMap.values()];
   if (statuses.length === 0) {
     return false;
   }
@@ -831,13 +897,28 @@ export function pauseWorker(
     ? [milestoneId]
     : [...state.workers.keys()];
 
+  let changed = false;
   for (const mid of targets) {
     const worker = state.workers.get(mid);
     if (!worker || worker.state !== "running") continue;
 
     sendSignal(basePath, mid, "pause");
     worker.state = "paused";
+    writeSessionStatus(basePath, {
+      milestoneId: mid,
+      pid: worker.pid,
+      state: worker.state,
+      currentUnit: null,
+      completedUnits: worker.completedUnits,
+      cost: worker.cost,
+      lastHeartbeat: Date.now(),
+      startedAt: worker.startedAt,
+      worktreePath: worker.worktreePath,
+    });
+    changed = true;
   }
+
+  if (changed) persistState(basePath);
 }
 
 /** Resume a specific worker or all workers. */
@@ -851,13 +932,28 @@ export function resumeWorker(
     ? [milestoneId]
     : [...state.workers.keys()];
 
+  let changed = false;
   for (const mid of targets) {
     const worker = state.workers.get(mid);
     if (!worker || worker.state !== "paused") continue;
 
     sendSignal(basePath, mid, "resume");
     worker.state = "running";
+    writeSessionStatus(basePath, {
+      milestoneId: mid,
+      pid: worker.pid,
+      state: worker.state,
+      currentUnit: null,
+      completedUnits: worker.completedUnits,
+      cost: worker.cost,
+      lastHeartbeat: Date.now(),
+      startedAt: worker.startedAt,
+      worktreePath: worker.worktreePath,
+    });
+    changed = true;
   }
+
+  if (changed) persistState(basePath);
 }
 
 // ─── Status Refresh ────────────────────────────────────────────────────────
@@ -937,6 +1033,50 @@ export function isBudgetExceeded(): boolean {
 // ─── Reset ─────────────────────────────────────────────────────────────────
 
 /** Reset orchestrator state. Called on clean shutdown. */
+export function removeWorkerFromOrchestrator(basePath: string, milestoneId: string): void {
+  if (state) {
+    state.workers.delete(milestoneId);
+    state.totalCost = 0;
+    for (const worker of state.workers.values()) {
+      state.totalCost += worker.cost;
+    }
+    const hasRecoverableWorkers = [...state.workers.values()].some(
+      (worker) => isRecoveryRelevantState(worker.state, worker.completedUnits),
+    );
+    if (hasRecoverableWorkers) {
+      state.active = true;
+      persistState(basePath);
+    } else {
+      state.active = false;
+      removeStateFile(basePath);
+    }
+    return;
+  }
+
+  try {
+    const p = stateFilePath(basePath);
+    if (!existsSync(p)) return;
+    const persisted = JSON.parse(readFileSync(p, "utf-8")) as PersistedState;
+    const workers = persisted.workers.filter((worker) => worker.milestoneId !== milestoneId);
+    if (workers.length === persisted.workers.length) return;
+    const hasRecoverableWorkers = workers.some(
+      (worker) => isRecoveryRelevantState(worker.state, worker.completedUnits),
+    );
+    if (!hasRecoverableWorkers) {
+      removeStateFile(basePath);
+      return;
+    }
+    writePersistedStateFile(basePath, {
+      ...persisted,
+      active: true,
+      workers,
+      totalCost: workers.reduce((sum, worker) => sum + worker.cost, 0),
+    });
+  } catch {
+    // Non-fatal — merge cleanup should not block success reporting.
+  }
+}
+
 export function resetOrchestrator(): void {
   state = null;
 }

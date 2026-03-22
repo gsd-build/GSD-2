@@ -10,7 +10,7 @@ import { resolveMilestoneFile } from "./paths.js";
 import { mergeMilestoneToMain } from "./auto-worktree.js";
 import { MergeConflictError } from "./git-service.js";
 import { removeSessionStatus } from "./session-status-io.js";
-import type { WorkerInfo } from "./parallel-orchestrator.js";
+import { removeWorkerFromOrchestrator, type WorkerInfo } from "./parallel-orchestrator.js";
 import { getErrorMessage } from "./error-utils.js";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -79,8 +79,9 @@ export async function mergeCompletedMilestone(
     // Attempt the merge
     const result = mergeMilestoneToMain(basePath, milestoneId, roadmapContent);
 
-    // Clean up parallel session status
+    // Clean up parallel session status and persisted coordinator state
     removeSessionStatus(basePath, milestoneId);
+    removeWorkerFromOrchestrator(basePath, milestoneId);
 
     return {
       milestoneId,
