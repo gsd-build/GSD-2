@@ -15,6 +15,7 @@ import { getAutoDashboardData, isAutoActive, isAutoPaused, markToolEnd, markTool
 import { isParallelActive, shutdownParallel } from "../parallel-orchestrator.js";
 import { checkToolCallLoop, resetToolCallLoopGuard } from "./tool-call-loop-guard.js";
 import { saveActivityLog } from "../activity-log.js";
+import { cleanupQuickBranch } from "../quick.js";
 
 // Skip the welcome screen on the very first session_start — cli.ts already
 // printed it before the TUI launched. Only re-print on /clear (subsequent sessions).
@@ -61,6 +62,18 @@ export function registerHooks(pi: ExtensionAPI): void {
 
   pi.on("agent_end", async (event, ctx: ExtensionContext) => {
     resetToolCallLoopGuard();
+
+    // Merge quick-task branch back before auto-mode handling (#1935)
+    try {
+      const merged = cleanupQuickBranch();
+      if (merged) {
+        ctx.ui.notify("Quick task branch merged and cleaned up.", "info");
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      ctx.ui.notify(`Quick task cleanup failed: ${msg}`, "warning");
+    }
+
     await handleAgentEnd(pi, event, ctx);
   });
 

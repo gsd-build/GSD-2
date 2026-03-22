@@ -8,13 +8,16 @@
  */
 
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { execSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 import { createTestContext } from './test-helpers.ts';
 import { captureIntegrationBranch, getCurrentBranch } from "../worktree.ts";
 import { readIntegrationBranch, QUICK_BRANCH_RE } from "../git-service.ts";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const { assertEq, assertTrue, report } = createTestContext();
 
@@ -269,6 +272,93 @@ async function main(): Promise<void> {
     assertEq(readIntegrationBranch(repo, "M001"), "main",
       "M001 integration unchanged");
 
+    rmSync(repo, { recursive: true, force: true });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // agent_end hook calls cleanupQuickBranch (regression test for #1935)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  console.log("\n=== agent_end hook: cleanupQuickBranch is imported and called (#1935) ===");
+
+  {
+    // Verify that register-hooks.ts imports cleanupQuickBranch from quick.ts.
+    // Before the fix, cleanupQuickBranch was exported but never imported or
+    // called by any hook — making it dead code. This test ensures the wiring
+    // exists so quick-task branches are merged back on agent_end.
+    const registerHooksSource = readFileSync(
+      join(__dirname, "..", "bootstrap", "register-hooks.ts"),
+      "utf-8",
+    );
+
+    assertTrue(
+      registerHooksSource.includes("cleanupQuickBranch"),
+      "register-hooks.ts references cleanupQuickBranch",
+    );
+
+    assertTrue(
+      /import\s.*cleanupQuickBranch.*from.*quick/s.test(registerHooksSource),
+      "register-hooks.ts imports cleanupQuickBranch from quick module",
+    );
+
+    // Verify it is called inside the agent_end handler
+    // Match: within pi.on("agent_end", ...) block, cleanupQuickBranch is called
+    assertTrue(
+      /agent_end[\s\S]*cleanupQuickBranch\s*\(/.test(registerHooksSource),
+      "cleanupQuickBranch is called within the agent_end hook",
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Full lifecycle: agent_end merges quick branch back (#1935)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  console.log("\n=== Full lifecycle: quick branch merged on agent_end (#1935) ===");
+
+  {
+    const repo = createTestRepo();
+    const origCwd = process.cwd();
+
+    // 1. Simulate handleQuick: create branch and persist return state
+    run("git checkout -b gsd/quick/3-agent-end-test", repo);
+    writeFileSync(join(repo, "agent-fix.txt"), "agent-end fix\n");
+    run("git add -A", repo);
+    run(`git commit -m "quick work on agent-end test"`, repo);
+
+    const runtimeDir = join(repo, ".gsd", "runtime");
+    mkdirSync(runtimeDir, { recursive: true });
+    writeFileSync(join(runtimeDir, "quick-return.json"), JSON.stringify({
+      basePath: repo,
+      originalBranch: "main",
+      quickBranch: "gsd/quick/3-agent-end-test",
+      taskNum: 3,
+      slug: "agent-end-test",
+      description: "agent end test",
+    }) + "\n");
+
+    // 2. Simulate agent_end: call cleanupQuickBranch (this is what the hook now does)
+    process.chdir(repo);
+    const { cleanupQuickBranch } = await import("../quick.ts");
+    const merged = cleanupQuickBranch();
+
+    // 3. Verify the full lifecycle completed
+    assertTrue(merged, "cleanupQuickBranch returned true (branch was merged)");
+    assertEq(getCurrentBranch(repo), "main", "user is back on original branch");
+    assertTrue(existsSync(join(repo, "agent-fix.txt")), "quick work is on main");
+    assertTrue(!existsSync(join(runtimeDir, "quick-return.json")),
+      "quick-return.json consumed and removed");
+
+    // Verify commit message follows convention
+    const lastCommitMsg = run("git log -1 --format=%s", repo);
+    assertEq(lastCommitMsg, "quick(Q3): agent-end-test",
+      "squash commit uses quick(Q<num>): <slug> format");
+
+    // Verify quick branch is deleted
+    const branchList = run("git branch", repo);
+    assertTrue(!branchList.includes("gsd/quick/3-agent-end-test"),
+      "quick branch deleted after merge");
+
+    process.chdir(origCwd);
     rmSync(repo, { recursive: true, force: true });
   }
 
