@@ -650,15 +650,26 @@ export function spawnWorker(
   return true;
 }
 
+function preferBuiltLoaderPath(candidate: string): string {
+  const built = candidate.replace(/[/\\]src[/\\]loader\.ts$/, "/dist/loader.js");
+  return built !== candidate && existsSync(built) ? built : candidate;
+}
+
 /**
  * Resolve the GSD CLI binary path.
  * Uses GSD_BIN_PATH env var (set by loader.ts) or falls back to
  * finding the binary relative to the current module.
  */
 function resolveGsdBin(): string | null {
-  // GSD_BIN_PATH is set by loader.ts to the absolute path of dist/loader.js
-  if (process.env.GSD_BIN_PATH && existsSync(process.env.GSD_BIN_PATH)) {
-    return process.env.GSD_BIN_PATH;
+  // GSD_BIN_PATH is set by loader.ts to the absolute path of dist/loader.js.
+  // In dev setups it may point at src/loader.ts, which child workers cannot
+  // reliably execute because the parent process's TS loader flags are not
+  // inherited. Prefer a sibling built dist/loader.js when available.
+  const envBinPath = process.env.GSD_BIN_PATH;
+  if (envBinPath) {
+    const preferred = preferBuiltLoaderPath(envBinPath);
+    if (existsSync(preferred)) return preferred;
+    if (existsSync(envBinPath)) return envBinPath;
   }
 
   // Fallback: try to find loader.js relative to this file

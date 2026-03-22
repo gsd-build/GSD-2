@@ -19,6 +19,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { execSync } from "node:child_process";
 
 import {
   writeSessionStatus,
@@ -62,6 +63,38 @@ import type { WorkerInfo } from "../parallel-orchestrator.js";
 function makeTmpBase(): string {
   const base = mkdtempSync(join(tmpdir(), "gsd-parallel-test-"));
   mkdirSync(join(base, ".gsd"), { recursive: true });
+  return base;
+}
+
+function run(command: string, cwd: string): string {
+  return execSync(command, { cwd, stdio: ["ignore", "pipe", "pipe"], encoding: "utf-8" }).trim();
+}
+
+function makeGitBaseRepo(): string {
+  const base = mkdtempSync(join(tmpdir(), "gsd-parallel-git-test-"));
+  run("git init -b main", base);
+  run('git config user.name "Test User"', base);
+  run('git config user.email "test@example.com"', base);
+  mkdirSync(join(base, ".gsd", "milestones", "M001"), { recursive: true });
+  writeFileSync(join(base, ".gitignore"), ".gsd\n", "utf-8");
+  writeFileSync(join(base, ".gsd", "PROJECT.md"), "# Project\n", "utf-8");
+  writeFileSync(join(base, ".gsd", "REQUIREMENTS.md"), "# Requirements\n", "utf-8");
+  writeFileSync(join(base, ".gsd", "DECISIONS.md"), "# Decisions\n", "utf-8");
+  writeFileSync(join(base, ".gsd", "KNOWLEDGE.md"), "# Knowledge\n", "utf-8");
+  writeFileSync(join(base, ".gsd", "milestones", "M001", "M001-CONTEXT.md"), "# M001: Done\n", "utf-8");
+  writeFileSync(
+    join(base, ".gsd", "milestones", "M001", "M001-ROADMAP.md"),
+    "# M001: Done\n\n## Slices\n- [x] **S01: Finished** `risk:low` `depends:[]`\n  > done\n",
+    "utf-8",
+  );
+  writeFileSync(
+    join(base, ".gsd", "milestones", "M001", "M001-SUMMARY.md"),
+    "---\nid: M001\ntitle: Done\nstatus: complete\n---\n\n# M001 Summary\n",
+    "utf-8",
+  );
+  run("git add .gitignore", base);
+  run("git add -f .gsd/PROJECT.md .gsd/REQUIREMENTS.md .gsd/DECISIONS.md .gsd/KNOWLEDGE.md .gsd/milestones/M001", base);
+  run('git commit -m "seed tracked M001"', base);
   return base;
 }
 
@@ -341,6 +374,55 @@ describe("parallel-orchestrator: lifecycle", () => {
     // State is "running" if spawn succeeds, "error" if binary not found (CI)
     assert.ok(status.state === "running" || status.state === "error",
       `expected running or error, got ${status.state}`);
+  });
+
+  it("startParallel prefers sibling dist loader when GSD_BIN_PATH points at src/loader.ts", async () => {
+    const originalBinPath = process.env.GSD_BIN_PATH;
+    const repo = makeGitBaseRepo();
+    const loaderRoot = mkdtempSync(join(tmpdir(), "gsd-loader-fixture-"));
+    const sourceLoader = join(loaderRoot, "src", "loader.ts");
+    const builtLoader = join(loaderRoot, "dist", "loader.js");
+
+    try {
+      mkdirSync(join(loaderRoot, "src"), { recursive: true });
+      mkdirSync(join(loaderRoot, "dist"), { recursive: true });
+
+      writeFileSync(sourceLoader, "import './bundled-extension-paths.js';\n", "utf-8");
+      writeFileSync(
+        builtLoader,
+        [
+          "process.stdout.write(JSON.stringify({ type: 'message_end', message: { role: 'assistant', usage: { input: 1, output: 1, totalTokens: 2, cost: { total: 0.01 } } } }) + '\\n');",
+          "setInterval(() => {}, 1000);",
+        ].join("\n"),
+        "utf-8",
+      );
+
+      process.env.GSD_BIN_PATH = sourceLoader;
+
+      const result = await startParallel(repo, ["M001"], {
+        parallel: { enabled: true, max_workers: 1, merge_strategy: "per-milestone", auto_merge: "confirm" },
+      });
+      assert.deepEqual(result.started, ["M001"]);
+
+      let worker: WorkerInfo | undefined;
+      for (let i = 0; i < 10; i++) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        refreshWorkerStatuses(repo);
+        worker = getWorkerStatuses().find((entry) => entry.milestoneId === "M001");
+        if (worker?.state === "running" && worker.cost >= 0.01) break;
+      }
+
+      assert.ok(worker, "worker should exist");
+      assert.equal(worker.state, "running", "worker should stay running via dist loader fallback");
+      assert.ok(worker.cost >= 0.01, `expected worker cost to reflect stub loader output, got ${worker.cost}`);
+
+      await stopParallel(repo);
+    } finally {
+      process.env.GSD_BIN_PATH = originalBinPath;
+      resetOrchestrator();
+      rmSync(repo, { recursive: true, force: true });
+      rmSync(loaderRoot, { recursive: true, force: true });
+    }
   });
 
   it("stopParallel stops all workers", async () => {
