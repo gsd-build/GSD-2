@@ -1055,6 +1055,7 @@ export async function startAuto(
             s.currentMilestoneId = meta.milestoneId;
             s.originalBasePath = meta.originalBasePath || base;
             s.stepMode = meta.stepMode ?? requestedStepMode;
+            s.pausedSessionFile = meta.sessionFile ?? null;
             s.paused = true;
             // Clean up the persisted file — we're consuming it
             try { unlinkSync(pausedPath); } catch { /* non-fatal */ }

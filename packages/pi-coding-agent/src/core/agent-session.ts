@@ -2412,6 +2412,8 @@ export class AgentSession {
 		const previousCwd = this._cwd;
 		this._cwd = this.sessionManager.getCwd();
 		if (this._cwd !== previousCwd) {
+			this._resourceLoader.setCwd(this._cwd);
+			await this._resourceLoader.reload();
 			try {
 				process.chdir(this._cwd);
 			} catch {

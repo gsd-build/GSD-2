@@ -1,7 +1,7 @@
 import { join } from "node:path";
 
 import type { ExtensionAPI, ExtensionContext } from "@gsd/pi-coding-agent";
-import { isToolCallEventType } from "@gsd/pi-coding-agent";
+import { isToolCallEventType, loadSkillsFromDir } from "@gsd/pi-coding-agent";
 
 import { buildMilestoneFileName, resolveMilestonePath, resolveSliceFile, resolveSlicePath } from "../paths.js";
 import { buildBeforeAgentStartResult } from "./system-context.js";
@@ -148,10 +148,10 @@ export function registerHooks(pi: ExtensionAPI): void {
     if (event.toolName === "read") {
       const path = typeof (event.input as any)?.path === "string" ? (event.input as any).path : undefined;
       if (path && /(?:^|\/)SKILL\.md$/i.test(path)) {
-        const parts = path.split(/[\\/]/).filter(Boolean);
-        const skillDir = parts.length >= 2 ? parts[parts.length - 2] : undefined;
-        if (skillDir) {
-          recordSkillRead(skillDir);
+        const result = loadSkillsFromDir({ dir: join(path, ".."), source: "path" });
+        const skill = result.skills[0];
+        if (skill) {
+          recordSkillRead(skill.name);
         }
       }
     }

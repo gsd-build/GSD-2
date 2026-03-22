@@ -33,6 +33,7 @@ export interface ResourceLoader {
 	getSystemPrompt(): string | undefined;
 	getAppendSystemPrompt(): string[];
 	getPathMetadata(): Map<string, PathMetadata>;
+	setCwd(cwd: string): void;
 	extendResources(paths: ResourceExtensionPaths): void;
 	reload(): Promise<void>;
 }
@@ -272,6 +273,15 @@ export class DefaultResourceLoader implements ResourceLoader {
 
 	getPathMetadata(): Map<string, PathMetadata> {
 		return this.pathMetadata;
+	}
+
+	setCwd(cwd: string): void {
+		this.cwd = cwd;
+		this.packageManager = new DefaultPackageManager({
+			cwd: this.cwd,
+			agentDir: this.agentDir,
+			settingsManager: this.settingsManager,
+		});
 	}
 
 	extendResources(paths: ResourceExtensionPaths): void {
