@@ -100,3 +100,13 @@ test("custom prompt: excludes skill catalog when Skill is not in selectedTools",
 	});
 	assert.ok(!prompt.includes("<available_skills>"), "should not contain <available_skills>");
 });
+
+test("custom prompt: excludes skill catalog when selectedTools is empty array", () => {
+	const prompt = buildSystemPrompt({
+		customPrompt: "You are a helpful assistant.",
+		selectedTools: [],
+		skills: [sampleSkill],
+		cwd: "/project",
+	});
+	assert.ok(!prompt.includes("<available_skills>"), "empty selectedTools array should exclude catalog");
+});
