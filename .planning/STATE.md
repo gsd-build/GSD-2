@@ -58,6 +58,9 @@ Recent decisions affecting current work:
 - 1-05: Manifest includes all 5 entity types per D-06 — full DB dump, not curated
 - 1-05: Event hash from cmd+params only (deterministic, ts/actor-independent)
 - 1-05: afterCommand is non-fatal for projections, manifest, and events
+- 2-01: Sync lock uses atomicWriteSync for crash-safe lock file creation
+- 2-01: replay() suppresses afterCommand entirely per D-11 — projections still render but no event/manifest writes
+- 2-01: acquireSyncLock accepts optional timeoutMs for testability (default 5000ms)
 - 2-03: Hard switch with no fallback — prompts do not offer checkbox-edit escape hatch per D-07
 - 2-03: plan-slice migration is additive — file-write steps preserved, tool call added as new step 8
 
