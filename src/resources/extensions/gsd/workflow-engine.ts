@@ -9,6 +9,7 @@ import { _getAdapter, isDbAvailable } from "./gsd-db.js";
 import type { GSDState, ActiveRef, Phase, MilestoneRegistryEntry } from "./types.js";
 import { writeManifest } from "./workflow-manifest.js";
 import { appendEvent } from "./workflow-events.js";
+import type { WorkflowEvent } from "./workflow-events.js";
 import { renderAllProjections } from "./workflow-projections.js";
 import {
   completeTask as _completeTask,
@@ -233,6 +234,52 @@ export class WorkflowEngine {
     const result = _reportBlocker(this.db, params);
     this.afterCommand("report_blocker", params as unknown as Record<string, unknown>);
     return result;
+  }
+
+  // ── Event replay (cross-worktree reconciliation) ──────────────────
+
+  /**
+   * Replay a single event from another engine's log.
+   * Dispatches to the matching command handler but suppresses afterCommand
+   * side effects (no event append, no manifest write). Projections still render.
+   * Per D-10: lenient — unknown/failing events are skipped with stderr warning.
+   */
+  replay(event: WorkflowEvent): void {
+    const handlers: Record<string, (p: Record<string, unknown>) => unknown> = {
+      complete_task: (p) => _completeTask(this.db, p as unknown as CompleteTaskParams),
+      complete_slice: (p) => _completeSlice(this.db, p as unknown as CompleteSliceParams),
+      plan_slice: (p) => _planSlice(this.db, p as unknown as PlanSliceParams),
+      save_decision: (p) => _saveDecision(this.db, p as unknown as SaveDecisionParams),
+      start_task: (p) => _startTask(this.db, p as unknown as StartTaskParams),
+      record_verification: (p) => _recordVerification(this.db, p as unknown as RecordVerificationParams),
+      report_blocker: (p) => _reportBlocker(this.db, p as unknown as ReportBlockerParams),
+    };
+
+    const handler = handlers[event.cmd];
+    if (!handler) {
+      process.stderr.write(`workflow-engine: replay skipping unknown cmd: ${event.cmd}\n`);
+      return;
+    }
+
+    try {
+      handler(event.params);
+      // D-11: render projections but do NOT call afterCommand
+      const milestoneId = (event.params as { milestoneId?: string }).milestoneId;
+      if (milestoneId) {
+        try { renderAllProjections(this.basePath, milestoneId); } catch { /* non-fatal */ }
+      }
+    } catch (err) {
+      process.stderr.write(`workflow-engine: replay skipping ${event.cmd} (${event.hash ?? "?"}): ${(err as Error).message}\n`);
+    }
+  }
+
+  /**
+   * Replay multiple events in order. Per D-12: if one fails, log and continue.
+   */
+  replayAll(events: WorkflowEvent[]): void {
+    for (const event of events) {
+      this.replay(event);
+    }
   }
 
   // ── State derivation ───────────────────────────────────────────────
