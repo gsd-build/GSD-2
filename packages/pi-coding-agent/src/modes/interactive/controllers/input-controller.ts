@@ -56,7 +56,7 @@ export function setupEditorSubmitHandler(host: InteractiveModeStateHost & {
 		if (host.session.isStreaming) {
 			host.editor.addToHistory?.(text);
 			host.editor.setText("");
-			await host.session.prompt(text, { streamingBehavior: "steer" });
+			await host.session.prompt(text, { streamingBehavior: "followUp" });
 			host.updatePendingMessagesDisplay();
 			host.ui.requestRender();
 			return;
