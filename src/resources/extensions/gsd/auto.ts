@@ -362,13 +362,12 @@ export function isAutoPaused(): boolean {
 }
 
 export async function resumeAutoAfterDelay(
-  ctx: ExtensionContext,
   pi: ExtensionAPI,
 ): Promise<void> {
   if (!s.paused) return;
   const base = s.originalBasePath || s.basePath;
-  if (!base) return;
-  await startAuto(ctx as unknown as ExtensionCommandContext, pi, base, s.verbose, {
+  if (!base || !s.cmdCtx) return;
+  await startAuto(s.cmdCtx, pi, base, s.verbose, {
     step: s.stepMode,
   });
 }

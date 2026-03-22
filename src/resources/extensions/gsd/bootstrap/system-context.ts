@@ -12,6 +12,7 @@ import { hasSkillSnapshot, detectNewSkills, formatSkillsXml } from "../skill-dis
 import { getActiveAutoWorktreeContext } from "../auto-worktree.js";
 import { getActiveWorktreeName, getWorktreeOriginalCwd } from "../worktree-command.js";
 import { deriveState } from "../state.js";
+import { captureAvailableSkills } from "../skill-telemetry.js";
 import { formatOverridesSection, loadActiveOverrides, loadFile, parseContinue, parseSummary } from "../files.js";
 import { toPosixPath } from "../../shared/mod.js";
 import { markCmuxPromptShown, shouldPromptToEnableCmux } from "../../cmux/index.js";
@@ -104,6 +105,7 @@ export async function buildBeforeAgentStartResult(
   const injection = await buildGuidedExecuteContextInjection(event.prompt, process.cwd());
   const worktreeBlock = buildWorktreeContextBlock();
   const fullSystem = `${event.systemPrompt}\n\n[SYSTEM CONTEXT — GSD]\n\n${systemContent}${preferenceBlock}${knowledgeBlock}${memoryBlock}${newSkillsBlock}${worktreeBlock}`;
+  captureAvailableSkills(fullSystem);
 
   stopContextTimer({
     systemPromptSize: fullSystem.length,

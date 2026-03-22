@@ -20,6 +20,12 @@ export interface DiscoveredSkill {
   location: string;
 }
 
+interface SkillFrontmatter {
+  name?: string;
+  description?: string;
+  disableModelInvocation?: boolean;
+}
+
 /** Snapshot of skill names at auto-mode start */
 let baselineSkills: Set<string> | null = null;
 
@@ -61,7 +67,7 @@ export function detectNewSkills(): DiscoveredSkill[] {
     if (!existsSync(skillMdPath)) continue;
 
     const meta = parseSkillFrontmatter(skillMdPath);
-    if (meta) {
+    if (meta && !meta.disableModelInvocation) {
       newSkills.push({
         name: meta.name || dir,
         description: meta.description || `Skill: ${dir}`,
@@ -107,7 +113,7 @@ function listSkillDirs(): string[] {
   }
 }
 
-function parseSkillFrontmatter(path: string): { name?: string; description?: string } | null {
+function parseSkillFrontmatter(path: string): SkillFrontmatter | null {
   try {
     const content = readFileSync(path, "utf-8");
     // Use indexOf instead of [\s\S]*? regex to avoid backtracking (#468)
@@ -116,13 +122,16 @@ function parseSkillFrontmatter(path: string): { name?: string; description?: str
     if (endIdx === -1) return null;
 
     const fm = content.slice(4, endIdx);
-    const result: { name?: string; description?: string } = {};
+    const result: SkillFrontmatter = {};
 
     const nameMatch = fm.match(/^name:\s*(.+)$/m);
     if (nameMatch) result.name = nameMatch[1].trim();
 
     const descMatch = fm.match(/^description:\s*(.+)$/m);
     if (descMatch) result.description = descMatch[1].trim();
+
+    const disableMatch = fm.match(/^disable-model-invocation:\s*(true|false)$/m);
+    if (disableMatch) result.disableModelInvocation = disableMatch[1] === "true";
 
     return result;
   } catch {

@@ -117,7 +117,7 @@ export async function handleAgentEnd(
       resume: allowAutoResume
         ? () => {
           if (!isAutoPaused()) return;
-          void resumeAutoAfterDelay(ctx, pi);
+          void resumeAutoAfterDelay(pi);
         }
         : undefined,
     });

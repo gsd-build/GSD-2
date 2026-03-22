@@ -116,7 +116,7 @@ test("bootstrap handleAgentEnd guards session switches and resolves agent_end on
 test("bootstrap provider recovery resumes paused auto-mode through resumeAutoAfterDelay", () => {
   const source = getBootstrapAgentEndSource();
   assert.ok(
-    source.includes("resumeAutoAfterDelay(ctx, pi)"),
+    source.includes("resumeAutoAfterDelay(pi)"),
     "bootstrap provider recovery must resume paused auto-mode through the real resume path",
   );
 });
