@@ -8,4 +8,5 @@ export const GIT_NO_PROMPT_ENV = {
   GIT_TERMINAL_PROMPT: "0",
   GIT_ASKPASS: "",
   GIT_SVN_ID: "",
+  LC_ALL: "C",
 };
