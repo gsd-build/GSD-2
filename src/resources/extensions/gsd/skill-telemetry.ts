@@ -93,6 +93,7 @@ export function detectStaleSkills(
   thresholdDays: number,
 ): string[] {
   if (thresholdDays <= 0) return [];
+  if (units.length === 0) return [];
 
   const lastUsed = getSkillLastUsed(units);
   const cutoff = Date.now() - (thresholdDays * 24 * 60 * 60 * 1000);

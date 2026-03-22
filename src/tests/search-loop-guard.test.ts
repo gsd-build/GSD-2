@@ -14,6 +14,23 @@ import assert from "node:assert/strict";
 import { registerSearchTool } from "../resources/extensions/search-the-web/tool-search.ts";
 import searchExtension from "../resources/extensions/search-the-web/index.ts";
 
+const ORIGINAL_ENV = {
+  BRAVE_API_KEY: process.env.BRAVE_API_KEY,
+  TAVILY_API_KEY: process.env.TAVILY_API_KEY,
+  OLLAMA_API_KEY: process.env.OLLAMA_API_KEY,
+};
+
+function restoreSearchEnv() {
+  if (ORIGINAL_ENV.BRAVE_API_KEY === undefined) delete process.env.BRAVE_API_KEY;
+  else process.env.BRAVE_API_KEY = ORIGINAL_ENV.BRAVE_API_KEY;
+
+  if (ORIGINAL_ENV.TAVILY_API_KEY === undefined) delete process.env.TAVILY_API_KEY;
+  else process.env.TAVILY_API_KEY = ORIGINAL_ENV.TAVILY_API_KEY;
+
+  if (ORIGINAL_ENV.OLLAMA_API_KEY === undefined) delete process.env.OLLAMA_API_KEY;
+  else process.env.OLLAMA_API_KEY = ORIGINAL_ENV.OLLAMA_API_KEY;
+}
+
 // =============================================================================
 // Mock helpers
 // =============================================================================
@@ -101,6 +118,8 @@ async function callSearch(
 
 test("search loop guard fires after MAX_CONSECUTIVE_DUPES duplicates", async () => {
   process.env.BRAVE_API_KEY = "test-key-loop-guard";
+  delete process.env.TAVILY_API_KEY;
+  delete process.env.OLLAMA_API_KEY;
   const restoreFetch = mockFetch(makeBraveResponse());
 
   try {
@@ -127,12 +146,14 @@ test("search loop guard fires after MAX_CONSECUTIVE_DUPES duplicates", async () 
     );
   } finally {
     restoreFetch();
-    delete process.env.BRAVE_API_KEY;
+    restoreSearchEnv();
   }
 });
 
 test("search loop guard resets at session_start boundary", async () => {
   process.env.BRAVE_API_KEY = "test-key-loop-guard-session";
+  delete process.env.TAVILY_API_KEY;
+  delete process.env.OLLAMA_API_KEY;
   const restoreFetch = mockFetch(makeBraveResponse());
   const query = "session boundary query";
 
@@ -167,12 +188,14 @@ test("search loop guard resets at session_start boundary", async () => {
     );
   } finally {
     restoreFetch();
-    delete process.env.BRAVE_API_KEY;
+    restoreSearchEnv();
   }
 });
 
 test("search loop guard stays armed after firing — subsequent duplicates immediately re-trigger (#1671)", async () => {
   process.env.BRAVE_API_KEY = "test-key-loop-guard-2";
+  delete process.env.TAVILY_API_KEY;
+  delete process.env.OLLAMA_API_KEY;
   const restoreFetch = mockFetch(makeBraveResponse());
 
   // Use a unique query so module-level state from previous test doesn't interfere
@@ -209,12 +232,14 @@ test("search loop guard stays armed after firing — subsequent duplicates immed
     );
   } finally {
     restoreFetch();
-    delete process.env.BRAVE_API_KEY;
+    restoreSearchEnv();
   }
 });
 
 test("search loop guard resets cleanly when a different query is issued", async () => {
   process.env.BRAVE_API_KEY = "test-key-loop-guard-3";
+  delete process.env.TAVILY_API_KEY;
+  delete process.env.OLLAMA_API_KEY;
   const restoreFetch = mockFetch(makeBraveResponse());
 
   const queryA = "query alpha reset test";
@@ -239,6 +264,6 @@ test("search loop guard resets cleanly when a different query is issued", async 
     );
   } finally {
     restoreFetch();
-    delete process.env.BRAVE_API_KEY;
+    restoreSearchEnv();
   }
 });

@@ -15,6 +15,59 @@ const onboardingRoute = await import("../../web/app/api/onboarding/route.ts");
 const commandRoute = await import("../../web/app/api/session/command/route.ts");
 const { AuthStorage } = await import("@gsd/pi-coding-agent");
 
+const ONBOARDING_ENV_KEYS = [
+  "GITHUB_TOKEN",
+  "GH_TOKEN",
+  "COPILOT_GITHUB_TOKEN",
+  "ANTHROPIC_OAUTH_TOKEN",
+  "ANTHROPIC_API_KEY",
+  "OPENAI_API_KEY",
+  "AZURE_OPENAI_API_KEY",
+  "GEMINI_API_KEY",
+  "GOOGLE_APPLICATION_CREDENTIALS",
+  "GOOGLE_CLOUD_PROJECT",
+  "GCLOUD_PROJECT",
+  "GOOGLE_CLOUD_LOCATION",
+  "GROQ_API_KEY",
+  "CEREBRAS_API_KEY",
+  "XAI_API_KEY",
+  "OPENROUTER_API_KEY",
+  "AI_GATEWAY_API_KEY",
+  "ZAI_API_KEY",
+  "MISTRAL_API_KEY",
+  "MINIMAX_API_KEY",
+  "MINIMAX_CN_API_KEY",
+  "HF_TOKEN",
+  "OPENCODE_API_KEY",
+  "KIMI_API_KEY",
+  "ALIBABA_API_KEY",
+  "AWS_PROFILE",
+  "AWS_ACCESS_KEY_ID",
+  "AWS_SECRET_ACCESS_KEY",
+  "AWS_BEARER_TOKEN_BEDROCK",
+  "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
+  "AWS_CONTAINER_CREDENTIALS_FULL_URI",
+  "AWS_WEB_IDENTITY_TOKEN_FILE",
+] as const;
+
+const ORIGINAL_ONBOARDING_ENV = Object.fromEntries(
+  ONBOARDING_ENV_KEYS.map((key) => [key, process.env[key]]),
+) as Record<(typeof ONBOARDING_ENV_KEYS)[number], string | undefined>;
+
+function clearOnboardingEnv(): void {
+  for (const key of ONBOARDING_ENV_KEYS) {
+    delete process.env[key];
+  }
+}
+
+function restoreOnboardingEnv(): void {
+  for (const key of ONBOARDING_ENV_KEYS) {
+    const value = ORIGINAL_ONBOARDING_ENV[key];
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+}
+
 class FakeRpcChild extends EventEmitter {
   stdin = new PassThrough();
   stdout = new PassThrough();
@@ -229,7 +282,6 @@ function configureBridgeFixture(fixture: { projectCwd: string; sessionsDir: stri
 
   bridge.configureBridgeServiceForTests({
     env: {
-      ...process.env,
       GSD_WEB_PROJECT_CWD: fixture.projectCwd,
       GSD_WEB_PROJECT_SESSIONS_DIR: fixture.sessionsDir,
       GSD_WEB_PACKAGE_ROOT: repoRoot,
@@ -244,6 +296,7 @@ function configureBridgeFixture(fixture: { projectCwd: string; sessionsDir: stri
 
 test("boot and onboarding routes expose locked required state plus explicitly skippable optional setup when auth is missing", async () => {
   const fixture = makeWorkspaceFixture();
+  clearOnboardingEnv();
   const authStorage = AuthStorage.inMemory({});
   configureBridgeFixture(fixture, "sess-missing-auth");
   onboarding.configureOnboardingServiceForTests({ authStorage });
@@ -289,12 +342,14 @@ test("boot and onboarding routes expose locked required state plus explicitly sk
   } finally {
     onboarding.resetOnboardingServiceForTests();
     await bridge.resetBridgeServiceForTests();
+    restoreOnboardingEnv();
     fixture.cleanup();
   }
 });
 
 test("runtime env-backed auth unlocks boot onboarding state and reports the environment source", async () => {
   const fixture = makeWorkspaceFixture();
+  clearOnboardingEnv();
   const authStorage = AuthStorage.inMemory({});
   const previousGithubToken = process.env.GITHUB_TOKEN;
   process.env.GITHUB_TOKEN = "ghu_runtime_env_token";
@@ -325,12 +380,14 @@ test("runtime env-backed auth unlocks boot onboarding state and reports the envi
     }
     onboarding.resetOnboardingServiceForTests();
     await bridge.resetBridgeServiceForTests();
+    restoreOnboardingEnv();
     fixture.cleanup();
   }
 });
 
 test("failed API-key validation stays locked, redacts the error, and is reflected in boot state without persisting auth", async () => {
   const fixture = makeWorkspaceFixture();
+  clearOnboardingEnv();
   const authStorage = AuthStorage.inMemory({});
   configureBridgeFixture(fixture, "sess-validation-failure");
   onboarding.configureOnboardingServiceForTests({
@@ -375,12 +432,14 @@ test("failed API-key validation stays locked, redacts the error, and is reflecte
   } finally {
     onboarding.resetOnboardingServiceForTests();
     await bridge.resetBridgeServiceForTests();
+    restoreOnboardingEnv();
     fixture.cleanup();
   }
 });
 
 test("direct prompt commands cannot bypass onboarding while required setup is still locked", async () => {
   const fixture = makeWorkspaceFixture();
+  clearOnboardingEnv();
   const authStorage = AuthStorage.inMemory({});
   const harness = configureBridgeFixture(fixture, "sess-command-locked");
   onboarding.configureOnboardingServiceForTests({ authStorage });
@@ -393,8 +452,8 @@ test("direct prompt commands cannot bypass onboarding while required setup is st
       }),
     );
 
-    assert.equal(response.status, 423);
     const payload = (await response.json()) as any;
+    assert.equal(response.status, 423, JSON.stringify(payload));
     assert.equal(payload.success, false);
     assert.equal(payload.command, "prompt");
     assert.equal(payload.code, "onboarding_locked");
@@ -416,12 +475,14 @@ test("direct prompt commands cannot bypass onboarding while required setup is st
   } finally {
     onboarding.resetOnboardingServiceForTests();
     await bridge.resetBridgeServiceForTests();
+    restoreOnboardingEnv();
     fixture.cleanup();
   }
 });
 
 test("bridge auth refresh failures remain inspectable and keep the workspace locked after credentials validate", async () => {
   const fixture = makeWorkspaceFixture();
+  clearOnboardingEnv();
   const authStorage = AuthStorage.inMemory({});
   configureBridgeFixture(fixture, "sess-refresh-failure");
   onboarding.configureOnboardingServiceForTests({
@@ -463,12 +524,14 @@ test("bridge auth refresh failures remain inspectable and keep the workspace loc
   } finally {
     onboarding.resetOnboardingServiceForTests();
     await bridge.resetBridgeServiceForTests();
+    restoreOnboardingEnv();
     fixture.cleanup();
   }
 });
 
 test("successful API-key validation persists the credential and unlocks onboarding", async () => {
   const fixture = makeWorkspaceFixture();
+  clearOnboardingEnv();
   const authStorage = AuthStorage.inMemory({});
   const harness = configureBridgeFixture(fixture, "sess-validation-success");
   onboarding.configureOnboardingServiceForTests({
@@ -511,12 +574,14 @@ test("successful API-key validation persists the credential and unlocks onboardi
   } finally {
     onboarding.resetOnboardingServiceForTests();
     await bridge.resetBridgeServiceForTests();
+    restoreOnboardingEnv();
     fixture.cleanup();
   }
 });
 
 test("logout_provider removes saved auth, refreshes the bridge, and relocks onboarding when it was the only provider", async () => {
   const fixture = makeWorkspaceFixture();
+  clearOnboardingEnv();
   const authStorage = AuthStorage.inMemory({
     openai: { type: "api_key", key: "sk-saved-logout" },
   } as any);
@@ -558,12 +623,14 @@ test("logout_provider removes saved auth, refreshes the bridge, and relocks onbo
   } finally {
     onboarding.resetOnboardingServiceForTests();
     await bridge.resetBridgeServiceForTests();
+    restoreOnboardingEnv();
     fixture.cleanup();
   }
 });
 
 test("logout_provider fails clearly for environment-backed auth that the browser cannot remove", async () => {
   const fixture = makeWorkspaceFixture();
+  clearOnboardingEnv();
   const authStorage = AuthStorage.inMemory({});
   const previousGithubToken = process.env.GITHUB_TOKEN;
   process.env.GITHUB_TOKEN = "ghu_env_only_token";
@@ -601,6 +668,7 @@ test("logout_provider fails clearly for environment-backed auth that the browser
     }
     onboarding.resetOnboardingServiceForTests();
     await bridge.resetBridgeServiceForTests();
+    restoreOnboardingEnv();
     fixture.cleanup();
   }
 });
