@@ -226,11 +226,15 @@ test("M2: session.stuckRecoveryAttempts=1 at startup causes Level 2 stop on firs
   assert.ok(deps.callLog.includes("stopAuto"), "Level 2 hard stop should fire");
   assert.ok(stopReason.includes("Stuck"), `stop reason should mention 'Stuck', got: ${stopReason}`);
 
-  // Level 1 (cache invalidation) must NOT have been called — we started at
+  // Level 1 (cache invalidation) must NOT have fired — we started at
   // stuckRecoveryAttempts=1, so Level 1 was skipped entirely.
-  assert.ok(
-    !deps.callLog.includes("invalidateAllCaches"),
-    "invalidateAllCaches should NOT be called — Level 1 was already consumed before restart",
+  // runPreDispatch calls invalidateAllCaches once per iteration (3 iterations = 3 calls).
+  // If Level 1 fired it would add an extra call, producing 5+ calls instead of 3.
+  const invalidateCount = deps.callLog.filter((c) => c === "invalidateAllCaches").length;
+  assert.equal(
+    invalidateCount,
+    3,
+    `invalidateAllCaches called ${invalidateCount} times; expected exactly 3 (1 per runPreDispatch) — Level 1 must NOT have fired`,
   );
 });
 

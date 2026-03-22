@@ -47,7 +47,7 @@ export async function autoLoop(
   let iteration = 0;
   // Fix M2: restore stuckRecoveryAttempts from session so escalation survives pause/resume.
   // s.stuckRecoveryAttempts is populated from paused-session.json before autoLoop() is called.
-  const loopState: LoopState = { recentUnits: [], stuckRecoveryAttempts: s.stuckRecoveryAttempts };
+  const loopState: LoopState = { recentUnits: [], stuckRecoveryAttempts: s.stuckRecoveryAttempts ?? 0 };
   let consecutiveErrors = 0;
 
   while (s.active) {
