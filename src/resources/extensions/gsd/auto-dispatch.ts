@@ -58,7 +58,7 @@ export type DispatchAction =
       matchedRule?: string;
     }
   | { action: "stop"; reason: string; level: "info" | "warning" | "error"; matchedRule?: string }
-  | { action: "skip" };
+  | { action: "skip"; matchedRule?: string };
 
 export interface DispatchContext {
   basePath: string;
