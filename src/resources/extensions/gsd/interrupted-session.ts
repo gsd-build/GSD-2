@@ -74,6 +74,7 @@ export async function assessInterruptedSession(
   basePath: string,
 ): Promise<InterruptedSessionAssessment> {
   const pausedSession = readPausedSessionMetadata(basePath);
+  const assessmentBasePath = pausedSession?.worktreePath || basePath;
   const rawLock = readCrashLock(basePath);
   const lock = rawLock && rawLock.pid !== process.pid ? rawLock : null;
 
@@ -108,22 +109,22 @@ export async function assessInterruptedSession(
   }
 
   const isBootstrapCrash = isBootstrapCrashLock(lock);
-  const state = await deriveState(basePath);
+  const state = await deriveState(assessmentBasePath);
   const hasResumableDiskState = hasResumableDerivedState(state);
   const artifactSatisfied = !!(
     lock &&
     !isBootstrapCrash &&
-    verifyExpectedArtifact(lock.unitType, lock.unitId, basePath)
+    verifyExpectedArtifact(lock.unitType, lock.unitId, assessmentBasePath)
   );
 
   let recovery: RecoveryBriefing | null = null;
   if (lock && !isBootstrapCrash && !artifactSatisfied) {
     recovery = synthesizeCrashRecovery(
-      basePath,
+      assessmentBasePath,
       lock.unitType,
       lock.unitId,
       lock.sessionFile,
-      join(gsdRoot(basePath), "activity"),
+      join(gsdRoot(assessmentBasePath), "activity"),
     );
   }
 

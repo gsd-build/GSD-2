@@ -98,12 +98,17 @@ function writeCompleteMilestoneSummary(base: string): void {
   writeFileSync(join(milestoneDir, "M001-SUMMARY.md"), "# Milestone Summary\nDone.\n", "utf-8");
 }
 
-function writePausedSession(base: string, milestoneId = "M001", stepMode = false): void {
+function writePausedSession(
+  base: string,
+  milestoneId = "M001",
+  stepMode = false,
+  worktreePath?: string,
+): void {
   const runtimeDir = join(base, ".gsd", "runtime");
   mkdirSync(runtimeDir, { recursive: true });
   writeFileSync(
     join(runtimeDir, "paused-session.json"),
-    JSON.stringify({ milestoneId, originalBasePath: base, stepMode }, null, 2),
+    JSON.stringify({ milestoneId, originalBasePath: base, stepMode, worktreePath }, null, 2),
     "utf-8",
   );
 }
@@ -218,6 +223,24 @@ test("assessInterruptedSession marks stale paused-session metadata as stale when
     writeCompleteSliceArtifacts(base);
     writeCompleteMilestoneSummary(base);
     writePausedSession(base, "M999");
+
+    const assessment = await assessInterruptedSession(base);
+    assert.equal(assessment.classification, "stale");
+    assert.equal(assessment.hasResumableDiskState, false);
+  } finally {
+    cleanup(base);
+  }
+});
+
+test("assessInterruptedSession prefers paused worktree state when worktreePath is recorded", async () => {
+  const base = makeTmpBase();
+  const worktree = join(base, "worktree-copy");
+  try {
+    writeRoadmap(base, false);
+    writeRoadmap(worktree, true);
+    writeCompleteSliceArtifacts(worktree);
+    writeCompleteMilestoneSummary(worktree);
+    writePausedSession(base, "M001", false, worktree);
 
     const assessment = await assessInterruptedSession(base);
     assert.equal(assessment.classification, "stale");

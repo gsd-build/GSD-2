@@ -127,12 +127,12 @@ test("guided-flow stale paused-session scenario is suppressed when no resumable 
   }
 });
 
-test("guided-flow source uses step-aware resume label, step-aware discuss handoff, and stale paused cleanup", () => {
+test("guided-flow source uses step-aware resume and clears stale paused metadata without changing discuss handoff semantics", () => {
   const source = readFileSync(join(import.meta.dirname, "..", "guided-flow.ts"), "utf-8");
   assert.ok(source.includes('const interrupted = await assessInterruptedSession(basePath);'));
   assert.ok(source.includes('resumeLabel = interrupted.pausedSession?.stepMode'));
   assert.ok(source.includes('step: interrupted.pausedSession?.stepMode ?? false'));
   assert.ok(source.includes('unlinkSync(join(gsdRoot(basePath), "runtime", "paused-session.json"))'));
-  assert.ok(source.includes('pendingAutoStart = { ctx, pi, basePath, milestoneId: mid, step: true };'));
+  assert.ok(source.includes('pendingAutoStart = { ctx, pi, basePath, milestoneId: mid, step: false };'));
   assert.ok(source.includes('pendingAutoStart = { ctx, pi, basePath, milestoneId: nextId, step: true };'));
 });
