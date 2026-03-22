@@ -63,6 +63,8 @@ This milestone is complete only when all are true:
 
 ## Slices
 
+**IMPORTANT: Use this exact checkbox format for each slice. The auto-mode parser depends on it.**
+
 - [ ] **S01: {{sliceTitle}}** `risk:high` `depends:[]`
   > After this: {{whatIsDemoableWhenThisSliceIsDone}}
 - [ ] **S02: {{sliceTitle}}** `risk:medium` `depends:[S01]`
@@ -75,6 +77,7 @@ This milestone is complete only when all are true:
   - Checkbox line: - [ ] **S01: Title** `risk:high|medium|low` `depends:[S01,S02]`
   - Demo line:     >  After this: one sentence showing what's demoable
   - Mark done:     change [ ] to [x]
+  - Do NOT use ### headers for slices — use checkbox lines only
   - Order slices by risk (highest first)
   - Each slice must be a vertical, demoable increment — not a layer
   - If all slices are completed exactly as written, the milestone's promised outcome should actually work at the stated proof level

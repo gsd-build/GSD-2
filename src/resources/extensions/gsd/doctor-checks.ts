@@ -622,6 +622,39 @@ export async function checkRuntimeHealth(
     // Non-fatal — activity log check failed
   }
 
+  // ── Unparseable roadmaps ───────────────────────────────────────────────
+  // A roadmap file that exists but contains zero parseable slices will block
+  // auto-mode silently. Check every milestone that has a ROADMAP file.
+  try {
+    const msDir = milestonesDir(basePath);
+    if (existsSync(msDir)) {
+      const entries = readdirSync(msDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const mid = entry.name;
+        const roadmapPath = resolveMilestoneFile(basePath, mid, "ROADMAP");
+        if (!roadmapPath) continue;
+        const roadmapContent = roadmapPath ? await loadFile(roadmapPath) : null;
+        if (!roadmapContent) continue;
+
+        const roadmap = parseRoadmap(roadmapContent);
+        if (roadmap.slices.length === 0) {
+          issues.push({
+            severity: "error",
+            code: "unparseable_roadmap",
+            scope: "milestone",
+            unitId: mid,
+            message: `Roadmap for ${mid} exists but has no parseable slices — auto-mode will block. Ensure slices use checkbox format: - [ ] **S01: Title** \`risk:level\` \`depends:[]\``,
+            file: roadmapPath,
+            fixable: false,
+          });
+        }
+      }
+    }
+  } catch {
+    // Non-fatal — roadmap parse check failed
+  }
+
   // ── STATE.md health ───────────────────────────────────────────────────
   try {
     const stateFilePath = resolveGsdRootFile(basePath, "STATE");

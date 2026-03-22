@@ -307,6 +307,17 @@ export function verifyExpectedArtifact(
   if (!absPath) return false;
   if (!existsSync(absPath)) return false;
 
+  // plan-milestone must produce a roadmap with parseable slices, not just an
+  // empty scaffold. Without this check, a roadmap file that exists but contains
+  // no machine-readable slices (e.g. the LLM used an unsupported format) passes
+  // artifact verification, the unit is marked complete, and auto-mode blocks with
+  // "No slice eligible" — a confusing error with no actionable guidance.
+  if (unitType === "plan-milestone") {
+    const roadmapContent = readFileSync(absPath, "utf-8");
+    const roadmap = parseRoadmap(roadmapContent);
+    if (roadmap.slices.length === 0) return false;
+  }
+
   if (unitType === "validate-milestone") {
     const validationContent = readFileSync(absPath, "utf-8");
     if (!isValidationTerminal(validationContent)) return false;

@@ -457,6 +457,103 @@ async function main(): Promise<void> {
     assertEq(slices[1].done, false, '#1736 checkbox compat: S02 not done');
   }
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // U. Regression: ### headers inside ## Slices section (production bug)
+  //    When ## Slices exists but slices use ### sub-headers instead of
+  //    checkboxes, the primary parser finds nothing but the section is
+  //    non-empty — the prose fallback must still trigger.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  console.log('\n=== U. ### inside ## Slices — prose fallback must trigger ===');
+
+  {
+    const content = [
+      '# M002 Roadmap: Test',
+      '',
+      '## Slices',
+      '',
+      '### S01 — Foundation',
+      '- **Risk:** medium',
+      '- **Depends:** none',
+      '',
+      '### S02 — Features',
+      '- **Risk:** high',
+      '- **Depends:** S01',
+      '',
+      '### S03 — Polish',
+      '- **Risk:** low',
+      '- **Depends:** S01',
+      '',
+      '## Boundary Map',
+    ].join('\n');
+
+    const slices = parseRoadmapSlices(content);
+    assertEq(slices.length, 3, '### inside ## Slices: 3 slices found');
+    assertEq(slices[0].id, 'S01', '### inside ## Slices: S01');
+    assertEq(slices[1].id, 'S02', '### inside ## Slices: S02');
+    assertEq(slices[2].id, 'S03', '### inside ## Slices: S03');
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // V. Prose fallback: - **Depends:** S01 format (without "on")
+  //    The prose parser originally only matched "Depends on:" — it must
+  //    also handle "Depends:" (no "on") and bullet-prefixed variants.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  console.log('\n=== V. Prose deps: - **Depends:** format ===');
+
+  {
+    const content = [
+      '## Slices',
+      '',
+      '### S01 — Foundation',
+      '- **Risk:** low',
+      '- **Depends:** none',
+      '',
+      '### S02 — Features',
+      '- **Risk:** high',
+      '- **Depends:** S01',
+      '',
+      '### S03 — Integration',
+      '- **Risk:** medium',
+      '- **Depends:** S01, S02',
+    ].join('\n');
+
+    const slices = parseRoadmapSlices(content);
+    assertEq(slices.length, 3, 'bullet depends: 3 slices');
+    assertEq(slices[0].depends.length, 0, 'S01: no deps');
+    assertEq(slices[1].depends.length, 1, 'S02: 1 dep');
+    assertEq(slices[1].depends[0], 'S01', 'S02: depends on S01');
+    assertEq(slices[2].depends.length, 2, 'S03: 2 deps');
+    assertTrue(slices[2].depends.includes('S01'), 'S03: has S01');
+    assertTrue(slices[2].depends.includes('S02'), 'S03: has S02');
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // W. Prose fallback: risk extraction from bullet lines
+  // ═══════════════════════════════════════════════════════════════════════
+
+  console.log('\n=== W. Prose risk extraction ===');
+
+  {
+    const content = [
+      '## S01: Foundation',
+      '- **Risk:** low',
+      '',
+      '## S02: Features',
+      '- **Risk:** high',
+      '',
+      '## S03: Polish',
+      '- **Risk:** medium',
+    ].join('\n');
+
+    const slices = parseRoadmapSlices(content);
+    assertEq(slices.length, 3, 'prose risk: 3 slices');
+    assertEq(slices[0].risk, 'low', 'S01 risk: low');
+    assertEq(slices[1].risk, 'high', 'S02 risk: high');
+    assertEq(slices[2].risk, 'medium', 'S03 risk: medium');
+  }
+
   report();
 }
 

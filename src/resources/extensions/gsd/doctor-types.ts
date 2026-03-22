@@ -69,6 +69,8 @@ export type DoctorIssueCode =
   | "worktree_unpushed"
   // Snapshot ref bloat
   | "snapshot_ref_bloat"
+  // Roadmap structural checks
+  | "unparseable_roadmap"
   // Runtime data integrity
   | "orphaned_project_state"
   | "metrics_ledger_bloat"

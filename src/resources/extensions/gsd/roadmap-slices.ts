@@ -253,7 +253,10 @@ function parseProseSliceHeaders(content: string): RoadmapSliceEntry[] {
     const nextHeader = afterHeader.search(/^#{1,4}\s/m);
     const section = nextHeader !== -1 ? afterHeader.slice(0, nextHeader) : afterHeader.slice(0, 500);
 
-    const depsMatch = section.match(/\*{0,2}Depends\s+on:?\*{0,2}\s*(.+)/i);
+    // Extract dependencies — handles multiple LLM-generated variants:
+    //   "**Depends on:** S01"  |  "- **Depends:** S01"  |  "Depends: S01, S02"
+    //   "**Depends on:** none" |  "- **Depends:** none"
+    const depsMatch = section.match(/[-*\s]*\*{0,2}Depends(?:\s+on)?:?\*{0,2}\s*(.+)/i);
     let depends: string[] = [];
     if (depsMatch) {
       const rawDeps = depsMatch[1]!.replace(/none/i, "").trim();
@@ -264,7 +267,18 @@ function parseProseSliceHeaders(content: string): RoadmapSliceEntry[] {
       }
     }
 
-    slices.push({ id, title, risk: "medium" as RiskLevel, depends, done, demo: "" });
+    // Extract risk level from prose — handles:
+    //   "- **Risk:** high"  |  "**Risk:** medium"  |  "Risk: low"
+    let risk: RiskLevel = "medium";
+    const riskMatch = section.match(/[-*\s]*\*{0,2}Risk:?\*{0,2}\s*(\w+)/i);
+    if (riskMatch) {
+      const riskVal = riskMatch[1]!.toLowerCase();
+      if (riskVal === "high" || riskVal === "low" || riskVal === "medium") {
+        risk = riskVal;
+      }
+    }
+
+    slices.push({ id, title, risk, depends, done, demo: "" });
   }
 
   return slices;
