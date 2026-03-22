@@ -335,6 +335,44 @@ test("snapshotUnitMetrics handles simulated idle-watchdog duplicate pattern", ()
   }
 });
 
+test("snapshotUnitMetrics preserves previously captured skills on duplicate closeout", async () => {
+  const tmpBase = mkdtempSync(join(tmpdir(), "gsd-metrics-skill-preserve-"));
+  mkdirSync(join(tmpBase, ".gsd"), { recursive: true });
+  try {
+    initMetrics(tmpBase);
+    const startedAt = Date.now() - 10000;
+    const ctx = mockCtx([
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "Working" }],
+        usage: {
+          input: 1000, output: 500, cacheRead: 0, cacheWrite: 0, totalTokens: 1500,
+          cost: 0.01,
+        },
+      },
+    ]);
+
+    const { captureAvailableSkills } = await import("../skill-telemetry.js");
+    captureAvailableSkills(`
+<available_skills>
+  <skill>
+    <name>visible-skill</name>
+  </skill>
+</available_skills>
+`);
+
+    snapshotUnitMetrics(ctx, "plan-slice", "M001/S01", startedAt, "test-model");
+    assert.deepEqual(getLedger()!.units[0].skills, ["visible-skill"]);
+
+    // Duplicate closeout without new skill telemetry should not erase the original skill list.
+    snapshotUnitMetrics(ctx, "plan-slice", "M001/S01", startedAt, "test-model");
+    assert.deepEqual(getLedger()!.units[0].skills, ["visible-skill"]);
+  } finally {
+    resetMetrics();
+    rmSync(tmpBase, { recursive: true, force: true });
+  }
+});
+
 // ── toolCall block counting ─────────────────────────────────────────────────
 
 test("snapshotUnitMetrics counts toolCall blocks correctly (#1713)", () => {

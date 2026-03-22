@@ -862,7 +862,7 @@ export async function runUnitPhase(
     unitEndEmitted = true;
     deps.emitJournalEvent({ ts: new Date().toISOString(), flowId: ic.flowId, seq: ic.nextSeq(), eventType: "unit-end", data: { unitType, unitId, status, artifactVerified }, causedBy: { flowId: ic.flowId, seq: unitStartSeq } });
   };
-  deps.captureAvailableSkills(s.basePath);
+  deps.captureAvailableSkills(ctx.getSystemPrompt());
   deps.writeUnitRuntimeRecord(
     s.basePath,
     unitType,

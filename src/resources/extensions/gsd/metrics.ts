@@ -215,7 +215,7 @@ export function snapshotUnitMetrics(
     (u) => u.type === unit.type && u.id === unit.id && u.startedAt === unit.startedAt,
   );
   if (dupeIdx >= 0) {
-    ledger.units[dupeIdx] = unit;
+    ledger.units[dupeIdx] = { ...ledger.units[dupeIdx], ...unit };
   } else {
     ledger.units.push(unit);
   }

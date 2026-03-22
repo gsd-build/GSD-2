@@ -2408,17 +2408,6 @@ export class AgentSession {
 		// Reload messages
 		const sessionContext = this.sessionManager.buildSessionContext();
 
-		// Emit session_switch event to extensions
-		if (this._extensionRunner) {
-			await this._extensionRunner.emit({
-				type: "session_switch",
-				reason: "resume",
-				previousSessionFile,
-			});
-		}
-
-		// Emit session event to custom tools
-
 		this.agent.replaceMessages(sessionContext.messages);
 
 		// Restore model if saved
@@ -2450,6 +2439,15 @@ export class AgentSession {
 		}
 
 		this._reconnectToAgent();
+
+		if (this._extensionRunner) {
+			await this._extensionRunner.emit({
+				type: "session_switch",
+				reason: "resume",
+				previousSessionFile,
+			});
+		}
+
 		this._emitSessionStateChanged("switch_session");
 		return true;
 	}

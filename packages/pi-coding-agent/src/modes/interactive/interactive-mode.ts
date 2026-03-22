@@ -3257,18 +3257,18 @@ export class InteractiveMode {
 		}
 		this.statusContainer.clear();
 
-		// Clear UI state
-		this.pendingMessagesContainer.clear();
-		this.compactionQueuedMessages = [];
-		this.streamingComponent = undefined;
-		this.streamingMessage = undefined;
-		this.pendingTools.clear();
-
 		// Switch session via AgentSession (emits extension session events)
 		const switched = await this.session.switchSession(sessionPath);
 		if (!switched) {
 			return false;
 		}
+
+		// Clear UI state only after the switch succeeds
+		this.pendingMessagesContainer.clear();
+		this.compactionQueuedMessages = [];
+		this.streamingComponent = undefined;
+		this.streamingMessage = undefined;
+		this.pendingTools.clear();
 
 		// Clear and re-render the chat
 		this.chatContainer.clear();

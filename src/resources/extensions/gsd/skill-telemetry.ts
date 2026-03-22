@@ -6,14 +6,14 @@
  * "actively loaded" skills (read via tool calls during execution).
  *
  * Data flow:
- *   1. At dispatch, captureAvailableSkills() records skills from the system prompt
+ *   1. At dispatch, captureAvailableSkills() records skills from the rendered system prompt
  *   2. During execution, recordSkillRead() tracks explicit SKILL.md reads
  *   3. At unit completion, getAndClearSkills() returns the loaded list for metrics
  */
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { getAgentDir, loadSkills } from "@gsd/pi-coding-agent";
+import { getAgentDir } from "@gsd/pi-coding-agent";
 
 // ─── In-memory state ──────────────────────────────────────────────────────────
 
@@ -29,10 +29,8 @@ const activelyLoadedSkills = new Set<string>();
  * Capture the list of available skill names at dispatch time.
  * Called before each unit starts.
  */
-export function captureAvailableSkills(basePath: string, agentDir?: string): void {
-  availableSkills = loadSkills({ cwd: basePath, agentDir }).skills
-    .filter((skill) => !skill.disableModelInvocation)
-    .map((skill) => skill.name);
+export function captureAvailableSkills(systemPrompt: string): void {
+  availableSkills = extractAvailableSkillNames(systemPrompt);
   activelyLoadedSkills.clear();
 }
 
@@ -125,4 +123,11 @@ function listSkillNames(skillsDir: string): string[] {
   } catch {
     return [];
   }
+}
+
+function extractAvailableSkillNames(systemPrompt: string): string[] {
+  const match = systemPrompt.match(/<available_skills>([\s\S]*?)<\/available_skills>/i);
+  if (!match) return [];
+
+  return Array.from(match[1].matchAll(/<name>(.*?)<\/name>/g)).map((entry) => entry[1]);
 }

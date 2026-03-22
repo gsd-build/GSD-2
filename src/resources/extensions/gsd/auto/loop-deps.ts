@@ -213,7 +213,7 @@ export interface LoopDeps {
     completedCount: number,
     sessionFile?: string,
   ) => void;
-  captureAvailableSkills: (basePath: string) => void;
+  captureAvailableSkills: (systemPrompt: string) => void;
   ensurePreconditions: (
     unitType: string,
     unitId: string,

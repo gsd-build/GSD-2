@@ -5,9 +5,6 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { UnitMetrics } from "../metrics.js";
 
 // ─── Test helpers ─────────────────────────────────────────────────────────────
@@ -34,24 +31,13 @@ describe("skill-telemetry", () => {
   it("captureAvailableSkills excludes disable-model-invocation skills", async () => {
     const { captureAvailableSkills, getAndClearSkills, resetSkillTelemetry } = await import("../skill-telemetry.js");
 
-    const projectDir = mkdtempSync(join(tmpdir(), "skill-telemetry-project-"));
-    const agentDir = mkdtempSync(join(tmpdir(), "skill-telemetry-agent-"));
-
-    const projectSkillDir = join(projectDir, ".pi", "skills", "visible-skill");
-    mkdirSync(projectSkillDir, { recursive: true });
-    writeFileSync(
-      join(projectSkillDir, "SKILL.md"),
-      "---\nname: visible-skill\ndescription: Visible skill.\n---\n\n# Visible\n",
-    );
-
-    const hiddenSkillDir = join(agentDir, "skills", "hidden-skill");
-    mkdirSync(hiddenSkillDir, { recursive: true });
-    writeFileSync(
-      join(hiddenSkillDir, "SKILL.md"),
-      "---\nname: hidden-skill\ndescription: Hidden skill.\ndisable-model-invocation: true\n---\n\n# Hidden\n",
-    );
-
-    captureAvailableSkills(projectDir, agentDir);
+    captureAvailableSkills(`
+<available_skills>
+  <skill>
+    <name>visible-skill</name>
+  </skill>
+</available_skills>
+`);
     assert.deepEqual(getAndClearSkills(), ["visible-skill"]);
     resetSkillTelemetry();
   });
