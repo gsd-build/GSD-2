@@ -3,7 +3,7 @@
 // Discovery order (D003): preference → task plan verify → package.json scripts.
 // First non-empty source wins.
 
-import { spawnSync, type SpawnSyncReturns } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join, basename } from "node:path";
 import type { AuditWarning, RuntimeError, VerificationCheck, VerificationResult } from "./types.js";
@@ -230,14 +230,76 @@ export interface RunVerificationGateOptions {
 }
 
 /**
- * Run the verification gate: discover commands, execute each via spawnSync,
+ * Execute a single shell command asynchronously and return its result.
+ *
+ * Uses `spawn` (non-blocking) instead of `spawnSync` so the Node.js event
+ * loop stays responsive during execution — timers, I/O callbacks, and TUI
+ * rendering continue to fire while the command runs.
+ */
+function execCommandAsync(
+  command: string,
+  cwd: string,
+  timeoutMs: number,
+): Promise<{ stdout: string; stderr: string; exitCode: number; durationMs: number }> {
+  return new Promise((resolve) => {
+    const start = Date.now();
+    const shellBin = process.platform === "win32" ? "cmd" : "sh";
+    const shellArgs = process.platform === "win32" ? ["/c", command] : ["-c", command];
+
+    const child = spawn(shellBin, shellArgs, {
+      cwd,
+      stdio: "pipe",
+    });
+
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+
+    child.stdout.on("data", (chunk: Buffer) => stdoutChunks.push(chunk));
+    child.stderr.on("data", (chunk: Buffer) => stderrChunks.push(chunk));
+
+    const timer = setTimeout(() => {
+      child.kill("SIGTERM");
+    }, timeoutMs);
+
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      const durationMs = Date.now() - start;
+      const stderrStr = Buffer.concat(stderrChunks).toString("utf-8");
+      resolve({
+        stdout: Buffer.concat(stdoutChunks).toString("utf-8"),
+        stderr: stderrStr + "\n" + err.message,
+        exitCode: 127,
+        durationMs,
+      });
+    });
+
+    child.on("close", (code, signal) => {
+      clearTimeout(timer);
+      const durationMs = Date.now() - start;
+      resolve({
+        stdout: Buffer.concat(stdoutChunks).toString("utf-8"),
+        stderr: Buffer.concat(stderrChunks).toString("utf-8"),
+        // null status when killed by signal — treat as failure
+        exitCode: code ?? 1,
+        durationMs,
+      });
+    });
+  });
+}
+
+/**
+ * Run the verification gate: discover commands, execute each asynchronously,
  * and return a structured result.
  *
- * - All commands run sequentially regardless of individual pass/fail.
+ * Commands run sequentially (awaited one at a time) so output does not
+ * interleave, but the event loop is never blocked — TUI rendering, timer
+ * callbacks, and heartbeat updates continue between ticks.
+ *
+ * - All commands run regardless of individual pass/fail.
  * - `passed` is true when every command exits 0 (or no commands are discovered).
  * - stdout/stderr per command are truncated to 10 KB.
  */
-export function runVerificationGate(options: RunVerificationGateOptions): VerificationResult {
+export async function runVerificationGate(options: RunVerificationGateOptions): Promise<VerificationResult> {
   const timestamp = Date.now();
 
   const { commands, source } = discoverCommands({
@@ -258,41 +320,15 @@ export function runVerificationGate(options: RunVerificationGateOptions): Verifi
   const checks: VerificationCheck[] = [];
 
   for (const command of commands) {
-    const start = Date.now();
-    // Pass the command string as an argument to the shell explicitly
-    // to avoid Node.js DEP0190 (spawnSync with shell: true and no args).
-    const shellBin = process.platform === "win32" ? "cmd" : "sh";
-    const shellArgs = process.platform === "win32" ? ["/c", command] : ["-c", command];
-    const result: SpawnSyncReturns<string> = spawnSync(shellBin, shellArgs, {
-      cwd: options.cwd,
-      stdio: "pipe",
-      encoding: "utf-8",
-      timeout: options.commandTimeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS,
-    });
-    const durationMs = Date.now() - start;
-
-    let exitCode: number;
-    let stderr: string;
-
-    if (result.error) {
-      // Command not found or spawn failure
-      exitCode = 127;
-      stderr = truncate(
-        (result.stderr || "") + "\n" + (result.error as Error).message,
-        MAX_OUTPUT_BYTES,
-      );
-    } else {
-      // status is null when killed by signal — treat as failure
-      exitCode = result.status ?? 1;
-      stderr = truncate(result.stderr, MAX_OUTPUT_BYTES);
-    }
+    const timeoutMs = options.commandTimeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS;
+    const result = await execCommandAsync(command, options.cwd, timeoutMs);
 
     checks.push({
       command,
-      exitCode,
+      exitCode: result.exitCode,
       stdout: truncate(result.stdout, MAX_OUTPUT_BYTES),
-      stderr,
-      durationMs,
+      stderr: truncate(result.stderr, MAX_OUTPUT_BYTES),
+      durationMs: result.durationMs,
     });
   }
 

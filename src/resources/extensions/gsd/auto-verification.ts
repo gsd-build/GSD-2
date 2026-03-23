@@ -75,7 +75,7 @@ export async function runPostUnitVerification(
       }
     }
 
-    const result = runVerificationGate({
+    const result = await runVerificationGate({
       basePath: s.basePath,
       unitId: s.currentUnit.id,
       cwd: s.basePath,
