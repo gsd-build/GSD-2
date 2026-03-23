@@ -1026,7 +1026,6 @@ export async function runUnitPhase(
     deps.lockBase(),
     unitType,
     unitId,
-    0,
   );
 
   debugLog("autoLoop", {
@@ -1057,14 +1056,12 @@ export async function runUnitPhase(
     deps.lockBase(),
     unitType,
     unitId,
-    0,
     sessionFile,
   );
   deps.writeLock(
     deps.lockBase(),
     unitType,
     unitId,
-    0,
     sessionFile,
   );
 
