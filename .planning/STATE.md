@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-03-22)
 ## Current Position
 
 Phase: 3 of 5 (Event Reconciliation + Mandatory Tools)
-Plan: 2 of 5 in current phase
+Plan: 5 of 5 in current phase
 Status: Executing
-Last activity: 2026-03-22 — Completed 3-02: Write intercept + prompt migration
+Last activity: 2026-03-22 — Completed 3-05: gsd resolve-conflict CLI command
 
-Progress: [███████░░░] 44%
+Progress: [████████░░] 56%
 
 ## Performance Metrics
 
@@ -29,10 +29,10 @@ Progress: [███████░░░] 44%
 |-------|-------|-------|----------|
 | 1 - Engine Foundation | 5 | 23 min | 5 min |
 | 2 - Sync + Prompt Migration | 2 | 5 min | 3 min |
-| 3 - Event Reconciliation + Mandatory Tools | 2 (so far) | ~8 min | 4 min |
+| 3 - Event Reconciliation + Mandatory Tools | 5 (so far) | ~23 min | 5 min |
 
 **Recent Trend:**
-- Last 5 plans: 1-05 (4 min), 2-01 (2 min), 2-02 (3 min), 3-01 (~4 min), 3-02 (4 min)
+- Last 5 plans: 2-02 (3 min), 3-01 (4 min), 3-02 (4 min), 3-05 (3 min)
 - Trend: Steady
 
 *Updated after each plan completion*
@@ -72,6 +72,12 @@ Recent decisions affecting current work:
 - 3-02: realpathSync try/catch in isBlockedStateFile handles files that don't exist yet (pre-write path matching)
 - 3-02: discuss.md/discuss-headless.md REQUIREMENTS.md writes left as-is — initial project setup, not status updates
 - 3-02: complete-slice.md and reassess-roadmap.md residual REQUIREMENTS.md writes replaced with gsd_save_decision (found during audit)
+- 3-04: Compaction wired in WorkflowEngine.completeSlice (not workflow-commands.ts) — engine has basePath, commands layer does not
+- 3-04: _milestoneProgress exported from workflow-commands.ts — returns { total, done, pct } for slice completion tracking
+- 3-04: Static import of atomicWriteSync in workflow-events.ts — no circular dependency risk
+- 3-05: CONFLICTS.md parsed with line-by-line regex — matches writeConflictsFile format exactly
+- 3-05: resolveConflict re-writes CONFLICTS.md with empty worktreePath string on partial resolve (worktreePath is display-only)
+- 3-05: Dynamic import of resolveConflict/listConflicts in ops.ts consistent with existing migrate handler pattern
 
 ### Pending Todos
 
@@ -84,5 +90,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-22
-Stopped at: Completed 3-02-PLAN.md — Write intercept + prompt migration (PMG-04, PMG-05)
+Stopped at: Completed 3-05-PLAN.md — gsd resolve-conflict CLI command (SYNC-05)
 Resume file: None
