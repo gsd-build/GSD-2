@@ -371,17 +371,9 @@ export class SettingsManager {
 
 	/** Migrate old settings format to new format */
 	private static migrateSettings(settings: Record<string, unknown>): Settings {
-		// Migrate queueMode -> steeringMode
-		if ("queueMode" in settings && !("steeringMode" in settings)) {
-			settings.steeringMode = settings.queueMode;
-			delete settings.queueMode;
-		}
-
-		// Migrate legacy websockets boolean -> transport enum
-		if (!("transport" in settings) && typeof settings.websockets === "boolean") {
-			settings.transport = settings.websockets ? "websocket" : "sse";
-			delete settings.websockets;
-		}
+		// Legacy migrations for queueMode→steeringMode and websockets→transport
+		// were removed (dead code since v2.20). Any remaining legacy configs are
+		// simply ignored.
 
 		// Migrate old skills object format to new array format
 		if (
