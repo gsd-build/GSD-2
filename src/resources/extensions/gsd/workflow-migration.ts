@@ -120,12 +120,16 @@ export function migrateFromMarkdown(basePath: string): void {
     const now = new Date().toISOString();
 
     // Determine milestone status: done if a milestone-level SUMMARY.md exists
-    const milestoneSummaryPath = join(mDir, "SUMMARY.md");
-    const milestoneDone = existsSync(milestoneSummaryPath);
+    // Check both naming conventions: SUMMARY.md and M001-SUMMARY.md
+    const milestoneSummaryBare = join(mDir, "SUMMARY.md");
+    const milestoneSummaryPrefixed = join(mDir, `${mId}-SUMMARY.md`);
+    const milestoneDone = existsSync(milestoneSummaryPrefixed) || existsSync(milestoneSummaryBare);
     const milestoneStatus = milestoneDone ? "done" : "active";
 
-    // Parse ROADMAP.md for slices list
-    const roadmapPath = join(mDir, "ROADMAP.md");
+    // Parse ROADMAP.md for slices list — check both naming conventions
+    const roadmapPathBare = join(mDir, "ROADMAP.md");
+    const roadmapPathPrefixed = join(mDir, `${mId}-ROADMAP.md`);
+    const roadmapPath = existsSync(roadmapPathPrefixed) ? roadmapPathPrefixed : roadmapPathBare;
     let roadmapSlices: Array<{ id: string; title: string; done: boolean; risk: string }> = [];
 
     if (existsSync(roadmapPath)) {
@@ -174,9 +178,11 @@ export function migrateFromMarkdown(basePath: string): void {
         forceDone: milestoneDone,
       });
 
-      // Read *-PLAN.md for this slice
-      const planPath = join(mDir, `${slice.id}-PLAN.md`);
-      if (existsSync(planPath)) {
+      // Read *-PLAN.md for this slice — check both flat and nested layouts
+      const flatPlanPath = join(mDir, `${slice.id}-PLAN.md`);
+      const nestedPlanPath = join(mDir, "slices", slice.id, `${slice.id}-PLAN.md`);
+      const planPath = existsSync(nestedPlanPath) ? nestedPlanPath : (existsSync(flatPlanPath) ? flatPlanPath : null);
+      if (planPath) {
         try {
           const planContent = readFileSync(planPath, "utf-8");
           const plan = parsePlan(planContent);
@@ -203,7 +209,8 @@ export function migrateFromMarkdown(basePath: string): void {
     // Check for orphaned summary files (summary for a slice not in ROADMAP)
     try {
       const files = readdirSync(mDir);
-      const summaryFiles = files.filter(f => f.endsWith("-SUMMARY.md") && f !== "SUMMARY.md");
+      const milestoneSummaryName = `${mId}-SUMMARY.md`;
+      const summaryFiles = files.filter(f => f.endsWith("-SUMMARY.md") && f !== "SUMMARY.md" && f !== milestoneSummaryName);
       for (const summaryFile of summaryFiles) {
         const sliceId = summaryFile.replace("-SUMMARY.md", "");
         if (!knownSliceIds.has(sliceId)) {
@@ -316,7 +323,10 @@ export function validateMigration(basePath: string): { discrepancies: string[] }
 
     for (const mId of milestoneDirs) {
       const mDir = join(milestonesDir, mId);
-      const roadmapPath = join(mDir, "ROADMAP.md");
+      // Check both naming conventions: ROADMAP.md and M001-ROADMAP.md
+      const roadmapPathBare = join(mDir, "ROADMAP.md");
+      const roadmapPathPrefixed = join(mDir, `${mId}-ROADMAP.md`);
+      const roadmapPath = existsSync(roadmapPathPrefixed) ? roadmapPathPrefixed : roadmapPathBare;
 
       if (existsSync(roadmapPath)) {
         try {
@@ -325,8 +335,11 @@ export function validateMigration(basePath: string): { discrepancies: string[] }
           mdSliceCount += roadmap.slices.length;
 
           for (const slice of roadmap.slices) {
-            const planPath = join(mDir, `${slice.id}-PLAN.md`);
-            if (existsSync(planPath)) {
+            // Check both flat and nested plan layouts
+            const flatPlanPath = join(mDir, `${slice.id}-PLAN.md`);
+            const nestedPlanPath = join(mDir, "slices", slice.id, `${slice.id}-PLAN.md`);
+            const planPath = existsSync(nestedPlanPath) ? nestedPlanPath : (existsSync(flatPlanPath) ? flatPlanPath : null);
+            if (planPath) {
               try {
                 const planContent = readFileSync(planPath, "utf-8");
                 const plan = parsePlan(planContent);
