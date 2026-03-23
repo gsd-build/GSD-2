@@ -664,6 +664,17 @@ export function createAutoWorktree(
   if (!branchExists) {
     copyPlanningArtifacts(basePath, info.path);
   } else {
+    // If .gsd was gitignored (the default since v2.14.0), the milestone branch
+    // has no .gsd/ content for this milestone even though the branch exists.
+    // In that case, copy artifacts from the project root before reconciling
+    // checkboxes (#2199). Check the specific milestone directory, not just
+    // .gsd/milestones/, because other milestones may have been committed
+    // before .gsd was gitignored.
+    const wtMilestoneDir = join(info.path, ".gsd", "milestones", milestoneId);
+    if (!existsSync(wtMilestoneDir)) {
+      copyPlanningArtifacts(basePath, info.path);
+    }
+
     // Re-attaching to an existing branch: forward-merge any plan checkpoint
     // state from the project root into the worktree (#778).
     //

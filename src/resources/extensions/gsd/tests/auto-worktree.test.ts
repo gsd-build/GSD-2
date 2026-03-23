@@ -253,6 +253,64 @@ async function main(): Promise<void> {
       }
     }
 
+    // ─── #2199: reattach copies artifacts when .gsd is gitignored ─────
+    console.log("\n=== #2199: reattach copies artifacts when .gsd is gitignored ===");
+    {
+      // Simulate a greenfield repo where .gsd is gitignored (the default).
+      // A prior auto-mode session created the milestone branch, but since .gsd
+      // was gitignored, the branch contains no .gsd/ content. On re-attach,
+      // copyPlanningArtifacts must run so deriveState can find milestones.
+
+      const { mkdirSync: mkdir, writeFileSync: write, readFileSync: read } = await import("node:fs");
+
+      // Set up .gsd/milestones/M005 in project root (untracked, gitignored)
+      const msRelPath = join(".gsd", "milestones", "M005");
+      const msDir = join(tempDir, msRelPath);
+      mkdir(join(msDir, "slices", "S01"), { recursive: true });
+      write(join(msDir, "CONTEXT.md"), "# M005 Context\n");
+      write(
+        join(msDir, "slices", "S01", "S01-PLAN.md"),
+        "# S01 Plan\n- [ ] **T01:** task one\n- [ ] **T02:** task two\n",
+      );
+
+      // Add .gsd to .gitignore so artifacts are never committed
+      write(join(tempDir, ".gitignore"), ".gsd/\n");
+      run("git add .gitignore", tempDir);
+      run('git commit -m "gitignore .gsd"', tempDir);
+
+      // Create milestone branch (simulating a prior auto-mode session that
+      // created the branch but .gsd was gitignored — branch has no .gsd/)
+      const milestoneBranch = "milestone/M005";
+      run(`git checkout -b ${milestoneBranch}`, tempDir);
+      // Branch exists but has no .gsd content (gitignored)
+      run('git commit --allow-empty -m "milestone branch placeholder"', tempDir);
+      run("git checkout main", tempDir);
+
+      // Re-attach to the existing milestone branch
+      const wtPath = createAutoWorktree(tempDir, "M005");
+
+      try {
+        // The worktree must have .gsd/milestones/M005 even though the branch
+        // never had it committed — copyPlanningArtifacts should have run as
+        // a fallback when the worktree .gsd/milestones directory was missing.
+        const wtMsDir = join(wtPath, ".gsd", "milestones", "M005");
+        assertTrue(existsSync(wtMsDir), "#2199: milestones dir exists in worktree after re-attach with gitignored .gsd");
+        assertTrue(
+          existsSync(join(wtMsDir, "CONTEXT.md")),
+          "#2199: CONTEXT.md copied to worktree",
+        );
+        assertTrue(
+          existsSync(join(wtMsDir, "slices", "S01", "S01-PLAN.md")),
+          "#2199: plan file copied to worktree",
+        );
+
+        const plan = read(join(wtMsDir, "slices", "S01", "S01-PLAN.md"), "utf-8");
+        assertTrue(plan.includes("**T01:**"), "#2199: plan content is correct");
+      } finally {
+        teardownAutoWorktree(tempDir, "M005");
+      }
+    }
+
   } finally {
     // Always restore cwd and clean up
     process.chdir(savedCwd);
