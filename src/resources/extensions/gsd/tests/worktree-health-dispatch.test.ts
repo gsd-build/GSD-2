@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execSync } from "node:child_process";
 
-import { PROJECT_FILES } from "../detection.js";
+import { PROJECT_FILES } from "../detection.ts";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -57,7 +57,7 @@ import { existsSync } from "node:fs";
 
 test("PROJECT_FILES is exported and contains expected multi-ecosystem entries", () => {
   assert.ok(Array.isArray(PROJECT_FILES), "PROJECT_FILES is an array");
-  assert.ok(PROJECT_FILES.length >= 17, `expected >= 17 entries, got ${PROJECT_FILES.length}`);
+  assert.ok(PROJECT_FILES.length >= 24, `expected >= 24 entries, got ${PROJECT_FILES.length}`);
   // Spot-check key ecosystems
   assert.ok(PROJECT_FILES.includes("Cargo.toml"), "includes Rust marker");
   assert.ok(PROJECT_FILES.includes("go.mod"), "includes Go marker");
@@ -132,4 +132,91 @@ describe("health check without git repo", () => {
     writeFileSync(join(dir, "Cargo.toml"), "[package]\nname = \"test\"\n");
     assert.ok(!wouldPassHealthCheck(dir, existsSync), "no-git directory should fail health check");
   });
+});
+
+// ─── IaC ecosystem tests (#2253) ─────────────────────────────────────────────
+
+test("PROJECT_FILES includes IaC markers", () => {
+  // Terraform
+  assert.ok(PROJECT_FILES.includes("main.tf"), "includes Terraform main.tf marker");
+  assert.ok(PROJECT_FILES.includes("terraform.tf"), "includes Terraform terraform.tf marker");
+  // Pulumi
+  assert.ok(PROJECT_FILES.includes("Pulumi.yaml"), "includes Pulumi marker");
+  // Ansible
+  assert.ok(PROJECT_FILES.includes("ansible.cfg"), "includes Ansible cfg marker");
+  assert.ok(PROJECT_FILES.includes("playbook.yml"), "includes Ansible playbook marker");
+  // Helm
+  assert.ok(PROJECT_FILES.includes("Chart.yaml"), "includes Helm Chart.yaml marker");
+  // CloudFormation
+  assert.ok(PROJECT_FILES.includes("template.yaml"), "includes CloudFormation template.yaml marker");
+});
+
+test("health check passes for Terraform project (main.tf, no package.json)", () => {
+  const dir = createGitRepo();
+  try {
+    writeFileSync(join(dir, "main.tf"), 'resource "aws_instance" "example" {}\n');
+    assert.ok(wouldPassHealthCheck(dir, existsSync), "Terraform project should pass health check");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("health check passes for Terraform project (terraform.tf, no package.json)", () => {
+  const dir = createGitRepo();
+  try {
+    writeFileSync(join(dir, "terraform.tf"), 'terraform {\n  required_version = ">= 1.0"\n}\n');
+    assert.ok(wouldPassHealthCheck(dir, existsSync), "Terraform project should pass health check");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("health check passes for Pulumi project (Pulumi.yaml, no package.json)", () => {
+  const dir = createGitRepo();
+  try {
+    writeFileSync(join(dir, "Pulumi.yaml"), "name: my-project\nruntime: nodejs\n");
+    assert.ok(wouldPassHealthCheck(dir, existsSync), "Pulumi project should pass health check");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("health check passes for Ansible project (ansible.cfg, no package.json)", () => {
+  const dir = createGitRepo();
+  try {
+    writeFileSync(join(dir, "ansible.cfg"), "[defaults]\ninventory = hosts\n");
+    assert.ok(wouldPassHealthCheck(dir, existsSync), "Ansible project should pass health check");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("health check passes for Ansible project (playbook.yml, no package.json)", () => {
+  const dir = createGitRepo();
+  try {
+    writeFileSync(join(dir, "playbook.yml"), "---\n- hosts: all\n  tasks: []\n");
+    assert.ok(wouldPassHealthCheck(dir, existsSync), "Ansible project should pass health check");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("health check passes for Helm project (Chart.yaml, no package.json)", () => {
+  const dir = createGitRepo();
+  try {
+    writeFileSync(join(dir, "Chart.yaml"), "apiVersion: v2\nname: my-chart\nversion: 0.1.0\n");
+    assert.ok(wouldPassHealthCheck(dir, existsSync), "Helm project should pass health check");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("health check passes for CloudFormation project (template.yaml, no package.json)", () => {
+  const dir = createGitRepo();
+  try {
+    writeFileSync(join(dir, "template.yaml"), "AWSTemplateFormatVersion: '2010-09-09'\nResources: {}\n");
+    assert.ok(wouldPassHealthCheck(dir, existsSync), "CloudFormation project should pass health check");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

@@ -99,6 +99,14 @@ export const PROJECT_FILES = [
   ".xcworkspace",
   // Docker
   "Dockerfile",
+  // Infrastructure-as-Code (#2253)
+  "main.tf",         // Terraform
+  "terraform.tf",    // Terraform
+  "Pulumi.yaml",     // Pulumi
+  "ansible.cfg",     // Ansible
+  "playbook.yml",    // Ansible
+  "Chart.yaml",      // Helm
+  "template.yaml",   // CloudFormation / SAM
 ] as const;
 
 const LANGUAGE_MAP: Record<string, string> = {
@@ -125,6 +133,14 @@ const LANGUAGE_MAP: Record<string, string> = {
   ".xcodeproj": "swift/xcode",
   ".xcworkspace": "swift/xcode",
   "Dockerfile": "docker",
+  // Infrastructure-as-Code (#2253)
+  "main.tf": "terraform",
+  "terraform.tf": "terraform",
+  "Pulumi.yaml": "pulumi",
+  "ansible.cfg": "ansible",
+  "playbook.yml": "ansible",
+  "Chart.yaml": "helm",
+  "template.yaml": "cloudformation",
 };
 
 const MONOREPO_MARKERS = [
@@ -410,6 +426,16 @@ function detectVerificationCommands(
     if (makeTargets.includes("test")) {
       commands.push("make test");
     }
+  }
+
+  // Infrastructure-as-Code (#2253)
+  if (detectedFiles.includes("main.tf") || detectedFiles.includes("terraform.tf")) {
+    commands.push("terraform validate");
+    commands.push("terraform fmt -check");
+  }
+
+  if (detectedFiles.includes("Chart.yaml")) {
+    commands.push("helm lint .");
   }
 
   return commands;
