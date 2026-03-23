@@ -867,20 +867,7 @@ export async function runUnitPhase(
   const unitStartSeq = ic.nextSeq();
   deps.emitJournalEvent({ ts: new Date().toISOString(), flowId: ic.flowId, seq: unitStartSeq, eventType: "unit-start", data: { unitType, unitId } });
   deps.captureAvailableSkills();
-  deps.writeUnitRuntimeRecord(
-    s.basePath,
-    unitType,
-    unitId,
-    s.currentUnit.startedAt,
-    {
-      phase: "dispatched",
-      wrapupWarningSent: false,
-      timeoutAt: null,
-      lastProgressAt: s.currentUnit.startedAt,
-      progressCount: 0,
-      lastProgressKind: "dispatch",
-    },
-  );
+  // Unit runtime record removed — engine task status is authoritative
 
   // Status bar + progress widget
   ctx.ui.setStatus("gsd-auto", "auto");
@@ -1214,8 +1201,8 @@ export async function runFinalize(
   // Sidecar items use lightweight pre-verification opts
   const preVerificationOpts: PreVerificationOpts | undefined = sidecarItem
     ? sidecarItem.kind === "hook"
-      ? { skipSettleDelay: true, skipDoctor: true, skipStateRebuild: true, skipWorktreeSync: true }
-      : { skipSettleDelay: true, skipStateRebuild: true }
+      ? { skipSettleDelay: true, skipWorktreeSync: true }
+      : { skipSettleDelay: true }
     : undefined;
   const preResult = await deps.postUnitPreVerification(postUnitCtx, preVerificationOpts);
   if (preResult === "dispatched") {

@@ -44,7 +44,8 @@ export async function handleCleanupBranches(ctx: ExtensionCommandContext, basePa
   try {
     const { listWorktrees } = await import("./worktree-manager.js");
     const { resolveMilestoneFile } = await import("./paths.js");
-    const { loadFile, parseRoadmap } = await import("./files.js");
+    const { loadFile } = await import("./files.js");
+    const { parseRoadmap } = await import("./legacy/parsers.js");
     const { isMilestoneComplete } = await import("./state.js");
 
     const attachedBranches = new Set(
