@@ -658,11 +658,31 @@ PRs #2219 (Doctor Surgery) and #2220 (Dead Code Cleanup) performed significant c
 
 ### 15.4 Code Impact vs Promises
 
+**Raw numbers (cumulative PR #2246):** +10,990 / -3,900 = **+7,090 net**
+
+However, raw net lines are misleading without categorization. Here's where the lines actually went:
+
+| Category | Lines | Notes |
+|----------|-------|-------|
+| **New engine production code** | +1,513 | workflow-engine, commands, events, projections, manifest, logger, sync-lock, write-intercept, bootstrap/workflow-tools, legacy/parsers |
+| **New engine tests** | +3,546 | 16 test files covering commands, events, replay, reconciliation, sync, migration, projections, crossval |
+| **Doctor/recovery cleanup** | **-1,541 net** | auto-recovery (-476), files.ts (-317), doctor.ts (-49), auto.ts (-69), idle-recovery tests (-326), auto-recovery tests (-368), etc. |
+| **Documentation** | +703 | ADR-004 (+316), SINGLE-WRITER-STATE-MAP (+387) |
+| **Prompt changes** | +15 | Tool call instructions replacing checkbox instructions |
+| **Other modified files** | +865 net | Bootstrap, commands, state.ts engine integration, worktree sync, etc. |
+
+**Compared to ADR promises:**
+
 | ADR Promise | Actual | Status |
 |-------------|--------|--------|
-| Deletions: 4,500–6,500 lines | ~3,790 lines | MISSING ~700-2,700 lines |
-| Additions: 2,000–2,500 lines | ~10,763 lines | DEVIATED — 4x estimate |
-| Net: -2,500 to -4,000 lines | **+6,973 lines net** | **INVERTED** |
+| Deletions: 4,500–6,500 lines | 3,900 lines deleted | **PARTIAL** — 60-85% of target |
+| Engine additions: 2,000–2,500 lines | 1,513 production + 3,546 tests = 5,059 | **DEVIATED** — production code close to estimate, tests doubled it |
+| Net: -2,500 to -4,000 lines | +7,090 net (but +3,546 are tests, +703 are docs) | See below |
+| Doctor cleanup specifically | -1,541 net lines from reconciliation targets | **DELIVERED** — cleanup happened per ADR kill list |
+
+**Adjusted net (excluding tests and docs):** +10,990 - 3,546 (tests) - 703 (docs) = +6,741 production additions. Against 3,900 deletions = **+2,841 net production lines**. The ADR estimated +2,000-2,500 additions — actual production additions are +2,378 (engine + other modified), close to estimate. The gap is that deletions fell short of the 4,500-6,500 target.
+
+**Why the deletion shortfall:** The ADR's Phases 2-4 (mandatory tool calls, remove parsing code, dead code cleanup) projected removing stuck detection (~75), health scoring (~430), forensics (~600), and remaining reconciliation (~500). These survive because the dual-path migration strategy keeps the legacy fallback operational. Removing them requires declaring the engine the mandatory path — a Phase 2 decision not yet made.
 
 ### 15.5 What Was Delivered Well
 
@@ -707,8 +727,9 @@ PRs #2219 (Doctor Surgery) and #2220 (Dead Code Cleanup) performed significant c
 | DB schema match | ~75% column coverage | Engine-specific schema (different approach) |
 | Migration phases complete | 2 of 5 | 2 of 5 |
 | Doctor kill list executed | 7 of ~15 issue codes | 3 of 6 targets (fix handlers removed, codes kept for diagnostics) |
-| Code removal delivered | ~608 of ~2,500 lines (24%) | ~2,295 net lines from cleanup targets |
-| Net line impact | +7,387 (promised -2,000) | +6,973 (promised -2,500 to -4,000) |
+| Code removal delivered | ~608 of ~2,500 lines (24%) | -3,900 deleted; -1,541 net from cleanup targets |
+| Net line impact (raw) | +7,387 (promised -2,000) | +7,090 (promised -2,500 to -4,000) |
+| Net production lines (excl tests/docs) | ~+7,387 | +2,841 (engine production adds close to ADR estimate) |
 | Success criteria met | 1 of 5 | 1 of 7 |
 | Event sourcing | Not in ADR, not implemented | Promised and DELIVERED |
 | Worktree coordination | Not in ADR, not implemented | Promised and DELIVERED |
@@ -717,9 +738,13 @@ PRs #2219 (Doctor Surgery) and #2220 (Dead Code Cleanup) performed significant c
 
 ### The Uncomfortable Truth
 
-**Neither implementation delivers what its ADR promised.** Both are additive Phase 0/1 foundations that add the engine layer on top of the existing system without executing the subtractive cleanup phases. Both result in **net code increases of ~7,000 lines** where both ADRs promised **net reductions of 2,000-4,000 lines**.
+**Neither implementation fully delivers what its ADR promised** — both are Phase 0/1 foundations that still need Phase 2-4 cleanup to achieve the promised net code reduction.
 
-The difference: the stack's additive work is **architecturally complete** (17 tools, event log, sync locks) while PR #2141's additive work is **architecturally partial** (2 tools, no events, no sync). Both still need Phases 2-4 to deliver on their ADR promises.
+However, the raw "+7K lines" metric is misleading for the stack. Categorized breakdown:
+- **Stack:** +1,513 engine production code (close to ADR's ~2,000 estimate), +3,546 tests, +703 docs, -3,900 deletions including -1,541 net from doctor/recovery cleanup targets. The engine production additions are on-estimate; the "miss" is tests (which the ADR didn't budget) and incomplete deletion of legacy fallback paths.
+- **PR #2141:** +8,828 lines with no categorization benefit — tests and production code are interleaved in a single PR with no cleanup phase.
+
+The stack's additive work is **architecturally complete** (17 tools, event log, sync locks) while PR #2141's additive work is **architecturally partial** (2 tools, no events, no sync). Both still need Phases 2-4 to deliver on their ADR promises — but the stack has already executed significant cleanup (PRs #2219 + #2220) while PR #2141 has not.
 
 ### What Remains for Both
 
