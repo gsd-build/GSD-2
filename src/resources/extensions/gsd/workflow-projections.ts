@@ -262,9 +262,12 @@ export function renderStateContent(state: GSDState): string {
 export function renderStateProjection(basePath: string): void {
   try {
     // Dynamic import to avoid circular dependency at module level
-    const { isDbAvailable } = require("./gsd-db.js") as typeof import("./gsd-db.js");
+    const { isDbAvailable, _getAdapter } = require("./gsd-db.js") as typeof import("./gsd-db.js");
     if (!isDbAvailable()) return; // DB was closed — skip silently
-    const { getEngine } = require("./workflow-engine.js") as typeof import("./workflow-engine.js");
+    // Probe the DB handle to detect stale connections (adapter set but handle closed)
+    try { _getAdapter()?.prepare("SELECT 1").get(); } catch { return; }
+    const { isEngineAvailable, getEngine } = require("./workflow-engine.js") as typeof import("./workflow-engine.js");
+    if (!isEngineAvailable(basePath)) return; // Engine tables don't exist yet
     const engine = getEngine(basePath);
     const state = engine.deriveState();
     const content = renderStateContent(state);
@@ -273,7 +276,8 @@ export function renderStateProjection(basePath: string): void {
     atomicWriteSync(join(dir, "STATE.md"), content);
   } catch (err) {
     // Non-fatal per D-02 — projection failure should not block
-    console.error("[projections] renderStateProjection failed:", err);
+    const { logWarning } = require("./workflow-logger.js") as typeof import("./workflow-logger.js");
+    logWarning("projection", `renderStateProjection failed: ${(err as Error).message}`);
   }
 }
 
