@@ -463,8 +463,11 @@ async function main(): Promise<void> {
       assertTrue(existsSync(join(repo, "sync-test.ts")), "sync-test.ts on main after merge");
     }
 
-    // ─── Test 11: #1738 Bug 1+2 — dirty tree merge preserves branch end-to-end ──
-    console.log("\n=== #1738 e2e: dirty tree rejection preserves branch ===");
+    // ─── Test 11: #1738 Bug 1+2 → #2151: dirty tree auto-stashed, merge succeeds ──
+    // Before #2151, a conflicting dirty file in the project root would cause
+    // the squash merge to reject.  Now auto-stash moves it out of the way,
+    // the merge succeeds, and the user's local file goes to the stash.
+    console.log("\n=== #2151: dirty tree auto-stashed, merge succeeds ===");
     {
       const repo = freshRepo();
       const wtPath = createAutoWorktree(repo, "M100");
@@ -473,31 +476,21 @@ async function main(): Promise<void> {
         { file: "e2e.ts", content: "export const e2e = true;\n", message: "add e2e" },
       ]);
 
+      // Create a conflicting local file — previously blocked the merge.
       writeFileSync(join(repo, "e2e.ts"), "// conflicting local file\n");
 
       const roadmap = makeRoadmap("M100", "E2E dirty tree", [
         { id: "S01", title: "E2E test" },
       ]);
 
-      let threw = false;
-      let errorMsg = "";
-      try {
-        mergeMilestoneToMain(repo, "M100", roadmap);
-      } catch (err: unknown) {
-        threw = true;
-        errorMsg = err instanceof Error ? err.message : String(err);
-      }
-      assertTrue(threw, "#1738 e2e: throws on dirty working tree");
-      assertTrue(
-        errorMsg.includes("dirty") || errorMsg.includes("untracked") || errorMsg.includes("overwritten"),
-        "#1738 e2e: error identifies dirty tree cause",
-      );
+      // With auto-stash (#2151), the merge should succeed.
+      const result = mergeMilestoneToMain(repo, "M100", roadmap);
+      assertTrue(result.commitMessage.includes("feat(M100)"), "#2151: merge succeeds after auto-stash");
 
-      const branches = run("git branch", repo);
-      assertTrue(
-        branches.includes("milestone/M100"),
-        "#1738 e2e: milestone branch preserved on dirty tree rejection",
-      );
+      // The milestone code should be on main.
+      assertTrue(existsSync(join(repo, "e2e.ts")), "#2151: e2e.ts merged to main");
+      const content = readFileSync(join(repo, "e2e.ts"), "utf-8");
+      assertEq(content, "export const e2e = true;\n", "#2151: merged content is from milestone branch");
     }
 
     // ─── Test 12: Throw on unanchored code changes after empty commit (#1792) ─
@@ -769,6 +762,68 @@ async function main(): Promise<void> {
         "#1906: codeFilesChanged must be true when real code files were merged",
       );
       assertTrue(existsSync(join(repo, "real-code.ts")), "real-code.ts merged to main");
+    }
+
+    // ─── Test 20: #2151 Bug 1 — auto-stash allows merge with pre-existing dirty files ──
+    console.log("\n=== #2151 bug 1: auto-stash unblocks merge when unrelated files are dirty ===");
+    {
+      const repo = freshRepo();
+      const wtPath = createAutoWorktree(repo, "M200");
+
+      addSliceToMilestone(repo, wtPath, "M200", "S01", "Stash test", [
+        { file: "stash-test.ts", content: "export const stash = true;\n", message: "add stash test" },
+      ]);
+
+      // Dirty an unrelated tracked file in the project root — this previously
+      // blocked the squash merge with "local changes would be overwritten".
+      writeFileSync(join(repo, "README.md"), "# modified locally\n");
+
+      const roadmap = makeRoadmap("M200", "Auto-stash test", [
+        { id: "S01", title: "Stash test" },
+      ]);
+
+      // Should succeed — the dirty README.md is auto-stashed before merge.
+      const result = mergeMilestoneToMain(repo, "M200", roadmap);
+      assertTrue(result.commitMessage.includes("feat(M200)"), "#2151: merge succeeds with dirty unrelated file");
+      assertTrue(existsSync(join(repo, "stash-test.ts")), "#2151: milestone code merged to main");
+
+      // Verify the dirty file was restored (stash popped).
+      const readmeContent = readFileSync(join(repo, "README.md"), "utf-8");
+      assertEq(readmeContent, "# modified locally\n", "#2151: stash popped — dirty file restored after merge");
+    }
+
+    // ─── Test 21: #2151 Bug 2 — nativeMergeSquash returns dirty filenames ──
+    console.log("\n=== #2151 bug 2: nativeMergeSquash returns dirty filenames ===");
+    {
+      const { nativeMergeSquash } = await import("../native-git-bridge.ts");
+      const repo = freshRepo();
+
+      run("git checkout -b milestone/M210", repo);
+      writeFileSync(join(repo, "overlap.ts"), "export const overlap = true;\n");
+      run("git add .", repo);
+      run('git commit -m "add overlap"', repo);
+      run("git checkout main", repo);
+
+      // Create the same file as a dirty local change
+      writeFileSync(join(repo, "overlap.ts"), "// local dirty version\n");
+
+      const result = nativeMergeSquash(repo, "milestone/M210");
+      assertEq(result.success, false, "#2151: merge reports failure");
+      assertTrue(
+        result.conflicts.includes("__dirty_working_tree__"),
+        "#2151: conflicts include __dirty_working_tree__ sentinel",
+      );
+      assertTrue(
+        Array.isArray(result.dirtyFiles) && result.dirtyFiles.length > 0,
+        "#2151: dirtyFiles array is populated",
+      );
+      assertTrue(
+        result.dirtyFiles!.includes("overlap.ts"),
+        "#2151: dirtyFiles includes the actual dirty file name",
+      );
+
+      run("git checkout -- . 2>/dev/null || true", repo);
+      run("rm -f overlap.ts", repo);
     }
 
   } finally {
