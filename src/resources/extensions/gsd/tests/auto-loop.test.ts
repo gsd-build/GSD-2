@@ -2129,6 +2129,9 @@ test("autoLoop allows greenfield project with .gsd but no project files (#1833)"
   const deps = makeMockDeps({
     deriveState: async () => {
       deps.callLog.push("deriveState");
+      // Stop the loop after first iteration — we only need to confirm
+      // the health check didn't block us
+      s.active = false;
       return {
         phase: "executing",
         activeMilestone: { id: "M001", title: "Test", status: "active" },
