@@ -33,6 +33,7 @@ export type DoctorIssueCode =
   | "unresolvable_dependency"
   | "failed_migration"
   | "broken_symlink"
+  | "numbered_gsd_variant"
   // Environment health checks (#1221)
   | "env_node_version"
   | "env_dependencies"

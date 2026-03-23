@@ -8,7 +8,7 @@
 
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 
@@ -271,15 +271,54 @@ export function externalProjectsRoot(): string {
   return join(base, "projects");
 }
 
+// ─── Numbered Variant Cleanup ────────────────────────────────────────────────
+
+/**
+ * macOS collision pattern: `.gsd 2`, `.gsd 3`, `.gsd 4`, etc.
+ *
+ * When `symlinkSync` (or Finder) tries to create `.gsd` but a real directory
+ * already exists at that path, macOS APFS silently renames the new entry to
+ * `.gsd 2`, then `.gsd 3`, and so on. These numbered variants confuse GSD
+ * because the canonical `.gsd` path no longer resolves to the external state
+ * directory, making tracked planning files appear deleted.
+ *
+ * This helper scans the project root for entries matching `.gsd <digits>` and
+ * removes them. It is called early in `ensureGsdSymlink()` so that the
+ * canonical `.gsd` path is always the one in use.
+ */
+const GSD_NUMBERED_VARIANT_RE = /^\.gsd \d+$/;
+
+export function cleanNumberedGsdVariants(projectPath: string): string[] {
+  const removed: string[] = [];
+  try {
+    const entries = readdirSync(projectPath);
+    for (const entry of entries) {
+      if (GSD_NUMBERED_VARIANT_RE.test(entry)) {
+        const fullPath = join(projectPath, entry);
+        try {
+          rmSync(fullPath, { recursive: true, force: true });
+          removed.push(entry);
+        } catch {
+          // Best-effort: if removal fails (e.g. permissions), continue with next
+        }
+      }
+    }
+  } catch {
+    // Non-fatal: readdir failure should not block symlink creation
+  }
+  return removed;
+}
+
 // ─── Symlink Management ─────────────────────────────────────────────────────
 
 /**
  * Ensure the `<project>/.gsd` symlink points to the external state directory.
  *
- * 1. mkdir -p the external dir
- * 2. If `<project>/.gsd` doesn't exist → create symlink
- * 3. If `<project>/.gsd` is already the correct symlink → no-op
- * 4. If `<project>/.gsd` is a real directory → return as-is (migration handles later)
+ * 1. Clean up any macOS numbered collision variants (`.gsd 2`, `.gsd 3`, etc.)
+ * 2. mkdir -p the external dir
+ * 3. If `<project>/.gsd` doesn't exist → create symlink
+ * 4. If `<project>/.gsd` is already the correct symlink → no-op
+ * 5. If `<project>/.gsd` is a real directory → return as-is (migration handles later)
  *
  * Returns the resolved external path.
  */
@@ -296,6 +335,10 @@ export function ensureGsdSymlink(projectPath: string): string {
   if (localGsdNormalized === gsdHomePath) {
     return localGsd;
   }
+
+  // Clean up macOS numbered collision variants (.gsd 2, .gsd 3, etc.) before
+  // any existence checks — otherwise they accumulate and confuse state (#2205).
+  cleanNumberedGsdVariants(projectPath);
 
   // Ensure external directory exists
   mkdirSync(externalPath, { recursive: true });

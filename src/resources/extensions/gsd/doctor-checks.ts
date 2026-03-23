@@ -2,7 +2,7 @@ import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, rmSync,
 import { basename, dirname, join, sep } from "node:path";
 
 import type { DoctorIssue, DoctorIssueCode } from "./doctor-types.js";
-import { readRepoMeta, externalProjectsRoot } from "./repo-identity.js";
+import { readRepoMeta, externalProjectsRoot, cleanNumberedGsdVariants } from "./repo-identity.js";
 import { loadFile, parseRoadmap } from "./files.js";
 import { resolveMilestoneFile, milestonesDir, gsdRoot, resolveGsdRootFile, relGsdRootFile } from "./paths.js";
 import { deriveState, isMilestoneComplete } from "./state.js";
@@ -774,6 +774,37 @@ export async function checkRuntimeHealth(
     }
   } catch {
     // Non-fatal — external state check failed
+  }
+
+  // ── Numbered .gsd collision variants (#2205) ───────────────────────────
+  // macOS APFS can create ".gsd 2", ".gsd 3" etc. when a directory blocks
+  // symlink creation. These must be removed so the canonical .gsd is used.
+  try {
+    const variantPattern = /^\.gsd \d+$/;
+    const entries = readdirSync(basePath);
+    const variants = entries.filter(e => variantPattern.test(e));
+    if (variants.length > 0) {
+      for (const v of variants) {
+        issues.push({
+          severity: "warning",
+          code: "numbered_gsd_variant",
+          scope: "project",
+          unitId: "project",
+          message: `Found macOS collision variant "${v}" — this can cause GSD state to appear deleted.`,
+          file: v,
+          fixable: true,
+        });
+      }
+
+      if (shouldFix("numbered_gsd_variant")) {
+        const removed = cleanNumberedGsdVariants(basePath);
+        for (const name of removed) {
+          fixesApplied.push(`removed numbered .gsd variant: ${name}`);
+        }
+      }
+    }
+  } catch {
+    // Non-fatal — variant check failed
   }
 
   // ── Metrics ledger integrity ───────────────────────────────────────────
