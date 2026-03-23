@@ -98,21 +98,33 @@ Do not count the reflection step as a question round. Rounds start after reflect
 
 ## Depth Verification
 
-Before moving to the wrap-up gate, present a structured depth summary as a checkpoint.
+Before moving to the wrap-up gate, verify your understanding across three dimensions in sequence. Each dimension gets its own summary + confirmation cycle.
 
-**Print the summary as normal chat text first** — this is where the formatting renders properly. Structure the summary across the depth checklist dimensions using the user's own terminology and framing. Cover: what you understood them to be building, what shaped your understanding most (their emphasis, constraints, concerns), and any areas where you're least confident in your understanding.
+**Convention:** Each question ID must contain `depth_verification` AND a dimension suffix: `depth_verification_what`, `depth_verification_risks`, `depth_verification_dependencies`. Bare `depth_verification` (without a suffix) still works for backward compatibility, but the preferred form is dimension-specific.
 
-**Then** use `ask_user_questions` with a short confirmation question — NOT the summary itself. The question field is designed for single sentences, not multi-paragraph summaries.
+### Dimension 1: What (`depth_verification_what`)
 
-**Convention:** The question ID must contain `depth_verification` (e.g., `depth_verification_confirm`). This naming convention enables downstream mechanical detection of this step.
+Print a concise summary (3–5 bullets) of what you understand they're building, why it needs to exist, who it's for, and what "done" looks like — using the user's own terminology.
 
-Example flow:
-1. Print in chat: the full depth summary with markdown formatting (headers, bold, bullets)
-2. Call `ask_user_questions` with: header "Depth Check", question "Did I capture the depth right?", options "Yes, you got it (Recommended)" and "Not quite — let me clarify"
+Then call `ask_user_questions` with: header "What Check", question "Did I capture the what correctly?", options "Yes, you got it (Recommended)" and "Not quite — let me clarify", ID containing `depth_verification_what`.
 
-If they clarify, absorb the correction and re-verify.
+### Dimension 2: Risks (`depth_verification_risks`)
 
-The depth verification is the required write-gate. Do **not** add another meta "ready to proceed?" checkpoint immediately after it unless there is still material ambiguity.
+Print a concise summary (3–5 bullets) of the technical unknowns, risks, unproven assumptions, and potential failure modes you identified during discussion.
+
+Then call `ask_user_questions` with: header "Risks Check", question "Did I identify the key risks?", options "Yes, you got it (Recommended)" and "Not quite — let me clarify", ID containing `depth_verification_risks`.
+
+### Dimension 3: Dependencies (`depth_verification_dependencies`)
+
+Print a concise summary (3–5 bullets) of external systems, APIs, services, integration points, constraints, and deployment environment.
+
+Then call `ask_user_questions` with: header "Deps Check", question "Did I capture the dependencies correctly?", options "Yes, you got it (Recommended)" and "Not quite — let me clarify", ID containing `depth_verification_dependencies`.
+
+### Re-verification
+
+If the user says "not quite" on any dimension, absorb the correction and re-verify **that dimension only** — do not re-run all three. Each dimension is independently gated.
+
+The depth verification is the required write-gate. All three dimensions must pass before CONTEXT.md can be written. Do **not** add another meta "ready to proceed?" checkpoint immediately after it unless there is still material ambiguity.
 
 ## Wrap-up Gate
 
@@ -252,7 +264,7 @@ Before writing each milestone's CONTEXT.md (whether primary or secondary), you M
 
 1. **Read the actual code** for every file or module you reference. Confirm APIs exist, check what functions actually do, identify phantom capabilities (code that exists but isn't wired up).
 2. **Check for stale assumptions** — the codebase changes. Verify referenced modules still work as described.
-3. **Present findings** — use `ask_user_questions` with a question ID containing BOTH `depth_verification` AND the milestone ID (e.g., `depth_verification_M002`). Present: what you're about to write, key technical findings from investigation, risks the code review surfaced.
+3. **Present findings** — use three sequential `ask_user_questions` calls, each with a dimension-specific ID containing BOTH the dimension suffix AND the milestone ID: `depth_verification_what_M002`, `depth_verification_risks_M002`, `depth_verification_dependencies_M002`. The pattern is `depth_verification_<dim>_<milestoneId>`. Present per dimension: what you're about to write (what), key risks the code review surfaced (risks), integration points and external dependencies discovered (dependencies).
 
 **The system mechanically blocks CONTEXT.md writes until the per-milestone depth verification passes.** Each milestone needs its own verification — one global verification does not unlock all milestones.
 
