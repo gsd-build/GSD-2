@@ -2121,3 +2121,44 @@ test("autoLoop warns but proceeds for greenfield project (no project files) (#18
     "should warn about greenfield project (no project files)",
   );
 });
+
+test("autoLoop allows greenfield project with .gsd but no project files (#1833)", async () => {
+  _resetPendingResolve();
+
+  const ctx = makeMockCtx();
+  ctx.ui.setStatus = () => {};
+  ctx.sessionManager = { getSessionFile: () => "/tmp/session.json" };
+  const pi = makeMockPi();
+
+  const notifications: string[] = [];
+  ctx.ui.notify = (msg: string) => { notifications.push(msg); };
+
+  const s = makeLoopSession({ basePath: "/tmp/greenfield-project" });
+
+  const deps = makeMockDeps({
+    deriveState: async () => {
+      deps.callLog.push("deriveState");
+      return {
+        phase: "executing",
+        activeMilestone: { id: "M001", title: "Test", status: "active" },
+        activeSlice: { id: "S01", title: "Slice 1" },
+        activeTask: { id: "T01" },
+        registry: [{ id: "M001", status: "active" }],
+        blockers: [],
+      } as any;
+    },
+    // Has .git and .gsd but no package.json or src/
+    existsSync: (p: string) => p.endsWith(".git") || p.endsWith(".gsd"),
+  });
+
+  await autoLoop(ctx, pi, s, deps);
+
+  // Should NOT stop due to worktree health check — .gsd counts as valid
+  const healthNotification = notifications.find(
+    (n) => n.includes("Worktree health check failed") && n.includes("no recognized project files"),
+  );
+  assert.ok(
+    !healthNotification,
+    "should NOT fail health check when .gsd directory exists (greenfield project)",
+  );
+});
