@@ -86,7 +86,7 @@ Plans:
 
 Plans:
 - [x] 4-00-PLAN.md — Wave 0 test scaffolds (checkEngineHealth, import boundary, removed exports)
-- [ ] 4-01-PLAN.md — Parser relocation (create legacy/parsers.ts, update all imports)
+- [x] 4-01-PLAN.md — Parser relocation (create legacy/parsers.ts, update all imports)
 - [ ] 4-02-PLAN.md — Doctor surgery (remove reconciliation, add engine health checks)
 - [ ] 4-03-PLAN.md — Recovery + forensics simplification (engine queries, event log)
 

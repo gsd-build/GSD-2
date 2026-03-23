@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-03-22)
 ## Current Position
 
 Phase: 4 of 5 (Remove Parsing from Hot Path) — IN PROGRESS
-Plan: 1 of 4 in current phase (4-00 complete)
+Plan: 2 of 4 in current phase (4-00, 4-01 complete)
 Status: Executing
-Last activity: 2026-03-23 — Plan 4-00 complete (Wave 0 test scaffolds)
+Last activity: 2026-03-23 — Plan 4-01 complete (Parser relocation to legacy/parsers.ts)
 
-Progress: [███████████░] 65%
+Progress: [████████████░] 70%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 13
+- Total plans completed: 14
 - Average duration: 4 min
-- Total execution time: 0.8 hours
+- Total execution time: 1.1 hours
 
 **By Phase:**
 
@@ -30,10 +30,10 @@ Progress: [███████████░] 65%
 | 1 - Engine Foundation | 5 | 23 min | 5 min |
 | 2 - Sync + Prompt Migration | 2 | 5 min | 3 min |
 | 3 - Event Reconciliation + Mandatory Tools | 5 | ~23 min | 5 min |
-| 4 - Remove Parsing from Hot Path | 1 (so far) | 5 min | 5 min |
+| 4 - Remove Parsing from Hot Path | 2 (so far) | 20 min | 10 min |
 
 **Recent Trend:**
-- Last 5 plans: 3-01 (4 min), 3-02 (4 min), 3-05 (3 min), 4-00 (5 min)
+- Last 5 plans: 3-02 (4 min), 3-05 (3 min), 4-00 (5 min), 4-01 (15 min)
 - Trend: Steady
 
 *Updated after each plan completion*
@@ -85,6 +85,9 @@ Recent decisions affecting current work:
 - 4-00: TODO placeholders for checkEngineHealth tests (import would fail since function doesn't exist yet)
 - 4-00: Multi-line import regex for state.ts boundary test to handle TypeScript multi-line import blocks
 - 4-00: Removed-export tests use dynamic import + typeof check for runtime export presence validation
+- 4-01: Exported cachedParse from files.ts so legacy/parsers.ts shares the same parse cache
+- 4-01: Hot-path usage sites stubbed with safe defaults (false/null/empty) to keep TypeScript compiling
+- 4-01: auto-prompts.ts and auto-dispatch.ts added as display callers (not in plan but required for compile)
 
 ### Pending Todos
 
@@ -97,5 +100,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-23
-Stopped at: Completed 4-00-PLAN.md (Wave 0 test scaffolds)
+Stopped at: Completed 4-01-PLAN.md (Parser relocation to legacy/parsers.ts)
 Resume file: None

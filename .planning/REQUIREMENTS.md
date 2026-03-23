@@ -91,7 +91,7 @@ Requirements for v1.0 milestone. Each maps to roadmap phases.
 - [ ] **CLN-04**: Remove unit-runtime.ts inspection (replaced by engine task status)
 - [ ] **CLN-05**: Simplify auto-post-unit.ts (remove doctor fix runs, STATE.md rebuild)
 - [ ] **CLN-06**: Remove oscillation detection from stuck detection (keep same-error-twice)
-- [ ] **CLN-07**: Move markdown parsers to legacy/ (preserve for gsd migrate only)
+- [x] **CLN-07**: Move markdown parsers to legacy/ (preserve for gsd migrate only)
 
 ## v2 Requirements
 
@@ -176,7 +176,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CLN-04 | Phase 5 | Pending |
 | CLN-05 | Phase 5 | Pending |
 | CLN-06 | Phase 5 | Pending |
-| CLN-07 | Phase 4 | Pending |
+| CLN-07 | Phase 4 (4-01) | Complete |
 
 **Coverage:**
 - v1 requirements: 47 total
