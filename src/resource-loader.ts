@@ -40,6 +40,12 @@ interface ManagedResourceManifest {
    * causing extension load errors.
    */
   installedExtensionRootFiles?: string[]
+  /**
+   * Subdirectory extension names installed in extensions/ by this GSD version.
+   * Used on the next upgrade to detect and prune subdirectory extensions that
+   * were removed from the bundle.
+   */
+  installedExtensionDirs?: string[]
 }
 
 export { discoverExtensionEntryPaths } from './extension-discovery.js'
@@ -67,13 +73,24 @@ function getBundledGsdVersion(): string {
 }
 
 function writeManagedResourceManifest(agentDir: string): void {
-  // Record root-level files currently in the bundled extensions source so that
-  // future upgrades can detect and prune any that get removed or moved.
+  // Record root-level files and subdirectory extension names currently in the
+  // bundled extensions source so that future upgrades can detect and prune any
+  // that get removed or moved.
   let installedExtensionRootFiles: string[] = []
+  let installedExtensionDirs: string[] = []
   try {
     if (existsSync(bundledExtensionsDir)) {
-      installedExtensionRootFiles = readdirSync(bundledExtensionsDir, { withFileTypes: true })
+      const entries = readdirSync(bundledExtensionsDir, { withFileTypes: true })
+      installedExtensionRootFiles = entries
         .filter(e => e.isFile())
+        .map(e => e.name)
+      installedExtensionDirs = entries
+        .filter(e => e.isDirectory())
+        .filter(e => {
+          // Only track directories that are actual extensions (contain index.js or index.ts)
+          const dirPath = join(bundledExtensionsDir, e.name)
+          return existsSync(join(dirPath, 'index.js')) || existsSync(join(dirPath, 'index.ts'))
+        })
         .map(e => e.name)
     }
   } catch { /* non-fatal */ }
@@ -83,6 +100,7 @@ function writeManagedResourceManifest(agentDir: string): void {
     syncedAt: Date.now(),
     contentHash: computeResourceFingerprint(),
     installedExtensionRootFiles,
+    installedExtensionDirs,
   }
   writeFileSync(getManagedResourceManifestPath(agentDir), JSON.stringify(manifest))
 }
@@ -314,24 +332,40 @@ function pruneRemovedBundledExtensions(
 
   // Current bundled root-level files (what the new version provides)
   const currentSourceFiles = new Set<string>()
+  // Current bundled subdirectory extensions
+  const currentSourceDirs = new Set<string>()
   try {
     if (existsSync(bundledExtensionsDir)) {
       for (const e of readdirSync(bundledExtensionsDir, { withFileTypes: true })) {
         if (e.isFile()) currentSourceFiles.add(e.name)
+        if (e.isDirectory()) currentSourceDirs.add(e.name)
       }
     }
   } catch { /* non-fatal */ }
 
-  const removeIfStale = (fileName: string) => {
+  const removeFileIfStale = (fileName: string) => {
     if (currentSourceFiles.has(fileName)) return  // still in bundle, not stale
     const stale = join(extensionsDir, fileName)
     try { if (existsSync(stale)) rmSync(stale, { force: true }) } catch { /* non-fatal */ }
   }
 
+  const removeDirIfStale = (dirName: string) => {
+    if (currentSourceDirs.has(dirName)) return  // still in bundle, not stale
+    const stale = join(extensionsDir, dirName)
+    try { if (existsSync(stale)) rmSync(stale, { recursive: true, force: true }) } catch { /* non-fatal */ }
+  }
+
   if (manifest?.installedExtensionRootFiles) {
     // Manifest-based: remove previously-installed root files that are no longer bundled
     for (const prevFile of manifest.installedExtensionRootFiles) {
-      removeIfStale(prevFile)
+      removeFileIfStale(prevFile)
+    }
+  }
+
+  if (manifest?.installedExtensionDirs) {
+    // Manifest-based: remove previously-installed subdirectory extensions that are no longer bundled
+    for (const prevDir of manifest.installedExtensionDirs) {
+      removeDirIfStale(prevDir)
     }
   }
 
@@ -339,7 +373,7 @@ function pruneRemovedBundledExtensions(
   // These were installed by pre-manifest versions so they may not appear in
   // installedExtensionRootFiles even when a manifest exists.
   // env-utils.js was moved from extensions/ root → gsd/ in v2.39.x (#1634)
-  removeIfStale('env-utils.js')
+  removeFileIfStale('env-utils.js')
 }
 
 /**
@@ -452,5 +486,6 @@ export function buildResourceLoader(agentDir: string): DefaultResourceLoader {
   return new DefaultResourceLoader({
     agentDir,
     additionalExtensionPaths: piExtensionPaths,
-  })
+    bundledExtensionNames: bundledKeys,
+  } as ConstructorParameters<typeof DefaultResourceLoader>[0])
 }
