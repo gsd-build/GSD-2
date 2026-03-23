@@ -11,7 +11,7 @@ import type { ExtensionContext } from "@gsd/pi-coding-agent";
 import { parseUnitId } from "./unit-id.js";
 import { atomicWriteSync } from "./atomic-write.js";
 import { clearUnitRuntimeRecord } from "./unit-runtime.js";
-import { clearParseCache, parseRoadmap, parsePlan } from "./files.js";
+import { clearParseCache, parseRoadmap, parsePlan, parseResearchDepth } from "./files.js";
 import { isDbAvailable, getTask, getSlice } from "./gsd-db.js";
 import { isValidationTerminal } from "./state.js";
 import {
@@ -306,6 +306,39 @@ export function verifyExpectedArtifact(
   // is missing on disk — treat as stale completion state so the key gets evicted (#313).
   if (!absPath) return false;
   if (!existsSync(absPath)) return false;
+
+  // discuss-milestone must produce a CONTEXT.md with required sections, no
+  // unreplaced placeholder text, and valid frontmatter. Without this check a
+  // CONTEXT.md with missing sections or `{{placeholder}}` text passes
+  // verification and advances the pipeline into planning with incomplete context.
+  if (unitType === "discuss-milestone") {
+    try {
+      const contextContent = readFileSync(absPath, "utf-8");
+      // Check 1: Required sections present
+      const requiredSections = ["## Project Description", "## Risks and Unknowns", "## Scope"];
+      for (const section of requiredSections) {
+        if (!contextContent.includes(section)) return false;
+      }
+      // Check 2: No unreplaced placeholder text
+      if (/\{\{[a-zA-Z_]+\}\}/.test(contextContent)) return false;
+      // Check 3: Frontmatter validity — only fail if depth IS present but unrecognized
+      const { depth } = parseResearchDepth(contextContent);
+      if (depth !== null && !["skip", "light", "standard", "deep"].includes(depth)) return false;
+    } catch {
+      return true; // fail-open on read error
+    }
+  }
+
+  // plan-milestone must produce a roadmap with parseable slices, not just an
+  // empty scaffold. Without this check, a roadmap file that exists but contains
+  // no machine-readable slices (e.g. the LLM used an unsupported format) passes
+  // artifact verification, the unit is marked complete, and auto-mode blocks with
+  // "No slice eligible" — a confusing error with no actionable guidance.
+  if (unitType === "plan-milestone") {
+    const roadmapContent = readFileSync(absPath, "utf-8");
+    const roadmap = parseRoadmap(roadmapContent);
+    if (roadmap.slices.length === 0) return false;
+  }
 
   if (unitType === "validate-milestone") {
     const validationContent = readFileSync(absPath, "utf-8");
