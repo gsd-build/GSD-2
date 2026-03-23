@@ -173,6 +173,34 @@ async function handleCustomWorkflow(
 }
 
 export async function handleWorkflowCommand(trimmed: string, ctx: ExtensionCommandContext, pi: ExtensionAPI): Promise<boolean> {
+  // ── /gsd do — natural language routing (must be early to route to other commands) ──
+  if (trimmed === "do" || trimmed.startsWith("do ")) {
+    const { handleDo } = await import("../../commands-do.js");
+    await handleDo(trimmed.replace(/^do\s*/, "").trim(), ctx, pi);
+    return true;
+  }
+  // ── Slice mutation commands ──
+  if (trimmed === "add-slice" || trimmed.startsWith("add-slice ")) {
+    const { handleAddSlice } = await import("../../commands-slice-mutation.js");
+    await handleAddSlice(trimmed.replace(/^add-slice\s*/, "").trim(), ctx, pi);
+    return true;
+  }
+  if (trimmed === "insert-slice" || trimmed.startsWith("insert-slice ")) {
+    const { handleInsertSlice } = await import("../../commands-slice-mutation.js");
+    await handleInsertSlice(trimmed.replace(/^insert-slice\s*/, "").trim(), ctx, pi);
+    return true;
+  }
+  if (trimmed === "remove-slice" || trimmed.startsWith("remove-slice ")) {
+    const { handleRemoveSlice } = await import("../../commands-slice-mutation.js");
+    await handleRemoveSlice(trimmed.replace(/^remove-slice\s*/, "").trim(), ctx, pi);
+    return true;
+  }
+  // ── Backlog management ──
+  if (trimmed === "backlog" || trimmed.startsWith("backlog ")) {
+    const { handleBacklog } = await import("../../commands-backlog.js");
+    await handleBacklog(trimmed.replace(/^backlog\s*/, "").trim(), ctx, pi);
+    return true;
+  }
   // ── Custom workflow commands (`/gsd workflow ...`) ──
   if (trimmed === "workflow" || trimmed.startsWith("workflow ")) {
     const sub = trimmed.slice("workflow".length).trim();
