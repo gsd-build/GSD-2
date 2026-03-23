@@ -15,7 +15,7 @@ export interface GsdCommandDefinition {
 type CompletionMap = Record<string, readonly GsdCommandDefinition[]>;
 
 export const GSD_COMMAND_DESCRIPTION =
-  "GSD — Get Shit Done: /gsd help|start|templates|next|auto|stop|pause|status|widget|visualize|queue|quick|discuss|capture|triage|dispatch|history|undo|rate|skip|export|cleanup|mode|prefs|config|keys|hooks|run-hook|skill-health|doctor|logs|forensics|changelog|migrate|remote|steer|knowledge|new-milestone|parallel|cmux|park|unpark|init|setup|inspect|extensions|update|fast";
+  "GSD — Get Shit Done: /gsd help|start|templates|next|auto|stop|pause|status|widget|visualize|queue|quick|discuss|capture|triage|mcp|dispatch|history|undo|rate|skip|export|cleanup|mode|prefs|config|keys|hooks|run-hook|skill-health|doctor|logs|forensics|changelog|migrate|remote|steer|knowledge|new-milestone|parallel|cmux|park|unpark|init|setup|inspect|extensions|update|fast";
 
 export const TOP_LEVEL_SUBCOMMANDS: readonly GsdCommandDefinition[] = [
   { cmd: "help", desc: "Categorized command reference with descriptions" },
@@ -32,6 +32,7 @@ export const TOP_LEVEL_SUBCOMMANDS: readonly GsdCommandDefinition[] = [
   { cmd: "capture", desc: "Fire-and-forget thought capture" },
   { cmd: "changelog", desc: "Show categorized release notes" },
   { cmd: "triage", desc: "Manually trigger triage of pending captures" },
+  { cmd: "mcp", desc: "Diagnose configured MCP servers" },
   { cmd: "dispatch", desc: "Dispatch a specific phase directly" },
   { cmd: "history", desc: "View execution history" },
   { cmd: "undo", desc: "Revert last completed unit" },
@@ -274,6 +275,20 @@ export function getGsdArgumentCompletions(prefix: string) {
   }
 
   const [command, subcommand = "", third = ""] = parts;
+
+  if (command === "mcp") {
+    const flags: readonly GsdCommandDefinition[] = [
+      { cmd: "--verbose", desc: "Show detailed MCP diagnostics" },
+      { cmd: "--refresh", desc: "Reload MCP config from disk" },
+    ];
+    if (parts.length <= 2) {
+      return filterOptions(subcommand, flags, "mcp");
+    }
+    if (parts.length <= 3) {
+      return filterOptions(third, flags, `mcp ${subcommand}`);
+    }
+    return [];
+  }
 
   if (command === "cmux") {
     if (parts.length <= 2) {
