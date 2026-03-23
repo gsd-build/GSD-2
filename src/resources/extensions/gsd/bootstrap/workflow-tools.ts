@@ -1,5 +1,5 @@
 // GSD Extension — Workflow Engine Agent Tools
-// Registers 7 agent-callable tools that delegate to WorkflowEngine commands.
+// Registers 17 agent-callable tools that delegate to WorkflowEngine commands.
 // Each tool follows the same pattern as db-tools.ts: ensureDbOpen guard,
 // engine command call, rich response with progress context per D-04.
 
@@ -457,6 +457,615 @@ export function registerWorkflowTools(pi: ExtensionAPI): void {
         return {
           content: [{ type: "text" as const, text: `Error: ${msg}` }],
           details: { operation: "engine_save_decision", error: msg } as any,
+        };
+      }
+    },
+  });
+
+  // ── Tool 8: gsd_create_milestone ──────────────────────────────────────
+  pi.registerTool({
+    name: "gsd_create_milestone",
+    label: "Create Milestone",
+    description:
+      "Create a new milestone with an ID and title. " +
+      "The milestone starts in 'active' status.",
+    promptSnippet:
+      "Create a new GSD milestone (inserts into DB, sets status active)",
+    promptGuidelines: [
+      "Use gsd_create_milestone to create a new milestone.",
+      "Provide a milestone_id (e.g. M001) and a descriptive title.",
+      "Optionally include context text for the milestone.",
+    ],
+    parameters: Type.Object({
+      milestone_id: Type.String({ description: "Milestone ID (e.g. M001)" }),
+      title: Type.String({ description: "Milestone title" }),
+      context: Type.Optional(Type.String({ description: "Optional context for the milestone" })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      const dbAvailable = await ensureDbOpen();
+      if (!dbAvailable) {
+        return {
+          content: [{ type: "text" as const, text: "Error: GSD database is not available." }],
+          details: { operation: "create_milestone", error: "db_unavailable" } as any,
+        };
+      }
+      try {
+        const { getEngine } = await import("../workflow-engine.js");
+        const engine = getEngine(process.cwd());
+        const result = engine.createMilestone({
+          milestoneId: params.milestone_id,
+          title: params.title,
+          context: params.context,
+        });
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Created milestone ${result.milestoneId}: ${result.title}. Next: plan slices with gsd_plan_milestone.`,
+            },
+          ],
+          details: { operation: "create_milestone", ...result } as any,
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logError("tool", `gsd_create_milestone failed: ${msg}`);
+        return {
+          content: [{ type: "text" as const, text: `Error: ${msg}` }],
+          details: { operation: "create_milestone", error: msg } as any,
+        };
+      }
+    },
+  });
+
+  // ── Tool 9: gsd_plan_milestone ────────────────────────────────────────
+  pi.registerTool({
+    name: "gsd_plan_milestone",
+    label: "Plan Milestone",
+    description:
+      "Define slices for a milestone (creates ROADMAP). " +
+      "Each slice gets an ID, title, risk level, dependencies, and demo criteria.",
+    promptSnippet:
+      "Define roadmap slices for a GSD milestone (atomic batch insert)",
+    promptGuidelines: [
+      "Use gsd_plan_milestone to define the roadmap slices — do NOT manually write ROADMAP.md.",
+      "Provide an array of slice objects with id, title, risk, depends, and demo.",
+      "Optional: set done to true for slices that are already complete.",
+    ],
+    parameters: Type.Object({
+      milestone_id: Type.String({ description: "Milestone ID (e.g. M001)" }),
+      title: Type.String({ description: "Milestone title" }),
+      vision: Type.String({ description: "Vision statement for the milestone" }),
+      slices: Type.Array(
+        Type.Object({
+          id: Type.String({ description: "Slice ID (e.g. S01)" }),
+          title: Type.String({ description: "Slice title" }),
+          risk: Type.String({ description: "Risk level (low/medium/high)" }),
+          depends: Type.Array(Type.String(), { description: "IDs of slices this depends on" }),
+          demo: Type.String({ description: "Demo/acceptance criteria" }),
+          done: Type.Optional(Type.Boolean({ description: "Whether the slice is already done" })),
+        }),
+        { description: "Array of slice definitions" },
+      ),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      const dbAvailable = await ensureDbOpen();
+      if (!dbAvailable) {
+        return {
+          content: [{ type: "text" as const, text: "Error: GSD database is not available." }],
+          details: { operation: "plan_milestone", error: "db_unavailable" } as any,
+        };
+      }
+      try {
+        const { getEngine } = await import("../workflow-engine.js");
+        const engine = getEngine(process.cwd());
+        const result = engine.planMilestone({
+          milestoneId: params.milestone_id,
+          title: params.title,
+          vision: params.vision,
+          slices: params.slices,
+        });
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Planned ${result.sliceCount} slices for milestone ${result.milestoneId}: ${result.sliceIds.join(", ")}`,
+            },
+          ],
+          details: { operation: "plan_milestone", ...result } as any,
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logError("tool", `gsd_plan_milestone failed: ${msg}`);
+        return {
+          content: [{ type: "text" as const, text: `Error: ${msg}` }],
+          details: { operation: "plan_milestone", error: msg } as any,
+        };
+      }
+    },
+  });
+
+  // ── Tool 10: gsd_complete_milestone ───────────────────────────────────
+  pi.registerTool({
+    name: "gsd_complete_milestone",
+    label: "Complete Milestone",
+    description:
+      "Mark a milestone as complete with a summary. " +
+      "Sets status to 'complete' with a completion timestamp.",
+    promptSnippet:
+      "Mark a GSD milestone complete (updates DB, sets status complete)",
+    promptGuidelines: [
+      "Use gsd_complete_milestone when all slices in a milestone are done.",
+      "Provide milestone_id and a summary of the milestone outcome.",
+    ],
+    parameters: Type.Object({
+      milestone_id: Type.String({ description: "Milestone ID (e.g. M001)" }),
+      summary: Type.String({ description: "Summary of the milestone outcome" }),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      const dbAvailable = await ensureDbOpen();
+      if (!dbAvailable) {
+        return {
+          content: [{ type: "text" as const, text: "Error: GSD database is not available." }],
+          details: { operation: "complete_milestone", error: "db_unavailable" } as any,
+        };
+      }
+      try {
+        const { getEngine } = await import("../workflow-engine.js");
+        const engine = getEngine(process.cwd());
+        const result = engine.completeMilestone({
+          milestoneId: params.milestone_id,
+          summary: params.summary,
+        });
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Milestone ${result.milestoneId} marked complete. ${result.summary}`,
+            },
+          ],
+          details: { operation: "complete_milestone", ...result } as any,
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logError("tool", `gsd_complete_milestone failed: ${msg}`);
+        return {
+          content: [{ type: "text" as const, text: `Error: ${msg}` }],
+          details: { operation: "complete_milestone", error: msg } as any,
+        };
+      }
+    },
+  });
+
+  // ── Tool 11: gsd_validate_milestone ───────────────────────────────────
+  pi.registerTool({
+    name: "gsd_validate_milestone",
+    label: "Validate Milestone",
+    description:
+      "Record a milestone validation verdict (pass, needs-attention, or needs-remediation). " +
+      "Optionally includes remediation slices for issues found.",
+    promptSnippet:
+      "Record a validation verdict for a GSD milestone",
+    promptGuidelines: [
+      "Use gsd_validate_milestone after reviewing a completed milestone.",
+      "Verdict must be 'pass', 'needs-attention', or 'needs-remediation'.",
+      "For needs-remediation, provide remediation_slices with fix descriptions.",
+    ],
+    parameters: Type.Object({
+      milestone_id: Type.String({ description: "Milestone ID (e.g. M001)" }),
+      verdict: Type.Union(
+        [
+          Type.Literal("pass"),
+          Type.Literal("needs-attention"),
+          Type.Literal("needs-remediation"),
+        ],
+        { description: "Validation verdict" },
+      ),
+      summary: Type.String({ description: "Summary of validation findings" }),
+      remediation_slices: Type.Optional(
+        Type.Array(Type.String(), {
+          description: "Optional array of remediation slice descriptions",
+        }),
+      ),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      const dbAvailable = await ensureDbOpen();
+      if (!dbAvailable) {
+        return {
+          content: [{ type: "text" as const, text: "Error: GSD database is not available." }],
+          details: { operation: "validate_milestone", error: "db_unavailable" } as any,
+        };
+      }
+      try {
+        const { getEngine } = await import("../workflow-engine.js");
+        const engine = getEngine(process.cwd());
+        const result = engine.validateMilestone({
+          milestoneId: params.milestone_id,
+          verdict: params.verdict,
+          summary: params.summary,
+          remediationSlices: params.remediation_slices,
+        });
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Milestone ${result.milestoneId} validated: ${result.verdict}. ${result.summary}`,
+            },
+          ],
+          details: { operation: "validate_milestone", ...result } as any,
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logError("tool", `gsd_validate_milestone failed: ${msg}`);
+        return {
+          content: [{ type: "text" as const, text: `Error: ${msg}` }],
+          details: { operation: "validate_milestone", error: msg } as any,
+        };
+      }
+    },
+  });
+
+  // ── Tool 12: gsd_update_roadmap ───────────────────────────────────────
+  pi.registerTool({
+    name: "gsd_update_roadmap",
+    label: "Update Roadmap",
+    description:
+      "Add, remove, or reorder slices in a milestone's roadmap. " +
+      "Updates the ROADMAP.md projection automatically.",
+    promptSnippet:
+      "Add/remove/reorder slices in a GSD milestone roadmap",
+    promptGuidelines: [
+      "Use gsd_update_roadmap to modify slices — do NOT manually edit ROADMAP.md.",
+      "Provide add_slices to add new slices, remove_slice_ids to remove, reorder_slice_ids to reorder.",
+      "At least one of add_slices, remove_slice_ids, or reorder_slice_ids must be provided.",
+    ],
+    parameters: Type.Object({
+      milestone_id: Type.String({ description: "Milestone ID (e.g. M001)" }),
+      add_slices: Type.Optional(
+        Type.Array(
+          Type.Object({
+            id: Type.String({ description: "Slice ID (e.g. S01)" }),
+            title: Type.String({ description: "Slice title" }),
+            risk: Type.String({ description: "Risk level (low/medium/high)" }),
+            depends: Type.Array(Type.String(), { description: "IDs of slices this depends on" }),
+            demo: Type.String({ description: "Demo/acceptance criteria" }),
+          }),
+          { description: "Slices to add" },
+        ),
+      ),
+      remove_slice_ids: Type.Optional(
+        Type.Array(Type.String(), { description: "Slice IDs to remove" }),
+      ),
+      reorder_slice_ids: Type.Optional(
+        Type.Array(Type.String(), { description: "Slice IDs in desired order" }),
+      ),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      const dbAvailable = await ensureDbOpen();
+      if (!dbAvailable) {
+        return {
+          content: [{ type: "text" as const, text: "Error: GSD database is not available." }],
+          details: { operation: "update_roadmap", error: "db_unavailable" } as any,
+        };
+      }
+      try {
+        const { getEngine } = await import("../workflow-engine.js");
+        const engine = getEngine(process.cwd());
+        const result = engine.updateRoadmap({
+          milestoneId: params.milestone_id,
+          addSlices: params.add_slices,
+          removeSliceIds: params.remove_slice_ids,
+          reorderSliceIds: params.reorder_slice_ids,
+        });
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Roadmap updated for milestone ${result.milestoneId}. Added: ${result.added}, removed: ${result.removed}, reordered: ${result.reordered}.`,
+            },
+          ],
+          details: { operation: "update_roadmap", ...result } as any,
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logError("tool", `gsd_update_roadmap failed: ${msg}`);
+        return {
+          content: [{ type: "text" as const, text: `Error: ${msg}` }],
+          details: { operation: "update_roadmap", error: msg } as any,
+        };
+      }
+    },
+  });
+
+  // ── Tool 13: gsd_save_context ─────────────────────────────────────────
+  pi.registerTool({
+    name: "gsd_save_context",
+    label: "Save Context",
+    description:
+      "Save milestone context content. " +
+      "Updates the CONTEXT.md projection automatically.",
+    promptSnippet:
+      "Save context for a GSD milestone (updates DB, renders CONTEXT.md)",
+    promptGuidelines: [
+      "Use gsd_save_context to store milestone context — do NOT manually write CONTEXT.md.",
+      "Provide milestone_id and the full context content.",
+    ],
+    parameters: Type.Object({
+      milestone_id: Type.String({ description: "Milestone ID (e.g. M001)" }),
+      content: Type.String({ description: "Context content to save" }),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      const dbAvailable = await ensureDbOpen();
+      if (!dbAvailable) {
+        return {
+          content: [{ type: "text" as const, text: "Error: GSD database is not available." }],
+          details: { operation: "save_context", error: "db_unavailable" } as any,
+        };
+      }
+      try {
+        const { getEngine } = await import("../workflow-engine.js");
+        const engine = getEngine(process.cwd());
+        const result = engine.saveContext({
+          milestoneId: params.milestone_id,
+          content: params.content,
+        });
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Context saved for milestone ${result.milestoneId}. Next: continue planning or execution.`,
+            },
+          ],
+          details: { operation: "save_context", ...result } as any,
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logError("tool", `gsd_save_context failed: ${msg}`);
+        return {
+          content: [{ type: "text" as const, text: `Error: ${msg}` }],
+          details: { operation: "save_context", error: msg } as any,
+        };
+      }
+    },
+  });
+
+  // ── Tool 14: gsd_save_research ────────────────────────────────────────
+  pi.registerTool({
+    name: "gsd_save_research",
+    label: "Save Research",
+    description:
+      "Save research findings for a milestone. " +
+      "Updates the RESEARCH.md projection automatically.",
+    promptSnippet:
+      "Save research findings for a GSD milestone (updates DB, renders RESEARCH.md)",
+    promptGuidelines: [
+      "Use gsd_save_research to store research — do NOT manually write RESEARCH.md.",
+      "Provide milestone_id and the research content.",
+      "Optionally scope to a specific slice with slice_id.",
+    ],
+    parameters: Type.Object({
+      milestone_id: Type.String({ description: "Milestone ID (e.g. M001)" }),
+      content: Type.String({ description: "Research content to save" }),
+      slice_id: Type.Optional(Type.String({ description: "Optional slice ID to scope research" })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      const dbAvailable = await ensureDbOpen();
+      if (!dbAvailable) {
+        return {
+          content: [{ type: "text" as const, text: "Error: GSD database is not available." }],
+          details: { operation: "save_research", error: "db_unavailable" } as any,
+        };
+      }
+      try {
+        const { getEngine } = await import("../workflow-engine.js");
+        const engine = getEngine(process.cwd());
+        const result = engine.saveResearch({
+          milestoneId: params.milestone_id,
+          content: params.content,
+          sliceId: params.slice_id,
+        });
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Research saved for milestone ${result.milestoneId}. Next: continue planning or execution.`,
+            },
+          ],
+          details: { operation: "save_research", ...result } as any,
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logError("tool", `gsd_save_research failed: ${msg}`);
+        return {
+          content: [{ type: "text" as const, text: `Error: ${msg}` }],
+          details: { operation: "save_research", error: msg } as any,
+        };
+      }
+    },
+  });
+
+  // ── Tool 15: gsd_save_requirements ────────────────────────────────────
+  pi.registerTool({
+    name: "gsd_save_requirements",
+    label: "Save Requirements",
+    description:
+      "Add or update requirements for a milestone. " +
+      "Each requirement has an ID, title, status, and optional metadata.",
+    promptSnippet:
+      "Save requirements for a GSD milestone (batch upsert)",
+    promptGuidelines: [
+      "Use gsd_save_requirements to add or update milestone requirements.",
+      "Provide an array of requirement objects with id, title, and status.",
+      "Optional fields: owner, source.",
+    ],
+    parameters: Type.Object({
+      milestone_id: Type.String({ description: "Milestone ID (e.g. M001)" }),
+      requirements: Type.Array(
+        Type.Object({
+          id: Type.String({ description: "Requirement ID (e.g. R01)" }),
+          title: Type.String({ description: "Requirement title" }),
+          status: Type.String({ description: "Requirement status (e.g. draft, approved, implemented)" }),
+          owner: Type.Optional(Type.String({ description: "Owner of the requirement" })),
+          source: Type.Optional(Type.String({ description: "Source of the requirement" })),
+        }),
+        { description: "Array of requirement definitions" },
+      ),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      const dbAvailable = await ensureDbOpen();
+      if (!dbAvailable) {
+        return {
+          content: [{ type: "text" as const, text: "Error: GSD database is not available." }],
+          details: { operation: "save_requirements", error: "db_unavailable" } as any,
+        };
+      }
+      try {
+        const { getEngine } = await import("../workflow-engine.js");
+        const engine = getEngine(process.cwd());
+        const result = engine.saveRequirements({
+          milestoneId: params.milestone_id,
+          requirements: params.requirements,
+        });
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Saved ${result.count} requirements for milestone ${result.milestoneId}.`,
+            },
+          ],
+          details: { operation: "save_requirements", ...result } as any,
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logError("tool", `gsd_save_requirements failed: ${msg}`);
+        return {
+          content: [{ type: "text" as const, text: `Error: ${msg}` }],
+          details: { operation: "save_requirements", error: msg } as any,
+        };
+      }
+    },
+  });
+
+  // ── Tool 16: gsd_save_uat_result ──────────────────────────────────────
+  pi.registerTool({
+    name: "gsd_save_uat_result",
+    label: "Save UAT Result",
+    description:
+      "Record UAT (User Acceptance Testing) results for a slice. " +
+      "Includes a verdict and individual check results.",
+    promptSnippet:
+      "Record UAT results for a GSD slice (verdict + checks)",
+    promptGuidelines: [
+      "Use gsd_save_uat_result after running acceptance tests on a slice.",
+      "Verdict must be 'pass', 'fail', or 'partial'.",
+      "Provide an array of checks with name, passed (boolean), and optional notes.",
+    ],
+    parameters: Type.Object({
+      milestone_id: Type.String({ description: "Milestone ID (e.g. M001)" }),
+      slice_id: Type.String({ description: "Slice ID (e.g. S01)" }),
+      verdict: Type.Union(
+        [
+          Type.Literal("pass"),
+          Type.Literal("fail"),
+          Type.Literal("partial"),
+        ],
+        { description: "UAT verdict" },
+      ),
+      checks: Type.Array(
+        Type.Object({
+          name: Type.String({ description: "Check name" }),
+          passed: Type.Boolean({ description: "Whether the check passed" }),
+          notes: Type.Optional(Type.String({ description: "Optional notes for the check" })),
+        }),
+        { description: "Array of UAT check results" },
+      ),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      const dbAvailable = await ensureDbOpen();
+      if (!dbAvailable) {
+        return {
+          content: [{ type: "text" as const, text: "Error: GSD database is not available." }],
+          details: { operation: "save_uat_result", error: "db_unavailable" } as any,
+        };
+      }
+      try {
+        const { getEngine } = await import("../workflow-engine.js");
+        const engine = getEngine(process.cwd());
+        const result = engine.saveUatResult({
+          milestoneId: params.milestone_id,
+          sliceId: params.slice_id,
+          verdict: params.verdict,
+          checks: params.checks,
+        });
+        const passedCount = params.checks.filter(c => c.passed).length;
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `UAT result recorded for ${result.milestoneId}/${result.sliceId}: ${result.verdict} (${passedCount}/${params.checks.length} checks passed).`,
+            },
+          ],
+          details: { operation: "save_uat_result", ...result } as any,
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logError("tool", `gsd_save_uat_result failed: ${msg}`);
+        return {
+          content: [{ type: "text" as const, text: `Error: ${msg}` }],
+          details: { operation: "save_uat_result", error: msg } as any,
+        };
+      }
+    },
+  });
+
+  // ── Tool 17: gsd_save_knowledge ───────────────────────────────────────
+  pi.registerTool({
+    name: "gsd_save_knowledge",
+    label: "Save Knowledge",
+    description:
+      "Append a knowledge entry (lesson learned, pattern, insight). " +
+      "Updates the KNOWLEDGE.md projection automatically.",
+    promptSnippet:
+      "Record a knowledge entry for the GSD project (updates DB, renders KNOWLEDGE.md)",
+    promptGuidelines: [
+      "Use gsd_save_knowledge to record lessons learned — do NOT manually write KNOWLEDGE.md.",
+      "Provide the knowledge content and optionally a category and source.",
+    ],
+    parameters: Type.Object({
+      content: Type.String({ description: "Knowledge content to record" }),
+      category: Type.Optional(Type.String({ description: "Optional category (e.g. 'architecture', 'testing')" })),
+      source: Type.Optional(Type.String({ description: "Optional source (e.g. milestone ID, slice ID)" })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+      const dbAvailable = await ensureDbOpen();
+      if (!dbAvailable) {
+        return {
+          content: [{ type: "text" as const, text: "Error: GSD database is not available." }],
+          details: { operation: "save_knowledge", error: "db_unavailable" } as any,
+        };
+      }
+      try {
+        const { getEngine } = await import("../workflow-engine.js");
+        const engine = getEngine(process.cwd());
+        const result = engine.saveKnowledge({
+          content: params.content,
+          category: params.category,
+          source: params.source,
+        });
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Knowledge entry saved: ${result.id}. Next: continue current task.`,
+            },
+          ],
+          details: { operation: "save_knowledge", ...result } as any,
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logError("tool", `gsd_save_knowledge failed: ${msg}`);
+        return {
+          content: [{ type: "text" as const, text: `Error: ${msg}` }],
+          details: { operation: "save_knowledge", error: msg } as any,
         };
       }
     },

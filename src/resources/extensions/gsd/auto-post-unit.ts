@@ -18,6 +18,7 @@ import { parseSummary } from "./legacy/parsers.js";
 import { loadPrompt } from "./prompt-loader.js";
 import {
   resolveSliceFile,
+  resolveSlicePath,
   resolveTaskFile,
   resolveMilestoneFile,
   resolveTasksDir,
@@ -31,6 +32,7 @@ import {
 } from "./worktree.js";
 import { resolveExpectedArtifactPath } from "./auto-artifact-paths.js";
 import { WorkflowEngine, isEngineAvailable } from "./workflow-engine.js";
+import { regenerateIfMissing } from "./workflow-projections.js";
 import { syncStateToProjectRoot } from "./auto-worktree-sync.js";
 import { isDbAvailable } from "./gsd-db.js";
 import { consumeSignal } from "./session-status-io.js";
@@ -54,6 +56,66 @@ import { existsSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { uncheckTaskInPlan } from "./undo.js";
 import { _resetHasChangesCache } from "./native-git-bridge.js";
+
+// ─── Rogue File Detection (cherry-picked from PR #2141) ───────────────────
+
+export interface RogueFileWrite {
+  path: string;
+  unitType: string;
+  unitId: string;
+}
+
+/**
+ * Detects when an LLM agent bypasses engine tool calls and writes
+ * authoritative state files (task/slice summaries) directly to disk
+ * without updating the engine DB. Returns a list of rogue writes.
+ *
+ * This is a safety net — if a summary file exists on disk but the
+ * engine DB doesn't show the task/slice as complete, the agent
+ * bypassed the tool API.
+ */
+export function detectRogueFileWrites(
+  unitType: string,
+  unitId: string,
+  basePath: string,
+): RogueFileWrite[] {
+  if (!isEngineAvailable(basePath)) return [];
+
+  const parts = unitId.split("/");
+  const rogues: RogueFileWrite[] = [];
+
+  if (unitType === "execute-task") {
+    const [mid, sid, tid] = parts;
+    if (!mid || !sid || !tid) return [];
+
+    const summaryPath = resolveTaskFile(basePath, mid, sid, tid, "SUMMARY");
+    if (!summaryPath || !existsSync(summaryPath)) return [];
+
+    const engine = new WorkflowEngine(basePath);
+    const dbRow = engine.getTask(mid, sid, tid);
+    if (!dbRow || dbRow.status !== "done") {
+      rogues.push({ path: summaryPath, unitType, unitId });
+    }
+  } else if (unitType === "complete-slice") {
+    const [mid, sid] = parts;
+    if (!mid || !sid) return [];
+
+    const slicePath = resolveSlicePath(basePath, mid, sid);
+    if (!slicePath) return [];
+
+    // Check for slice summary file
+    const summaryFile = join(slicePath, `${sid}-SUMMARY.md`);
+    if (!existsSync(summaryFile)) return [];
+
+    const engine = new WorkflowEngine(basePath);
+    const dbRow = engine.getSlice(mid, sid);
+    if (!dbRow || dbRow.status !== "done") {
+      rogues.push({ path: summaryFile, unitType, unitId });
+    }
+  }
+
+  return rogues;
+}
 
 export interface PreVerificationOpts {
   skipSettleDelay?: boolean;
@@ -272,6 +334,26 @@ export async function postUnitPreVerification(pctx: PostUnitContext, opts?: PreV
       }
     }
 
+    // Rogue file detection — catch agent writing state files directly
+    // instead of using engine tool calls (D-03 safety net)
+    if (!s.currentUnit.type.startsWith("hook/")) {
+      try {
+        const rogues = detectRogueFileWrites(s.currentUnit.type, s.currentUnit.id, s.basePath);
+        if (rogues.length > 0) {
+          for (const rogue of rogues) {
+            process.stderr.write(`gsd-rogue: detected rogue file write: ${rogue.path} (${rogue.unitType}/${rogue.unitId})\n`);
+          }
+          ctx.ui.notify(
+            `Warning: Agent wrote ${rogues.length} state file(s) directly instead of using engine tools. ` +
+            `These writes may be inconsistent with engine state.`,
+            "warning",
+          );
+        }
+      } catch (e) {
+        debugLog("postUnit", { phase: "rogue-detection", error: String(e) });
+      }
+    }
+
     // Artifact verification — query engine if available, else fall back to
     // file-existence check via resolveExpectedArtifactPath.
     let triggerArtifactVerified = false;
@@ -292,6 +374,38 @@ export async function postUnitPreVerification(pctx: PostUnitContext, opts?: PreV
             triggerArtifactVerified = !!(sliceRow && sliceRow.status === "done");
           } else if (unitType === "plan-slice" && sid) {
             triggerArtifactVerified = engine.getTasks(mid, sid).length > 0;
+          } else if (unitType === "validate-milestone" && mid) {
+            // Check for VALIDATION.md via engine milestone status
+            const milestoneRow = engine.getMilestone(mid);
+            triggerArtifactVerified = !!(milestoneRow && milestoneRow.status === "done");
+          } else if (unitType === "plan-milestone" && mid) {
+            // Roadmap must exist AND contain parseable slices — an empty
+            // or table-format roadmap silently breaks the entire pipeline.
+            const roadmapPath = resolveMilestoneFile(s.basePath, mid, "ROADMAP");
+            if (roadmapPath) {
+              try {
+                const { parseRoadmap: pr } = await import("./legacy/parsers.js");
+                const content = (await import("node:fs")).readFileSync(roadmapPath, "utf-8");
+                const parsed = pr(content);
+                triggerArtifactVerified = parsed.slices.length > 0;
+                if (!triggerArtifactVerified) {
+                  ctx.ui.notify(
+                    `Roadmap written but contains 0 parseable slices — agent likely used wrong format. Will retry.`,
+                    "warning",
+                  );
+                }
+              } catch {
+                triggerArtifactVerified = false;
+              }
+            }
+          } else if (unitType === "research-slice" && sid) {
+            // Research produces a RESEARCH.md — check file existence with
+            // regeneration fallback if engine has the data
+            regenerateIfMissing(s.basePath, mid, sid, "PLAN");
+            const artifactPath = resolveExpectedArtifactPath(unitType, unitId, s.basePath);
+            triggerArtifactVerified = artifactPath !== null
+              ? existsSync(artifactPath)
+              : true;
           } else {
             // For all other unit types, fall back to file existence
             const artifactPath = resolveExpectedArtifactPath(unitType, unitId, s.basePath);

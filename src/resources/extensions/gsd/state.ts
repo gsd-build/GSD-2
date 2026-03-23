@@ -213,12 +213,23 @@ export async function deriveState(basePath: string): Promise<GSDState> {
       _telemetry.engineDeriveCount++;
       return engineState;
     }
-  } catch {
-    // Fall through to legacy markdown parse — engine not yet initialized or import failed
-    try {
-      const { logWarning } = await import('./workflow-logger.js');
-      logWarning("state", "engine unavailable, falling back to markdown parsing");
-    } catch { /* logger itself not available — truly early init */ }
+    // isEngineAvailable returned false — DB not yet opened. This is normal
+    // during early init (hooks fire before any tool calls ensureDbOpen).
+    // Fall through silently to legacy markdown parse.
+  } catch (engineErr) {
+    // "database is not open" / "no database connection" are expected during
+    // early init before ensureDbOpen runs — fall through silently like
+    // isEngineAvailable() returning false.
+    const errMsg = (engineErr as Error).message ?? "";
+    const isExpectedStartup =
+      errMsg.includes("database is not open") ||
+      errMsg.includes("no database connection");
+    if (!isExpectedStartup) {
+      try {
+        const { logWarning } = await import('./workflow-logger.js');
+        logWarning("state", `engine error, falling back to markdown parsing: ${errMsg}`);
+      } catch { /* logger itself not available — truly early init */ }
+    }
   }
 
   const stopTimer = debugTime("derive-state-impl");

@@ -2,6 +2,7 @@
 // Wraps SQLite via the existing DbAdapter to provide typed query methods
 // for milestones, slices, tasks, and verification evidence. Implements
 // deriveState() to return GSDState from direct DB reads.
+// Provides 17 command handlers delegated to workflow-commands.ts.
 
 import type { DbAdapter } from "./gsd-db.js";
 import { _getAdapter, isDbAvailable } from "./gsd-db.js";
@@ -19,6 +20,16 @@ import {
   startTask as _startTask,
   recordVerification as _recordVerification,
   reportBlocker as _reportBlocker,
+  createMilestone as _createMilestone,
+  planMilestone as _planMilestone,
+  completeMilestone as _completeMilestone,
+  validateMilestone as _validateMilestone,
+  updateRoadmap as _updateRoadmap,
+  saveContext as _saveContext,
+  saveResearch as _saveResearch,
+  saveRequirements as _saveRequirements,
+  saveUatResult as _saveUatResult,
+  saveKnowledge as _saveKnowledge,
   _milestoneProgress,
 } from "./workflow-commands.js";
 import type {
@@ -36,6 +47,26 @@ import type {
   RecordVerificationResult,
   ReportBlockerParams,
   ReportBlockerResult,
+  CreateMilestoneParams,
+  CreateMilestoneResult,
+  PlanMilestoneParams,
+  PlanMilestoneResult,
+  CompleteMilestoneParams,
+  CompleteMilestoneResult,
+  ValidateMilestoneParams,
+  ValidateMilestoneResult,
+  UpdateRoadmapParams,
+  UpdateRoadmapResult,
+  SaveContextParams,
+  SaveContextResult,
+  SaveResearchParams,
+  SaveResearchResult,
+  SaveRequirementsParams,
+  SaveRequirementsResult,
+  SaveUatResultParams,
+  SaveUatResultResult,
+  SaveKnowledgeParams,
+  SaveKnowledgeResult,
 } from "./workflow-commands.js";
 
 // Re-export param/result types so consumers can import from one place
@@ -54,6 +85,26 @@ export type {
   RecordVerificationResult,
   ReportBlockerParams,
   ReportBlockerResult,
+  CreateMilestoneParams,
+  CreateMilestoneResult,
+  PlanMilestoneParams,
+  PlanMilestoneResult,
+  CompleteMilestoneParams,
+  CompleteMilestoneResult,
+  ValidateMilestoneParams,
+  ValidateMilestoneResult,
+  UpdateRoadmapParams,
+  UpdateRoadmapResult,
+  SaveContextParams,
+  SaveContextResult,
+  SaveResearchParams,
+  SaveResearchResult,
+  SaveRequirementsParams,
+  SaveRequirementsResult,
+  SaveUatResultParams,
+  SaveUatResultResult,
+  SaveKnowledgeParams,
+  SaveKnowledgeResult,
 } from "./workflow-commands.js";
 
 // ─── Row Interfaces ──────────────────────────────────────────────────────
@@ -250,6 +301,66 @@ export class WorkflowEngine {
     return result;
   }
 
+  createMilestone(params: CreateMilestoneParams): CreateMilestoneResult {
+    const result = _createMilestone(this.db, params);
+    this.afterCommand("create_milestone", params as unknown as Record<string, unknown>);
+    return result;
+  }
+
+  planMilestone(params: PlanMilestoneParams): PlanMilestoneResult {
+    const result = _planMilestone(this.db, params);
+    this.afterCommand("plan_milestone", params as unknown as Record<string, unknown>);
+    return result;
+  }
+
+  completeMilestone(params: CompleteMilestoneParams): CompleteMilestoneResult {
+    const result = _completeMilestone(this.db, params);
+    this.afterCommand("complete_milestone", params as unknown as Record<string, unknown>);
+    return result;
+  }
+
+  validateMilestone(params: ValidateMilestoneParams): ValidateMilestoneResult {
+    const result = _validateMilestone(this.db, params);
+    this.afterCommand("validate_milestone", params as unknown as Record<string, unknown>);
+    return result;
+  }
+
+  updateRoadmap(params: UpdateRoadmapParams): UpdateRoadmapResult {
+    const result = _updateRoadmap(this.db, params);
+    this.afterCommand("update_roadmap", params as unknown as Record<string, unknown>);
+    return result;
+  }
+
+  saveContext(params: SaveContextParams): SaveContextResult {
+    const result = _saveContext(this.db, params);
+    this.afterCommand("save_context", params as unknown as Record<string, unknown>);
+    return result;
+  }
+
+  saveResearch(params: SaveResearchParams): SaveResearchResult {
+    const result = _saveResearch(this.db, params);
+    this.afterCommand("save_research", params as unknown as Record<string, unknown>);
+    return result;
+  }
+
+  saveRequirements(params: SaveRequirementsParams): SaveRequirementsResult {
+    const result = _saveRequirements(this.db, params);
+    this.afterCommand("save_requirements", params as unknown as Record<string, unknown>);
+    return result;
+  }
+
+  saveUatResult(params: SaveUatResultParams): SaveUatResultResult {
+    const result = _saveUatResult(this.db, params);
+    this.afterCommand("save_uat_result", params as unknown as Record<string, unknown>);
+    return result;
+  }
+
+  saveKnowledge(params: SaveKnowledgeParams): SaveKnowledgeResult {
+    const result = _saveKnowledge(this.db, params);
+    this.afterCommand("save_knowledge", params as unknown as Record<string, unknown>);
+    return result;
+  }
+
   // ── Event replay (cross-worktree reconciliation) ──────────────────
 
   /**
@@ -267,6 +378,16 @@ export class WorkflowEngine {
       start_task: (p) => _startTask(this.db, p as unknown as StartTaskParams),
       record_verification: (p) => _recordVerification(this.db, p as unknown as RecordVerificationParams),
       report_blocker: (p) => _reportBlocker(this.db, p as unknown as ReportBlockerParams),
+      create_milestone: (p) => _createMilestone(this.db, p as unknown as CreateMilestoneParams),
+      plan_milestone: (p) => _planMilestone(this.db, p as unknown as PlanMilestoneParams),
+      complete_milestone: (p) => _completeMilestone(this.db, p as unknown as CompleteMilestoneParams),
+      validate_milestone: (p) => _validateMilestone(this.db, p as unknown as ValidateMilestoneParams),
+      update_roadmap: (p) => _updateRoadmap(this.db, p as unknown as UpdateRoadmapParams),
+      save_context: (p) => _saveContext(this.db, p as unknown as SaveContextParams),
+      save_research: (p) => _saveResearch(this.db, p as unknown as SaveResearchParams),
+      save_requirements: (p) => _saveRequirements(this.db, p as unknown as SaveRequirementsParams),
+      save_uat_result: (p) => _saveUatResult(this.db, p as unknown as SaveUatResultParams),
+      save_knowledge: (p) => _saveKnowledge(this.db, p as unknown as SaveKnowledgeParams),
     };
 
     const handler = handlers[event.cmd];
@@ -317,6 +438,8 @@ export class WorkflowEngine {
       : null;
 
     // Active slice (within active milestone)
+    // First look for an explicitly active slice; if none, promote the first
+    // pending slice whose dependencies are satisfied (mirrors migration logic).
     let activeSlice: ActiveRef | null = null;
     if (activeMilestone) {
       const activeSliceRow = this.db
@@ -329,6 +452,31 @@ export class WorkflowEngine {
           id: activeSliceRow["id"] as string,
           title: activeSliceRow["title"] as string,
         };
+      } else {
+        // No active slice — find first pending slice with deps met
+        const doneSlices = new Set(
+          (this.db
+            .prepare("SELECT id FROM slices WHERE milestone_id = ? AND status = 'done'")
+            .all(activeMilestone.id) as Array<Record<string, unknown>>)
+            .map(r => r["id"] as string),
+        );
+        const pendingSlices = this.db
+          .prepare("SELECT id, title, depends_on FROM slices WHERE milestone_id = ? AND status = 'pending' ORDER BY seq")
+          .all(activeMilestone.id) as Array<Record<string, unknown>>;
+        for (const row of pendingSlices) {
+          const deps = (row["depends_on"] as string || "").split(",").map(s => s.trim()).filter(Boolean);
+          if (deps.every(d => doneSlices.has(d))) {
+            // Promote to active in DB so subsequent calls are consistent
+            this.db
+              .prepare("UPDATE slices SET status = 'active' WHERE milestone_id = ? AND id = ?")
+              .run(activeMilestone.id, row["id"] as string);
+            activeSlice = {
+              id: row["id"] as string,
+              title: row["title"] as string,
+            };
+            break;
+          }
+        }
       }
     }
 

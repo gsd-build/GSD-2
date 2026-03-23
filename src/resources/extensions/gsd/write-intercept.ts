@@ -8,7 +8,8 @@ import { realpathSync } from "node:fs";
  * Patterns matching authoritative .gsd/ state files that agents must NOT write directly.
  *
  * Only STATE.md is blocked — it is purely engine-rendered from DB state.
- * All other .gsd/ files are agent-authored content:
+ * All other .gsd/ files are agent-authored content that agents create and
+ * update during discuss, plan, and execute phases:
  * - REQUIREMENTS.md — agents create during discuss, read during planning
  * - PROJECT.md — agents create during discuss, update at milestone close
  * - ROADMAP.md / PLAN.md — agents create during planning, engine renders checkboxes
