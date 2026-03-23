@@ -1,7 +1,6 @@
 // GSD Extension — Legacy Markdown to Engine Migration
 // Converts legacy markdown-only projects to engine state by parsing
 // existing ROADMAP.md, *-PLAN.md, and *-SUMMARY.md files.
-// Copyright (c) 2026 Jeremy McSpadden <jeremy@fluxlabs.net>
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";

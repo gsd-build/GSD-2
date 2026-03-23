@@ -1,7 +1,6 @@
 // GSD Extension — Command Handler Unit Tests
 // Tests for all 7 workflow command handlers: completeTask, completeSlice,
 // planSlice, saveDecision, startTask, recordVerification, reportBlocker.
-// Copyright (c) 2026 Jeremy McSpadden <jeremy@fluxlabs.net>
 
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";

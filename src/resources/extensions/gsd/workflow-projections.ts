@@ -1,7 +1,6 @@
 // GSD Extension — Projection Renderers (DB -> Markdown)
 // Renders PLAN.md, ROADMAP.md, SUMMARY.md, and STATE.md from database rows.
 // Projections are read-only views of engine state (Layer 3 of the architecture).
-// Copyright (c) 2026 Jeremy McSpadden <jeremy@fluxlabs.net>
 
 import { _getAdapter } from "./gsd-db.js";
 import { atomicWriteSync } from "./atomic-write.js";

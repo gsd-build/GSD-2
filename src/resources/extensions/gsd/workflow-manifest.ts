@@ -1,7 +1,6 @@
 // GSD Extension — State Manifest (Snapshot/Restore)
 // Captures complete DB state as portable JSON. Enables fresh-clone
 // bootstrap from state-manifest.json without parsing markdown.
-// Copyright (c) 2026 Jeremy McSpadden <jeremy@fluxlabs.net>
 
 import type { DbAdapter } from "./gsd-db.js";
 import { transaction } from "./gsd-db.js";

@@ -1,5 +1,4 @@
 // GSD Extension — Import Boundary Tests (CLN-07)
-// Copyright (c) 2026 Jeremy McSpadden <jeremy@fluxlabs.net>
 //
 // Static analysis tests that verify hot-path files do not import parse functions
 // from files.ts or legacy/parsers.ts. These enforce the architectural boundary

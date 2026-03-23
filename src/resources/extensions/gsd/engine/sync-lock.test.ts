@@ -1,5 +1,4 @@
 // GSD-2 Single-Writer State Architecture — Sync lock tests
-// Copyright (c) 2026 Jeremy McSpadden <jeremy@fluxlabs.net>
 
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";

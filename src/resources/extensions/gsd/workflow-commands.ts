@@ -2,7 +2,6 @@
 // All 7 command handlers that form the core mutation API of the WorkflowEngine.
 // Each command validates preconditions, writes atomically via transaction(),
 // and returns rich results with progress context per D-04.
-// Copyright (c) 2026 Jeremy McSpadden <jeremy@fluxlabs.net>
 
 import type { DbAdapter } from "./gsd-db.js";
 import { transaction } from "./gsd-db.js";

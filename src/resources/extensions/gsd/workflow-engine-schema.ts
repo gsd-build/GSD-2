@@ -1,7 +1,6 @@
 // GSD Extension — Schema v5: Workflow Engine Tables
 // Adds milestones, slices, tasks, and verification_evidence tables
 // to the existing SQLite database for the single-writer state engine.
-// Copyright (c) 2026 Jeremy McSpadden <jeremy@fluxlabs.net>
 
 import type { DbAdapter } from "./gsd-db.js";
 

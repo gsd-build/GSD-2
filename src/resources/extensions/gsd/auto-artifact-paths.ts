@@ -1,6 +1,5 @@
 /**
  * GSD Auto-mode — Artifact Path Resolution
- * Copyright (c) 2026 Jeremy McSpadden <jeremy@fluxlabs.net>
  *
  * resolveExpectedArtifactPath and diagnoseExpectedArtifact moved here from
  * auto-recovery.ts (Phase 5 dead-code cleanup). The artifact verification

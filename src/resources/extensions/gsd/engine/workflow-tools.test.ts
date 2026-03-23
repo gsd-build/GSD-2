@@ -1,6 +1,5 @@
 // GSD Extension — Workflow Tools Integration Tests
 // Tests for deriveState engine bridge, telemetry, and tool registration smoke test.
-// Copyright (c) 2026 Jeremy McSpadden <jeremy@fluxlabs.net>
 
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";

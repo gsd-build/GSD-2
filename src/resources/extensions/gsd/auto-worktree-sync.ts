@@ -1,7 +1,6 @@
 // GSD-2 Single-Writer State Architecture — Worktree Sync
 // Syncs state between worktree and project root using snapshot/restore (engine
 // projects) or file-copy (legacy projects without state-manifest.json).
-// Copyright (c) 2026 Jeremy McSpadden <jeremy@fluxlabs.net>
 
 import {
   existsSync,
