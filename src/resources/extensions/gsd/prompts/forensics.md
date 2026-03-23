@@ -101,6 +101,8 @@ Explain your findings:
 - **Code snippet** — the problematic code and what it should do instead
 - **Recovery** — what the user can do right now to get unstuck
 
+{{dedupSection}}
+
 Then **offer GitHub issue creation**: "Would you like me to create a GitHub issue for this on gsd-build/gsd-2?"
 
 **CRITICAL: The `github_issues` tool ONLY targets the current user's repository — it has no `repo` parameter. You MUST use `gh issue create --repo gsd-build/gsd-2` via the `bash` tool to file on the correct repo. Do NOT use the `github_issues` tool for this.**
