@@ -472,6 +472,13 @@ export function closeDatabase(): void {
     currentPath = null;
     currentPid = 0;
   }
+  // Reset engine singleton so next openDatabase gets a fresh one
+  try {
+    const { resetEngine } = require("./workflow-engine.js") as typeof import("./workflow-engine.js");
+    resetEngine();
+  } catch {
+    // workflow-engine may not be loaded yet — safe to skip
+  }
 }
 
 /**

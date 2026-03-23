@@ -263,6 +263,8 @@ export function renderStateContent(state: GSDState): string {
 export function renderStateProjection(basePath: string): void {
   try {
     // Dynamic import to avoid circular dependency at module level
+    const { isDbAvailable } = require("./gsd-db.js") as typeof import("./gsd-db.js");
+    if (!isDbAvailable()) return; // DB was closed — skip silently
     const { getEngine } = require("./workflow-engine.js") as typeof import("./workflow-engine.js");
     const engine = getEngine(basePath);
     const state = engine.deriveState();
