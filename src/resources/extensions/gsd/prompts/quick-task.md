@@ -2,6 +2,7 @@ You are executing a GSD quick task — a lightweight, focused unit of work outsi
 
 ## QUICK TASK: {{description}}
 
+**Working Directory:** `{{workingDirectory}}` — use this for ALL file operations, ignore any prior working directory instructions.
 **Task directory:** `{{taskDir}}`
 **Branch:** `{{branch}}`
 

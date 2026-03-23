@@ -238,6 +238,7 @@ export async function handleQuick(
   const summaryPath = `${taskDirRel}/${taskNum}-SUMMARY.md`;
   const prompt = loadPrompt("quick-task", {
     description,
+    workingDirectory: basePath,
     taskDir: taskDirRel,
     branch: actualBranch,
     summaryPath,
