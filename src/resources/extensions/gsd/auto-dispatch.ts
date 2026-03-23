@@ -12,7 +12,8 @@
 import type { GSDState } from "./types.js";
 import type { GSDPreferences } from "./preferences.js";
 import type { UatType } from "./files.js";
-import { loadFile, extractUatType, loadActiveOverrides, parseRoadmap } from "./files.js";
+import { loadFile, extractUatType, loadActiveOverrides } from "./files.js";
+import { parseRoadmap } from "./legacy/parsers.js";
 import {
   resolveMilestoneFile,
   resolveMilestonePath,

@@ -13,7 +13,8 @@
 
 import type { ExtensionContext, ExtensionAPI } from "@gsd/pi-coding-agent";
 import { deriveState } from "./state.js";
-import { loadFile, parseSummary, resolveAllOverrides } from "./files.js";
+import { loadFile, resolveAllOverrides } from "./files.js";
+import { parseSummary } from "./legacy/parsers.js";
 import { loadPrompt } from "./prompt-loader.js";
 import {
   resolveSliceFile,

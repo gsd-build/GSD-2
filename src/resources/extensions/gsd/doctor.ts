@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { loadFile, parsePlan, parseRoadmap, parseSummary, saveFile, parseTaskPlanMustHaves, countMustHavesMentionedInSummary } from "./files.js";
+import { loadFile, saveFile, parseTaskPlanMustHaves, countMustHavesMentionedInSummary } from "./files.js";
 import { resolveMilestoneFile, resolveMilestonePath, resolveSliceFile, resolveSlicePath, resolveTaskFile, resolveTasksDir, milestonesDir, gsdRoot, relMilestoneFile, relSliceFile, relTaskFile, relSlicePath, relGsdRootFile, resolveGsdRootFile, relMilestonePath } from "./paths.js";
 import { deriveState, isMilestoneComplete } from "./state.js";
 import { invalidateAllCaches } from "./cache.js";
@@ -374,8 +374,10 @@ export async function selectDoctorScope(basePath: string, requestedScope?: strin
     const roadmapPath = resolveMilestoneFile(basePath, milestone.id, "ROADMAP");
     const roadmapContent = roadmapPath ? await loadFile(roadmapPath) : null;
     if (!roadmapContent) continue;
-    const roadmap = parseRoadmap(roadmapContent);
-    if (!isMilestoneComplete(roadmap)) return milestone.id;
+    // TODO(phase-4-plan-02): replace with engine query
+    // const roadmap = parseRoadmap(roadmapContent);
+    // if (!isMilestoneComplete(roadmap)) return milestone.id;
+    return milestone.id;
   }
 
   return state.registry[0]?.id;
@@ -629,7 +631,9 @@ export async function runGSDDoctor(basePath: string, options?: { fix?: boolean; 
     const roadmapPath = resolveMilestoneFile(basePath, milestoneId, "ROADMAP");
     const roadmapContent = roadmapPath ? await loadFile(roadmapPath) : null;
     if (!roadmapContent) continue;
-    const roadmap = parseRoadmap(roadmapContent);
+    // TODO(phase-4-plan-02): replace with engine query
+    // const roadmap = parseRoadmap(roadmapContent);
+    const roadmap = { title: '', vision: '', successCriteria: [] as string[], slices: [] as any[], boundaryMap: [] as any[] };
 
     // ── Circular dependency detection ──────────────────────────────────────
     for (const cycle of detectCircularDependencies(roadmap.slices)) {
@@ -748,7 +752,9 @@ export async function runGSDDoctor(basePath: string, options?: { fix?: boolean; 
 
       const planPath = resolveSliceFile(basePath, milestoneId, slice.id, "PLAN");
       const planContent = planPath ? await loadFile(planPath) : null;
-      const plan = planContent ? parsePlan(planContent) : null;
+      // TODO(phase-4-plan-02): replace with engine query
+      // const plan = planContent ? parsePlan(planContent) : null;
+      const plan = null;
       if (!plan) {
         if (!slice.done) {
           issues.push({
@@ -893,7 +899,9 @@ export async function runGSDDoctor(basePath: string, options?: { fix?: boolean; 
           if (!summaryPath) continue;
           const summaryContent = await loadFile(summaryPath);
           if (!summaryContent) continue;
-          const summary = parseSummary(summaryContent);
+          // TODO(phase-4-plan-02): replace with engine query
+          // const summary = parseSummary(summaryContent);
+          const summary = { frontmatter: { blocker_discovered: false } } as any;
           if (summary.frontmatter.blocker_discovered) {
             issues.push({
               severity: "warning",

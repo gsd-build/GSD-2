@@ -11,7 +11,8 @@
  */
 
 import type { ExtensionContext, ExtensionAPI } from "@gsd/pi-coding-agent";
-import { loadFile, parsePlan } from "./files.js";
+import { loadFile } from "./files.js";
+import { parsePlan } from "./legacy/parsers.js";
 import { resolveSliceFile, resolveSlicePath } from "./paths.js";
 import { loadEffectiveGSDPreferences } from "./preferences.js";
 import {

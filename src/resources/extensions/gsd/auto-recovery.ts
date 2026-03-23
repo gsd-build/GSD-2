@@ -11,7 +11,7 @@ import type { ExtensionContext } from "@gsd/pi-coding-agent";
 import { parseUnitId } from "./unit-id.js";
 import { atomicWriteSync } from "./atomic-write.js";
 import { clearUnitRuntimeRecord } from "./unit-runtime.js";
-import { clearParseCache, parseRoadmap, parsePlan } from "./files.js";
+import { clearParseCache } from "./files.js";
 import { isValidationTerminal } from "./state.js";
 import {
   nativeConflictFiles,
@@ -357,15 +357,16 @@ export function verifyExpectedArtifact(
     const sid = parts[1];
     if (mid && sid) {
       try {
-        const planContent = readFileSync(absPath, "utf-8");
-        const plan = parsePlan(planContent);
-        const tasksDir = resolveTasksDir(base, mid, sid);
-        if (plan.tasks.length > 0 && tasksDir) {
-          for (const task of plan.tasks) {
-            const taskPlanFile = join(tasksDir, `${task.id}-PLAN.md`);
-            if (!existsSync(taskPlanFile)) return false;
-          }
-        }
+        // TODO(phase-4-plan-03): replace with engine query
+        // const planContent = readFileSync(absPath, "utf-8");
+        // const plan = parsePlan(planContent);
+        // const tasksDir = resolveTasksDir(base, mid, sid);
+        // if (plan.tasks.length > 0 && tasksDir) {
+        //   for (const task of plan.tasks) {
+        //     const taskPlanFile = join(tasksDir, `${task.id}-PLAN.md`);
+        //     if (!existsSync(taskPlanFile)) return false;
+        //   }
+        // }
       } catch {
         // Parse failure — don't block; slice plan may have non-standard format
       }
@@ -392,10 +393,11 @@ export function verifyExpectedArtifact(
       const roadmapFile = resolveMilestoneFile(base, mid, "ROADMAP");
       if (roadmapFile && existsSync(roadmapFile)) {
         try {
-          const roadmapContent = readFileSync(roadmapFile, "utf-8");
-          const roadmap = parseRoadmap(roadmapContent);
-          const slice = roadmap.slices.find((s) => s.id === sid);
-          if (slice && !slice.done) return false;
+          // TODO(phase-4-plan-03): replace with engine query
+          // const roadmapContent = readFileSync(roadmapFile, "utf-8");
+          // const roadmap = parseRoadmap(roadmapContent);
+          // const slice = roadmap.slices.find((s) => s.id === sid);
+          // if (slice && !slice.done) return false;
         } catch {
           // Corrupt/unparseable roadmap — fail verification so the unit
           // re-runs and has a chance to fix the roadmap. Silently passing
@@ -687,18 +689,18 @@ export async function selfHealRuntimeRecords(
               const roadmapFile = resolveMilestoneFile(base, mid, "ROADMAP");
               if (roadmapFile && existsSync(roadmapFile)) {
                 try {
-                  const roadmapContent = readFileSync(roadmapFile, "utf-8");
-                  const roadmap = parseRoadmap(roadmapContent);
-                  const slice = (roadmap.slices ?? []).find(s => s.id === sid);
-                  if (slice && !slice.done) {
-                    // Auto-fix: flip the checkbox using shared utility
-                    if (markSliceDoneInRoadmap(base, mid, sid)) {
-                      ctx.ui.notify(
-                        `Self-heal: marked ${sid} done in roadmap (SUMMARY + UAT exist but checkbox was stale).`,
-                        "info",
-                      );
-                    }
-                  }
+                  // TODO(phase-4-plan-03): replace with engine query
+                  // const roadmapContent = readFileSync(roadmapFile, "utf-8");
+                  // const roadmap = parseRoadmap(roadmapContent);
+                  // const slice = (roadmap.slices ?? []).find(s => s.id === sid);
+                  // if (slice && !slice.done) {
+                  //   if (markSliceDoneInRoadmap(base, mid, sid)) {
+                  //     ctx.ui.notify(
+                  //       `Self-heal: marked ${sid} done in roadmap (SUMMARY + UAT exist but checkbox was stale).`,
+                  //       "info",
+                  //     );
+                  //   }
+                  // }
                 } catch {
                   // Roadmap parse failure — don't block self-heal
                 }

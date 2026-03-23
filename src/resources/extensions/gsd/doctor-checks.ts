@@ -3,7 +3,7 @@ import { basename, dirname, join, sep } from "node:path";
 
 import type { DoctorIssue, DoctorIssueCode } from "./doctor-types.js";
 import { readRepoMeta, externalProjectsRoot } from "./repo-identity.js";
-import { loadFile, parseRoadmap } from "./files.js";
+import { loadFile } from "./files.js";
 import { resolveMilestoneFile, milestonesDir, gsdRoot, resolveGsdRootFile, relGsdRootFile } from "./paths.js";
 import { deriveState, isMilestoneComplete } from "./state.js";
 import { saveFile } from "./files.js";
@@ -54,8 +54,10 @@ export async function checkGitHealth(
         const roadmapPath = resolveMilestoneFile(basePath, milestoneId, "ROADMAP");
         const roadmapContent = roadmapPath ? await loadFile(roadmapPath) : null;
         if (roadmapContent) {
-          const roadmap = parseRoadmap(roadmapContent);
-          isComplete = isMilestoneComplete(roadmap);
+          // TODO(phase-4-plan-02): replace with engine query
+          // const roadmap = parseRoadmap(roadmapContent);
+          // isComplete = isMilestoneComplete(roadmap);
+          isComplete = false;
         }
       }
 
@@ -101,8 +103,9 @@ export async function checkGitHealth(
           const roadmapContent = roadmapPath ? await loadFile(roadmapPath) : null;
           if (!roadmapContent) continue;
 
-          const roadmap = parseRoadmap(roadmapContent);
-          if (isMilestoneComplete(roadmap)) {
+          // TODO(phase-4-plan-02): replace with engine query
+          // const roadmap = parseRoadmap(roadmapContent);
+          if (false /* isMilestoneComplete(roadmap) */) {
             issues.push({
               severity: "info",
               code: "stale_milestone_branch",

@@ -3,7 +3,7 @@ import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
-import { parseSummary } from '../files.ts';
+import { parseSummary } from '../legacy/parsers.ts';
 import { deriveState } from '../state.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));

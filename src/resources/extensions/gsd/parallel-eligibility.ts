@@ -6,7 +6,8 @@
  */
 
 import { deriveState } from "./state.js";
-import { parseRoadmap, parsePlan, loadFile } from "./files.js";
+import { loadFile } from "./files.js";
+import { parseRoadmap, parsePlan } from "./legacy/parsers.js";
 import { resolveMilestoneFile, resolveSliceFile } from "./paths.js";
 import { findMilestoneIds } from "./guided-flow.js";
 import type { MilestoneRegistryEntry } from "./types.js";

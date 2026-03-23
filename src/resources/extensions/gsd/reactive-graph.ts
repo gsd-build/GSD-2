@@ -10,7 +10,8 @@
  */
 
 import type { TaskIO, DerivedTaskNode, ReactiveExecutionState } from "./types.js";
-import { loadFile, parsePlan, parseTaskPlanIO } from "./files.js";
+import { loadFile, parseTaskPlanIO } from "./files.js";
+import { parsePlan } from "./legacy/parsers.js";
 import { resolveTasksDir, resolveTaskFiles } from "./paths.js";
 import { join } from "node:path";
 import { loadJsonFileOrNull, saveJsonFile } from "./json-persistence.js";

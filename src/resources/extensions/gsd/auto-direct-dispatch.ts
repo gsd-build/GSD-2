@@ -9,7 +9,8 @@ import type {
 } from "@gsd/pi-coding-agent";
 
 import { deriveState } from "./state.js";
-import { loadFile, parseRoadmap } from "./files.js";
+import { loadFile } from "./files.js";
+import { parseRoadmap } from "./legacy/parsers.js";
 import {
   resolveMilestoneFile, resolveSliceFile, relSliceFile,
 } from "./paths.js";

@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 
 import { writeGSDDirectory } from '../migrate/writer.ts';
 import { generatePreview } from '../migrate/preview.ts';
-import { parseRoadmap, parsePlan, parseSummary } from '../files.ts';
+import { parseRoadmap, parsePlan, parseSummary } from '../legacy/parsers.ts';
 import { deriveState } from '../state.ts';
 import { invalidateAllCaches } from '../cache.ts';
 import type {

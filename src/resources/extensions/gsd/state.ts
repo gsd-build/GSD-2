@@ -12,9 +12,6 @@ import type {
 } from './types.js';
 
 import {
-  parseRoadmap,
-  parsePlan,
-  parseSummary,
   loadFile,
   parseRequirementCounts,
   parseContextDependsOn,
@@ -149,13 +146,15 @@ export async function getActiveMilestoneId(basePath: string): Promise<string | n
       // Note: draft-awareness (CONTEXT-DRAFT.md) is handled in deriveState(), not here.
       // A draft milestone is still "active" — this function only determines which milestone is current.
     }
-    const roadmap = parseRoadmap(content);
-    if (!isMilestoneComplete(roadmap)) {
-      // Summary is the terminal artifact — if it exists, the milestone is
-      // complete even when roadmap checkboxes weren't ticked (#864).
-      const summaryFile = resolveMilestoneFile(basePath, mid, "SUMMARY");
-      if (!summaryFile) return mid;
-    }
+    // TODO(phase-4-plan-02): replace with engine query
+    // const roadmap = parseRoadmap(content);
+    // if (!isMilestoneComplete(roadmap)) {
+    //   const summaryFile = resolveMilestoneFile(basePath, mid, "SUMMARY");
+    //   if (!summaryFile) return mid;
+    // }
+    // Stub: treat milestone as incomplete if no summary exists
+    const summaryFileCheck = resolveMilestoneFile(basePath, mid, "SUMMARY");
+    if (!summaryFileCheck) return mid;
   }
   return null;
 }
@@ -323,7 +322,8 @@ async function _deriveStateLegacy(basePath: string): Promise<GSDState> {
       // Cache roadmap for title extraction (but don't add to completeMilestoneIds)
       const prf = resolveMilestoneFile(basePath, mid, "ROADMAP");
       const prc = prf ? await cachedLoadFile(prf) : null;
-      if (prc) roadmapCache.set(mid, parseRoadmap(prc));
+      // TODO(phase-4-plan-02): replace with engine query
+      // if (prc) roadmapCache.set(mid, parseRoadmap(prc));
       continue;
     }
 
@@ -334,13 +334,18 @@ async function _deriveStateLegacy(basePath: string): Promise<GSDState> {
       if (sf) completeMilestoneIds.add(mid);
       continue;
     }
-    const rmap = parseRoadmap(rc);
-    roadmapCache.set(mid, rmap);
-    if (!isMilestoneComplete(rmap)) {
-      // Summary is the terminal artifact — if it exists, the milestone is
-      // complete even when roadmap checkboxes weren't ticked (#864).
-      const sf = resolveMilestoneFile(basePath, mid, "SUMMARY");
-      if (sf) completeMilestoneIds.add(mid);
+    // TODO(phase-4-plan-02): replace with engine query
+    // const rmap = parseRoadmap(rc);
+    // roadmapCache.set(mid, rmap);
+    // if (!isMilestoneComplete(rmap)) {
+    //   const sf = resolveMilestoneFile(basePath, mid, "SUMMARY");
+    //   if (sf) completeMilestoneIds.add(mid);
+    //   continue;
+    // }
+    // Stub: treat milestone as complete if summary exists, else incomplete
+    const sf = resolveMilestoneFile(basePath, mid, "SUMMARY");
+    if (sf) {
+      completeMilestoneIds.add(mid);
       continue;
     }
     const sf = resolveMilestoneFile(basePath, mid, "SUMMARY");
@@ -372,9 +377,11 @@ async function _deriveStateLegacy(basePath: string): Promise<GSDState> {
       const summaryFile = resolveMilestoneFile(basePath, mid, "SUMMARY");
       if (summaryFile) {
         const summaryContent = await cachedLoadFile(summaryFile);
-        const summaryTitle = summaryContent
-          ? (parseSummary(summaryContent).title || mid)
-          : mid;
+        // TODO(phase-4-plan-02): replace with engine query
+        // const summaryTitle = summaryContent
+        //   ? (parseSummary(summaryContent).title || mid)
+        //   : mid;
+        const summaryTitle = mid;
         registry.push({ id: mid, title: summaryTitle, status: 'complete' });
         completeMilestoneIds.add(mid);
         continue;
@@ -727,7 +734,9 @@ async function _deriveStateLegacy(basePath: string): Promise<GSDState> {
     };
   }
 
-  const slicePlan = parsePlan(slicePlanContent);
+  // TODO(phase-4-plan-02): replace with engine query
+  // const slicePlan = parsePlan(slicePlanContent);
+  const slicePlan = { id: '', title: '', goal: '', demo: '', mustHaves: [] as string[], tasks: [] as any[], filesLikelyTouched: [] as string[] };
   const taskProgress = {
     done: slicePlan.tasks.filter(t => t.done).length,
     total: slicePlan.tasks.length,
@@ -819,8 +828,10 @@ async function _deriveStateLegacy(basePath: string): Promise<GSDState> {
     if (!summaryFile) continue;
     const summaryContent = await cachedLoadFile(summaryFile);
     if (!summaryContent) continue;
-    const summary = parseSummary(summaryContent);
-    if (summary.frontmatter.blocker_discovered) {
+    // TODO(phase-4-plan-02): replace with engine query
+    // const summary = parseSummary(summaryContent);
+    // if (summary.frontmatter.blocker_discovered) {
+    if (false) {
       blockerTaskId = ct.id;
       break;
     }

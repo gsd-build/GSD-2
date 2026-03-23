@@ -6,7 +6,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { _getAdapter, transaction } from "./gsd-db.js";
-import { parseRoadmap, parsePlan, parseSummary } from "./files.js";
+import { parseRoadmap, parsePlan, parseSummary } from "./legacy/parsers.js";
 import { appendEvent } from "./workflow-events.js";
 import { writeManifest } from "./workflow-manifest.js";
 

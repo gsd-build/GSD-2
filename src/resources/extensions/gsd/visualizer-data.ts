@@ -3,7 +3,8 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { deriveState } from './state.js';
-import { parseRoadmap, parsePlan, parseSummary, loadFile } from './files.js';
+import { loadFile } from './files.js';
+import { parseRoadmap, parsePlan, parseSummary } from './legacy/parsers.js';
 import { findMilestoneIds } from './milestone-ids.js';
 import { resolveMilestoneFile, resolveSliceFile, resolveGsdRootFile, gsdRoot } from './paths.js';
 import {

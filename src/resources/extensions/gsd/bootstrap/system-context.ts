@@ -12,7 +12,8 @@ import { hasSkillSnapshot, detectNewSkills, formatSkillsXml } from "../skill-dis
 import { getActiveAutoWorktreeContext } from "../auto-worktree.js";
 import { getActiveWorktreeName, getWorktreeOriginalCwd } from "../worktree-command.js";
 import { deriveState } from "../state.js";
-import { formatOverridesSection, loadActiveOverrides, loadFile, parseContinue, parseSummary } from "../files.js";
+import { formatOverridesSection, loadActiveOverrides, loadFile, parseContinue } from "../files.js";
+import { parseSummary } from "../legacy/parsers.js";
 import { toPosixPath } from "../../shared/mod.js";
 import { markCmuxPromptShown, shouldPromptToEnableCmux } from "../../cmux/index.js";
 

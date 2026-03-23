@@ -1,6 +1,7 @@
 import { join } from "node:path";
 
-import { loadFile, parsePlan, parseRoadmap } from "./files.js";
+import { loadFile } from "./files.js";
+import { parseRoadmap, parsePlan } from "./legacy/parsers.js";
 import {
   resolveMilestoneFile,
   resolveSliceFile,
