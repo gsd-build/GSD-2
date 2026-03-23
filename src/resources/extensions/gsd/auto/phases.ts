@@ -671,9 +671,27 @@ export async function runGuards(
   // Budget ceiling guard
   const budgetCeiling = prefs?.budget_ceiling;
   if (budgetCeiling !== undefined && budgetCeiling > 0) {
-    const currentLedger = deps.getLedger() as { units: unknown } | null;
-    const totalCost = currentLedger
-      ? deps.getProjectTotals(currentLedger.units).cost
+    const currentLedger = deps.getLedger() as { units: Array<{ startedAt?: number | string; [k: string]: unknown }> } | null;
+    // Parallel workers should only count cost from the current session, not
+    // historical project-wide spend. Without this filter, workers on fresh
+    // milestones hit the ceiling immediately because metrics.json accumulates
+    // cost across all milestones ever run.
+    let relevantUnits = currentLedger?.units ?? [];
+    if (process.env.GSD_PARALLEL_WORKER && s.autoStartTime) {
+      const sessionStart = typeof s.autoStartTime === "number"
+        ? s.autoStartTime
+        : new Date(s.autoStartTime).getTime();
+      relevantUnits = relevantUnits.filter((u) => {
+        const unitStart = typeof u.startedAt === "number"
+          ? u.startedAt
+          : typeof u.startedAt === "string"
+            ? new Date(u.startedAt).getTime()
+            : 0;
+        return unitStart >= sessionStart;
+      });
+    }
+    const totalCost = relevantUnits.length > 0
+      ? deps.getProjectTotals(relevantUnits).cost
       : 0;
     const budgetPct = totalCost / budgetCeiling;
     const budgetAlertLevel = deps.getBudgetAlertLevel(budgetPct);

@@ -84,10 +84,22 @@ let _lockAcquiredAt: number = 0;
 
 const LOCK_FILE = "auto.lock";
 
+/**
+ * Derive the effective lock file name for the current process.
+ * Parallel workers use a per-milestone lock file to avoid contending
+ * with the coordinator or other workers on the shared `.gsd/` directory.
+ */
+function effectiveLockFile(): string {
+  if (process.env.GSD_PARALLEL_WORKER && process.env.GSD_MILESTONE_LOCK) {
+    return `auto-${process.env.GSD_MILESTONE_LOCK}.lock`;
+  }
+  return LOCK_FILE;
+}
+
 function lockPath(basePath: string): string {
   // If we have a snapshotted path from acquisition, use it for consistency
   if (_snapshotLockPath) return _snapshotLockPath;
-  return join(gsdRoot(basePath), LOCK_FILE);
+  return join(gsdRoot(basePath), effectiveLockFile());
 }
 
 // ─── Stray Lock Cleanup ─────────────────────────────────────────────────────
@@ -218,13 +230,18 @@ export function acquireSessionLock(basePath: string): SessionLockResult {
 
   const gsdDir = gsdRoot(basePath);
 
-  try {
-    // Try to acquire an exclusive OS-level lock on the lock file.
-    // We lock the directory (gsdRoot) since proper-lockfile works best
-    // on directories, and the lock file itself may not exist yet.
-    mkdirSync(gsdDir, { recursive: true });
+  // Parallel workers lock a per-milestone subdirectory instead of the shared
+  // .gsd/ root. This prevents contention with the coordinator and other workers.
+  const lockTarget = (process.env.GSD_PARALLEL_WORKER && process.env.GSD_MILESTONE_LOCK)
+    ? join(gsdDir, "parallel", process.env.GSD_MILESTONE_LOCK)
+    : gsdDir;
 
-    const release = lockfile.lockSync(gsdDir, {
+  try {
+    // Try to acquire an exclusive OS-level lock on the lock target.
+    // We lock a directory since proper-lockfile works best on directories.
+    mkdirSync(lockTarget, { recursive: true });
+
+    const release = lockfile.lockSync(lockTarget, {
       realpath: false,
       stale: 1_800_000, // 30 minutes — safe for laptop sleep / long event loop stalls
       update: 10_000, // Update lock mtime every 10s to prove liveness
@@ -268,7 +285,10 @@ export function acquireSessionLock(basePath: string): SessionLockResult {
 
     // Safety net: clean up lock dir on process exit if _releaseFunction
     // wasn't called (e.g., normal exit after clean completion) (#1245).
+    // Register both the gsdDir AND the per-milestone lockTarget so the exit
+    // handler cleans up the correct proper-lockfile directory.
     ensureExitHandler(gsdDir);
+    if (lockTarget !== gsdDir) ensureExitHandler(lockTarget);
 
     // Write the informational lock data
     atomicWriteSync(lp, JSON.stringify(lockData, null, 2));
@@ -283,12 +303,12 @@ export function acquireSessionLock(basePath: string): SessionLockResult {
     // If no lock file or no alive process, try to clean up and re-acquire (#1245)
     if (!existingData || (existingPid && !isPidAlive(existingPid))) {
       try {
-        const lockDir = join(gsdDir + ".lock");
+        const lockDir = join(lockTarget + ".lock");
         if (existsSync(lockDir)) rmSync(lockDir, { recursive: true, force: true });
         if (existsSync(lp)) unlinkSync(lp);
 
         // Retry acquisition after cleanup
-        const release = lockfile.lockSync(gsdDir, {
+        const release = lockfile.lockSync(lockTarget, {
           realpath: false,
           stale: 1_800_000, // 30 minutes — match primary lock settings
           update: 10_000,
@@ -324,6 +344,7 @@ export function acquireSessionLock(basePath: string): SessionLockResult {
 
         // Safety net — uses centralized handler to avoid double-registration
         ensureExitHandler(gsdDir);
+        if (lockTarget !== gsdDir) ensureExitHandler(lockTarget);
 
         atomicWriteSync(lp, JSON.stringify(lockData, null, 2));
         return { acquired: true };

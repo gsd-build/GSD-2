@@ -29,6 +29,11 @@ export async function guardRemoteSession(
 ): Promise<boolean> {
   if (isAutoActive() || isAutoPaused()) return true;
 
+  // Parallel workers are spawned by the coordinator and inherit the project
+  // root. They will detect the coordinator's lock file as a "remote session",
+  // but this is expected — the coordinator IS running. Skip the guard.
+  if (process.env.GSD_PARALLEL_WORKER === "1") return true;
+
   const remote = checkRemoteAutoSession(projectRoot());
   if (!remote.running || !remote.pid) return true;
 

@@ -523,11 +523,11 @@ export function spawnWorker(
       env: {
         ...process.env,
         GSD_MILESTONE_LOCK: milestoneId,
-        // Pass the real project root so workers don't need to re-derive it.
-        // Without this, process.cwd() resolves symlinks and the worktree
-        // path heuristic can match the user-level ~/.gsd instead of the
-        // project .gsd, causing writes to ~ and corrupting user config.
-        GSD_PROJECT_ROOT: basePath,
+        // Point workers at their own worktree so session lock, state
+        // derivation, and artifact writes target the isolated worktree —
+        // not the shared project root. This prevents lock contention with
+        // the coordinator and cross-milestone artifact pollution.
+        GSD_PROJECT_ROOT: worker.worktreePath,
         // Prevent workers from spawning their own parallel sessions
         GSD_PARALLEL_WORKER: "1",
       },
@@ -897,7 +897,13 @@ export function refreshWorkerStatuses(
     const diskStatus = statusMap.get(mid);
     if (!diskStatus) {
       if (!isPidAlive(worker.pid)) {
-        worker.state = worker.completedUnits > 0 ? "stopped" : "error";
+        // Only mark as "error" if the worker was previously "running" — a worker
+        // that exited cleanly with 0 units (e.g., because it couldn't acquire a
+        // lock or hit budget ceiling) wrote "stopped" to its status file before
+        // stale session cleanup removed it. Preserve "stopped" if already set.
+        if (worker.state === "running") {
+          worker.state = "stopped";
+        }
         worker.process = null;
       }
       continue;
