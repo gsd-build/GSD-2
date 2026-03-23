@@ -158,6 +158,47 @@ async function main(): Promise<void> {
     assertTrue(true, 'no crash on missing directories');
   }
 
+  // ─── 6b. syncProjectRootToWorktree copies root-level living docs ──────
+  console.log('\n=== 6b. syncProjectRootToWorktree copies root-level living docs (#1168 regression) ===');
+  {
+    const mainBase = createBase('main');
+    const wtBase = createBase('wt');
+
+    try {
+      // Main repo has root-level living docs
+      const m001Dir = join(mainBase, '.gsd', 'milestones', 'M001');
+      mkdirSync(m001Dir, { recursive: true });
+      writeFileSync(join(m001Dir, 'M001-ROADMAP.md'), '# Roadmap');
+      writeFileSync(join(mainBase, '.gsd', 'DECISIONS.md'), '# Decisions\n## D001');
+      writeFileSync(join(mainBase, '.gsd', 'REQUIREMENTS.md'), '# Requirements\n## R001');
+      writeFileSync(join(mainBase, '.gsd', 'PROJECT.md'), '# Project\nActive milestone: M001');
+      writeFileSync(join(mainBase, '.gsd', 'KNOWLEDGE.md'), '# Knowledge\nSome learning.');
+      writeFileSync(join(mainBase, '.gsd', 'OVERRIDES.md'), '# Overrides');
+      writeFileSync(join(mainBase, '.gsd', 'QUEUE.md'), '# Queue\n- M002 next');
+
+      // Worktree has stale copies
+      writeFileSync(join(wtBase, '.gsd', 'DECISIONS.md'), '# Decisions (stale)');
+      writeFileSync(join(wtBase, '.gsd', 'REQUIREMENTS.md'), '# Requirements (stale)');
+
+      syncProjectRootToWorktree(mainBase, wtBase, 'M001');
+
+      // Root-level files should be overwritten with project root versions
+      const decContent = readFileSync(join(wtBase, '.gsd', 'DECISIONS.md'), 'utf-8');
+      assertTrue(decContent.includes('D001'), '#1168: DECISIONS.md synced to worktree');
+
+      const reqContent = readFileSync(join(wtBase, '.gsd', 'REQUIREMENTS.md'), 'utf-8');
+      assertTrue(reqContent.includes('R001'), '#1168: REQUIREMENTS.md synced to worktree');
+
+      assertTrue(existsSync(join(wtBase, '.gsd', 'PROJECT.md')), '#1168: PROJECT.md synced to worktree');
+      assertTrue(existsSync(join(wtBase, '.gsd', 'KNOWLEDGE.md')), '#1168: KNOWLEDGE.md synced to worktree');
+      assertTrue(existsSync(join(wtBase, '.gsd', 'OVERRIDES.md')), '#1168: OVERRIDES.md synced to worktree');
+      assertTrue(existsSync(join(wtBase, '.gsd', 'QUEUE.md')), '#1168: QUEUE.md synced to worktree');
+    } finally {
+      cleanup(mainBase);
+      cleanup(wtBase);
+    }
+  }
+
   // ─── 7. milestones/ directory created in worktree when missing ────────
   console.log('\n=== 7. milestones/ directory created in worktree when missing ===');
   {

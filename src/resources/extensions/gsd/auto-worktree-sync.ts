@@ -51,6 +51,13 @@ export function syncProjectRootToWorktree(
     join(wtGsd, "milestones", milestoneId),
   );
 
+  // Copy root-level living documents so agents in the worktree see current
+  // decisions, requirements, project state, knowledge, and queue.
+  // Originally added in #1173, accidentally dropped during the #1419 refactor.
+  for (const doc of ["DECISIONS.md", "REQUIREMENTS.md", "PROJECT.md", "KNOWLEDGE.md", "OVERRIDES.md", "QUEUE.md"]) {
+    safeCopy(join(prGsd, doc), join(wtGsd, doc), { force: true });
+  }
+
   // Delete worktree gsd.db so it rebuilds from the freshly synced files.
   // Stale DB rows are the root cause of the infinite skip loop (#853).
   try {
@@ -102,6 +109,15 @@ export function syncStateToProjectRoot(
     join(prGsd, "runtime", "units"),
     { force: true },
   );
+
+  // 5. Root-level living documents — decisions, requirements, project description,
+  // knowledge, overrides, queue. Agents update these during slice execution.
+  // Without syncing back, a new session reads stale copies from the project root,
+  // losing architectural decisions, requirement status updates, and accumulated
+  // knowledge. Originally added in #1173, accidentally dropped during #1419.
+  for (const doc of ["DECISIONS.md", "REQUIREMENTS.md", "PROJECT.md", "KNOWLEDGE.md", "OVERRIDES.md", "QUEUE.md"]) {
+    safeCopy(join(wtGsd, doc), join(prGsd, doc), { force: true });
+  }
 }
 
 // ─── Resource Staleness ───────────────────────────────────────────────────
