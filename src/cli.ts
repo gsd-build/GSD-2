@@ -2,6 +2,7 @@ import {
   AuthStorage,
   DefaultResourceLoader,
   ModelRegistry,
+  runPackageCommand,
   SettingsManager,
   SessionManager,
   createAgentSession,
@@ -151,6 +152,19 @@ if (subcommand && process.argv.includes('--help')) {
   if (printSubcommandHelp(subcommand, process.env.GSD_VERSION || '0.0.0')) {
     process.exit(0)
   }
+}
+
+const packageCommand = await runPackageCommand({
+  appName: 'gsd',
+  args: process.argv.slice(2),
+  cwd: process.cwd(),
+  agentDir,
+  stdout: process.stdout,
+  stderr: process.stderr,
+  allowedCommands: new Set(['install', 'remove', 'list']),
+})
+if (packageCommand.handled) {
+  process.exit(packageCommand.exitCode)
 }
 
 // `gsd config` — replay the setup wizard and exit

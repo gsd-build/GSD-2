@@ -42,6 +42,7 @@ import type {
 	Extension,
 	ExtensionAPI,
 	ExtensionFactory,
+	PostInstallHandler,
 	ExtensionRuntime,
 	LoadExtensionsResult,
 	MessageRenderer,
@@ -463,6 +464,10 @@ function createExtensionAPI(
 			extension.commands.set(name, { name, ...options });
 		},
 
+		registerPostInstall(handler: PostInstallHandler): void {
+			extension.postInstallHandlers.push(handler);
+		},
+
 		registerShortcut(
 			shortcut: KeyId,
 			options: {
@@ -650,6 +655,7 @@ function createExtension(extensionPath: string, resolvedPath: string): Extension
 		commands: new Map(),
 		flags: new Map(),
 		shortcuts: new Map(),
+		postInstallHandlers: [],
 	};
 }
 

@@ -94,6 +94,9 @@ export type {
 	// Provider Registration
 	ProviderConfig,
 	ProviderModelConfig,
+	PostInstallContext,
+	PostInstallHandler,
+	PostInstallScope,
 	ReadToolCallEvent,
 	ReadToolResultEvent,
 	// Commands

@@ -32,6 +32,30 @@ const SUBCOMMAND_HELP: Record<string, string> = {
     'Compare with --continue (-c) which always resumes the most recent session.',
   ].join('\n'),
 
+  install: [
+    'Usage: gsd install <source> [-l, --local]',
+    '',
+    'Install a package/extension source and run any declared post-install hooks.',
+    '',
+    'Examples:',
+    '  gsd install npm:@foo/bar',
+    '  gsd install git:github.com/user/repo',
+    '  gsd install https://github.com/user/repo',
+    '  gsd install ./local/path',
+  ].join('\n'),
+
+  remove: [
+    'Usage: gsd remove <source> [-l, --local]',
+    '',
+    'Remove an installed package source and its settings entry.',
+  ].join('\n'),
+
+  list: [
+    'Usage: gsd list',
+    '',
+    'List installed package sources from user and project settings.',
+  ].join('\n'),
+
   worktree: [
     'Usage: gsd worktree <command> [args]',
     '',
@@ -128,6 +152,9 @@ export function printHelp(version: string): void {
   process.stdout.write('  --help, -h               Print this help and exit\n')
   process.stdout.write('\nSubcommands:\n')
   process.stdout.write('  config                   Re-run the setup wizard\n')
+  process.stdout.write('  install <source>         Install a package/extension source\n')
+  process.stdout.write('  remove <source>          Remove an installed package source\n')
+  process.stdout.write('  list                     List installed package sources\n')
   process.stdout.write('  update                   Update GSD to the latest version\n')
   process.stdout.write('  sessions                 List and resume a past session\n')
   process.stdout.write('  worktree <cmd>           Manage worktrees (list, merge, clean, remove)\n')

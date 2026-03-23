@@ -94,6 +94,9 @@ export type {
 	MessageRenderOptions,
 	ProviderConfig,
 	ProviderModelConfig,
+	PostInstallContext,
+	PostInstallHandler,
+	PostInstallScope,
 	ReadToolCallEvent,
 	RegisteredCommand,
 	RegisteredTool,
@@ -152,6 +155,13 @@ export type {
 	ResolvedResource,
 } from "./core/package-manager.js";
 export { DefaultPackageManager } from "./core/package-manager.js";
+export type {
+	PackageCommand,
+	PackageCommandOptions,
+	PackageCommandRunnerOptions,
+	PackageCommandRunnerResult,
+} from "./core/package-commands.js";
+export { getPackageCommandUsage, parsePackageCommand, runPackageCommand } from "./core/package-commands.js";
 export type { ResourceCollision, ResourceDiagnostic, ResourceLoader } from "./core/resource-loader.js";
 export { DefaultResourceLoader } from "./core/resource-loader.js";
 // SDK for programmatic usage

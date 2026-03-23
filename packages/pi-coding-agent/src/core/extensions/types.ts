@@ -949,6 +949,29 @@ export interface RegisteredCommand {
 	handler: (args: string, ctx: ExtensionCommandContext) => Promise<void>;
 }
 
+export type PostInstallScope = "user" | "project";
+
+export interface PostInstallContext {
+	/** Package source string passed to install (npm:, git:, https://, local path). */
+	source: string;
+	/** Resolved installed package path (or resolved local path). */
+	installedPath: string;
+	/** Where the package was installed. */
+	scope: PostInstallScope;
+	/** Current working directory for the install invocation. */
+	cwd: string;
+	/** Whether install is running in an interactive TTY. */
+	interactive: boolean;
+	/** Info-level logging sink for install output. */
+	log(message: string): void;
+	/** Warning-level logging sink for install output. */
+	warn(message: string): void;
+	/** Error-level logging sink for install output. */
+	error(message: string): void;
+}
+
+export type PostInstallHandler = (ctx: PostInstallContext) => Promise<void> | void;
+
 // ============================================================================
 // Extension API
 // ============================================================================
@@ -1018,6 +1041,14 @@ export interface ExtensionAPI {
 
 	/** Register a custom command. */
 	registerCommand(name: string, options: Omit<RegisteredCommand, "name">): void;
+
+	/**
+	 * Register a post-install hook.
+	 *
+	 * Called after native package installation succeeds (`pi install`, `gsd install`).
+	 * Hooks are generic and can perform any extension-defined setup.
+	 */
+	registerPostInstall(handler: PostInstallHandler): void;
 
 	/** Register a keyboard shortcut. */
 	registerShortcut(
@@ -1382,6 +1413,7 @@ export interface Extension {
 	commands: Map<string, RegisteredCommand>;
 	flags: Map<string, ExtensionFlag>;
 	shortcuts: Map<KeyId, ExtensionShortcut>;
+	postInstallHandlers: PostInstallHandler[];
 }
 
 /** Result of loading extensions. */
