@@ -173,44 +173,12 @@ async function main(): Promise<void> {
       assertTrue(content.includes("M001"), "STATE.md references milestone");
     }
 
-    // ─── Test 6: STATE.md stale detection & fix ───────────────────────
-    console.log("\n=== state_file_stale ===");
-    {
-      const dir = createMinimalProject();
-      cleanups.push(dir);
-
-      // Write a STATE.md with wrong phase/milestone info
-      const stateFilePath = join(dir, ".gsd", "STATE.md");
-      writeFileSync(stateFilePath, `# GSD State
-
-**Active Milestone:** None
-**Active Slice:** None
-**Phase:** idle
-
-## Milestone Registry
-
-## Recent Decisions
-- None recorded
-
-## Blockers
-- None
-
-## Next Action
-None
-`);
-
-      const detect = await runGSDDoctor(dir);
-      const staleIssues = detect.issues.filter(i => i.code === "state_file_stale");
-      assertTrue(staleIssues.length > 0, "detects stale STATE.md");
-      assertTrue(staleIssues[0]?.message.includes("idle"), "message references old phase");
-
-      const fixed = await runGSDDoctor(dir, { fix: true });
-      assertTrue(fixed.fixesApplied.some(f => f.includes("rebuilt STATE.md")), "fix rebuilds STATE.md");
-
-      // Verify updated content matches derived state
-      const content = readFileSync(stateFilePath, "utf-8");
-      assertTrue(content.includes("M001"), "rebuilt STATE.md references milestone");
-    }
+    // ─── Test 6: STATE.md stale detection removed ─────────────────────
+    // state_file_stale check was removed as part of the single-writer
+    // architecture (doctor surgery PR #2219). STATE.md is now a projection
+    // rendered by the engine, so staleness is detected by the engine layer
+    // rather than the doctor.
+    console.log("\n=== state_file_stale (removed — engine-rendered projection) ===");
 
     // ─── Test 7: Gitignore missing patterns detection & fix ───────────
     if (process.platform !== "win32") {

@@ -7,7 +7,7 @@
  * switch to skip the engine layer entirely.
  */
 
-import type { WorkflowEngine } from "./workflow-engine.js";
+import type { IPolymorphicEngine } from "./engine-types.js";
 import type { ExecutionPolicy } from "./execution-policy.js";
 import { DevWorkflowEngine } from "./dev-workflow-engine.js";
 import { DevExecutionPolicy } from "./dev-execution-policy.js";
@@ -16,7 +16,7 @@ import { CustomExecutionPolicy } from "./custom-execution-policy.js";
 
 /** A resolved engine + policy pair ready for the auto-loop. */
 export interface ResolvedEngine {
-  engine: WorkflowEngine;
+  engine: IPolymorphicEngine;
   policy: ExecutionPolicy;
 }
 

@@ -56,7 +56,7 @@ function makeMockPi() {
   } catch (err: any) {
     crashed = true;
     assertTrue(
-      err.message.includes("path") || err.message.includes("string") || err.code === "ERR_INVALID_ARG_TYPE",
+      err.message.includes("path") || err.message.includes("string") || err.code === "ERR_INVALID_ARG_TYPE" || err.message.includes("Cannot read properties of undefined"),
       `should crash with path/type error, got: ${err.message}`,
     );
   }

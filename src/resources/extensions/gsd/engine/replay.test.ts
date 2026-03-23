@@ -2,6 +2,7 @@
 // Tests for engine.replay() and engine.replayAll() methods.
 // Verifies replay dispatches to command handlers, suppresses afterCommand,
 // and handles unknown/failing events leniently.
+// Copyright (c) 2026 Jeremy McSpadden <jeremy@fluxlabs.net>
 
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";

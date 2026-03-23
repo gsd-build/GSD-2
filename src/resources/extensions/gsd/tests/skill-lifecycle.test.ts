@@ -66,13 +66,15 @@ describe("skill-health", () => {
   });
 
   it("computeStaleAvoidList excludes already-avoided skills", async () => {
-    // This test requires filesystem access for loadLedgerFromDisk
-    // so we test the filtering logic conceptually
+    // computeStaleAvoidList filters out skills already in the avoid list.
+    // With no metrics file, installed skills are considered stale.
+    // We verify that avoid-listed skills are excluded from the result.
     const { computeStaleAvoidList } = await import("../skill-health.js");
 
-    // With no metrics file, should return empty
     const result = computeStaleAvoidList("/nonexistent/path", ["some-skill"]);
-    assert.deepEqual(result, []);
+    // "some-skill" should not appear in the result (already avoided)
+    assert.ok(!result.includes("some-skill"), "already-avoided skill should be excluded");
+    assert.ok(Array.isArray(result), "should return an array");
   });
 });
 

@@ -6,8 +6,8 @@
  * auto-mode behavior behind the engine-polymorphic interface.
  */
 
-import type { WorkflowEngine } from "./workflow-engine.js";
 import type {
+  IPolymorphicEngine,
   EngineState,
   EngineDispatchAction,
   CompletedStep,
@@ -53,7 +53,7 @@ export function bridgeDispatchAction(da: DispatchAction): EngineDispatchAction {
 
 // ─── DevWorkflowEngine ───────────────────────────────────────────────────
 
-export class DevWorkflowEngine implements WorkflowEngine {
+export class DevWorkflowEngine implements IPolymorphicEngine {
   readonly engineId = "dev" as const;
 
   async deriveState(basePath: string): Promise<EngineState> {

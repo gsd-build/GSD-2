@@ -2,6 +2,7 @@
 // Replaces INSERT OR REPLACE worktree merge with event-based reconciliation.
 // Uses findForkPoint() to detect divergence, replays non-conflicting events,
 // writes CONFLICTS.md and blocks merge on entity-level conflicts.
+// Copyright (c) 2026 Jeremy McSpadden <jeremy@fluxlabs.net>
 
 import { join } from "node:path";
 import { mkdirSync, existsSync, readFileSync, unlinkSync } from "node:fs";

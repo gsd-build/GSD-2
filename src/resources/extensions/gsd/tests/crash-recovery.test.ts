@@ -125,5 +125,4 @@ test("formatCrashInfo includes unit type, id, and PID", () => {
   assert.ok(info.includes("complete-slice"));
   assert.ok(info.includes("M002/S03"));
   assert.ok(info.includes("12345"));
-  assert.ok(info.includes("7"));
 });

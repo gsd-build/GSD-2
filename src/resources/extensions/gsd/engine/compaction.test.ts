@@ -1,5 +1,6 @@
 // GSD Extension — Event Log Compaction Unit Tests
 // Tests for compactMilestoneEvents(): archive milestone events, retain others.
+// Copyright (c) 2026 Jeremy McSpadden <jeremy@fluxlabs.net>
 
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";

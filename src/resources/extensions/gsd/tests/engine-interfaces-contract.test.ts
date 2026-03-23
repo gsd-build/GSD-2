@@ -129,11 +129,11 @@ describe("EngineDispatchAction shape", () => {
   });
 });
 
-// ── WorkflowEngine interface shape ──────────────────────────────────────────
+// ── IPolymorphicEngine interface shape ──────────────────────────────────────
 
-describe("WorkflowEngine interface shape", () => {
-  test("WorkflowEngine has engineId and all required methods", () => {
-    const source = readSource(WORKFLOW_ENGINE_PATH);
+describe("IPolymorphicEngine interface shape", () => {
+  test("IPolymorphicEngine has engineId and all required methods", () => {
+    const source = readSource(ENGINE_TYPES_PATH);
 
     const requiredMembers = [
       "engineId",
@@ -141,6 +141,30 @@ describe("WorkflowEngine interface shape", () => {
       "resolveDispatch",
       "reconcile",
       "getDisplayMetadata",
+    ];
+
+    for (const member of requiredMembers) {
+      assert.ok(
+        source.includes(member),
+        `IPolymorphicEngine must contain member: ${member}`,
+      );
+    }
+  });
+});
+
+// ── WorkflowEngine concrete class shape ────────────────────────────────────
+
+describe("WorkflowEngine concrete class shape", () => {
+  test("WorkflowEngine has deriveState and command methods", () => {
+    const source = readSource(WORKFLOW_ENGINE_PATH);
+
+    const requiredMembers = [
+      "deriveState",
+      "completeTask",
+      "completeSlice",
+      "planSlice",
+      "startTask",
+      "replay",
     ];
 
     for (const member of requiredMembers) {

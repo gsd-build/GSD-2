@@ -1,6 +1,7 @@
 // GSD Extension — Event Log (Append-Only JSONL)
 // Records every engine command as a JSONL event with content hash.
 // Enables fork-point detection for diverged worktree reconciliation.
+// Copyright (c) 2026 Jeremy McSpadden <jeremy@fluxlabs.net>
 
 import { createHash } from "node:crypto";
 import { appendFileSync, readFileSync, existsSync, mkdirSync } from "node:fs";

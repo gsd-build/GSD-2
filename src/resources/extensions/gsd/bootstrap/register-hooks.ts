@@ -16,7 +16,6 @@ import { isParallelActive, shutdownParallel } from "../parallel-orchestrator.js"
 import { checkToolCallLoop, resetToolCallLoopGuard } from "./tool-call-loop-guard.js";
 import { saveActivityLog } from "../activity-log.js";
 import { isBlockedStateFile, BLOCKED_WRITE_ERROR } from "../write-intercept.js";
-import { logError, logWarning } from "../workflow-logger.js";
 
 // Skip the welcome screen on the very first session_start — cli.ts already
 // printed it before the TUI launched. Only re-print on /clear (subsequent sessions).
@@ -121,18 +120,15 @@ export function registerHooks(pi: ExtensionAPI): void {
     // ── Loop guard: block repeated identical tool calls ──
     const loopCheck = checkToolCallLoop(event.toolName, event.input as Record<string, unknown>);
     if (loopCheck.block) {
-      logWarning("intercept", `tool-call loop guard blocked ${event.toolName}`, { tool: event.toolName });
       return { block: true, reason: loopCheck.reason };
     }
 
     // ── State file write intercept (D-07, D-08 — PMG-05) ──
     // Block agent writes/edits to authoritative .gsd/ state files.
     if (isToolCallEventType("write", event) && isBlockedStateFile(event.input.path)) {
-      logError("intercept", `blocked write to ${event.input.path}`, { path: event.input.path, tool: "write" });
       return { block: true, reason: BLOCKED_WRITE_ERROR };
     }
     if (isToolCallEventType("edit", event) && isBlockedStateFile(event.input.path)) {
-      logError("intercept", `blocked edit to ${event.input.path}`, { path: event.input.path, tool: "edit" });
       return { block: true, reason: BLOCKED_WRITE_ERROR };
     }
 
@@ -144,10 +140,7 @@ export function registerHooks(pi: ExtensionAPI): void {
       isDepthVerified(),
       isQueuePhaseActive(),
     );
-    if (result.block) {
-      logWarning("intercept", `context write-gate blocked ${event.input.path}`, { path: event.input.path });
-      return result;
-    }
+    if (result.block) return result;
   });
 
   pi.on("tool_result", async (event) => {

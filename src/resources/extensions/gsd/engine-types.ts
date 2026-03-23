@@ -69,3 +69,18 @@ export interface CompletedStep {
   startedAt: number;
   finishedAt: number;
 }
+
+/**
+ * Polymorphic engine interface for the auto-loop.
+ *
+ * Implemented by DevWorkflowEngine (GSD dev path) and CustomWorkflowEngine
+ * (custom workflow path). The concrete WorkflowEngine class (SQLite single-writer)
+ * does NOT implement this — it serves a different purpose (command API + state derivation).
+ */
+export interface IPolymorphicEngine {
+  readonly engineId: string;
+  deriveState(basePath: string): Promise<EngineState>;
+  resolveDispatch(state: EngineState, context: { basePath: string }): Promise<EngineDispatchAction>;
+  reconcile(state: EngineState, completedStep: CompletedStep): Promise<ReconcileResult>;
+  getDisplayMetadata(state: EngineState): DisplayMetadata;
+}

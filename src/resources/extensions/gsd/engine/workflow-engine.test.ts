@@ -1,5 +1,6 @@
 // GSD Extension — WorkflowEngine Unit Tests
 // Tests for engine creation, typed query methods, and deriveState().
+// Copyright (c) 2026 Jeremy McSpadden <jeremy@fluxlabs.net>
 
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";

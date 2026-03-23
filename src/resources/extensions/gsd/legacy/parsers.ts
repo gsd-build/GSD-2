@@ -1,4 +1,5 @@
 // GSD Extension — Legacy Markdown Parsers
+// Copyright (c) 2026 Jeremy McSpadden <jeremy@fluxlabs.net>
 
 /**
  * BOUNDARY: These parsers are for display-only callers and `gsd migrate`.

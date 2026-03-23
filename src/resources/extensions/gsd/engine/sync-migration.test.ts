@@ -1,5 +1,6 @@
 // GSD-2 Single-Writer State Architecture — Sync migration tests
 // Tests for migrated sync functions using snapshot/restore instead of file copy.
+// Copyright (c) 2026 Jeremy McSpadden <jeremy@fluxlabs.net>
 
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";

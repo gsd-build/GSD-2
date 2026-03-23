@@ -1,5 +1,6 @@
 // GSD Extension — Conflict Resolution Unit Tests
 // Tests for resolveConflict, listConflicts, removeConflictsFile in workflow-reconcile.ts.
+// Copyright (c) 2026 Jeremy McSpadden <jeremy@fluxlabs.net>
 
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";

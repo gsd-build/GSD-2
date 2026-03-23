@@ -52,15 +52,20 @@ export async function checkGitHealth(
       const milestoneId = wt.branch.replace(/^milestone\//, "");
       const milestoneEntry = state.registry.find(m => m.id === milestoneId);
 
-      // Check if milestone is complete via engine
+      // Check if milestone is complete via engine, with file-based fallback
       let isComplete = false;
-      if (milestoneEntry && isEngineAvailable(basePath)) {
-        try {
-          const engine = new WorkflowEngine(basePath);
-          const milestoneRow = engine.getMilestone(milestoneId);
-          isComplete = milestoneRow?.status === "complete";
-        } catch {
-          // Engine not available — fall back to not complete
+      if (milestoneEntry) {
+        if (isEngineAvailable(basePath)) {
+          try {
+            const engine = new WorkflowEngine(basePath);
+            const milestoneRow = engine.getMilestone(milestoneId);
+            isComplete = milestoneRow?.status === "complete";
+          } catch {
+            // Engine not available — use file-based check
+            isComplete = milestoneEntry.status === "complete";
+          }
+        } else {
+          isComplete = milestoneEntry.status === "complete";
         }
       }
 
@@ -109,8 +114,13 @@ export async function checkGitHealth(
               const milestoneRow = engine.getMilestone(milestoneId);
               branchMilestoneComplete = milestoneRow?.status === "complete";
             } catch {
-              // Engine not available — skip
+              // Engine not available — use file-based check
+              const entry = state.registry.find(m => m.id === milestoneId);
+              branchMilestoneComplete = entry?.status === "complete";
             }
+          } else {
+            const entry = state.registry.find(m => m.id === milestoneId);
+            branchMilestoneComplete = entry?.status === "complete";
           }
           if (!branchMilestoneComplete) continue;
 
@@ -611,8 +621,12 @@ export async function checkRuntimeHealth(
       if (shouldFix("state_file_missing")) {
         try {
           renderStateProjection(basePath);
-          fixesApplied.push("re-rendered STATE.md from engine state");
         } catch {
+          // engine render failed — fall through to fallback
+        }
+        if (existsSync(stateFilePath)) {
+          fixesApplied.push("re-rendered STATE.md from engine state");
+        } else {
           // Fallback: derive state and write directly
           const state = await deriveState(basePath);
           await saveFile(stateFilePath, buildStateMarkdownForCheck(state));

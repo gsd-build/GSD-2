@@ -2,11 +2,11 @@
 // Registers 7 agent-callable tools that delegate to WorkflowEngine commands.
 // Each tool follows the same pattern as db-tools.ts: ensureDbOpen guard,
 // engine command call, rich response with progress context per D-04.
+// Copyright (c) 2026 Jeremy McSpadden <jeremy@fluxlabs.net>
 
 import { Type } from "@sinclair/typebox";
 import type { ExtensionAPI } from "@gsd/pi-coding-agent";
 import { ensureDbOpen } from "./dynamic-tools.js";
-import { logError } from "../workflow-logger.js";
 
 export function registerWorkflowTools(pi: ExtensionAPI): void {
   // ── Tool 1: gsd_complete_task (CMD-01) ──────────────────────────────────
@@ -67,7 +67,7 @@ export function registerWorkflowTools(pi: ExtensionAPI): void {
         };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        logError("tool", `gsd_complete_task failed: ${msg}`);
+        process.stderr.write(`workflow-tools: gsd_complete_task failed: ${msg}\n`);
         return {
           content: [{ type: "text" as const, text: `Error: ${msg}` }],
           details: { operation: "complete_task", error: msg } as any,
@@ -129,7 +129,7 @@ export function registerWorkflowTools(pi: ExtensionAPI): void {
         };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        logError("tool", `gsd_complete_slice failed: ${msg}`);
+        process.stderr.write(`workflow-tools: gsd_complete_slice failed: ${msg}\n`);
         return {
           content: [{ type: "text" as const, text: `Error: ${msg}` }],
           details: { operation: "complete_slice", error: msg } as any,
@@ -197,7 +197,7 @@ export function registerWorkflowTools(pi: ExtensionAPI): void {
         };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        logError("tool", `gsd_plan_slice failed: ${msg}`);
+        process.stderr.write(`workflow-tools: gsd_plan_slice failed: ${msg}\n`);
         return {
           content: [{ type: "text" as const, text: `Error: ${msg}` }],
           details: { operation: "plan_slice", error: msg } as any,
@@ -252,7 +252,7 @@ export function registerWorkflowTools(pi: ExtensionAPI): void {
         };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        logError("tool", `gsd_start_task failed: ${msg}`);
+        process.stderr.write(`workflow-tools: gsd_start_task failed: ${msg}\n`);
         return {
           content: [{ type: "text" as const, text: `Error: ${msg}` }],
           details: { operation: "start_task", error: msg } as any,
@@ -321,7 +321,7 @@ export function registerWorkflowTools(pi: ExtensionAPI): void {
         };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        logError("tool", `gsd_record_verification failed: ${msg}`);
+        process.stderr.write(`workflow-tools: gsd_record_verification failed: ${msg}\n`);
         return {
           content: [{ type: "text" as const, text: `Error: ${msg}` }],
           details: { operation: "record_verification", error: msg } as any,
@@ -378,7 +378,7 @@ export function registerWorkflowTools(pi: ExtensionAPI): void {
         };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        logError("tool", `gsd_report_blocker failed: ${msg}`);
+        process.stderr.write(`workflow-tools: gsd_report_blocker failed: ${msg}\n`);
         return {
           content: [{ type: "text" as const, text: `Error: ${msg}` }],
           details: { operation: "report_blocker", error: msg } as any,
@@ -453,7 +453,7 @@ export function registerWorkflowTools(pi: ExtensionAPI): void {
         };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        logError("tool", `gsd_engine_save_decision failed: ${msg}`);
+        process.stderr.write(`workflow-tools: gsd_engine_save_decision failed: ${msg}\n`);
         return {
           content: [{ type: "text" as const, text: `Error: ${msg}` }],
           details: { operation: "engine_save_decision", error: msg } as any,

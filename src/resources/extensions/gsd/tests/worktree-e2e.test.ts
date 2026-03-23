@@ -201,6 +201,8 @@ Test
 ## Boundary Map
 _None_
 `);
+      // Add milestone summary to mark it as complete
+      writeFileSync(join(msDir, "M001-SUMMARY.md"), `# M001: Test Milestone\n\nCompleted.`);
       run("git add -A", repo);
       run("git commit -m \"add milestone\"", repo);
 

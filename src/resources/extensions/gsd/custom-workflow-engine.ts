@@ -12,8 +12,8 @@
  * - Phase transitions are derivable from GRAPH.yaml step statuses.
  */
 
-import type { WorkflowEngine } from "./workflow-engine.js";
 import type {
+  IPolymorphicEngine,
   EngineState,
   EngineDispatchAction,
   CompletedStep,
@@ -41,7 +41,7 @@ export function readFrozenDefinition(runDir: string): WorkflowDefinition {
   return parse(raw, { schema: "core" }) as WorkflowDefinition;
 }
 
-export class CustomWorkflowEngine implements WorkflowEngine {
+export class CustomWorkflowEngine implements IPolymorphicEngine {
   readonly engineId = "custom";
   private readonly runDir: string;
 

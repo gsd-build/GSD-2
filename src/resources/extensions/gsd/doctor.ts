@@ -541,35 +541,51 @@ export async function runGSDDoctor(basePath: string, options?: { fix?: boolean; 
       }
     }
 
-    // Use engine queries for milestone/slice data instead of parseRoadmap
-    let engineSlices: import("./workflow-engine.js").SliceRow[] = [];
+    // Use engine queries for milestone/slice data, with file-based fallback
+    let roadmap: { title: string; vision: string; successCriteria: string[]; slices: RoadmapSliceEntry[]; boundaryMap: any[] };
     let engineAvailable = false;
     if (isEngineAvailable(basePath)) {
       try {
         const engine = new WorkflowEngine(basePath);
-        engineSlices = engine.getSlices(milestoneId);
+        const engineSlices = engine.getSlices(milestoneId);
+        roadmap = {
+          title: milestone.title,
+          vision: '',
+          successCriteria: [] as string[],
+          slices: engineSlices.map(s => ({
+            id: s.id,
+            title: s.title,
+            done: s.status === "done",
+            risk: (s.risk || "medium") as import("./types.js").RiskLevel,
+            depends: s.depends_on ? s.depends_on.split(",").map(d => d.trim()).filter(Boolean) : [],
+            demo: '',
+          })) as RoadmapSliceEntry[],
+          boundaryMap: [] as any[],
+        };
         engineAvailable = true;
       } catch {
-        // Engine not available — skip engine-based checks
+        continue; // Engine query failed — skip this milestone
+      }
+    } else {
+      // Fallback: parse roadmap file when engine DB is not available
+      try {
+        const { parseRoadmap } = await import("./legacy/parsers.js");
+        const roadmapPath = resolveMilestoneFile(basePath, milestoneId, "ROADMAP");
+        if (!roadmapPath) continue;
+        const roadmapContent = await loadFile(roadmapPath);
+        if (!roadmapContent) continue;
+        const parsed = parseRoadmap(roadmapContent);
+        roadmap = {
+          title: parsed.title,
+          vision: parsed.vision,
+          successCriteria: parsed.successCriteria,
+          slices: parsed.slices,
+          boundaryMap: parsed.boundaryMap ?? [],
+        };
+      } catch {
+        continue; // Parse failed — skip this milestone
       }
     }
-
-    // Build a roadmap-compatible structure from engine data
-    const roadmap = {
-      title: milestone.title,
-      vision: '',
-      successCriteria: [] as string[],
-      slices: engineSlices.map(s => ({
-        id: s.id,
-        title: s.title,
-        done: s.status === "done",
-        risk: (s.risk || "medium") as import("./types.js").RiskLevel,
-        depends: s.depends_on ? s.depends_on.split(",").map(d => d.trim()).filter(Boolean) : [],
-        demo: '',
-      })) as RoadmapSliceEntry[],
-      boundaryMap: [] as any[],
-    };
-    if (!engineAvailable) continue;
 
     // ── Circular dependency detection ──────────────────────────────────────
     for (const cycle of detectCircularDependencies(roadmap.slices)) {
@@ -686,7 +702,7 @@ export async function runGSDDoctor(basePath: string, options?: { fix?: boolean; 
         }
       }
 
-      // Use engine to get tasks for this slice
+      // Use engine to get tasks for this slice, with file-based fallback
       let plan: { tasks: Array<{ id: string; done: boolean }> } | null = null;
       if (engineAvailable) {
         try {
@@ -698,7 +714,23 @@ export async function runGSDDoctor(basePath: string, options?: { fix?: boolean; 
             };
           }
         } catch {
-          // Engine query failed — fall through to missing plan check
+          // Engine query failed — fall through to file-based fallback
+        }
+      }
+      if (!plan) {
+        // Fallback: parse plan file from disk
+        try {
+          const { parsePlan } = await import("./legacy/parsers.js");
+          const planPath = resolveSliceFile(basePath, milestoneId, slice.id, "PLAN");
+          if (planPath) {
+            const planContent = await loadFile(planPath);
+            if (planContent) {
+              const parsed = parsePlan(planContent);
+              plan = { tasks: parsed.tasks };
+            }
+          }
+        } catch {
+          // Parse failed — plan stays null
         }
       }
       if (!plan) {
@@ -836,29 +868,45 @@ export async function runGSDDoctor(basePath: string, options?: { fix?: boolean; 
         await markSliceUndoneInRoadmap(basePath, milestoneId, slice.id, fixesApplied);
       }
 
-      // Blocker-without-replan detection (using engine task blocker field)
+      // Blocker-without-replan detection
       const replanPath = resolveSliceFile(basePath, milestoneId, slice.id, "REPLAN");
-      if (!replanPath && engineAvailable) {
-        try {
-          const engine = new WorkflowEngine(basePath);
-          const tasks = engine.getTasks(milestoneId, slice.id);
-          for (const task of tasks) {
-            if (task.status !== "done") continue;
-            if (task.blocker) {
-              issues.push({
-                severity: "warning",
-                code: "blocker_discovered_no_replan",
-                scope: "slice",
-                unitId,
-                message: `Task ${task.id} has a blocker recorded but no REPLAN.md exists for ${slice.id} \u2014 slice may be stuck`,
-                file: relSliceFile(basePath, milestoneId, slice.id, "REPLAN"),
-                fixable: false,
-              });
-              break;
+      if (!replanPath) {
+        let blockerTaskId: string | null = null;
+        if (engineAvailable) {
+          try {
+            const engine = new WorkflowEngine(basePath);
+            const tasks = engine.getTasks(milestoneId, slice.id);
+            for (const task of tasks) {
+              if (task.status !== "done") continue;
+              if (task.blocker) { blockerTaskId = task.id; break; }
             }
-          }
-        } catch {
-          // Non-fatal — blocker detection failed
+          } catch { /* non-fatal */ }
+        } else {
+          // Fallback: scan task summary frontmatter for blocker_discovered
+          try {
+            const td = resolveTasksDir(basePath, milestoneId, slice.id);
+            if (td && existsSync(td)) {
+              for (const f of readdirSync(td)) {
+                if (!f.endsWith("-SUMMARY.md")) continue;
+                const content = readFileSync(join(td, f), "utf-8");
+                if (/blocker_discovered:\s*true/i.test(content)) {
+                  blockerTaskId = f.replace(/-SUMMARY\.md$/, "");
+                  break;
+                }
+              }
+            }
+          } catch { /* non-fatal */ }
+        }
+        if (blockerTaskId) {
+          issues.push({
+            severity: "warning",
+            code: "blocker_discovered_no_replan",
+            scope: "slice",
+            unitId,
+            message: `Task ${blockerTaskId} has a blocker recorded but no REPLAN.md exists for ${slice.id} \u2014 slice may be stuck`,
+            file: relSliceFile(basePath, milestoneId, slice.id, "REPLAN"),
+            fixable: false,
+          });
         }
       }
 
@@ -874,18 +922,26 @@ export async function runGSDDoctor(basePath: string, options?: { fix?: boolean; 
       const hasSliceSummary = !!(sliceSummaryPath && await loadFile(sliceSummaryPath));
       const hasSliceUat = existsSync(sliceUatPath);
 
-      // Placeholder summary generation removed per D-03: engine's completeTask()
-      // atomically creates summaries — if missing, the task isn't truly complete.
+      // When the engine is available, summary creation is handled by completeTask().
+      // When the engine is NOT available (file-based fallback), doctor creates placeholders.
+      const canFixSummary = !engineAvailable;
       if (allTasksDone && !hasSliceSummary) {
         issues.push({
           severity: "error",
           code: "all_tasks_done_missing_slice_summary",
           scope: "slice",
           unitId,
-          message: `All tasks are done but ${slice.id}-SUMMARY.md is missing — complete the slice via the engine to generate it`,
+          message: canFixSummary
+            ? `All tasks are done but ${slice.id}-SUMMARY.md is missing`
+            : `All tasks are done but ${slice.id}-SUMMARY.md is missing — complete the slice via the engine to generate it`,
           file: relSliceFile(basePath, milestoneId, slice.id, "SUMMARY"),
-          fixable: false,
+          fixable: canFixSummary,
         });
+        if (canFixSummary && shouldFix("all_tasks_done_missing_slice_summary")) {
+          const summaryContent = `---\nid: ${slice.id}\nmilestone: ${milestoneId}\n---\n\n# ${slice.id}: ${slice.title}\n\n**Status:** Complete\n`;
+          await saveFile(join(slicePath, `${slice.id}-SUMMARY.md`), summaryContent);
+          fixesApplied.push(`created placeholder ${slice.id}-SUMMARY.md`);
+        }
       }
 
       if (allTasksDone && !hasSliceUat) {
@@ -896,8 +952,13 @@ export async function runGSDDoctor(basePath: string, options?: { fix?: boolean; 
           unitId,
           message: `All tasks are done but ${slice.id}-UAT.md is missing`,
           file: `${relSlicePath(basePath, milestoneId, slice.id)}/${slice.id}-UAT.md`,
-          fixable: false,
+          fixable: canFixSummary,
         });
+        if (canFixSummary && shouldFix("all_tasks_done_missing_slice_uat")) {
+          const uatContent = `# ${slice.id} UAT\n\n- [ ] Verify ${slice.title}\n`;
+          await saveFile(join(slicePath, `${slice.id}-UAT.md`), uatContent);
+          fixesApplied.push(`created placeholder ${slice.id}-UAT.md`);
+        }
       }
 
       if (allTasksDone && !slice.done) {

@@ -384,7 +384,7 @@ console.log('=== md-importer: schema v1→v2 migration ===');
   openDatabase(':memory:');
   const adapter = _getAdapter();
   const version = adapter?.prepare('SELECT MAX(version) as v FROM schema_version').get();
-  assertEq(version?.v, 4, 'new DB should be at schema version 4');
+  assertEq(version?.v, 5, 'new DB should be at schema version 5');
 
   // Artifacts table should exist
   const tableCheck = adapter?.prepare("SELECT count(*) as c FROM sqlite_master WHERE type='table' AND name='artifacts'").get();

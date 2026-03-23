@@ -1,4 +1,5 @@
 // GSD-2 Single-Writer State Architecture — Prompt migration content assertions
+// Copyright (c) 2026 Jeremy McSpadden <jeremy@fluxlabs.net>
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";

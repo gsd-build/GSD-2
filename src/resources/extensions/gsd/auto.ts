@@ -156,7 +156,9 @@ import {
   reconcileMergeState,
 } from "./auto-recovery.js";
 import { resolveExpectedArtifactPath } from "./auto-artifact-paths.js";
-import { resolveDispatch } from "./auto-dispatch.js";
+import { resolveDispatch, DISPATCH_RULES } from "./auto-dispatch.js";
+import { initRegistry, convertDispatchRules } from "./rule-registry.js";
+import { emitJournalEvent as _emitJournalEvent, type JournalEntry } from "./journal.js";
 import {
   type AutoDashboardData,
   updateProgressWidget as _updateProgressWidget,

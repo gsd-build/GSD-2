@@ -59,6 +59,9 @@ Test
 _None_
 `);
 
+  // Add milestone summary to mark it as complete
+  writeFileSync(join(msDir, "M001-SUMMARY.md"), `# M001: Test Milestone\n\nCompleted.`);
+
   // Commit .gsd files
   run("git add -A", dir);
   run("git commit -m \"add milestone\"", dir);

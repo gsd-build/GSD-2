@@ -1,5 +1,6 @@
 // GSD Extension — Migration Module Unit Tests
 // Tests for migrateFromMarkdown, needsAutoMigration, and validateMigration.
+// Copyright (c) 2026 Jeremy McSpadden <jeremy@fluxlabs.net>
 
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
