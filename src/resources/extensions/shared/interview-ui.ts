@@ -635,11 +635,12 @@ export async function showInterviewRound(
 				}
 
 				// Side-by-side body — fixed height per render, capped to terminal.
-				// TUI_CHROME accounts for the spinner, status bar, and other
-				// elements rendered outside the interview component.
+				// tuiChrome accounts for elements rendered outside the interview
+				// component: spinner/loader (1-2), status line (1), tool header (1),
+				// plus a safety margin for future additions.
 				const termRows = (typeof process !== "undefined" && process.stdout?.rows) || 24;
 				const footerLines = 3; // blank + hints + bar
-				const tuiChrome = 5;   // spinner, status bar, safety margin
+				const tuiChrome = 5;
 				const maxBody = Math.min(PREVIEW_MAX_LINES, Math.max(6, termRows - lines.length - footerLines - tuiChrome));
 
 				const previewWidth = Math.max(MIN_PREVIEW_WIDTH, Math.floor(width * PREVIEW_RATIO));
