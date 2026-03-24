@@ -333,6 +333,10 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			if (!resolvedProvider) {
 				throw new Error("No model selected");
 			}
+			const authMode = modelRegistry.getProviderAuthMode(resolvedProvider);
+			if (authMode === "externalCli" || authMode === "none") {
+				return undefined;
+			}
 
 			// Retry key resolution with backoff to handle transient network failures
 			// (e.g., OAuth token refresh failing due to brief connectivity loss).

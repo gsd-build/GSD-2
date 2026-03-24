@@ -1240,6 +1240,8 @@ export interface ExtensionAPI {
 
 /** Configuration for registering a provider via pi.registerProvider(). */
 export interface ProviderConfig {
+	/** Auth behavior for provider availability and request key handling. Defaults to "apiKey". */
+	authMode?: "apiKey" | "oauth" | "externalCli" | "none";
 	/** Base URL for the API endpoint. Required when defining models. */
 	baseUrl?: string;
 	/** API key or environment variable name. Required when defining models (unless oauth provided). */

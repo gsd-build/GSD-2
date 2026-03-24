@@ -128,6 +128,8 @@ ajv.addSchema(ModelsConfigSchema, "ModelsConfig");
 
 type ModelsConfig = Static<typeof ModelsConfigSchema>;
 
+export type ProviderAuthMode = "apiKey" | "oauth" | "externalCli" | "none";
+
 /** Provider override config (baseUrl, headers, apiKey) without custom models */
 interface ProviderOverride {
 	baseUrl?: string;
@@ -513,7 +515,31 @@ export class ModelRegistry {
 	 * This is a fast check that doesn't refresh OAuth tokens.
 	 */
 	getAvailable(): Model<Api>[] {
-		return this.models.filter((m) => this.authStorage.hasAuth(m.provider));
+		return this.models.filter((m) => this.isProviderRequestReady(m.provider));
+	}
+
+	/**
+	 * Get auth mode for a provider.
+	 * Defaults to "apiKey" for built-ins and providers without explicit mode.
+	 */
+	getProviderAuthMode(provider: string): ProviderAuthMode {
+		const config = this.registeredProviders.get(provider);
+		if (!config) return "apiKey";
+		if (config.authMode) return config.authMode;
+		if (config.oauth) return "oauth";
+		if (config.apiKey) return "apiKey";
+		return "apiKey";
+	}
+
+	/**
+	 * Whether a provider can be used for requests/fallback without hard auth gating.
+	 */
+	isProviderRequestReady(provider: string): boolean {
+		const authMode = this.getProviderAuthMode(provider);
+		if (authMode === "externalCli" || authMode === "none") {
+			return true;
+		}
+		return this.authStorage.hasAuth(provider);
 	}
 
 	/**
@@ -525,17 +551,23 @@ export class ModelRegistry {
 
 	/**
 	 * Get API key for a model.
+	 * Returns undefined for externalCli/none providers (no key needed).
 	 * @param sessionId - Optional session ID for sticky credential selection
 	 */
 	async getApiKey(model: Model<Api>, sessionId?: string): Promise<string | undefined> {
+		const authMode = this.getProviderAuthMode(model.provider);
+		if (authMode === "externalCli" || authMode === "none") return undefined;
 		return this.authStorage.getApiKey(model.provider, sessionId);
 	}
 
 	/**
 	 * Get API key for a provider.
+	 * Returns undefined for externalCli/none providers (no key needed).
 	 * @param sessionId - Optional session ID for sticky credential selection
 	 */
 	async getApiKeyForProvider(provider: string, sessionId?: string): Promise<string | undefined> {
+		const authMode = this.getProviderAuthMode(provider);
+		if (authMode === "externalCli" || authMode === "none") return undefined;
 		return this.authStorage.getApiKey(provider, sessionId);
 	}
 
@@ -614,7 +646,8 @@ export class ModelRegistry {
 			if (!config.baseUrl) {
 				throw new Error(`Provider ${providerName}: "baseUrl" is required when defining models.`);
 			}
-			if (!config.apiKey && !config.oauth) {
+			const authMode = config.authMode ?? (config.oauth ? "oauth" : config.apiKey ? "apiKey" : "apiKey");
+			if (authMode === "apiKey" && !config.apiKey && !config.oauth) {
 				throw new Error(`Provider ${providerName}: "apiKey" or "oauth" is required when defining models.`);
 			}
 
@@ -702,7 +735,7 @@ export class ModelRegistry {
 
 			try {
 				const apiKey = await this.authStorage.getApiKey(providerName);
-				if (!apiKey && providerName !== "ollama") continue;
+				if (!apiKey && !this.isProviderRequestReady(providerName)) continue;
 
 				const models = await adapter.fetchModels(apiKey ?? "", undefined);
 				this.discoveryCache.set(providerName, models);
@@ -780,6 +813,7 @@ export class ModelRegistry {
  * Input type for registerProvider API.
  */
 export interface ProviderConfigInput {
+	authMode?: ProviderAuthMode;
 	baseUrl?: string;
 	apiKey?: string;
 	api?: Api;
