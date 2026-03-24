@@ -317,7 +317,7 @@ export function snapshotUnitMetrics(
     ...(opts?.interventions ? { interventions: opts.interventions } : {}),
     ...(opts?.factCheck ? { factCheck: opts.factCheck } : {}),
     // wallClockMs: explicit value, or derived from timestamps
-    wallClockMs: opts?.wallClockMs ?? (unit.finishedAt - startedAt),
+    wallClockMs: opts?.wallClockMs ?? (Date.now() - startedAt),
   };
 
   // Auto-capture skill telemetry (#599)
