@@ -164,10 +164,13 @@ Reading a diff is not the same as verifying a change. Our review standard is exe
 
 **What reviewers do:**
 
-1. **Build the branch** — run `npm run build` on the PR branch. A diff that doesn't compile is not reviewable.
-2. **Run the test suite** — run `npm test` on the PR branch. CI status is a signal, not a substitute for local verification.
-3. **Trace root cause for bug fixes** — confirm the diff addresses the root cause described in the issue, not just the symptom.
-4. **Check for a regression test** — bug fixes must include a test that would have caught the original bug. If it's absent, the fix is incomplete.
+1. **Check out the branch** — check out the PR branch locally (or in a worktree). Don't review from the diff view alone.
+2. **Build the branch** — run `npm run build`. A diff that doesn't compile is not reviewable.
+3. **Run the test suite** — run `npm test`. CI status is a signal, not a substitute for local verification.
+4. **Trace root cause for bug fixes** — confirm the diff addresses the root cause described in the issue, not just the symptom.
+5. **Check for a regression test** — bug fixes must include a test that would have caught the original bug. If it's absent, the fix is incomplete.
+
+Only after completing these steps should a reviewer make claims about correctness.
 
 **What "looks right" means:**
 
