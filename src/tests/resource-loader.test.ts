@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, parse } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -96,6 +96,39 @@ test("buildResourceLoader excludes duplicate top-level pi extensions when bundle
     );
   } finally {
     restoreHomeEnv();
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("initResources manifest tracks all bundled extension subdirectories including remote-questions (#2367)", async () => {
+  const { initResources } = await import("../resource-loader.ts");
+  const tmp = mkdtempSync(join(tmpdir(), "gsd-resource-loader-manifest-"));
+  const fakeAgentDir = join(tmp, "agent");
+
+  try {
+    initResources(fakeAgentDir);
+
+    const manifestPath = join(fakeAgentDir, "managed-resources.json");
+    assert.equal(existsSync(manifestPath), true, "managed-resources.json should exist after initResources");
+
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
+    const installedDirs: string[] = manifest.installedExtensionDirs ?? [];
+
+    // remote-questions uses mod.ts (not index.ts) as its entry point and has an
+    // extension-manifest.json — it must still appear in the manifest so that
+    // pruneRemovedBundledExtensions can track it across upgrades.
+    assert.ok(
+      installedDirs.includes("remote-questions"),
+      `installedExtensionDirs should include remote-questions but got: [${installedDirs.join(", ")}]`,
+    );
+
+    // Also verify that the synced remote-questions directory actually exists in the agent dir
+    assert.equal(
+      existsSync(join(fakeAgentDir, "extensions", "remote-questions")),
+      true,
+      "remote-questions directory should be synced to agent extensions",
+    );
+  } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
 });
