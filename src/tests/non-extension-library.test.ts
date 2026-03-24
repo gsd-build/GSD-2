@@ -31,17 +31,17 @@ function isNonExtensionLibrary(resolvedPath: string): boolean {
   while (dir !== root) {
     const packageJsonPath = join(dir, 'package.json')
     if (existsSync(packageJsonPath)) {
-      t.after(() => rmSync(root, { recursive: true, force: true }));
-      const content = readFileSync(packageJsonPath, 'utf-8')
-      const pkg = JSON.parse(content)
-      if (pkg.pi && typeof pkg.pi === 'object') {
-        const extensions = pkg.pi.extensions
-        if (!Array.isArray(extensions) || extensions.length === 0) {
-          return true
+      try {
+        const content = readFileSync(packageJsonPath, 'utf-8')
+        const pkg = JSON.parse(content)
+        if (pkg.pi && typeof pkg.pi === 'object') {
+          const extensions = pkg.pi.extensions
+          if (!Array.isArray(extensions) || extensions.length === 0) {
+            return true
+          }
         }
-      }
       } catch {
-      // Malformed package.json
+        // Malformed package.json
       }
       break
     }
@@ -53,21 +53,21 @@ function isNonExtensionLibrary(resolvedPath: string): boolean {
 describe('isNonExtensionLibrary — defense-in-depth for #1709', () => {
   test('returns true for a file inside a directory with pi: {} (cmux pattern)', (t) => {
     const root = makeTempDir()
-    try {
-      const libDir = join(root, 'cmux')
-      mkdirSync(libDir)
-      writeFileSync(join(libDir, 'package.json'), JSON.stringify({
+    t.after(() => rmSync(root, { recursive: true, force: true }));
+    const libDir = join(root, 'cmux')
+    mkdirSync(libDir)
+    writeFileSync(join(libDir, 'package.json'), JSON.stringify({
       name: '@gsd/cmux',
       description: 'cmux integration library — used by other extensions, not an extension itself',
       pi: {}
-      }))
-      writeFileSync(join(libDir, 'index.js'), 'module.exports.utility = function() {};')
+    }))
+    writeFileSync(join(libDir, 'index.js'), 'module.exports.utility = function() {};')
 
-      assert.equal(
+    assert.equal(
       isNonExtensionLibrary(join(libDir, 'index.js')),
       true,
       'cmux with pi: {} should be identified as a non-extension library'
-      )
+    )
   })
 
   test('returns true for pi.extensions as empty array', (t) => {

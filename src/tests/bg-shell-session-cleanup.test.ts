@@ -10,11 +10,11 @@ import {
 
 function isPidAlive(pid: number | undefined): boolean {
 	if (!pid || pid <= 0) return false;
-	t.after(cleanupAll);
-	process.kill(pid, 0);
-	return true;
+	try {
+		process.kill(pid, 0);
+		return true;
 	} catch {
-	return false;
+		return false;
 	}
 }
 
@@ -22,25 +22,25 @@ function isPidAlive(pid: number | undefined): boolean {
 // without relying on platform-specific quoting for `node -e "..."`
 const sleeperCommand = "sleep 30";
 
-test("cleanupSessionProcesses reaps only session-scoped processes from the previous session", async () => {
+test("cleanupSessionProcesses reaps only session-scoped processes from the previous session", async (t) => {
+	t.after(cleanupAll);
 	const owned = startProcess({
-	command: sleeperCommand,
-	cwd: process.cwd(),
-	ownerSessionFile: "session-a",
+		command: sleeperCommand,
+		cwd: process.cwd(),
+		ownerSessionFile: "session-a",
 	});
 	const persistent = startProcess({
-	command: sleeperCommand,
-	cwd: process.cwd(),
-	ownerSessionFile: "session-a",
-	persistAcrossSessions: true,
+		command: sleeperCommand,
+		cwd: process.cwd(),
+		ownerSessionFile: "session-a",
+		persistAcrossSessions: true,
 	});
 	const foreign = startProcess({
-	command: sleeperCommand,
-	cwd: process.cwd(),
-	ownerSessionFile: "session-b",
+		command: sleeperCommand,
+		cwd: process.cwd(),
+		ownerSessionFile: "session-b",
 	});
 
-	try {
 	await new Promise((resolve) => setTimeout(resolve, 150));
 	assert.equal(isPidAlive(owned.proc.pid), true, "owned process should be alive before cleanup");
 	assert.equal(isPidAlive(persistent.proc.pid), true, "persistent process should be alive before cleanup");

@@ -162,7 +162,7 @@ test("initResources syncs extensions, agents, and skills to target dir", async (
   assertExtensionIndexExists(fakeAgentDir, "gsd");
 });
 
-test("initResources skips copy when managed version matches current version", async () => {
+test("initResources skips copy when managed version matches current version", async (t) => {
   const { initResources, readManagedResourceVersion } = await import("../resource-loader.ts");
   const tmp = mkdtempSync(join(tmpdir(), "gsd-resources-skip-"));
   const fakeAgentDir = join(tmp, "agent");
@@ -198,7 +198,7 @@ test("initResources skips copy when managed version matches current version", as
 // 4. wizard loadStoredEnvKeys hydration
 // ═══════════════════════════════════════════════════════════════════════════
 
-test("loadStoredEnvKeys hydrates process.env from auth.json", async () => {
+test("loadStoredEnvKeys hydrates process.env from auth.json", async (t) => {
   const { loadStoredEnvKeys } = await import("../wizard.ts");
   const { AuthStorage } = await import("@gsd/pi-coding-agent");
 

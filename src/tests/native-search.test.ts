@@ -346,7 +346,7 @@ test("model_select disables all custom search tools when Anthropic even with BRA
   assert.ok(active.includes("fetch_page"), "fetch_page should remain active");
 });
 
-test("model_select re-enables Brave tools when switching away from Anthropic", async () => {
+test("model_select re-enables Brave tools when switching away from Anthropic", async (t) => {
   const originalKey = process.env.BRAVE_API_KEY;
   delete process.env.BRAVE_API_KEY;
 
@@ -450,7 +450,7 @@ test("CUSTOM_SEARCH_TOOL_NAMES contains all custom search tools", () => {
   assert.deepEqual(CUSTOM_SEARCH_TOOL_NAMES, ["search-the-web", "search_and_read", "google_search"]);
 });
 
-test("before_provider_request removes Brave tools from payload when no BRAVE_API_KEY", async () => {
+test("before_provider_request removes Brave tools from payload when no BRAVE_API_KEY", async (t) => {
   const originalKey = process.env.BRAVE_API_KEY;
   delete process.env.BRAVE_API_KEY;
 
@@ -495,7 +495,7 @@ test("before_provider_request removes Brave tools from payload when no BRAVE_API
   assert.ok(names.includes("web_search"), "native web_search should be injected");
 });
 
-test("before_provider_request removes all custom search tools from payload even with BRAVE_API_KEY", async () => {
+test("before_provider_request removes all custom search tools from payload even with BRAVE_API_KEY", async (t) => {
   const originalKey = process.env.BRAVE_API_KEY;
   process.env.BRAVE_API_KEY = "test-key";
 
@@ -540,7 +540,7 @@ test("before_provider_request removes all custom search tools from payload even 
 
 // ─── BUG-1 regression: duplicate Brave tools on repeated provider toggle ────
 
-test("model_select re-enable does not duplicate Brave tools across toggle cycles", async () => {
+test("model_select re-enable does not duplicate Brave tools across toggle cycles", async (t) => {
   const originalKey = process.env.BRAVE_API_KEY;
   delete process.env.BRAVE_API_KEY;
 

@@ -306,7 +306,7 @@ test("no-key error message mentions both TAVILY_API_KEY and BRAVE_API_KEY", () =
   assert.ok(errorMessage.includes("secure_env_collect"), "Error must mention secure_env_collect");
 });
 
-test("Tavily LLM context request uses POST with Bearer auth and advanced search depth", async () => {
+test("Tavily LLM context request uses POST with Bearer auth and advanced search depth", async (t) => {
   const apiKey = "tvly-test-key-abc123";
   const query = "typescript handbook";
 

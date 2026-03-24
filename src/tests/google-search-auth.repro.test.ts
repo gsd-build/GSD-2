@@ -38,7 +38,7 @@ function mockModelRegistry(oauthJson?: string) {
   };
 }
 
-test("fix: google-search uses OAuth if GEMINI_API_KEY is missing", async () => {
+test("fix: google-search uses OAuth if GEMINI_API_KEY is missing", async (t) => {
   const originalKey = process.env.GEMINI_API_KEY;
   delete process.env.GEMINI_API_KEY;
 
