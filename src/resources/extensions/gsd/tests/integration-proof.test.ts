@@ -278,8 +278,12 @@ test("full lifecycle: migration through completion through doctor", async (t) =>
   const base = createRealisticFixture();
   const dbPath = join(base, ".gsd", "gsd.db");
 
-  try {
-    // ── (a) Open file-backed DB ──────────────────────────────────────
+  t.after(() => {
+    closeDatabase();
+    rmSync(base, { recursive: true, force: true });
+  });
+
+  // ── (a) Open file-backed DB ──────────────────────────────────────
     const opened = openDatabase(dbPath);
     assert.equal(opened, true, "DB should open successfully");
     assert.equal(isDbAvailable(), true, "DB should be available");
@@ -414,10 +418,6 @@ test("full lifecycle: migration through completion through doctor", async (t) =>
     const rogues = detectRogueFileWrites("execute-task", "M001/S01/T99", base);
     assert.ok(rogues.length > 0, "Should detect rogue file write for T99");
     assert.equal(rogues[0].unitId, "M001/S01/T99", "Rogue detection should identify the correct unit");
-  } finally {
-    closeDatabase();
-    rmSync(base, { recursive: true, force: true });
-  }
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -429,8 +429,12 @@ test("recovery: DB loss → migrateFromMarkdown restores state, stale render det
   const base = createRealisticFixture();
   const dbPath = join(base, ".gsd", "gsd.db");
 
-  try {
-    // Set up a completed state first
+  t.after(() => {
+    closeDatabase();
+    rmSync(base, { recursive: true, force: true });
+  });
+
+  // Set up a completed state first
     openDatabase(dbPath);
     migrateHierarchyToDb(base);
     await handleCompleteTask(makeCompleteTaskParams("T01"), base);
@@ -503,10 +507,6 @@ test("recovery: DB loss → migrateFromMarkdown restores state, stale render det
     const t2Recovered = getTask("M001", "S01", "T02");
     assert.ok(t2Recovered, "T02 should exist after recovery");
     assert.equal(t2Recovered!.status, "complete", "T02 should be complete after recovery");
-  } finally {
-    closeDatabase();
-    rmSync(base, { recursive: true, force: true });
-  }
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -517,8 +517,12 @@ test("undo/reset: undo task and reset slice revert DB + markdown", async (t) => 
   const base = createRealisticFixture();
   const dbPath = join(base, ".gsd", "gsd.db");
 
-  try {
-    // Build up completed state
+  t.after(() => {
+    closeDatabase();
+    rmSync(base, { recursive: true, force: true });
+  });
+
+  // Build up completed state
     openDatabase(dbPath);
     migrateHierarchyToDb(base);
     await handleCompleteTask(makeCompleteTaskParams("T01"), base);
@@ -636,8 +640,4 @@ test("undo/reset: undo task and reset slice revert DB + markdown", async (t) => 
       resetNotifs.some(n => n.level === "success"),
       "Reset should produce success notification",
     );
-  } finally {
-    closeDatabase();
-    rmSync(base, { recursive: true, force: true });
-  }
 });
