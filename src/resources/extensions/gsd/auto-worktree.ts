@@ -32,6 +32,7 @@ import {
   removeWorktree,
   resolveGitDir,
   worktreePath,
+  isInsideWorktreesDir,
 } from "./worktree-manager.js";
 import {
   detectWorktreeName,
@@ -794,11 +795,18 @@ export function teardownAutoWorktree(
         `  This is likely an orphaned directory consuming disk space.\n` +
         `  Remove it manually with: rm -rf "${wtDir.replaceAll("\\", "/")}"`,
     );
-    // Attempt a direct filesystem removal as a fallback
-    try {
-      rmSync(wtDir, { recursive: true, force: true });
-    } catch {
-      // Non-fatal — the warning above tells the user how to clean up
+    // Attempt a direct filesystem removal as a fallback — but ONLY if the
+    // path is safely inside .gsd/worktrees/ to prevent #2365 data loss.
+    if (isInsideWorktreesDir(originalBasePath, wtDir)) {
+      try {
+        rmSync(wtDir, { recursive: true, force: true });
+      } catch {
+        // Non-fatal — the warning above tells the user how to clean up
+      }
+    } else {
+      console.error(
+        `[GSD] REFUSING fallback rmSync — path is outside .gsd/worktrees/: ${wtDir}`,
+      );
     }
   }
 }

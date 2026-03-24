@@ -111,6 +111,22 @@ export function worktreeBranchName(name: string): string {
   return `worktree/${name}`;
 }
 
+/**
+ * Validate that a path is inside the .gsd/worktrees/ directory.
+ * Resolves symlinks and normalizes ".." traversals before comparison
+ * so that a symlink-resolved or crafted path cannot escape containment.
+ *
+ * Used as a safety gate before any destructive operation (rmSync,
+ * nativeWorktreeRemove --force) to prevent #2365-style data loss.
+ */
+export function isInsideWorktreesDir(basePath: string, targetPath: string): boolean {
+  const wtDir = resolve(worktreesDir(basePath));
+  const resolved = resolve(targetPath);
+  // The resolved path must start with the worktrees dir followed by a separator,
+  // not merely be a prefix match (e.g. ".gsd/worktrees-extra" must not match).
+  return resolved === wtDir || resolved.startsWith(wtDir + sep);
+}
+
 // ─── Core Operations ───────────────────────────────────────────────────────
 
 /**
@@ -296,15 +312,36 @@ export function removeWorktree(
   // time, so its registered path points to the resolved external location.
   // If syncStateToProjectRoot later creates a real .gsd/ directory that
   // shadows the symlink, the computed path diverges from git's record.
+  let gitReportedPath: string | null = null;
   try {
     const entries = nativeWorktreeList(basePath);
     const entry = entries.find(e => e.branch === branch);
     if (entry?.path) {
-      wtPath = entry.path;
+      gitReportedPath = entry.path;
     }
   } catch { /* fall back to computed path */ }
 
+  // Safety gate (#2365): only use the git-reported path if it is actually
+  // inside .gsd/worktrees/.  When .gsd/ was a symlink, git may have resolved
+  // it to an external directory (e.g. a project data folder).  Using that
+  // path for removal would destroy user data.
+  if (gitReportedPath && isInsideWorktreesDir(basePath, gitReportedPath)) {
+    wtPath = gitReportedPath;
+  } else if (gitReportedPath) {
+    console.error(
+      `[GSD] WARNING: git worktree list reported path outside .gsd/worktrees/: ${gitReportedPath}\n` +
+        `  Refusing to use it for removal — falling back to computed path: ${wtPath}`,
+    );
+    // Still tell git to unregister the worktree entry via its reported path,
+    // but do NOT use force and do NOT fall back to rmSync on this path.
+    try { nativeWorktreeRemove(basePath, gitReportedPath, false); } catch { /* best-effort */ }
+  }
+
   const resolvedWtPath = existsSync(wtPath) ? realpathSync(wtPath) : wtPath;
+
+  // Double-check: the resolved path (after symlink resolution) must also be
+  // inside .gsd/worktrees/ — a symlink inside the directory could point out.
+  const resolvedPathSafe = isInsideWorktreesDir(basePath, resolvedWtPath);
 
   // If we're inside the worktree, move out first — git can't remove an in-use directory
   const cwd = process.cwd();
@@ -321,12 +358,22 @@ export function removeWorktree(
     return;
   }
 
-  // Remove worktree using the resolved path (force if requested, to handle dirty worktrees)
-  try { nativeWorktreeRemove(basePath, resolvedWtPath, force); } catch { /* may fail */ }
+  // Remove worktree — only use force/rmSync when the path is safely contained
+  if (resolvedPathSafe) {
+    try { nativeWorktreeRemove(basePath, resolvedWtPath, force); } catch { /* may fail */ }
 
-  // If the directory is still there (e.g. locked), try harder with force
-  if (existsSync(resolvedWtPath)) {
-    try { nativeWorktreeRemove(basePath, resolvedWtPath, true); } catch { /* may fail */ }
+    // If the directory is still there (e.g. locked), try harder with force
+    if (existsSync(resolvedWtPath)) {
+      try { nativeWorktreeRemove(basePath, resolvedWtPath, true); } catch { /* may fail */ }
+    }
+  } else {
+    // Path is outside containment — only do a non-force git worktree remove
+    // (which refuses to delete dirty worktrees) and never fall back to rmSync.
+    console.error(
+      `[GSD] WARNING: Resolved worktree path is outside .gsd/worktrees/: ${resolvedWtPath}\n` +
+        `  Skipping forced removal to prevent data loss.`,
+    );
+    try { nativeWorktreeRemove(basePath, resolvedWtPath, false); } catch { /* may fail */ }
   }
 
   // Prune stale entries so git knows the worktree is gone
