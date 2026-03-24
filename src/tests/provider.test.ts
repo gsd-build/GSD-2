@@ -28,17 +28,17 @@ function withEnv(
       process.env[key] = vars[key]
     }
   }
-  t.after(() => {
+  try {
+    fn()
+  } finally {
     for (const key of Object.keys(originals)) {
-    if (originals[key] === undefined) {
-    delete process.env[key]
-    } else {
-    process.env[key] = originals[key]
+      if (originals[key] === undefined) {
+        delete process.env[key]
+      } else {
+        process.env[key] = originals[key]
+      }
     }
-    }
-  });
-
-  fn()
+  }
 }
 
 function makeTmpAuth(data: Record<string, unknown> = {}): { authPath: string; cleanup: () => void } {

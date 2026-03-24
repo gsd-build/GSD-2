@@ -14,12 +14,12 @@ function capture(opts: Parameters<typeof printWelcomeScreen>[0]): string {
   const origIsTTY = (process.stderr as any).isTTY
   ;(process.stderr as any).isTTY = true
 
-  t.after(() => {
+  try {
+    printWelcomeScreen(opts)
+  } finally {
     ;(process.stderr as any).write = original
     ;(process.stderr as any).isTTY = origIsTTY
-  });
-
-  printWelcomeScreen(opts)
+  }
 
   return chunks.join('')
 }

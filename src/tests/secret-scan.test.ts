@@ -24,9 +24,8 @@ function scanContent(
   filename = "test-file.ts",
 ): { status: number; stdout: string; stderr: string } {
   const dir = mkdtempSync(join(tmpdir(), "secret-scan-test-"));
-  t.after(() => { rmSync(dir, { recursive: true, force: true }); });
-
-  // Initialize a git repo so `git diff --cached` works
+  try {
+    // Initialize a git repo so `git diff --cached` works
   spawnSync("git", ["init"], { cwd: dir });
   spawnSync("git", ["config", "user.email", "test@test.com"], { cwd: dir });
   spawnSync("git", ["config", "user.name", "Test"], { cwd: dir });
@@ -46,11 +45,14 @@ function scanContent(
     env: { ...process.env, TERM: "dumb" },
   });
 
-  return {
-    status: result.status ?? 1,
-    stdout: result.stdout ?? "",
-    stderr: result.stderr ?? "",
-  };
+    return {
+      status: result.status ?? 1,
+      stdout: result.stdout ?? "",
+      stderr: result.stderr ?? "",
+    };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 // ── Detection tests ──────────────────────────────────────────────────
