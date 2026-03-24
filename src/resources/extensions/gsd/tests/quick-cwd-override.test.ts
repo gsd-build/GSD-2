@@ -61,12 +61,13 @@ test("handleQuick prompt includes explicit working directory override", async ()
     await handleQuick("fix the login button", mockCtx as any, mockPi as any);
 
     assert.ok(capturedMessage, "sendMessage was called");
-    assert.equal(capturedMessage!.customType, "gsd-quick-task");
+    const msg = capturedMessage as { customType: string; content: string; display: boolean };
+    assert.equal(msg.customType, "gsd-quick-task");
 
     // The prompt content MUST include an explicit working directory directive
     // pointing to the project root (process.cwd()), so the agent doesn't follow
     // a stale worktree path from prior auto-mode context.
-    const content = capturedMessage!.content;
+    const content = msg.content;
     assert.ok(
       content.includes(repo),
       `Prompt must include the project root path (${repo}), got:\n${content.slice(0, 500)}`,
