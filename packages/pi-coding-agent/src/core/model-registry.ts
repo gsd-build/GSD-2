@@ -535,10 +535,10 @@ export class ModelRegistry {
 	 * Whether a provider can be used for requests/fallback without hard auth gating.
 	 */
 	isProviderRequestReady(provider: string): boolean {
+		const config = this.registeredProviders.get(provider);
+		if (config?.isReady) return config.isReady();
 		const authMode = this.getProviderAuthMode(provider);
-		if (authMode === "externalCli" || authMode === "none") {
-			return true;
-		}
+		if (authMode === "externalCli" || authMode === "none") return true;
 		return this.authStorage.hasAuth(provider);
 	}
 
@@ -814,6 +814,8 @@ export class ModelRegistry {
  */
 export interface ProviderConfigInput {
 	authMode?: ProviderAuthMode;
+	/** Optional readiness check. Called by isProviderRequestReady() before default auth checks. */
+	isReady?: () => boolean;
 	baseUrl?: string;
 	apiKey?: string;
 	api?: Api;

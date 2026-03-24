@@ -1242,6 +1242,8 @@ export interface ExtensionAPI {
 export interface ProviderConfig {
 	/** Auth behavior for provider availability and request key handling. Defaults to "apiKey". */
 	authMode?: "apiKey" | "oauth" | "externalCli" | "none";
+	/** Optional readiness check. Return false if the provider cannot accept requests (e.g., CLI not authenticated, API key invalid). Called before default auth checks. */
+	isReady?: () => boolean;
 	/** Base URL for the API endpoint. Required when defining models. */
 	baseUrl?: string;
 	/** API key or environment variable name. Required when defining models (unless oauth provided). */
