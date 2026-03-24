@@ -52,6 +52,8 @@ export async function runPrintMode(session: AgentSession, options: PrintModeOpti
 		}
 	});
 
+	let exitCode = 0;
+
 	try {
 		// Send initial message with attachments
 		if (initialMessage) {
@@ -74,13 +76,13 @@ export async function runPrintMode(session: AgentSession, options: PrintModeOpti
 				// Check for error/aborted
 				if (assistantMsg.stopReason === "error" || assistantMsg.stopReason === "aborted") {
 					console.error(assistantMsg.errorMessage || `Request ${assistantMsg.stopReason}`);
-					process.exit(1);
-				}
-
-				// Output text content
-				for (const content of assistantMsg.content) {
-					if (content.type === "text") {
-						console.log(content.text);
+					exitCode = 1;
+				} else {
+					// Output text content
+					for (const content of assistantMsg.content) {
+						if (content.type === "text") {
+							console.log(content.text);
+						}
 					}
 				}
 			}
@@ -96,5 +98,9 @@ export async function runPrintMode(session: AgentSession, options: PrintModeOpti
 		});
 	} finally {
 		unsubscribe();
+	}
+
+	if (exitCode !== 0) {
+		process.exit(exitCode);
 	}
 }
