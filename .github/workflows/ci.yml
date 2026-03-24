@@ -83,6 +83,9 @@ jobs:
       - name: Scan for hardcoded secrets
         run: bash scripts/secret-scan.sh --diff origin/main
 
+      - name: Scan for base64-encoded secrets
+        run: bash scripts/base64-scan.sh --diff origin/main
+
       - name: Ensure .gsd/ is not checked in
         run: |
           if [ -d ".gsd" ]; then
