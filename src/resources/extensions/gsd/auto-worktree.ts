@@ -25,6 +25,7 @@ import {
 } from "./gsd-db.js";
 import { atomicWriteSync } from "./atomic-write.js";
 import { execFileSync } from "node:child_process";
+import { GIT_NO_PROMPT_ENV } from "./git-constants.js";
 import { safeCopy, safeCopyRecursive } from "./safe-fs.js";
 import { gsdRoot } from "./paths.js";
 import {
@@ -1055,11 +1056,13 @@ export function mergeMilestoneToMain(
         cwd: worktreeCwd,
         stdio: ["ignore", "pipe", "pipe"],
         encoding: "utf-8",
+        env: GIT_NO_PROMPT_ENV,
       }).trim();
       const branchHead = execFileSync("git", ["rev-parse", milestoneBranch], {
         cwd: originalBasePath_,
         stdio: ["ignore", "pipe", "pipe"],
         encoding: "utf-8",
+        env: GIT_NO_PROMPT_ENV,
       }).trim();
 
       if (worktreeHead && branchHead && worktreeHead !== branchHead) {
@@ -1227,6 +1230,7 @@ export function mergeMilestoneToMain(
         cwd: originalBasePath_,
         stdio: ["ignore", "pipe", "pipe"],
         encoding: "utf-8",
+        env: GIT_NO_PROMPT_ENV,
       });
       pushed = true;
     } catch {
@@ -1245,6 +1249,7 @@ export function mergeMilestoneToMain(
         cwd: originalBasePath_,
         stdio: ["ignore", "pipe", "pipe"],
         encoding: "utf-8",
+        env: GIT_NO_PROMPT_ENV,
       });
       // Create PR via gh CLI
       execFileSync("gh", [

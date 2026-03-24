@@ -4,6 +4,7 @@
 // First non-empty source wins.
 
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
+import { GIT_NO_PROMPT_ENV } from "./git-constants.js";
 import { existsSync, readFileSync } from "node:fs";
 import { join, basename } from "node:path";
 import type { AuditWarning, RuntimeError, VerificationCheck, VerificationResult } from "./types.js";
@@ -518,6 +519,7 @@ function defaultGitDiff(cwd: string): string[] {
       cwd,
       encoding: "utf-8",
       timeout: 10_000,
+      env: GIT_NO_PROMPT_ENV,
     });
     if (result.status !== 0 || !result.stdout) return [];
     return result.stdout.trim().split("\n").filter(Boolean);

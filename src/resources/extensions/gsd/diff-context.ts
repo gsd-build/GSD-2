@@ -9,6 +9,7 @@
 import { execFileSync, execFile } from "node:child_process";
 import { resolve } from "node:path";
 import { GSDError, GSD_PARSE_ERROR } from "./errors.js";
+import { GIT_NO_PROMPT_ENV } from "./git-constants.js";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -31,6 +32,7 @@ const EXEC_OPTS = {
   encoding: "utf-8" as const,
   timeout: 5000,
   stdio: ["pipe", "pipe", "pipe"] as ["pipe", "pipe", "pipe"],
+  env: GIT_NO_PROMPT_ENV,
 };
 
 /** Synchronous git — used where sequential control flow is required (fallback paths). */
@@ -44,7 +46,7 @@ function gitAsync(args: string[], cwd: string): Promise<string> {
     execFile(
       "git",
       args,
-      { encoding: "utf-8", timeout: 5000, cwd },
+      { encoding: "utf-8", timeout: 5000, cwd, env: GIT_NO_PROMPT_ENV },
       (err, stdout) => resolve(err ? "" : stdout.trim()),
     );
   });

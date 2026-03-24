@@ -12,6 +12,7 @@
 import { readdirSync, existsSync, realpathSync, Dirent } from "node:fs";
 import { join, dirname, normalize } from "node:path";
 import { spawnSync } from "node:child_process";
+import { GIT_NO_PROMPT_ENV } from "./git-constants.js";
 import { nativeScanGsdTree, type GsdTreeEntry } from "./native-parser-bridge.js";
 import { DIR_CACHE_MAX } from "./constants.js";
 
@@ -325,6 +326,7 @@ function probeGsdRoot(rawBasePath: string): string {
     const out = spawnSync("git", ["rev-parse", "--show-toplevel"], {
       cwd: basePath,
       encoding: "utf-8",
+      env: GIT_NO_PROMPT_ENV,
     });
     if (out.status === 0) {
       const r = out.stdout.trim();

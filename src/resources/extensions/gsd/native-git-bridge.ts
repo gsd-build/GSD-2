@@ -812,6 +812,7 @@ export function nativeCheckoutBranch(basePath: string, branch: string): void {
     cwd: basePath,
     stdio: ["ignore", "pipe", "pipe"],
     encoding: "utf-8",
+    env: GIT_NO_PROMPT_ENV,
   });
 }
 

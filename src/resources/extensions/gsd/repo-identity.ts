@@ -8,6 +8,7 @@
 
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { GIT_NO_PROMPT_ENV } from "./git-constants.js";
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
@@ -152,6 +153,7 @@ function getRemoteUrl(basePath: string): string {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "ignore"],
       timeout: 5_000,
+      env: GIT_NO_PROMPT_ENV,
     }).trim();
   } catch {
     return "";
@@ -178,6 +180,7 @@ function resolveGitCommonDir(basePath: string): string {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "ignore"],
       timeout: 5_000,
+      env: GIT_NO_PROMPT_ENV,
     }).trim();
   } catch {
     const raw = execFileSync("git", ["rev-parse", "--git-common-dir"], {
@@ -185,6 +188,7 @@ function resolveGitCommonDir(basePath: string): string {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "ignore"],
       timeout: 5_000,
+      env: GIT_NO_PROMPT_ENV,
     }).trim();
     return resolve(basePath, raw);
   }
@@ -212,6 +216,7 @@ function resolveGitRoot(basePath: string): string {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "ignore"],
       timeout: 5_000,
+      env: GIT_NO_PROMPT_ENV,
     }).trim());
   } catch {
     return resolve(basePath);

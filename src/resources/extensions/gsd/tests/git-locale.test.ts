@@ -124,6 +124,112 @@ async function main(): Promise<void> {
     );
   }
 
+  // ─── ALL production git call sites must use GIT_NO_PROMPT_ENV (#2294) ──
+
+  console.log("\n=== ALL production git call sites use GIT_NO_PROMPT_ENV (#2294) ===");
+
+  {
+    // Static analysis: every production source file that calls
+    // execFileSync("git" / execFile("git" / spawnSync("git" must either:
+    //   a) pass env: GIT_NO_PROMPT_ENV in the options, OR
+    //   b) spread EXEC_OPTS which itself includes env: GIT_NO_PROMPT_ENV
+    //
+    // This prevents regressions where new git call sites forget LC_ALL=C,
+    // causing stderr checks to fail on non-English locales.
+
+    const { readdirSync } = await import("node:fs");
+    const { resolve: resolvePath } = await import("node:path");
+
+    const srcDir = resolvePath(import.meta.dirname, "..");
+    const sourceFiles = [
+      "native-git-bridge.ts",
+      "git-service.ts",
+      "diff-context.ts",
+      "auto-dashboard.ts",
+      "auto-worktree.ts",
+      "verification-gate.ts",
+      "paths.ts",
+      "repo-identity.ts",
+      "gitignore.ts",
+      "migrate-external.ts",
+    ];
+
+    const gitCallPattern = /(?:execFileSync|execFile|spawnSync)\(\s*"git"/g;
+
+    for (const file of sourceFiles) {
+      const filePath = join(srcDir, file);
+      let content: string;
+      try {
+        content = readFileSync(filePath, "utf-8");
+      } catch {
+        continue; // File may not exist in all configurations
+      }
+
+      const lines = content.split("\n");
+
+      // For each git call, verify the options object includes GIT_NO_PROMPT_ENV or LC_ALL
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (!gitCallPattern.test(line)) {
+          gitCallPattern.lastIndex = 0;
+          continue;
+        }
+        gitCallPattern.lastIndex = 0;
+
+        // Grab surrounding context (the options object may span multiple lines)
+        const context = lines.slice(i, Math.min(i + 8, lines.length)).join("\n");
+
+        const hasLocaleEnv =
+          context.includes("GIT_NO_PROMPT_ENV") ||
+          context.includes("LC_ALL") ||
+          context.includes("...EXEC_OPTS");
+
+        assertTrue(
+          hasLocaleEnv,
+          `${file}:${i + 1} — git call must use GIT_NO_PROMPT_ENV (or LC_ALL) to ensure English output (#2294)`
+        );
+      }
+    }
+  }
+
+  // ─── nativeCheckoutBranch fallback uses GIT_NO_PROMPT_ENV (#2294) ──
+
+  console.log("\n=== nativeCheckoutBranch fallback uses GIT_NO_PROMPT_ENV (#2294) ===");
+
+  {
+    const src = readFileSync(
+      join(import.meta.dirname, "..", "native-git-bridge.ts"),
+      "utf-8"
+    );
+    const fnStart = src.indexOf("export function nativeCheckoutBranch");
+    assertTrue(fnStart !== -1, "nativeCheckoutBranch function exists in source");
+
+    const nextFnStart = src.indexOf("\nexport function", fnStart + 1);
+    const fnBody = src.slice(fnStart, nextFnStart !== -1 ? nextFnStart : undefined);
+    const hasEnv = fnBody.includes("env: GIT_NO_PROMPT_ENV");
+    assertTrue(
+      hasEnv,
+      "nativeCheckoutBranch fallback must pass env: GIT_NO_PROMPT_ENV (#2294)"
+    );
+  }
+
+  // ─── diff-context.ts uses GIT_NO_PROMPT_ENV (#2294) ───────────────────
+
+  console.log("\n=== diff-context.ts uses GIT_NO_PROMPT_ENV (#2294) ===");
+
+  {
+    const src = readFileSync(
+      join(import.meta.dirname, "..", "diff-context.ts"),
+      "utf-8"
+    );
+
+    // EXEC_OPTS must include env: GIT_NO_PROMPT_ENV
+    assertTrue(
+      src.includes("GIT_NO_PROMPT_ENV"),
+      "diff-context.ts must reference GIT_NO_PROMPT_ENV for locale-safe git calls (#2294)"
+    );
+  }
+
   report();
 }
 

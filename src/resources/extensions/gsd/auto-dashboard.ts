@@ -18,6 +18,7 @@ import {
 import { parseRoadmap, parsePlan } from "./files.js";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
+import { GIT_NO_PROMPT_ENV } from "./git-constants.js";
 import { truncateToWidth, visibleWidth } from "@gsd/pi-tui";
 import { makeUI } from "../shared/tui.js";
 import { GLYPH, INDENT } from "../shared/mod.js";
@@ -305,6 +306,7 @@ function refreshLastCommit(basePath: string): void {
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
       timeout: 3000,
+      env: GIT_NO_PROMPT_ENV,
     }).trim();
     const sep = raw.indexOf("|");
     if (sep > 0) {
