@@ -200,18 +200,4 @@ describe('unique-milestone-ids', async () => {
     const prefs: GSDPreferences = { unique_milestone_ids: true, version: 1 };
     assert.ok(prefs.unique_milestone_ids === true, 'GSDPreferences interface accepts unique_milestone_ids');
   }
-}
-
-// When run via vitest, wrap in test(); when run via tsx, call directly.
-const isVitest = typeof globalThis !== 'undefined' && (globalThis as any).__vitest_worker__?.config?.defines != null && 'vitest' in (globalThis as any).__vitest_worker__.config.defines || process.env.VITEST;
-if (isVitest) {
-  const { test } = await import('node:test');
-  test('unique-milestone-ids: all ID primitives handle both formats', async () => {
-    await main();
-  });
-} else {
-  main().catch((error) => {
-    console.error(error);
-    process.exit(1);
-  });
 });

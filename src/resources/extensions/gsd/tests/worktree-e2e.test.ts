@@ -234,6 +234,4 @@ _None_
       try { rmSync(d, { recursive: true, force: true }); } catch { /* ignore */ }
     }
   }
-}
-
-main();
+});

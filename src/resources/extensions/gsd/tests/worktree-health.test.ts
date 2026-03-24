@@ -178,6 +178,4 @@ describe('worktree-health', async () => {
       try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
     }
   }
-}
-
-main();
+});

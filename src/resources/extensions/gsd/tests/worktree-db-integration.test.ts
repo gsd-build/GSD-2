@@ -199,6 +199,4 @@ describe('worktree-db-integration', async () => {
       }
     }
   }
-}
-
-main();
+});
