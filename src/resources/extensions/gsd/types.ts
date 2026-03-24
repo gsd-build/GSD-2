@@ -183,6 +183,8 @@ export interface GSDState {
     slices?: { done: number; total: number };
     tasks?: { done: number; total: number };
   };
+  /** Populated when multiple slices are running in parallel within a milestone. */
+  parallelSlices?: ActiveRef[];
 }
 
 // ─── Post-Unit Hook Types ─────────────────────────────────────────────────
@@ -305,4 +307,175 @@ export interface HookStatusEntry {
   targets: string[];
   /** Current cycle counts for active triggers. */
   activeCycles: Record<string, number>;
+}
+
+// ─── Database Types (Decisions & Requirements) ────────────────────────────
+
+export interface Decision {
+  seq: number;              // auto-increment primary key
+  id: string;               // e.g. "D001"
+  when_context: string;     // when/context of the decision
+  scope: string;            // scope (milestone, slice, global, etc.)
+  decision: string;         // what was decided
+  choice: string;           // the specific choice made
+  rationale: string;        // why this choice
+  revisable: string;        // whether/when revisable
+  superseded_by: string | null;  // ID of superseding decision, or null
+}
+
+export interface Requirement {
+  id: string;               // e.g. "R001"
+  class: string;            // requirement class (functional, non-functional, etc.)
+  status: string;           // active, validated, deferred, etc.
+  description: string;      // short description
+  why: string;              // rationale
+  source: string;           // origin (milestone, user, etc.)
+  primary_owner: string;    // owning slice/milestone
+  supporting_slices: string; // other slices that touch this
+  validation: string;       // how to validate
+  notes: string;            // additional notes
+  full_content: string;     // full requirement text
+  superseded_by: string | null;  // ID of superseding requirement, or null
+}
+
+// ─── Parallel Orchestration Types ────────────────────────────────────────
+
+export type CompressionStrategy = 'truncate' | 'compress';
+export type ContextSelectionMode = 'full' | 'smart';
+
+export type MergeStrategy = "per-slice" | "per-milestone";
+export type AutoMergeMode = "auto" | "confirm" | "manual";
+export type TokenProfile = "budget" | "balanced" | "quality";
+export type InlineLevel = "minimal" | "standard" | "full";
+
+export interface PhaseSkipPreferences {
+  skip_research?: boolean;
+  skip_reassess?: boolean;
+  skip_slice_research?: boolean;
+  skip_milestone_validation?: boolean;
+  reassess_after_slice?: boolean;
+}
+
+export interface ParallelConfig {
+  enabled: boolean;
+  max_workers: number;
+  budget_ceiling?: number;
+  merge_strategy: MergeStrategy;
+  auto_merge: AutoMergeMode;
+  slice_parallel?: SliceParallelConfig;
+  distribution?: WorkDistributionConfig;
+}
+
+export interface SliceParallelConfig {
+  enabled: boolean;
+  max_concurrent_slices: number;
+  max_concurrent_tasks: number;
+  merge_strategy: "patch" | "cherry-pick";
+}
+
+export interface WorkDistributionConfig {
+  enabled: boolean;
+  strategy: "round-robin" | "least-loaded" | "capability-match";
+  work_stealing: boolean;
+  auto_scale: boolean;
+  min_workers: number;
+  max_workers: number;
+  idle_timeout_ms: number;
+  queue_depth_scale_threshold: number;
+}
+
+// ─── Inter-Agent Communication Types ──────────────────────────────────────
+
+export interface AgentMessage {
+  id: string;
+  from: string;
+  to: string | "*";
+  channel: "discovery" | "artifact" | "conflict" | "request";
+  payload: Record<string, unknown>;
+  timestamp: number;
+  acked: boolean;
+}
+
+export interface SharedArtifact {
+  id: string;
+  producedBy: string;
+  unitId: string;
+  type: "file" | "interface" | "schema" | "test" | "config";
+  path: string;
+  description: string;
+  timestamp: number;
+}
+
+export interface SharedKnowledgeEntry {
+  id: string;
+  category: "pattern" | "decision" | "discovery" | "warning";
+  content: string;
+  author: string;
+  unitId: string;
+  timestamp: number;
+  relevantTo?: string[];
+}
+
+export interface ConflictWarning {
+  id: string;
+  workers: string[];
+  files: string[];
+  severity: "info" | "warning" | "critical";
+  resolved: boolean;
+  timestamp: number;
+}
+
+// ─── Team Types ───────────────────────────────────────────────────────────
+
+export interface TeamDefinition {
+  name: string;
+  description: string;
+  members: TeamMember[];
+  filePatterns: string[];
+  capabilities: string[];
+  model?: string;
+  tools?: string[];
+  maxConcurrency?: number;
+}
+
+export interface TeamMember {
+  agent: string;
+  role?: string;
+  filePatterns?: string[];
+}
+
+export interface TeamAssignment {
+  teamName: string;
+  confidence: number;
+  matchedPatterns: string[];
+  matchedCapabilities: string[];
+}
+
+// ─── Work Queue Types ─────────────────────────────────────────────────────
+
+export interface WorkQueueItem {
+  id: string;
+  unitType: string;
+  unitId: string;
+  prompt: string;
+  priority: number;
+  assignedTo: string | null;
+  status: "queued" | "assigned" | "in-progress" | "completed" | "failed";
+  enqueuedAt: number;
+  assignedAt: number | null;
+  completedAt: number | null;
+  teamHint?: string;
+  estimatedCost?: number;
+  requirements?: string[];
+}
+
+export interface WorkerCapacity {
+  workerId: string;
+  currentLoad: number;
+  maxLoad: number;
+  completedCount: number;
+  totalCost: number;
+  capabilities: string[];
+  idleSince: number | null;
+  lastHeartbeat: number;
 }

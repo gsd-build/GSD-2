@@ -82,7 +82,8 @@ import {
   setActiveMilestoneId,
 } from "./worktree.js";
 import { GitServiceImpl } from "./git-service.js";
-import { getPriorSliceCompletionBlocker } from "./dispatch-guard.js";
+import { getPriorSliceCompletionBlocker, getSliceDependencyBlocker } from "./dispatch-guard.js";
+import { resolveSliceParallelConfig } from "./preferences.js";
 import { formatGitError } from "./git-self-heal.js";
 import {
   createAutoWorktree,
@@ -1016,6 +1017,45 @@ export async function handleAgentEnd(
     return;
   }
 
+  // ── Parallel slice worker refresh & merge-back ──────────────────────────
+  try {
+    const { isSliceParallelActive, refreshSliceWorkerStatuses, allSliceWorkersComplete, getCompletedSliceWorkers, resetSliceOrchestrator } = await import("./slice-parallel-orchestrator.js");
+    if (isSliceParallelActive()) {
+      refreshSliceWorkerStatuses(s.basePath);
+      if (allSliceWorkersComplete()) {
+        // Merge completed slice worktrees back to parent
+        const completed = getCompletedSliceWorkers();
+        for (const worker of completed) {
+          try {
+            const { mergeWorktreeToMain } = await import("./worktree-manager.js");
+            mergeWorktreeToMain(s.basePath, worker.workerId, {
+              squash: true,
+              message: `gsd: merge parallel slice ${worker.sliceId}`,
+            });
+          } catch (mergeErr) {
+            process.stderr.write(`[gsd] slice merge failed for ${worker.sliceId}: ${mergeErr}\n`);
+          }
+        }
+        resetSliceOrchestrator(s.basePath);
+      }
+    }
+  } catch { /* non-fatal */ }
+
+  // Inter-agent comms: share unit outcome (opt-in)
+  try {
+    const effectivePrefs = loadEffectiveGSDPreferences()?.preferences;
+    if (effectivePrefs?.comms?.enabled !== false && s.currentUnit) {
+      const { addKnowledge } = await import("./agent-comms.js");
+      const { cleanupComms } = await import("./agent-comms-cleanup.js");
+      addKnowledge(s.basePath, {
+        category: "decision",
+        content: `Completed ${s.currentUnit.type} ${s.currentUnit.id}`,
+        author: `worker-${process.pid}`,
+        unitId: s.currentUnit.id,
+      });
+      cleanupComms(s.basePath);
+    }
+  } catch { /* non-fatal */ }
   try {
     await dispatchNextUnit(ctx, pi);
   } catch (dispatchErr) {
@@ -1202,6 +1242,20 @@ async function dispatchNextUnit(
   let state = await deriveState(basePath);
   let mid = state.activeMilestone?.id;
   let midTitle = state.activeMilestone?.title;
+
+  // ── Poll inter-agent messages (parallel workers only) ──────────────────
+  if (process.env.GSD_PARALLEL_WORKER === "1") {
+    try {
+      const { pollMessages, ackMessage } = await import("./agent-comms.js");
+      const messages = pollMessages(s.basePath, `worker-${process.pid}`);
+      for (const msg of messages) {
+        if (msg.channel === "conflict") {
+          process.stderr.write(`[gsd] conflict warning: ${JSON.stringify(msg.payload)}\n`);
+        }
+        ackMessage(s.basePath, msg.id);
+      }
+    } catch { /* non-fatal */ }
+  }
 
   // Detect milestone transition
   if (mid && currentMilestoneId && mid !== currentMilestoneId) {
@@ -1433,6 +1487,7 @@ async function dispatchNextUnit(
   unitId = dispatchResult.unitId;
   prompt = dispatchResult.prompt;
   let pauseAfterUatDispatch = dispatchResult.pauseAfterDispatch ?? false;
+  const teamHint = dispatchResult.teamHint;
 
   // ── Pre-dispatch hooks: modify, skip, or replace the unit before dispatch ──
   const preDispatchResult = runPreDispatchHooks(unitType, unitId, prompt, basePath);
@@ -1456,11 +1511,52 @@ async function dispatchNextUnit(
     prompt = preDispatchResult.prompt;
   }
 
-  const priorSliceBlocker = getPriorSliceCompletionBlocker(basePath, getMainBranch(basePath), unitType, unitId);
+  // Use dependency-aware blocker when slice parallelism is enabled (checks only explicit deps),
+  // otherwise fall back to sequential blocker (blocks on any prior incomplete slice).
+  const sliceParallelCfg = resolveSliceParallelConfig(prefs);
+  const priorSliceBlocker = sliceParallelCfg.enabled
+    ? getSliceDependencyBlocker(basePath, getMainBranch(basePath), unitType, unitId)
+    : getPriorSliceCompletionBlocker(basePath, getMainBranch(basePath), unitType, unitId);
   if (priorSliceBlocker) {
     await stopAuto(ctx, pi);
     ctx.ui.notify(priorSliceBlocker, "error");
     return;
+  }
+
+  // ── Parallel slice fan-out (opt-in) ──────────────────────────────────
+  if (sliceParallelCfg.enabled && state.parallelSlices && state.parallelSlices.length > 0 && mid) {
+    try {
+      const { isSliceParallelActive, startSliceParallelExecution } = await import("./slice-parallel-orchestrator.js");
+      if (!isSliceParallelActive()) {
+        const siblingIds = state.parallelSlices.map(ps => ps.id);
+
+        // Conflict detection: filter out slices with critical file overlaps
+        let safeIds = siblingIds;
+        try {
+          const { detectAndRaiseOverlaps } = await import("./agent-comms.js");
+          const { collectSliceFiles } = await import("./slice-parallel-eligibility.js");
+          const allSliceIds = [state.activeSlice!.id, ...siblingIds];
+          const workerFiles = new Map<string, string[]>();
+          for (const sid of allSliceIds) {
+            workerFiles.set(sid, await collectSliceFiles(basePath, mid, sid));
+          }
+          const conflicts = detectAndRaiseOverlaps(basePath, workerFiles);
+          const criticalIds = new Set<string>();
+          for (const c of conflicts) {
+            if (c.severity === "critical") {
+              for (const w of c.workers) criticalIds.add(w);
+            }
+          }
+          safeIds = siblingIds.filter(id => !criticalIds.has(id));
+        } catch { /* non-fatal — skip conflict detection on error */ }
+
+        if (safeIds.length > 0) {
+          const { resolveWorkDistributionConfig } = await import("./preferences.js");
+          const distCfg = resolveWorkDistributionConfig(prefs);
+          startSliceParallelExecution(basePath, mid, safeIds, sliceParallelCfg, distCfg.enabled ? distCfg : undefined);
+        }
+      }
+    } catch { /* non-fatal — parallel spawn failure shouldn't block primary dispatch */ }
   }
 
   const observabilityIssues = await collectObservabilityWarnings(ctx, unitType, unitId);
@@ -1792,9 +1888,43 @@ async function dispatchNextUnit(
     finalPrompt = `${finalPrompt}${repairBlock}`;
   }
 
+  // ── Inject shared knowledge from parallel workers (opt-in) ──
+  if (prefs?.comms?.knowledge_sharing !== false && sliceParallelCfg.enabled) {
+    try {
+      const { queryKnowledge, queryArtifacts } = await import("./agent-comms.js");
+      const knowledge = queryKnowledge(basePath, [unitId, mid]);
+      const artifacts = queryArtifacts(basePath);
+      if (knowledge.length > 0 || artifacts.length > 0) {
+        let sharedCtx = "\n\n---\n## Shared Context from Parallel Workers\n";
+        if (knowledge.length > 0) {
+          sharedCtx += "\n### Discoveries:\n";
+          for (const k of knowledge.slice(-10)) {
+            sharedCtx += `- [${k.category}] ${k.content}\n`;
+          }
+        }
+        if (artifacts.length > 0) {
+          sharedCtx += "\n### Shared Artifacts:\n";
+          for (const a of artifacts.slice(-5)) {
+            sharedCtx += `- ${a.type}: ${a.path} (${a.description})\n`;
+          }
+        }
+        finalPrompt += sharedCtx;
+      }
+    } catch { /* non-fatal */ }
+  }
+
   // Switch model if preferences specify one for this unit type
   // Try primary model, then fallbacks in order if setting fails
-  const modelConfig = resolveModelWithFallbacksForUnit(unitType);
+  // Look up team model override from dispatch result
+  let modelConfig = resolveModelWithFallbacksForUnit(unitType);
+  const teamModel = teamHint && prefs?.teams
+    ? prefs.teams.find(t => t.name === teamHint)?.model
+    : undefined;
+  if (teamModel && modelConfig) {
+    modelConfig = { primary: teamModel, fallbacks: modelConfig.fallbacks };
+  } else if (teamModel) {
+    modelConfig = { primary: teamModel, fallbacks: [] };
+  }
   if (modelConfig) {
     const availableModels = ctx.modelRegistry.getAvailable();
     const modelsToTry = [modelConfig.primary, ...modelConfig.fallbacks];

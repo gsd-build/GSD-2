@@ -12,7 +12,7 @@
 import type { GSDState } from "./types.js";
 import type { GSDPreferences } from "./preferences.js";
 import type { UatType } from "./files.js";
-import { loadFile, extractUatType, loadActiveOverrides } from "./files.js";
+import { loadFile, extractUatType, loadActiveOverrides, parseRoadmap, parsePlan } from "./files.js";
 import {
   resolveMilestoneFile, resolveSliceFile,
   relSliceFile,
@@ -36,7 +36,7 @@ import {
 // ─── Types ────────────────────────────────────────────────────────────────
 
 export type DispatchAction =
-  | { action: "dispatch"; unitType: string; unitId: string; prompt: string; pauseAfterDispatch?: boolean }
+  | { action: "dispatch"; unitType: string; unitId: string; prompt: string; pauseAfterDispatch?: boolean; teamHint?: string }
   | { action: "stop"; reason: string; level: "info" | "warning" | "error" }
   | { action: "skip" };
 
@@ -234,17 +234,40 @@ const DISPATCH_RULES: DispatchRule[] = [
   },
   {
     name: "executing → execute-task",
-    match: async ({ state, mid, basePath }) => {
+    match: async ({ state, mid, basePath, prefs }) => {
       if (state.phase !== "executing" || !state.activeTask) return null;
       const sid = state.activeSlice!.id;
       const sTitle = state.activeSlice!.title;
       const tid = state.activeTask.id;
       const tTitle = state.activeTask.title;
+
+      // Team routing (opt-in): resolve team assignment from task files
+      let teamHint: string | undefined;
+      if (prefs?.teams && prefs.teams.length > 0) {
+        try {
+          const { resolveTeamForTask } = await import("./teams.js");
+          // Try to get task files from the slice plan
+          const planPath = resolveSliceFile(basePath, mid, sid, "PLAN");
+          let taskFiles: string[] = [];
+          if (planPath) {
+            const planContent = await loadFile(planPath);
+            if (planContent) {
+              const plan = parsePlan(planContent);
+              const taskEntry = plan.tasks.find(t => t.id === tid);
+              taskFiles = taskEntry?.files ?? [];
+            }
+          }
+          const assignment = resolveTeamForTask(prefs.teams, taskFiles, tTitle);
+          if (assignment) teamHint = assignment.teamName;
+        } catch { /* non-fatal — team routing failure shouldn't block dispatch */ }
+      }
+
       return {
         action: "dispatch",
         unitType: "execute-task",
         unitId: `${mid}/${sid}/${tid}`,
         prompt: await buildExecuteTaskPrompt(mid, sid, sTitle, tid, tTitle, basePath),
+        teamHint,
       };
     },
   },

@@ -5,7 +5,14 @@ import { readFileSync } from "node:fs";
 import { readdirSync } from "node:fs";
 import { resolveMilestoneFile, milestonesDir } from "./paths.js";
 import { parseRoadmapSlices } from "./roadmap-slices.js";
-import { extractMilestoneSeq, milestoneIdSort } from "./guided-flow.js";
+import { extractMilestoneSeq, milestoneIdSort, findMilestoneIds } from "./guided-flow.js";
+import type { RoadmapSliceEntry } from "./types.js";
+
+/** Parse a unit ID string (e.g. "M1/S1/T1") into its milestone, slice, and task components. */
+function parseUnitId(unitId: string): { milestone: string; slice?: string; task?: string } {
+  const [milestone, slice, task] = unitId.split("/");
+  return { milestone: milestone!, slice, task };
+}
 
 const SLICE_DISPATCH_TYPES = new Set([
   "research-slice",
@@ -35,6 +42,70 @@ function readRoadmapFromDisk(base: string, milestoneId: string): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Dependency-aware slice blocker for parallel execution mode.
+ *
+ * When slice_parallel is enabled, a slice is only blocked if its explicit
+ * `depends` entries are not yet complete — NOT by all prior slices.
+ * This allows independent slices to run concurrently.
+ *
+ * Cross-milestone blocking still applies: all slices in prior milestones
+ * must be complete before any slice in the current milestone can start.
+ */
+export function getSliceDependencyBlocker(
+  base: string,
+  _mainBranch: string,
+  unitType: string,
+  unitId: string,
+): string | null {
+  if (!SLICE_DISPATCH_TYPES.has(unitType)) return null;
+
+  const { milestone: targetMid, slice: targetSid } = parseUnitId(unitId);
+  if (!targetMid || !targetSid) return null;
+
+  const allIds = findMilestoneIds(base);
+  const targetIdx = allIds.indexOf(targetMid);
+  if (targetIdx < 0) return null;
+
+  // Cross-milestone blocking: prior milestones must be complete
+  const priorMilestones = allIds.slice(0, targetIdx);
+  for (const mid of priorMilestones) {
+    const parkedFile = resolveMilestoneFile(base, mid, "PARKED");
+    if (parkedFile) continue;
+
+    const roadmapContent = readRoadmapFromDisk(base, mid);
+    if (!roadmapContent) continue;
+
+    const slices = parseRoadmapSlices(roadmapContent);
+    const incomplete = slices.find(slice => !slice.done);
+    if (incomplete) {
+      return `Cannot dispatch ${unitType} ${unitId}: earlier slice ${mid}/${incomplete.id} is not complete.`;
+    }
+  }
+
+  // Within the target milestone: only check explicit dependencies
+  const roadmapContent = readRoadmapFromDisk(base, targetMid);
+  if (!roadmapContent) return null;
+
+  const slices = parseRoadmapSlices(roadmapContent);
+  const targetSlice = slices.find(s => s.id === targetSid);
+  if (!targetSlice) return null;
+
+  // Build a lookup for quick status checks
+  const sliceMap = new Map<string, RoadmapSliceEntry>();
+  for (const s of slices) sliceMap.set(s.id, s);
+
+  // Check each explicit dependency
+  for (const depId of targetSlice.depends) {
+    const dep = sliceMap.get(depId);
+    if (dep && !dep.done) {
+      return `Cannot dispatch ${unitType} ${unitId}: dependency ${targetMid}/${depId} is not complete.`;
+    }
+  }
+
+  return null;
 }
 
 export function getPriorSliceCompletionBlocker(base: string, _mainBranch: string, unitType: string, unitId: string): string | null {

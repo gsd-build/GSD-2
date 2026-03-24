@@ -26,6 +26,7 @@ import {
   resolveSlicePath,
   resolveSliceFile,
   resolveTaskFile,
+  resolveTasksDir,
   resolveGsdRootFile,
   gsdRoot,
 } from './paths.js';
@@ -34,6 +35,7 @@ import { milestoneIdSort, findMilestoneIds } from './guided-flow.js';
 import { nativeBatchParseGsdFiles, type BatchParsedFile } from './native-parser-bridge.js';
 
 import { join, resolve } from 'path';
+import { existsSync, readdirSync } from 'node:fs';
 
 // ─── Query Functions ───────────────────────────────────────────────────────
 
@@ -383,6 +385,29 @@ async function _deriveStateImpl(basePath: string): Promise<GSDState> {
     }
   }
 
+  // Collect parallel-eligible slices (all incomplete slices with satisfied deps, excluding the primary)
+  const parallelSlices: ActiveRef[] = [];
+  for (const sl of activeRoadmap.slices) {
+    if (sl.done) continue;
+    if (activeSlice && sl.id === activeSlice.id) continue;
+    if (sl.depends.every(dep => doneSliceIds.has(dep))) {
+      parallelSlices.push({ id: sl.id, title: sl.title });
+    }
+  }
+
+  // Slice-level worker isolation: when GSD_SLICE_LOCK is set,
+  // restrict this worker to only its assigned slice.
+  const sliceLock = process.env.GSD_SLICE_LOCK;
+  if (sliceLock && activeSlice) {
+    const lockSliceId = sliceLock.split("/").pop();
+    if (lockSliceId && activeSlice.id !== lockSliceId) {
+      const lockedSlice = activeRoadmap.slices.find(sl => sl.id === lockSliceId && !sl.done);
+      if (lockedSlice && lockedSlice.depends.every(dep => doneSliceIds.has(dep))) {
+        activeSlice = { id: lockedSlice.id, title: lockedSlice.title };
+      }
+    }
+  }
+
   if (!activeSlice) {
     return {
       activeMilestone,
@@ -398,6 +423,7 @@ async function _deriveStateImpl(basePath: string): Promise<GSDState> {
         milestones: milestoneProgress,
         slices: sliceProgress,
       },
+      parallelSlices,
     };
   }
 
@@ -421,6 +447,7 @@ async function _deriveStateImpl(basePath: string): Promise<GSDState> {
         milestones: milestoneProgress,
         slices: sliceProgress,
       },
+      parallelSlices,
     };
   }
 
@@ -449,6 +476,7 @@ async function _deriveStateImpl(basePath: string): Promise<GSDState> {
         slices: sliceProgress,
         tasks: taskProgress,
       },
+      parallelSlices,
     };
   }
 
@@ -470,6 +498,7 @@ async function _deriveStateImpl(basePath: string): Promise<GSDState> {
         slices: sliceProgress,
         tasks: taskProgress,
       },
+      parallelSlices,
     };
   }
 
@@ -477,6 +506,35 @@ async function _deriveStateImpl(basePath: string): Promise<GSDState> {
     id: activeTaskEntry.id,
     title: activeTaskEntry.title,
   };
+
+  // ── Task plan file check (#909) ──────────────────────────────────────
+  // The slice plan may reference tasks but per-task plan files may be
+  // missing — e.g. when the slice plan was pre-created during roadmapping.
+  // If the tasks dir exists but has literally zero files (empty dir from
+  // mkdir), fall back to planning so plan-slice generates task plans.
+  const tasksDir = resolveTasksDir(basePath, activeMilestone.id, activeSlice.id);
+  if (tasksDir && existsSync(tasksDir) && slicePlan.tasks.length > 0) {
+    const allFiles = readdirSync(tasksDir).filter(f => f.endsWith(".md"));
+    if (allFiles.length === 0) {
+      return {
+        activeMilestone,
+        activeSlice,
+        activeTask: null,
+        phase: 'planning',
+        recentDecisions: [],
+        blockers: [],
+        nextAction: `Task plan files missing for ${activeSlice.id}. Run plan-slice to generate task plans.`,
+        registry,
+        requirements,
+        progress: {
+          milestones: milestoneProgress,
+          slices: sliceProgress,
+          tasks: taskProgress,
+        },
+        parallelSlices,
+      };
+    }
+  }
 
   // ── Blocker detection: scan completed task summaries ──────────────────
   // If any completed task has blocker_discovered: true and no REPLAN.md
@@ -508,7 +566,7 @@ async function _deriveStateImpl(basePath: string): Promise<GSDState> {
         recentDecisions: [],
         blockers: [`Task ${blockerTaskId} discovered a blocker requiring slice replan`],
         nextAction: `Task ${blockerTaskId} reported blocker_discovered. Replan slice ${activeSlice.id} before continuing.`,
-  
+
         activeWorkspace: undefined,
         registry,
         requirements,
@@ -517,6 +575,7 @@ async function _deriveStateImpl(basePath: string): Promise<GSDState> {
           slices: sliceProgress,
           tasks: taskProgress,
         },
+        parallelSlices,
       };
     }
     // REPLAN.md exists — loop protection: fall through to normal executing
@@ -546,5 +605,6 @@ async function _deriveStateImpl(basePath: string): Promise<GSDState> {
       slices: sliceProgress,
       tasks: taskProgress,
     },
+    parallelSlices,
   };
 }

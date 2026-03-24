@@ -3,7 +3,24 @@ import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { getAgentDir } from "@gsd/pi-coding-agent";
 import type { GitPreferences } from "./git-service.js";
-import type { PostUnitHookConfig, PreDispatchHookConfig, BudgetEnforcementMode, NotificationPreferences } from "./types.js";
+import type {
+  PostUnitHookConfig, PreDispatchHookConfig, BudgetEnforcementMode, NotificationPreferences,
+  TokenProfile, PhaseSkipPreferences, ParallelConfig, CompressionStrategy, ContextSelectionMode,
+  TeamDefinition,
+} from "./types.js";
+/** Dynamic routing configuration for complexity-based model selection. */
+export interface DynamicRoutingConfig {
+  enabled?: boolean;
+  escalate_on_failure?: boolean;
+  budget_pressure?: boolean;
+  cross_provider?: boolean;
+  hooks?: boolean;
+  tier_models?: {
+    light?: string;
+    standard?: string;
+    heavy?: string;
+  };
+}
 import { VALID_BRANCH_NAME } from "./git-service.js";
 
 const GLOBAL_PREFERENCES_PATH = join(homedir(), ".gsd", "preferences.md");
@@ -122,6 +139,26 @@ export interface GSDPreferences {
   git?: GitPreferences;
   post_unit_hooks?: PostUnitHookConfig[];
   pre_dispatch_hooks?: PreDispatchHookConfig[];
+  dynamic_routing?: DynamicRoutingConfig;
+  token_profile?: TokenProfile;
+  phases?: PhaseSkipPreferences;
+  auto_visualize?: boolean;
+  auto_report?: boolean;
+  parallel?: ParallelConfig;
+  verification_commands?: string[];
+  verification_auto_fix?: boolean;
+  verification_max_retries?: number;
+  search_provider?: "brave" | "tavily" | "ollama" | "native" | "auto";
+  compression_strategy?: CompressionStrategy;
+  context_selection?: ContextSelectionMode;
+  /** Team definitions for parallel team-based routing. */
+  teams?: TeamDefinition[];
+  /** Inter-agent communication settings. */
+  comms?: {
+    enabled?: boolean;
+    conflict_detection?: boolean;
+    knowledge_sharing?: boolean;
+  };
 }
 
 export interface LoadedGSDPreferences {
@@ -1134,4 +1171,54 @@ export function resolvePreDispatchHooks(): PreDispatchHookConfig[] {
   const prefs = loadEffectiveGSDPreferences();
   return (prefs?.preferences.pre_dispatch_hooks ?? [])
     .filter(h => h.enabled !== false);
+}
+
+// ─── Isolation & Parallel ─────────────────────────────────────────────────────
+
+/**
+ * Resolve the effective git isolation mode from preferences.
+ * Returns "worktree" (default), "branch", or "none".
+ */
+export function getIsolationMode(): "none" | "worktree" | "branch" {
+  const prefs = loadEffectiveGSDPreferences()?.preferences?.git;
+  const isolation = prefs?.isolation as string | undefined;
+  if (isolation === "none") return "none";
+  if (isolation === "branch") return "branch";
+  return "worktree"; // default
+}
+
+export function resolveParallelConfig(prefs: GSDPreferences | undefined): import("./types.js").ParallelConfig {
+  return {
+    enabled: prefs?.parallel?.enabled ?? false,
+    max_workers: Math.max(1, Math.min(4, prefs?.parallel?.max_workers ?? 2)),
+    budget_ceiling: prefs?.parallel?.budget_ceiling,
+    merge_strategy: prefs?.parallel?.merge_strategy ?? "per-milestone",
+    auto_merge: prefs?.parallel?.auto_merge ?? "confirm",
+    slice_parallel: resolveSliceParallelConfig(prefs),
+    distribution: resolveWorkDistributionConfig(prefs),
+  };
+}
+
+export function resolveSliceParallelConfig(prefs: GSDPreferences | undefined): import("./types.js").SliceParallelConfig {
+  const sp = prefs?.parallel?.slice_parallel;
+  return {
+    enabled: sp?.enabled ?? false,
+    max_concurrent_slices: Math.max(1, Math.min(8, sp?.max_concurrent_slices ?? 3)),
+    max_concurrent_tasks: Math.max(1, Math.min(8, sp?.max_concurrent_tasks ?? 4)),
+    merge_strategy: sp?.merge_strategy ?? "patch",
+  };
+}
+
+export function resolveWorkDistributionConfig(prefs: GSDPreferences | undefined): import("./types.js").WorkDistributionConfig {
+  const dist = prefs?.parallel?.distribution;
+  return {
+    enabled: dist?.enabled ?? false,
+    strategy: dist?.strategy ?? "least-loaded",
+    work_stealing: dist?.work_stealing ?? false,
+    auto_scale: dist?.auto_scale ?? false,
+    min_workers: Math.max(1, dist?.min_workers ?? 1),
+    max_workers: Math.max(1, Math.min(8, dist?.max_workers ?? 4)),
+    idle_timeout_ms: dist?.idle_timeout_ms ?? 30_000,
+    queue_depth_scale_threshold: dist?.queue_depth_scale_threshold ?? 3,
+  };
 }

@@ -18,6 +18,7 @@ import {
 } from "./metrics.js";
 import { loadEffectiveGSDPreferences } from "./preferences.js";
 import { getActiveWorktreeName } from "./worktree-command.js";
+import { hasActiveWorkers, getWorkerBatches } from "../subagent/worker-registry.js";
 
 function formatDuration(ms: number): string {
   const s = Math.floor(ms / 1000);
@@ -344,6 +345,75 @@ export class GSDDashboardOverlay {
       lines.push(row(th.fg("dim", "No unit running · /gsd auto to start")));
       lines.push(blank());
     }
+
+    // Parallel workers section — shows active subagent sessions
+    if (hasActiveWorkers()) {
+      lines.push(hr());
+      lines.push(row(th.fg("text", th.bold("Parallel Workers"))));
+      lines.push(blank());
+
+      const batches = getWorkerBatches();
+      for (const [batchId, workers] of batches) {
+        const running = workers.filter(w => w.status === "running").length;
+        const done = workers.filter(w => w.status === "completed").length;
+        const failed = workers.filter(w => w.status === "failed").length;
+        const total = workers[0]?.batchSize ?? workers.length;
+
+        lines.push(row(joinColumns(
+          `  ${th.fg("accent", "⟐")} ${th.fg("text", `Batch ${batchId.slice(0, 8)}`)}`,
+          th.fg("dim", `${done + failed}/${total} done`),
+          contentWidth,
+        )));
+
+        for (const w of workers) {
+          const icon = w.status === "running"
+            ? th.fg("accent", "▸")
+            : w.status === "completed"
+              ? th.fg("success", "✓")
+              : th.fg("error", "✗");
+          const elapsed = th.fg("dim", formatDuration(Date.now() - w.startedAt));
+          const taskPreview = truncateToWidth(w.task, Math.max(20, contentWidth - 30));
+          lines.push(row(joinColumns(
+            `    ${icon} ${th.fg("text", w.agent)} ${th.fg("dim", taskPreview)}`,
+            elapsed,
+            contentWidth,
+          )));
+        }
+      }
+      lines.push(blank());
+    }
+
+    // ── Slice Parallel Workers ──────────────────────────────────────────
+    try {
+      const { isSliceParallelActive, getSliceWorkerStatuses } = require("./slice-parallel-orchestrator.js") as {
+        isSliceParallelActive: () => boolean;
+        getSliceWorkerStatuses: () => Array<{ sliceId: string; state: string; completedUnits: number; cost: number; startedAt: number }>;
+      };
+      if (isSliceParallelActive()) {
+        const sliceWorkers = getSliceWorkerStatuses();
+        if (sliceWorkers.length > 0) {
+          lines.push(hr());
+          lines.push(row(th.fg("text", th.bold("Parallel Slice Workers"))));
+          lines.push(blank());
+          for (const w of sliceWorkers) {
+            const icon = w.state === "completed"
+              ? th.fg("success", "✓")
+              : w.state === "error"
+                ? th.fg("error", "✗")
+                : th.fg("accent", "▸");
+            const elapsed = th.fg("dim", formatDuration(Date.now() - w.startedAt));
+            const cost = th.fg("dim", `$${w.cost.toFixed(2)}`);
+            lines.push(row(joinColumns(
+              `  ${icon} ${th.fg("text", w.sliceId)} ${th.fg("dim", `[${w.state}]`)} ${th.fg("dim", `${w.completedUnits} units`)}`,
+              `${cost} ${elapsed}`,
+              contentWidth,
+            )));
+          }
+          lines.push(blank());
+        }
+      }
+    } catch { /* non-fatal — module may not be loaded */ }
+
 
     if (this.loading) {
       lines.push(centered(th.fg("dim", "Loading dashboard…")));
