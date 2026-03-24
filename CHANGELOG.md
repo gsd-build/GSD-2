@@ -6,6 +6,74 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.44.0] - 2026-03-24
+
+### Added
+- **core**: support for 'non-api-key' provider extensions like Claude Code CLI (#2382)
+- **docker**: add official Docker sandbox template for isolated GSD auto mode (#2360)
+- **gsd**: show per-prompt token cost in footer behind show_token_cost preference (#2357)
+- **web**: add "Change project root" button to web UI (#2355)
+- **gsd**: Tool-driven write-side state transitions — replace markdown mutation with atomic SQLite tool calls (#2141)
+- **S06/T02**: Strip all 16 lazy createRequire fallback paths from migr…
+- **S05/T04**: Migrate remaining 6 callers (auto-prompts, auto-recovery…
+- **S05/T03**: Migrate 7 warm/cold callers (doctor, doctor-checks, visu…
+- **S05/T02**: Extend migrateHierarchyToDb to populate v8 planning colu…
+- **S05/T01**: Schema v10 adds replan_triggered_at column; deriveStateF…
+- **S04/T03**: Migrate auto-dispatch.ts (3 rules), auto-verification.ts…
+- **S04/T02**: Migrate dispatch-guard.ts to DB queries with isDbAvailab…
+- **S01/T03**: Migrate planning prompts to DB-backed tool guidance and…
+- **S01/T01**: Partially advanced schema v8 groundwork and documented t…
+- **gsd**: tool-driven write-side state transitions (M001)
+
+### Fixed
+- post-migration cleanup — pragmas, rollbacks, tool gaps, stale code (#2410)
+- **test**: normalize CRLF in auto-stash-merge assertion for Windows
+- **test**: swallow EPERM on Windows temp dir cleanup in auto-stash-merge test
+- **gsd**: add file-based fallbacks for DB-dependent code paths and fix CI test failures
+- **gsd**: remove stale observabilityIssues reference in journal-integration test
+- **extensions**: detect TypeScript syntax in .js extension files and suggest renaming to .ts (#2386)
+- **gsd**: prevent planning data loss from destructive upsert and post-unit re-import (#2370)
+- **gsd**: use correct notify severity type ("warning" not "warn")
+- **web**: resolve compiled .js modules for all subprocess calls under node_modules (#2320)
+- **test**: increase perf assertion threshold to prevent CI flake (#2327)
+- add missing SQLite WAL sidecars and journal to runtime exclusion lists (#2299)
+- **gsd**: remove stale observability validator + fix greenfield worktree check
+- **memory**: fix memory and resource leaks across TUI, LSP, DB, and automation (#2314)
+- **gsd**: preserve freeform DECISIONS.md content on decision save (#2319)
+- **pi-ai**: restore alibaba-coding-plan provider via models.custom.ts (#2350)
+- **doctor**: skip false env_dependencies error in auto-worktrees (#2318)
+- **gsd**: auto-stash dirty files before squash merge and surface dirty filenames in error (#2298)
+- **gsd**: keep params as any in db-tools executors (CI tsconfig is stricter)
+- **gsd**: replace any types in db-tools executor signatures
+- **gsd**: resolve 4 TS compilation errors from parser migration
+- **gsd**: wrap plan-task DB writes in transaction + untrack .gsd/ artifacts
+- **S04/T04**: Add planning-crossval tests proving DB↔rendered↔parsed pa…
+- **S04/T01**: Add schema v9 migration with sequence column on slices/ta…
+- remove .gsd/ milestone artifacts from git index
+- **tests**: update remediation step assertions and crossval fixture
+- **gsd**: address all 7 review findings from PR #2141
+- **tests**: remove invalid `seq` property from insertMilestone calls
+
+### Changed
+- **contrib**: add CODEOWNERS and team workflow docs (#2286)
+- **M001**: auto-commit after complete-milestone
+- **M001**: auto-commit after validate-milestone
+- **M001/S06**: auto-commit after complete-slice
+- **M001/S06**: auto-commit after plan-slice
+- **M001/S06**: auto-commit after research-slice
+- **M001/S05**: auto-commit after complete-slice
+- **M001/S05**: auto-commit after plan-slice
+- **M001/S05**: auto-commit after research-slice
+- **M001/S04**: auto-commit after complete-slice
+- **M001/S04**: auto-commit after research-slice
+- **M001/S03**: auto-commit after complete-slice
+- **M001/S03**: auto-commit after plan-slice
+- **M001/S03**: auto-commit after research-slice
+- **M001/S02**: auto-commit after complete-slice
+- **M001/S02**: auto-commit after plan-slice
+- **M001/S02**: auto-commit after research-slice
+- **M001/S01**: auto-commit after complete-slice
+
 ## [2.43.0] - 2026-03-23
 
 ### Added
@@ -1672,7 +1740,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - License updated to MIT
 
-[Unreleased]: https://github.com/gsd-build/gsd-2/compare/v2.43.0...HEAD
+[Unreleased]: https://github.com/gsd-build/gsd-2/compare/v2.44.0...HEAD
+[2.44.0]: https://github.com/gsd-build/gsd-2/compare/v2.43.0...v2.44.0
 [2.43.0]: https://github.com/gsd-build/gsd-2/compare/v2.42.0...v2.43.0
 [2.42.0]: https://github.com/gsd-build/gsd-2/compare/v2.41.0...v2.42.0
 [2.41.0]: https://github.com/gsd-build/gsd-2/compare/v2.40.0...v2.41.0
