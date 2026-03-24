@@ -566,6 +566,25 @@ export async function bootstrapAutoSession(
       };
     }
 
+    // Apply worker model override from parallel orchestrator (#worker-model).
+    // GSD_WORKER_MODEL is injected by the coordinator when parallel.worker_model
+    // is configured, so parallel milestone workers use a cheaper model than the
+    // coordinator session (e.g. Haiku for execution, Sonnet for planning).
+    const workerModelOverride = process.env.GSD_WORKER_MODEL;
+    if (workerModelOverride && process.env.GSD_PARALLEL_WORKER === "1") {
+      const availableModels = ctx.modelRegistry.getAvailable();
+      const { resolveModelId } = await import("./auto-model-selection.js");
+      const overrideModel = resolveModelId(workerModelOverride, availableModels, ctx.model?.provider);
+      if (overrideModel) {
+        const ok = await pi.setModel(overrideModel, { persist: false });
+        if (ok) {
+          // Update start model so all subsequent units use this as the baseline
+          s.autoModeStartModel = { provider: overrideModel.provider, id: overrideModel.id };
+          ctx.ui.notify(`Worker model override: ${overrideModel.provider}/${overrideModel.id}`, "info");
+        }
+      }
+    }
+
     // Snapshot installed skills
     if (resolveSkillDiscoveryMode() !== "off") {
       snapshotSkills();

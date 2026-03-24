@@ -11,6 +11,8 @@ export interface WorkerEntry {
   task: string;
   startedAt: number;
   status: "running" | "completed" | "failed";
+  completedAt?: number;
+  durationMs?: number;
   /** Index within a parallel batch (0-based) */
   index: number;
   /** Total workers in the parallel batch */
@@ -53,6 +55,8 @@ export function updateWorker(id: string, status: "completed" | "failed"): void {
   const entry = activeWorkers.get(id);
   if (entry) {
     entry.status = status;
+    entry.completedAt = Date.now();
+    entry.durationMs = entry.completedAt - entry.startedAt;
     // Remove after a brief display window (5 seconds)
     setTimeout(() => {
       activeWorkers.delete(id);
@@ -88,6 +92,31 @@ export function hasActiveWorkers(): boolean {
     if (worker.status === "running") return true;
   }
   return false;
+}
+
+/**
+ * Get a timing summary for a completed batch.
+ * Returns min/max/avg duration across workers in the batch.
+ */
+export function getWaveSummary(batchId: string): {
+  batchId: string;
+  workerCount: number;
+  minDurationMs: number;
+  maxDurationMs: number;
+  avgDurationMs: number;
+} | null {
+  const workers = Array.from(activeWorkers.values()).filter(
+    (w) => w.batchId === batchId && w.durationMs !== undefined,
+  );
+  if (workers.length === 0) return null;
+  const durations = workers.map((w) => w.durationMs!);
+  return {
+    batchId,
+    workerCount: workers.length,
+    minDurationMs: Math.min(...durations),
+    maxDurationMs: Math.max(...durations),
+    avgDurationMs: Math.round(durations.reduce((a, b) => a + b, 0) / durations.length),
+  };
 }
 
 /**

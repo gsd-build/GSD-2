@@ -35,14 +35,16 @@ const UNIT_TYPE_TIERS: Record<string, ComplexityTier> = {
   "complete-slice": "light",
   "run-uat": "light",
 
-  // Tier 2 — Standard: research, routine planning, discussion
+  // Tier 2 — Standard: research, routine discussion
   "discuss-milestone": "standard",
   "research-milestone": "standard",
   "research-slice": "standard",
-  "plan-milestone": "standard",
-  "plan-slice": "standard",
 
-  // Tier 3 — Heavy: execution, replanning (requires deep reasoning)
+  // Tier 3 — Heavy: planning, execution, replanning (requires deep reasoning)
+  // Planning is heavy so it uses the best configured model (e.g. Opus) and is
+  // not downgraded by dynamic routing when a capable model is configured.
+  "plan-milestone": "heavy",
+  "plan-slice": "heavy",
   "execute-task": "standard",   // default standard, upgraded by metadata
   "replan-slice": "heavy",
   "reassess-roadmap": "heavy",
@@ -184,8 +186,8 @@ function analyzePlanComplexity(
   // Check if this is a milestone-level plan (more complex) vs single slice
   const { milestone: mid, slice: sid } = parseUnitId(unitId);
   if (!sid) {
-    // Milestone-level planning is always at least standard
-    return { tier: "standard", reason: "milestone-level planning" };
+    // Milestone-level planning is always heavy — requires full context and best model
+    return { tier: "heavy", reason: "milestone-level planning" };
   }
 
   // For slice planning, try to read the context/research to gauge complexity

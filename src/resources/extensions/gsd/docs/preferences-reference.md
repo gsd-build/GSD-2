@@ -203,6 +203,12 @@ Setting `prefer_skills: []` does **not** disable skill discovery — it just mea
   - `merge_strategy`: `"per-slice"` or `"per-milestone"` — when to merge worktree results back. Default: `"per-milestone"`.
   - `auto_merge`: `"auto"`, `"confirm"`, or `"manual"` — merge behavior after completion. `"auto"` merges immediately; `"confirm"` asks first; `"manual"` leaves branches for you. Default: `"confirm"`.
 
+- `reactive_execution`: configures reactive (graph-derived parallel) task execution within slices. Disabled by default. Keys:
+  - `enabled`: boolean — enable reactive parallel execution. When enabled, GSD derives a dependency graph from task IO annotations and dispatches independent tasks in parallel. Default: `false`.
+  - `max_parallel` (number 1-8): Maximum parallel tasks per batch. Also sets the `concurrency` parameter passed to the subagent tool for this batch. Default: `3`.
+  - `isolation_mode`: `"same-tree"` — isolation mode for parallel tasks within a slice. Currently only `"same-tree"` is supported (all tasks run in the same worktree). Default: `"same-tree"`.
+  - `subagent_model` (optional string): Model override for subagents spawned during parallel execution. Useful for cost optimization — e.g., set to `claude-haiku-4-5-20251001` to run parallel tasks on a faster/cheaper model while keeping the orchestrator on a more capable model. When unset, subagents inherit the parent session's model.
+
 - `verification_commands`: string[] — shell commands to run as verification after task execution (e.g., `["npm test", "npm run lint"]`). Commands run in order; if any fails, the task is marked as needing fixes.
 
 - `verification_auto_fix`: boolean — when `true`, automatically attempt to fix verification failures instead of just reporting them. Default: `false`.

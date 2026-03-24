@@ -125,7 +125,7 @@ test("profile: balanced profile skips research, reassess, and slice research (AD
 
 test("profile: quality profile skips research, slice research, and reassess (ADR-003)", () => {
   const qualityIdx = preferencesSrc.indexOf('case "quality":');
-  const qualityBlock = preferencesSrc.slice(qualityIdx, qualityIdx + 300);
+  const qualityBlock = preferencesSrc.slice(qualityIdx, qualityIdx + 600);
   assert.ok(qualityBlock.includes("skip_research: true"), "quality should skip research");
   assert.ok(qualityBlock.includes("skip_slice_research: true"), "quality should skip slice research");
   assert.ok(qualityBlock.includes("skip_reassess: true"), "quality should skip reassess");

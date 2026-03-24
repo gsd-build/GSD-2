@@ -116,12 +116,37 @@ export function resolveModelForComplexity(
 
   // Downgrade-only: if requested tier >= configured tier, no change
   if (tierOrdinal(requestedTier) >= tierOrdinal(configuredTier)) {
+    // If the configured primary is directly available, use it
+    if (isModelAvailable(configuredPrimary, availableModelIds)) {
+      return {
+        modelId: configuredPrimary,
+        fallbacks: phaseConfig.fallbacks,
+        tier: requestedTier,
+        wasDowngraded: false,
+        reason: `tier ${requestedTier} >= configured ${configuredTier}`,
+      };
+    }
+
+    // Configured primary is unavailable (e.g. Anthropic model configured but
+    // running on a non-Anthropic provider). Find the best available model at
+    // the same capability tier so routing still works cross-provider.
+    const crossProviderEquivalent = findModelForTier(
+      configuredTier,
+      routingConfig,
+      availableModelIds,
+      routingConfig.cross_provider !== false,
+    );
+
     return {
-      modelId: configuredPrimary,
-      fallbacks: phaseConfig.fallbacks,
+      modelId: crossProviderEquivalent ?? configuredPrimary,
+      fallbacks: crossProviderEquivalent
+        ? [...phaseConfig.fallbacks.filter(f => f !== crossProviderEquivalent), configuredPrimary]
+        : phaseConfig.fallbacks,
       tier: requestedTier,
       wasDowngraded: false,
-      reason: `tier ${requestedTier} >= configured ${configuredTier}`,
+      reason: crossProviderEquivalent
+        ? `cross-provider ${configuredTier}-tier equivalent`
+        : `tier ${requestedTier} >= configured ${configuredTier}`,
     };
   }
 
@@ -176,7 +201,7 @@ export function escalateTier(currentTier: ComplexityTier): ComplexityTier | null
  */
 export function defaultRoutingConfig(): DynamicRoutingConfig {
   return {
-    enabled: false,
+    enabled: true,
     escalate_on_failure: true,
     budget_pressure: true,
     cross_provider: true,
@@ -185,6 +210,20 @@ export function defaultRoutingConfig(): DynamicRoutingConfig {
 }
 
 // ─── Internal ────────────────────────────────────────────────────────────────
+
+/**
+ * Check whether a model ID is present in the available models list.
+ * Handles bare IDs ("claude-opus-4-6") and provider-prefixed IDs ("anthropic/claude-opus-4-6").
+ */
+function isModelAvailable(modelId: string, availableModelIds: string[]): boolean {
+  if (availableModelIds.includes(modelId)) return true;
+  // Strip provider prefix for comparison
+  const bare = modelId.includes("/") ? modelId.split("/").pop()! : modelId;
+  return availableModelIds.some(id => {
+    const availBare = id.includes("/") ? id.split("/").pop()! : id;
+    return availBare === bare;
+  });
+}
 
 function getModelTier(modelId: string): ComplexityTier {
   // Strip provider prefix if present

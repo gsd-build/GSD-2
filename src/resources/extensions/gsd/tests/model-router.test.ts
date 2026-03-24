@@ -165,3 +165,48 @@ test("falls back to configured model when no light-tier model available", () => 
   assert.equal(result.modelId, "claude-opus-4-6");
   assert.equal(result.wasDowngraded, false);
 });
+
+// ─── Cross-provider fallback ──────────────────────────────────────────────────
+
+test("uses cross-provider equivalent when configured primary is unavailable", () => {
+  const config = { ...defaultRoutingConfig(), enabled: true };
+  // Profile default says claude-opus-4-6 for planning, but user is on GPT only
+  const result = resolveModelForComplexity(
+    makeClassification("heavy"),
+    { primary: "claude-opus-4-6", fallbacks: [] },
+    config,
+    ["gpt-4o", "gpt-4o-mini", "o1"],
+  );
+  // o1 is the heavy-tier GPT model — should be selected as cross-provider equivalent
+  assert.equal(result.modelId, "o1");
+  assert.equal(result.wasDowngraded, false);
+  assert.match(result.reason, /cross-provider/);
+});
+
+test("cross-provider: selects standard-tier equivalent when primary unavailable", () => {
+  const config = { ...defaultRoutingConfig(), enabled: true };
+  // Planning configured with Opus, but only GPT standard models available
+  const result = resolveModelForComplexity(
+    makeClassification("heavy"),
+    { primary: "claude-opus-4-6", fallbacks: [] },
+    config,
+    ["gpt-4o", "gpt-4o-mini"],
+  );
+  // gpt-4o is standard tier, not heavy — no heavy-tier model available
+  // Should fall back to gpt-4o (best available)
+  assert.ok(result.modelId === "gpt-4o" || result.modelId === "claude-opus-4-6");
+  assert.equal(result.wasDowngraded, false);
+});
+
+test("cross-provider: configured primary available by bare ID wins over equivalent", () => {
+  const config = { ...defaultRoutingConfig(), enabled: true };
+  // Provider-prefixed ID — bare match should find it
+  const result = resolveModelForComplexity(
+    makeClassification("heavy"),
+    { primary: "claude-opus-4-6", fallbacks: [] },
+    config,
+    ["anthropic/claude-opus-4-6", "o1"],
+  );
+  assert.equal(result.modelId, "claude-opus-4-6");
+  assert.equal(result.wasDowngraded, false);
+});

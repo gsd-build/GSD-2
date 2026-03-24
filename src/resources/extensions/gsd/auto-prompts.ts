@@ -1631,3 +1631,35 @@ export async function buildRewriteDocsPrompt(
     overridesPath: relGsdRootFile("OVERRIDES"),
   });
 }
+
+// ─── Parallel Research Slices ─────────────────────────────────────────────────
+
+export async function buildParallelResearchSlicesPrompt(
+  mid: string,
+  midTitle: string,
+  slices: Array<{ id: string; title: string }>,
+  basePath: string,
+): Promise<string> {
+  // Build individual research-slice prompts for each slice
+  const subagentSections: string[] = [];
+  for (const slice of slices) {
+    const slicePrompt = await buildResearchSlicePrompt(mid, midTitle, slice.id, slice.title, basePath);
+    subagentSections.push([
+      `### ${slice.id}: ${slice.title}`,
+      "",
+      "Use this as the prompt for a `subagent` call (agent: `gsd-executor` or the default agent):",
+      "",
+      "```",
+      slicePrompt,
+      "```",
+    ].join("\n"));
+  }
+
+  return loadPrompt("parallel-research-slices", {
+    mid,
+    midTitle,
+    sliceCount: String(slices.length),
+    sliceList: slices.map((s) => `- **${s.id}**: ${s.title}`).join("\n"),
+    subagentPrompts: subagentSections.join("\n\n---\n\n"),
+  });
+}

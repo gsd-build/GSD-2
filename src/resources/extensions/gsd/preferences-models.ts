@@ -235,11 +235,12 @@ export function resolveProfileDefaults(profile: TokenProfile): Partial<GSDPrefer
     case "budget":
       return {
         models: {
-          planning: "claude-sonnet-4-5-20250514",
-          execution: "claude-sonnet-4-5-20250514",
-          execution_simple: "claude-haiku-4-5-20250414",
-          completion: "claude-haiku-4-5-20250414",
-          subagent: "claude-haiku-4-5-20250414",
+          planning: "claude-sonnet-4-6",
+          research: "claude-haiku-4-5",
+          execution: "claude-sonnet-4-6",
+          execution_simple: "claude-haiku-4-5",
+          completion: "claude-haiku-4-5",
+          subagent: "claude-haiku-4-5",
         },
         phases: {
           skip_research: true,
@@ -251,7 +252,12 @@ export function resolveProfileDefaults(profile: TokenProfile): Partial<GSDPrefer
     case "balanced":
       return {
         models: {
-          subagent: "claude-sonnet-4-5-20250514",
+          planning: "claude-sonnet-4-6",
+          research: "claude-sonnet-4-6",
+          execution: "claude-sonnet-4-6",
+          execution_simple: "claude-haiku-4-5",
+          completion: "claude-haiku-4-5",
+          subagent: "claude-haiku-4-5",
         },
         phases: {
           skip_research: true,
@@ -261,7 +267,14 @@ export function resolveProfileDefaults(profile: TokenProfile): Partial<GSDPrefer
       };
     case "quality":
       return {
-        models: {},
+        models: {
+          planning: "claude-opus-4-6",
+          research: "claude-sonnet-4-6",
+          execution: "claude-sonnet-4-6",
+          execution_simple: "claude-haiku-4-5",
+          completion: "claude-haiku-4-5",
+          subagent: "claude-sonnet-4-6",
+        },
         phases: {
           skip_research: true,
           skip_slice_research: true,

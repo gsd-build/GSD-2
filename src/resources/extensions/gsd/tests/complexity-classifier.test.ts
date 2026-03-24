@@ -41,14 +41,14 @@ test("research-slice classifies as standard", () => {
   assert.equal(result.tier, "standard");
 });
 
-test("plan-milestone classifies as standard", () => {
+test("plan-milestone classifies as heavy", () => {
   const result = classifyUnitComplexity("plan-milestone", "M001", "/tmp/fake");
-  assert.equal(result.tier, "standard");
+  assert.equal(result.tier, "heavy");
 });
 
-test("plan-slice classifies as standard", () => {
+test("plan-slice classifies as heavy", () => {
   const result = classifyUnitComplexity("plan-slice", "M001/S01", "/tmp/fake");
-  assert.equal(result.tier, "standard");
+  assert.equal(result.tier, "heavy");
 });
 
 test("replan-slice classifies as heavy", () => {

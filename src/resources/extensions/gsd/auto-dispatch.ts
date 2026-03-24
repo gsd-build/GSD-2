@@ -41,6 +41,7 @@ import {
   buildReassessRoadmapPrompt,
   buildRewriteDocsPrompt,
   buildReactiveExecutePrompt,
+  buildParallelResearchSlicesPrompt,
   checkNeedsReassessment,
   checkNeedsRunUat,
 } from "./auto-prompts.js";
@@ -268,6 +269,47 @@ export const DISPATCH_RULES: DispatchRule[] = [
     },
   },
   {
+    name: "planning (multiple slices need research) → parallel-research-slices",
+    match: async ({ state, mid, midTitle, basePath, prefs }) => {
+      if (state.phase !== "planning") return null;
+      if (prefs?.phases?.skip_research || prefs?.phases?.skip_slice_research) return null;
+
+      // Load roadmap to find all slices
+      const roadmapFile = resolveMilestoneFile(basePath, mid, "ROADMAP");
+      const roadmapContent = roadmapFile ? await loadFile(roadmapFile) : null;
+      if (!roadmapContent) return null;
+      const roadmap = parseRoadmap(roadmapContent);
+
+      // Find slices that need research (no RESEARCH file, dependencies done)
+      const milestoneResearchFile = resolveMilestoneFile(basePath, mid, "RESEARCH");
+      const researchReadySlices: Array<{ id: string; title: string }> = [];
+
+      for (const slice of roadmap.slices) {
+        if (slice.done) continue;
+        // Skip S01 when milestone research exists
+        if (milestoneResearchFile && slice.id === "S01") continue;
+        // Skip if already has research
+        if (resolveSliceFile(basePath, mid, slice.id, "RESEARCH")) continue;
+        // Skip if dependencies aren't done (check for SUMMARY files)
+        const depsComplete = (slice.depends ?? []).every((depId) =>
+          !!resolveSliceFile(basePath, mid, depId, "SUMMARY"),
+        );
+        if (!depsComplete) continue;
+        researchReadySlices.push({ id: slice.id, title: slice.title });
+      }
+
+      // Only activate when 2+ slices are ready for parallel research
+      if (researchReadySlices.length < 2) return null;
+
+      return {
+        action: "dispatch",
+        unitType: "parallel-research-slices",
+        unitId: `${mid}/parallel-research`,
+        prompt: await buildParallelResearchSlicesPrompt(mid, midTitle, researchReadySlices, basePath),
+      };
+    },
+  },
+  {
     name: "planning (no research, not S01) → research-slice",
     match: async ({ state, mid, midTitle, basePath, prefs }) => {
       if (state.phase !== "planning") return null;
@@ -366,6 +408,7 @@ export const DISPATCH_RULES: DispatchRule[] = [
           loadSliceTaskIO,
           deriveTaskGraph,
           isGraphAmbiguous,
+          getMissingAnnotationTasks,
           getReadyTasks,
           chooseNonConflictingSubset,
           graphMetrics,
@@ -376,8 +419,16 @@ export const DISPATCH_RULES: DispatchRule[] = [
 
         const graph = deriveTaskGraph(taskIO);
 
-        // Ambiguous graph → fall through to sequential
-        if (isGraphAmbiguous(graph)) return null;
+        // Ambiguous graph → fall through to sequential, but surface diagnostic
+        if (isGraphAmbiguous(graph)) {
+          const missing = getMissingAnnotationTasks(graph);
+          const taskList = missing.map((t) => `${t.id} (${t.title})`).join(", ");
+          process.stderr.write(
+            `gsd-reactive: ${mid}/${sid} parallel dispatch skipped — ${missing.length} task(s) missing IO annotations: ${taskList}\n` +
+            `  Add input_files/output_files sections to task plans to enable parallel execution.\n`,
+          );
+          return null;
+        }
 
         const completed = new Set(graph.filter((n) => n.done).map((n) => n.id));
         const readyIds = getReadyTasks(graph, completed, new Set());
@@ -395,6 +446,8 @@ export const DISPATCH_RULES: DispatchRule[] = [
 
         // Log graph metrics for observability
         const metrics = graphMetrics(graph);
+        // Capture batch start time for wave timing
+        const batchStartMs = Date.now();
         process.stderr.write(
           `gsd-reactive: ${mid}/${sid} graph — tasks:${metrics.taskCount} edges:${metrics.edgeCount} ` +
           `ready:${metrics.readySetSize} dispatching:${selected.length} ambiguous:${metrics.ambiguous}\n`,
@@ -410,6 +463,10 @@ export const DISPATCH_RULES: DispatchRule[] = [
           graphSnapshot: metrics,
           updatedAt: new Date().toISOString(),
         });
+
+        process.stderr.write(
+          `gsd-reactive: ${mid}/${sid} batch dispatched at ${new Date(batchStartMs).toISOString()} — ${selected.length} tasks\n`,
+        );
 
         // Encode selected task IDs in unitId for artifact verification.
         // Format: M001/S01/reactive+T02,T03

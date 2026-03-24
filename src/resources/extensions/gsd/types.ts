@@ -447,6 +447,8 @@ export interface ParallelConfig {
   budget_ceiling?: number;
   merge_strategy: MergeStrategy;
   auto_merge: AutoMergeMode;
+  /** Optional model override for parallel milestone workers (e.g. "claude-haiku-4-5"). */
+  worker_model?: string;
 }
 
 // ─── Reactive Task Execution Types ───────────────────────────────────────
@@ -473,6 +475,8 @@ export interface ReactiveExecutionConfig {
   max_parallel: number;
   /** Isolation mode for parallel tasks within a slice. Currently only "same-tree" is supported. */
   isolation_mode: "same-tree";
+  /** Optional model override for subagents spawned during parallel execution. */
+  subagent_model?: string;
 }
 
 /** Per-slice reactive execution runtime state, persisted to disk. */

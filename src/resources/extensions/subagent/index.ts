@@ -26,6 +26,7 @@ import { Type } from "@sinclair/typebox";
 import { formatTokenCount } from "../shared/mod.js";
 import { type AgentConfig, type AgentScope, discoverAgents } from "./agents.js";
 import {
+	type DeltaPatch,
 	type IsolationEnvironment,
 	type IsolationMode,
 	type MergeResult,
@@ -33,7 +34,8 @@ import {
 	mergeDeltaPatches,
 	readIsolationMode,
 } from "./isolation.js";
-import { registerWorker, updateWorker } from "./worker-registry.js";
+import { registerWorker, updateWorker, getWaveSummary } from "./worker-registry.js";
+import { ParallelIPC } from "./parallel-ipc.js";
 import { loadEffectiveGSDPreferences } from "../gsd/preferences.js";
 import { CmuxClient, shellEscape } from "../cmux/index.js";
 
@@ -609,6 +611,7 @@ const SubagentParams = Type.Object({
 			default: false,
 		}),
 	),
+	concurrency: Type.Optional(Type.Number({ minimum: 1, maximum: 8, description: "Max concurrent tasks. Defaults to 4." })),
 });
 
 export default function (pi: ExtensionAPI) {
@@ -819,17 +822,55 @@ export default function (pi: ExtensionAPI) {
 				const gridSurfaces = cmuxSplitsEnabled
 					? await cmuxClient.createGridLayout(Math.min(batchSize, MAX_CONCURRENCY))
 					: [];
-				const results = await mapWithConcurrencyLimit(params.tasks, MAX_CONCURRENCY, async (t, index) => {
+				const parallelConcurrency = Math.min(params.concurrency ?? MAX_CONCURRENCY, MAX_PARALLEL_TASKS);
+
+				// Load GSD preferences to check for a subagent model override
+				const prefs = loadEffectiveGSDPreferences();
+				const subagentModelOverride = prefs?.preferences?.reactive_execution?.subagent_model;
+
+				// If a subagent_model override is configured, create a shallow copy of
+				// each agent config with the overridden model so that
+				// buildSubagentProcessArgs picks it up automatically.
+				const effectiveAgents: AgentConfig[] = subagentModelOverride
+					? agents.map((a) => ({ ...a, model: subagentModelOverride }))
+					: agents;
+
+				// File-based IPC — write worker state + NDJSON event stream to .gsd/parallel/<batchId>/
+				const ipc = new ParallelIPC(ctx.cwd, batchId);
+				ipc.init(batchSize);
+				process.stderr.write(`gsd-parallel: batch ${batchId} started — monitor: ${ipc.eventsFilePath}\n`);
+
+				// Per-task worktree isolation (only when params.isolated + a mode is configured)
+				const taskIsolations = new Map<number, IsolationEnvironment>();
+				const taskPatches = new Map<number, DeltaPatch[]>();
+				if (useIsolation) {
+					for (let i = 0; i < params.tasks.length; i++) {
+						try {
+							const taskCwd = params.tasks[i].cwd ?? ctx.cwd;
+							const iso = await createIsolation(taskCwd, `${batchId}-${i}`, isolationMode);
+							taskIsolations.set(i, iso);
+						} catch (err) {
+							process.stderr.write(`gsd-parallel: isolation setup failed for task ${i}: ${err}\n`);
+						}
+					}
+				}
+
+				const results = await mapWithConcurrencyLimit(params.tasks, parallelConcurrency, async (t, index) => {
+					const isolation = taskIsolations.get(index);
+					const effectiveCwd = isolation ? isolation.workDir : t.cwd;
+					const workerStartMs = Date.now();
 					const workerId = registerWorker(t.agent, t.task, index, batchSize, batchId);
+					ipc.workerStart(index, t.agent, t.task);
+
 					const runTask = () => cmuxSplitsEnabled
 						? runSingleAgentInCmuxSplit(
 							cmuxClient,
 							gridSurfaces[index] ?? (index % 2 === 0 ? "right" : "down"),
 							ctx.cwd,
-							agents,
+							effectiveAgents,
 							t.agent,
 							t.task,
-							t.cwd,
+							effectiveCwd,
 							undefined,
 							signal,
 							(partial) => {
@@ -842,10 +883,10 @@ export default function (pi: ExtensionAPI) {
 						)
 						: runSingleAgent(
 							ctx.cwd,
-							agents,
+							effectiveAgents,
 							t.agent,
 							t.task,
-							t.cwd,
+							effectiveCwd,
 							undefined,
 							signal,
 							(partial) => {
@@ -864,13 +905,60 @@ export default function (pi: ExtensionAPI) {
 						result = await runTask();
 					}
 
-					updateWorker(workerId, result.exitCode === 0 ? "completed" : "failed");
+					// Capture delta from isolation before marking complete
+					if (isolation) {
+						try {
+							const patches = await isolation.captureDelta();
+							if (patches.length > 0) taskPatches.set(index, patches);
+						} catch (err) {
+							process.stderr.write(`gsd-parallel: delta capture failed for task ${index}: ${err}\n`);
+						}
+					}
+
+					const workerStatus = result.exitCode === 0 ? "completed" : "failed";
+					const workerDurationMs = Date.now() - workerStartMs;
+					updateWorker(workerId, workerStatus);
+					ipc.workerComplete(index, workerStatus, workerDurationMs);
 					allResults[index] = result;
 					emitParallelUpdate();
 					return result;
 				});
 
+				// Merge isolation patches back to the main repo.
+				// Combine all patches into a single set so mergeDeltaPatches can do
+				// one combined dry-run before applying anything — avoids partial merges.
+				if (taskIsolations.size > 0) {
+					const allPatches: DeltaPatch[] = [];
+					for (let i = 0; i < params.tasks.length; i++) {
+						const patches = taskPatches.get(i);
+						if (patches) allPatches.push(...patches);
+					}
+
+					if (allPatches.length > 0 && !signal?.aborted) {
+						const mergeResult = await mergeDeltaPatches(ctx.cwd, allPatches);
+						if (!mergeResult.success) {
+							process.stderr.write(`gsd-parallel: patch merge failed: ${mergeResult.error}\n`);
+						}
+					}
+
+					for (const iso of taskIsolations.values()) {
+						await iso.cleanup().catch(() => { /* best effort */ });
+					}
+				}
+
 				const successCount = results.filter((r) => r.exitCode === 0).length;
+				ipc.batchComplete(successCount, results.length - successCount);
+
+				// Log wave timing summary
+				const waveSummary = getWaveSummary(batchId);
+				if (waveSummary) {
+					process.stderr.write(
+						`gsd-parallel: batch ${batchId} complete — ` +
+						`workers:${waveSummary.workerCount} ` +
+						`min:${waveSummary.minDurationMs}ms max:${waveSummary.maxDurationMs}ms avg:${waveSummary.avgDurationMs}ms\n`,
+					);
+				}
+
 				const summaries = results.map((r) => {
 					const isError = r.exitCode !== 0 || r.stopReason === "error" || r.stopReason === "aborted";
 					const output = isError
