@@ -352,3 +352,31 @@ test("handles empty models config", () => {
   assert.notEqual(prefs, null);
   assert.equal(prefs!.models, undefined);
 });
+
+// ── Non-frontmatter markdown format (#2036) ──────────────────────────────────
+
+test("parsePreferencesMarkdown parses heading+list format without frontmatter (#2036)", () => {
+  // A GSD agent recovery session wrote preferences in markdown heading+list
+  // format instead of YAML frontmatter. Since the heading+list fallback parser
+  // was added, this format is now handled gracefully.
+  const content = "## Git\n\n- isolation: none\n";
+  const result = parsePreferencesMarkdown(content);
+  assert.notEqual(result, null, "heading+list content should be parsed");
+  assert.deepStrictEqual(result!.git, { isolation: "none" });
+});
+
+test("parsePreferencesMarkdown does not warn for empty/whitespace-only content", () => {
+  const stderrMessages: string[] = [];
+  const origWrite = process.stderr.write;
+  process.stderr.write = ((chunk: string | Uint8Array) => {
+    stderrMessages.push(chunk.toString());
+    return true;
+  }) as typeof process.stderr.write;
+  try {
+    assert.equal(parsePreferencesMarkdown(""), null);
+    assert.equal(parsePreferencesMarkdown("   \n  \n"), null);
+    assert.equal(stderrMessages.length, 0, "no warnings for empty content");
+  } finally {
+    process.stderr.write = origWrite;
+  }
+});
