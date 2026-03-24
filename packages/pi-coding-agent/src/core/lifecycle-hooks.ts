@@ -190,9 +190,6 @@ async function runHookSafe(
 }
 
 function getLegacyExportCandidates(phase: LifecycleHookPhase): string[] {
-	if (phase === "afterInstall") {
-		return ["afterInstall", "postInstall"];
-	}
 	return [phase];
 }
 
