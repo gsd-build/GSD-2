@@ -301,6 +301,7 @@ function initSchema(db: DbAdapter, fileBacked: boolean): void {
         inputs TEXT NOT NULL DEFAULT '[]',
         expected_output TEXT NOT NULL DEFAULT '[]',
         observability_impact TEXT NOT NULL DEFAULT '',
+        full_plan_md TEXT NOT NULL DEFAULT '',
         sequence INTEGER DEFAULT 0, -- DEAD CODE: no tool exposes sequence — always 0
         PRIMARY KEY (milestone_id, slice_id, id),
         FOREIGN KEY (milestone_id, slice_id) REFERENCES slices(milestone_id, id)
@@ -616,6 +617,15 @@ function migrateSchema(db: DbAdapter): void {
       });
     }
 
+    if (currentVersion < 11) {
+      ensureColumn(db, "tasks", "full_plan_md", `ALTER TABLE tasks ADD COLUMN full_plan_md TEXT NOT NULL DEFAULT ''`);
+
+      db.prepare("INSERT INTO schema_version (version, applied_at) VALUES (:version, :applied_at)").run({
+        ":version": 11,
+        ":applied_at": new Date().toISOString(),
+      });
+    }
+
     db.exec("COMMIT");
   } catch (err) {
     db.exec("ROLLBACK");
@@ -923,6 +933,7 @@ export interface TaskPlanningRecord {
   inputs: string[];
   expectedOutput: string[];
   observabilityImpact: string;
+  fullPlanMd?: string;
 }
 
 export function insertMilestone(m: {
@@ -1163,7 +1174,8 @@ export function upsertTaskPlanning(milestoneId: string, sliceId: string, taskId:
       verify = COALESCE(:verify, verify),
       inputs = COALESCE(:inputs, inputs),
       expected_output = COALESCE(:expected_output, expected_output),
-      observability_impact = COALESCE(:observability_impact, observability_impact)
+      observability_impact = COALESCE(:observability_impact, observability_impact),
+      full_plan_md = COALESCE(:full_plan_md, full_plan_md)
      WHERE milestone_id = :milestone_id AND slice_id = :slice_id AND id = :id`,
   ).run({
     ":milestone_id": milestoneId,
@@ -1177,6 +1189,7 @@ export function upsertTaskPlanning(milestoneId: string, sliceId: string, taskId:
     ":inputs": planning.inputs ? JSON.stringify(planning.inputs) : null,
     ":expected_output": planning.expectedOutput ? JSON.stringify(planning.expectedOutput) : null,
     ":observability_impact": planning.observabilityImpact ?? null,
+    ":full_plan_md": planning.fullPlanMd ?? null,
   });
 }
 
@@ -1268,6 +1281,7 @@ export interface TaskRow {
   inputs: string[];
   expected_output: string[];
   observability_impact: string;
+  full_plan_md: string;
   sequence: number;
 }
 
@@ -1296,6 +1310,7 @@ function rowToTask(row: Record<string, unknown>): TaskRow {
     inputs: JSON.parse((row["inputs"] as string) || "[]"),
     expected_output: JSON.parse((row["expected_output"] as string) || "[]"),
     observability_impact: (row["observability_impact"] as string) ?? "",
+    full_plan_md: (row["full_plan_md"] as string) ?? "",
     sequence: (row["sequence"] as number) ?? 0,
   };
 }

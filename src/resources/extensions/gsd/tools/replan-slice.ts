@@ -21,6 +21,7 @@ export interface ReplanSliceTaskInput {
   verify: string;
   inputs: string[];
   expectedOutput: string[];
+  fullPlanMd?: string;
 }
 
 export interface ReplanSliceParams {
@@ -136,6 +137,7 @@ export async function handleReplanSlice(
             verify: updatedTask.verify || "",
             inputs: updatedTask.inputs || [],
             expectedOutput: updatedTask.expectedOutput || [],
+            fullPlanMd: updatedTask.fullPlanMd,
           });
         } else {
           // Insert new task then set planning fields
@@ -154,6 +156,7 @@ export async function handleReplanSlice(
             verify: updatedTask.verify || "",
             inputs: updatedTask.inputs || [],
             expectedOutput: updatedTask.expectedOutput || [],
+            fullPlanMd: updatedTask.fullPlanMd,
           });
         }
       }

@@ -387,7 +387,7 @@ export async function renderTaskPlanFromDb(
   mkdirSync(tasksDir, { recursive: true });
   const absPath = join(tasksDir, buildTaskFileName(taskId, "PLAN"));
   const artifactPath = toArtifactPath(absPath, basePath);
-  const content = renderTaskPlanMarkdown(task);
+  const content = task.full_plan_md.trim() ? task.full_plan_md : renderTaskPlanMarkdown(task);
 
   await writeAndStore(absPath, artifactPath, content, {
     artifact_type: "PLAN",

@@ -20,6 +20,7 @@ export interface PlanSliceTaskInput {
   inputs: string[];
   expectedOutput: string[];
   observabilityImpact?: string;
+  fullPlanMd?: string;
 }
 
 export interface PlanSliceParams {
@@ -167,6 +168,7 @@ export async function handlePlanSlice(
           inputs: task.inputs,
           expectedOutput: task.expectedOutput,
           observabilityImpact: task.observabilityImpact ?? "",
+          fullPlanMd: task.fullPlanMd,
         });
       }
     });

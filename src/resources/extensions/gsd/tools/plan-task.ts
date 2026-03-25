@@ -15,6 +15,7 @@ export interface PlanTaskParams {
   inputs: string[];
   expectedOutput: string[];
   observabilityImpact?: string;
+  fullPlanMd?: string;
 }
 
 export interface PlanTaskResult {
@@ -94,6 +95,7 @@ export async function handlePlanTask(
         inputs: params.inputs,
         expectedOutput: params.expectedOutput,
         observabilityImpact: params.observabilityImpact ?? "",
+        fullPlanMd: params.fullPlanMd,
       });
     });
   } catch (err) {
