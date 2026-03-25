@@ -26,16 +26,17 @@ test("#2313: completed-units.json should not be blindly wiped to [] on milestone
   const completedUnitsIdx = phasesSrc.indexOf("completed-units", transitionIdx);
   assert.ok(completedUnitsIdx !== -1, "completed-units handling exists in transition");
 
-  // Get a window around the completed-units handling
-  const windowStart = Math.max(0, completedUnitsIdx - 200);
-  const windowEnd = Math.min(phasesSrc.length, completedUnitsIdx + 500);
-  const window = phasesSrc.slice(windowStart, windowEnd);
+  // Get a window around the completed-units handling (1200 chars to
+  // accommodate CRLF line endings on Windows which inflate byte offsets).
+  const windowStart = Math.max(0, completedUnitsIdx - 300);
+  const windowEnd = Math.min(phasesSrc.length, completedUnitsIdx + 900);
+  const window = phasesSrc.slice(windowStart, windowEnd).toLowerCase();
 
   // Should archive/rename the old file before resetting
   const hasArchive = window.includes("archive") ||
     window.includes("rename") ||
-    window.includes("cpSync") ||
-    window.includes("safeCopy") ||
+    window.includes("cpsync") ||
+    window.includes("safecopy") ||
     window.includes("completed-units-");
 
   assert.ok(
