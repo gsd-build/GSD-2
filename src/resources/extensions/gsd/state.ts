@@ -117,6 +117,11 @@ interface StateCache {
 const CACHE_TTL_MS = 100;
 let _stateCache: StateCache | null = null;
 
+// ── Telemetry counters for derive-path observability ────────────────────────
+let _telemetry = { dbDeriveCount: 0, markdownDeriveCount: 0 };
+export function getDeriveTelemetry() { return { ..._telemetry }; }
+export function resetDeriveTelemetry() { _telemetry = { dbDeriveCount: 0, markdownDeriveCount: 0 }; }
+
 /**
  * Invalidate the deriveState() cache. Call this whenever planning files on disk
  * may have changed (unit completion, merges, file writes).
@@ -203,12 +208,15 @@ export async function deriveState(basePath: string): Promise<GSDState> {
       const stopDbTimer = debugTime("derive-state-db");
       result = await deriveStateFromDb(basePath);
       stopDbTimer({ phase: result.phase, milestone: result.activeMilestone?.id });
+      _telemetry.dbDeriveCount++;
     } else {
       // DB open but empty hierarchy tables — pre-migration project, use filesystem
       result = await _deriveStateImpl(basePath);
+      _telemetry.markdownDeriveCount++;
     }
   } else {
     result = await _deriveStateImpl(basePath);
+    _telemetry.markdownDeriveCount++;
   }
 
   stopTimer({ phase: result.phase, milestone: result.activeMilestone?.id });

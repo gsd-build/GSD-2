@@ -70,7 +70,13 @@ export type DoctorIssueCode =
   | "large_planning_file"
   // Slow environment checks (opt-in via --build / --test flags)
   | "env_build"
-  | "env_test";
+  | "env_test"
+  // Engine health checks (Phase 4)
+  | "db_orphaned_task"
+  | "db_orphaned_slice"
+  | "db_done_task_no_summary"
+  | "db_duplicate_id"
+  | "projection_drift";
 
 /**
  * Issue codes that represent global or completion-critical state.

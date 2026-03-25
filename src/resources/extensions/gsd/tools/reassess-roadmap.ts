@@ -10,6 +10,9 @@ import {
 } from "../gsd-db.js";
 import { invalidateStateCache } from "../state.js";
 import { renderRoadmapFromDb, renderAssessmentFromDb } from "../markdown-renderer.js";
+import { renderAllProjections } from "../workflow-projections.js";
+import { writeManifest } from "../workflow-manifest.js";
+import { appendEvent } from "../workflow-events.js";
 import { join } from "node:path";
 
 export interface SliceChangeInput {
@@ -190,6 +193,22 @@ export async function handleReassessRoadmap(
     // ── Invalidate caches ─────────────────────────────────────────
     invalidateStateCache();
     clearParseCache();
+
+    // ── Post-mutation hook: projections, manifest, event log ─────
+    try {
+      await renderAllProjections(basePath, params.milestoneId);
+      writeManifest(basePath);
+      appendEvent(basePath, {
+        cmd: "reassess-roadmap",
+        params: { milestoneId: params.milestoneId, completedSliceId: params.completedSliceId },
+        ts: new Date().toISOString(),
+        actor: "agent",
+      });
+    } catch (hookErr) {
+      process.stderr.write(
+        `gsd: reassess-roadmap post-mutation hook warning: ${(hookErr as Error).message}\n`,
+      );
+    }
 
     return {
       milestoneId: params.milestoneId,

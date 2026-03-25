@@ -7,6 +7,7 @@ import { buildMilestoneFileName, resolveMilestonePath, resolveSliceFile, resolve
 import { buildBeforeAgentStartResult } from "./system-context.js";
 import { handleAgentEnd } from "./agent-end-recovery.js";
 import { clearDiscussionFlowState, isDepthVerified, isQueuePhaseActive, markDepthVerified, resetWriteGateState, shouldBlockContextWrite } from "./write-gate.js";
+import { isBlockedStateFile } from "../write-intercept.js";
 import { getDiscussionMilestoneId } from "../guided-flow.js";
 import { loadToolApiKeys } from "../commands-config.js";
 import { loadFile, saveFile, formatContinue } from "../files.js";
@@ -136,6 +137,14 @@ export function registerHooks(pi: ExtensionAPI): void {
     }
 
     if (!isToolCallEventType("write", event)) return;
+
+    // Block direct writes to authoritative .gsd/ state files (single-writer engine)
+    const filePath = event.input.path;
+    if (isBlockedStateFile(filePath)) {
+      const { basename } = await import("node:path");
+      return { block: true, reason: `Direct writes to ${basename(filePath)} are blocked. Use the gsd_* tool API instead.` };
+    }
+
     const result = shouldBlockContextWrite(
       event.toolName,
       event.input.path,

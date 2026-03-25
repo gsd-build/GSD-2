@@ -9,6 +9,9 @@ import {
 } from "../gsd-db.js";
 import { invalidateStateCache } from "../state.js";
 import { renderRoadmapFromDb } from "../markdown-renderer.js";
+import { renderAllProjections } from "../workflow-projections.js";
+import { writeManifest } from "../workflow-manifest.js";
+import { appendEvent } from "../workflow-events.js";
 
 export interface PlanMilestoneSliceInput {
   sliceId: string;
@@ -241,6 +244,22 @@ export async function handlePlanMilestone(
 
   invalidateStateCache();
   clearParseCache();
+
+  // ── Post-mutation hook: projections, manifest, event log ───────────────
+  try {
+    await renderAllProjections(basePath, params.milestoneId);
+    writeManifest(basePath);
+    appendEvent(basePath, {
+      cmd: "plan-milestone",
+      params: { milestoneId: params.milestoneId },
+      ts: new Date().toISOString(),
+      actor: "agent",
+    });
+  } catch (hookErr) {
+    process.stderr.write(
+      `gsd: plan-milestone post-mutation hook warning: ${(hookErr as Error).message}\n`,
+    );
+  }
 
   return {
     milestoneId: params.milestoneId,

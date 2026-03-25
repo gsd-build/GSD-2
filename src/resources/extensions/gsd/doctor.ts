@@ -12,7 +12,7 @@ import { loadEffectiveGSDPreferences, type GSDPreferences } from "./preferences.
 import type { DoctorIssue, DoctorIssueCode, DoctorReport } from "./doctor-types.js";
 import { GLOBAL_STATE_CODES } from "./doctor-types.js";
 import type { RoadmapSliceEntry } from "./types.js";
-import { checkGitHealth, checkRuntimeHealth, checkGlobalHealth } from "./doctor-checks.js";
+import { checkGitHealth, checkRuntimeHealth, checkGlobalHealth, checkEngineHealth } from "./doctor-checks.js";
 import { checkEnvironmentHealth } from "./doctor-environment.js";
 import { runProviderChecks } from "./doctor-providers.js";
 
@@ -381,6 +381,9 @@ export async function runGSDDoctor(basePath: string, options?: { fix?: boolean; 
     includeTests: options?.includeTests,
   });
   const envMs = Date.now() - t0env;
+
+  // Engine health checks — DB constraints and projection drift
+  await checkEngineHealth(basePath, issues, fixesApplied);
 
   const milestonesPath = milestonesDir(basePath);
   if (!existsSync(milestonesPath)) {

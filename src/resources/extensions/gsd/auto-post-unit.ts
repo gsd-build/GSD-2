@@ -17,12 +17,10 @@ import { loadFile, parseSummary, resolveAllOverrides } from "./files.js";
 import { loadPrompt } from "./prompt-loader.js";
 import {
   resolveSliceFile,
-  resolveSlicePath,
   resolveTaskFile,
   resolveMilestoneFile,
   resolveTasksDir,
   buildTaskFileName,
-  gsdRoot,
 } from "./paths.js";
 import { invalidateAllCaches } from "./cache.js";
 import { closeoutUnit, type CloseoutOptions } from "./auto-unit-closeout.js";
@@ -34,9 +32,7 @@ import {
   verifyExpectedArtifact,
   resolveExpectedArtifactPath,
 } from "./auto-recovery.js";
-import { writeUnitRuntimeRecord, clearUnitRuntimeRecord } from "./unit-runtime.js";
-import { runGSDDoctor, rebuildState, summarizeDoctorIssues } from "./doctor.js";
-import { recordHealthSnapshot, checkHealEscalation } from "./doctor-proactive.js";
+import { regenerateIfMissing } from "./workflow-projections.js";
 import { syncStateToProjectRoot } from "./auto-worktree-sync.js";
 import { isDbAvailable, getTask, getSlice, getMilestone, updateTaskStatus, _getAdapter } from "./gsd-db.js";
 import { renderPlanCheckboxes } from "./markdown-renderer.js";
@@ -57,9 +53,8 @@ import {
   unitVerb,
   hideFooter,
 } from "./auto-dashboard.js";
-import { existsSync, unlinkSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
-import { atomicWriteSync } from "./atomic-write.js";
 import { _resetHasChangesCache } from "./native-git-bridge.js";
 
 // ─── Rogue File Detection ──────────────────────────────────────────────────
@@ -186,13 +181,8 @@ export function detectRogueFileWrites(
   return rogues;
 }
 
-/** Throttle STATE.md rebuilds — at most once per 30 seconds */
-const STATE_REBUILD_MIN_INTERVAL_MS = 30_000;
-
 export interface PreVerificationOpts {
   skipSettleDelay?: boolean;
-  skipDoctor?: boolean;
-  skipStateRebuild?: boolean;
   skipWorktreeSync?: boolean;
 }
 
@@ -304,78 +294,6 @@ export async function postUnitPreVerification(pctx: PostUnitContext, opts?: PreV
       await runGitHubSync(s.basePath, s.currentUnit.type, s.currentUnit.id);
     } catch (e) {
       debugLog("postUnit", { phase: "github-sync", error: String(e) });
-    }
-
-    // Doctor: fix mechanical bookkeeping (skipped for lightweight sidecars)
-    if (!opts?.skipDoctor) try {
-      const scopeParts = s.currentUnit.id.split("/").slice(0, 2);
-      const doctorScope = scopeParts.join("/");
-      const sliceTerminalUnits = new Set(["complete-slice", "run-uat"]);
-      const effectiveFixLevel = sliceTerminalUnits.has(s.currentUnit.type) ? "all" as const : "task" as const;
-      const report = await runGSDDoctor(s.basePath, { fix: true, scope: doctorScope, fixLevel: effectiveFixLevel });
-      // Human-readable fix notification with details
-      if (report.fixesApplied.length > 0) {
-        const fixSummary = report.fixesApplied.length <= 2
-          ? report.fixesApplied.join("; ")
-          : `${report.fixesApplied[0]}; +${report.fixesApplied.length - 1} more`;
-        ctx.ui.notify(`Doctor: ${fixSummary}`, "info");
-      }
-
-      // Proactive health tracking — filter to current milestone to avoid
-      // cross-milestone stale errors inflating the escalation counter
-      const currentMilestoneId = s.currentUnit.id.split("/")[0];
-      const milestoneIssues = currentMilestoneId
-        ? report.issues.filter(i =>
-            i.unitId === currentMilestoneId ||
-            i.unitId.startsWith(`${currentMilestoneId}/`))
-        : report.issues;
-      const summary = summarizeDoctorIssues(milestoneIssues);
-      // Pass issue details + scope for real-time visibility in the progress widget
-      const issueDetails = milestoneIssues
-        .filter(i => i.severity === "error" || i.severity === "warning")
-        .map(i => ({ code: i.code, message: i.message, severity: i.severity, unitId: i.unitId }));
-      recordHealthSnapshot(summary.errors, summary.warnings, report.fixesApplied.length, issueDetails, report.fixesApplied, doctorScope);
-
-      // Check if we should escalate to LLM-assisted heal
-      if (summary.errors > 0) {
-        const unresolvedErrors = milestoneIssues
-          .filter(i => i.severity === "error" && !i.fixable)
-          .map(i => ({ code: i.code, message: i.message, unitId: i.unitId }));
-        const escalation = checkHealEscalation(summary.errors, unresolvedErrors);
-        if (escalation.shouldEscalate) {
-          ctx.ui.notify(
-            `Doctor heal escalation: ${escalation.reason}. Dispatching LLM-assisted heal.`,
-            "warning",
-          );
-          try {
-            const { formatDoctorIssuesForPrompt, formatDoctorReport } = await import("./doctor.js");
-            const { dispatchDoctorHeal } = await import("./commands-handlers.js");
-            const actionable = report.issues.filter(i => i.severity === "error");
-            const reportText = formatDoctorReport(report, { scope: doctorScope, includeWarnings: true });
-            const structuredIssues = formatDoctorIssuesForPrompt(actionable);
-            dispatchDoctorHeal(pi, doctorScope, reportText, structuredIssues);
-            return "dispatched";
-          } catch (e) {
-            debugLog("postUnit", { phase: "doctor-heal-dispatch", error: String(e) });
-          }
-        }
-      }
-    } catch (e) {
-      debugLog("postUnit", { phase: "doctor", error: String(e) });
-    }
-
-    // Throttled STATE.md rebuild (skipped for lightweight sidecars)
-    if (!opts?.skipStateRebuild) {
-      const now = Date.now();
-      if (now - s.lastStateRebuildAt >= STATE_REBUILD_MIN_INTERVAL_MS) {
-        try {
-          await rebuildState(s.basePath);
-          s.lastStateRebuildAt = now;
-          autoCommitCurrentBranch(s.basePath, "state-rebuild", s.currentUnit.id);
-        } catch (e) {
-          debugLog("postUnit", { phase: "state-rebuild", error: String(e) });
-        }
-      }
     }
 
     // Prune dead bg-shell processes
@@ -503,6 +421,27 @@ export async function postUnitPreVerification(pctx: PostUnitContext, opts?: PreV
         debugLog("postUnit", { phase: "artifact-verify", error: String(e) });
       }
 
+      // If verification failed, attempt to regenerate missing projection files
+      // from DB data before giving up (e.g. research-slice produces PLAN from engine).
+      if (!triggerArtifactVerified) {
+        try {
+          const parts = s.currentUnit.id.split("/");
+          const [mid, sid] = parts;
+          if (mid && sid) {
+            const regenerated = regenerateIfMissing(s.basePath, mid, sid, "PLAN");
+            if (regenerated) {
+              // Re-check after regeneration
+              triggerArtifactVerified = verifyExpectedArtifact(s.currentUnit.type, s.currentUnit.id, s.basePath);
+              if (triggerArtifactVerified) {
+                invalidateAllCaches();
+              }
+            }
+          }
+        } catch (e) {
+          debugLog("postUnit", { phase: "regenerate-projection", error: String(e) });
+        }
+      }
+
       // When artifact verification fails for a unit type that has a known expected
       // artifact, return "retry" so the caller re-dispatches with failure context
       // instead of blindly re-dispatching the same unit (#1571).
@@ -526,17 +465,7 @@ export async function postUnitPreVerification(pctx: PostUnitContext, opts?: PreV
         }
       }
     } else {
-      // Hook unit completed — finalize its runtime record
-      try {
-        writeUnitRuntimeRecord(s.basePath, s.currentUnit.type, s.currentUnit.id, s.currentUnit.startedAt, {
-          phase: "finalized",
-          progressCount: 1,
-          lastProgressKind: "hook-completed",
-        });
-        clearUnitRuntimeRecord(s.basePath, s.currentUnit.type, s.currentUnit.id);
-      } catch (e) {
-        debugLog("postUnit", { phase: "hook-finalize", error: String(e) });
-      }
+      // Hook unit completed — no additional processing needed
     }
   }
 
@@ -625,17 +554,7 @@ export async function postUnitPostVerification(pctx: PostUnitContext): Promise<"
             }
           }
 
-          // 3. Remove from s.completedUnits and flush to completed-units.json
-          s.completedUnits = s.completedUnits.filter(
-            u => !(u.type === trigger.unitType && u.id === trigger.unitId),
-          );
-          try {
-            const completedKeysPath = join(gsdRoot(s.basePath), "completed-units.json");
-            const keys = s.completedUnits.map(u => `${u.type}/${u.id}`);
-            atomicWriteSync(completedKeysPath, JSON.stringify(keys, null, 2));
-          } catch { /* non-fatal: disk flush failure */ }
-
-          // 4. Delete the retry_on artifact (e.g. NEEDS-REWORK.md)
+          // 3. Delete the retry_on artifact (e.g. NEEDS-REWORK.md)
           if (trigger.retryArtifact) {
             const retryArtifactPath = resolveHookArtifactPath(s.basePath, trigger.unitId, trigger.retryArtifact);
             if (existsSync(retryArtifactPath)) {

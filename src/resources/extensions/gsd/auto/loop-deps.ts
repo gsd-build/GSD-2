@@ -80,7 +80,6 @@ export interface LoopDeps {
     basePath: string,
     unitType: string,
     unitId: string,
-    completedUnits: number,
     sessionFile?: string,
   ) => void;
   handleLostSessionLock: (
@@ -179,29 +178,11 @@ export interface LoopDeps {
     startedAt: number,
     opts?: CloseoutOptions & Record<string, unknown>,
   ) => Promise<void>;
-  verifyExpectedArtifact: (
-    unitType: string,
-    unitId: string,
-    basePath: string,
-  ) => boolean;
-  clearUnitRuntimeRecord: (
-    basePath: string,
-    unitType: string,
-    unitId: string,
-  ) => void;
-  writeUnitRuntimeRecord: (
-    basePath: string,
-    unitType: string,
-    unitId: string,
-    startedAt: number,
-    record: Record<string, unknown>,
-  ) => void;
   recordOutcome: (unitType: string, tier: string, success: boolean) => void;
   writeLock: (
     lockBase: string,
     unitType: string,
     unitId: string,
-    completedCount: number,
     sessionFile?: string,
   ) => void;
   captureAvailableSkills: () => void;

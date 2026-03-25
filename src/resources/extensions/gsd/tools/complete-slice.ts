@@ -23,6 +23,9 @@ import { resolveSliceFile, resolveSlicePath, clearPathCache } from "../paths.js"
 import { saveFile, clearParseCache } from "../files.js";
 import { invalidateStateCache } from "../state.js";
 import { renderRoadmapCheckboxes } from "../markdown-renderer.js";
+import { renderAllProjections } from "../workflow-projections.js";
+import { writeManifest } from "../workflow-manifest.js";
+import { appendEvent } from "../workflow-events.js";
 
 export interface CompleteSliceResult {
   sliceId: string;
@@ -290,6 +293,22 @@ export async function handleCompleteSlice(
   invalidateStateCache();
   clearPathCache();
   clearParseCache();
+
+  // ── Post-mutation hook: projections, manifest, event log ───────────────
+  try {
+    await renderAllProjections(basePath, params.milestoneId);
+    writeManifest(basePath);
+    appendEvent(basePath, {
+      cmd: "complete-slice",
+      params: { milestoneId: params.milestoneId, sliceId: params.sliceId },
+      ts: new Date().toISOString(),
+      actor: "agent",
+    });
+  } catch (hookErr) {
+    process.stderr.write(
+      `gsd: complete-slice post-mutation hook warning: ${(hookErr as Error).message}\n`,
+    );
+  }
 
   return {
     sliceId: params.sliceId,
