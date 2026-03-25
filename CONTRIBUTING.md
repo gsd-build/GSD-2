@@ -184,6 +184,78 @@ Only after completing these steps should a reviewer make claims about correctnes
 
 If your PR claims to fix issue #N, reviewers will verify the fix addresses the root cause described in #N — not just that CI is green.
 
+## Testing standards
+
+This project uses Node.js built-in `node:test` as the test runner. All new tests must follow these patterns:
+
+### Use `node:test` and `node:assert/strict`
+
+```typescript
+import { describe, test, beforeEach, afterEach } from "node:test";
+import assert from "node:assert/strict";
+```
+
+Do not use `createTestContext()` from `test-helpers.ts` (legacy, being removed). Do not introduce Jest, Vitest, or other test frameworks.
+
+### Use `beforeEach`/`afterEach` or `t.after()` for cleanup — never `try`/`finally`
+
+```typescript
+// ✅ CORRECT — shared fixture with beforeEach/afterEach
+describe("feature", () => {
+  let tmp: string;
+  beforeEach(() => { tmp = mkdtempSync(join(tmpdir(), "test-")); });
+  afterEach(() => { rmSync(tmp, { recursive: true, force: true }); });
+
+  test("case", () => { /* clean test body */ });
+});
+
+// ✅ CORRECT — per-test cleanup with t.after()
+test("case", (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "test-"));
+  t.after(() => { rmSync(tmp, { recursive: true, force: true }); });
+  // test body
+});
+
+// ❌ WRONG — inline try/finally
+test("case", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "test-"));
+  try {
+    // test body
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+```
+
+**When to use which:**
+- `beforeEach`/`afterEach` — when all tests in a `describe` block share the same setup/teardown pattern
+- `t.after()` — when each test has unique cleanup (different fixtures, env vars, etc.)
+- `try`/`finally` — only inside standalone helper functions that don't have access to the test context `t` (e.g., `withEnv()`, `capture()`)
+
+### Template literal fixture data
+
+When constructing multi-line fixture content (markdown, YAML, etc.) inside indented test blocks, use array join to avoid unintended leading whitespace:
+
+```typescript
+// ✅ CORRECT — no indentation leakage
+const content = [
+  "## Slices",
+  "- [x] **S01: First slice**",
+  "- [ ] **S02: Second slice**",
+].join("\n");
+
+// ❌ WRONG — template literal inside describe/test adds leading spaces
+const content = `
+  ## Slices
+  - [x] **S01: First slice**
+`;
+// Each line now has 2 leading spaces, breaking ^## regex anchors
+```
+
+### Test-first for bug fixes
+
+Bug fixes must include a regression test that fails before the fix and passes after. Write the test first, confirm it fails, then apply the fix. See the `test-first-bugfix` skill.
+
 ## Local development
 
 ```bash
