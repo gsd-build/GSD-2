@@ -860,6 +860,7 @@ export async function runUnitPhase(
       lastProgressAt: s.currentUnit.startedAt,
       progressCount: 0,
       lastProgressKind: "dispatch",
+      recoveryAttempts: 0, // Reset so re-dispatched units get full recovery budget (#2322)
     },
   );
 
