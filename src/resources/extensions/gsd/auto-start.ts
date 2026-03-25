@@ -551,6 +551,20 @@ export async function bootstrapAutoSession(
       }
     }
 
+    // Gate: abort bootstrap if the DB file exists but the provider is
+    // still unavailable after both open attempts above. Without this,
+    // auto-mode starts but every gsd_task_complete / gsd_slice_complete
+    // call returns "db_unavailable", triggering artifact-retry which
+    // re-dispatches the same task — producing an infinite loop (#2419).
+    if (existsSync(gsdDbPath) && !isDbAvailable()) {
+      ctx.ui.notify(
+        "SQLite database exists but failed to open. Auto-mode cannot proceed without a working database provider. " +
+          "Check for corrupt gsd.db or missing native SQLite bindings.",
+        "error",
+      );
+      return releaseLockAndReturn();
+    }
+
     // Initialize metrics
     initMetrics(s.basePath);
 
