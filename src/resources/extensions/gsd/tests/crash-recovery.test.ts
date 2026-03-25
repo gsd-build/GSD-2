@@ -26,53 +26,45 @@ function cleanup(base: string): void {
 
 // ─── writeLock / readCrashLock ────────────────────────────────────────────
 
-test("writeLock creates lock file and readCrashLock reads it", () => {
+test("writeLock creates lock file and readCrashLock reads it", (t) => {
   const base = makeTmpBase();
-  try {
-    writeLock(base, "execute-task", "M001/S01/T01", 3, "/tmp/session.jsonl");
-    const lock = readCrashLock(base);
-    assert.ok(lock, "lock should exist");
-    assert.equal(lock!.unitType, "execute-task");
-    assert.equal(lock!.unitId, "M001/S01/T01");
-    assert.equal(lock!.completedUnits, 3);
-    assert.equal(lock!.sessionFile, "/tmp/session.jsonl");
-    assert.equal(lock!.pid, process.pid);
-  } finally {
-    cleanup(base);
-  }
+  t.after(() => cleanup(base));
+
+  writeLock(base, "execute-task", "M001/S01/T01", 3, "/tmp/session.jsonl");
+  const lock = readCrashLock(base);
+  assert.ok(lock, "lock should exist");
+  assert.equal(lock!.unitType, "execute-task");
+  assert.equal(lock!.unitId, "M001/S01/T01");
+  assert.equal(lock!.completedUnits, 3);
+  assert.equal(lock!.sessionFile, "/tmp/session.jsonl");
+  assert.equal(lock!.pid, process.pid);
 });
 
-test("readCrashLock returns null when no lock exists", () => {
+test("readCrashLock returns null when no lock exists", (t) => {
   const base = makeTmpBase();
-  try {
-    const lock = readCrashLock(base);
-    assert.equal(lock, null);
-  } finally {
-    cleanup(base);
-  }
+  t.after(() => cleanup(base));
+
+  const lock = readCrashLock(base);
+  assert.equal(lock, null);
 });
 
 // ─── clearLock ────────────────────────────────────────────────────────────
 
-test("clearLock removes existing lock file", () => {
+test("clearLock removes existing lock file", (t) => {
   const base = makeTmpBase();
-  try {
-    writeLock(base, "plan-slice", "M001/S01", 0);
-    assert.ok(readCrashLock(base), "lock should exist before clear");
-    clearLock(base);
-    assert.equal(readCrashLock(base), null, "lock should be gone after clear");
-  } finally {
-    cleanup(base);
-  }
+  t.after(() => cleanup(base));
+
+  writeLock(base, "plan-slice", "M001/S01", 0);
+  assert.ok(readCrashLock(base), "lock should exist before clear");
+  clearLock(base);
+  assert.equal(readCrashLock(base), null, "lock should be gone after clear");
 });
 
-test("clearLock is safe when no lock exists", () => {
+test("clearLock is safe when no lock exists", (t) => {
   const base = makeTmpBase();
-  try {
-    assert.doesNotThrow(() => clearLock(base));
-  } finally {
-    cleanup(base);
-  }
+  t.after(() => cleanup(base));
+
+  assert.doesNotThrow(() => clearLock(base));
 });
 
 // ─── isLockProcessAlive ──────────────────────────────────────────────────

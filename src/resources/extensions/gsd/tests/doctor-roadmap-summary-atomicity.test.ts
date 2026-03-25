@@ -58,72 +58,66 @@ Done.
 `);
 }
 
-test("fixLevel:task — roadmap checkbox is never toggled by doctor (reconciliation removed)", async () => {
+test("fixLevel:task — roadmap checkbox is never toggled by doctor (reconciliation removed)", async (t) => {
   const tmp = makeTmp("no-roadmap-toggle");
-  try {
-    buildScaffold(tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
 
-    const report = await runGSDDoctor(tmp, { fix: true, fixLevel: "task" });
+  buildScaffold(tmp);
 
-    // Roadmap must remain unchecked — doctor no longer touches checkboxes
-    const roadmapContent = readFileSync(join(tmp, ".gsd", "milestones", "M001", "M001-ROADMAP.md"), "utf8");
-    assert.ok(
-      roadmapContent.includes("- [ ] **S01"),
-      "roadmap should remain unchecked — doctor no longer toggles checkboxes"
-    );
+  const report = await runGSDDoctor(tmp, { fix: true, fixLevel: "task" });
 
-    // No summary or UAT stubs created
-    const sliceSummaryPath = join(tmp, ".gsd", "milestones", "M001", "slices", "S01", "S01-SUMMARY.md");
-    assert.ok(!existsSync(sliceSummaryPath), "summary should NOT be created");
-  } finally {
-    rmSync(tmp, { recursive: true, force: true });
-  }
+  // Roadmap must remain unchecked — doctor no longer touches checkboxes
+  const roadmapContent = readFileSync(join(tmp, ".gsd", "milestones", "M001", "M001-ROADMAP.md"), "utf8");
+  assert.ok(
+    roadmapContent.includes("- [ ] **S01"),
+    "roadmap should remain unchecked — doctor no longer toggles checkboxes"
+  );
+
+  // No summary or UAT stubs created
+  const sliceSummaryPath = join(tmp, ".gsd", "milestones", "M001", "slices", "S01", "S01-SUMMARY.md");
+  assert.ok(!existsSync(sliceSummaryPath), "summary should NOT be created");
 });
 
-test("fixLevel:all — roadmap checkbox is never toggled by doctor (reconciliation removed)", async () => {
+test("fixLevel:all — roadmap checkbox is never toggled by doctor (reconciliation removed)", async (t) => {
   const tmp = makeTmp("all-no-toggle");
-  try {
-    buildScaffold(tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
 
-    const report = await runGSDDoctor(tmp, { fix: true });
+  buildScaffold(tmp);
 
-    // Even at fixLevel:all, doctor no longer creates stubs or toggles checkboxes
-    const roadmapContent = readFileSync(join(tmp, ".gsd", "milestones", "M001", "M001-ROADMAP.md"), "utf8");
-    assert.ok(
-      roadmapContent.includes("- [ ] **S01"),
-      "roadmap should remain unchecked — reconciliation removed"
-    );
+  const report = await runGSDDoctor(tmp, { fix: true });
 
-    const sliceSummaryPath = join(tmp, ".gsd", "milestones", "M001", "slices", "S01", "S01-SUMMARY.md");
-    assert.ok(!existsSync(sliceSummaryPath), "summary should NOT be created");
-  } finally {
-    rmSync(tmp, { recursive: true, force: true });
-  }
+  // Even at fixLevel:all, doctor no longer creates stubs or toggles checkboxes
+  const roadmapContent = readFileSync(join(tmp, ".gsd", "milestones", "M001", "M001-ROADMAP.md"), "utf8");
+  assert.ok(
+    roadmapContent.includes("- [ ] **S01"),
+    "roadmap should remain unchecked — reconciliation removed"
+  );
+
+  const sliceSummaryPath = join(tmp, ".gsd", "milestones", "M001", "slices", "S01", "S01-SUMMARY.md");
+  assert.ok(!existsSync(sliceSummaryPath), "summary should NOT be created");
 });
 
-test("consecutive doctor runs produce no reconciliation codes", async () => {
+test("consecutive doctor runs produce no reconciliation codes", async (t) => {
   const tmp = makeTmp("consecutive-clean");
-  try {
-    buildScaffold(tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
 
-    await runGSDDoctor(tmp, { fix: true, fixLevel: "task" });
-    const report2 = await runGSDDoctor(tmp, { fix: true, fixLevel: "task" });
+  buildScaffold(tmp);
 
-    const REMOVED_CODES = [
-      "task_done_missing_summary",
-      "task_summary_without_done_checkbox",
-      "all_tasks_done_missing_slice_summary",
-      "all_tasks_done_missing_slice_uat",
-      "all_tasks_done_roadmap_not_checked",
-      "slice_checked_missing_summary",
-      "slice_checked_missing_uat",
-    ];
+  await runGSDDoctor(tmp, { fix: true, fixLevel: "task" });
+  const report2 = await runGSDDoctor(tmp, { fix: true, fixLevel: "task" });
 
-    const codes = report2.issues.map(i => i.code);
-    for (const removed of REMOVED_CODES) {
-      assert.ok(!codes.includes(removed as any), `should NOT report removed code: ${removed}`);
-    }
-  } finally {
-    rmSync(tmp, { recursive: true, force: true });
+  const REMOVED_CODES = [
+    "task_done_missing_summary",
+    "task_summary_without_done_checkbox",
+    "all_tasks_done_missing_slice_summary",
+    "all_tasks_done_missing_slice_uat",
+    "all_tasks_done_roadmap_not_checked",
+    "slice_checked_missing_summary",
+    "slice_checked_missing_uat",
+  ];
+
+  const codes = report2.issues.map(i => i.code);
+  for (const removed of REMOVED_CODES) {
+    assert.ok(!codes.includes(removed as any), `should NOT report removed code: ${removed}`);
   }
 });

@@ -38,361 +38,315 @@ function cleanup(dir: string): void {
 
 // ─── detectProjectState ─────────────────────────────────────────────────────────
 
-test("detectProjectState: empty directory returns state=none", () => {
+test("detectProjectState: empty directory returns state=none", (t) => {
   const dir = makeTempDir("empty");
-  try {
-    const result = detectProjectState(dir);
-    assert.equal(result.state, "none");
-    assert.equal(result.v1, undefined);
-    assert.equal(result.v2, undefined);
-  } finally {
-    cleanup(dir);
-  }
+  t.after(() => cleanup(dir));
+
+  const result = detectProjectState(dir);
+  assert.equal(result.state, "none");
+  assert.equal(result.v1, undefined);
+  assert.equal(result.v2, undefined);
 });
 
-test("detectProjectState: directory with .gsd/milestones/M001 returns v2-gsd", () => {
+test("detectProjectState: directory with .gsd/milestones/M001 returns v2-gsd", (t) => {
   const dir = makeTempDir("v2-gsd");
-  try {
-    mkdirSync(join(dir, ".gsd", "milestones", "M001"), { recursive: true });
-    const result = detectProjectState(dir);
-    assert.equal(result.state, "v2-gsd");
-    assert.ok(result.v2);
-    assert.equal(result.v2!.milestoneCount, 1);
-  } finally {
-    cleanup(dir);
-  }
+  t.after(() => cleanup(dir));
+
+  mkdirSync(join(dir, ".gsd", "milestones", "M001"), { recursive: true });
+  const result = detectProjectState(dir);
+  assert.equal(result.state, "v2-gsd");
+  assert.ok(result.v2);
+  assert.equal(result.v2!.milestoneCount, 1);
 });
 
-test("detectProjectState: directory with empty .gsd/milestones returns v2-gsd-empty", () => {
+test("detectProjectState: directory with empty .gsd/milestones returns v2-gsd-empty", (t) => {
   const dir = makeTempDir("v2-empty");
-  try {
-    mkdirSync(join(dir, ".gsd", "milestones"), { recursive: true });
-    const result = detectProjectState(dir);
-    assert.equal(result.state, "v2-gsd-empty");
-    assert.ok(result.v2);
-    assert.equal(result.v2!.milestoneCount, 0);
-  } finally {
-    cleanup(dir);
-  }
+  t.after(() => cleanup(dir));
+
+  mkdirSync(join(dir, ".gsd", "milestones"), { recursive: true });
+  const result = detectProjectState(dir);
+  assert.equal(result.state, "v2-gsd-empty");
+  assert.ok(result.v2);
+  assert.equal(result.v2!.milestoneCount, 0);
 });
 
-test("detectProjectState: directory with .planning/ returns v1-planning", () => {
+test("detectProjectState: directory with .planning/ returns v1-planning", (t) => {
   const dir = makeTempDir("v1-planning");
-  try {
-    mkdirSync(join(dir, ".planning", "phases", "01-setup"), { recursive: true });
-    writeFileSync(join(dir, ".planning", "ROADMAP.md"), "# Roadmap\n", "utf-8");
-    const result = detectProjectState(dir);
-    assert.equal(result.state, "v1-planning");
-    assert.ok(result.v1);
-    assert.equal(result.v1!.hasRoadmap, true);
-    assert.equal(result.v1!.hasPhasesDir, true);
-    assert.equal(result.v1!.phaseCount, 1);
-  } finally {
-    cleanup(dir);
-  }
+  t.after(() => cleanup(dir));
+
+  mkdirSync(join(dir, ".planning", "phases", "01-setup"), { recursive: true });
+  writeFileSync(join(dir, ".planning", "ROADMAP.md"), "# Roadmap\n", "utf-8");
+  const result = detectProjectState(dir);
+  assert.equal(result.state, "v1-planning");
+  assert.ok(result.v1);
+  assert.equal(result.v1!.hasRoadmap, true);
+  assert.equal(result.v1!.hasPhasesDir, true);
+  assert.equal(result.v1!.phaseCount, 1);
 });
 
-test("detectProjectState: v2 takes priority over v1 when both exist", () => {
+test("detectProjectState: v2 takes priority over v1 when both exist", (t) => {
   const dir = makeTempDir("both");
-  try {
-    mkdirSync(join(dir, ".gsd", "milestones", "M001"), { recursive: true });
-    mkdirSync(join(dir, ".planning"), { recursive: true });
-    const result = detectProjectState(dir);
-    assert.equal(result.state, "v2-gsd");
-  } finally {
-    cleanup(dir);
-  }
+  t.after(() => cleanup(dir));
+
+  mkdirSync(join(dir, ".gsd", "milestones", "M001"), { recursive: true });
+  mkdirSync(join(dir, ".planning"), { recursive: true });
+  const result = detectProjectState(dir);
+  assert.equal(result.state, "v2-gsd");
 });
 
-test("detectProjectState: detects preferences in .gsd/", () => {
+test("detectProjectState: detects preferences in .gsd/", (t) => {
   const dir = makeTempDir("prefs");
-  try {
-    mkdirSync(join(dir, ".gsd", "milestones"), { recursive: true });
-    writeFileSync(join(dir, ".gsd", "preferences.md"), "---\nversion: 1\n---\n", "utf-8");
-    const result = detectProjectState(dir);
-    assert.ok(result.v2);
-    assert.equal(result.v2!.hasPreferences, true);
-  } finally {
-    cleanup(dir);
-  }
+  t.after(() => cleanup(dir));
+
+  mkdirSync(join(dir, ".gsd", "milestones"), { recursive: true });
+  writeFileSync(join(dir, ".gsd", "preferences.md"), "---\nversion: 1\n---\n", "utf-8");
+  const result = detectProjectState(dir);
+  assert.ok(result.v2);
+  assert.equal(result.v2!.hasPreferences, true);
 });
 
 // ─── detectV1Planning ───────────────────────────────────────────────────────────
 
-test("detectV1Planning: returns null for missing .planning/", () => {
+test("detectV1Planning: returns null for missing .planning/", (t) => {
   const dir = makeTempDir("no-v1");
-  try {
-    assert.equal(detectV1Planning(dir), null);
-  } finally {
-    cleanup(dir);
-  }
+  t.after(() => cleanup(dir));
+
+  assert.equal(detectV1Planning(dir), null);
 });
 
-test("detectV1Planning: returns null when .planning is a file", () => {
+test("detectV1Planning: returns null when .planning is a file", (t) => {
   const dir = makeTempDir("v1-file");
-  try {
-    writeFileSync(join(dir, ".planning"), "not a directory", "utf-8");
-    assert.equal(detectV1Planning(dir), null);
-  } finally {
-    cleanup(dir);
-  }
+  t.after(() => cleanup(dir));
+
+  writeFileSync(join(dir, ".planning"), "not a directory", "utf-8");
+  assert.equal(detectV1Planning(dir), null);
 });
 
-test("detectV1Planning: detects phases directory with multiple phases", () => {
+test("detectV1Planning: detects phases directory with multiple phases", (t) => {
   const dir = makeTempDir("v1-phases");
-  try {
-    mkdirSync(join(dir, ".planning", "phases", "01-setup"), { recursive: true });
-    mkdirSync(join(dir, ".planning", "phases", "02-core"), { recursive: true });
-    mkdirSync(join(dir, ".planning", "phases", "03-deploy"), { recursive: true });
-    const result = detectV1Planning(dir);
-    assert.ok(result);
-    assert.equal(result!.phaseCount, 3);
-    assert.equal(result!.hasPhasesDir, true);
-  } finally {
-    cleanup(dir);
-  }
+  t.after(() => cleanup(dir));
+
+  mkdirSync(join(dir, ".planning", "phases", "01-setup"), { recursive: true });
+  mkdirSync(join(dir, ".planning", "phases", "02-core"), { recursive: true });
+  mkdirSync(join(dir, ".planning", "phases", "03-deploy"), { recursive: true });
+  const result = detectV1Planning(dir);
+  assert.ok(result);
+  assert.equal(result!.phaseCount, 3);
+  assert.equal(result!.hasPhasesDir, true);
 });
 
-test("detectV1Planning: detects ROADMAP.md", () => {
+test("detectV1Planning: detects ROADMAP.md", (t) => {
   const dir = makeTempDir("v1-roadmap");
-  try {
-    mkdirSync(join(dir, ".planning"), { recursive: true });
-    writeFileSync(join(dir, ".planning", "ROADMAP.md"), "# Roadmap", "utf-8");
-    const result = detectV1Planning(dir);
-    assert.ok(result);
-    assert.equal(result!.hasRoadmap, true);
-    assert.equal(result!.hasPhasesDir, false);
-    assert.equal(result!.phaseCount, 0);
-  } finally {
-    cleanup(dir);
-  }
+  t.after(() => cleanup(dir));
+
+  mkdirSync(join(dir, ".planning"), { recursive: true });
+  writeFileSync(join(dir, ".planning", "ROADMAP.md"), "# Roadmap", "utf-8");
+  const result = detectV1Planning(dir);
+  assert.ok(result);
+  assert.equal(result!.hasRoadmap, true);
+  assert.equal(result!.hasPhasesDir, false);
+  assert.equal(result!.phaseCount, 0);
 });
 
 // ─── detectProjectSignals ───────────────────────────────────────────────────────
 
-test("detectProjectSignals: empty directory", () => {
+test("detectProjectSignals: empty directory", (t) => {
   const dir = makeTempDir("signals-empty");
-  try {
-    const signals = detectProjectSignals(dir);
-    assert.deepEqual(signals.detectedFiles, []);
-    assert.equal(signals.isGitRepo, false);
-    assert.equal(signals.isMonorepo, false);
-    assert.equal(signals.primaryLanguage, undefined);
-    assert.equal(signals.hasCI, false);
-    assert.equal(signals.hasTests, false);
-    assert.deepEqual(signals.verificationCommands, []);
-  } finally {
-    cleanup(dir);
-  }
+  t.after(() => cleanup(dir));
+
+  const signals = detectProjectSignals(dir);
+  assert.deepEqual(signals.detectedFiles, []);
+  assert.equal(signals.isGitRepo, false);
+  assert.equal(signals.isMonorepo, false);
+  assert.equal(signals.primaryLanguage, undefined);
+  assert.equal(signals.hasCI, false);
+  assert.equal(signals.hasTests, false);
+  assert.deepEqual(signals.verificationCommands, []);
 });
 
-test("detectProjectSignals: Node.js project", () => {
+test("detectProjectSignals: Node.js project", (t) => {
   const dir = makeTempDir("signals-node");
-  try {
-    writeFileSync(
-      join(dir, "package.json"),
-      JSON.stringify({
-        name: "test-project",
-        scripts: {
-          test: "jest",
-          build: "tsc",
-          lint: "eslint .",
-        },
-      }),
-      "utf-8",
-    );
-    writeFileSync(join(dir, "package-lock.json"), "{}", "utf-8");
-    mkdirSync(join(dir, ".git"), { recursive: true });
+  t.after(() => cleanup(dir));
 
-    const signals = detectProjectSignals(dir);
-    assert.ok(signals.detectedFiles.includes("package.json"));
-    assert.equal(signals.primaryLanguage, "javascript/typescript");
-    assert.equal(signals.isGitRepo, true);
-    assert.equal(signals.packageManager, "npm");
-    assert.ok(signals.verificationCommands.includes("npm test"));
-    assert.ok(signals.verificationCommands.some(c => c.includes("build")));
-    assert.ok(signals.verificationCommands.some(c => c.includes("lint")));
-  } finally {
-    cleanup(dir);
-  }
+  writeFileSync(
+    join(dir, "package.json"),
+    JSON.stringify({
+      name: "test-project",
+      scripts: {
+        test: "jest",
+        build: "tsc",
+        lint: "eslint .",
+      },
+    }),
+    "utf-8",
+  );
+  writeFileSync(join(dir, "package-lock.json"), "{}", "utf-8");
+  mkdirSync(join(dir, ".git"), { recursive: true });
+
+  const signals = detectProjectSignals(dir);
+  assert.ok(signals.detectedFiles.includes("package.json"));
+  assert.equal(signals.primaryLanguage, "javascript/typescript");
+  assert.equal(signals.isGitRepo, true);
+  assert.equal(signals.packageManager, "npm");
+  assert.ok(signals.verificationCommands.includes("npm test"));
+  assert.ok(signals.verificationCommands.some(c => c.includes("build")));
+  assert.ok(signals.verificationCommands.some(c => c.includes("lint")));
 });
 
-test("detectProjectSignals: Rust project", () => {
+test("detectProjectSignals: Rust project", (t) => {
   const dir = makeTempDir("signals-rust");
-  try {
-    writeFileSync(join(dir, "Cargo.toml"), '[package]\nname = "test"\n', "utf-8");
-    const signals = detectProjectSignals(dir);
-    assert.ok(signals.detectedFiles.includes("Cargo.toml"));
-    assert.equal(signals.primaryLanguage, "rust");
-    assert.ok(signals.verificationCommands.includes("cargo test"));
-    assert.ok(signals.verificationCommands.includes("cargo clippy"));
-  } finally {
-    cleanup(dir);
-  }
+  t.after(() => cleanup(dir));
+
+  writeFileSync(join(dir, "Cargo.toml"), '[package]\nname = "test"\n', "utf-8");
+  const signals = detectProjectSignals(dir);
+  assert.ok(signals.detectedFiles.includes("Cargo.toml"));
+  assert.equal(signals.primaryLanguage, "rust");
+  assert.ok(signals.verificationCommands.includes("cargo test"));
+  assert.ok(signals.verificationCommands.includes("cargo clippy"));
 });
 
-test("detectProjectSignals: Go project", () => {
+test("detectProjectSignals: Go project", (t) => {
   const dir = makeTempDir("signals-go");
-  try {
-    writeFileSync(join(dir, "go.mod"), "module example.com/test\n", "utf-8");
-    const signals = detectProjectSignals(dir);
-    assert.ok(signals.detectedFiles.includes("go.mod"));
-    assert.equal(signals.primaryLanguage, "go");
-    assert.ok(signals.verificationCommands.includes("go test ./..."));
-  } finally {
-    cleanup(dir);
-  }
+  t.after(() => cleanup(dir));
+
+  writeFileSync(join(dir, "go.mod"), "module example.com/test\n", "utf-8");
+  const signals = detectProjectSignals(dir);
+  assert.ok(signals.detectedFiles.includes("go.mod"));
+  assert.equal(signals.primaryLanguage, "go");
+  assert.ok(signals.verificationCommands.includes("go test ./..."));
 });
 
-test("detectProjectSignals: Python project", () => {
+test("detectProjectSignals: Python project", (t) => {
   const dir = makeTempDir("signals-python");
-  try {
-    writeFileSync(join(dir, "pyproject.toml"), "[tool.poetry]\n", "utf-8");
-    const signals = detectProjectSignals(dir);
-    assert.ok(signals.detectedFiles.includes("pyproject.toml"));
-    assert.equal(signals.primaryLanguage, "python");
-    assert.ok(signals.verificationCommands.includes("pytest"));
-  } finally {
-    cleanup(dir);
-  }
+  t.after(() => cleanup(dir));
+
+  writeFileSync(join(dir, "pyproject.toml"), "[tool.poetry]\n", "utf-8");
+  const signals = detectProjectSignals(dir);
+  assert.ok(signals.detectedFiles.includes("pyproject.toml"));
+  assert.equal(signals.primaryLanguage, "python");
+  assert.ok(signals.verificationCommands.includes("pytest"));
 });
 
-test("detectProjectSignals: monorepo detection via workspaces", () => {
+test("detectProjectSignals: monorepo detection via workspaces", (t) => {
   const dir = makeTempDir("signals-monorepo");
-  try {
-    writeFileSync(
-      join(dir, "package.json"),
-      JSON.stringify({ name: "mono", workspaces: ["packages/*"] }),
-      "utf-8",
-    );
-    const signals = detectProjectSignals(dir);
-    assert.equal(signals.isMonorepo, true);
-  } finally {
-    cleanup(dir);
-  }
+  t.after(() => cleanup(dir));
+
+  writeFileSync(
+    join(dir, "package.json"),
+    JSON.stringify({ name: "mono", workspaces: ["packages/*"] }),
+    "utf-8",
+  );
+  const signals = detectProjectSignals(dir);
+  assert.equal(signals.isMonorepo, true);
 });
 
-test("detectProjectSignals: monorepo detection via turbo.json", () => {
+test("detectProjectSignals: monorepo detection via turbo.json", (t) => {
   const dir = makeTempDir("signals-turbo");
-  try {
-    writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "test" }), "utf-8");
-    writeFileSync(join(dir, "turbo.json"), "{}", "utf-8");
-    const signals = detectProjectSignals(dir);
-    assert.equal(signals.isMonorepo, true);
-  } finally {
-    cleanup(dir);
-  }
+  t.after(() => cleanup(dir));
+
+  writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "test" }), "utf-8");
+  writeFileSync(join(dir, "turbo.json"), "{}", "utf-8");
+  const signals = detectProjectSignals(dir);
+  assert.equal(signals.isMonorepo, true);
 });
 
-test("detectProjectSignals: CI detection", () => {
+test("detectProjectSignals: CI detection", (t) => {
   const dir = makeTempDir("signals-ci");
-  try {
-    mkdirSync(join(dir, ".github", "workflows"), { recursive: true });
-    const signals = detectProjectSignals(dir);
-    assert.equal(signals.hasCI, true);
-  } finally {
-    cleanup(dir);
-  }
+  t.after(() => cleanup(dir));
+
+  mkdirSync(join(dir, ".github", "workflows"), { recursive: true });
+  const signals = detectProjectSignals(dir);
+  assert.equal(signals.hasCI, true);
 });
 
-test("detectProjectSignals: test detection via jest config", () => {
+test("detectProjectSignals: test detection via jest config", (t) => {
   const dir = makeTempDir("signals-tests");
-  try {
-    writeFileSync(join(dir, "jest.config.ts"), "export default {}", "utf-8");
-    const signals = detectProjectSignals(dir);
-    assert.equal(signals.hasTests, true);
-  } finally {
-    cleanup(dir);
-  }
+  t.after(() => cleanup(dir));
+
+  writeFileSync(join(dir, "jest.config.ts"), "export default {}", "utf-8");
+  const signals = detectProjectSignals(dir);
+  assert.equal(signals.hasTests, true);
 });
 
-test("detectProjectSignals: package manager detection", () => {
+test("detectProjectSignals: package manager detection", (t) => {
   const dir1 = makeTempDir("pm-pnpm");
   const dir2 = makeTempDir("pm-yarn");
   const dir3 = makeTempDir("pm-bun");
-  try {
-    writeFileSync(join(dir1, "pnpm-lock.yaml"), "", "utf-8");
-    writeFileSync(join(dir1, "package.json"), "{}", "utf-8");
-    assert.equal(detectProjectSignals(dir1).packageManager, "pnpm");
-
-    writeFileSync(join(dir2, "yarn.lock"), "", "utf-8");
-    writeFileSync(join(dir2, "package.json"), "{}", "utf-8");
-    assert.equal(detectProjectSignals(dir2).packageManager, "yarn");
-
-    writeFileSync(join(dir3, "bun.lockb"), "", "utf-8");
-    writeFileSync(join(dir3, "package.json"), "{}", "utf-8");
-    assert.equal(detectProjectSignals(dir3).packageManager, "bun");
-  } finally {
+  t.after(() => {
     cleanup(dir1);
     cleanup(dir2);
     cleanup(dir3);
-  }
+  });
+
+  writeFileSync(join(dir1, "pnpm-lock.yaml"), "", "utf-8");
+  writeFileSync(join(dir1, "package.json"), "{}", "utf-8");
+  assert.equal(detectProjectSignals(dir1).packageManager, "pnpm");
+
+  writeFileSync(join(dir2, "yarn.lock"), "", "utf-8");
+  writeFileSync(join(dir2, "package.json"), "{}", "utf-8");
+  assert.equal(detectProjectSignals(dir2).packageManager, "yarn");
+
+  writeFileSync(join(dir3, "bun.lockb"), "", "utf-8");
+  writeFileSync(join(dir3, "package.json"), "{}", "utf-8");
+  assert.equal(detectProjectSignals(dir3).packageManager, "bun");
 });
 
-test("detectProjectSignals: skips default npm test script", () => {
+test("detectProjectSignals: skips default npm test script", (t) => {
   const dir = makeTempDir("signals-default-test");
-  try {
-    writeFileSync(
-      join(dir, "package.json"),
-      JSON.stringify({
-        name: "test",
-        scripts: { test: 'echo "Error: no test specified" && exit 1' },
-      }),
-      "utf-8",
-    );
-    const signals = detectProjectSignals(dir);
-    // Should NOT include the default npm test script
-    assert.equal(
-      signals.verificationCommands.some(c => c.includes("test")),
-      false,
-    );
-  } finally {
-    cleanup(dir);
-  }
+  t.after(() => cleanup(dir));
+
+  writeFileSync(
+    join(dir, "package.json"),
+    JSON.stringify({
+      name: "test",
+      scripts: { test: 'echo "Error: no test specified" && exit 1' },
+    }),
+    "utf-8",
+  );
+  const signals = detectProjectSignals(dir);
+  // Should NOT include the default npm test script
+  assert.equal(
+    signals.verificationCommands.some(c => c.includes("test")),
+    false,
+  );
 });
 
-test("detectProjectSignals: pnpm uses pnpm commands", () => {
+test("detectProjectSignals: pnpm uses pnpm commands", (t) => {
   const dir = makeTempDir("signals-pnpm-cmds");
-  try {
-    writeFileSync(
-      join(dir, "package.json"),
-      JSON.stringify({
-        name: "test",
-        scripts: { test: "vitest", build: "tsc" },
-      }),
-      "utf-8",
-    );
-    writeFileSync(join(dir, "pnpm-lock.yaml"), "", "utf-8");
-    const signals = detectProjectSignals(dir);
-    assert.ok(signals.verificationCommands.includes("pnpm test"));
-    assert.ok(signals.verificationCommands.includes("pnpm run build"));
-  } finally {
-    cleanup(dir);
-  }
+  t.after(() => cleanup(dir));
+
+  writeFileSync(
+    join(dir, "package.json"),
+    JSON.stringify({
+      name: "test",
+      scripts: { test: "vitest", build: "tsc" },
+    }),
+    "utf-8",
+  );
+  writeFileSync(join(dir, "pnpm-lock.yaml"), "", "utf-8");
+  const signals = detectProjectSignals(dir);
+  assert.ok(signals.verificationCommands.includes("pnpm test"));
+  assert.ok(signals.verificationCommands.includes("pnpm run build"));
 });
 
-test("detectProjectSignals: Ruby project with rspec", () => {
+test("detectProjectSignals: Ruby project with rspec", (t) => {
   const dir = makeTempDir("signals-ruby");
-  try {
-    writeFileSync(join(dir, "Gemfile"), 'source "https://rubygems.org"\n', "utf-8");
-    mkdirSync(join(dir, "spec"), { recursive: true });
-    const signals = detectProjectSignals(dir);
-    assert.ok(signals.detectedFiles.includes("Gemfile"));
-    assert.equal(signals.primaryLanguage, "ruby");
-    assert.ok(signals.verificationCommands.includes("bundle exec rspec"));
-  } finally {
-    cleanup(dir);
-  }
+  t.after(() => cleanup(dir));
+
+  writeFileSync(join(dir, "Gemfile"), 'source "https://rubygems.org"\n', "utf-8");
+  mkdirSync(join(dir, "spec"), { recursive: true });
+  const signals = detectProjectSignals(dir);
+  assert.ok(signals.detectedFiles.includes("Gemfile"));
+  assert.equal(signals.primaryLanguage, "ruby");
+  assert.ok(signals.verificationCommands.includes("bundle exec rspec"));
 });
 
-test("detectProjectSignals: Makefile with test target", () => {
+test("detectProjectSignals: Makefile with test target", (t) => {
   const dir = makeTempDir("signals-make");
-  try {
-    writeFileSync(join(dir, "Makefile"), "test:\n\tgo test ./...\n\nbuild:\n\tgo build\n", "utf-8");
-    const signals = detectProjectSignals(dir);
-    assert.ok(signals.detectedFiles.includes("Makefile"));
-    assert.ok(signals.verificationCommands.includes("make test"));
-  } finally {
-    cleanup(dir);
-  }
+  t.after(() => cleanup(dir));
+
+  writeFileSync(join(dir, "Makefile"), "test:\n\tgo test ./...\n\nbuild:\n\tgo build\n", "utf-8");
+  const signals = detectProjectSignals(dir);
+  assert.ok(signals.detectedFiles.includes("Makefile"));
+  assert.ok(signals.verificationCommands.includes("make test"));
 });

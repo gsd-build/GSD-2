@@ -56,35 +56,33 @@ Done.
 `);
 }
 
-test("doctor does not report any reconciliation issue codes", async () => {
+test("doctor does not report any reconciliation issue codes", async (t) => {
   const tmp = makeTmp("no-reconciliation");
-  try {
-    buildScaffold(tmp);
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
 
-    const report = await runGSDDoctor(tmp, { fix: true, fixLevel: "task" });
+  buildScaffold(tmp);
 
-    const REMOVED_CODES = [
-      "task_done_missing_summary",
-      "task_summary_without_done_checkbox",
-      "all_tasks_done_missing_slice_summary",
-      "all_tasks_done_missing_slice_uat",
-      "all_tasks_done_roadmap_not_checked",
-      "slice_checked_missing_summary",
-      "slice_checked_missing_uat",
-    ];
+  const report = await runGSDDoctor(tmp, { fix: true, fixLevel: "task" });
 
-    const codes = report.issues.map(i => i.code);
-    for (const removed of REMOVED_CODES) {
-      assert.ok(!codes.includes(removed as any), `should NOT report removed code: ${removed}`);
-    }
+  const REMOVED_CODES = [
+    "task_done_missing_summary",
+    "task_summary_without_done_checkbox",
+    "all_tasks_done_missing_slice_summary",
+    "all_tasks_done_missing_slice_uat",
+    "all_tasks_done_roadmap_not_checked",
+    "slice_checked_missing_summary",
+    "slice_checked_missing_uat",
+  ];
 
-    // No summary or UAT stubs should be created
-    const sliceSummaryPath = join(tmp, ".gsd", "milestones", "M001", "slices", "S01", "S01-SUMMARY.md");
-    assert.ok(!existsSync(sliceSummaryPath), "should NOT have created summary stub");
-
-    const sliceUatPath = join(tmp, ".gsd", "milestones", "M001", "slices", "S01", "S01-UAT.md");
-    assert.ok(!existsSync(sliceUatPath), "should NOT have created UAT stub");
-  } finally {
-    rmSync(tmp, { recursive: true, force: true });
+  const codes = report.issues.map(i => i.code);
+  for (const removed of REMOVED_CODES) {
+    assert.ok(!codes.includes(removed as any), `should NOT report removed code: ${removed}`);
   }
+
+  // No summary or UAT stubs should be created
+  const sliceSummaryPath = join(tmp, ".gsd", "milestones", "M001", "slices", "S01", "S01-SUMMARY.md");
+  assert.ok(!existsSync(sliceSummaryPath), "should NOT have created summary stub");
+
+  const sliceUatPath = join(tmp, ".gsd", "milestones", "M001", "slices", "S01", "S01-UAT.md");
+  assert.ok(!existsSync(sliceUatPath), "should NOT have created UAT stub");
 });
