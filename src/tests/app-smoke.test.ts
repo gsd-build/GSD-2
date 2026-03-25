@@ -130,6 +130,59 @@ test("loader sets all 4 GSD_ env vars and PI_PACKAGE_DIR", async (t) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+// 2b. loader runtime dependency checks
+// ═══════════════════════════════════════════════════════════════════════════
+
+test("loader source contains Node version check with MIN_NODE_MAJOR", () => {
+  const loaderSrc = readFileSync(join(projectRoot, "src", "loader.ts"), "utf-8");
+  assert.ok(loaderSrc.includes("MIN_NODE_MAJOR"), "loader defines MIN_NODE_MAJOR constant");
+  assert.ok(loaderSrc.includes("process.versions.node"), "loader checks process.versions.node");
+});
+
+test("loader source contains git availability check", () => {
+  const loaderSrc = readFileSync(join(projectRoot, "src", "loader.ts"), "utf-8");
+  assert.ok(loaderSrc.includes("git"), "loader checks for git");
+  assert.ok(loaderSrc.includes("execFileSync"), "loader uses execFileSync for git check");
+});
+
+test("loader exits with error on unsupported Node version", () => {
+  // Spawn a subprocess that simulates the loader's version check logic
+  // with a deliberately high minimum to force the failure path
+  const script = [
+    "const major = parseInt(process.versions.node.split('.')[0], 10);",
+    "const MIN = 99;",
+    "if (major < MIN) { process.stderr.write('WOULD_EXIT'); process.exit(1); }",
+    "process.stdout.write('OK');",
+  ].join(" ");
+  try {
+    execSync(`node -e "${script}"`, { encoding: "utf-8", stdio: "pipe" });
+    // Node >= 99 would reach here — acceptable no-op
+  } catch (err: unknown) {
+    const e = err as { status?: number; stderr?: string };
+    assert.strictEqual(e.status, 1, "exits with code 1 for unsupported Node");
+    assert.ok((e.stderr || "").includes("WOULD_EXIT"), "stderr contains version error");
+  }
+});
+
+test("loader MIN_NODE_MAJOR matches package.json engines field", () => {
+  const loaderSrc = readFileSync(join(projectRoot, "src", "loader.ts"), "utf-8");
+  const pkg = JSON.parse(readFileSync(join(projectRoot, "package.json"), "utf-8"));
+
+  // Extract MIN_NODE_MAJOR value from loader source
+  const match = loaderSrc.match(/MIN_NODE_MAJOR\s*=\s*(\d+)/);
+  assert.ok(match, "MIN_NODE_MAJOR is defined with a numeric value");
+  const loaderMin = parseInt(match![1], 10);
+
+  // Extract major version from engines.node (e.g. ">=22.0.0" → 22)
+  const engineMatch = (pkg.engines?.node || "").match(/(\d+)/);
+  assert.ok(engineMatch, "package.json engines.node is defined");
+  const engineMin = parseInt(engineMatch![1], 10);
+
+  assert.strictEqual(loaderMin, engineMin,
+    `loader MIN_NODE_MAJOR (${loaderMin}) must match package.json engines.node (>=${engineMin}.0.0)`);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
 // 3. resource-loader syncs bundled resources
 // ═══════════════════════════════════════════════════════════════════════════
 

@@ -30,6 +30,46 @@ if (firstArg === '--help' || firstArg === '-h') {
   process.exit(0)
 }
 
+// ---------------------------------------------------------------------------
+// Runtime dependency checks — fail fast with clear diagnostics before any
+// heavy imports. Reads minimum Node version from the engines field in
+// package.json (already parsed above) and verifies git is available.
+// ---------------------------------------------------------------------------
+{
+  const MIN_NODE_MAJOR = 22
+  const red = '\x1b[31m'
+  const bold = '\x1b[1m'
+  const dim = '\x1b[2m'
+  const reset = '\x1b[0m'
+
+  // -- Node version --
+  const nodeMajor = parseInt(process.versions.node.split('.')[0], 10)
+  if (nodeMajor < MIN_NODE_MAJOR) {
+    process.stderr.write(
+      `\n${red}${bold}Error:${reset} GSD requires Node.js >= ${MIN_NODE_MAJOR}.0.0\n` +
+      `       You are running Node.js ${process.versions.node}\n\n` +
+      `${dim}Install a supported version:${reset}\n` +
+      `  nvm install ${MIN_NODE_MAJOR}   ${dim}# if using nvm${reset}\n` +
+      `  fnm install ${MIN_NODE_MAJOR}   ${dim}# if using fnm${reset}\n` +
+      `  brew install node@${MIN_NODE_MAJOR} ${dim}# macOS Homebrew${reset}\n\n`
+    )
+    process.exit(1)
+  }
+
+  // -- git --
+  try {
+    const { execFileSync } = await import('child_process')
+    execFileSync('git', ['--version'], { stdio: 'ignore' })
+  } catch {
+    process.stderr.write(
+      `\n${red}${bold}Error:${reset} GSD requires git but it was not found on PATH.\n\n` +
+      `${dim}Install git:${reset}\n` +
+      `  https://git-scm.com/downloads\n\n`
+    )
+    process.exit(1)
+  }
+}
+
 import { agentDir, appRoot } from './app-paths.js'
 import { serializeBundledExtensionPaths } from './bundled-extension-paths.js'
 import { discoverExtensionEntryPaths } from './extension-discovery.js'

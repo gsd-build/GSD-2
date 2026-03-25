@@ -78,8 +78,12 @@ function loadProvider(): void {
     // unavailable
   }
 
+  const nodeMajor = parseInt(process.versions.node.split(".")[0], 10);
+  const versionHint = nodeMajor < 22
+    ? ` GSD requires Node >= 22.0.0 (current: v${process.versions.node}). Upgrade Node to fix this.`
+    : "";
   process.stderr.write(
-    "gsd-db: No SQLite provider available (tried node:sqlite, better-sqlite3)\n",
+    `gsd-db: No SQLite provider available (tried node:sqlite, better-sqlite3).${versionHint}\n`,
   );
 }
 
