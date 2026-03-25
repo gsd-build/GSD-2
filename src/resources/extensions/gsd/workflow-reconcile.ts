@@ -1,8 +1,9 @@
 import { join } from "node:path";
 import { mkdirSync, existsSync, readFileSync, unlinkSync } from "node:fs";
-import { readEvents, findForkPoint, appendEvent } from "./workflow-events.js";
+import { readEvents, findForkPoint, appendEvent, getSessionId } from "./workflow-events.js";
 import type { WorkflowEvent } from "./workflow-events.js";
 import {
+  transaction,
   updateTaskStatus,
   updateSliceStatus,
   insertVerificationEvidence,
@@ -11,6 +12,7 @@ import {
 } from "./gsd-db.js";
 import { writeManifest } from "./workflow-manifest.js";
 import { atomicWriteSync } from "./atomic-write.js";
+import { acquireSyncLock, releaseSyncLock } from "./sync-lock.js";
 
 // ─── Public Types ─────────────────────────────────────────────────────────────
 
@@ -34,6 +36,7 @@ export interface ReconcileResult {
  * direct DB calls.
  */
 function replayEvents(events: WorkflowEvent[]): void {
+  transaction(() => {
   for (const event of events) {
     const p = event.params;
     switch (event.cmd) {
@@ -48,7 +51,7 @@ function replayEvents(events: WorkflowEvent[]): void {
         const milestoneId = p["milestoneId"] as string;
         const sliceId = p["sliceId"] as string;
         const taskId = p["taskId"] as string;
-        updateTaskStatus(milestoneId, sliceId, taskId, "in-progress");
+        updateTaskStatus(milestoneId, sliceId, taskId, "in-progress", event.ts);
         break;
       }
       case "report_blocker": {
@@ -106,6 +109,7 @@ function replayEvents(events: WorkflowEvent[]): void {
         break;
     }
   }
+  }); // end transaction
 }
 
 // ─── extractEntityKey ─────────────────────────────────────────────────────────
@@ -267,6 +271,26 @@ export function reconcileWorktreeLogs(
   mainBasePath: string,
   worktreeBasePath: string,
 ): ReconcileResult {
+  // Acquire advisory lock to prevent concurrent reconcile + append races
+  const lock = acquireSyncLock(mainBasePath);
+  if (!lock.acquired) {
+    process.stderr.write(
+      `[gsd] reconcile: could not acquire sync lock — another reconciliation may be in progress\n`,
+    );
+    return { autoMerged: 0, conflicts: [] };
+  }
+
+  try {
+    return _reconcileWorktreeLogsInner(mainBasePath, worktreeBasePath);
+  } finally {
+    releaseSyncLock(mainBasePath);
+  }
+}
+
+function _reconcileWorktreeLogsInner(
+  mainBasePath: string,
+  worktreeBasePath: string,
+): ReconcileResult {
   // Step 1: Read both logs
   const mainLogPath = join(mainBasePath, ".gsd", "event-log.jsonl");
   const wtLogPath = join(worktreeBasePath, ".gsd", "event-log.jsonl");
@@ -297,24 +321,23 @@ export function reconcileWorktreeLogs(
     return { autoMerged: 0, conflicts };
   }
 
-  // Step 6: Clean merge — sort by timestamp and replay
-  const merged = [...mainDiverged, ...wtDiverged].sort((a, b) =>
-    a.ts.localeCompare(b.ts),
-  );
+  // Step 6: Clean merge — stable sort by timestamp (index-based tiebreaker)
+  const indexed = [...mainDiverged, ...wtDiverged].map((e, i) => ({ e, i }));
+  indexed.sort((a, b) => a.e.ts.localeCompare(b.e.ts) || a.i - b.i);
+  const merged = indexed.map(({ e }) => e);
 
-  // Ensure DB is open for main base path
-  openDatabase(join(mainBasePath, ".gsd", "gsd.db"));
-  replayEvents(merged);
-
-  // Step 7: Write merged event log (base + merged in timestamp order)
-  // CRITICAL (Pitfall #2): After replay, explicitly write the merged event log.
+  // Step 7: Write merged event log FIRST (so crash recovery can re-derive DB state)
   const baseEvents = mainEvents.slice(0, forkPoint + 1);
   const mergedLog = baseEvents.concat(merged);
   const logContent = mergedLog.map((e) => JSON.stringify(e)).join("\n") + (mergedLog.length > 0 ? "\n" : "");
   mkdirSync(join(mainBasePath, ".gsd"), { recursive: true });
   atomicWriteSync(join(mainBasePath, ".gsd", "event-log.jsonl"), logContent);
 
-  // Step 8: Write manifest
+  // Step 8: Replay into DB (wrapped in a transaction by replayEvents)
+  openDatabase(join(mainBasePath, ".gsd", "gsd.db"));
+  replayEvents(merged);
+
+  // Step 9: Write manifest
   try {
     writeManifest(mainBasePath);
   } catch (err) {
@@ -323,7 +346,6 @@ export function reconcileWorktreeLogs(
     );
   }
 
-  // Step 9: Return result
   return { autoMerged: merged.length, conflicts: [] };
 }
 
@@ -411,7 +433,7 @@ function parseEventBlock(block: string): WorkflowEvent[] {
           }
         }
 
-        events.push({ cmd, params, ts, hash, actor: "agent" });
+        events.push({ cmd, params, ts, hash, actor: "agent", session_id: getSessionId() });
       }
     }
     i++;
@@ -423,9 +445,13 @@ function parseEventBlock(block: string): WorkflowEvent[] {
  * Resolve a single conflict by picking one side's events.
  * Replays the picked events through the DB helpers, appends them to the event log,
  * and updates or removes CONFLICTS.md.
+ *
+ * When the last conflict is resolved, non-conflicting events from both sides
+ * are also replayed (they were blocked by the all-or-nothing D-04 rule).
  */
 export function resolveConflict(
   basePath: string,
+  worktreeBasePath: string,
   entityKey: string,  // e.g. "task:T01"
   pick: "main" | "worktree",
 ): void {
@@ -452,12 +478,16 @@ export function resolveConflict(
   // Remove resolved conflict from list
   conflicts.splice(idx, 1);
 
-  // Update or remove CONFLICTS.md
   if (conflicts.length === 0) {
+    // All conflicts resolved — remove CONFLICTS.md and re-run reconciliation
+    // to pick up non-conflicting events that were blocked by D-04 all-or-nothing.
     removeConflictsFile(basePath);
+    if (worktreeBasePath) {
+      reconcileWorktreeLogs(basePath, worktreeBasePath);
+    }
   } else {
-    // Re-write CONFLICTS.md with remaining conflicts (worktreePath unknown — use empty string)
-    writeConflictsFile(basePath, conflicts, "");
+    // Re-write CONFLICTS.md with remaining conflicts
+    writeConflictsFile(basePath, conflicts, worktreeBasePath);
   }
 }
 

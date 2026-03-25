@@ -206,23 +206,6 @@ export async function handleCompleteSlice(
     return { error: "milestoneId is required and must be a non-empty string" };
   }
 
-  // ── State machine preconditions ─────────────────────────────────────────
-  const milestone = getMilestone(params.milestoneId);
-  if (!milestone) {
-    return { error: `milestone not found: ${params.milestoneId}` };
-  }
-  if (milestone.status === "complete" || milestone.status === "done") {
-    return { error: `cannot complete slice in a closed milestone: ${params.milestoneId} (status: ${milestone.status})` };
-  }
-
-  const slice = getSlice(params.milestoneId, params.sliceId);
-  if (!slice) {
-    return { error: `slice not found: ${params.milestoneId}/${params.sliceId}` };
-  }
-  if (slice.status === "complete" || slice.status === "done") {
-    return { error: `slice ${params.sliceId} is already complete — use gsd_slice_reopen first if you need to redo it` };
-  }
-
   // ── Ownership check (opt-in: only enforced when claim file exists) ──────
   const ownershipErr = checkOwnership(
     basePath,
@@ -233,26 +216,49 @@ export async function handleCompleteSlice(
     return { error: ownershipErr };
   }
 
-  // ── Verify all tasks are complete ───────────────────────────────────────
-  const tasks = getSliceTasks(params.milestoneId, params.sliceId);
-  if (tasks.length === 0) {
-    return { error: `no tasks found for slice ${params.sliceId} in milestone ${params.milestoneId}` };
-  }
-
-  const incompleteTasks = tasks.filter(t => t.status !== "complete");
-  if (incompleteTasks.length > 0) {
-    const incompleteIds = incompleteTasks.map(t => `${t.id} (status: ${t.status})`).join(", ");
-    return { error: `incomplete tasks: ${incompleteIds}` };
-  }
-
-  // ── DB writes inside a transaction ──────────────────────────────────────
+  // ── Guards + DB writes inside a single transaction (prevents TOCTOU) ───
   const completedAt = new Date().toISOString();
+  let guardError: string | null = null;
 
   transaction(() => {
+    // State machine preconditions (inside txn for atomicity).
+    // Milestone/slice not existing is OK — insertMilestone/insertSlice below will auto-create.
+    // Only block if they exist and are closed.
+    const milestone = getMilestone(params.milestoneId);
+    if (milestone && (milestone.status === "complete" || milestone.status === "done")) {
+      guardError = `cannot complete slice in a closed milestone: ${params.milestoneId} (status: ${milestone.status})`;
+      return;
+    }
+
+    const slice = getSlice(params.milestoneId, params.sliceId);
+    if (slice && (slice.status === "complete" || slice.status === "done")) {
+      guardError = `slice ${params.sliceId} is already complete — use gsd_slice_reopen first if you need to redo it`;
+      return;
+    }
+
+    // Verify all tasks are complete
+    const tasks = getSliceTasks(params.milestoneId, params.sliceId);
+    if (tasks.length === 0) {
+      guardError = `no tasks found for slice ${params.sliceId} in milestone ${params.milestoneId}`;
+      return;
+    }
+
+    const incompleteTasks = tasks.filter(t => t.status !== "complete" && t.status !== "done");
+    if (incompleteTasks.length > 0) {
+      const incompleteIds = incompleteTasks.map(t => `${t.id} (status: ${t.status})`).join(", ");
+      guardError = `incomplete tasks: ${incompleteIds}`;
+      return;
+    }
+
+    // All guards passed — perform writes
     insertMilestone({ id: params.milestoneId });
     insertSlice({ id: params.sliceId, milestoneId: params.milestoneId });
     updateSliceStatus(params.milestoneId, params.sliceId, "complete", completedAt);
   });
+
+  if (guardError) {
+    return { error: guardError };
+  }
 
   // ── Filesystem operations (outside transaction) ─────────────────────────
   // If disk render fails, roll back the DB status so deriveState() and

@@ -138,28 +138,6 @@ export async function handleCompleteTask(
     return { error: "milestoneId is required and must be a non-empty string" };
   }
 
-  // ── State machine preconditions ─────────────────────────────────────────
-  const milestone = getMilestone(params.milestoneId);
-  if (!milestone) {
-    return { error: `milestone not found: ${params.milestoneId}` };
-  }
-  if (milestone.status === "complete" || milestone.status === "done") {
-    return { error: `cannot complete task in a closed milestone: ${params.milestoneId} (status: ${milestone.status})` };
-  }
-
-  const slice = getSlice(params.milestoneId, params.sliceId);
-  if (!slice) {
-    return { error: `slice not found: ${params.milestoneId}/${params.sliceId}` };
-  }
-  if (slice.status === "complete" || slice.status === "done") {
-    return { error: `cannot complete task in a closed slice: ${params.sliceId} (status: ${slice.status})` };
-  }
-
-  const existingTask = getTask(params.milestoneId, params.sliceId, params.taskId);
-  if (existingTask && (existingTask.status === "complete" || existingTask.status === "done")) {
-    return { error: `task ${params.taskId} is already complete — use gsd_task_reopen first if you need to redo it` };
-  }
-
   // ── Ownership check (opt-in: only enforced when claim file exists) ──────
   const ownershipErr = checkOwnership(
     basePath,
@@ -170,10 +148,33 @@ export async function handleCompleteTask(
     return { error: ownershipErr };
   }
 
-  // ── DB writes inside a transaction ──────────────────────────────────────
+  // ── Guards + DB writes inside a single transaction (prevents TOCTOU) ───
   const completedAt = new Date().toISOString();
+  let guardError: string | null = null;
 
   transaction(() => {
+    // State machine preconditions (inside txn for atomicity).
+    // Milestone/slice not existing is OK — insertMilestone/insertSlice below will auto-create.
+    // Only block if they exist and are closed.
+    const milestone = getMilestone(params.milestoneId);
+    if (milestone && (milestone.status === "complete" || milestone.status === "done")) {
+      guardError = `cannot complete task in a closed milestone: ${params.milestoneId} (status: ${milestone.status})`;
+      return;
+    }
+
+    const slice = getSlice(params.milestoneId, params.sliceId);
+    if (slice && (slice.status === "complete" || slice.status === "done")) {
+      guardError = `cannot complete task in a closed slice: ${params.sliceId} (status: ${slice.status})`;
+      return;
+    }
+
+    const existingTask = getTask(params.milestoneId, params.sliceId, params.taskId);
+    if (existingTask && (existingTask.status === "complete" || existingTask.status === "done")) {
+      guardError = `task ${params.taskId} is already complete — use gsd_task_reopen first if you need to redo it`;
+      return;
+    }
+
+    // All guards passed — perform writes
     insertMilestone({ id: params.milestoneId });
     insertSlice({ id: params.sliceId, milestoneId: params.milestoneId });
     insertTask({
@@ -205,6 +206,10 @@ export async function handleCompleteTask(
       });
     }
   });
+
+  if (guardError) {
+    return { error: guardError };
+  }
 
   // ── Filesystem operations (outside transaction) ─────────────────────────
   // If disk render fails, roll back the DB status so deriveState() and

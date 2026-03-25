@@ -15,6 +15,7 @@ import {
   getSlice,
   getTask,
   updateTaskStatus,
+  transaction,
 } from "../gsd-db.js";
 import { invalidateStateCache } from "../state.js";
 import { renderAllProjections } from "../workflow-projections.js";
@@ -53,33 +54,46 @@ export async function handleReopenTask(
     return { error: "milestoneId is required and must be a non-empty string" };
   }
 
-  // ── State machine preconditions ─────────────────────────────────────────
-  const milestone = getMilestone(params.milestoneId);
-  if (!milestone) {
-    return { error: `milestone not found: ${params.milestoneId}` };
-  }
-  if (milestone.status === "complete" || milestone.status === "done") {
-    return { error: `cannot reopen task in a closed milestone: ${params.milestoneId} (status: ${milestone.status})` };
-  }
+  // ── Guards + DB write inside a single transaction (prevents TOCTOU) ────
+  let guardError: string | null = null;
 
-  const slice = getSlice(params.milestoneId, params.sliceId);
-  if (!slice) {
-    return { error: `slice not found: ${params.milestoneId}/${params.sliceId}` };
-  }
-  if (slice.status === "complete" || slice.status === "done") {
-    return { error: `cannot reopen task inside a closed slice: ${params.sliceId} (status: ${slice.status}) — use gsd_slice_reopen first` };
-  }
+  transaction(() => {
+    const milestone = getMilestone(params.milestoneId);
+    if (!milestone) {
+      guardError = `milestone not found: ${params.milestoneId}`;
+      return;
+    }
+    if (milestone.status === "complete" || milestone.status === "done") {
+      guardError = `cannot reopen task in a closed milestone: ${params.milestoneId} (status: ${milestone.status})`;
+      return;
+    }
 
-  const task = getTask(params.milestoneId, params.sliceId, params.taskId);
-  if (!task) {
-    return { error: `task not found: ${params.milestoneId}/${params.sliceId}/${params.taskId}` };
-  }
-  if (task.status !== "complete" && task.status !== "done") {
-    return { error: `task ${params.taskId} is not complete (status: ${task.status}) — nothing to reopen` };
-  }
+    const slice = getSlice(params.milestoneId, params.sliceId);
+    if (!slice) {
+      guardError = `slice not found: ${params.milestoneId}/${params.sliceId}`;
+      return;
+    }
+    if (slice.status === "complete" || slice.status === "done") {
+      guardError = `cannot reopen task inside a closed slice: ${params.sliceId} (status: ${slice.status}) — use gsd_slice_reopen first`;
+      return;
+    }
 
-  // ── Reset task status ────────────────────────────────────────────────────
-  updateTaskStatus(params.milestoneId, params.sliceId, params.taskId, "pending");
+    const task = getTask(params.milestoneId, params.sliceId, params.taskId);
+    if (!task) {
+      guardError = `task not found: ${params.milestoneId}/${params.sliceId}/${params.taskId}`;
+      return;
+    }
+    if (task.status !== "complete" && task.status !== "done") {
+      guardError = `task ${params.taskId} is not complete (status: ${task.status}) — nothing to reopen`;
+      return;
+    }
+
+    updateTaskStatus(params.milestoneId, params.sliceId, params.taskId, "pending");
+  });
+
+  if (guardError) {
+    return { error: guardError };
+  }
 
   // ── Invalidate caches ────────────────────────────────────────────────────
   invalidateStateCache();

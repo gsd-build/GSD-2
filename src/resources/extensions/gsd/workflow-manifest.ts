@@ -55,6 +55,11 @@ function requireDb() {
 export function snapshotState(): StateManifest {
   const db = requireDb();
 
+  // Wrap all reads in a deferred transaction so the snapshot is consistent
+  // (all SELECTs see the same DB state even if a concurrent write lands between them).
+  db.exec("BEGIN DEFERRED");
+
+  try {
   const rawMilestones = db.prepare("SELECT * FROM milestones ORDER BY id").all() as Record<string, unknown>[];
   const milestones: MilestoneRow[] = rawMilestones.map((r) => ({
     id: r["id"] as string,
@@ -153,7 +158,7 @@ export function snapshotState(): StateManifest {
     created_at: r["created_at"] as string,
   }));
 
-  return {
+  const result: StateManifest = {
     version: 1,
     exported_at: new Date().toISOString(),
     milestones,
@@ -162,6 +167,13 @@ export function snapshotState(): StateManifest {
     decisions,
     verification_evidence,
   };
+
+  db.exec("COMMIT");
+  return result;
+  } catch (err) {
+    try { db.exec("ROLLBACK"); } catch { /* ignore rollback failure */ }
+    throw err;
+  }
 }
 
 // ─── restore ─────────────────────────────────────────────────────────────
@@ -291,6 +303,13 @@ export function readManifest(basePath: string): StateManifest | null {
 
   if (parsed.version !== 1) {
     throw new Error(`Unsupported manifest version: ${parsed.version}`);
+  }
+
+  // Validate required fields to avoid cryptic errors during restore
+  if (!Array.isArray(parsed.milestones) || !Array.isArray(parsed.slices) ||
+      !Array.isArray(parsed.tasks) || !Array.isArray(parsed.decisions) ||
+      !Array.isArray(parsed.verification_evidence)) {
+    throw new Error("Malformed manifest: missing or invalid required arrays");
   }
 
   return parsed;

@@ -101,19 +101,19 @@ test('workflow-projections: renderPlanContent includes ## Tasks section', () => 
 test('workflow-projections: pending task renders with [ ] checkbox', () => {
   const task = makeTask({ status: 'pending' });
   const content = renderPlanContent(makeSlice(), [task]);
-  assert.ok(content.includes('- [ ] **T01:**'), `expected unchecked, got: ${content}`);
+  assert.ok(content.includes('- [ ] **T01:'), `expected unchecked, got: ${content}`);
 });
 
 test('workflow-projections: done task renders with [x] checkbox', () => {
   const task = makeTask({ status: 'done' });
   const content = renderPlanContent(makeSlice(), [task]);
-  assert.ok(content.includes('- [x] **T01:**'), `expected checked, got: ${content}`);
+  assert.ok(content.includes('- [x] **T01:'), `expected checked, got: ${content}`);
 });
 
-test('workflow-projections: non-done status renders with [ ] checkbox', () => {
-  const task = makeTask({ status: 'complete' }); // 'complete' ≠ 'done' → unchecked
+test('workflow-projections: complete status renders with [x] checkbox', () => {
+  const task = makeTask({ status: 'complete' }); // 'complete' and 'done' both → checked
   const content = renderPlanContent(makeSlice(), [task]);
-  assert.ok(content.includes('- [ ] **T01:**'));
+  assert.ok(content.includes('- [x] **T01:'));
 });
 
 // ─── renderPlanContent: task sublines ────────────────────────────────────
@@ -164,7 +164,7 @@ test('workflow-projections: multiple tasks rendered in order', () => {
   const t1 = makeTask({ id: 'T01', title: 'First task', sequence: 1 });
   const t2 = makeTask({ id: 'T02', title: 'Second task', sequence: 2 });
   const content = renderPlanContent(makeSlice(), [t1, t2]);
-  const idxT1 = content.indexOf('**T01:**');
-  const idxT2 = content.indexOf('**T02:**');
+  const idxT1 = content.indexOf('**T01:');
+  const idxT2 = content.indexOf('**T02:');
   assert.ok(idxT1 < idxT2, 'T01 should appear before T02');
 });

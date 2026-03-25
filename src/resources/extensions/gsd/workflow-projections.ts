@@ -312,7 +312,7 @@ export async function renderAllProjections(basePath: string, milestoneId: string
   try {
     renderRoadmapProjection(basePath, milestoneId);
   } catch (err) {
-    console.error(`[projections] renderRoadmapProjection failed for ${milestoneId}:`, err);
+    logWarning("projection", `renderRoadmapProjection failed for ${milestoneId}: ${(err as Error).message}`);
   }
 
   // Query all slices for this milestone
@@ -323,18 +323,18 @@ export async function renderAllProjections(basePath: string, milestoneId: string
     try {
       renderPlanProjection(basePath, milestoneId, slice.id);
     } catch (err) {
-      console.error(`[projections] renderPlanProjection failed for ${milestoneId}/${slice.id}:`, err);
+      logWarning("projection", `renderPlanProjection failed for ${milestoneId}/${slice.id}: ${(err as Error).message}`);
     }
 
     // Render SUMMARY.md for each completed task
     const taskRows = getSliceTasks(milestoneId, slice.id);
-    const doneTasks = taskRows.filter(t => t.status === "done");
+    const doneTasks = taskRows.filter(t => t.status === "done" || t.status === "complete");
 
     for (const task of doneTasks) {
       try {
         renderSummaryProjection(basePath, milestoneId, slice.id, task.id);
       } catch (err) {
-        console.error(`[projections] renderSummaryProjection failed for ${milestoneId}/${slice.id}/${task.id}:`, err);
+        logWarning("projection", `renderSummaryProjection failed for ${milestoneId}/${slice.id}/${task.id}: ${(err as Error).message}`);
       }
     }
   }
@@ -343,7 +343,7 @@ export async function renderAllProjections(basePath: string, milestoneId: string
   try {
     await renderStateProjection(basePath);
   } catch (err) {
-    console.error("[projections] renderStateProjection failed:", err);
+    logWarning("projection", `renderStateProjection failed: ${(err as Error).message}`);
   }
 }
 
@@ -379,21 +379,22 @@ export function regenerateIfMissing(
   }
 
   if (fileType === "SUMMARY") {
-    // Special handling: check if the tasks directory exists and has summary files
-    if (!existsSync(filePath)) {
-      // Regenerate all task summaries for this slice
-      const taskRows = getSliceTasks(milestoneId, sliceId);
-      const doneTasks = taskRows.filter(t => t.status === "done");
-      for (const task of doneTasks) {
+    // Check each completed task's SUMMARY file individually (not just the directory)
+    const taskRows = getSliceTasks(milestoneId, sliceId);
+    const doneTasks = taskRows.filter(t => t.status === "done" || t.status === "complete");
+    let regenerated = 0;
+    for (const task of doneTasks) {
+      const summaryPath = join(basePath, ".gsd", "milestones", milestoneId, "slices", sliceId, "tasks", `${task.id}-SUMMARY.md`);
+      if (!existsSync(summaryPath)) {
         try {
           renderSummaryProjection(basePath, milestoneId, sliceId, task.id);
+          regenerated++;
         } catch (err) {
           console.error(`[projections] regenerateIfMissing SUMMARY failed for ${task.id}:`, err);
         }
       }
-      return doneTasks.length > 0;
     }
-    return false;
+    return regenerated > 0;
   }
 
   if (existsSync(filePath)) {
@@ -410,10 +411,11 @@ export function regenerateIfMissing(
         renderRoadmapProjection(basePath, milestoneId);
         break;
       case "STATE":
-        // renderStateProjection is async but regenerateIfMissing is sync.
-        // Fire-and-forget the async render; STATE.md will appear shortly.
+        // renderStateProjection is async — fire-and-forget.
+        // Return false since the file isn't written yet; it will appear
+        // on the next post-mutation hook cycle.
         void renderStateProjection(basePath);
-        break;
+        return false;
     }
     return true;
   } catch (err) {

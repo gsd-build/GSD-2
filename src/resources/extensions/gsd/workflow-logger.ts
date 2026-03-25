@@ -93,7 +93,7 @@ export function hasErrors(): boolean {
 }
 
 export function hasWarnings(): boolean {
-  return _buffer.length > 0;
+  return _buffer.some((e) => e.severity === "warn");
 }
 
 /**
@@ -193,8 +193,9 @@ function _push(
       const auditDir = join(_auditBasePath, ".gsd");
       mkdirSync(auditDir, { recursive: true });
       appendFileSync(join(auditDir, "audit-log.jsonl"), JSON.stringify(entry) + "\n", "utf-8");
-    } catch {
+    } catch (auditErr) {
       // Best-effort — never let audit write failures bubble up
+      process.stderr.write(`[gsd:audit] failed to persist log entry: ${(auditErr as Error).message}\n`);
     }
   }
 }

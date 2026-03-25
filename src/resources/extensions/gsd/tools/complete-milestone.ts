@@ -117,41 +117,48 @@ export async function handleCompleteMilestone(
     return { error: "title is required and must be a non-empty string" };
   }
 
-  // ── State machine preconditions ─────────────────────────────────────────
-  const milestone = getMilestone(params.milestoneId);
-  if (!milestone) {
-    return { error: `milestone not found: ${params.milestoneId}` };
-  }
-  if (milestone.status === "complete" || milestone.status === "done") {
-    return { error: `milestone ${params.milestoneId} is already complete` };
-  }
-
-  // ── Verify all slices are complete ───────────────────────────────────────
-  const slices = getMilestoneSlices(params.milestoneId);
-  if (slices.length === 0) {
-    return { error: `no slices found for milestone ${params.milestoneId}` };
-  }
-
-  const incompleteSlices = slices.filter(s => s.status !== "complete" && s.status !== "done");
-  if (incompleteSlices.length > 0) {
-    const incompleteIds = incompleteSlices.map(s => `${s.id} (status: ${s.status})`).join(", ");
-    return { error: `incomplete slices: ${incompleteIds}` };
-  }
-
-  // ── Deep check: verify all tasks in all slices are complete ──────────────
-  for (const slice of slices) {
-    const tasks = getSliceTasks(params.milestoneId, slice.id);
-    const incompleteTasks = tasks.filter(t => t.status !== "complete" && t.status !== "done");
-    if (incompleteTasks.length > 0) {
-      const ids = incompleteTasks.map(t => `${t.id} (status: ${t.status})`).join(", ");
-      return { error: `slice ${slice.id} has incomplete tasks: ${ids}` };
-    }
-  }
-
-  // ── DB writes inside a transaction ──────────────────────────────────────
+  // ── Guards + DB writes inside a single transaction (prevents TOCTOU) ───
   const completedAt = new Date().toISOString();
+  let guardError: string | null = null;
 
   transaction(() => {
+    // State machine preconditions (inside txn for atomicity)
+    const milestone = getMilestone(params.milestoneId);
+    if (!milestone) {
+      guardError = `milestone not found: ${params.milestoneId}`;
+      return;
+    }
+    if (milestone.status === "complete" || milestone.status === "done") {
+      guardError = `milestone ${params.milestoneId} is already complete`;
+      return;
+    }
+
+    // Verify all slices are complete
+    const slices = getMilestoneSlices(params.milestoneId);
+    if (slices.length === 0) {
+      guardError = `no slices found for milestone ${params.milestoneId}`;
+      return;
+    }
+
+    const incompleteSlices = slices.filter(s => s.status !== "complete" && s.status !== "done");
+    if (incompleteSlices.length > 0) {
+      const incompleteIds = incompleteSlices.map(s => `${s.id} (status: ${s.status})`).join(", ");
+      guardError = `incomplete slices: ${incompleteIds}`;
+      return;
+    }
+
+    // Deep check: verify all tasks in all slices are complete
+    for (const slice of slices) {
+      const tasks = getSliceTasks(params.milestoneId, slice.id);
+      const incompleteTasks = tasks.filter(t => t.status !== "complete" && t.status !== "done");
+      if (incompleteTasks.length > 0) {
+        const ids = incompleteTasks.map(t => `${t.id} (status: ${t.status})`).join(", ");
+        guardError = `slice ${slice.id} has incomplete tasks: ${ids}`;
+        return;
+      }
+    }
+
+    // All guards passed — perform write
     const adapter = _getAdapter()!;
     adapter.prepare(
       `UPDATE milestones SET status = 'complete', completed_at = :completed_at WHERE id = :mid`,
@@ -160,6 +167,10 @@ export async function handleCompleteMilestone(
       ":mid": params.milestoneId,
     });
   });
+
+  if (guardError) {
+    return { error: guardError };
+  }
 
   // ── Filesystem operations (outside transaction) ─────────────────────────
   const summaryMd = renderMilestoneSummaryMarkdown(params);

@@ -3,6 +3,7 @@
 // an error directing the agent to use the engine tool API instead.
 
 import { realpathSync } from "node:fs";
+import { resolve } from "node:path";
 
 /**
  * Patterns matching authoritative .gsd/ state files that agents must NOT write directly.
@@ -17,29 +18,59 @@ import { realpathSync } from "node:fs";
  */
 const BLOCKED_PATTERNS: RegExp[] = [
   // STATE.md is the only purely engine-rendered file.
+  // Case-insensitive to prevent bypass on macOS (case-insensitive APFS).
   // (^|[/\\]) matches both absolute paths (/project/.gsd/…) and bare relative
   // paths (.gsd/STATE.md) so a path without a leading separator is also blocked.
-  /(^|[/\\])\.gsd[/\\]STATE\.md$/,
+  /(^|[/\\])\.gsd[/\\]STATE\.md$/i,
   // Also match resolved symlink paths under ~/.gsd/projects/ (Pitfall #6)
-  /(^|[/\\])\.gsd[/\\]projects[/\\][^/\\]+[/\\]STATE\.md$/,
+  /(^|[/\\])\.gsd[/\\]projects[/\\][^/\\]+[/\\]STATE\.md$/i,
+];
+
+/**
+ * Bash command patterns that target STATE.md.
+ * Covers common shell write patterns: redirect, tee, cp, mv, sed -i, etc.
+ */
+const BASH_STATE_PATTERNS: RegExp[] = [
+  // Redirect/pipe writes: > STATE.md, >> STATE.md, >| STATE.md
+  /[>|]+\s*\S*STATE\.md/i,
+  // tee to STATE.md
+  /\btee\b.*STATE\.md/i,
+  // cp/mv targeting STATE.md
+  /\b(cp|mv)\b.*STATE\.md/i,
+  // sed -i editing STATE.md
+  /\bsed\b.*-i.*STATE\.md/i,
+  // dd output to STATE.md
+  /\bdd\b.*of=\S*STATE\.md/i,
 ];
 
 /**
  * Tests whether the given file path matches a blocked authoritative .gsd/ state file.
- * Also attempts to resolve symlinks (realpathSync) to catch Pitfall #6 (symlinked .gsd paths).
+ * Resolves `..` segments via path.resolve() and attempts realpathSync for symlinks.
  */
 export function isBlockedStateFile(filePath: string): boolean {
+  // Check raw path first
   if (matchesBlockedPattern(filePath)) return true;
 
-  // Also try resolved symlink path — file may not exist yet, so wrap in try/catch
+  // Resolve ".." segments (works even for non-existing files)
+  const resolved = resolve(filePath);
+  if (resolved !== filePath && matchesBlockedPattern(resolved)) return true;
+
+  // Also try symlink resolution — file may not exist yet, so wrap in try/catch
   try {
-    const resolved = realpathSync(filePath);
-    if (resolved !== filePath && matchesBlockedPattern(resolved)) return true;
+    const realpath = realpathSync(filePath);
+    if (realpath !== filePath && realpath !== resolved && matchesBlockedPattern(realpath)) return true;
   } catch {
-    // File doesn't exist yet — that's fine, path matching is enough
+    // File doesn't exist yet — path matching above is sufficient
   }
 
   return false;
+}
+
+/**
+ * Tests whether a bash command appears to target STATE.md for writing.
+ */
+export function isBashWriteToStateFile(command: string): boolean {
+  return BASH_STATE_PATTERNS.some((pattern) => pattern.test(command));
 }
 
 function matchesBlockedPattern(path: string): boolean {
@@ -50,7 +81,7 @@ function matchesBlockedPattern(path: string): boolean {
  * Error message returned when an agent attempts to directly write an authoritative .gsd/ state file.
  * Directs the agent to use engine tool calls instead.
  */
-export const BLOCKED_WRITE_ERROR = `Error: Direct writes to .gsd/ state files are blocked. Use engine tool calls instead:
+export const BLOCKED_WRITE_ERROR = `Direct writes to .gsd/STATE.md are blocked. Use engine tool calls instead:
 - To complete a task: call gsd_complete_task(milestone_id, slice_id, task_id, summary)
 - To complete a slice: call gsd_complete_slice(milestone_id, slice_id, summary, uat_result)
 - To save a decision: call gsd_save_decision(scope, decision, choice, rationale)

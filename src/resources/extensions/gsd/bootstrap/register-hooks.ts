@@ -7,7 +7,7 @@ import { buildMilestoneFileName, resolveMilestonePath, resolveSliceFile, resolve
 import { buildBeforeAgentStartResult } from "./system-context.js";
 import { handleAgentEnd } from "./agent-end-recovery.js";
 import { clearDiscussionFlowState, isDepthVerified, isQueuePhaseActive, markDepthVerified, resetWriteGateState, shouldBlockContextWrite } from "./write-gate.js";
-import { isBlockedStateFile } from "../write-intercept.js";
+import { isBlockedStateFile, isBashWriteToStateFile, BLOCKED_WRITE_ERROR } from "../write-intercept.js";
 import { getDiscussionMilestoneId } from "../guided-flow.js";
 import { loadToolApiKeys } from "../commands-config.js";
 import { loadFile, saveFile, formatContinue } from "../files.js";
@@ -136,14 +136,27 @@ export function registerHooks(pi: ExtensionAPI): void {
       return { block: true, reason: loopCheck.reason };
     }
 
-    if (!isToolCallEventType("write", event)) return;
-
-    // Block direct writes to authoritative .gsd/ state files (single-writer engine)
-    const filePath = event.input.path;
-    if (isBlockedStateFile(filePath)) {
-      const { basename } = await import("node:path");
-      return { block: true, reason: `Direct writes to ${basename(filePath)} are blocked. Use the gsd_* tool API instead.` };
+    // ── Single-writer engine: block direct writes to STATE.md ──────────
+    // Covers write, edit, and bash tools to prevent bypass vectors.
+    if (isToolCallEventType("write", event)) {
+      if (isBlockedStateFile(event.input.path)) {
+        return { block: true, reason: BLOCKED_WRITE_ERROR };
+      }
     }
+
+    if (isToolCallEventType("edit", event)) {
+      if (isBlockedStateFile(event.input.path)) {
+        return { block: true, reason: BLOCKED_WRITE_ERROR };
+      }
+    }
+
+    if (isToolCallEventType("bash", event)) {
+      if (isBashWriteToStateFile(event.input.command)) {
+        return { block: true, reason: BLOCKED_WRITE_ERROR };
+      }
+    }
+
+    if (!isToolCallEventType("write", event)) return;
 
     const result = shouldBlockContextWrite(
       event.toolName,

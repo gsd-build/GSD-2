@@ -40,7 +40,7 @@ export function appendEvent(
   event: Omit<WorkflowEvent, "hash" | "session_id"> & { actor_name?: string; trigger_reason?: string },
 ): void {
   const hash = createHash("sha256")
-    .update(JSON.stringify({ cmd: event.cmd, params: event.params }))
+    .update(JSON.stringify({ cmd: event.cmd, params: event.params, ts: event.ts }))
     .digest("hex")
     .slice(0, 16);
 

@@ -52,32 +52,44 @@ export async function handleReopenSlice(
     return { error: "milestoneId is required and must be a non-empty string" };
   }
 
-  // ── State machine preconditions ─────────────────────────────────────────
-  const milestone = getMilestone(params.milestoneId);
-  if (!milestone) {
-    return { error: `milestone not found: ${params.milestoneId}` };
-  }
-  if (milestone.status === "complete" || milestone.status === "done") {
-    return { error: `cannot reopen slice inside a closed milestone: ${params.milestoneId} (status: ${milestone.status})` };
-  }
-
-  const slice = getSlice(params.milestoneId, params.sliceId);
-  if (!slice) {
-    return { error: `slice not found: ${params.milestoneId}/${params.sliceId}` };
-  }
-  if (slice.status !== "complete" && slice.status !== "done") {
-    return { error: `slice ${params.sliceId} is not complete (status: ${slice.status}) — nothing to reopen` };
-  }
-
-  // ── Reset slice + all tasks in a transaction ────────────────────────────
-  const tasks = getSliceTasks(params.milestoneId, params.sliceId);
+  // ── Guards + DB writes inside a single transaction (prevents TOCTOU) ───
+  let guardError: string | null = null;
+  let tasksResetCount = 0;
 
   transaction(() => {
+    const milestone = getMilestone(params.milestoneId);
+    if (!milestone) {
+      guardError = `milestone not found: ${params.milestoneId}`;
+      return;
+    }
+    if (milestone.status === "complete" || milestone.status === "done") {
+      guardError = `cannot reopen slice inside a closed milestone: ${params.milestoneId} (status: ${milestone.status})`;
+      return;
+    }
+
+    const slice = getSlice(params.milestoneId, params.sliceId);
+    if (!slice) {
+      guardError = `slice not found: ${params.milestoneId}/${params.sliceId}`;
+      return;
+    }
+    if (slice.status !== "complete" && slice.status !== "done") {
+      guardError = `slice ${params.sliceId} is not complete (status: ${slice.status}) — nothing to reopen`;
+      return;
+    }
+
+    // Fetch tasks inside txn so the list is consistent with the slice status check
+    const tasks = getSliceTasks(params.milestoneId, params.sliceId);
+    tasksResetCount = tasks.length;
+
     updateSliceStatus(params.milestoneId, params.sliceId, "in_progress");
     for (const task of tasks) {
       updateTaskStatus(params.milestoneId, params.sliceId, task.id, "pending");
     }
   });
+
+  if (guardError) {
+    return { error: guardError };
+  }
 
   // ── Invalidate caches ────────────────────────────────────────────────────
   invalidateStateCache();
@@ -92,7 +104,7 @@ export async function handleReopenSlice(
         milestoneId: params.milestoneId,
         sliceId: params.sliceId,
         reason: params.reason ?? null,
-        tasksReset: tasks.length,
+        tasksReset: tasksResetCount,
       },
       ts: new Date().toISOString(),
       actor: "agent",
@@ -108,6 +120,6 @@ export async function handleReopenSlice(
   return {
     milestoneId: params.milestoneId,
     sliceId: params.sliceId,
-    tasksReset: tasks.length,
+    tasksReset: tasksResetCount,
   };
 }
