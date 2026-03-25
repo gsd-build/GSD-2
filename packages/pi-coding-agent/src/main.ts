@@ -391,6 +391,25 @@ export async function main(args: string[]) {
 	const authStorage = AuthStorage.create();
 	const modelRegistry = new ModelRegistry(authStorage, getModelsPath());
 
+	// Offline mode validation / auto-detection
+	if (offlineMode) {
+		// --offline flag: validate all models are local
+		if (!modelRegistry.isAllLocalChain()) {
+			const remoteModel = modelRegistry.getAll().find((m) => !ModelRegistry.isLocalModel(m));
+			if (remoteModel) {
+				console.error(
+					`Error: --offline requires all configured models to be local. Found remote model: ${remoteModel.name} (${remoteModel.baseUrl || "cloud API"})`,
+				);
+				process.exit(1);
+			}
+		}
+	} else if (modelRegistry.isAllLocalChain() && modelRegistry.getAll().length > 0) {
+		// Auto-detect: all models are local, enable offline mode
+		process.env.PI_OFFLINE = "1";
+		process.env.PI_SKIP_VERSION_CHECK = "1";
+		console.log("[gsd] All configured models are local \u2014 enabling offline mode automatically.");
+	}
+
 	const resourceLoader = new DefaultResourceLoader({
 		cwd,
 		agentDir,

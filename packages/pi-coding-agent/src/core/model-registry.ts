@@ -28,6 +28,7 @@ import { ModelDiscoveryCache } from "./discovery-cache.js";
 import type { DiscoveredModel, DiscoveryResult } from "./model-discovery.js";
 import { getDefaultTTL, getDiscoverableProviders, getDiscoveryAdapter } from "./model-discovery.js";
 import { clearConfigValueCache, resolveConfigValue, resolveHeaders } from "./resolve-config-value.js";
+import { isLocalModel } from "./local-model-check.js";
 
 const Ajv = (AjvModule as any).default || AjvModule;
 const ajv = new Ajv();
@@ -557,7 +558,7 @@ export class ModelRegistry {
 	async getApiKey(model: Model<Api>, sessionId?: string): Promise<string | undefined> {
 		const authMode = this.getProviderAuthMode(model.provider);
 		if (authMode === "externalCli" || authMode === "none") return undefined;
-		return this.authStorage.getApiKey(model.provider, sessionId);
+		return this.authStorage.getApiKey(model.provider, sessionId, { baseUrl: model.baseUrl });
 	}
 
 	/**
@@ -806,6 +807,25 @@ export class ModelRegistry {
 			}
 		}
 		return converted;
+	}
+
+	/**
+	 * Check if a model's baseUrl points to a local endpoint.
+	 * Delegates to standalone isLocalModel() function.
+	 */
+	static isLocalModel(model: Model<Api>): boolean {
+		return isLocalModel(model);
+	}
+
+	/**
+	 * Check if all models in the registry are local.
+	 * Returns true only if every model passes isLocalModel().
+	 * Returns false if there are no models.
+	 */
+	isAllLocalChain(): boolean {
+		const models = this.getAll();
+		if (models.length === 0) return false;
+		return models.every((m) => isLocalModel(m));
 	}
 }
 
