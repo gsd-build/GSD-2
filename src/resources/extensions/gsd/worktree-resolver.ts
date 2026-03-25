@@ -17,6 +17,7 @@ import { existsSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import type { AutoSession } from "./auto/session.js";
 import { debugLog } from "./debug-logger.js";
+import { MergeConflictError } from "./git-service.js";
 
 // ─── Dependency Interface ──────────────────────────────────────────────────
 
@@ -432,6 +433,12 @@ export class WorktreeResolver {
         } catch {
           /* best-effort */
         }
+      }
+
+      // Re-throw MergeConflictError so the auto loop can detect real code
+      // conflicts and stop instead of retrying forever (#2330).
+      if (err instanceof MergeConflictError) {
+        throw err;
       }
     }
 
