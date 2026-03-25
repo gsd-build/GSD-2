@@ -34,6 +34,7 @@ const RENAME_MAP: Array<{ canonical: string; alias: string }> = [
   { canonical: "gsd_replan_slice", alias: "gsd_slice_replan" },
   { canonical: "gsd_reassess_roadmap", alias: "gsd_roadmap_reassess" },
   { canonical: "gsd_complete_milestone", alias: "gsd_milestone_complete" },
+  { canonical: "gsd_validate_milestone", alias: "gsd_milestone_validate" },
 ];
 
 // ─── Registration count ──────────────────────────────────────────────────────
@@ -43,7 +44,7 @@ console.log('\n── Tool naming: registration count ──');
 const pi = makeMockPi();
 registerDbTools(pi);
 
-assert.deepStrictEqual(pi.tools.length, 24, 'Should register exactly 24 tools (12 canonical + 12 aliases)');
+assert.deepStrictEqual(pi.tools.length, 26, 'Should register exactly 26 tools (13 canonical + 13 aliases)');
 
 // ─── Both names exist for each pair ──────────────────────────────────────────
 

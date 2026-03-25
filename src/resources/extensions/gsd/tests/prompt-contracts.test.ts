@@ -147,12 +147,12 @@ test("plan-slice prompt no longer frames direct PLAN writes as the source of tru
   assert.match(prompt, /Do \*\*not\*\* rely on direct `PLAN\.md` writes as the source of truth/i);
 });
 
-test("plan-slice prompt explicitly names gsd_plan_slice and gsd_plan_task as DB-backed planning tools", () => {
+test("plan-slice prompt explicitly names gsd_plan_slice as DB-backed planning tool", () => {
   const prompt = readPrompt("plan-slice");
   assert.match(prompt, /gsd_plan_slice/);
   assert.match(prompt, /gsd_plan_task/);
-  // The prompt should describe these as the canonical write path
-  assert.match(prompt, /DB-backed tools are the canonical write path/i);
+  // The prompt should describe the DB-backed tool as the canonical write path
+  assert.match(prompt, /DB-backed tool is the canonical write path/i);
 });
 
 test("plan-slice prompt does not instruct direct file writes as a primary step", () => {
@@ -161,14 +161,18 @@ test("plan-slice prompt does not instruct direct file writes as a primary step",
   assert.doesNotMatch(prompt, /^\d+\.\s+Write `?\{\{outputPath\}\}`?\s*$/m);
 });
 
-test("plan-slice prompt instructs calling gsd_plan_task for each task", () => {
+test("plan-slice prompt clarifies gsd_plan_slice handles task persistence", () => {
   const prompt = readPrompt("plan-slice");
-  assert.match(prompt, /call `gsd_plan_task` for each task/i);
+  // gsd_plan_slice persists tasks in its transaction — no separate gsd_plan_task calls needed
+  assert.match(prompt, /gsd_plan_task/);
+  assert.match(prompt, /gsd_plan_slice` handles task persistence/i);
 });
 
-test("replan-slice prompt requires DB-backed planning state when available", () => {
+test("replan-slice prompt uses gsd_replan_slice as canonical DB-backed tool", () => {
   const prompt = readPrompt("replan-slice");
-  assert.match(prompt, /DB-backed planning tool exists for this phase, use it as the source of truth/i);
+  assert.match(prompt, /gsd_replan_slice/);
+  // Degraded fallback (direct file writes) was removed — DB tools are always available
+  assert.doesNotMatch(prompt, /Degraded fallback/i);
 });
 
 test("reassess-roadmap prompt references gsd_reassess_roadmap tool", () => {
