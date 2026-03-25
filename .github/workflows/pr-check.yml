@@ -53,7 +53,7 @@ jobs:
           bunx tsc -p packages/pi-ai/tsconfig.json
           bunx tsc -p packages/pi-agent-core/tsconfig.json
           bunx tsc -p packages/pi-tui/tsconfig.json
-          bunx tsc -p packages/pi-coding-agent/tsconfig.json
+          bun run --cwd packages/pi-coding-agent build
 
       - name: TypeScript check
         run: bunx tsc --noEmit -p packages/mission-control/tsconfig.json

@@ -23,7 +23,11 @@
   "files": [
     "dist",
     "dist/web",
-    "packages",
+    "packages/pi-coding-agent",
+    "packages/pi-agent-core",
+    "packages/pi-ai",
+    "packages/pi-tui",
+    "packages/native",
     "pkg",
     "src/resources",
     "scripts/postinstall.js",
@@ -41,6 +45,9 @@
   },
   "packageManager": "npm@10.9.3",
   "scripts": {
+    "mc:dev": "bun run --cwd packages/mission-control dev",
+    "tauri:dev": "cd packages/mission-control && cargo tauri dev",
+    "tauri:build": "cd packages/mission-control && cargo tauri build",
     "build:pi-tui": "npm run build -w @gsd/pi-tui",
     "build:pi-ai": "npm run build -w @gsd/pi-ai",
     "build:pi-agent-core": "npm run build -w @gsd/pi-agent-core",
