@@ -15,7 +15,8 @@
  *   POST /api/auth/logout         → remove provider credentials
  */
 
-import { AuthStorage } from "@gsd/pi-coding-agent/auth-storage";
+import { AuthStorage } from "@gsd/pi-coding-agent";
+import type { OAuthAuthInfo, OAuthPrompt } from "@gsd/pi-ai";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
@@ -228,21 +229,21 @@ export async function handleAuthRequest(req: Request, url: URL): Promise<Respons
     // Start login in background — do NOT await
     authStorage
       .login(provider as Parameters<typeof authStorage.login>[0], {
-        onAuth: ({ url: authUrl, instructions }) => {
+        onAuth: ({ url: authUrl, instructions }: OAuthAuthInfo) => {
           addEvent({ type: "url", url: authUrl, instructions });
         },
-        onPrompt: (prompt) => {
+        onPrompt: (prompt: OAuthPrompt) => {
           addEvent({
             type: "prompt",
             message: prompt.message,
-            placeholder: (prompt as { placeholder?: string }).placeholder,
-            allowEmpty: (prompt as { allowEmpty?: boolean }).allowEmpty,
+            placeholder: prompt.placeholder,
+            allowEmpty: prompt.allowEmpty,
           });
           return new Promise<string>((resolve) => {
             session.promptResolver = resolve;
           });
         },
-        onProgress: (message) => {
+        onProgress: (message: string) => {
           addEvent({ type: "progress", message });
         },
       })
