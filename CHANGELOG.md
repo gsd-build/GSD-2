@@ -6,6 +6,32 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.46.0] - 2026-03-25
+
+### Added
+- **gsd**: single-writer engine v3 — state machine guards, actor identity, reversibility
+- **gsd**: single-writer state engine v2 — discipline layer on DB architecture
+- **gsd**: add workflow-logger and wire into engine, tool, manifest, reconcile paths (#2494)
+
+### Fixed
+- **gsd**: align prompts with single-writer tool API
+- **gsd**: integration-proof — check DB state not roadmap projection after reset
+- **gsd**: block milestone completion when verification fails (#2500)
+- **ci**: add typecheck:extensions to pretest to prevent silent type drift
+- **gsd**: relax integration-proof cross-validation for table-format roadmap
+- **gsd**: update integration-proof tests for table-format roadmap projections
+- **gsd**: update test assertions for schema v11, prompt changes, and removed completedUnits
+- **gsd**: update test files for removed completedUnits, writeLock signature, and type changes
+- **gsd**: remove stale completedUnits refs, fix writeLock callers, add missing imports
+- **gsd**: harden single-writer engine — close TOCTOU, intercept bypasses, status inconsistencies
+- **write-intercept**: close bare-relative-path bypass in STATE.md regex
+- **voice**: fix misleading portaudio error on PEP 668 Linux systems (#2403) (#2407)
+- **core**: address PR review feedback for non-apikey provider support (#2452)
+- **ci**: retry npm install in pipeline to handle registry propagation delay (#2462)
+- **gsd**: change default isolation mode from worktree to none (#2481)
+- **loader**: add startup checks for Node version and git availability (#2463)
+- **gsd**: add worktree lifecycle events to journal (#2486)
+
 ## [2.45.0] - 2026-03-25
 
 ### Added
@@ -1791,7 +1817,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - License updated to MIT
 
-[Unreleased]: https://github.com/gsd-build/gsd-2/compare/v2.45.0...HEAD
+[Unreleased]: https://github.com/gsd-build/gsd-2/compare/v2.46.0...HEAD
+[2.46.0]: https://github.com/gsd-build/gsd-2/compare/v2.45.0...v2.46.0
 [2.45.0]: https://github.com/gsd-build/gsd-2/compare/v2.44.0...v2.45.0
 [2.44.0]: https://github.com/gsd-build/gsd-2/compare/v2.43.0...v2.44.0
 [2.43.0]: https://github.com/gsd-build/gsd-2/compare/v2.42.0...v2.43.0
