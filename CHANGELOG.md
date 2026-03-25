@@ -6,6 +6,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.48.0] - 2026-03-25
+
+### Added
+- **discuss**: allow /gsd discuss to target queued milestones
+- enhance /gsd forensics with journal and activity log awareness
+
+### Fixed
+- make journal scanning intelligent — limit parsed files, line-count older ones
+- **model-registry**: scope custom provider stream handlers to prevent clobbering built-in API handlers
+- **forensics**: filter benign bash exit-code-1 and user skips from error traces
+- **gsd**: clear stale milestone ID reservations at session start
+- render tool calls above text response for external providers
+- **auto**: skip CONTEXT-DRAFT warning for completed/parked milestones
+
+### Changed
+- address review - extract RAPID_ITERATION_THRESHOLD_MS, simplify data access
+
+### Removed
+- remove insertChildBefore usage in chat-controller
+
 ## [2.47.0] - 2026-03-25
 
 ### Added
@@ -1845,7 +1865,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - License updated to MIT
 
-[Unreleased]: https://github.com/gsd-build/gsd-2/compare/v2.47.0...HEAD
+[Unreleased]: https://github.com/gsd-build/gsd-2/compare/v2.48.0...HEAD
+[2.48.0]: https://github.com/gsd-build/gsd-2/compare/v2.47.0...v2.48.0
 [2.47.0]: https://github.com/gsd-build/gsd-2/compare/v2.46.1...v2.47.0
 [2.46.1]: https://github.com/gsd-build/gsd-2/compare/v2.46.0...v2.46.1
 [2.46.0]: https://github.com/gsd-build/gsd-2/compare/v2.45.0...v2.46.0
