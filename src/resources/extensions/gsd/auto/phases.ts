@@ -1039,17 +1039,16 @@ export async function runUnitPhase(
   );
 
   // Tag the most recent window entry with error info for stuck detection
-  if (unitResult.status === "error" || unitResult.status === "cancelled") {
-    const lastEntry = loopState.recentUnits[loopState.recentUnits.length - 1];
-    if (lastEntry) {
+  const lastEntry = loopState.recentUnits[loopState.recentUnits.length - 1];
+  if (lastEntry) {
+    if (unitResult.errorContext) {
+      lastEntry.error = `${unitResult.errorContext.category}:${unitResult.errorContext.message}`.slice(0, 200);
+    } else if (unitResult.status === "error" || unitResult.status === "cancelled") {
       lastEntry.error = `${unitResult.status}:${unitType}/${unitId}`;
-    }
-  } else if (unitResult.event?.messages?.length) {
-    const lastMsg = unitResult.event.messages[unitResult.event.messages.length - 1];
-    const msgStr = typeof lastMsg === "string" ? lastMsg : JSON.stringify(lastMsg);
-    if (/error|fail|exception/i.test(msgStr)) {
-      const lastEntry = loopState.recentUnits[loopState.recentUnits.length - 1];
-      if (lastEntry) {
+    } else if (unitResult.event?.messages?.length) {
+      const lastMsg = unitResult.event.messages[unitResult.event.messages.length - 1];
+      const msgStr = typeof lastMsg === "string" ? lastMsg : JSON.stringify(lastMsg);
+      if (/error|fail|exception/i.test(msgStr)) {
         lastEntry.error = msgStr.slice(0, 200);
       }
     }
@@ -1122,7 +1121,7 @@ export async function runUnitPhase(
     s.unitRecoveryCount.delete(`${unitType}/${unitId}`);
   }
 
-  deps.emitJournalEvent({ ts: new Date().toISOString(), flowId: ic.flowId, seq: ic.nextSeq(), eventType: "unit-end", data: { unitType, unitId, status: unitResult.status, artifactVerified }, causedBy: { flowId: ic.flowId, seq: unitStartSeq } });
+  deps.emitJournalEvent({ ts: new Date().toISOString(), flowId: ic.flowId, seq: ic.nextSeq(), eventType: "unit-end", data: { unitType, unitId, status: unitResult.status, artifactVerified, ...(unitResult.errorContext ? { errorContext: unitResult.errorContext } : {}) }, causedBy: { flowId: ic.flowId, seq: unitStartSeq } });
 
   return { action: "next", data: { unitStartedAt: s.currentUnit.startedAt } };
 }

@@ -1745,6 +1745,41 @@ test("resolveAgentEndCancelled prevents orphaned promise after abort path", asyn
   assert.equal(result.status, "cancelled");
 });
 
+test("resolveAgentEndCancelled with errorContext passes it through to resolved promise", async () => {
+  _resetPendingResolve();
+
+  const { _setCurrentResolve } = await import("../auto/resolve.js");
+
+  const p = new Promise<UnitResult>((r) => {
+    _setCurrentResolve(r);
+  });
+
+  resolveAgentEndCancelled({ message: "test timeout", category: "timeout", isTransient: true });
+
+  const resolved = await p;
+  assert.equal(resolved.status, "cancelled");
+  assert.ok(resolved.errorContext, "errorContext must be present");
+  assert.equal(resolved.errorContext!.category, "timeout");
+  assert.equal(resolved.errorContext!.message, "test timeout");
+  assert.equal(resolved.errorContext!.isTransient, true);
+});
+
+test("resolveAgentEndCancelled without args produces no errorContext field", async () => {
+  _resetPendingResolve();
+
+  const { _setCurrentResolve } = await import("../auto/resolve.js");
+
+  const p = new Promise<UnitResult>((r) => {
+    _setCurrentResolve(r);
+  });
+
+  resolveAgentEndCancelled();
+
+  const resolved = await p;
+  assert.equal(resolved.status, "cancelled");
+  assert.equal(resolved.errorContext, undefined, "errorContext must not be present when no args passed");
+});
+
 // ─── #1571: artifact verification retry ──────────────────────────────────────
 
 test("autoLoop re-iterates when postUnitPreVerification returns retry (#1571)", async () => {
