@@ -4,12 +4,10 @@ import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { createBashTool } from "../../packages/pi-coding-agent/src/core/tools/bash.ts";
-import { rewriteCommandForGsd } from "../../packages/pi-coding-agent/src/utils/rtk.ts";
 import { rewriteCommandWithRtk as rewriteSharedCommandWithRtk } from "../resources/extensions/shared/rtk.ts";
-import { createAsyncBashTool } from "../resources/extensions/async-jobs/async-bash-tool.ts";
-import { AsyncJobManager } from "../resources/extensions/async-jobs/job-manager.ts";
 import { runVerificationGate } from "../resources/extensions/gsd/verification-gate.ts";
+import { AsyncJobManager } from "../resources/extensions/async-jobs/job-manager.ts";
+import { createAsyncBashTool } from "../resources/extensions/async-jobs/async-bash-tool.ts";
 import { cleanupAll, startProcess } from "../resources/extensions/bg-shell/process-manager.ts";
 import { runOnSession } from "../resources/extensions/bg-shell/interaction.ts";
 import { createFakeRtk } from "./rtk-test-utils.ts";
@@ -48,8 +46,6 @@ function withManagedFakeRtk<T>(mapping: Record<string, string | { status?: numbe
   const fake = createFakeRtk(mapping);
   const managedHome = mkdtempSync(join(tmpdir(), "gsd-rtk-managed-home-"));
   const managedDir = join(managedHome, "agent", "bin");
-  // On Windows, place the fake as rtk.cmd so resolveRtkBinaryPath's .cmd fallback finds it.
-  // Placing it as rtk.exe (a PE binary slot) with .cmd content fails on Windows.
   const managedPath = join(managedDir, process.platform === "win32" ? "rtk.cmd" : "rtk");
   mkdirSync(managedDir, { recursive: true });
   copyFileSync(fake.path, managedPath);
@@ -94,40 +90,21 @@ function withManagedFakeRtk<T>(mapping: Record<string, string | { status?: numbe
   }
 }
 
-test("bash tool rewrites commands through RTK before execution", async () => {
+// NOTE: The bash tool itself no longer does RTK rewriting directly. That's now
+// handled by the bash_transform extension hook in register-hooks.ts. The seam
+// tests below verify the GSD-layer surfaces that still call rewriteCommandWithRtk
+// directly: shared/rtk.ts, verification-gate, async-bash, and bg-shell.
+
+test("shared RTK helper rewrites commands via fake RTK binary", async () => {
   await withFakeRtk({ "echo raw": "echo rewritten" }, async () => {
-    let seenCommand = "";
-    const bashTool = createBashTool(process.cwd(), {
-      operations: {
-        exec: async (command, _cwd, { onData }) => {
-          seenCommand = command;
-          onData(Buffer.from("wrapped output\n"));
-          return { exitCode: 0 };
-        },
-      },
-    });
-
-    const result = await bashTool.execute("rtk-bash", { command: "echo raw" });
-    assert.equal(seenCommand, "echo rewritten");
-    assert.match(result.content[0]?.type === "text" ? result.content[0].text : "", /wrapped output/);
-  });
-});
-
-test("pi-coding-agent RTK helper rewrites commands before delegated execution", async () => {
-  await withFakeRtk({ "echo raw": "echo rewritten" }, async () => {
-    const rewritten = rewriteCommandForGsd("echo raw", {
-      binaryPath: process.env.GSD_RTK_PATH,
-    });
-
+    const rewritten = rewriteSharedCommandWithRtk("echo raw");
     assert.equal(rewritten, "echo rewritten");
   });
 });
 
-test("pi-coding-agent RTK helpers fall back to the managed RTK path when GSD_RTK_PATH is unset", async () => {
-  await withManagedFakeRtk({ "echo raw": "echo rewritten" }, async (env, managedPath) => {
-    assert.equal(rewriteCommandForGsd("echo raw", { env }), "echo rewritten");
+test("shared RTK helper falls back to the managed RTK path when GSD_RTK_PATH is unset", async () => {
+  await withManagedFakeRtk({ "echo raw": "echo rewritten" }, async (env) => {
     assert.equal(rewriteSharedCommandWithRtk("echo raw", env), "echo rewritten");
-    assert.equal(rewriteCommandForGsd("echo raw", { env, binaryPath: managedPath }), "echo rewritten");
   });
 });
 
