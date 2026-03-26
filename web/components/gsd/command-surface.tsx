@@ -290,7 +290,7 @@ function SegmentedControl<T extends string>({
   disabled?: boolean
 }) {
   return (
-    <div className="inline-flex rounded-lg border border-border bg-card/30 p-0.5">
+    <div className="inline-flex rounded-lg border border-border bg-card/50 p-0.5">
       {options.map((opt) => (
         <button
           key={opt.value}
@@ -1275,7 +1275,7 @@ export function CommandSurface() {
               ].map(({ label, count, active, color }) => (
                 <div key={label} className={cn(
                   "rounded-md border px-2 py-2 text-center transition-colors",
-                  active ? "border-border bg-card/80" : "border-border/50 bg-card/30",
+                  active ? "border-border bg-card" : "border-border/50 bg-card/50",
                 )}>
                   <div className={cn(
                     "text-base font-semibold tabular-nums leading-none",
@@ -1300,7 +1300,7 @@ export function CommandSurface() {
                     {result.changedFiles.length}{result.truncatedFileCount > 0 ? `+${result.truncatedFileCount}` : ""} files
                   </span>
                 </div>
-                <div className="space-y-px rounded-lg border border-border/50 bg-card/30 overflow-hidden">
+                <div className="space-y-px rounded-lg border border-border/50 bg-card/50 overflow-hidden">
                   {result.changedFiles.map((file) => (
                     <div
                       key={`${file.status}:${file.repoPath}`}
@@ -1899,7 +1899,7 @@ export function CommandSurface() {
                 {activeFlow.progress.length > 0 && (
                   <div className="space-y-1">
                     {activeFlow.progress.map((message, index) => (
-                      <div key={`${activeFlow.flowId}-${index}`} className="rounded-md border border-border/50 bg-card/30 px-2.5 py-1.5 text-xs text-muted-foreground">
+                      <div key={`${activeFlow.flowId}-${index}`} className="rounded-md border border-border/50 bg-card/50 px-2.5 py-1.5 text-xs text-muted-foreground">
                         {message}
                       </div>
                     ))}
@@ -1987,7 +1987,7 @@ export function CommandSurface() {
 
       {/* Individual overrides — only visible when master is on */}
       {devOverrides.enabled && (
-        <div className="space-y-2 rounded-lg border border-border/50 bg-card/30 p-3">
+        <div className="space-y-2 rounded-lg border border-border/50 bg-card/50 p-3">
           <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             Override shortcuts
           </div>
@@ -2016,7 +2016,7 @@ export function CommandSurface() {
       )}
 
       {/* Onboarding — one-click launch */}
-      <div className="rounded-lg border border-border/50 bg-card/30 p-3 space-y-3">
+      <div className="rounded-lg border border-border/50 bg-card/50 p-3 space-y-3">
         <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
           Onboarding
         </div>
@@ -2046,7 +2046,7 @@ export function CommandSurface() {
         </div>
       </div>
 
-      <div className="rounded-lg border border-border/50 bg-card/30 px-3 py-2.5 text-xs text-muted-foreground">
+      <div className="rounded-lg border border-border/50 bg-card/50 px-3 py-2.5 text-xs text-muted-foreground">
         This tab is only visible when running via{" "}
         <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">npm run gsd:web</code>.
         Overrides reset on page refresh.
@@ -2285,7 +2285,7 @@ export function CommandSurface() {
         <div className="flex h-full min-h-0">
           {/* ─── Left nav rail (hidden for single-section surfaces) ─── */}
           {!isSingleSection && (
-            <nav className="flex w-12 shrink-0 flex-col items-center gap-0.5 border-r border-border/50 bg-card/30 py-3" data-testid="command-surface-sections">
+            <nav className="flex w-12 shrink-0 flex-col items-center gap-0.5 border-r border-border/50 bg-card/50 py-3" data-testid="command-surface-sections">
               {surfaceSections.map((section) => {
                 const active = commandSurface.section === section
                 return (

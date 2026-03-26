@@ -313,7 +313,7 @@ function MarkdownViewer({ content, filepath, shikiTheme = "github-dark-default" 
             },
             img({ src, alt }) {
               return (
-                <span className="my-2 block rounded border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground italic">
+                <span className="my-2 block rounded border border-border bg-muted/50 px-3 py-2 text-xs text-muted-foreground italic">
                   🖼 {alt || (typeof src === "string" ? src : "") || "image"}
                 </span>
               )

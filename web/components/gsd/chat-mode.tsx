@@ -348,7 +348,7 @@ function MarkdownContent({ content }: { content: string }) {
             if (isInline) {
               return (
                 <code
-                  className="rounded-md bg-muted/80 px-1.5 py-0.5 text-[0.85em] font-mono text-foreground"
+                  className="rounded-md bg-muted px-1.5 py-0.5 text-[0.85em] font-mono text-foreground"
                   {...props}
                 >
                   {children}
@@ -374,7 +374,7 @@ function MarkdownContent({ content }: { content: string }) {
           },
           th({ children }: { children?: React.ReactNode }) {
             return (
-              <th className="border-b border-border bg-muted/40 px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+              <th className="border-b border-border bg-muted/50 px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                 {children}
               </th>
             )
@@ -424,7 +424,7 @@ function MarkdownContent({ content }: { content: string }) {
           },
           img({ alt, src }: { alt?: string; src?: string }) {
             return (
-              <span className="my-2 block rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground italic">
+              <span className="my-2 block rounded-lg border border-border bg-muted/50 px-3 py-2 text-xs text-muted-foreground italic">
                 🖼 {alt || src || "image"}
               </span>
             )
@@ -559,7 +559,7 @@ function TuiSelectPrompt({
       data-testid="tui-select-prompt"
       tabIndex={0}
       onKeyDown={handleKeyDown}
-      className="mt-2 rounded-xl border border-border bg-background/60 p-1.5 shadow-sm outline-none focus-visible:ring-1 focus-visible:ring-border"
+      className="mt-2 rounded-xl border border-border bg-background p-1.5 shadow-sm outline-none focus-visible:ring-1 focus-visible:ring-border"
       aria-label={`Select: ${prompt.label}`}
       role="listbox"
       aria-activedescendant={`tui-select-option-${localIndex}`}
@@ -584,7 +584,7 @@ function TuiSelectPrompt({
               "flex w-full items-start gap-2 rounded-lg px-3 py-1.5 text-left text-sm transition-colors",
               isSelected
                 ? "bg-primary/15 text-primary font-medium"
-                : "text-foreground hover:bg-muted/60",
+                : "text-foreground hover:bg-muted",
             )}
           >
             <span className="mt-0.5 flex h-4 w-4 flex-shrink-0 items-center justify-center">
@@ -671,7 +671,7 @@ function TuiTextPrompt({
   return (
     <div
       data-testid="tui-text-prompt"
-      className="mt-2 rounded-xl border border-border bg-background/60 p-3 shadow-sm"
+      className="mt-2 rounded-xl border border-border bg-background p-3 shadow-sm"
     >
       {prompt.label && (
         <p className="mb-2 text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
@@ -771,7 +771,7 @@ function TuiPasswordPrompt({
   return (
     <div
       data-testid="tui-password-prompt"
-      className="mt-2 rounded-xl border border-border bg-background/60 p-3 shadow-sm"
+      className="mt-2 rounded-xl border border-border bg-background p-3 shadow-sm"
     >
       {prompt.label && (
         <p className="mb-2 text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
@@ -910,7 +910,7 @@ function InlineThinking({ content, isStreaming }: { content: string; isStreaming
         onClick={() => setExpanded((e) => !e)}
         className={cn(
           "group w-full rounded-xl border px-3.5 py-2.5 text-left transition-all",
-          "border-border/50 bg-muted/20 hover:bg-muted/30",
+          "border-border/50 bg-muted/50 hover:bg-muted/50",
         )}
       >
         {/* Header row */}
@@ -929,7 +929,7 @@ function InlineThinking({ content, isStreaming }: { content: string; isStreaming
             {isStreaming ? "Thinking…" : "Thought process"}
           </span>
           {hasMore && !expanded && (
-            <span className="ml-1 rounded-full bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+            <span className="ml-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
               {lines.length} lines
             </span>
           )}
@@ -957,7 +957,7 @@ function InlineThinking({ content, isStreaming }: { content: string; isStreaming
         {expanded && (
           <div
             ref={scrollRef}
-            className="mt-2 max-h-[400px] overflow-y-auto overscroll-contain rounded-lg border border-border/50 bg-background/40 p-3 text-[12px] leading-[1.7] text-muted-foreground whitespace-pre-wrap scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent"
+            className="mt-2 max-h-[400px] overflow-y-auto overscroll-contain rounded-lg border border-border/50 bg-background/50 p-3 text-[12px] leading-[1.7] text-muted-foreground whitespace-pre-wrap scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent"
           >
             {content}
             {isStreaming && <StreamingCursor />}
@@ -1326,7 +1326,7 @@ function ChatInputBar({
   const overflowGroups = useMemo(() => groupByCategory(OVERFLOW_ACTIONS), [])
 
   return (
-    <div className="flex-shrink-0 border-t border-border bg-card/80 px-4 py-3 backdrop-blur-sm">
+    <div className="flex-shrink-0 border-t border-border bg-card px-4 py-3 backdrop-blur-sm">
       <div
         className="flex items-end gap-2"
         onDrop={handleDrop}
@@ -1340,7 +1340,7 @@ function ChatInputBar({
             "flex flex-1 flex-col rounded-xl border bg-background transition-colors",
             connected
               ? "border-border focus-within:ring-1 focus-within:ring-border/30"
-              : "border-border/50 opacity-60",
+              : "border-border/50 opacity-80",
             isDragging && connected && "border-primary/60 ring-2 ring-primary/20 bg-primary/5",
           )}
         >
@@ -1675,7 +1675,7 @@ function InlineSelect({
               disabled={disabled}
               className={cn(
                 "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition-colors",
-                checked ? "bg-primary/15 text-primary font-medium" : "text-foreground hover:bg-muted/60",
+                checked ? "bg-primary/15 text-primary font-medium" : "text-foreground hover:bg-muted",
               )}
             >
               <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border border-border">
@@ -1693,7 +1693,7 @@ function InlineSelect({
             disabled={disabled}
             className={cn(
               "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition-colors",
-              selected ? "bg-primary/15 text-primary font-medium" : "text-foreground hover:bg-muted/60",
+              selected ? "bg-primary/15 text-primary font-medium" : "text-foreground hover:bg-muted",
             )}
           >
             <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center">
@@ -1927,7 +1927,7 @@ function ToolExecutionBlock({ tool }: { tool: CompletedToolExecution }) {
             "w-full rounded-lg border px-3 py-2 text-left text-xs transition-colors",
             isError
               ? "border-destructive/30 bg-destructive/5 hover:bg-destructive/10"
-              : "border-border/50 bg-muted/20 hover:bg-muted/30",
+              : "border-border/50 bg-muted/50 hover:bg-muted/50",
           )}
         >
           {/* Header */}
@@ -1951,7 +1951,7 @@ function ToolExecutionBlock({ tool }: { tool: CompletedToolExecution }) {
 
           {/* Expanded content */}
           {expanded && diff && (
-            <div className="mt-2 overflow-x-auto rounded-md border border-border/50 bg-background/80 p-2 font-mono text-[11px] leading-relaxed">
+            <div className="mt-2 overflow-x-auto rounded-md border border-border/50 bg-background p-2 font-mono text-[11px] leading-relaxed">
               {diff.split("\n").map((line, i) => {
                 const isAdd = line.startsWith("+")
                 const isRemove = line.startsWith("-")
@@ -1976,7 +1976,7 @@ function ToolExecutionBlock({ tool }: { tool: CompletedToolExecution }) {
 
           {/* Expanded: bash output or other result */}
           {expanded && !diff && resultText && (
-            <div className="mt-2 max-h-[200px] overflow-y-auto rounded-md border border-border/50 bg-background/80 p-2 font-mono text-[11px] leading-relaxed text-muted-foreground whitespace-pre-wrap">
+            <div className="mt-2 max-h-[200px] overflow-y-auto rounded-md border border-border/50 bg-background p-2 font-mono text-[11px] leading-relaxed text-muted-foreground whitespace-pre-wrap">
               {resultText.length > 2000 ? resultText.slice(0, 2000) + "\n…" : resultText}
             </div>
           )}
@@ -2291,7 +2291,7 @@ export function ChatPane({ className, onOpenAction }: ChatPaneProps) {
                     <div key={`active-${item.tool.id}`} className="flex justify-start gap-3">
                       <div className="w-7 flex-shrink-0" />
                       <div className="max-w-[82%] min-w-0">
-                        <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-muted/20 px-3.5 py-2">
+                        <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-muted/50 px-3.5 py-2">
                           <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
                           <span className="font-mono text-xs text-muted-foreground">
                             {item.tool.name}

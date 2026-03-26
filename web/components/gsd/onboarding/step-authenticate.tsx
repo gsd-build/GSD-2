@@ -228,7 +228,7 @@ export function StepAuthenticate({
 
         {/* ─── API key form ─── */}
         {hasApiKey && !canProceed && (
-          <div className="space-y-3 rounded-xl border border-border/50 bg-card/30 p-4">
+          <div className="space-y-3 rounded-xl border border-border/50 bg-card/50 p-4">
             <div className="text-sm font-medium text-foreground">API key</div>
             <form
               className="space-y-3"
@@ -276,15 +276,15 @@ export function StepAuthenticate({
             {/* Divider between API key and OAuth */}
             {hasApiKey && (
               <div className="flex items-center gap-3 py-1">
-                <div className="h-px flex-1 bg-border/40" />
+                <div className="h-px flex-1 bg-border/50" />
                 <span className="text-xs text-muted-foreground">or</span>
-                <div className="h-px flex-1 bg-border/40" />
+                <div className="h-px flex-1 bg-border/50" />
               </div>
             )}
 
             {/* ─── No active flow: show start button ─── */}
             {!flowActive && (
-              <div className="rounded-xl border border-border/50 bg-card/30 p-4">
+              <div className="rounded-xl border border-border/50 bg-card/50 p-4">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <div className="text-sm font-medium text-foreground">Browser sign-in</div>
@@ -316,7 +316,7 @@ export function StepAuthenticate({
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.3 }}
-                className="rounded-xl border border-border/50 bg-card/30 p-4 space-y-4"
+                className="rounded-xl border border-border/50 bg-card/50 p-4 space-y-4"
                 data-testid="onboarding-active-flow"
               >
                 {/* Device code — big and prominent */}
@@ -461,7 +461,7 @@ export function StepAuthenticate({
 
         {/* OAuth unavailable */}
         {provider.supports.oauth && !provider.supports.oauthAvailable && !hasApiKey && (
-          <div className="rounded-xl border border-border/50 bg-card/30 px-4 py-3.5 text-sm text-muted-foreground">
+          <div className="rounded-xl border border-border/50 bg-card/50 px-4 py-3.5 text-sm text-muted-foreground">
             Browser sign-in is not available in this runtime. Go back and choose a provider with API-key support.
           </div>
         )}

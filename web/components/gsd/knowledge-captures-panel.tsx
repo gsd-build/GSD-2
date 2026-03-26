@@ -84,7 +84,7 @@ function PanelLoading({ label }: { label: string }) {
 
 function PanelEmpty({ message }: { message: string }) {
   return (
-    <div className="rounded-lg border border-border/50 bg-card/30 px-4 py-5 text-center text-xs text-muted-foreground">
+    <div className="rounded-lg border border-border/50 bg-card/50 px-4 py-5 text-center text-xs text-muted-foreground">
       {message}
     </div>
   )
@@ -181,7 +181,7 @@ const CLASSIFICATION_OPTIONS: Classification[] = ["quick-task", "inject", "defer
 function KnowledgeEntryRow({ entry }: { entry: KnowledgeEntry }) {
   const badge = knowledgeTypeBadge(entry.type)
   return (
-    <div className="group rounded-lg border border-border/50 bg-card/20 px-3 py-2.5 transition-colors hover:bg-card/40">
+    <div className="group rounded-lg border border-border/50 bg-card/50 px-3 py-2.5 transition-colors hover:bg-card/50">
       <div className="flex items-start gap-2.5">
         <KnowledgeTypeIcon type={entry.type} className="mt-0.5" />
         <div className="min-w-0 flex-1">
@@ -255,7 +255,7 @@ function CaptureEntryRow({
   const status = captureStatusStyle(entry.status)
 
   return (
-    <div className="group rounded-lg border border-border/50 bg-card/20 px-3 py-2.5 transition-colors hover:bg-card/40">
+    <div className="group rounded-lg border border-border/50 bg-card/50 px-3 py-2.5 transition-colors hover:bg-card/50">
       <div className="flex items-start gap-2.5">
         <div className={cn(
           "mt-1 h-2 w-2 shrink-0 rounded-full",

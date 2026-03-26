@@ -72,7 +72,7 @@ function InlineFolderBrowser({
   }, [browse])
 
   return (
-    <div className="rounded-xl border border-border/50 bg-card/20 overflow-hidden">
+    <div className="rounded-xl border border-border/50 bg-card/50 overflow-hidden">
       {/* Current path */}
       <div className="flex items-center justify-between gap-2 border-b border-border/50 px-4 py-2.5">
         <p className="min-w-0 truncate font-mono text-xs text-muted-foreground" title={currentPath}>

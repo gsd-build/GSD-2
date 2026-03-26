@@ -89,14 +89,14 @@ function TerminalWidgetBand({
 
   return (
     <div
-      className="border-t border-border/50 bg-card/20 px-4 py-2"
+      className="border-t border-border/50 bg-card/50 px-4 py-2"
       data-testid={placement === "aboveEditor" ? "terminal-widgets-above-editor" : "terminal-widgets-below-editor"}
     >
       <div className="space-y-2">
         {widgets.map((widget) => (
           <div
             key={`${widget.placement}:${widget.key}`}
-            className="rounded-md border border-border bg-background/40 px-3 py-2"
+            className="rounded-md border border-border bg-background/50 px-3 py-2"
             data-testid="terminal-widget"
             data-widget-key={widget.key}
             data-widget-placement={widget.placement}

@@ -109,7 +109,7 @@ function PanelLoading({ label }: { label: string }) {
 
 function PanelEmpty({ message }: { message: string }) {
   return (
-    <div className="rounded-lg border border-border/50 bg-card/30 px-4 py-5 text-center text-xs text-muted-foreground">
+    <div className="rounded-lg border border-border/50 bg-card/50 px-4 py-5 text-center text-xs text-muted-foreground">
       {message}
     </div>
   )
@@ -155,7 +155,7 @@ export function QuickPanel() {
         icon={<Zap className="h-3.5 w-3.5" />}
       />
 
-      <div className="rounded-lg border border-border/50 bg-card/30 px-4 py-4 space-y-3">
+      <div className="rounded-lg border border-border/50 bg-card/50 px-4 py-4 space-y-3">
         <p className="text-xs text-foreground">
           Create a quick one-off task outside the current plan. Useful for small fixes, experiments, or ad-hoc work that
           doesn&apos;t fit into the milestone structure.
@@ -231,7 +231,7 @@ export function HistoryPanel() {
           </div>
 
           {/* Tab switcher */}
-          <div className="flex gap-1 rounded-lg border border-border/50 bg-card/20 p-0.5">
+          <div className="flex gap-1 rounded-lg border border-border/50 bg-card/50 p-0.5">
             {(["phase", "slice", "model", "units"] as const).map((tab) => (
               <button
                 key={tab}
@@ -240,7 +240,7 @@ export function HistoryPanel() {
                 className={cn(
                   "flex-1 rounded-md px-2.5 py-1 text-[11px] font-medium capitalize transition-colors",
                   activeTab === tab
-                    ? "bg-card/80 text-foreground shadow-sm"
+                    ? "bg-card text-foreground shadow-sm"
                     : "text-muted-foreground hover:text-muted-foreground",
                 )}
               >
@@ -254,7 +254,7 @@ export function HistoryPanel() {
             <div className="overflow-x-auto rounded-lg border border-border/50">
               <table className="w-full text-[11px]">
                 <thead>
-                  <tr className="border-b border-border/50 bg-card/40">
+                  <tr className="border-b border-border/50 bg-card/50">
                     <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">Phase</th>
                     <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">Units</th>
                     <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">Cost</th>
@@ -280,7 +280,7 @@ export function HistoryPanel() {
             <div className="overflow-x-auto rounded-lg border border-border/50">
               <table className="w-full text-[11px]">
                 <thead>
-                  <tr className="border-b border-border/50 bg-card/40">
+                  <tr className="border-b border-border/50 bg-card/50">
                     <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">Slice</th>
                     <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">Units</th>
                     <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">Cost</th>
@@ -306,7 +306,7 @@ export function HistoryPanel() {
             <div className="overflow-x-auto rounded-lg border border-border/50">
               <table className="w-full text-[11px]">
                 <thead>
-                  <tr className="border-b border-border/50 bg-card/40">
+                  <tr className="border-b border-border/50 bg-card/50">
                     <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">Model</th>
                     <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">Units</th>
                     <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">Cost</th>
@@ -332,7 +332,7 @@ export function HistoryPanel() {
                 <div className="overflow-x-auto rounded-lg border border-border/50">
                   <table className="w-full text-[11px]">
                     <thead>
-                      <tr className="border-b border-border/50 bg-card/40">
+                      <tr className="border-b border-border/50 bg-card/50">
                         <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">Type</th>
                         <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">ID</th>
                         <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">Model</th>
@@ -427,7 +427,7 @@ export function UndoPanel() {
           {data.lastUnitType ? (
             <>
               {/* Last unit info */}
-              <div className="rounded-lg border border-border/50 bg-card/30 px-3 py-2.5 space-y-1.5">
+              <div className="rounded-lg border border-border/50 bg-card/50 px-3 py-2.5 space-y-1.5">
                 <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Last Completed Unit</h4>
                 <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[11px]">
                   <span className="text-muted-foreground">Type</span>
@@ -571,7 +571,7 @@ export function SteerPanel() {
             {data.overridesContent}
           </div>
         ) : (
-          <div className="rounded-lg border border-border/50 bg-card/30 px-3 py-2.5 text-[11px] text-muted-foreground italic">
+          <div className="rounded-lg border border-border/50 bg-card/50 px-3 py-2.5 text-[11px] text-muted-foreground italic">
             No active overrides
           </div>
         )}
@@ -636,7 +636,7 @@ export function HooksPanel() {
             <div className="overflow-x-auto rounded-lg border border-border/50">
               <table className="w-full text-[11px]">
                 <thead>
-                  <tr className="border-b border-border/50 bg-card/40">
+                  <tr className="border-b border-border/50 bg-card/50">
                     <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">Name</th>
                     <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">Type</th>
                     <th className="px-2.5 py-1.5 text-center font-medium text-muted-foreground">Status</th>
@@ -734,7 +734,7 @@ export function InspectPanel() {
               <div className="overflow-x-auto rounded-lg border border-border/50">
                 <table className="w-full text-[11px]">
                   <thead>
-                    <tr className="border-b border-border/50 bg-card/40">
+                    <tr className="border-b border-border/50 bg-card/50">
                       <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">ID</th>
                       <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">Decision</th>
                       <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">Choice</th>
@@ -761,7 +761,7 @@ export function InspectPanel() {
               <div className="overflow-x-auto rounded-lg border border-border/50">
                 <table className="w-full text-[11px]">
                   <thead>
-                    <tr className="border-b border-border/50 bg-card/40">
+                    <tr className="border-b border-border/50 bg-card/50">
                       <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">ID</th>
                       <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">Status</th>
                       <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">Description</th>
@@ -844,7 +844,7 @@ export function ExportPanel() {
       {/* Format selector */}
       <div className="space-y-2">
         <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Format</h4>
-        <div className="flex gap-1 rounded-lg border border-border/50 bg-card/20 p-0.5">
+        <div className="flex gap-1 rounded-lg border border-border/50 bg-card/50 p-0.5">
           {(["markdown", "json"] as const).map((f) => (
             <button
               key={f}
@@ -853,7 +853,7 @@ export function ExportPanel() {
               className={cn(
                 "flex-1 rounded-md px-3 py-1.5 text-[11px] font-medium capitalize transition-colors",
                 format === f
-                  ? "bg-card/80 text-foreground shadow-sm"
+                  ? "bg-card text-foreground shadow-sm"
                   : "text-muted-foreground hover:text-muted-foreground",
               )}
             >
@@ -980,7 +980,7 @@ export function CleanupPanel() {
               <div className="overflow-x-auto rounded-lg border border-border/50">
                 <table className="w-full text-[11px]">
                   <thead>
-                    <tr className="border-b border-border/50 bg-card/40">
+                    <tr className="border-b border-border/50 bg-card/50">
                       <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">Branch</th>
                       <th className="px-2.5 py-1.5 text-center font-medium text-muted-foreground">Status</th>
                     </tr>
@@ -1037,7 +1037,7 @@ export function CleanupPanel() {
               <div className="overflow-x-auto rounded-lg border border-border/50">
                 <table className="w-full text-[11px]">
                   <thead>
-                    <tr className="border-b border-border/50 bg-card/40">
+                    <tr className="border-b border-border/50 bg-card/50">
                       <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">Ref</th>
                       <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">Date</th>
                     </tr>
@@ -1101,7 +1101,7 @@ export function QueuePanel() {
                   "rounded-lg border px-3 py-2.5 space-y-1.5",
                   isActive
                     ? "border-info/25 bg-info/5"
-                    : "border-border/50 bg-card/30",
+                    : "border-border/50 bg-card/50",
                 )}
               >
                 <div className="flex items-center justify-between gap-2">
@@ -1121,7 +1121,7 @@ export function QueuePanel() {
 
                 {/* Progress bar */}
                 {progress.total > 0 && (
-                  <div className="h-1 rounded-full bg-border/30 overflow-hidden">
+                  <div className="h-1 rounded-full bg-border/50 overflow-hidden">
                     <div
                       className={cn(
                         "h-full rounded-full transition-all",
@@ -1194,7 +1194,7 @@ export function StatusPanel() {
       />
 
       {/* Active context card */}
-      <div className="rounded-lg border border-border/50 bg-card/30 px-3 py-3 space-y-2">
+      <div className="rounded-lg border border-border/50 bg-card/50 px-3 py-3 space-y-2">
         <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Active Context</h4>
         <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[11px]">
           <span className="text-muted-foreground">Phase</span>
@@ -1244,7 +1244,7 @@ export function StatusPanel() {
             <span>Overall Progress</span>
             <span className="tabular-nums">{Math.round((doneSlices / totalSlices) * 100)}%</span>
           </div>
-          <div className="h-1.5 rounded-full bg-border/30 overflow-hidden">
+          <div className="h-1.5 rounded-full bg-border/50 overflow-hidden">
             <div
               className={cn(
                 "h-full rounded-full transition-all",

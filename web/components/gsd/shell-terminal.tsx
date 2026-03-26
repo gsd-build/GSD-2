@@ -711,7 +711,7 @@ export function ShellTerminal({
 
         {/* Drop overlay */}
         {isDragOver && (
-          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-background/80 backdrop-blur-sm border-2 border-dashed border-primary rounded-md pointer-events-none">
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-background backdrop-blur-sm border-2 border-dashed border-primary rounded-md pointer-events-none">
             <ImagePlus className="h-8 w-8 text-primary" />
             <span className="text-sm font-medium text-primary">Drop image here</span>
           </div>
@@ -729,7 +729,7 @@ export function ShellTerminal({
             <Plus className="h-3 w-3" />
           </button>
 
-          <div className="h-px bg-border/40" />
+          <div className="h-px bg-border/50" />
 
           {/* Tab list */}
           <div className="flex-1 overflow-y-auto">

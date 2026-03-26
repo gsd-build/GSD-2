@@ -96,7 +96,7 @@ export function StepProvider({ providers, selectedId, onSelect, onNext, onBack }
                       "active:scale-[0.98]",
                       selected
                         ? "border-foreground/30 bg-foreground/[0.06]"
-                        : "border-border/50 bg-card/20 hover:border-foreground/15 hover:bg-card/50",
+                        : "border-border/50 bg-card/50 hover:border-foreground/15 hover:bg-card/50",
                     )}
                     data-testid={`onboarding-provider-${provider.id}`}
                   >

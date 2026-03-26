@@ -64,7 +64,7 @@ export function StepOptional({ sections, onBack, onNext }: StepOptionalProps) {
               "flex items-start gap-3.5 rounded-xl border px-4 py-3.5 transition-colors",
               section.configured
                 ? "border-success/15 bg-success/[0.03]"
-                : "border-border/50 bg-card/20",
+                : "border-border/50 bg-card/50",
             )}
             data-testid={`onboarding-optional-${section.id}`}
           >
