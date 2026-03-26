@@ -469,7 +469,13 @@ export interface DerivedTaskNode extends TaskIO {
 
 /** Configuration for reactive (graph-derived parallel) task execution within a slice. */
 export interface ReactiveExecutionConfig {
-  enabled: boolean;
+  /**
+   * - true: always use reactive dispatch
+   * - false: disable reactive dispatch
+   * - "auto" (default when absent): derive the task graph; parallelize non-ambiguous
+   *   tasks, fall through to sequential for ambiguous ones or single-ready
+   */
+  enabled: boolean | "auto";
   /** Maximum number of tasks to dispatch in parallel. Clamped to 1–8. */
   max_parallel: number;
   /** Isolation mode for parallel tasks within a slice. Currently only "same-tree" is supported. */

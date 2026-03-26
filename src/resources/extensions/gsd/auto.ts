@@ -33,7 +33,7 @@ import {
   milestonesDir,
   buildTaskFileName,
 } from "./paths.js";
-import { invalidateAllCaches } from "./cache.js";
+import { invalidateAllCaches, invalidateAllCachesIfDirty } from "./cache.js";
 import { clearActivityLogState } from "./activity-log.js";
 import {
   synthesizeCrashRecovery,
@@ -914,6 +914,7 @@ function buildLoopDeps(): LoopDeps {
 
     // State and cache
     invalidateAllCaches,
+    invalidateAllCachesIfDirty,
     deriveState,
     rebuildState,
     loadEffectiveGSDPreferences,

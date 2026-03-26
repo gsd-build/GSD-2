@@ -68,6 +68,22 @@ import { existsSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { _resetHasChangesCache } from "./native-git-bridge.js";
 
+// ─── Fire-and-forget cleanup tracking ──────────────────────────────────────
+// The post-unit fire-and-forget cleanup (GitHub sync, bg-shell prune, browser
+// teardown) runs without blocking dispatch. However, browser teardown can race
+// with the next unit if it needs browser tools. This promise lets the next
+// pre-dispatch await completion before proceeding.
+let _pendingCleanup: Promise<void> | null = null;
+
+/**
+ * Returns the pending fire-and-forget cleanup promise, or null if none is
+ * in flight. The caller should await this before dispatching a new unit that
+ * may use browser tools.
+ */
+export function getPendingCleanup(): Promise<void> | null {
+  return _pendingCleanup;
+}
+
 // ─── Rogue File Detection ──────────────────────────────────────────────────
 
 export interface RogueFileWrite {
@@ -232,10 +248,8 @@ export async function postUnitPreVerification(pctx: PostUnitContext, opts?: PreV
   // Invalidate all caches
   invalidateAllCaches();
 
-  // Small delay to let files settle (skipped for sidecars where latency matters more)
-  if (!opts?.skipSettleDelay) {
-    await new Promise(r => setTimeout(r, 100));
-  }
+  // Note: 100ms settle delay was removed — sidecar path already skipped it without issues,
+  // and modern filesystem writes are synchronous for userspace applications.
 
   // Auto-commit
   if (s.currentUnit) {
@@ -296,33 +310,42 @@ export async function postUnitPreVerification(pctx: PostUnitContext, opts?: PreV
       ctx.ui.notify(`Auto-commit failed: ${String(e).split("\n")[0]}`, "warning");
     }
 
-    // GitHub sync (non-blocking, opt-in)
-    try {
-      const { runGitHubSync } = await import("../github-sync/sync.js");
-      await runGitHubSync(s.basePath, s.currentUnit.type, s.currentUnit.id);
-    } catch (e) {
-      debugLog("postUnit", { phase: "github-sync", error: String(e) });
-    }
-
-    // Prune dead bg-shell processes
-    try {
-      const { pruneDeadProcesses } = await import("../bg-shell/process-manager.js");
-      pruneDeadProcesses();
-    } catch (e) {
-      debugLog("postUnit", { phase: "prune-bg-shell", error: String(e) });
-    }
-
-    // Tear down browser between units to prevent Chrome process accumulation (#1733)
-    try {
-      const { getBrowser } = await import("../browser-tools/state.js");
-      if (getBrowser()) {
-        const { closeBrowser } = await import("../browser-tools/lifecycle.js");
-        await closeBrowser();
-        debugLog("postUnit", { phase: "browser-teardown", status: "closed" });
-      }
-    } catch (e) {
-      debugLog("postUnit", { phase: "browser-teardown", error: String(e) });
-    }
+    // Fire-and-forget: GitHub sync, bg-shell prune, and browser teardown are
+    // non-critical and independent — run in parallel without blocking dispatch.
+    // The cleanup promise is tracked so pre-dispatch can await it before the
+    // next unit (prevents browser teardown from racing with browser tool use).
+    const unitType = s.currentUnit.type;
+    const unitId = s.currentUnit.id;
+    _pendingCleanup = Promise.allSettled([
+      (async () => {
+        try {
+          const { runGitHubSync } = await import("../github-sync/sync.js");
+          await runGitHubSync(s.basePath, unitType, unitId);
+        } catch (e) {
+          debugLog("postUnit", { phase: "github-sync", error: String(e) });
+        }
+      })(),
+      (async () => {
+        try {
+          const { pruneDeadProcesses } = await import("../bg-shell/process-manager.js");
+          pruneDeadProcesses();
+        } catch (e) {
+          debugLog("postUnit", { phase: "prune-bg-shell", error: String(e) });
+        }
+      })(),
+      (async () => {
+        try {
+          const { getBrowser } = await import("../browser-tools/state.js");
+          if (getBrowser()) {
+            const { closeBrowser } = await import("../browser-tools/lifecycle.js");
+            await closeBrowser();
+            debugLog("postUnit", { phase: "browser-teardown", status: "closed" });
+          }
+        } catch (e) {
+          debugLog("postUnit", { phase: "browser-teardown", error: String(e) });
+        }
+      })(),
+    ]).then(() => { _pendingCleanup = null; });
 
     // Sync worktree state back to project root (skipped for lightweight sidecars)
     if (!opts?.skipWorktreeSync && s.originalBasePath && s.originalBasePath !== s.basePath) {

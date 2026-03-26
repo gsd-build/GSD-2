@@ -1530,6 +1530,24 @@ export function getMilestoneSlices(milestoneId: string): SliceRow[] {
   return rows.map(rowToSlice);
 }
 
+/**
+ * Batch-load all slices grouped by milestone ID. Returns a Map for O(1)
+ * lookup, replacing N per-milestone getMilestoneSlices() calls with a
+ * single query in deriveStateFromDb().
+ */
+export function getAllSlicesGrouped(): Map<string, SliceRow[]> {
+  const result = new Map<string, SliceRow[]>();
+  if (!currentDb) return result;
+  const rows = currentDb.prepare("SELECT * FROM slices ORDER BY milestone_id, sequence, id").all();
+  for (const row of rows) {
+    const slice = rowToSlice(row);
+    const list = result.get(slice.milestone_id);
+    if (list) list.push(slice);
+    else result.set(slice.milestone_id, [slice]);
+  }
+  return result;
+}
+
 export function getArtifact(path: string): ArtifactRow | null {
   if (!currentDb) return null;
   const row = currentDb.prepare("SELECT * FROM artifacts WHERE path = :path").get({ ":path": path });

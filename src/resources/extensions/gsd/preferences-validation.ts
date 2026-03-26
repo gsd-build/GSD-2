@@ -504,8 +504,8 @@ export function validatePreferences(preferences: GSDPreferences): {
       const validRe: Record<string, unknown> = {};
 
       if (re.enabled !== undefined) {
-        if (typeof re.enabled === "boolean") validRe.enabled = re.enabled;
-        else errors.push("reactive_execution.enabled must be a boolean");
+        if (typeof re.enabled === "boolean" || re.enabled === "auto") validRe.enabled = re.enabled;
+        else errors.push('reactive_execution.enabled must be a boolean or "auto"');
       }
       if (re.max_parallel !== undefined) {
         const mp = typeof re.max_parallel === "number" ? re.max_parallel : Number(re.max_parallel);

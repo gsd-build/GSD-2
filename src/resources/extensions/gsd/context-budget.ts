@@ -89,18 +89,27 @@ export interface MinimalPreferences {
 
 // ─── Public API ──────────────────────────────────────────────────────────────
 
+// Memoization cache for computeBudgets — keyed by "contextWindow:provider".
+// The function is pure so cache entries never go stale.
+const _budgetCache = new Map<string, BudgetAllocation>();
+
 /**
  * Compute proportional budget allocations from a context window size (in tokens).
  *
  * Returns deterministic output for any given input. Invalid inputs (≤ 0)
- * silently default to 200K (D002).
+ * silently default to 200K (D002). Results are memoized since the function
+ * is pure.
  */
 export function computeBudgets(contextWindow: number, provider?: TokenProvider): BudgetAllocation {
+  const cacheKey = `${contextWindow}:${provider ?? ""}`;
+  const cached = _budgetCache.get(cacheKey);
+  if (cached) return cached;
+
   const effectiveWindow = contextWindow > 0 ? contextWindow : DEFAULT_CONTEXT_WINDOW;
   const charsPerToken = provider ? getCharsPerToken(provider) : CHARS_PER_TOKEN;
   const totalChars = effectiveWindow * charsPerToken;
 
-  return {
+  const result: BudgetAllocation = {
     summaryBudgetChars: Math.floor(totalChars * SUMMARY_RATIO),
     inlineContextBudgetChars: Math.floor(totalChars * INLINE_CONTEXT_RATIO),
     verificationBudgetChars: Math.floor(totalChars * VERIFICATION_RATIO),
@@ -110,6 +119,8 @@ export function computeBudgets(contextWindow: number, provider?: TokenProvider):
       max: resolveTaskCountMax(effectiveWindow),
     },
   };
+  _budgetCache.set(cacheKey, result);
+  return result;
 }
 
 /**

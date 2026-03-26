@@ -44,6 +44,7 @@ function makeMockDeps(
     syncCmuxSidebar: () => {},
     logCmuxEvent: () => {},
     invalidateAllCaches: () => {},
+    invalidateAllCachesIfDirty: () => true,
     deriveState: async () => ({
       phase: "executing",
       activeMilestone: { id: "M001", title: "Test", status: "active" },

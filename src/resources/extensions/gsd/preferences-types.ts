@@ -221,7 +221,7 @@ export interface GSDPreferences {
   context_selection?: ContextSelectionMode;
   /** Default widget display mode for auto-mode dashboard. "full" | "small" | "min" | "off". Default: "full". */
   widget_mode?: "full" | "small" | "min" | "off";
-  /** Reactive (graph-derived parallel) task execution within slices. Disabled by default. */
+  /** Reactive (graph-derived parallel) task execution within slices. Defaults to "auto" mode — parallelizes tasks with clear IO annotations, falls back to sequential for ambiguous tasks. */
   reactive_execution?: ReactiveExecutionConfig;
   /** Parallel quality gate evaluation during slice planning. Disabled by default. */
   gate_evaluation?: GateEvaluationConfig;

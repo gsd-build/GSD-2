@@ -146,6 +146,7 @@ function makeMockDeps(overrides?: Partial<LoopDeps>): LoopDeps & { callLog: stri
     syncCmuxSidebar: () => {},
     logCmuxEvent: () => {},
     invalidateAllCaches: () => {},
+    invalidateAllCachesIfDirty: () => true,
     deriveState: async () => {
       callLog.push("deriveState");
       return {

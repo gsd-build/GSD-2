@@ -25,6 +25,21 @@ const _counters = {
   parsePlanTotalMs: 0,
   dispatches: 0,
   renders: 0,
+  // Per-phase timing (added for throughput measurement)
+  preDispatchCalls: 0,
+  preDispatchTotalMs: 0,
+  guardsCalls: 0,
+  guardsTotalMs: 0,
+  dispatchCalls: 0,
+  dispatchTotalMs: 0,
+  unitExecutionCalls: 0,
+  unitExecutionTotalMs: 0,
+  finalizeCalls: 0,
+  finalizeTotalMs: 0,
+  promptBuildCalls: 0,
+  promptBuildTotalMs: 0,
+  cacheInvalidations: 0,
+  cacheSkips: 0,
 };
 
 /** Max debug log files to keep. Older ones are pruned on enable. */
@@ -123,6 +138,31 @@ export function debugTime(event: string): (data?: Record<string, unknown>) => vo
   };
 }
 
+/**
+ * Like debugTime(), but also accumulates elapsed time into a counter pair.
+ * Use for phase-level timing where you want both per-event JSONL logs and
+ * aggregate totals in the debug summary.
+ *
+ * @param event   - Event name for the JSONL log entry
+ * @param callsCounter  - Counter key to increment (e.g., "preDispatchCalls")
+ * @param totalMsCounter - Counter key to accumulate elapsed ms (e.g., "preDispatchTotalMs")
+ */
+export function debugTimeAccum(
+  event: string,
+  callsCounter: keyof typeof _counters,
+  totalMsCounter: keyof typeof _counters,
+): (data?: Record<string, unknown>) => void {
+  if (!_enabled) return _noop;
+
+  const start = performance.now();
+  return (data?: Record<string, unknown>) => {
+    const elapsed_ms = Math.round((performance.now() - start) * 100) / 100;
+    _counters[callsCounter] += 1;
+    _counters[totalMsCounter] += elapsed_ms;
+    debugLog(event, { elapsed_ms, ...data });
+  };
+}
+
 // ─── Counter Helpers ──────────────────────────────────────────────────────────
 
 /** Increment a debug counter (used by instrumentation points). */
@@ -154,20 +194,34 @@ export function writeDebugSummary(): string | null {
     ? Math.round((_counters.ttsrTotalMs / _counters.ttsrChecks) * 100) / 100
     : 0;
 
+  const avg = (total: number, count: number) =>
+    count > 0 ? Math.round((total / count) * 100) / 100 : 0;
+
   debugLog('debug-summary', {
     totalElapsed_ms,
     dispatches: _counters.dispatches,
     deriveStateCalls: _counters.deriveStateCalls,
     avgDeriveState_ms,
     parseRoadmapCalls: _counters.parseRoadmapCalls,
-    avgParseRoadmap_ms: _counters.parseRoadmapCalls > 0
-      ? Math.round((_counters.parseRoadmapTotalMs / _counters.parseRoadmapCalls) * 100) / 100
-      : 0,
+    avgParseRoadmap_ms: avg(_counters.parseRoadmapTotalMs, _counters.parseRoadmapCalls),
     parsePlanCalls: _counters.parsePlanCalls,
     ttsrChecks: _counters.ttsrChecks,
     avgTtsrCheck_ms,
     ttsrPeakBuffer: _counters.ttsrPeakBuffer,
     renders: _counters.renders,
+    // Per-phase timing (throughput measurement)
+    phases: {
+      preDispatch:    { calls: _counters.preDispatchCalls,    totalMs: Math.round(_counters.preDispatchTotalMs * 100) / 100,    avgMs: avg(_counters.preDispatchTotalMs, _counters.preDispatchCalls) },
+      guards:         { calls: _counters.guardsCalls,         totalMs: Math.round(_counters.guardsTotalMs * 100) / 100,         avgMs: avg(_counters.guardsTotalMs, _counters.guardsCalls) },
+      dispatch:       { calls: _counters.dispatchCalls,       totalMs: Math.round(_counters.dispatchTotalMs * 100) / 100,       avgMs: avg(_counters.dispatchTotalMs, _counters.dispatchCalls) },
+      unitExecution:  { calls: _counters.unitExecutionCalls,  totalMs: Math.round(_counters.unitExecutionTotalMs * 100) / 100,  avgMs: avg(_counters.unitExecutionTotalMs, _counters.unitExecutionCalls) },
+      finalize:       { calls: _counters.finalizeCalls,       totalMs: Math.round(_counters.finalizeTotalMs * 100) / 100,       avgMs: avg(_counters.finalizeTotalMs, _counters.finalizeCalls) },
+      promptBuild:    { calls: _counters.promptBuildCalls,    totalMs: Math.round(_counters.promptBuildTotalMs * 100) / 100,    avgMs: avg(_counters.promptBuildTotalMs, _counters.promptBuildCalls) },
+    },
+    cache: {
+      invalidations: _counters.cacheInvalidations,
+      skips: _counters.cacheSkips,
+    },
   });
 
   return disableDebug();

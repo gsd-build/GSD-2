@@ -26,7 +26,7 @@ import {
   runUnitPhase,
   runFinalize,
 } from "./phases.js";
-import { debugLog } from "../debug-logger.js";
+import { debugLog, debugTime, debugTimeAccum } from "../debug-logger.js";
 import { isInfrastructureError } from "./infra-errors.js";
 import { resolveEngine } from "../engine-resolver.js";
 
@@ -209,18 +209,24 @@ export async function autoLoop(
 
       if (!sidecarItem) {
         // ── Phase 1: Pre-dispatch ─────────────────────────────────────────
+        const stopPreDispatch = debugTimeAccum("phase:pre-dispatch", "preDispatchCalls", "preDispatchTotalMs");
         const preDispatchResult = await runPreDispatch(ic, loopState);
+        stopPreDispatch({ iteration, action: preDispatchResult.action });
         if (preDispatchResult.action === "break") break;
         if (preDispatchResult.action === "continue") continue;
 
         const preData = preDispatchResult.data;
 
         // ── Phase 2: Guards ───────────────────────────────────────────────
+        const stopGuards = debugTimeAccum("phase:guards", "guardsCalls", "guardsTotalMs");
         const guardsResult = await runGuards(ic, preData.mid);
+        stopGuards({ iteration });
         if (guardsResult.action === "break") break;
 
         // ── Phase 3: Dispatch ─────────────────────────────────────────────
+        const stopDispatch = debugTimeAccum("phase:dispatch", "dispatchCalls", "dispatchTotalMs");
         const dispatchResult = await runDispatch(ic, preData, loopState);
+        stopDispatch({ iteration, action: dispatchResult.action, unitType: "data" in dispatchResult ? dispatchResult.data?.unitType : undefined });
         if (dispatchResult.action === "break") break;
         if (dispatchResult.action === "continue") continue;
         iterData = dispatchResult.data;
@@ -240,12 +246,16 @@ export async function autoLoop(
         };
       }
 
+      // ── Phase 4: Unit execution ──────────────────────────────────────
+      const stopUnit = debugTimeAccum("phase:unit-execution", "unitExecutionCalls", "unitExecutionTotalMs");
       const unitPhaseResult = await runUnitPhase(ic, iterData, loopState, sidecarItem);
+      stopUnit({ iteration, unitType: iterData.unitType, unitId: iterData.unitId });
       if (unitPhaseResult.action === "break") break;
 
       // ── Phase 5: Finalize ───────────────────────────────────────────────
-
+      const stopFinalize = debugTimeAccum("phase:finalize", "finalizeCalls", "finalizeTotalMs");
       const finalizeResult = await runFinalize(ic, iterData, sidecarItem);
+      stopFinalize({ iteration, unitType: iterData.unitType });
       if (finalizeResult.action === "break") break;
       if (finalizeResult.action === "continue") continue;
 

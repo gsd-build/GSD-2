@@ -1075,9 +1075,52 @@ export async function buildExecuteTaskPrompt(
     ? priorSummaries.map(p => `- \`${p}\``).join("\n")
     : "- (no prior tasks)";
 
+  // Resolve paths synchronously, then load files in parallel.
   const taskPlanPath = resolveTaskFile(base, mid, sid, tid, "PLAN");
-  const taskPlanContent = taskPlanPath ? await loadFile(taskPlanPath) : null;
   const taskPlanRelPath = relSlicePath(base, mid, sid) + `/tasks/${tid}-PLAN.md`;
+  const slicePlanPath = resolveSliceFile(base, mid, sid, "PLAN");
+  const continueFile = resolveSliceFile(base, mid, sid, "CONTINUE");
+  const legacyContinueDir = resolveSlicePath(base, mid, sid);
+  const legacyContinuePath = legacyContinueDir ? join(legacyContinueDir, "continue.md") : null;
+  const knowledgeAbsPath = resolveGsdRootFile(base, "KNOWLEDGE");
+  const runtimePath = resolveRuntimeFile(base);
+
+  // For minimal inline level, only carry forward the most recent prior summary
+  const effectivePriorSummaries = inlineLevel === "minimal" && priorSummaries.length > 1
+    ? priorSummaries.slice(-1)
+    : priorSummaries;
+
+  // Parallel file I/O: load all independent files concurrently.
+  const [
+    taskPlanContent,
+    slicePlanContent,
+    continueContent,
+    legacyContinueContentRaw,
+    carryForwardSection,
+    knowledgeInlineET,
+    activeOverrides,
+    runtimeContent,
+  ] = await Promise.all([
+    taskPlanPath ? loadFile(taskPlanPath) : null,
+    slicePlanPath ? loadFile(slicePlanPath) : null,
+    continueFile ? loadFile(continueFile) : null,
+    legacyContinuePath ? loadFile(legacyContinuePath) : null,
+    buildCarryForwardSection(effectivePriorSummaries, base),
+    existsSync(knowledgeAbsPath)
+      ? inlineFileSmart(
+          knowledgeAbsPath,
+          relGsdRootFile("KNOWLEDGE"),
+          "Project Knowledge",
+          `${tTitle} ${sTitle}`,
+        )
+      : null,
+    loadActiveOverrides(base),
+    existsSync(runtimePath) ? loadFile(runtimePath) : null,
+  ]);
+
+  // Legacy continue is only used when the new continue file is absent.
+  const legacyContinueContent = !continueContent ? legacyContinueContentRaw : null;
+
   const taskPlanInline = taskPlanContent
     ? [
       "## Inlined Task Plan (authoritative local execution contract)",
@@ -1090,16 +1133,8 @@ export async function buildExecuteTaskPrompt(
       `Task plan not found at dispatch time. Read \`${taskPlanRelPath}\` before executing.`,
     ].join("\n");
 
-  const slicePlanPath = resolveSliceFile(base, mid, sid, "PLAN");
-  const slicePlanContent = slicePlanPath ? await loadFile(slicePlanPath) : null;
   const slicePlanExcerpt = extractSliceExecutionExcerpt(slicePlanContent, relSliceFile(base, mid, sid, "PLAN"));
 
-  // Check for continue file (new naming or legacy)
-  const continueFile = resolveSliceFile(base, mid, sid, "CONTINUE");
-  const legacyContinueDir = resolveSlicePath(base, mid, sid);
-  const legacyContinuePath = legacyContinueDir ? join(legacyContinueDir, "continue.md") : null;
-  const continueContent = continueFile ? await loadFile(continueFile) : null;
-  const legacyContinueContent = !continueContent && legacyContinuePath ? await loadFile(legacyContinuePath) : null;
   const continueRelPath = relSliceFile(base, mid, sid, "CONTINUE");
   const resumeSection = buildResumeSection(
     continueContent,
@@ -1108,23 +1143,7 @@ export async function buildExecuteTaskPrompt(
     legacyContinuePath ? `${relSlicePath(base, mid, sid)}/continue.md` : null,
   );
 
-  // For minimal inline level, only carry forward the most recent prior summary
-  const effectivePriorSummaries = inlineLevel === "minimal" && priorSummaries.length > 1
-    ? priorSummaries.slice(-1)
-    : priorSummaries;
-  const carryForwardSection = await buildCarryForwardSection(effectivePriorSummaries, base);
-
-  // Inline project knowledge if available (smart-chunked for relevance)
-  const knowledgeAbsPath = resolveGsdRootFile(base, "KNOWLEDGE");
-  const knowledgeInlineET = existsSync(knowledgeAbsPath)
-    ? await inlineFileSmart(
-        knowledgeAbsPath,
-        relGsdRootFile("KNOWLEDGE"),
-        "Project Knowledge",
-        `${tTitle} ${sTitle}`,  // use task + slice title as relevance query
-      )
-    : null;
-  // Only include if it has content (not a "not found" result)
+  // Only include knowledge if it has content (not a "not found" result)
   const knowledgeContent = knowledgeInlineET && !knowledgeInlineET.includes("not found") ? knowledgeInlineET : null;
 
   const inlinedTemplates = inlineLevel === "minimal"
@@ -1137,7 +1156,6 @@ export async function buildExecuteTaskPrompt(
 
   const taskSummaryPath = join(base, `${relSlicePath(base, mid, sid)}/tasks/${tid}-SUMMARY.md`);
 
-  const activeOverrides = await loadActiveOverrides(base);
   const overridesSection = formatOverridesSection(activeOverrides);
 
   // Compute verification budget for the executor's context window (issue #707)
@@ -1153,9 +1171,6 @@ export async function buildExecuteTaskPrompt(
     finalCarryForward = truncateAtSectionBoundary(carryForwardSection, carryForwardBudget).content;
   }
 
-  // Inline RUNTIME.md if present
-  const runtimePath = resolveRuntimeFile(base);
-  const runtimeContent = existsSync(runtimePath) ? await loadFile(runtimePath) : null;
   const runtimeContext = runtimeContent
     ? `### Runtime Context\nSource: \`.gsd/RUNTIME.md\`\n\n${runtimeContent.trim()}`
     : "";
@@ -1209,16 +1224,17 @@ export async function buildCompleteSlicePrompt(
   const knowledgeInlineCS = await inlineGsdRootFile(base, "knowledge.md", "Project Knowledge");
   if (knowledgeInlineCS) inlined.push(knowledgeInlineCS);
 
-  // Inline all task summaries for this slice
+  // Inline all task summaries for this slice (parallel file reads)
   const tDir = resolveTasksDir(base, mid, sid);
   if (tDir) {
     const summaryFiles = resolveTaskFiles(tDir, "SUMMARY").sort();
-    for (const file of summaryFiles) {
-      const absPath = join(tDir, file);
-      const content = await loadFile(absPath);
-      const sRel = relSlicePath(base, mid, sid);
-      const relPath = `${sRel}/tasks/${file}`;
+    const sRel = relSlicePath(base, mid, sid);
+    const summaryContents = await Promise.all(summaryFiles.map(file => loadFile(join(tDir, file))));
+    for (let i = 0; i < summaryFiles.length; i++) {
+      const content = summaryContents[i];
+      const file = summaryFiles[i];
       if (content) {
+        const relPath = `${sRel}/tasks/${file}`;
         inlined.push(`### Task Summary: ${file.replace(/-SUMMARY\.md$/i, "")}\nSource: \`${relPath}\`\n\n${content.trim()}`);
       }
     }
@@ -1273,14 +1289,16 @@ export async function buildCompleteMilestonePrompt(
       sliceIds = parseRoadmap(roadmapContent).slices.map(s => s.id);
     }
   }
-  const seenSlices = new Set<string>();
-  for (const sid of sliceIds) {
-    if (seenSlices.has(sid)) continue;
-    seenSlices.add(sid);
-    const summaryPath = resolveSliceFile(base, mid, sid, "SUMMARY");
-    const summaryRel = relSliceFile(base, mid, sid, "SUMMARY");
-    inlined.push(await inlineFile(summaryPath, summaryRel, `${sid} Summary`));
-  }
+  // Deduplicate and parallel-load all slice summaries
+  const uniqueSliceIds = [...new Set(sliceIds)];
+  const sliceSummaryResults = await Promise.all(
+    uniqueSliceIds.map(sid => {
+      const summaryPath = resolveSliceFile(base, mid, sid, "SUMMARY");
+      const summaryRel = relSliceFile(base, mid, sid, "SUMMARY");
+      return inlineFile(summaryPath, summaryRel, `${sid} Summary`);
+    }),
+  );
+  inlined.push(...sliceSummaryResults);
 
   // Inline root GSD files (skip for minimal — completion can read these if needed)
   if (inlineLevel !== "minimal") {
@@ -1345,18 +1363,22 @@ export async function buildValidateMilestonePrompt(
       valSliceIds = parseRoadmap(roadmapContent).slices.map(s => s.id);
     }
   }
-  const seenValSlices = new Set<string>();
-  for (const sid of valSliceIds) {
-    if (seenValSlices.has(sid)) continue;
-    seenValSlices.add(sid);
-    const summaryPath = resolveSliceFile(base, mid, sid, "SUMMARY");
-    const summaryRel = relSliceFile(base, mid, sid, "SUMMARY");
-    inlined.push(await inlineFile(summaryPath, summaryRel, `${sid} Summary`));
-
-    const uatPath = resolveSliceFile(base, mid, sid, "UAT");
-    const uatRel = relSliceFile(base, mid, sid, "UAT");
-    const uatInline = await inlineFileOptional(uatPath, uatRel, `${sid} UAT Result`);
-    if (uatInline) inlined.push(uatInline);
+  // Deduplicate and parallel-load all slice summaries + UAT results
+  const uniqueValSliceIds = [...new Set(valSliceIds)];
+  const valSliceResults = await Promise.all(
+    uniqueValSliceIds.flatMap(sid => {
+      const summaryPath = resolveSliceFile(base, mid, sid, "SUMMARY");
+      const summaryRel = relSliceFile(base, mid, sid, "SUMMARY");
+      const uatPath = resolveSliceFile(base, mid, sid, "UAT");
+      const uatRel = relSliceFile(base, mid, sid, "UAT");
+      return [
+        inlineFile(summaryPath, summaryRel, `${sid} Summary`).then(r => ({ type: "summary" as const, content: r })),
+        inlineFileOptional(uatPath, uatRel, `${sid} UAT Result`).then(r => ({ type: "uat" as const, content: r })),
+      ];
+    }),
+  );
+  for (const result of valSliceResults) {
+    if (result.content) inlined.push(result.content);
   }
 
   // Inline existing VALIDATION file if this is a re-validation round
@@ -1422,16 +1444,18 @@ export async function buildReplanSlicePrompt(
   inlined.push(await inlineFile(slicePlanPath, slicePlanRel, "Current Slice Plan"));
 
   // Find the blocker task summary — the completed task with blocker_discovered: true
+  // (parallel file reads)
   let blockerTaskId = "";
   const tDir = resolveTasksDir(base, mid, sid);
   if (tDir) {
     const summaryFiles = resolveTaskFiles(tDir, "SUMMARY").sort();
-    for (const file of summaryFiles) {
-      const absPath = join(tDir, file);
-      const content = await loadFile(absPath);
+    const summaryContents = await Promise.all(summaryFiles.map(file => loadFile(join(tDir, file))));
+    const sRel = relSlicePath(base, mid, sid);
+    for (let i = 0; i < summaryFiles.length; i++) {
+      const content = summaryContents[i];
+      const file = summaryFiles[i];
       if (!content) continue;
       const summary = parseSummary(content);
-      const sRel = relSlicePath(base, mid, sid);
       const relPath = `${sRel}/tasks/${file}`;
       if (summary.frontmatter.blocker_discovered) {
         blockerTaskId = summary.frontmatter.id || file.replace(/-SUMMARY\.md$/i, "");

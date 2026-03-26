@@ -306,6 +306,10 @@ function makeMockDeps(
     invalidateAllCaches: () => {
       callLog.push("invalidateAllCaches");
     },
+    invalidateAllCachesIfDirty: () => {
+      callLog.push("invalidateAllCachesIfDirty");
+      return true;
+    },
     deriveState: async () => {
       callLog.push("deriveState");
       return {

@@ -46,6 +46,7 @@ import {
   isDbAvailable,
   getAllMilestones,
   getMilestoneSlices,
+  getAllSlicesGrouped,
   getSliceTasks,
   getReplanHistory,
   getSlice,
@@ -115,7 +116,7 @@ interface StateCache {
   timestamp: number;
 }
 
-const CACHE_TTL_MS = 100;
+const CACHE_TTL_MS = 2000;
 let _stateCache: StateCache | null = null;
 
 // ── Telemetry counters for derive-path observability ────────────────────────
@@ -289,9 +290,9 @@ export async function deriveStateFromDb(basePath: string): Promise<GSDState> {
   // the DB. This happens when milestones were created before the DB migration
   // or were manually added to the filesystem. Without this, disk-only
   // milestones are invisible after migration (#2416).
+  // Reuse diskIds from above instead of calling findMilestoneIds() again.
   const dbMilestoneIds = new Set(allMilestones.map(m => m.id));
-  const diskMilestoneIds = findMilestoneIds(basePath);
-  for (const diskId of diskMilestoneIds) {
+  for (const diskId of diskIds) {
     if (!dbMilestoneIds.has(diskId)) {
       // Synthesize a minimal MilestoneRow for the disk-only milestone.
       // Title and status will be resolved from disk files in the loop below.
@@ -328,6 +329,9 @@ export async function deriveStateFromDb(basePath: string): Promise<GSDState> {
     };
   }
 
+  // Batch-load all slices once (single DB query) instead of N per-milestone calls.
+  const slicesByMilestone = getAllSlicesGrouped();
+
   // Phase 1: Build completeness set (which milestones count as "done" for dep resolution)
   const completeMilestoneIds = new Set<string>();
   const parkedMilestoneIds = new Set<string>();
@@ -353,7 +357,7 @@ export async function deriveStateFromDb(basePath: string): Promise<GSDState> {
     }
 
     // Check roadmap: all slices done means milestone is complete
-    const slices = getMilestoneSlices(m.id);
+    const slices = slicesByMilestone.get(m.id) ?? [];
     if (slices.length > 0 && slices.every(s => isStatusDone(s.status))) {
       // All slices done but no summary — still counts as complete for dep resolution
       // if a summary file exists
@@ -375,7 +379,7 @@ export async function deriveStateFromDb(basePath: string): Promise<GSDState> {
     }
 
     // Ghost milestone check: no slices in DB AND no substantive files on disk
-    const slices = getMilestoneSlices(m.id);
+    const slices = slicesByMilestone.get(m.id) ?? [];
     if (slices.length === 0 && !isStatusDone(m.status)) {
       // Check disk for ghost detection
       if (isGhostMilestone(basePath, m.id)) continue;

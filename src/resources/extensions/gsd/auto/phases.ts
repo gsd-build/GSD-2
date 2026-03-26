@@ -12,6 +12,7 @@ import { importExtensionModule, type ExtensionAPI, type ExtensionContext } from 
 import type { AutoSession, SidecarItem } from "./session.js";
 import type { LoopDeps } from "./loop-deps.js";
 import type { PostUnitContext, PreVerificationOpts } from "../auto-post-unit.js";
+import { getPendingCleanup } from "../auto-post-unit.js";
 import {
   MAX_RECOVERY_CHARS,
   BUDGET_THRESHOLDS,
@@ -145,46 +146,59 @@ export async function runPreDispatch(
     return { action: "break", reason: "resources-stale" };
   }
 
-  deps.invalidateAllCaches();
+  deps.invalidateAllCachesIfDirty();
   s.lastPromptCharCount = undefined;
   s.lastBaselineCharCount = undefined;
 
-  // Pre-dispatch health gate
-  try {
-    const healthGate = await deps.preDispatchHealthGate(s.basePath);
-    if (healthGate.fixesApplied.length > 0) {
-      ctx.ui.notify(
-        `Pre-dispatch: ${healthGate.fixesApplied.join(", ")}`,
-        "info",
-      );
-    }
-    if (!healthGate.proceed) {
-      ctx.ui.notify(
-        healthGate.reason ?? "Pre-dispatch health check failed.",
-        "error",
-      );
-      await deps.pauseAuto(ctx, pi);
-      debugLog("autoLoop", { phase: "exit", reason: "health-gate-failed" });
-      return { action: "break", reason: "health-gate-failed" };
-    }
-  } catch (e) {
-    logWarning("engine", "Pre-dispatch health gate threw unexpectedly", { error: String(e) });
+  // Await any in-flight fire-and-forget cleanup from the previous post-unit.
+  // This prevents browser teardown from racing with the next unit's browser
+  // tool usage (#1733 follow-up for fire-and-forget safety).
+  const pendingCleanup = getPendingCleanup();
+  if (pendingCleanup) {
+    await pendingCleanup;
   }
 
-  // Sync project root artifacts into worktree
-  if (
-    s.originalBasePath &&
+  // Worktree sync must run before the health gate because it copies milestone
+  // artifacts and deletes gsd.db in the worktree directory. Running them in
+  // parallel would let the health gate read inconsistent state mid-copy.
+  const needsWorktreeSync = s.originalBasePath &&
     s.basePath !== s.originalBasePath &&
-    s.currentMilestoneId
-  ) {
+    s.currentMilestoneId;
+
+  if (needsWorktreeSync) {
     deps.syncProjectRootToWorktree(
-      s.originalBasePath,
+      s.originalBasePath!,
       s.basePath,
-      s.currentMilestoneId,
+      s.currentMilestoneId!,
     );
   }
 
-  // Derive state
+  // Health gate runs after worktree sync so it sees consistent state.
+  let healthGateResult: { proceed: boolean; fixesApplied: string[] };
+  try {
+    healthGateResult = await deps.preDispatchHealthGate(s.basePath);
+  } catch (e: unknown) {
+    logWarning("engine", "Pre-dispatch health gate threw unexpectedly", { error: String(e) });
+    healthGateResult = { proceed: true, fixesApplied: [] };
+  }
+
+  if (healthGateResult.fixesApplied.length > 0) {
+    ctx.ui.notify(
+      `Pre-dispatch: ${healthGateResult.fixesApplied.join(", ")}`,
+      "info",
+    );
+  }
+  if (!healthGateResult.proceed) {
+    ctx.ui.notify(
+      (healthGateResult as { reason?: string }).reason ?? "Pre-dispatch health check failed.",
+      "error",
+    );
+    await deps.pauseAuto(ctx, pi);
+    debugLog("autoLoop", { phase: "exit", reason: "health-gate-failed" });
+    return { action: "break", reason: "health-gate-failed" };
+  }
+
+  // Derive state (after worktree sync has completed)
   let state = await deps.deriveState(s.basePath);
   deps.syncCmuxSidebar(prefs, state);
   let mid = state.activeMilestone?.id;

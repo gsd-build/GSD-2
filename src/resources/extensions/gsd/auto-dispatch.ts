@@ -393,13 +393,15 @@ export const DISPATCH_RULES: DispatchRule[] = [
       if (state.phase !== "executing" || !state.activeTask) return null;
       if (!state.activeSlice) return null; // fall through
 
-      // Only activate when reactive_execution is explicitly enabled
+      // Activate when reactive_execution is enabled or "auto" (default).
+      // When absent from prefs, treat as "auto".
       const reactiveConfig = prefs?.reactive_execution;
-      if (!reactiveConfig?.enabled) return null;
+      const reactiveEnabled = reactiveConfig?.enabled ?? "auto";
+      if (reactiveEnabled === false) return null;
 
       const sid = state.activeSlice.id;
       const sTitle = state.activeSlice.title;
-      const maxParallel = reactiveConfig.max_parallel ?? 2;
+      const maxParallel = reactiveConfig?.max_parallel ?? 4;
 
       // Dry-run mode: max_parallel=1 means graph is derived and logged but
       // execution remains sequential
@@ -410,8 +412,10 @@ export const DISPATCH_RULES: DispatchRule[] = [
           loadSliceTaskIO,
           deriveTaskGraph,
           isGraphAmbiguous,
+          getAmbiguousTaskIds,
           getReadyTasks,
           chooseNonConflictingSubset,
+          suggestMaxParallel,
           graphMetrics,
         } = await import("./reactive-graph.js");
 
@@ -420,11 +424,15 @@ export const DISPATCH_RULES: DispatchRule[] = [
 
         const graph = deriveTaskGraph(taskIO);
 
-        // Ambiguous graph → fall through to sequential
-        if (isGraphAmbiguous(graph)) return null;
+        // In "auto" mode, filter out ambiguous tasks rather than rejecting the
+        // whole graph. In explicit `enabled: true` mode, reject ambiguous graphs.
+        if (reactiveEnabled === true && isGraphAmbiguous(graph)) return null;
+        const ambiguousIds = reactiveEnabled === "auto" ? getAmbiguousTaskIds(graph) : new Set<string>();
 
         const completed = new Set(graph.filter((n) => n.done).map((n) => n.id));
-        const readyIds = getReadyTasks(graph, completed, new Set());
+        const effectiveMax = suggestMaxParallel(graph, completed, new Set(), maxParallel);
+        const readyIds = getReadyTasks(graph, completed, new Set())
+          .filter(id => !ambiguousIds.has(id));
 
         // Only activate reactive dispatch when >1 task is ready
         if (readyIds.length <= 1) return null;
@@ -432,7 +440,7 @@ export const DISPATCH_RULES: DispatchRule[] = [
         const selected = chooseNonConflictingSubset(
           readyIds,
           graph,
-          maxParallel,
+          effectiveMax,
           new Set(),
         );
         if (selected.length <= 1) return null;
