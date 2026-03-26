@@ -308,18 +308,16 @@ export function gsdRoot(basePath: string): string {
 }
 
 function probeGsdRoot(rawBasePath: string): string {
-  // 1. Fast path — check the input path directly
   const local = join(rawBasePath, ".gsd");
-  if (existsSync(local)) return local;
 
   // Resolve symlinks so path comparisons work correctly across platforms
   // (e.g. macOS /var → /private/var). Use rawBasePath as fallback if not resolvable.
   let basePath: string;
   try { basePath = realpathSync.native(rawBasePath); } catch { basePath = rawBasePath; }
 
-  // 2. Git root anchor — used as both probe target and walk-up boundary
-  //    Only walk if we're inside a git project — prevents escaping into
-  //    unrelated filesystem territory when running outside any repo.
+  // 1. Git root anchor — checked BEFORE the fast-path so that a .gsd symlink
+  //    created in a subdirectory (e.g. by ensureGsdSymlink when cwd was a
+  //    sub-dir) does not shadow the real .gsd at the project root.  See #2255.
   let gitRoot: string | null = null;
   try {
     const out = spawnSync("git", ["rev-parse", "--show-toplevel"], {
@@ -336,6 +334,10 @@ function probeGsdRoot(rawBasePath: string): string {
     const candidate = join(gitRoot, ".gsd");
     if (existsSync(candidate)) return candidate;
   }
+
+  // 2. Fast path — accept .gsd at basePath when no git-root .gsd was found
+  //    (handles non-git directories or repos where .gsd is in a subdirectory)
+  if (existsSync(local)) return local;
 
   // 3. Walk up from basePath to the git root (only if we are in a subdirectory)
   if (gitRoot && basePath !== gitRoot) {

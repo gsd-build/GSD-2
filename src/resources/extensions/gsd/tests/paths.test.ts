@@ -1,11 +1,12 @@
-import { describe, test } from 'node:test';
-import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, realpathSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, realpathSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
+import { describe, test, beforeEach, afterEach } from "node:test";
+import assert from "node:assert/strict";
 
 import { gsdRoot, _clearGsdRootCache } from "../paths.ts";
+
 /** Create a tmp dir and resolve symlinks + 8.3 short names (macOS /var→/private/var, Windows RUNNER~1→runneradmin). */
 function tmp(): string {
   const p = mkdtempSync(join(tmpdir(), "gsd-paths-test-"));
@@ -21,78 +22,85 @@ function initGit(dir: string): void {
   spawnSync("git", ["commit", "--allow-empty", "-m", "init"], { cwd: dir });
 }
 
-describe('paths', () => {
-  test('Case 1: .gsd exists at basePath — fast path', () => {
-    const root = tmp();
-    try {
-      mkdirSync(join(root, ".gsd"));
-      _clearGsdRootCache();
-      const result = gsdRoot(root);
-      assert.deepStrictEqual(result, join(root, ".gsd"), "fast path: returns basePath/.gsd");
-    } finally { cleanup(root); }
+describe("gsdRoot / probeGsdRoot", () => {
+  let root: string;
+  const extraDirs: string[] = [];
+
+  beforeEach(() => {
+    root = tmp();
+    _clearGsdRootCache();
   });
 
-  test('Case 2: .gsd exists at git root, cwd is a subdirectory', () => {
-    const root = tmp();
-    try {
-      initGit(root);
-      mkdirSync(join(root, ".gsd"));
-      const sub = join(root, "src", "deep");
-      mkdirSync(sub, { recursive: true });
-      _clearGsdRootCache();
-      const result = gsdRoot(sub);
-      assert.deepStrictEqual(result, join(root, ".gsd"), "git-root probe: finds .gsd at git root from subdirectory");
-    } finally { cleanup(root); }
+  afterEach(() => {
+    cleanup(root);
+    for (const d of extraDirs.splice(0)) cleanup(d);
   });
 
-  test('Case 3: .gsd in an ancestor — walk-up finds it', () => {
-    const root = tmp();
-    try {
-      initGit(root);
-      const project = join(root, "project");
-      mkdirSync(join(project, ".gsd"), { recursive: true });
-      const deep = join(project, "src", "deep");
-      mkdirSync(deep, { recursive: true });
-      _clearGsdRootCache();
-      const result = gsdRoot(deep);
-      assert.deepStrictEqual(result, join(project, ".gsd"), "walk-up: finds .gsd in ancestor when git root has none");
-    } finally { cleanup(root); }
+  test("fast path: .gsd exists at basePath", () => {
+    mkdirSync(join(root, ".gsd"));
+    assert.equal(gsdRoot(root), join(root, ".gsd"));
   });
 
-  test('Case 4: .gsd nowhere — fallback returns original basePath/.gsd', () => {
-    const root = tmp();
-    try {
-      initGit(root);
-      const sub = join(root, "src");
-      mkdirSync(sub, { recursive: true });
-      _clearGsdRootCache();
-      const result = gsdRoot(sub);
-      assert.deepStrictEqual(result, join(sub, ".gsd"), "fallback: returns basePath/.gsd when .gsd not found anywhere");
-    } finally { cleanup(root); }
+  test("git-root probe: finds .gsd at git root from subdirectory", () => {
+    initGit(root);
+    mkdirSync(join(root, ".gsd"));
+    const sub = join(root, "src", "deep");
+    mkdirSync(sub, { recursive: true });
+    assert.equal(gsdRoot(sub), join(root, ".gsd"));
   });
 
-  test('Case 5: cache — second call returns same value without re-probing', () => {
-    const root = tmp();
-    try {
-      mkdirSync(join(root, ".gsd"));
-      _clearGsdRootCache();
-      const first = gsdRoot(root);
-      const second = gsdRoot(root);
-      assert.deepStrictEqual(first, second, "cache: same result returned on second call");
-      assert.ok(first === second, "cache: identity check (same string)");
-    } finally { cleanup(root); }
+  test("walk-up: finds .gsd in ancestor when git root has none", () => {
+    initGit(root);
+    const project = join(root, "project");
+    mkdirSync(join(project, ".gsd"), { recursive: true });
+    const deep = join(project, "src", "deep");
+    mkdirSync(deep, { recursive: true });
+    assert.equal(gsdRoot(deep), join(project, ".gsd"));
   });
 
-  test('Case 6: .gsd at basePath takes precedence over ancestor .gsd', () => {
-    const outer = tmp();
-    try {
-      initGit(outer);
-      mkdirSync(join(outer, ".gsd"));
-      const inner = join(outer, "nested");
-      mkdirSync(join(inner, ".gsd"), { recursive: true });
-      _clearGsdRootCache();
-      const result = gsdRoot(inner);
-      assert.deepStrictEqual(result, join(inner, ".gsd"), "precedence: nearest .gsd wins over ancestor");
-    } finally { cleanup(outer); }
+  test("fallback: returns basePath/.gsd when .gsd not found anywhere", () => {
+    initGit(root);
+    const sub = join(root, "src");
+    mkdirSync(sub, { recursive: true });
+    assert.equal(gsdRoot(sub), join(sub, ".gsd"));
+  });
+
+  test("cache: second call returns same value without re-probing", () => {
+    mkdirSync(join(root, ".gsd"));
+    const first = gsdRoot(root);
+    const second = gsdRoot(root);
+    assert.equal(first, second);
+    assert.ok(first === second, "identity check — same string reference");
+  });
+
+  test("precedence: git-root .gsd wins over subdirectory .gsd (#2255)", () => {
+    initGit(root);
+    mkdirSync(join(root, ".gsd"));
+    const inner = join(root, "nested");
+    mkdirSync(join(inner, ".gsd"), { recursive: true });
+    assert.equal(gsdRoot(inner), join(root, ".gsd"));
+  });
+
+  test("subdirectory symlink to empty dir does not shadow git-root .gsd (#2255)", () => {
+    const emptyExternal = tmp();
+    extraDirs.push(emptyExternal);
+    initGit(root);
+    mkdirSync(join(root, ".gsd", "milestones"), { recursive: true });
+    const sub = join(root, "apps", "my_app", "scripts");
+    mkdirSync(sub, { recursive: true });
+    symlinkSync(emptyExternal, join(sub, ".gsd"), "junction");
+    assert.equal(gsdRoot(sub), join(root, ".gsd"));
+  });
+
+  test("subdirectory symlink to populated dir still loses to git-root .gsd (#2255)", () => {
+    const populatedExternal = tmp();
+    extraDirs.push(populatedExternal);
+    initGit(root);
+    mkdirSync(join(root, ".gsd", "milestones", "M001"), { recursive: true });
+    const sub = join(root, "packages", "app");
+    mkdirSync(sub, { recursive: true });
+    mkdirSync(join(populatedExternal, "milestones", "M002"), { recursive: true });
+    symlinkSync(populatedExternal, join(sub, ".gsd"), "junction");
+    assert.equal(gsdRoot(sub), join(root, ".gsd"));
   });
 });
