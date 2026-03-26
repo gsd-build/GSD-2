@@ -184,7 +184,7 @@ export const DISPATCH_RULES: DispatchRule[] = [
       }
 
       for (const sliceId of completedSliceIds) {
-        const resultFile = resolveSliceFile(basePath, mid, sliceId, "UAT-RESULT");
+        const resultFile = resolveSliceFile(basePath, mid, sliceId, "UAT");
         if (!resultFile) continue;
         const content = await loadFile(resultFile);
         if (!content) continue;
