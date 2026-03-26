@@ -418,6 +418,164 @@ describe("getEligibleModels", () => {
   });
 });
 
+// ─── capability-aware routing integration ────────────────────────────────────
+
+describe("capability-aware routing integration", () => {
+  // All standard-tier models available alongside heavy (opus)
+  const MULTI_MODEL_AVAILABLE = [
+    "claude-opus-4-6",
+    "claude-sonnet-4-6",
+    "gpt-4o",
+    "gemini-2.5-pro",
+    "claude-haiku-4-5",
+    "gpt-4o-mini",
+  ];
+
+  // 1. Full pipeline with capability scoring active
+  test("full pipeline with capability_routing: true returns capability-scored decision", () => {
+    const config: DynamicRoutingConfig = { ...defaultRoutingConfig(), enabled: true, capability_routing: true };
+    // Configured primary is opus (heavy) — standard tier should trigger capability scoring
+    const result = resolveModelForComplexity(
+      { tier: "standard", reason: "test", downgraded: false },
+      { primary: "claude-opus-4-6", fallbacks: [] },
+      config,
+      MULTI_MODEL_AVAILABLE,
+      "execute-task",
+      { tags: [], complexityKeywords: [], fileCount: 3, estimatedLines: 100, codeBlockCount: 0 },
+    );
+    assert.equal(result.selectionMethod, "capability-scored", "should use capability scoring when enabled with multiple eligible models");
+    assert.ok(result.capabilityScores !== undefined, "capabilityScores should be populated");
+    assert.ok(Object.keys(result.capabilityScores!).length > 1, "should have scores for multiple models");
+    assert.equal(result.wasDowngraded, true, "should be downgraded from opus");
+  });
+
+  // 2. capability_routing: false falls back to tier-only
+  test("capability_routing: false skips scoring and uses tier-only", () => {
+    const config: DynamicRoutingConfig = { ...defaultRoutingConfig(), enabled: true, capability_routing: false };
+    const result = resolveModelForComplexity(
+      { tier: "standard", reason: "test", downgraded: false },
+      { primary: "claude-opus-4-6", fallbacks: [] },
+      config,
+      MULTI_MODEL_AVAILABLE,
+      "execute-task",
+      undefined,
+    );
+    assert.equal(result.selectionMethod, "tier-only", "capability_routing: false should use tier-only");
+    assert.equal(result.capabilityScores, undefined, "capabilityScores should be undefined for tier-only");
+  });
+
+  // 3. Single eligible model skips scoring
+  test("single eligible model skips capability scoring and uses tier-only", () => {
+    const config: DynamicRoutingConfig = {
+      ...defaultRoutingConfig(),
+      enabled: true,
+      capability_routing: true,
+      tier_models: { standard: "claude-sonnet-4-6" },
+    };
+    // Pin to single standard model — eligible.length === 1 → skips STEP 2
+    const result = resolveModelForComplexity(
+      { tier: "standard", reason: "test", downgraded: false },
+      { primary: "claude-opus-4-6", fallbacks: [] },
+      config,
+      MULTI_MODEL_AVAILABLE,
+      "execute-task",
+      undefined,
+    );
+    // Single pinned model → tier-only (no scoring needed)
+    assert.equal(result.selectionMethod, "tier-only", "single eligible model should use tier-only");
+    assert.equal(result.modelId, "claude-sonnet-4-6", "should use the pinned model");
+  });
+
+  // 4. Unknown model with no profile gets uniform 50s and competes
+  test("unknown model with no profile gets uniform score of 50 and can compete", () => {
+    const unknownModel = "unknown-future-model-xyz";
+    const config: DynamicRoutingConfig = { ...defaultRoutingConfig(), enabled: true, capability_routing: true };
+    // Add unknown model to available list at standard tier (unknown → standard per D-15)
+    // scoring should still work with score=50 for the unknown model
+    const requirements = { coding: 0.9, instruction: 0.7, speed: 0.3 };
+    const scored = scoreEligibleModels([unknownModel, "claude-sonnet-4-6"], requirements);
+    const unknownEntry = scored.find(s => s.modelId === unknownModel);
+    assert.ok(unknownEntry !== undefined, "unknown model should be in scored results");
+    // Unknown model gets uniform 50s: (0.9*50 + 0.7*50 + 0.3*50) / (0.9+0.7+0.3) ≈ 50
+    assert.ok(Math.abs(unknownEntry!.score - 50) < 0.01, `expected score ~50, got ${unknownEntry!.score}`);
+  });
+
+  // 5. Capability overrides change scoring outcome
+  test("capabilityOverrides boost a model above another for same task", () => {
+    // sonnet: coding=85, gpt-4o: coding=80. Override gpt-4o coding to 99 → gpt-4o should win.
+    const requirements = { coding: 1.0 };
+    const overrides = { "gpt-4o": { coding: 99 } };
+    const scored = scoreEligibleModels(["claude-sonnet-4-6", "gpt-4o"], requirements, overrides);
+    assert.equal(scored[0].modelId, "gpt-4o", "overridden model should win for coding-heavy task");
+    assert.ok(scored[0].score > 90, `expected score > 90 after override, got ${scored[0].score}`);
+  });
+
+  // 5b. Capability overrides pass through resolveModelForComplexity to scoreEligibleModels
+  test("resolveModelForComplexity passes capabilityOverrides to scoring step", () => {
+    const config: DynamicRoutingConfig = { ...defaultRoutingConfig(), enabled: true, capability_routing: true };
+    // sonnet coding=85, gpt-4o coding=80. Override gpt-4o coding to 99 → gpt-4o should win.
+    const overrides: Record<string, Partial<ModelCapabilities>> = { "gpt-4o": { coding: 99 } };
+    const result = resolveModelForComplexity(
+      { tier: "standard", reason: "test", downgraded: false },
+      { primary: "claude-opus-4-6", fallbacks: [] },
+      config,
+      ["claude-opus-4-6", "claude-sonnet-4-6", "gpt-4o"],
+      "execute-task",
+      undefined,
+      overrides,
+    );
+    assert.equal(result.selectionMethod, "capability-scored");
+    assert.equal(result.modelId, "gpt-4o", "gpt-4o should win with coding override");
+  });
+
+  // 6. Regression: existing routing guards unchanged
+  test("regression: routing-disabled passthrough still returns tier-only", () => {
+    const config: DynamicRoutingConfig = { ...defaultRoutingConfig(), enabled: false };
+    const result = resolveModelForComplexity(
+      { tier: "light", reason: "test", downgraded: false },
+      { primary: "claude-opus-4-6", fallbacks: [] },
+      config,
+      MULTI_MODEL_AVAILABLE,
+      "execute-task",
+      undefined,
+    );
+    assert.equal(result.selectionMethod, "tier-only");
+    assert.equal(result.wasDowngraded, false);
+    assert.equal(result.modelId, "claude-opus-4-6");
+  });
+
+  test("regression: unknown-model bypass returns tier-only and does not downgrade", () => {
+    const config: DynamicRoutingConfig = { ...defaultRoutingConfig(), enabled: true };
+    const result = resolveModelForComplexity(
+      { tier: "light", reason: "test", downgraded: false },
+      { primary: "totally-unknown-custom-model", fallbacks: [] },
+      config,
+      ["totally-unknown-custom-model", ...MULTI_MODEL_AVAILABLE],
+      "execute-task",
+      undefined,
+    );
+    assert.equal(result.selectionMethod, "tier-only");
+    assert.equal(result.wasDowngraded, false);
+    assert.equal(result.modelId, "totally-unknown-custom-model");
+  });
+
+  test("regression: no-downgrade-needed path returns tier-only", () => {
+    const config: DynamicRoutingConfig = { ...defaultRoutingConfig(), enabled: true, capability_routing: true };
+    // Configured model is sonnet (standard), requesting standard → no downgrade needed
+    const result = resolveModelForComplexity(
+      { tier: "standard", reason: "test", downgraded: false },
+      { primary: "claude-sonnet-4-6", fallbacks: [] },
+      config,
+      MULTI_MODEL_AVAILABLE,
+      "execute-task",
+      undefined,
+    );
+    assert.equal(result.selectionMethod, "tier-only");
+    assert.equal(result.wasDowngraded, false);
+    assert.equal(result.modelId, "claude-sonnet-4-6");
+  });
+});
+
 // ─── getModelTier unknown default ────────────────────────────────────────────
 
 describe("getModelTier unknown default", () => {
