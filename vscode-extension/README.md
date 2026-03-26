@@ -1,6 +1,6 @@
 # GSD-2 — VS Code Extension
 
-Control the [GSD-2 coding agent](https://github.com/gsd-build/gsd-2) directly from VS Code. Run autonomous coding sessions, chat with `@gsd`, monitor agent activity in real-time, and manage your workflow — all without leaving the editor.
+Control the [GSD-2 coding agent](https://github.com/gsd-build/gsd-2) directly from VS Code. Run autonomous coding sessions, chat with `@gsd`, monitor agent activity in real-time, review and accept/reject changes, and manage your workflow — all without leaving the editor.
 
 ![GSD Extension Overview](docs/images/overview.png)
 
@@ -18,229 +18,119 @@ Control the [GSD-2 coding agent](https://github.com/gsd-build/gsd-2) directly fr
 3. Open a project folder in VS Code
 4. Click the **GSD icon** in the Activity Bar (left sidebar)
 5. Click **Start Agent** or run `Ctrl+Shift+P` > **GSD: Start Agent**
-6. Start chatting with `@gsd` in VS Code Chat or use the sidebar controls
+6. Start chatting with `@gsd` in Chat or click **Auto** in the sidebar
 
 ---
 
-## Feature Guide
+## Features
 
-### 1. Sidebar Dashboard
+### Sidebar Dashboard
 
-The sidebar is your command center. Click the **GSD icon** in the Activity Bar to open it.
+Click the **GSD icon** in the Activity Bar. The compact header shows connection status, model, session, message count, thinking level, context usage bar, and cost — all in two lines. Sections (Workflow, Stats, Actions, Settings) are collapsible and remember their state.
 
-![Sidebar Dashboard](docs/images/sidebar-dashboard.png)
+### Workflow Controls
 
-**Header card** shows at-a-glance status:
-- **Connection status** — green dot when connected, red when disconnected
-- **Model name** — click to switch models
-- **Session ID** — click to rename the session
-- **Message count** and **thinking level** — click thinking to cycle levels
-- **Context window** — thin progress bar showing how full the context is (green < 50%, yellow 50-80%, red > 80%)
-- **Cost** — running session cost displayed in the header
-
-**Sections are collapsible** — click any section header to collapse/expand. The state persists between refreshes.
-
----
-
-### 2. Workflow Controls
-
-The **Workflow** section provides one-click access to GSD's core automation commands.
-
-![Workflow Controls](docs/images/workflow-controls.png)
+One-click buttons for GSD's core commands. All route through the Chat panel so you see the full response:
 
 | Button | What it does |
 |--------|-------------|
-| **Auto** | Start autonomous mode — GSD researches, plans, and executes automatically |
+| **Auto** | Start autonomous mode — research, plan, execute |
 | **Next** | Execute one unit of work, then pause |
-| **Quick** | Run a quick task without full planning (opens input box) |
-| **Capture** | Capture a thought or idea for later triage (opens input box) |
-| **Status** | Show current milestone/phase progress |
-| **Fork** | Fork the session from any previous message |
+| **Quick** | Quick task without planning (opens input) |
+| **Capture** | Capture a thought for later triage |
 
-These buttons send `/gsd <command>` prompts to the agent — they work exactly like typing the slash commands in chat.
+### Chat Integration (`@gsd`)
 
----
-
-### 3. Settings Panel
-
-Toggle agent behaviors without leaving the sidebar.
-
-![Settings Panel](docs/images/settings-panel.png)
-
-| Toggle | Description |
-|--------|-------------|
-| **Auto-compact** | Automatically compress context when it gets large |
-| **Auto-retry** | Retry failed operations automatically |
-| **Steering** | Queue mode for steering messages: `all` (batch) or `1-at-a-time` |
-| **Follow-up** | Queue mode for follow-up messages: `all` (batch) or `1-at-a-time` |
-
-Click any pill to toggle its state.
-
----
-
-### 4. Actions
-
-Quick access to common operations.
-
-![Actions Panel](docs/images/actions-panel.png)
-
-| Button | Description |
-|--------|-------------|
-| **New** | Start a fresh session |
-| **Compact** | Manually trigger context compaction |
-| **Copy** | Copy the last agent response to clipboard |
-| **Export** | Export the full conversation as HTML |
-| **History** | Open the conversation history viewer |
-| **Cmds** | Browse and run available GSD slash commands |
-| **Stop Agent** | Shut down the agent process |
-
----
-
-### 5. Chat Integration (`@gsd`)
-
-Use `@gsd` in VS Code's built-in Chat panel (`Ctrl+Shift+I` / `Cmd+Shift+I`) to talk to the agent directly.
-
-![Chat Participant](docs/images/chat-participant.png)
+Use `@gsd` in VS Code Chat (`Cmd+Shift+I`) to talk to the agent:
 
 ```
 @gsd refactor the auth module to use JWT
 @gsd /gsd auto
-@gsd what's the current milestone status?
+@gsd fix the errors in this file
 ```
 
-Features:
-- **Auto-starts** the agent if it's not running
-- **File context** — use `#file` references to include file context
-- **Streaming** — shows tool execution progress in real-time
-- **Clickable file anchors** — files modified by the agent appear as links
-- **Token usage** — footer shows token counts for each response
-- **Follow-up suggestions** — suggested next actions after each response
+- **Auto-starts** the agent if not running
+- **File context** via `#file` references
+- **Selection context** — automatically includes selected code
+- **Diagnostic context** — auto-includes errors/warnings when you mention "fix" or "error"
+- **Streaming** progress, file anchors, token usage footer
 
----
+### Source Control Integration
 
-### 6. Activity Feed
+Agent-modified files appear in a dedicated **"GSD Agent"** section of the Source Control panel:
 
-The **Activity** panel shows a real-time log of every tool the agent executes.
+- **Click any file** to see a before/after diff in VS Code's native diff editor
+- **Accept** or **Discard** changes per-file via inline buttons
+- **Accept All** / **Discard All** via the SCM title bar
+- Gutter diff indicators (green/red bars) show exactly what changed
 
-![Activity Feed](docs/images/activity-feed.png)
+### Line-Level Decorations
 
-Each entry shows:
-- **Tool icon** — different icon per tool type (file, terminal, search, etc.)
-- **Tool name + summary** — e.g., "Read src/index.ts", "Bash: npm test"
-- **Status** — yellow (running), green (success), red (error)
-- **Duration** — how long the tool execution took
+When the agent modifies a file, you'll see:
+- **Green background** on newly added lines
+- **Yellow background** on modified lines
+- **Left border gutter indicator** on all agent-touched lines
+- **Hover** any decorated line to see "Modified by GSD Agent"
 
-Click on file-related items to open the file in the editor. Use the **clear** button in the view title to reset the feed.
+### Checkpoints & Rollback
 
----
+Automatic checkpoints are created at the start of each agent turn. Use **Discard All** in the SCM panel to revert all agent changes to their original state, or discard individual files.
 
-### 7. Sessions
+### Activity Feed
 
-The **Sessions** panel lists all session files for the current workspace.
+The **Activity** panel shows a real-time log of every tool the agent executes — Read, Write, Edit, Bash, Grep, Glob — with status icons (running/success/error), duration, and click-to-open for file operations.
 
-![Sessions Panel](docs/images/sessions-panel.png)
+### Sessions
 
-- Sessions are `.jsonl` files stored in `~/.pi/agent/sessions/<workspace>/`
-- **Current session** is highlighted with a green icon
-- **Click** any session to switch to it
-- Shows friendly timestamps (Today, Yesterday, Mon 2:30 PM, etc.)
-- Use the **refresh** button to rescan the sessions directory
+The **Sessions** panel lists all past sessions for the current workspace. Click any session to switch to it. The current session is highlighted green. Sessions persist to disk automatically.
 
----
+### Diagnostic Integration
 
-### 8. Conversation History
+- **Fix Errors** button in the sidebar reads the active file's diagnostics from the Problems panel and sends them to the agent
+- **Fix All Problems** (`Cmd+Shift+P` > GSD: Fix All Problems) collects errors/warnings across the workspace
+- Works automatically in chat — mention "fix" or "error" and diagnostics are included
 
-Open the full conversation with **History** button or `Ctrl+Shift+P` > **GSD: Show Conversation History**.
+### Code Lens
 
-![Conversation History](docs/images/conversation-history.png)
-
-Features:
-- **Full message rendering** — user and assistant messages with role headers
-- **Tool call blocks** — collapsible blocks showing tool invocations and results
-- **Thinking blocks** — collapsible thinking/reasoning from the model
-- **Search** — filter messages by text content
-- **Fork from here** — hover any message to see a "Fork" button that creates a new session branching from that point
-
----
-
-### 9. Code Lens
-
-Above every function and class declaration, GSD adds inline actions.
-
-![Code Lens](docs/images/code-lens.png)
+Four inline actions above every function and class (TS/JS/Python/Go/Rust):
 
 | Action | What it does |
 |--------|-------------|
 | **Ask GSD** | Explain the function/class |
-| **Refactor** | Suggest improvements to clarity, performance, or structure |
-| **Find Bugs** | Review for potential bugs and edge cases |
-| **Tests** | Generate comprehensive test coverage |
+| **Refactor** | Improve clarity, performance, or structure |
+| **Find Bugs** | Review for bugs and edge cases |
+| **Tests** | Generate test coverage |
 
-Supported languages: TypeScript, JavaScript, Python, Go, Rust.
+### Git Integration
 
-Toggle code lens on/off in settings: `gsd.codeLens`.
+- **Commit Agent Changes** — stages and commits modified files with your message
+- **Create Branch** — create a new branch for agent work
+- **Show Diff** — view git diff of agent changes
 
----
+### Approval Modes
 
-### 10. Slash Command Completion
+Control how much autonomy the agent has:
 
-Type `/` at the start of a line in any editor to get auto-completion for all GSD slash commands.
+| Mode | Behavior |
+|------|----------|
+| **Auto-approve** | Agent runs freely (default) |
+| **Ask** | Prompts before file writes and commands |
+| **Plan-only** | Read-only — agent can analyze but not modify |
 
-![Slash Completion](docs/images/slash-completion.png)
+Change via Settings section or `Cmd+Shift+P` > **GSD: Select Approval Mode**.
 
-- Works in Markdown, plaintext, TypeScript, and JavaScript files
-- Shows command source (extension, prompt, or skill) and location
-- Commands are cached and auto-refreshed when the agent reconnects
+### Agent UI Requests
 
----
+When the agent needs input (questions, confirmations, selections), VS Code dialogs appear automatically — no more hanging on `ask_user_questions`.
 
-### 11. File Decorations
+### Additional Features
 
-Files modified by the agent get a **"G" badge** in the Explorer.
-
-![File Decorations](docs/images/file-decorations.png)
-
-- Uses git-style coloring for modified files
-- Automatically applied when the agent uses Write or Edit tools
-- Clears when the agent disconnects
-- Manually clear with `Ctrl+Shift+P` > **GSD: Clear File Decorations**
-
----
-
-### 12. Bash Terminal
-
-When the agent runs shell commands, output streams to a dedicated **"GSD Agent" terminal**.
-
-![Bash Terminal](docs/images/bash-terminal.png)
-
-- Auto-creates the terminal on first Bash tool execution
-- Shows command prompts in dim gray
-- Streams stdout in real-time
-- Closes when the agent disconnects
-
----
-
-### 13. Progress Notifications
-
-While the agent is working, a progress notification appears with:
-
-- Current tool being executed (e.g., "Running Bash...")
-- A **cancel button** to abort the operation
-- Auto-dismisses when the agent completes
-
-Toggle with setting: `gsd.showProgressNotifications`.
-
----
-
-### 14. Context Window Warning
-
-When context usage exceeds a configurable threshold, a warning notification appears suggesting compaction.
-
-- Default threshold: 80%
-- Click **"Compact Now"** to immediately compact
-- Throttled to once per 60 seconds to avoid spam
-
-Configure: `gsd.showContextWarning` and `gsd.contextWarningThreshold`.
+- **Conversation History** — full message viewer with tool calls, thinking blocks, search, and fork-from-here
+- **Slash Command Completion** — type `/` for auto-complete of `/gsd` commands
+- **File Decorations** — "G" badge on agent-modified files in the Explorer
+- **Bash Terminal** — dedicated terminal for agent shell output
+- **Context Window Warning** — notification when context exceeds threshold
+- **Progress Notifications** — optional notification with cancel button (off by default)
 
 ---
 
@@ -250,69 +140,54 @@ Configure: `gsd.showContextWarning` and `gsd.contextWarningThreshold`.
 |---------|----------|-------------|
 | **GSD: Start Agent** | | Connect to the GSD agent |
 | **GSD: Stop Agent** | | Disconnect the agent |
-| **GSD: New Session** | `Cmd+Shift+G Cmd+Shift+N` | Start a fresh conversation |
-| **GSD: Send Message** | `Cmd+Shift+G Cmd+Shift+P` | Send a message to the agent |
-| **GSD: Abort Current Operation** | `Cmd+Shift+G Cmd+Shift+A` | Interrupt the current operation |
-| **GSD: Steer Agent** | `Cmd+Shift+G Cmd+Shift+I` | Send a steering message mid-operation |
+| **GSD: New Session** | `Cmd+Shift+G` `Cmd+Shift+N` | Start a fresh conversation |
+| **GSD: Send Message** | `Cmd+Shift+G` `Cmd+Shift+P` | Send a message to the agent |
+| **GSD: Abort** | `Cmd+Shift+G` `Cmd+Shift+A` | Interrupt the current operation |
+| **GSD: Steer Agent** | `Cmd+Shift+G` `Cmd+Shift+I` | Steering message mid-operation |
 | **GSD: Switch Model** | | Pick a model from QuickPick |
-| **GSD: Cycle Model** | `Cmd+Shift+G Cmd+Shift+M` | Rotate to the next model |
+| **GSD: Cycle Model** | `Cmd+Shift+G` `Cmd+Shift+M` | Rotate to the next model |
 | **GSD: Set Thinking Level** | | Choose off / low / medium / high |
-| **GSD: Cycle Thinking Level** | `Cmd+Shift+G Cmd+Shift+T` | Rotate through thinking levels |
+| **GSD: Cycle Thinking** | `Cmd+Shift+G` `Cmd+Shift+T` | Rotate through thinking levels |
 | **GSD: Compact Context** | | Trigger context compaction |
-| **GSD: Export Conversation as HTML** | | Save session as HTML |
-| **GSD: Show Session Stats** | | Display token usage and cost |
-| **GSD: Run Bash Command** | | Execute a shell command via the agent |
-| **GSD: List Available Commands** | | Browse GSD slash commands |
-| **GSD: Set Session Name** | | Rename the current session |
-| **GSD: Copy Last Response** | | Copy last agent response to clipboard |
-| **GSD: Switch Session** | | Switch to a different session file |
-| **GSD: Refresh Sessions** | | Rescan session directory |
-| **GSD: Show Conversation History** | | Open conversation history viewer |
-| **GSD: Ask About Symbol** | | Explain a function/class (via code lens) |
-| **GSD: Refactor Symbol** | | Refactor a function/class (via code lens) |
-| **GSD: Find Bugs in Symbol** | | Review for bugs (via code lens) |
-| **GSD: Generate Tests for Symbol** | | Generate tests (via code lens) |
-| **GSD: Clear File Decorations** | | Remove "G" badges from files |
-| **GSD: Clear Activity Feed** | | Clear the activity feed |
-| **GSD: Fork Session** | | Fork session from a previous message |
-| **GSD: Toggle Auto-Retry** | | Toggle auto-retry on failure |
-| **GSD: Abort Retry** | | Cancel a pending retry |
-| **GSD: Toggle Steering Mode** | | Switch steering queue mode |
-| **GSD: Toggle Follow-Up Mode** | | Switch follow-up queue mode |
+| **GSD: Export HTML** | | Save session as HTML |
+| **GSD: Session Stats** | | Display token usage and cost |
+| **GSD: Run Bash** | | Execute a shell command |
+| **GSD: List Commands** | | Browse slash commands |
+| **GSD: Set Session Name** | | Rename current session |
+| **GSD: Copy Last Response** | | Copy to clipboard |
+| **GSD: Switch Session** | | Load a different session |
+| **GSD: Show History** | | Open conversation viewer |
+| **GSD: Fork Session** | | Fork from a previous message |
+| **GSD: Fix Problems in File** | | Send file diagnostics to agent |
+| **GSD: Fix All Problems** | | Send workspace errors to agent |
+| **GSD: Commit Agent Changes** | | Git commit modified files |
+| **GSD: Create Branch** | | Create branch for agent work |
+| **GSD: Show Agent Diff** | | View git diff |
+| **GSD: Accept All Changes** | | Accept all SCM changes |
+| **GSD: Discard All Changes** | | Revert all agent modifications |
+| **GSD: Select Approval Mode** | | Choose auto-approve/ask/plan-only |
+| **GSD: Cycle Approval Mode** | | Rotate through approval modes |
+| **GSD: Code Lens** actions | | Ask, Refactor, Find Bugs, Tests |
+
+> On Windows/Linux, replace `Cmd` with `Ctrl`.
 
 ## Configuration
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `gsd.binaryPath` | `"gsd"` | Path to the GSD binary if not on PATH |
-| `gsd.autoStart` | `false` | Start the agent when the extension activates |
-| `gsd.autoCompaction` | `true` | Enable automatic context compaction |
-| `gsd.codeLens` | `true` | Show code lens above functions and classes |
-| `gsd.showProgressNotifications` | `true` | Show progress notification while agent works |
-| `gsd.activityFeedMaxItems` | `100` | Maximum items in the activity feed |
-| `gsd.showContextWarning` | `true` | Warn when context usage exceeds threshold |
-| `gsd.contextWarningThreshold` | `80` | Context usage % that triggers the warning |
-
-## Keyboard Shortcuts
-
-All shortcuts use a two-chord pattern: `Cmd+Shift+G` followed by a second chord.
-
-| Shortcut | Command |
-|----------|---------|
-| `Cmd+Shift+G` `Cmd+Shift+N` | New Session |
-| `Cmd+Shift+G` `Cmd+Shift+M` | Cycle Model |
-| `Cmd+Shift+G` `Cmd+Shift+T` | Cycle Thinking Level |
-| `Cmd+Shift+G` `Cmd+Shift+A` | Abort Operation |
-| `Cmd+Shift+G` `Cmd+Shift+I` | Steer Agent |
-| `Cmd+Shift+G` `Cmd+Shift+P` | Send Message |
-
-> On Windows/Linux, replace `Cmd` with `Ctrl`.
+| `gsd.binaryPath` | `"gsd"` | Path to the GSD binary |
+| `gsd.autoStart` | `false` | Start agent on extension activation |
+| `gsd.autoCompaction` | `true` | Automatic context compaction |
+| `gsd.codeLens` | `true` | Code lens above functions/classes |
+| `gsd.showProgressNotifications` | `false` | Progress notification (off — Chat shows progress) |
+| `gsd.activityFeedMaxItems` | `100` | Max items in Activity feed |
+| `gsd.showContextWarning` | `true` | Warn when context exceeds threshold |
+| `gsd.contextWarningThreshold` | `80` | Context % that triggers warning |
+| `gsd.approvalMode` | `"auto-approve"` | Agent permission mode |
 
 ## How It Works
 
-The extension spawns `gsd --mode rpc` as a child process and communicates over JSON-RPC via stdin/stdout. All agent events (tool executions, message updates, model changes) stream in real-time to power the sidebar, activity feed, chat participant, and notifications.
-
-The agent process auto-restarts on crash (up to 3 times within 60 seconds) and all pending requests are properly cleaned up on disconnect.
+The extension spawns `gsd --mode rpc` and communicates over JSON-RPC via stdin/stdout. Agent events stream in real-time. The change tracker captures file state before modifications for SCM diffs and rollback. UI requests from the agent (questions, confirmations) are handled via VS Code dialogs.
 
 ## Links
 

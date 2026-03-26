@@ -3,7 +3,7 @@
   "displayName": "GSD-2",
   "description": "VS Code integration for the GSD-2 coding agent — sidebar dashboard, @gsd chat participant, activity feed, conversation history, code lens, session forking, slash command completion, workflow controls, and 33 commands",
   "publisher": "FluxLabs",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "icon": "logo.jpg",
   "license": "MIT",
   "repository": {

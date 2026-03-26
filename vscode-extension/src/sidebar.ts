@@ -753,8 +753,8 @@ export class GsdSidebarProvider implements vscode.WebviewViewProvider {
 				<button class="action-btn" data-command="compact">Compact</button>
 				<button class="action-btn" data-command="copyLastResponse">Copy</button>
 				<button class="action-btn" data-command="status">Status</button>
+				<button class="action-btn" data-command="fixProblemsInFile">Fix Errs</button>
 				<button class="action-btn" data-command="showHistory">History</button>
-				<button class="action-btn" data-command="forkSession">Fork</button>
 			</div>
 			<div style="margin-top:6px">
 				<button class="action-btn danger full" data-command="stop">Stop Agent</button>
@@ -781,6 +781,10 @@ export class GsdSidebarProvider implements vscode.WebviewViewProvider {
 			<div class="toggle-row">
 				<span class="toggle-label">Follow-up</span>
 				<span class="toggle-pill ${info.followUpMode === "one-at-a-time" ? "on" : "off"}" data-command="toggleFollowUpMode">${info.followUpMode === "one-at-a-time" ? "1-at-a-time" : "all"}</span>
+			</div>
+			<div class="toggle-row">
+				<span class="toggle-label">Approval</span>
+				<span class="toggle-pill on" data-command="selectApprovalMode">change</span>
 			</div>
 		</div>
 	</div>`;
