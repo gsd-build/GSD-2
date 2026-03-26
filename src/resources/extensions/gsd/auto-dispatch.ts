@@ -626,6 +626,25 @@ export const DISPATCH_RULES: DispatchRule[] = [
     match: async ({ state, mid, midTitle, basePath }) => {
       if (state.phase !== "completing-milestone") return null;
 
+      // Safety guard (#2675): block completion when VALIDATION verdict is
+      // needs-remediation. The state machine treats needs-remediation as
+      // terminal (to prevent validate-milestone loops per #832), but
+      // completing-milestone should NOT proceed — remediation work is needed.
+      const validationFile = resolveMilestoneFile(basePath, mid, "VALIDATION");
+      if (validationFile) {
+        const validationContent = await loadFile(validationFile);
+        if (validationContent) {
+          const verdict = extractVerdict(validationContent);
+          if (verdict === "needs-remediation") {
+            return {
+              action: "stop",
+              reason: `Cannot complete milestone ${mid}: VALIDATION verdict is "needs-remediation". Address the remediation findings and re-run validation, or update the verdict manually.`,
+              level: "warning",
+            };
+          }
+        }
+      }
+
       // Safety guard (#1368): verify all roadmap slices have SUMMARY files.
       const missingSlices = findMissingSummaries(basePath, mid);
       if (missingSlices.length > 0) {
