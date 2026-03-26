@@ -211,7 +211,24 @@ export async function deriveState(basePath: string): Promise<GSDState> {
 
   // Dual-path: try DB-backed derivation first when hierarchy tables are populated
   if (isDbAvailable()) {
-    const dbMilestones = getAllMilestones();
+    let dbMilestones = getAllMilestones();
+
+    // Disk→DB reconciliation (#2631): when the milestones table is empty
+    // (e.g. failed initial migration per #2529), the reconciliation code
+    // inside deriveStateFromDb is unreachable. Populate from disk here so
+    // the DB path activates correctly.
+    if (dbMilestones.length === 0) {
+      const diskIds = findMilestoneIds(basePath);
+      let synced = false;
+      for (const diskId of diskIds) {
+        if (!isGhostMilestone(basePath, diskId)) {
+          insertMilestone({ id: diskId, status: 'active' });
+          synced = true;
+        }
+      }
+      if (synced) dbMilestones = getAllMilestones();
+    }
+
     if (dbMilestones.length > 0) {
       const stopDbTimer = debugTime("derive-state-db");
       result = await deriveStateFromDb(basePath);
