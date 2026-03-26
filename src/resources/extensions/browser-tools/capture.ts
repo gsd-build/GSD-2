@@ -168,13 +168,14 @@ export async function constrainScreenshot(
 	mimeType: string,
 	quality: number,
 ): Promise<Buffer> {
-	// Detect actual format from buffer (cmux browser always returns PNG regardless of request)
-	const isPng = buffer.length >= 4 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47;
-	const actualMimeType = isPng ? "image/png" : mimeType;
-
 	const meta = await sharp(buffer).metadata();
 	const width = meta.width;
 	const height = meta.height;
+
+	// Detect actual format from sharp metadata (cmux browser always returns
+	// PNG regardless of request). meta.format is authoritative — no manual
+	// magic byte checks needed.
+	const actualMimeType = meta.format === "png" ? "image/png" : mimeType;
 
 	if (width === undefined || height === undefined) return buffer;
 
