@@ -1,7 +1,7 @@
 {
   "name": "gsd-pi",
   "version": "2.49.0",
-  "description": "GSD \u2014 Get Shit Done coding agent",
+  "description": "GSD — Get Shit Done coding agent",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -89,7 +89,7 @@
     "release:update-changelog": "node scripts/update-changelog.mjs",
     "docker:build-runtime": "docker build --target runtime -t ghcr.io/gsd-build/gsd-pi .",
     "docker:build-builder": "docker build --target builder -t ghcr.io/gsd-build/gsd-ci-builder .",
-    "prepublishOnly": "npm run sync-pkg-version && npm run sync-platform-versions && ([ \"$CI\" = 'true' ] || git diff --exit-code || (echo 'ERROR: version sync changed files \u2014 commit them before publishing' && exit 1)) && npm run build && npm run typecheck:extensions && npm run validate-pack",
+    "prepublishOnly": "npm run sync-pkg-version && npm run sync-platform-versions && ([ \"$CI\" = 'true' ] || git diff --exit-code || (echo 'ERROR: version sync changed files — commit them before publishing' && exit 1)) && npm run build && npm run typecheck:extensions && npm run validate-pack",
     "test:live-regression": "node --experimental-strip-types tests/live-regression/run.ts"
   },
   "dependencies": {
