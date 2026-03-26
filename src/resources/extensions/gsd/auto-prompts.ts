@@ -784,6 +784,14 @@ export async function checkNeedsRunUat(
         if (!uatContent) return null;
         // If the UAT file already contains a verdict, UAT has been run — skip
         if (hasVerdict(uatContent)) return null;
+        // Also check the ASSESSMENT file — the run-uat prompt writes the verdict
+        // there (via gsd_summary_save artifact_type:"ASSESSMENT"), not into the
+        // UAT spec file. Without this check the unit re-dispatches indefinitely.
+        const assessmentFile = resolveSliceFile(base, mid, sid, "ASSESSMENT");
+        if (assessmentFile) {
+          const assessmentContent = await loadFile(assessmentFile);
+          if (assessmentContent && hasVerdict(assessmentContent)) return null;
+        }
         const uatType = getUatType(uatContent);
         return { sliceId: sid, uatType };
       }
@@ -808,6 +816,13 @@ export async function checkNeedsRunUat(
   if (!uatContentFb) return null;
   // If the UAT file already contains a verdict, UAT has been run — skip
   if (hasVerdict(uatContentFb)) return null;
+  // Also check the ASSESSMENT file for the file-based fallback path (same
+  // reason as the DB path above — verdict lives in ASSESSMENT, not UAT).
+  const assessmentFileFb = resolveSliceFile(base, mid, uatSid, "ASSESSMENT");
+  if (assessmentFileFb) {
+    const assessmentContentFb = await loadFile(assessmentFileFb);
+    if (assessmentContentFb && hasVerdict(assessmentContentFb)) return null;
+  }
   const uatTypeFb = getUatType(uatContentFb);
   return { sliceId: uatSid, uatType: uatTypeFb };
 }
