@@ -99,7 +99,7 @@ test("detectProjectState: detects preferences in .gsd/", (t) => {
   t.after(() => cleanup(dir));
 
   mkdirSync(join(dir, ".gsd", "milestones"), { recursive: true });
-  writeFileSync(join(dir, ".gsd", "preferences.md"), "---\nversion: 1\n---\n", "utf-8");
+  writeFileSync(join(dir, ".gsd", "PREFERENCES.md"), "---\nversion: 1\n---\n", "utf-8");
   const result = detectProjectState(dir);
   assert.ok(result.v2);
   assert.equal(result.v2!.hasPreferences, true);

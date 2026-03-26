@@ -64,11 +64,11 @@ _None_
   return dir;
 }
 
-/** Write a .gsd/preferences.md with the given git isolation mode. */
+/** Write a .gsd/PREFERENCES.md with the given git isolation mode. */
 function writePreferencesFile(dir: string, isolation: "none" | "worktree" | "branch"): void {
   const gsdDir = join(dir, ".gsd");
   mkdirSync(gsdDir, { recursive: true });
-  writeFileSync(join(gsdDir, "preferences.md"), `---\ngit:\n  isolation: "${isolation}"\n---\n`);
+  writeFileSync(join(gsdDir, "PREFERENCES.md"), `---\ngit:\n  isolation: "${isolation}"\n---\n`);
 }
 
 /** Create a repo with an in-progress milestone. */
@@ -302,7 +302,7 @@ describe('doctor-git', async () => {
     // ─── Test 7: none-mode skips orphaned worktree check ───────────────
     // NOTE: loadEffectiveGSDPreferences() resolves PROJECT_PREFERENCES_PATH
     // at module load time from process.cwd(). We write the prefs file to
-    // the test runner's cwd .gsd/preferences.md and clean up afterwards.
+    // the test runner's cwd .gsd/PREFERENCES.md and clean up afterwards.
     if (process.platform !== "win32") {
     test('none-mode skips orphaned worktree', async () => {
       const dir = createRepoWithCompletedMilestone();
@@ -409,7 +409,7 @@ describe('doctor-git', async () => {
       cleanups.push(dir);
 
       run("git branch trunk", dir);
-      writeFileSync(join(dir, ".gsd", "preferences.md"), `---\ngit:\n  isolation: "worktree"\n  main_branch: "trunk"\n---\n`);
+      writeFileSync(join(dir, ".gsd", "PREFERENCES.md"), `---\ngit:\n  isolation: "worktree"\n  main_branch: "trunk"\n---\n`);
 
       const metaPath = join(dir, ".gsd", "milestones", "M001", "M001-META.json");
       writeFileSync(metaPath, JSON.stringify({ integrationBranch: "feat/does-not-exist" }, null, 2));

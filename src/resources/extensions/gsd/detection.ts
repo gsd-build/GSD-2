@@ -359,8 +359,8 @@ function detectV2Gsd(basePath: string): V2Detection | null {
   if (!existsSync(gsdPath)) return null;
 
   const hasPreferences =
-    existsSync(join(gsdPath, "preferences.md")) ||
-    existsSync(join(gsdPath, "PREFERENCES.md"));
+    existsSync(join(gsdPath, "PREFERENCES.md")) ||
+    existsSync(join(gsdPath, "preferences.md"));
 
   const hasContext = existsSync(join(gsdPath, "CONTEXT.md"));
 
@@ -714,8 +714,8 @@ function detectVerificationCommands(
  */
 export function hasGlobalSetup(): boolean {
   return (
-    existsSync(join(gsdHome, "preferences.md")) ||
-    existsSync(join(gsdHome, "PREFERENCES.md"))
+    existsSync(join(gsdHome, "PREFERENCES.md")) ||
+    existsSync(join(gsdHome, "preferences.md"))
   );
 }
 
@@ -728,8 +728,8 @@ export function isFirstEverLaunch(): boolean {
 
   // If we have preferences, not first launch
   if (
-    existsSync(join(gsdHome, "preferences.md")) ||
-    existsSync(join(gsdHome, "PREFERENCES.md"))
+    existsSync(join(gsdHome, "PREFERENCES.md")) ||
+    existsSync(join(gsdHome, "preferences.md"))
   ) {
     return false;
   }

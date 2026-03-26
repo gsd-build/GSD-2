@@ -28,7 +28,7 @@ export const MAX_NATIVE_SEARCHES_PER_SESSION = 15;
 
 /** When true, skip native web search injection and keep Brave/custom tools active on Anthropic. */
 export function preferBraveSearch(): boolean {
-  // preferences.md takes priority over env var
+  // PREFERENCES.md takes priority over env var
   const prefsPref = resolveSearchProviderFromPreferences();
   if (prefsPref === "brave" || prefsPref === "tavily" || prefsPref === "ollama") return true;
   if (prefsPref === "native") return false;

@@ -422,9 +422,9 @@ function bootstrapGsdDirectory(
   const gsd = gsdRoot(basePath);
   mkdirSync(join(gsd, "milestones"), { recursive: true });
 
-  // Write preferences.md from wizard answers
+  // Write PREFERENCES.md from wizard answers
   const preferencesContent = buildPreferencesFile(prefs);
-  writeFileSync(join(gsd, "preferences.md"), preferencesContent, "utf-8");
+  writeFileSync(join(gsd, "PREFERENCES.md"), preferencesContent, "utf-8");
 
   // Seed CONTEXT.md with detected project signals
   const contextContent = buildContextSeed(signals);

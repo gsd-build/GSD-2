@@ -11,7 +11,7 @@ const NO_STORE = { "Cache-Control": "no-store" } as const
 // ─── Helpers (same pattern as remote-questions/route.ts) ─────────────────────
 
 function getPreferencesPath(): string {
-  return join(homedir(), ".gsd", "preferences.md")
+  return join(homedir(), ".gsd", "PREFERENCES.md")
 }
 
 function parseFrontmatter(content: string): { data: Record<string, unknown>; body: string } {

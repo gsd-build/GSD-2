@@ -87,7 +87,7 @@ function gsdHome(): string {
 }
 
 function globalPreferencesPath(): string {
-  return join(gsdHome(), "preferences.md");
+  return join(gsdHome(), "PREFERENCES.md");
 }
 
 function legacyGlobalPreferencesPath(): string {
@@ -95,15 +95,15 @@ function legacyGlobalPreferencesPath(): string {
 }
 
 function projectPreferencesPath(): string {
-  return join(gsdRoot(process.cwd()), "preferences.md");
-}
-// Bootstrap in gitignore.ts historically created PREFERENCES.md (uppercase) by mistake.
-// Check uppercase as a fallback so those files aren't silently ignored.
-function globalPreferencesPathUppercase(): string {
-  return join(gsdHome(), "PREFERENCES.md");
-}
-function projectPreferencesPathUppercase(): string {
   return join(gsdRoot(process.cwd()), "PREFERENCES.md");
+}
+// Legacy: older versions used lowercase preferences.md.
+// Check lowercase as a fallback so those files aren't silently ignored.
+function globalPreferencesPathLegacy(): string {
+  return join(gsdHome(), "preferences.md");
+}
+function projectPreferencesPathLegacy(): string {
+  return join(gsdRoot(process.cwd()), "preferences.md");
 }
 
 export function getGlobalGSDPreferencesPath(): string {
@@ -122,13 +122,13 @@ export function getProjectGSDPreferencesPath(): string {
 
 export function loadGlobalGSDPreferences(): LoadedGSDPreferences | null {
   return loadPreferencesFile(globalPreferencesPath(), "global")
-    ?? loadPreferencesFile(globalPreferencesPathUppercase(), "global")
+    ?? loadPreferencesFile(globalPreferencesPathLegacy(), "global")
     ?? loadPreferencesFile(legacyGlobalPreferencesPath(), "global");
 }
 
 export function loadProjectGSDPreferences(): LoadedGSDPreferences | null {
   return loadPreferencesFile(projectPreferencesPath(), "project")
-    ?? loadPreferencesFile(projectPreferencesPathUppercase(), "project");
+    ?? loadPreferencesFile(projectPreferencesPathLegacy(), "project");
 }
 
 export function loadEffectiveGSDPreferences(): LoadedGSDPreferences | null {
@@ -223,7 +223,7 @@ export function parsePreferencesMarkdown(content: string): GSDPreferences | null
 
   if (!_warnedUnrecognizedFormat) {
     _warnedUnrecognizedFormat = true;
-    console.warn("[parsePreferencesMarkdown] preferences.md exists but uses an unrecognized format — skipping.");
+    console.warn("[parsePreferencesMarkdown] PREFERENCES.md exists but uses an unrecognized format — skipping.");
   }
   return null;
 }
@@ -502,7 +502,7 @@ export function resolvePreDispatchHooks(): PreDispatchHookConfig[] {
  * Resolve the effective git isolation mode from preferences.
  * Returns "none" (default), "worktree", or "branch".
  *
- * Default is "none" so GSD works out of the box without preferences.md.
+ * Default is "none" so GSD works out of the box without PREFERENCES.md.
  * Worktree isolation requires explicit opt-in because it depends on git
  * branch infrastructure that must be set up before use.
  */

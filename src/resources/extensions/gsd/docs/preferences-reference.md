@@ -1,6 +1,6 @@
 # GSD Preferences Reference
 
-Full documentation for `~/.gsd/preferences.md` (global) and `.gsd/preferences.md` (project).
+Full documentation for `~/.gsd/PREFERENCES.md` (global) and `.gsd/PREFERENCES.md` (project).
 
 ---
 
@@ -51,8 +51,8 @@ skill_rules: []
 
 Preferences are loaded from two locations and merged:
 
-1. **Global:** `~/.gsd/preferences.md` — applies to all projects
-2. **Project:** `.gsd/preferences.md` — applies to the current project only
+1. **Global:** `~/.gsd/PREFERENCES.md` — applies to all projects
+2. **Project:** `.gsd/PREFERENCES.md` — applies to the current project only
 
 **Merge behavior** (see `mergePreferences()` in `preferences.ts`):
 

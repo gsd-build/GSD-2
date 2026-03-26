@@ -1200,7 +1200,7 @@ export function ExperimentalPanel() {
       {data && (
         <p className="text-[11px] text-muted-foreground">
           Changes are written to{" "}
-          <span className="font-mono">{prefs?.path ?? "~/.gsd/preferences.md"}</span>
+          <span className="font-mono">{prefs?.path ?? "~/.gsd/PREFERENCES.md"}</span>
           {" "}and take effect on the next session.
         </p>
       )}

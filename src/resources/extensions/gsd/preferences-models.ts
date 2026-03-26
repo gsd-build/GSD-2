@@ -308,7 +308,7 @@ export function resolveContextSelection(): import("./types.js").ContextSelection
 }
 
 /**
- * Resolve the search provider preference from preferences.md.
+ * Resolve the search provider preference from PREFERENCES.md.
  * Returns undefined if not configured (caller falls back to existing behavior).
  */
 export function resolveSearchProviderFromPreferences(): GSDPreferences["search_provider"] | undefined {

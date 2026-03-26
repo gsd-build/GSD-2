@@ -1142,7 +1142,7 @@ describe('git-service', async () => {
     mkdirSync(join(repo, ".gsd", "runtime"), { recursive: true });
     mkdirSync(join(repo, ".gsd", "activity"), { recursive: true });
     writeFileSync(join(repo, ".gsd", "milestones", "M001", "ROADMAP.md"), "# Roadmap");
-    writeFileSync(join(repo, ".gsd", "preferences.md"), "---\nversion: 1\n---");
+    writeFileSync(join(repo, ".gsd", "PREFERENCES.md"), "---\nversion: 1\n---");
     writeFileSync(join(repo, ".gsd", "STATE.md"), "# State");
     writeFileSync(join(repo, ".gsd", "runtime", "units.json"), "{}");
     writeFileSync(join(repo, ".gsd", "activity", "log.jsonl"), "{}");
