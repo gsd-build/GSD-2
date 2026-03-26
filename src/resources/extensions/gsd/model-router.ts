@@ -245,21 +245,41 @@ export function getEligibleModels(
 }
 
 /**
+ * Build a fallback chain for a selected model: [selectedModel, ...configuredFallbacks, configuredPrimary]
+ * Deduplicates entries while preserving order.
+ */
+function buildFallbackChain(selectedModelId: string, phaseConfig: ResolvedModelConfig): string[] {
+  return [
+    ...phaseConfig.fallbacks.filter(f => f !== selectedModelId),
+    phaseConfig.primary,
+  ].filter(f => f !== selectedModelId);
+}
+
+/**
  * Resolve the model to use for a given complexity tier.
  *
  * Downgrade-only: the returned model is always equal to or cheaper than
  * the user's configured primary model. Never upgrades beyond configuration.
  *
- * @param classification  The complexity classification result
- * @param phaseConfig     The user's configured model for this phase (ceiling)
- * @param routingConfig   Dynamic routing configuration
- * @param availableModelIds  List of available model IDs (from registry)
+ * STEP 1: Filter to eligible models for the requested tier.
+ * STEP 2: Capability scoring — ranks eligible models by task-capability match
+ *         when capability_routing is enabled and multiple eligible models exist.
+ * STEP 3: Fallback chain assembly.
+ *
+ * @param classification    The complexity classification result
+ * @param phaseConfig       The user's configured model for this phase (ceiling)
+ * @param routingConfig     Dynamic routing configuration
+ * @param availableModelIds List of available model IDs (from registry)
+ * @param unitType          The unit type for capability requirement computation (optional)
+ * @param taskMetadata      Task metadata for refined requirement vectors (optional)
  */
 export function resolveModelForComplexity(
   classification: ClassificationResult,
   phaseConfig: ResolvedModelConfig | undefined,
   routingConfig: DynamicRoutingConfig,
   availableModelIds: string[],
+  unitType?: string,
+  taskMetadata?: TaskMetadata,
 ): RoutingDecision {
   // If no phase config or routing disabled, pass through
   if (!phaseConfig || !routingConfig.enabled) {
@@ -305,15 +325,10 @@ export function resolveModelForComplexity(
     };
   }
 
-  // Find the best model for the requested tier
-  const targetModelId = findModelForTier(
-    requestedTier,
-    routingConfig,
-    availableModelIds,
-    routingConfig.cross_provider !== false,
-  );
+  // STEP 1: Get all eligible models for the requested tier
+  const eligible = getEligibleModels(requestedTier, availableModelIds, routingConfig);
 
-  if (!targetModelId) {
+  if (eligible.length === 0) {
     // No suitable model found — use configured primary
     return {
       modelId: configuredPrimary,
@@ -325,11 +340,33 @@ export function resolveModelForComplexity(
     };
   }
 
+  // STEP 2: Capability scoring (when enabled and multiple eligible models exist)
+  if (routingConfig.capability_routing !== false && eligible.length > 1 && unitType) {
+    const requirements = computeTaskRequirements(unitType, taskMetadata);
+    const scored = scoreEligibleModels(eligible, requirements);
+    const winner = scored[0];
+    if (winner) {
+      const capScores: Record<string, number> = {};
+      for (const s of scored) capScores[s.modelId] = s.score;
+      const fallbacks = buildFallbackChain(winner.modelId, phaseConfig);
+      return {
+        modelId: winner.modelId,
+        fallbacks,
+        tier: requestedTier,
+        wasDowngraded: true,
+        reason: `capability-scored: ${winner.modelId} (${winner.score.toFixed(1)}) for ${unitType}`,
+        capabilityScores: capScores,
+        taskRequirements: requirements,
+        selectionMethod: "capability-scored",
+      };
+    }
+  }
+
+  // STEP 3: Fallback — use first eligible model (cheapest in tier, or single eligible)
+  const targetModelId = eligible[0];
+
   // Build fallback chain: [downgraded_model, ...configured_fallbacks, configured_primary]
-  const fallbacks = [
-    ...phaseConfig.fallbacks.filter(f => f !== targetModelId),
-    configuredPrimary,
-  ].filter(f => f !== targetModelId);
+  const fallbacks = buildFallbackChain(targetModelId, phaseConfig);
 
   return {
     modelId: targetModelId,
