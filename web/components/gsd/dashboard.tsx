@@ -227,7 +227,7 @@ export function Dashboard({ onSwitchView, onExpandTerminal }: DashboardProps = {
       </div>
 
       <div className="flex-1 overflow-y-auto p-3 md:p-6">
-        <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 md:grid-cols-2 xl:grid-cols-5">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5">
           <div className="rounded-md border border-border bg-card p-4" data-testid="dashboard-current-unit">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">

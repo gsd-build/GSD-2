@@ -7,9 +7,13 @@ const require = createRequire(import.meta.url);
 const ROOT = new URL("../../../../../", import.meta.url);
 
 export function resolve(specifier, context, nextResolve) {
-  // 1. Direct redirects to dist/ for specific packages
+  // 1. Redirect the workspace package that portability tests import directly
+  //    from source. CI portability runs don't guarantee packages/pi-coding-agent
+  //    has been built, so bare imports must not depend on dist/index.js.
   if (specifier === "../../packages/pi-coding-agent/src/index.js") {
-    specifier = new URL("packages/pi-coding-agent/dist/index.js", ROOT).href;
+    specifier = new URL("packages/pi-coding-agent/src/index.ts", ROOT).href;
+  } else if (specifier === "@gsd/pi-coding-agent") {
+    specifier = new URL("packages/pi-coding-agent/src/index.ts", ROOT).href;
   } else if (specifier === "@gsd/pi-ai/oauth") {
     specifier = new URL("packages/pi-ai/dist/utils/oauth/index.js", ROOT).href;
   } else if (specifier === "@gsd/pi-ai") {
@@ -54,9 +58,14 @@ export function resolve(specifier, context, nextResolve) {
 }
 
 export function load(url, context, nextLoad) {
-  // Node's --experimental-strip-types handles .ts but not .tsx (which may contain JSX).
-  // Use TypeScript to transpile .tsx → JS with react-jsx transform, then serve as module.
-  if (url.endsWith('.tsx')) {
+  // Node's --experimental-strip-types handles many .ts files, but not .tsx and
+  // not all TypeScript syntax used by workspace packages (for example parameter
+  // properties in pi-coding-agent source). Transpile those files explicitly.
+  const shouldTranspileWithTypeScript =
+    url.endsWith('.tsx') ||
+    (url.endsWith('.ts') && url.includes('/packages/pi-coding-agent/src/'));
+
+  if (shouldTranspileWithTypeScript) {
     const ts = require('typescript');
     const source = readFileSync(fileURLToPath(url), 'utf-8');
     const { outputText } = ts.transpileModule(source, {
@@ -66,6 +75,8 @@ export function load(url, context, nextLoad) {
         module: ts.ModuleKind.ESNext,
         target: ts.ScriptTarget.ESNext,
         esModuleInterop: true,
+        experimentalDecorators: true,
+        emitDecoratorMetadata: true,
       },
     });
     return { format: 'module', source: outputText, shortCircuit: true };
