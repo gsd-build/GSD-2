@@ -215,6 +215,19 @@
       {
         "command": "gsd.showAgentDiff",
         "title": "GSD: Show Agent Diff"
+      },
+      {
+        "command": "gsd.clearPlan",
+        "title": "GSD: Clear Plan View",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "gsd.cycleApprovalMode",
+        "title": "GSD: Cycle Approval Mode"
+      },
+      {
+        "command": "gsd.selectApprovalMode",
+        "title": "GSD: Select Approval Mode"
       }
     ],
     "keybindings": [
@@ -276,6 +289,10 @@
         {
           "id": "gsd-checkpoints",
           "name": "Checkpoints"
+        },
+        {
+          "id": "gsd-plan",
+          "name": "Execution Plan"
         }
       ]
     },
@@ -289,6 +306,11 @@
         {
           "command": "gsd.clearActivity",
           "when": "view == gsd-activity",
+          "group": "navigation"
+        },
+        {
+          "command": "gsd.clearPlan",
+          "when": "view == gsd-plan",
           "group": "navigation"
         }
       ],
@@ -372,6 +394,17 @@
           "minimum": 50,
           "maximum": 95,
           "description": "Context window usage percentage that triggers a warning"
+        },
+        "gsd.approvalMode": {
+          "type": "string",
+          "default": "auto-approve",
+          "enum": ["auto-approve", "ask", "plan-only"],
+          "enumDescriptions": [
+            "Agent runs freely without prompts",
+            "Prompt before file changes and commands",
+            "Read-only mode — agent can analyze but not modify"
+          ],
+          "description": "Approval mode for agent actions"
         }
       }
     }
