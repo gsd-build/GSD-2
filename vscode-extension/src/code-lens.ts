@@ -96,13 +96,32 @@ export class GsdCodeLensProvider implements vscode.CodeLensProvider, vscode.Disp
 					seen.add(i);
 					const symbolName = match[1];
 					const range = new vscode.Range(i, 0, i, text.length);
+					const args = [symbolName, fileName, i + 1];
 
 					lenses.push(
 						new vscode.CodeLens(range, {
 							title: "$(hubot) Ask GSD",
 							tooltip: `Ask GSD to explain ${symbolName}`,
 							command: "gsd.askAboutSymbol",
-							arguments: [symbolName, fileName, i + 1],
+							arguments: args,
+						}),
+						new vscode.CodeLens(range, {
+							title: "$(pencil) Refactor",
+							tooltip: `Refactor ${symbolName}`,
+							command: "gsd.refactorSymbol",
+							arguments: args,
+						}),
+						new vscode.CodeLens(range, {
+							title: "$(bug) Find Bugs",
+							tooltip: `Review ${symbolName} for bugs`,
+							command: "gsd.findBugsSymbol",
+							arguments: args,
+						}),
+						new vscode.CodeLens(range, {
+							title: "$(beaker) Tests",
+							tooltip: `Generate tests for ${symbolName}`,
+							command: "gsd.generateTestsSymbol",
+							arguments: args,
 						}),
 					);
 				}

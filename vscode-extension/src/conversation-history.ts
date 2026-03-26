@@ -4,6 +4,9 @@ import type { GsdClient } from "./gsd-client.js";
 interface ContentBlock {
 	type: string;
 	text?: string;
+	name?: string;
+	input?: Record<string, unknown>;
+	content?: string | ContentBlock[];
 	[key: string]: unknown;
 }
 
@@ -14,7 +17,8 @@ interface ConversationMessage {
 
 /**
  * Webview panel that displays the full conversation history for the
- * current GSD session using the get_messages RPC call.
+ * current GSD session using the get_messages RPC call. Shows tool calls,
+ * thinking blocks, search/filter, and fork-from-here actions.
  */
 export class GsdConversationHistoryPanel implements vscode.Disposable {
 	private static currentPanel: GsdConversationHistoryPanel | undefined;
@@ -65,9 +69,19 @@ export class GsdConversationHistoryPanel implements vscode.Disposable {
 		this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
 
 		this.panel.webview.onDidReceiveMessage(
-			async (msg: { command: string }) => {
+			async (msg: { command: string; entryId?: string }) => {
 				if (msg.command === "refresh") {
 					await this.refresh();
+				} else if (msg.command === "fork" && msg.entryId) {
+					try {
+						const result = await this.client.forkSession(msg.entryId);
+						if (!result.cancelled) {
+							vscode.window.showInformationMessage("Session forked successfully.");
+						}
+					} catch (err) {
+						const errMsg = err instanceof Error ? err.message : String(err);
+						vscode.window.showErrorMessage(`Fork failed: ${errMsg}`);
+					}
 				}
 			},
 			null,
@@ -100,16 +114,23 @@ export class GsdConversationHistoryPanel implements vscode.Disposable {
 
 	private getHtml(messages: ConversationMessage[], errorMessage?: string): string {
 		const nonce = getNonce();
+		const visibleMessages = messages.filter((m) => m.role === "user" || m.role === "assistant");
 
-		const renderedMessages = messages
-			.filter((m) => m.role === "user" || m.role === "assistant")
-			.map((msg) => {
-				const text = extractText(msg.content);
-				if (!text.trim()) return "";
+		const renderedMessages = visibleMessages
+			.map((msg, idx) => {
 				const isUser = msg.role === "user";
-				return `<div class="message ${isUser ? "user" : "assistant"}">
-				<div class="role">${isUser ? "You" : "GSD"}</div>
-				<div class="content">${escapeHtml(text)}</div>
+				const blocks = renderContentBlocks(msg.content);
+				if (!blocks.trim()) return "";
+
+				const entryId = `msg-${idx}`;
+				const forkBtn = `<button class="fork-btn" data-entry-id="${entryId}" title="Fork from this message">Fork</button>`;
+
+				return `<div class="message ${isUser ? "user" : "assistant"}" id="${entryId}">
+				<div class="role-row">
+					<span class="role">${isUser ? "You" : "GSD"}</span>
+					${forkBtn}
+				</div>
+				<div class="content">${blocks}</div>
 			</div>`;
 			})
 			.filter(Boolean)
@@ -140,6 +161,15 @@ export class GsdConversationHistoryPanel implements vscode.Disposable {
 			gap: 8px;
 			margin-bottom: 16px;
 		}
+		.search-input {
+			flex: 1;
+			padding: 5px 10px;
+			border: 1px solid var(--vscode-input-border);
+			background: var(--vscode-input-background);
+			color: var(--vscode-input-foreground);
+			border-radius: 2px;
+			font-size: var(--vscode-font-size);
+		}
 		.btn {
 			padding: 5px 12px;
 			border: none;
@@ -148,11 +178,13 @@ export class GsdConversationHistoryPanel implements vscode.Disposable {
 			font-size: var(--vscode-font-size);
 			color: var(--vscode-button-foreground);
 			background: var(--vscode-button-background);
+			white-space: nowrap;
 		}
 		.btn:hover { background: var(--vscode-button-hoverBackground); }
 		.count {
 			font-size: 12px;
 			opacity: 0.6;
+			white-space: nowrap;
 		}
 		.error {
 			color: var(--vscode-errorForeground);
@@ -171,19 +203,47 @@ export class GsdConversationHistoryPanel implements vscode.Disposable {
 			overflow: hidden;
 			border: 1px solid var(--vscode-panel-border);
 		}
+		.message.hidden {
+			display: none;
+		}
+		.role-row {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			padding: 3px 10px;
+			background: var(--vscode-panel-border);
+		}
+		.message.assistant .role-row {
+			background: var(--vscode-focusBorder);
+		}
 		.role {
 			font-size: 10px;
 			font-weight: 700;
 			text-transform: uppercase;
 			letter-spacing: 0.6px;
-			padding: 3px 10px;
-			background: var(--vscode-panel-border);
 			opacity: 0.85;
 		}
 		.message.assistant .role {
-			background: var(--vscode-focusBorder);
 			color: var(--vscode-button-foreground);
 			opacity: 1;
+		}
+		.fork-btn {
+			padding: 1px 6px;
+			font-size: 10px;
+			border: 1px solid var(--vscode-foreground);
+			background: transparent;
+			color: var(--vscode-foreground);
+			border-radius: 3px;
+			cursor: pointer;
+			opacity: 0;
+			transition: opacity 0.15s;
+		}
+		.message:hover .fork-btn {
+			opacity: 0.6;
+		}
+		.fork-btn:hover {
+			opacity: 1 !important;
+			background: var(--vscode-button-secondaryBackground);
 		}
 		.content {
 			padding: 10px 12px;
@@ -191,20 +251,112 @@ export class GsdConversationHistoryPanel implements vscode.Disposable {
 			word-break: break-word;
 			line-height: 1.55;
 		}
+		.tool-block {
+			margin: 8px 0;
+			padding: 6px 10px;
+			background: var(--vscode-editor-background);
+			border: 1px solid var(--vscode-panel-border);
+			border-radius: 4px;
+			font-size: 12px;
+		}
+		.tool-header {
+			display: flex;
+			align-items: center;
+			gap: 6px;
+			cursor: pointer;
+			user-select: none;
+			font-weight: 600;
+			opacity: 0.8;
+		}
+		.tool-header:hover {
+			opacity: 1;
+		}
+		.tool-body {
+			display: none;
+			margin-top: 6px;
+			padding-top: 6px;
+			border-top: 1px solid var(--vscode-panel-border);
+			white-space: pre-wrap;
+			word-break: break-all;
+			max-height: 200px;
+			overflow-y: auto;
+			opacity: 0.75;
+		}
+		.tool-block.expanded .tool-body {
+			display: block;
+		}
+		.thinking-block {
+			margin: 8px 0;
+			padding: 6px 10px;
+			background: var(--vscode-editor-background);
+			border-left: 3px solid var(--vscode-focusBorder);
+			border-radius: 2px;
+			font-size: 12px;
+			opacity: 0.65;
+			font-style: italic;
+		}
+		.thinking-header {
+			cursor: pointer;
+			user-select: none;
+			font-weight: 600;
+		}
+		.thinking-body {
+			display: none;
+			margin-top: 4px;
+			white-space: pre-wrap;
+			max-height: 300px;
+			overflow-y: auto;
+		}
+		.thinking-block.expanded .thinking-body {
+			display: block;
+		}
+		code {
+			background: var(--vscode-editor-background);
+			padding: 1px 4px;
+			border-radius: 3px;
+			font-family: var(--vscode-editor-font-family);
+			font-size: 0.92em;
+		}
 	</style>
 </head>
 <body>
 	<h2>Conversation History</h2>
 	<div class="toolbar">
+		<input type="text" class="search-input" id="search" placeholder="Search messages..." />
 		<button class="btn" id="refresh">Refresh</button>
-		${messages.length > 0 ? `<span class="count">${messages.length} message${messages.length === 1 ? "" : "s"}</span>` : ""}
+		${visibleMessages.length > 0 ? `<span class="count">${visibleMessages.length} message${visibleMessages.length === 1 ? "" : "s"}</span>` : ""}
 	</div>
 	${errorMessage ? `<div class="error">${escapeHtml(errorMessage)}</div>` : ""}
-	${!errorMessage && renderedMessages === "" ? '<div class="empty">No messages in this session.</div>' : renderedMessages}
+	<div id="messages">
+		${!errorMessage && renderedMessages === "" ? '<div class="empty">No messages in this session.</div>' : renderedMessages}
+	</div>
 	<script nonce="${nonce}">
 		const vscode = acquireVsCodeApi();
+
 		document.getElementById('refresh').addEventListener('click', () => {
 			vscode.postMessage({ command: 'refresh' });
+		});
+
+		// Search filter
+		document.getElementById('search').addEventListener('input', (e) => {
+			const query = e.target.value.toLowerCase();
+			document.querySelectorAll('.message').forEach((el) => {
+				const text = el.textContent.toLowerCase();
+				el.classList.toggle('hidden', query && !text.includes(query));
+			});
+		});
+
+		// Toggle tool/thinking blocks
+		document.addEventListener('click', (e) => {
+			const header = e.target.closest('.tool-header, .thinking-header');
+			if (header) {
+				header.parentElement.classList.toggle('expanded');
+				return;
+			}
+			const forkBtn = e.target.closest('.fork-btn');
+			if (forkBtn) {
+				vscode.postMessage({ command: 'fork', entryId: forkBtn.dataset.entryId });
+			}
 		});
 	</script>
 </body>
@@ -212,18 +364,50 @@ export class GsdConversationHistoryPanel implements vscode.Disposable {
 	}
 }
 
-function extractText(content: string | ContentBlock[]): string {
-	if (typeof content === "string") return content;
-	if (Array.isArray(content)) {
-		return content
-			.map((block) => {
-				if (typeof block === "string") return block;
-				if (block?.type === "text" && typeof block.text === "string") return block.text;
-				return "";
-			})
-			.join("");
-	}
-	return "";
+function renderContentBlocks(content: string | ContentBlock[]): string {
+	if (typeof content === "string") return escapeHtml(content);
+	if (!Array.isArray(content)) return "";
+
+	return content
+		.map((block) => {
+			if (typeof block === "string") return escapeHtml(block);
+
+			switch (block.type) {
+				case "text":
+					return escapeHtml(block.text ?? "");
+
+				case "thinking":
+					if (!block.text) return "";
+					return `<div class="thinking-block">
+						<div class="thinking-header">Thinking...</div>
+						<div class="thinking-body">${escapeHtml(block.text)}</div>
+					</div>`;
+
+				case "tool_use":
+					return `<div class="tool-block">
+						<div class="tool-header">Tool: ${escapeHtml(block.name ?? "unknown")}</div>
+						<div class="tool-body">${escapeHtml(JSON.stringify(block.input ?? {}, null, 2))}</div>
+					</div>`;
+
+				case "tool_result": {
+					const resultText = typeof block.content === "string"
+						? block.content
+						: Array.isArray(block.content)
+							? block.content.map((b) => (typeof b === "string" ? b : b?.text ?? "")).join("")
+							: "";
+					if (!resultText) return "";
+					const truncated = resultText.length > 500 ? resultText.slice(0, 500) + "..." : resultText;
+					return `<div class="tool-block">
+						<div class="tool-header">Tool Result</div>
+						<div class="tool-body">${escapeHtml(truncated)}</div>
+					</div>`;
+				}
+
+				default:
+					return "";
+			}
+		})
+		.join("");
 }
 
 function escapeHtml(text: string): string {
