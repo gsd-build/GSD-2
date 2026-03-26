@@ -17,12 +17,14 @@ import {
   getOldestInFlightToolStart,
   clearInFlightTools,
   hasInteractiveToolInFlight,
+  shouldRepeatInteractiveNotification,
 } from "./auto-tool-tracking.js";
 import { detectWorkingTreeActivity } from "./auto-supervisor.js";
 import { closeoutUnit, type CloseoutOptions } from "./auto-unit-closeout.js";
 import { saveActivityLog } from "./activity-log.js";
 import { recoverTimedOutUnit, type RecoveryContext } from "./auto-timeout-recovery.js";
 import { resolveAgentEndCancelled } from "./auto/resolve.js";
+import { sendDesktopNotification } from "./notifications.js";
 import type { AutoSession } from "./auto/session.js";
 
 export interface SupervisionContext {
@@ -157,6 +159,15 @@ export function startUnitSupervision(sctx: SupervisionContext): void {
             lastProgressAt: Date.now(),
             lastProgressKind: "interactive-tool-waiting",
           });
+          // Re-notify every 2 minutes so the user doesn't forget (#2676).
+          if (shouldRepeatInteractiveNotification()) {
+            sendDesktopNotification(
+              "GSD — Still Waiting",
+              "The agent is still waiting for your response.",
+              "warning",
+              "attention",
+            );
+          }
           return;
         }
         const oldestStart = getOldestInFlightToolStart()!;

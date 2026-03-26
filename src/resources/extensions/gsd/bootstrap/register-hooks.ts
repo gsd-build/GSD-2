@@ -13,6 +13,8 @@ import { loadToolApiKeys } from "../commands-config.js";
 import { loadFile, saveFile, formatContinue } from "../files.js";
 import { deriveState } from "../state.js";
 import { getAutoDashboardData, isAutoActive, isAutoPaused, markToolEnd, markToolStart } from "../auto.js";
+import { isInteractiveTool, markInteractiveNotificationSent } from "../auto-tool-tracking.js";
+import { sendDesktopNotification } from "../notifications.js";
 import { isParallelActive, shutdownParallel } from "../parallel-orchestrator.js";
 import { checkToolCallLoop, resetToolCallLoopGuard } from "./tool-call-loop-guard.js";
 import { saveActivityLog } from "../activity-log.js";
@@ -243,9 +245,22 @@ export function registerHooks(pi: ExtensionAPI): void {
     await saveFile(discussionPath, existing + lines.join("\n"));
   });
 
-  pi.on("tool_execution_start", async (event) => {
+  pi.on("tool_execution_start", async (event, ctx) => {
     if (!isAutoActive()) return;
     markToolStart(event.toolCallId, event.toolName);
+
+    // Fire a desktop notification when a user-interactive tool starts
+    // so the user knows the agent is waiting for their input (#2676).
+    if (isInteractiveTool(event.toolName)) {
+      markInteractiveNotificationSent();
+      ctx.ui.notify("Waiting for your input — check the question dialog.", "info");
+      sendDesktopNotification(
+        "GSD — Input Required",
+        "The agent is waiting for your response.",
+        "info",
+        "attention",
+      );
+    }
   });
 
   pi.on("tool_execution_end", async (event) => {
