@@ -13,6 +13,7 @@ import { GsdChangeTracker } from "./change-tracker.js";
 import { GsdScmProvider } from "./scm-provider.js";
 import { GsdCheckpointProvider } from "./checkpoints.js";
 import { GsdDiagnosticBridge } from "./diagnostics.js";
+import { GsdLineDecorationManager } from "./line-decorations.js";
 
 let client: GsdClient | undefined;
 let sidebarProvider: GsdSidebarProvider | undefined;
@@ -23,6 +24,7 @@ let changeTracker: GsdChangeTracker | undefined;
 let scmProvider: GsdScmProvider | undefined;
 let checkpointProvider: GsdCheckpointProvider | undefined;
 let diagnosticBridge: GsdDiagnosticBridge | undefined;
+let lineDecorations: GsdLineDecorationManager | undefined;
 
 function requireConnected(): boolean {
 	if (!client?.isConnected) {
@@ -156,6 +158,11 @@ export function activate(context: vscode.ExtensionContext): void {
 
 	diagnosticBridge = new GsdDiagnosticBridge(client);
 	context.subscriptions.push(diagnosticBridge);
+
+	// -- Line-level decorations --------------------------------------------
+
+	lineDecorations = new GsdLineDecorationManager(changeTracker!);
+	context.subscriptions.push(lineDecorations);
 
 	// -- Progress notifications --------------------------------------------
 
@@ -930,6 +937,7 @@ export function deactivate(): void {
 	scmProvider?.dispose();
 	checkpointProvider?.dispose();
 	diagnosticBridge?.dispose();
+	lineDecorations?.dispose();
 	client = undefined;
 	sidebarProvider = undefined;
 	fileDecorations = undefined;
@@ -939,4 +947,5 @@ export function deactivate(): void {
 	scmProvider = undefined;
 	checkpointProvider = undefined;
 	diagnosticBridge = undefined;
+	lineDecorations = undefined;
 }
