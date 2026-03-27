@@ -1,5 +1,12 @@
 // GSD-2 — Provider capability registry for tool-aware model routing (ADR-005)
 // Copyright (c) 2026 Jeremy McSpadden <jeremy@fluxlabs.net>
+//
+// Pipeline contract (ADR-005):
+//   The tool-compatibility filter (Step 2) runs BEFORE capability scoring (Step 3).
+//   If a `before_model_select` hook is added in the future, it receives the
+//   POST-tool-filter candidate set — not the full tier-eligible set. This means
+//   the hook cannot override to a model that was filtered for tool incompatibility
+//   unless it explicitly opts out via a `force: true` return value.
 
 import type { Api } from "../types.js";
 
@@ -109,28 +116,74 @@ const API_VARIANT_ALIASES: Record<string, string> = {
 	"openai-completions": "openai-responses",
 };
 
+// ─── Runtime Overrides (ADR-005 Phase 6) ───────────────────────────────────
+// Loaded from preferences `provider_capabilities` key and deep-merged with
+// built-in defaults. Call setProviderCapabilityOverrides() at preferences load.
+
+let capabilityOverrides: Record<string, Partial<ProviderCapabilities>> = {};
+
+/**
+ * Apply provider capability overrides from user preferences.
+ * Call this when preferences are loaded/reloaded.
+ * Overrides are deep-merged: only specified fields are changed, others keep built-in defaults.
+ *
+ * Keys should be API protocol strings (e.g., "openai-responses").
+ * Unknown keys that don't match any canonical or alias API will still be stored —
+ * they create new entries that override the permissive default for custom APIs.
+ */
+export function setProviderCapabilityOverrides(
+	overrides: Record<string, Record<string, unknown>> | undefined,
+): void {
+	if (!overrides) {
+		capabilityOverrides = {};
+		return;
+	}
+	const parsed: Record<string, Partial<ProviderCapabilities>> = {};
+	for (const [api, values] of Object.entries(overrides)) {
+		if (typeof values === "object" && values !== null) {
+			parsed[api] = values as Partial<ProviderCapabilities>;
+		}
+	}
+	capabilityOverrides = parsed;
+}
+
+/**
+ * Clear all provider capability overrides. Used for testing.
+ */
+export function clearProviderCapabilityOverrides(): void {
+	capabilityOverrides = {};
+}
+
 /**
  * Returns provider capabilities for the given API string.
  *
  * Looks up the canonical API name first, then checks variant aliases.
  * Returns PERMISSIVE_CAPABILITIES for unknown APIs (fail-open).
+ * User overrides from preferences are deep-merged on top of built-in values.
  *
  * @param api - The API protocol string (e.g., "anthropic-messages", NOT "anthropic")
  */
 export function getProviderCapabilities(api: Api): ProviderCapabilities {
-	// Direct match on canonical API
+	// Resolve base capabilities: canonical → alias → permissive default
+	let base: ProviderCapabilities;
 	const direct = PROVIDER_CAPABILITIES[api];
-	if (direct) return direct;
-
-	// Check variant aliases
-	const canonical = API_VARIANT_ALIASES[api];
-	if (canonical) {
-		const aliased = PROVIDER_CAPABILITIES[canonical];
-		if (aliased) return aliased;
+	if (direct) {
+		base = direct;
+	} else {
+		const canonical = API_VARIANT_ALIASES[api];
+		if (canonical) {
+			base = PROVIDER_CAPABILITIES[canonical] ?? PERMISSIVE_CAPABILITIES;
+		} else {
+			base = PERMISSIVE_CAPABILITIES;
+		}
 	}
 
-	// Unknown API — return permissive default (fail-open)
-	return PERMISSIVE_CAPABILITIES;
+	// Apply user overrides if present for this API
+	const override = capabilityOverrides[api];
+	if (!override) return base;
+
+	// Deep-merge: override fields replace base fields
+	return { ...base, ...override } as ProviderCapabilities;
 }
 
 /**

@@ -1,12 +1,17 @@
 // GSD-2 — Tests for provider capability registry (ADR-005)
 // Copyright (c) 2026 Jeremy McSpadden <jeremy@fluxlabs.net>
 
-import { describe, test } from "node:test";
+import { describe, test, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import {
 	getProviderCapabilities,
 	getRegisteredApis,
 	getApiVariantAliases,
+	setProviderCapabilityOverrides,
+	clearProviderCapabilityOverrides,
 	PERMISSIVE_CAPABILITIES,
 } from "./capabilities.js";
 
@@ -166,6 +171,110 @@ describe("Provider Capability Registry", () => {
 					`Expected variant alias for "${variant}" (registered in register-builtins.ts)`,
 				);
 			}
+		});
+
+		test("every API in register-builtins.ts is covered by registry or aliases (dynamic CI check)", () => {
+			// Dynamically read register-builtins.ts source to extract all registered API strings.
+			// This test fails CI if a new provider is added without a registry/alias entry.
+			const __filename = fileURLToPath(import.meta.url);
+			const __dirname = dirname(__filename);
+			const source = readFileSync(
+				join(__dirname, "register-builtins.ts"),
+				"utf-8",
+			);
+			// Extract all `api: "..."` values from registerApiProvider calls
+			const apiRegex = /api:\s*"([^"]+)"/g;
+			const registeredApis: string[] = [];
+			let match;
+			while ((match = apiRegex.exec(source)) !== null) {
+				registeredApis.push(match[1]);
+			}
+
+			assert.ok(registeredApis.length > 0, "Failed to parse any APIs from register-builtins.ts");
+
+			const canonicals = getRegisteredApis();
+			const aliases = getApiVariantAliases();
+
+			for (const api of registeredApis) {
+				const inRegistry = canonicals.includes(api);
+				const inAliases = api in aliases;
+				assert.ok(
+					inRegistry || inAliases,
+					`API "${api}" is registered in register-builtins.ts but has no entry in ` +
+					`PROVIDER_CAPABILITIES (canonical) or API_VARIANT_ALIASES. ` +
+					`Add it to capabilities.ts to ensure tool compatibility filtering works for this provider.`,
+				);
+			}
+		});
+	});
+
+	describe("provider capability overrides (Phase 6)", () => {
+		afterEach(() => {
+			clearProviderCapabilityOverrides();
+		});
+
+		test("override changes a specific field while preserving others", () => {
+			setProviderCapabilityOverrides({
+				"openai-responses": { imageToolResults: true },
+			});
+			const caps = getProviderCapabilities("openai-responses");
+			// Override applied
+			assert.equal(caps.imageToolResults, true);
+			// Other fields preserved from built-in
+			assert.equal(caps.toolCalling, true);
+			assert.equal(caps.thinkingPersistence, "text-only");
+		});
+
+		test("override for unknown API creates new entry with merged permissive defaults", () => {
+			setProviderCapabilityOverrides({
+				"my-custom-api": { toolCalling: false },
+			});
+			const caps = getProviderCapabilities("my-custom-api");
+			assert.equal(caps.toolCalling, false);
+			// Other fields come from permissive default
+			assert.equal(caps.imageToolResults, true);
+		});
+
+		test("clearing overrides restores built-in values", () => {
+			setProviderCapabilityOverrides({
+				"openai-responses": { imageToolResults: true },
+			});
+			assert.equal(getProviderCapabilities("openai-responses").imageToolResults, true);
+
+			clearProviderCapabilityOverrides();
+			assert.equal(getProviderCapabilities("openai-responses").imageToolResults, false);
+		});
+
+		test("setProviderCapabilityOverrides with undefined clears overrides", () => {
+			setProviderCapabilityOverrides({
+				"anthropic-messages": { maxTools: 10 },
+			});
+			assert.equal(getProviderCapabilities("anthropic-messages").maxTools, 10);
+
+			setProviderCapabilityOverrides(undefined);
+			assert.equal(getProviderCapabilities("anthropic-messages").maxTools, 0);
+		});
+
+		test("override does not affect other APIs", () => {
+			setProviderCapabilityOverrides({
+				"openai-responses": { imageToolResults: true },
+			});
+			// Anthropic should be unchanged
+			const anthropic = getProviderCapabilities("anthropic-messages");
+			assert.equal(anthropic.imageToolResults, true); // built-in value
+		});
+
+		test("override for variant API applies only to variant, not canonical", () => {
+			setProviderCapabilityOverrides({
+				"google-vertex": { imageToolResults: false },
+			});
+			// google-vertex override applied
+			const vertex = getProviderCapabilities("google-vertex");
+			assert.equal(vertex.imageToolResults, false);
+
+			// canonical google-generative-ai unchanged
+			const google = getProviderCapabilities("google-generative-ai");
+			assert.equal(google.imageToolResults, true);
 		});
 	});
 });

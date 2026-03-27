@@ -103,6 +103,7 @@ export const KNOWN_PREFERENCE_KEYS = new Set<string>([
   "stale_commit_threshold_minutes",
   "context_management",
   "experimental",
+  "provider_capabilities",
 ]);
 
 /** Canonical list of all dispatch unit types. */
@@ -275,6 +276,20 @@ export interface GSDPreferences {
    * See the preferences reference for details on each feature.
    */
   experimental?: ExperimentalPreferences;
+  /**
+   * Provider capability overrides (ADR-005). Deep-merged with built-in defaults.
+   * Keys are API protocol strings (e.g., "openai-responses"), NOT provider short names.
+   *
+   * Example:
+   * ```yaml
+   * provider_capabilities:
+   *   openai-responses:
+   *     imageToolResults: true
+   *   my-custom-api:
+   *     toolCalling: false
+   * ```
+   */
+  provider_capabilities?: Record<string, Record<string, unknown>>;
 }
 
 export interface LoadedGSDPreferences {

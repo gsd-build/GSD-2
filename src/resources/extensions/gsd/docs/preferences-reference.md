@@ -197,6 +197,14 @@ Setting `prefer_skills: []` does **not** disable skill discovery — it just mea
   - `compaction_threshold_percent`: number — trigger compaction at this % of context window (0.5-0.95). Lower values fire compaction earlier, reducing drift. Default: `0.70`.
   - `tool_result_max_chars`: number — max chars per tool result in GSD sessions (200-10000). Default: `800`.
 
+- `provider_capabilities`: object — override built-in provider capability profiles (ADR-005). Keys are API protocol strings (e.g., `"openai-responses"`), NOT provider short names (e.g., `"openai"`). Values are partial `ProviderCapabilities` objects — only specified fields are overridden, others keep built-in defaults.
+  - `toolCalling`: boolean — whether the provider supports tool calling.
+  - `maxTools`: number — max tools the provider handles well (0 = unlimited).
+  - `imageToolResults`: boolean — whether tool results can contain images.
+  - `structuredOutput`: boolean — whether the provider supports structured JSON output.
+  - `thinkingPersistence`: `"full"`, `"text-only"`, or `"none"` — thinking block preservation.
+  - `unsupportedSchemaFeatures`: string[] — schema features NOT supported (e.g., `["patternProperties"]`).
+
 - `auto_visualize`: boolean — show a visualizer hint after each milestone completion in auto-mode. Default: `false`.
 
 - `auto_report`: boolean — generate an HTML report snapshot after each milestone completion. Default: `true`.

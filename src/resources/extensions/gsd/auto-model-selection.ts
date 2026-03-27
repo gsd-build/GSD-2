@@ -19,7 +19,7 @@ import {
 } from "./model-router.js";
 import { getLedger, getProjectTotals } from "./metrics.js";
 import { unitPhaseLabel } from "./auto-dashboard.js";
-import { getProviderCapabilities, type ProviderCapabilities } from "@gsd/pi-ai";
+import { getProviderCapabilities, setProviderCapabilityOverrides, type ProviderCapabilities } from "@gsd/pi-ai";
 import { isToolCompatibleWithProvider } from "./model-router.js";
 
 export interface ModelSelectionResult {
@@ -73,6 +73,10 @@ export async function selectAndApplyModel(
   autoModeStartModel: { provider: string; id: string } | null,
   retryContext?: { isRetry: boolean; previousTier?: string },
 ): Promise<ModelSelectionResult> {
+  // ADR-005 Phase 6: Apply provider capability overrides from preferences.
+  // This ensures user-specified capability overrides take effect before any routing decisions.
+  setProviderCapabilityOverrides(prefs?.provider_capabilities);
+
   const modelConfig = resolvePreferredModelConfig(unitType, autoModeStartModel);
   let routing: { tier: string; modelDowngraded: boolean } | null = null;
   let appliedModel: Model<Api> | null = null;
