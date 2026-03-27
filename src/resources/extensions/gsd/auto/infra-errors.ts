@@ -41,5 +41,8 @@ export function isInfrastructureError(err: unknown): string | null {
   for (const code of INFRA_ERROR_CODES) {
     if (msg.includes(code)) return code;
   }
+  // SQLite WAL corruption is not transient — retrying burns LLM budget
+  // for guaranteed failures (#2823).
+  if (msg.includes("database disk image is malformed")) return "SQLITE_CORRUPT";
   return null;
 }

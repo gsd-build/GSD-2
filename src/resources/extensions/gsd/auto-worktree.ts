@@ -1231,12 +1231,17 @@ export function mergeMilestoneToMain(
   // 1. Auto-commit dirty state in worktree before leaving
   autoCommitDirtyState(worktreeCwd);
 
-  // Reconcile worktree DB into main DB before leaving worktree context
+  // Reconcile worktree DB into main DB before leaving worktree context.
+  // Skip when both paths resolve to the same physical file (shared WAL /
+  // symlink layout) — ATTACHing a WAL-mode file to itself corrupts the
+  // database (#2823).
   if (isDbAvailable()) {
     try {
       const worktreeDbPath = join(worktreeCwd, ".gsd", "gsd.db");
       const mainDbPath = join(originalBasePath_, ".gsd", "gsd.db");
-      reconcileWorktreeDb(mainDbPath, worktreeDbPath);
+      if (!isSamePath(worktreeDbPath, mainDbPath)) {
+        reconcileWorktreeDb(mainDbPath, worktreeDbPath);
+      }
     } catch {
       /* non-fatal */
     }

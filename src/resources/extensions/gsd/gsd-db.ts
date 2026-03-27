@@ -6,7 +6,7 @@
 // Schema is initialized on first open with WAL mode for file-backed DBs.
 
 import { createRequire } from "node:module";
-import { existsSync, copyFileSync, mkdirSync } from "node:fs";
+import { existsSync, copyFileSync, mkdirSync, realpathSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Decision, Requirement, GateRow, GateId, GateScope, GateStatus, GateVerdict } from "./types.js";
 import { GSDError, GSD_STALE_STATE } from "./errors.js";
@@ -1761,6 +1761,11 @@ export function reconcileWorktreeDb(
 ): ReconcileResult {
   const zero: ReconcileResult = { decisions: 0, requirements: 0, artifacts: 0, milestones: 0, slices: 0, tasks: 0, memories: 0, verification_evidence: 0, conflicts: [] };
   if (!existsSync(worktreeDbPath)) return zero;
+  // Guard: bail when both paths resolve to the same physical file.
+  // ATTACHing a WAL-mode DB to itself corrupts the WAL (#2823).
+  try {
+    if (realpathSync(mainDbPath) === realpathSync(worktreeDbPath)) return zero;
+  } catch { /* path resolution failed — fall through to existing checks */ }
   // Sanitize path: reject any characters that could break ATTACH syntax.
   // ATTACH DATABASE doesn't support parameterized paths in all providers,
   // so we use strict allowlist validation instead.
