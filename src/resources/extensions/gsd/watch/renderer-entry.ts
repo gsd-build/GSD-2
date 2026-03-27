@@ -249,18 +249,27 @@ export function renderPlaceholder(projectRoot: string): void {
 
 // ─── Tree Renderer ────────────────────────────────────────────────────────────
 
+/** Cache of last rendered lines — used by arrow key handler and resize handler. */
+let lastRenderedLines: string[] = [];
+
 /**
- * Render the full project tree to stdout.
- * Replaces renderPlaceholder — reads filesystem, builds tree model, renders formatted output.
+ * Render the full project tree to stdout through the viewport.
+ * Updates lastRenderedLines so arrow key and resize handlers can access total line count.
  * Uses single atomic write to prevent flicker (Pitfall 5 from research).
  */
 export function renderTree(projectRoot: string): void {
   const width = getEffectiveWidth();
+  const height = getEffectiveHeight();
   const milestone = buildMilestoneTree(projectRoot);
 
   const lines = renderTreeLines(milestone, width);
+
+  // Store totalLines for use by scrollViewport calls (arrow key and resize handlers)
+  lastRenderedLines = lines;
+
+  const output = renderViewport(lines, viewportOffset, height, width);
   // Atomic single write: clear screen + content in one call to prevent flicker
-  process.stdout.write("\x1b[2J\x1b[H" + lines.join("\n") + "\n");
+  process.stdout.write("\x1b[2J\x1b[H" + output + "\n");
 }
 
 // ─── Shutdown ─────────────────────────────────────────────────────────────────
@@ -304,10 +313,46 @@ if (isMainModule) {
   // Render initial tree
   renderTree(projectRoot);
 
-  // Start file watcher — re-render tree on file changes
-  const watcher = startPlanningWatcher(planningDir, () =>
-    renderTree(projectRoot)
-  );
+  // Start file watcher — smart auto-follow on file changes (D-02)
+  const watcher = startPlanningWatcher(planningDir, () => {
+    // Smart auto-follow (D-02): only scroll to active phase if it was already visible
+    const height = getEffectiveHeight();
+    const oldLines = lastRenderedLines;
+    const total = oldLines.length;
+    const scrollable = total > height;
+    const contentHeight = scrollable ? height - 1 : height;
+
+    // Find active phase (◆) in current (pre-refresh) lines
+    const activeIndex = oldLines.findIndex((line) => line.includes("◆"));
+    const wasInView =
+      activeIndex >= 0 &&
+      activeIndex >= viewportOffset &&
+      activeIndex < viewportOffset + contentHeight;
+
+    // Re-render (this updates lastRenderedLines)
+    renderTree(projectRoot);
+
+    // After render: if active was in view, ensure it still is
+    if (wasInView && lastRenderedLines.length > 0) {
+      const newActiveIndex = lastRenderedLines.findIndex((line) => line.includes("◆"));
+      if (newActiveIndex >= 0) {
+        const newHeight = getEffectiveHeight();
+        const newTotal = lastRenderedLines.length;
+        const newScrollable = newTotal > newHeight;
+        const newContentHeight = newScrollable ? newHeight - 1 : newHeight;
+        const inViewNow =
+          newActiveIndex >= viewportOffset &&
+          newActiveIndex < viewportOffset + newContentHeight;
+        if (!inViewNow) {
+          // Scroll so active phase is at the top of viewport
+          const maxOffset = Math.max(0, newTotal - newContentHeight);
+          viewportOffset = Math.min(newActiveIndex, maxOffset);
+          // Re-render with corrected offset
+          renderTree(projectRoot);
+        }
+      }
+    }
+  });
 
   // Register signal handlers for clean exit on all termination paths
   for (const sig of CLEANUP_SIGNALS) {
@@ -320,12 +365,33 @@ if (isMainModule) {
     process.stdin.resume();
     process.stdin.setEncoding("utf-8");
     process.stdin.on("data", (chunk: string) => {
+      // Arrow keys MUST be checked first — their \x1b prefix must NOT reach parseQuitSequence (Pitfall 1)
+      const arrow = parseArrowKey(chunk);
+      if (arrow !== null) {
+        const height = getEffectiveHeight();
+        const total = lastRenderedLines.length;
+        const scrollable = total > height;
+        const contentHeight = scrollable ? height - 1 : height;
+        scrollViewport(arrow === "up" ? -1 : 1, total, contentHeight);
+        renderTree(projectRoot);
+        return; // consumed — do NOT pass to parseQuitSequence
+      }
       if (parseQuitSequence(chunk)) {
         void shutdown(watcher, gsdDir);
       }
     });
   }
 
-  // Re-render on terminal resize
-  process.stdout.on("resize", () => renderTree(projectRoot));
+  // Re-render on terminal resize — clamp viewport offset before re-render (Pitfall 4)
+  process.stdout.on("resize", () => {
+    const height = getEffectiveHeight();
+    const total = lastRenderedLines.length;
+    const scrollable = total > height;
+    const contentHeight = scrollable ? height - 1 : height;
+    const maxOffset = Math.max(0, total - contentHeight);
+    if (viewportOffset > maxOffset) {
+      viewportOffset = maxOffset;
+    }
+    renderTree(projectRoot);
+  });
 }
