@@ -42,6 +42,12 @@ test("buildRtkEnv prepends the managed bin dir and disables telemetry", () => {
   assert.equal(env.RTK_TELEMETRY_DISABLED, "1");
 });
 
+test("resolveRtkBinaryPath returns explicit binaryPath without existsSync check", () => {
+  // A path that does not exist on disk — must be returned as-is when explicitly provided
+  const fakePath = "/this/does/not/exist/rtk";
+  assert.equal(resolveRtkBinaryPath({ binaryPath: fakePath }), fakePath);
+});
+
 test("rewriteCommandWithRtk rewrites when RTK returns exit 0 or 3", () => {
   const spawnSyncImpl = ((_binary: string, _args: string[]) => ({ status: 0, stdout: "rtk git status", error: undefined })) as typeof import("node:child_process").spawnSync;
   assert.equal(rewriteCommandWithRtk("git status", { binaryPath: "/tmp/rtk", spawnSyncImpl }), "rtk git status");
