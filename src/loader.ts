@@ -5,6 +5,33 @@ import { fileURLToPath } from 'url'
 import { dirname, resolve, join, relative, delimiter } from 'path'
 import { existsSync, readFileSync, mkdirSync, symlinkSync, cpSync } from 'fs'
 
+// ─── node:sqlite flag injection ────────────────────────────────────────────
+// node:sqlite is experimental on Node 22-23 and requires --experimental-sqlite.
+// Without it, the GSD database layer silently falls back to "no provider available"
+// and all DB tools (gsd_decision_save, gsd_requirement_update, etc.) fail.
+// On Node >=24 the flag is no longer needed (node:sqlite is stable).
+// Re-exec once with the flag if we're on Node <24 and it's not already present.
+const nodeMajor = parseInt(process.version.slice(1), 10)
+if (
+  nodeMajor < 24 &&
+  !process.execArgv.includes('--experimental-sqlite') &&
+  !(process.env.NODE_OPTIONS || '').includes('--experimental-sqlite') &&
+  !process.env.__GSD_SQLITE_REEXEC
+) {
+  const { execFileSync } = await import('child_process')
+  try {
+    execFileSync(
+      process.execPath,
+      ['--experimental-sqlite', ...process.execArgv, ...process.argv.slice(1)],
+      { stdio: 'inherit', env: { ...process.env, __GSD_SQLITE_REEXEC: '1' } },
+    )
+    process.exit(0)
+  } catch (err: any) {
+    // Propagate the child's exit code
+    process.exit(err.status ?? 1)
+  }
+}
+
 // Fast-path: handle --version/-v and --help/-h before importing any heavy
 // dependencies. This avoids loading the entire pi-coding-agent barrel import
 // (~1s) just to print a version string.

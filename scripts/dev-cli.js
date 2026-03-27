@@ -11,7 +11,7 @@ const resolveTsPath = resolve(root, 'src', 'resources', 'extensions', 'gsd', 'te
 
 const child = spawn(
   process.execPath,
-  ['--import', resolveTsPath, '--experimental-strip-types', srcLoaderPath, ...process.argv.slice(2)],
+  ['--import', resolveTsPath, '--experimental-strip-types', '--experimental-sqlite', srcLoaderPath, ...process.argv.slice(2)],
   {
     cwd: process.cwd(),
     stdio: 'inherit',
