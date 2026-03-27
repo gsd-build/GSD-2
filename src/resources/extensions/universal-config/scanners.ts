@@ -11,6 +11,7 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, basename, resolve } from "node:path";
 import { homedir } from "node:os";
+import { splitFrontmatter, parseFrontmatterMap } from "../shared/frontmatter.js";
 import type {
   ConfigSource,
   ConfigLevel,
@@ -96,40 +97,9 @@ async function readDirSafe(dir: string): Promise<string[]> {
   }
 }
 
-/**
- * Parse MDC/YAML frontmatter from a markdown file.
- * Returns the frontmatter as key-value pairs and the body content.
- */
 function parseFrontmatter(content: string): { frontmatter: Record<string, unknown>; body: string } {
-  const match = content.match(/^---\s*\n([\s\S]*?)\n---\s*\n([\s\S]*)$/);
-  if (!match) {
-    return { frontmatter: {}, body: content };
-  }
-
-  const rawFm = match[1] ?? "";
-  const body = match[2] ?? "";
-  const frontmatter: Record<string, unknown> = {};
-
-  for (const line of rawFm.split("\n")) {
-    const colonIdx = line.indexOf(":");
-    if (colonIdx === -1) continue;
-    const key = line.slice(0, colonIdx).trim();
-    let value: unknown = line.slice(colonIdx + 1).trim();
-
-    // Strip surrounding quotes from YAML string values
-    if (typeof value === "string" && /^["'].*["']$/.test(value)) {
-      value = value.slice(1, -1);
-    }
-
-    // Parse simple types
-    if (value === "true") value = true;
-    else if (value === "false") value = false;
-    else if (typeof value === "string" && /^\d+$/.test(value)) value = parseInt(value, 10);
-
-    frontmatter[key] = value;
-  }
-
-  return { frontmatter, body };
+  const [lines, body] = splitFrontmatter(content);
+  return { frontmatter: lines ? parseFrontmatterMap(lines) : {}, body };
 }
 
 /**

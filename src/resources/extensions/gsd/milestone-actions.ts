@@ -12,6 +12,7 @@
  */
 
 import { existsSync, rmSync, writeFileSync, readFileSync, unlinkSync } from "node:fs";
+import { parse, stringify } from "yaml";
 import { join } from "node:path";
 import {
   resolveMilestonePath,
@@ -40,17 +41,8 @@ export function parkMilestone(basePath: string, milestoneId: string, reason: str
   const parkedPath = join(mDir, buildMilestoneFileName(milestoneId, "PARKED"));
   if (existsSync(parkedPath)) return false; // already parked
 
-  const content = [
-    "---",
-    `parked_at: ${new Date().toISOString()}`,
-    `reason: "${reason.replace(/"/g, '\\"')}"`,
-    "---",
-    "",
-    `# ${milestoneId} — Parked`,
-    "",
-    `> ${reason}`,
-    "",
-  ].join("\n");
+  const fm = { parked_at: new Date().toISOString(), reason };
+  const content = `---\n${stringify(fm).trimEnd()}\n---\n\n# ${milestoneId} — Parked\n\n> ${reason}\n`;
 
   writeFileSync(parkedPath, content, "utf-8");
   // Sync DB status so deriveStateFromDb also skips this milestone (#2694)
@@ -135,8 +127,8 @@ export function getParkedReason(basePath: string, milestoneId: string): string |
     const content = readFileSync(parkedFile, "utf-8");
     const match = content.match(/^---\n([\s\S]*?)\n---/);
     if (!match) return null;
-    const reasonMatch = match[1].match(/reason:\s*"([^"]*?)"/);
-    return reasonMatch ? reasonMatch[1] : null;
+    const parsed = parse(match[1], { schema: "failsafe" }) as Record<string, unknown> | null;
+    return typeof parsed?.reason === "string" ? parsed.reason : null;
   } catch {
     return null;
   }

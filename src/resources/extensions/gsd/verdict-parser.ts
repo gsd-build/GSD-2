@@ -5,6 +5,7 @@
  * (e.g. `passed` → `pass`) are applied consistently across the codebase.
  */
 
+import { parse } from "yaml";
 import { extractUatType } from "./files.js";
 import type { UatType } from "./files.js";
 
@@ -22,9 +23,9 @@ import type { UatType } from "./files.js";
 export function extractVerdict(content: string): string | undefined {
   const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
   if (!fmMatch) return undefined;
-  const verdictMatch = fmMatch[1].match(/verdict:\s*([\w-]+)/i);
-  if (!verdictMatch) return undefined;
-  let v = verdictMatch[1].toLowerCase();
+  const parsed = parse(fmMatch[1], { schema: "failsafe" }) as Record<string, unknown> | null;
+  if (!parsed?.verdict) return undefined;
+  let v = String(parsed.verdict).toLowerCase();
   if (v === "passed") v = "pass";
   return v;
 }
