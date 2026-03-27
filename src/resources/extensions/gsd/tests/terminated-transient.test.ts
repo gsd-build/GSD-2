@@ -82,3 +82,26 @@ test("#2572: 'SyntaxError' with JSON context (truncated stream) is transient", (
   assert.equal(isTransient(result), true, "'SyntaxError...JSON' should be transient");
   assert.equal(result.kind, "stream", "JSON parse errors are stream kind");
 });
+
+// --- #2882: "No number after minus sign" JSON parse error should be transient ---
+
+test("#2882: 'No number after minus sign in JSON' (truncated stream) is transient", () => {
+  const result = classifyError("No number after minus sign in JSON at position 2559 (line 1 column 2560)");
+  assert.equal(isTransient(result), true, "'No number after minus sign in JSON' should be transient");
+  assert.equal(result.kind, "stream", "JSON parse errors are stream kind");
+  assert.equal("retryAfterMs" in result && result.retryAfterMs, 15_000, "should use 15s backoff");
+});
+
+test("#2882: 'Exponent part is missing a number in JSON' (truncated stream) is transient", () => {
+  const result = classifyError("Exponent part is missing a number in JSON at position 42 (line 1 column 43)");
+  assert.equal(isTransient(result), true, "'Exponent part is missing' should be transient");
+  assert.equal(result.kind, "stream", "JSON parse errors are stream kind");
+});
+
+test("#2882: 'Unterminated string in JSON' (truncated stream) is transient", () => {
+  const result = classifyError("Unterminated string in JSON at position 1024 (line 1 column 1025)");
+  assert.equal(isTransient(result), true, "'Unterminated string in JSON' should be transient");
+  // Note: "Unterminated" matches CONNECTION_RE ("terminated") first due to classification order.
+  // Still transient either way — both connection and stream kinds trigger auto-retry.
+  assert.equal(result.kind, "connection", "'Unterminated' matches CONNECTION_RE before STREAM_RE");
+});
