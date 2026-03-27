@@ -294,6 +294,7 @@ export class ParallelMonitorOverlay {
   private cachedLines?: string[];
   private scrollOffset = 0;
   private disposed = false;
+  private resizeHandler: (() => void) | null = null;
 
   constructor(
     tui: { requestRender: () => void },
@@ -305,6 +306,13 @@ export class ParallelMonitorOverlay {
     this.theme = theme;
     this.onClose = onClose;
     this.basePath = basePath || process.cwd();
+
+    this.resizeHandler = () => {
+      if (this.disposed) return;
+      this.invalidate();
+      this.tui.requestRender();
+    };
+    process.stdout.on("resize", this.resizeHandler);
 
     this.refresh();
     this.refreshTimer = setInterval(() => this.refresh(), 5000);
@@ -330,30 +338,37 @@ export class ParallelMonitorOverlay {
   dispose(): void {
     this.disposed = true;
     clearInterval(this.refreshTimer);
+    if (this.resizeHandler) {
+      process.stdout.removeListener("resize", this.resizeHandler);
+      this.resizeHandler = null;
+    }
   }
 
-  handleInput(key: string): boolean {
-    if (matchesKey(key, Key.escape()) || key === "q") {
+  handleInput(data: string): void {
+    if (matchesKey(data, Key.escape) || data === "q") {
       this.dispose();
       this.onClose();
-      return true;
+      return;
     }
-    if (matchesKey(key, Key.arrowDown()) || key === "j") {
+    if (matchesKey(data, Key.down) || data === "j") {
       this.scrollOffset++;
-      this.cachedLines = undefined;
+      this.invalidate();
       this.tui.requestRender();
-      return true;
+      return;
     }
-    if (matchesKey(key, Key.arrowUp()) || key === "k") {
+    if (matchesKey(data, Key.up) || data === "k") {
       this.scrollOffset = Math.max(0, this.scrollOffset - 1);
-      this.cachedLines = undefined;
+      this.invalidate();
       this.tui.requestRender();
-      return true;
+      return;
     }
-    return false;
   }
 
-  render(width: number, height: number): string[] {
+  invalidate(): void {
+    this.cachedLines = undefined;
+  }
+
+  render(width: number): string[] {
     if (this.cachedLines) return this.cachedLines;
 
     const t = this.theme;
@@ -471,8 +486,9 @@ export class ParallelMonitorOverlay {
     }
     lines.push(t.fg("muted", "  ESC/q to close  │  ↑↓ scroll"));
 
-    // Apply scroll
-    const visible = lines.slice(this.scrollOffset, this.scrollOffset + height);
+    // Apply scroll — use terminal rows as height estimate
+    const termHeight = process.stdout.rows || 40;
+    const visible = lines.slice(this.scrollOffset, this.scrollOffset + termHeight);
     this.cachedLines = visible;
     return visible;
   }
