@@ -1,17 +1,19 @@
 /**
- * Regression tests for #2684: preferences.md must be included in both
- * ROOT_STATE_FILES (sync) and copyPlanningArtifacts (initial seed).
+ * Regression tests for #2684 plus uppercase-preference normalization:
+ * preferences files are handled explicitly
+ * outside ROOT_STATE_FILES and prefer canonical PREFERENCES.md over the
+ * legacy lowercase fallback.
  *
  * Without this, post_unit_hooks and all preference-driven config silently
  * stop working inside auto-mode worktrees.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from "node:fs";
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, existsSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-test("#2684: preferences.md is NOT in ROOT_STATE_FILES (forward-only sync)", () => {
+test("#2684: preferences files are NOT in ROOT_STATE_FILES (forward-only sync)", () => {
   const srcPath = join(import.meta.dirname, "..", "auto-worktree.ts");
   const src = readFileSync(srcPath, "utf-8");
 
@@ -22,21 +24,23 @@ test("#2684: preferences.md is NOT in ROOT_STATE_FILES (forward-only sync)", () 
   const arrayEnd = src.indexOf("] as const", arrayStart);
   const block = src.slice(arrayStart, arrayEnd);
 
-  // preferences.md must NOT be in ROOT_STATE_FILES — it is handled separately
+  // Project preferences must NOT be in ROOT_STATE_FILES — they are handled separately
   // in syncGsdStateToWorktree() (forward-only, additive). Including it in
   // ROOT_STATE_FILES would cause syncWorktreeStateBack() to overwrite the
   // authoritative project root copy (#2684).
   const entries = block.split("\n")
     .map(l => l.trim())
     .filter(l => l.startsWith('"') && l.includes(".md"));
-  const hasPrefs = entries.some(l => l.includes("preferences.md"));
+  const hasPrefs = entries.some(
+    l => l.includes("PREFERENCES.md") || l.includes("preferences.md"),
+  );
   assert.ok(
     !hasPrefs,
-    "preferences.md must NOT be in ROOT_STATE_FILES (back-sync would overwrite root)",
+    "preferences files must NOT be in ROOT_STATE_FILES (back-sync would overwrite root)",
   );
 });
 
-test("#2684: copyPlanningArtifacts file list includes preferences.md", () => {
+test("copyPlanningArtifacts prefers canonical PREFERENCES.md with lowercase fallback", () => {
   const srcPath = join(import.meta.dirname, "..", "auto-worktree.ts");
   const src = readFileSync(srcPath, "utf-8");
 
@@ -45,15 +49,15 @@ test("#2684: copyPlanningArtifacts file list includes preferences.md", () => {
   assert.ok(fnIdx !== -1, "copyPlanningArtifacts function exists");
 
   // Extract function body (up to the next top-level function)
-  const fnBody = src.slice(fnIdx, fnIdx + 1500);
+  const fnBody = src.slice(fnIdx, fnIdx + 2200);
 
   assert.ok(
-    fnBody.includes('"preferences.md"'),
-    "preferences.md should be in copyPlanningArtifacts file list",
+    fnBody.includes("PROJECT_PREFERENCES_FILE") && fnBody.includes("LEGACY_PROJECT_PREFERENCES_FILE"),
+    "copyPlanningArtifacts should prefer canonical PREFERENCES.md and retain lowercase fallback via the shared constants",
   );
 });
 
-test("#2684: syncGsdStateToWorktree copies preferences.md", async () => {
+test("syncGsdStateToWorktree copies canonical PREFERENCES.md", async () => {
   // Functional test: create a mock source and destination, call the sync
   const srcBase = mkdtempSync(join(tmpdir(), "gsd-wt-prefs-src-"));
   const dstBase = mkdtempSync(join(tmpdir(), "gsd-wt-prefs-dst-"));
@@ -63,9 +67,9 @@ test("#2684: syncGsdStateToWorktree copies preferences.md", async () => {
   mkdirSync(dstGsd, { recursive: true });
 
   try {
-    // Write a preferences.md in source
+    // Write a canonical PREFERENCES.md in source
     writeFileSync(
-      join(srcGsd, "preferences.md"),
+      join(srcGsd, "PREFERENCES.md"),
       "---\nversion: 1\n---\n\npost_unit_hooks:\n  - name: notify\n    command: echo done\n",
     );
 
@@ -73,16 +77,54 @@ test("#2684: syncGsdStateToWorktree copies preferences.md", async () => {
     const { syncGsdStateToWorktree } = await import("../auto-worktree.ts");
     syncGsdStateToWorktree(srcBase, dstBase);
 
-    // Verify preferences.md was copied
+    // Verify PREFERENCES.md was copied
     assert.ok(
-      existsSync(join(dstGsd, "preferences.md")),
-      "preferences.md should be copied to worktree",
+      existsSync(join(dstGsd, "PREFERENCES.md")),
+      "PREFERENCES.md should be copied to worktree",
     );
 
-    const content = readFileSync(join(dstGsd, "preferences.md"), "utf-8");
+    const content = readFileSync(join(dstGsd, "PREFERENCES.md"), "utf-8");
     assert.ok(
       content.includes("post_unit_hooks"),
-      "copied preferences.md should contain the hooks config",
+      "copied PREFERENCES.md should contain the hooks config",
+    );
+  } finally {
+    rmSync(srcBase, { recursive: true, force: true });
+    rmSync(dstBase, { recursive: true, force: true });
+  }
+});
+
+test("syncGsdStateToWorktree falls back to legacy lowercase preferences.md", async () => {
+  const srcBase = mkdtempSync(join(tmpdir(), "gsd-wt-prefs-legacy-src-"));
+  const dstBase = mkdtempSync(join(tmpdir(), "gsd-wt-prefs-legacy-dst-"));
+  const srcGsd = join(srcBase, ".gsd");
+  const dstGsd = join(dstBase, ".gsd");
+  mkdirSync(srcGsd, { recursive: true });
+  mkdirSync(dstGsd, { recursive: true });
+
+  try {
+    writeFileSync(
+      join(srcGsd, "preferences.md"),
+      "---\nversion: 1\n---\n\ngit:\n  auto_push: true\n",
+    );
+
+    const { syncGsdStateToWorktree } = await import("../auto-worktree.ts");
+    const result = syncGsdStateToWorktree(srcBase, dstBase);
+
+    const copiedEntries = readdirSync(dstGsd)
+      .filter((name) => name === "PREFERENCES.md" || name === "preferences.md");
+
+    assert.ok(
+      copiedEntries.length === 1,
+      `expected exactly one preferences file in worktree, got ${copiedEntries.join(", ") || "(none)"}`,
+    );
+    assert.ok(
+      copiedEntries[0] === "PREFERENCES.md" || copiedEntries[0] === "preferences.md",
+      "legacy fallback should still result in one readable preferences file",
+    );
+    assert.ok(
+      result.synced.includes("preferences.md") || result.synced.includes("PREFERENCES.md"),
+      "legacy fallback copy should be reported in synced list",
     );
   } finally {
     rmSync(srcBase, { recursive: true, force: true });

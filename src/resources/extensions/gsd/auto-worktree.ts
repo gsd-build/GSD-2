@@ -65,6 +65,8 @@ import {
 } from "./native-git-bridge.js";
 
 const gsdHome = process.env.GSD_HOME || join(homedir(), ".gsd");
+const PROJECT_PREFERENCES_FILE = "PREFERENCES.md";
+const LEGACY_PROJECT_PREFERENCES_FILE = "preferences.md";
 
 // ─── Shared Constants & Helpers ─────────────────────────────────────────────
 
@@ -82,7 +84,7 @@ const ROOT_STATE_FILES = [
   "QUEUE.md",
   "completed-units.json",
   "metrics.json",
-  // NOTE: preferences.md is intentionally NOT in ROOT_STATE_FILES.
+  // NOTE: project preferences are intentionally NOT in ROOT_STATE_FILES.
   // Forward-sync (main → worktree) is handled explicitly in syncGsdStateToWorktree().
   // Back-sync (worktree → main) must NEVER overwrite the project root's copy
   // because the project root is authoritative for preferences (#2684).
@@ -439,18 +441,25 @@ export function syncGsdStateToWorktree(
     }
   }
 
-  // Forward-sync preferences.md from project root to worktree (additive only).
-  // NOT in ROOT_STATE_FILES because syncWorktreeStateBack() must never overwrite
-  // the project root's preferences — the project root is authoritative (#2684).
+  // Forward-sync project preferences from project root to worktree (additive only).
+  // Prefer the canonical uppercase file name, but keep the legacy lowercase
+  // fallback so older repos still work on case-sensitive filesystems.
   {
-    const src = join(mainGsd, "preferences.md");
-    const dst = join(wtGsd, "preferences.md");
-    if (existsSync(src) && !existsSync(dst)) {
-      try {
-        cpSync(src, dst);
-        synced.push("preferences.md");
-      } catch {
-        /* non-fatal */
+    const worktreeHasPreferences = existsSync(join(wtGsd, PROJECT_PREFERENCES_FILE))
+      || existsSync(join(wtGsd, LEGACY_PROJECT_PREFERENCES_FILE));
+    if (!worktreeHasPreferences) {
+      for (const file of [PROJECT_PREFERENCES_FILE, LEGACY_PROJECT_PREFERENCES_FILE] as const) {
+        const src = join(mainGsd, file);
+        const dst = join(wtGsd, file);
+        if (existsSync(src)) {
+          try {
+            cpSync(src, dst);
+            synced.push(file);
+          } catch {
+            /* non-fatal */
+          }
+          break;
+        }
       }
     }
   }
@@ -985,9 +994,23 @@ function copyPlanningArtifacts(srcBase: string, wtPath: string): void {
     "STATE.md",
     "KNOWLEDGE.md",
     "OVERRIDES.md",
-    "preferences.md",
   ]) {
     safeCopy(join(srcGsd, file), join(dstGsd, file), { force: true });
+  }
+
+  // Seed canonical PREFERENCES.md when available; fall back to legacy lowercase.
+  if (existsSync(join(srcGsd, PROJECT_PREFERENCES_FILE))) {
+    safeCopy(
+      join(srcGsd, PROJECT_PREFERENCES_FILE),
+      join(dstGsd, PROJECT_PREFERENCES_FILE),
+      { force: true },
+    );
+  } else if (existsSync(join(srcGsd, LEGACY_PROJECT_PREFERENCES_FILE))) {
+    safeCopy(
+      join(srcGsd, LEGACY_PROJECT_PREFERENCES_FILE),
+      join(dstGsd, LEGACY_PROJECT_PREFERENCES_FILE),
+      { force: true },
+    );
   }
 
   // Shared WAL (R012): worktrees use the project root's DB directly.
