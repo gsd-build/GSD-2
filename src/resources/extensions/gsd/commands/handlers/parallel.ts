@@ -111,7 +111,25 @@ export async function handleParallelCommand(trimmed: string, _ctx: ExtensionComm
     return true;
   }
 
-  emitParallelMessage(pi, `Unknown parallel subcommand "${subcommand}". Usage: /gsd parallel [start|status|stop|pause|resume|merge]`);
+  if (subcommand === "watch") {
+    const root = projectRoot();
+    const { ParallelMonitorOverlay } = await import("../../parallel-monitor-overlay.js");
+    await _ctx.ui.custom<void>(
+      (tui, theme, _kb, done) => new ParallelMonitorOverlay(tui, theme, () => done(), root),
+      {
+        overlay: true,
+        overlayOptions: {
+          width: "90%",
+          minWidth: 80,
+          maxHeight: "92%",
+          anchor: "center",
+        },
+      },
+    );
+    return true;
+  }
+
+  emitParallelMessage(pi, `Unknown parallel subcommand "${subcommand}". Usage: /gsd parallel [start|status|stop|pause|resume|merge|watch]`);
   return true;
 }
 
