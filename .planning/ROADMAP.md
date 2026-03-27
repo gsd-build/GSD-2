@@ -38,7 +38,11 @@ Plans:
   2. Each phase row displays exactly 7 lifecycle badge slots (CONTEXT, RESEARCH, UI-SPEC, PLAN, SUMMARY, VERIFICATION, HUMAN-UAT) as flat icons with no color — filled when the corresponding file is present, empty otherwise.
   3. Status icons (done/active/pending/blocked) appear next to each node, matching the current state derived from plan files.
   4. No ANSI rendering artifacts or line overflow occur in a pane as narrow as 30 columns.
-**Plans**: TBD
+**Plans:** 2 plans
+
+Plans:
+- [ ] 03-01-PLAN.md — Tree data types, filesystem scanner, badge detection, and status derivation (DISP-01, DISP-02)
+- [ ] 03-02-PLAN.md — Tree renderer layout engine, badge formatting, and renderer-entry integration (DISP-01, DISP-02)
 
 ### Phase 4: Renderer Entry + Command Integration
 **Goal**: The renderer subprocess runs as a standalone process wired to stdin/stdout, supports viewport scrolling for tall trees, and the `/gsd watch` command is registered end-to-end in the GSD dispatcher.
@@ -46,7 +50,7 @@ Plans:
 **Requirements**: DISP-04
 **Success Criteria** (what must be TRUE):
   1. A project with more than 15 visible tree nodes causes the sidebar to show a scrollable viewport — nodes above and below the visible area are accessible without truncation.
-  2. Running `/gsd watch` through the full GSD command chain (dispatcher → handler → orchestrator → renderer subprocess) produces a working sidebar pane.
+  2. Running `/gsd watch` through the full GSD command chain (dispatcher -> handler -> orchestrator -> renderer subprocess) produces a working sidebar pane.
   3. The renderer subprocess can be invoked directly from the command line (bypassing the GSD dispatcher) for isolated testing.
 **Plans**: TBD
 
@@ -66,7 +70,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 2. Foundation | 3/3 | Complete   | 2026-03-27 |
-| 3. Core Renderer | 0/? | Not started | — |
+| 3. Core Renderer | 0/2 | Not started | — |
 | 4. Renderer Entry + Command Integration | 0/? | Not started | — |
 | 5. Navigation | 0/? | Not started | — |
 
