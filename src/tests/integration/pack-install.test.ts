@@ -49,6 +49,27 @@ function createNpmSandbox(prefix: string): NpmSandbox {
   };
 }
 
+function buildQuietNpmEnv(sandbox: NpmSandbox): NodeJS.ProcessEnv {
+  return {
+    ...sandbox.env,
+    NPM_CONFIG_LOGLEVEL: "error",
+    npm_config_loglevel: "error",
+    NPM_CONFIG_FUND: "false",
+    npm_config_fund: "false",
+    NPM_CONFIG_AUDIT: "false",
+    npm_config_audit: "false",
+  };
+}
+
+function runNpmQuiet(args: string[], sandbox: NpmSandbox): void {
+  execFileSync("npm", args, {
+    cwd: projectRoot,
+    env: buildQuietNpmEnv(sandbox),
+    stdio: "ignore",
+    maxBuffer: 16 * 1024 * 1024,
+  });
+}
+
 function packTarball(sandbox: NpmSandbox): string {
   const pkg = JSON.parse(readFileSync(join(projectRoot, "package.json"), "utf-8"));
   const safeName = pkg.name.replace(/^@[^/]+\//, "").replace(/\//g, "-");
@@ -56,11 +77,7 @@ function packTarball(sandbox: NpmSandbox): string {
   const packDestination = join(sandbox.rootDir, "pack-output");
 
   mkdirSync(packDestination, { recursive: true });
-  execFileSync("npm", ["pack", "--pack-destination", packDestination], {
-    cwd: projectRoot,
-    env: sandbox.env,
-    stdio: ["ignore", "ignore", "pipe"],
-  });
+  runNpmQuiet(["pack", "--pack-destination", packDestination], sandbox);
   return join(packDestination, tarball);
 }
 
@@ -141,10 +158,7 @@ test("tarball installs and gsd binary resolves", async (t) => {
   });
 
   // Install from tarball into a temp prefix
-  execFileSync("npm", ["install", "--prefix", sandbox.installPrefix, tarballPath, "--no-save"], {
-    env: sandbox.env,
-    stdio: ["ignore", "ignore", "pipe"],
-  });
+  runNpmQuiet(["install", "--prefix", sandbox.installPrefix, tarballPath, "--no-save"], sandbox);
 
   // Verify the gsd bin exists in the installed package
   const binName = process.platform === "win32" ? "gsd.cmd" : "gsd";
