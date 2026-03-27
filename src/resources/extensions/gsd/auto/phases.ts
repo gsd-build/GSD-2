@@ -261,8 +261,14 @@ export async function runPreDispatch(
         await deps.stopAuto(ctx, pi, `Merge conflict on milestone ${s.currentMilestoneId}`);
         return { action: "break", reason: "merge-conflict" };
       }
-      // Non-conflict merge errors — log and continue
-      logWarning("engine", "Milestone merge failed with non-conflict error", { milestone: s.currentMilestoneId!, error: String(mergeErr) });
+      // Non-conflict merge errors — stop auto to avoid advancing with unmerged work
+      logError("engine", "Milestone merge failed with non-conflict error", { milestone: s.currentMilestoneId!, error: String(mergeErr) });
+      ctx.ui.notify(
+        `Merge failed: ${mergeErr instanceof Error ? mergeErr.message : String(mergeErr)}. Resolve and run /gsd auto to resume.`,
+        "error",
+      );
+      await deps.stopAuto(ctx, pi, `Merge error on milestone ${s.currentMilestoneId}: ${String(mergeErr)}`);
+      return { action: "break", reason: "merge-failed" };
     }
 
     // PR creation (auto_pr) is handled inside mergeMilestoneToMain (#2302)
@@ -355,6 +361,13 @@ export async function runPreDispatch(
             await deps.stopAuto(ctx, pi, `Merge conflict on milestone ${s.currentMilestoneId}`);
             return { action: "break", reason: "merge-conflict" };
           }
+          logError("engine", "Milestone merge failed with non-conflict error", { milestone: s.currentMilestoneId!, error: String(mergeErr) });
+          ctx.ui.notify(
+            `Merge failed: ${mergeErr instanceof Error ? mergeErr.message : String(mergeErr)}. Resolve and run /gsd auto to resume.`,
+            "error",
+          );
+          await deps.stopAuto(ctx, pi, `Merge error on milestone ${s.currentMilestoneId}: ${String(mergeErr)}`);
+          return { action: "break", reason: "merge-failed" };
         }
 
         // PR creation (auto_pr) is handled inside mergeMilestoneToMain (#2302)
@@ -452,6 +465,13 @@ export async function runPreDispatch(
           await deps.stopAuto(ctx, pi, `Merge conflict on milestone ${s.currentMilestoneId}`);
           return { action: "break", reason: "merge-conflict" };
         }
+        logError("engine", "Milestone merge failed with non-conflict error", { milestone: s.currentMilestoneId!, error: String(mergeErr) });
+        ctx.ui.notify(
+          `Merge failed: ${mergeErr instanceof Error ? mergeErr.message : String(mergeErr)}. Resolve and run /gsd auto to resume.`,
+          "error",
+        );
+        await deps.stopAuto(ctx, pi, `Merge error on milestone ${s.currentMilestoneId}: ${String(mergeErr)}`);
+        return { action: "break", reason: "merge-failed" };
       }
 
       // PR creation (auto_pr) is handled inside mergeMilestoneToMain (#2302)

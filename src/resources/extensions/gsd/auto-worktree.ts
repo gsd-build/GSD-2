@@ -1499,7 +1499,47 @@ export function mergeMilestoneToMain(
         encoding: "utf-8",
       });
     } catch {
-      // Stash pop conflict is non-fatal — stash entry persists for manual resolution.
+      // Stash pop after squash merge can conflict on .gsd/ state files that
+      // diverged between branches.  Left unresolved, these UU entries block
+      // every subsequent merge.  Auto-resolve them the same way we handle
+      // .gsd/ conflicts during the merge itself: accept HEAD (the just-committed
+      // version) and drop the now-applied stash.
+      const uu = nativeConflictFiles(originalBasePath_);
+      const gsdUU = uu.filter((f) => f.startsWith(".gsd/"));
+      const nonGsdUU = uu.filter((f) => !f.startsWith(".gsd/"));
+
+      if (gsdUU.length > 0) {
+        for (const f of gsdUU) {
+          try {
+            // Accept the committed (HEAD) version of the state file
+            execFileSync("git", ["checkout", "HEAD", "--", f], {
+              cwd: originalBasePath_,
+              stdio: ["ignore", "pipe", "pipe"],
+              encoding: "utf-8",
+            });
+            nativeAddPaths(originalBasePath_, [f]);
+          } catch {
+            // Last resort: remove the conflicted state file
+            nativeRmForce(originalBasePath_, [f]);
+          }
+        }
+      }
+
+      if (nonGsdUU.length === 0) {
+        // All conflicts were .gsd/ files — safe to drop the stash
+        try {
+          execFileSync("git", ["stash", "drop"], {
+            cwd: originalBasePath_,
+            stdio: ["ignore", "pipe", "pipe"],
+            encoding: "utf-8",
+          });
+        } catch { /* stash may already be consumed */ }
+      } else {
+        // Non-.gsd conflicts remain — leave stash for manual resolution
+        logWarning("reconcile", "Stash pop conflict on non-.gsd files after merge", {
+          files: nonGsdUU.join(", "),
+        });
+      }
     }
   }
 
