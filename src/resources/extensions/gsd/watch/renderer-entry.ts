@@ -1,4 +1,4 @@
-// GSD Watch — Renderer subprocess entry point: signal wiring, quit key detection, placeholder rendering
+// GSD Watch — Renderer subprocess entry point: viewport scrolling, signal wiring, quit key detection, tree rendering
 // Copyright (c) 2026 Jeremy McSpadden <jeremy@fluxlabs.net>
 
 import { existsSync, readFileSync } from "node:fs";
@@ -8,6 +8,7 @@ import { clearWatchLock } from "./orchestrator.js";
 import { gsdRoot } from "../paths.js";
 import { buildMilestoneTree } from "./tree-model.js";
 import { renderTreeLines } from "./tree-renderer.js";
+import { visibleWidth, truncateToWidth } from "@gsd/pi-tui";
 import type { FSWatcher } from "chokidar";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -17,6 +18,9 @@ export const CLEANUP_SIGNALS: NodeJS.Signals[] = ["SIGTERM", "SIGHUP", "SIGINT"]
 
 /** Minimum PTY width to guard against zero-width pane at startup (Pitfall 2). */
 const MIN_WIDTH = 40;
+
+/** Minimum PTY height to guard against zero-height pane and non-TTY contexts. */
+const MIN_HEIGHT = 3;
 
 /** Time window (ms) within which a repeated key press counts as a quit sequence. */
 const QUIT_TIMEOUT_MS = 500;
@@ -86,6 +90,116 @@ export function parseQuitSequence(chunk: string): boolean {
   lastKey = chunk;
   lastKeyTime = now;
   return false;
+}
+
+// ─── PTY Height Guard ─────────────────────────────────────────────────────────
+
+/**
+ * Returns the effective terminal height, enforcing a minimum of MIN_HEIGHT (3)
+ * to guard against PTY height=0 at pane creation and undefined in non-TTY contexts.
+ */
+export function getEffectiveHeight(): number {
+  return Math.max(process.stdout.rows || 0, MIN_HEIGHT);
+}
+
+// ─── Viewport State ───────────────────────────────────────────────────────────
+
+/** Current top-of-viewport line index. Module-level state, mirrors lastKey/lastKeyTime pattern. */
+let viewportOffset = 0;
+
+/**
+ * Reset the viewport state.
+ * Exported for test isolation (call in beforeEach).
+ */
+export function resetViewportState(): void {
+  viewportOffset = 0;
+}
+
+/**
+ * Returns the current viewport offset.
+ * Exported for test assertions.
+ */
+export function getViewportOffset(): number {
+  return viewportOffset;
+}
+
+// ─── Arrow Key Parser ─────────────────────────────────────────────────────────
+
+export type ArrowDirection = "up" | "down" | null;
+
+/**
+ * Parse a raw keypress chunk and detect ANSI arrow key sequences.
+ * Returns "up", "down", or null for non-arrow input.
+ *
+ * Per Pattern 3: run BEFORE parseQuitSequence in the stdin data handler so that
+ * the \x1b prefix of arrow sequences never reaches the quit state machine.
+ */
+export function parseArrowKey(chunk: string): ArrowDirection {
+  if (chunk === "\x1b[A") return "up";
+  if (chunk === "\x1b[B") return "down";
+  return null;
+}
+
+// ─── Viewport Scroll ──────────────────────────────────────────────────────────
+
+/**
+ * Mutate viewportOffset by delta, clamped to [0, totalLines - contentHeight].
+ */
+export function scrollViewport(delta: number, totalLines: number, contentHeight: number): void {
+  const maxOffset = Math.max(0, totalLines - contentHeight);
+  viewportOffset = Math.max(0, Math.min(viewportOffset + delta, maxOffset));
+}
+
+// ─── Viewport Renderer ────────────────────────────────────────────────────────
+
+/**
+ * Build the centered status bar string.
+ * Hides ▲ when at top (offset === 0), hides ▼ when at bottom.
+ */
+function buildStatusBar(
+  offset: number,
+  total: number,
+  contentHeight: number,
+  width: number
+): string {
+  const upArrow = offset > 0 ? "▲" : " ";
+  const downArrow = offset + contentHeight < total ? "▼" : " ";
+  const positionText = `${offset + 1}/${total}`;
+  const rawBar = `${upArrow} ${positionText} ${downArrow}`;
+  const barWidth = visibleWidth(rawBar);
+  if (barWidth <= width) {
+    const padding = Math.floor((width - barWidth) / 2);
+    return " ".repeat(padding) + rawBar;
+  }
+  return truncateToWidth(rawBar, width, "");
+}
+
+/**
+ * Slice the full line array into a viewport window and append a conditional status bar.
+ *
+ * Per Pitfall 2: status bar row only reserved when scrollable (total > height).
+ * When tree fits, returns all lines joined — no height reduction, no status bar.
+ */
+export function renderViewport(
+  lines: string[],
+  offset: number,
+  height: number,
+  width: number
+): string {
+  const total = lines.length;
+  const scrollable = total > height;
+
+  if (!scrollable) {
+    return lines.join("\n");
+  }
+
+  // Reserve 1 row for status bar when scrollable
+  const contentHeight = height - 1;
+  const clampedOffset = Math.max(0, Math.min(offset, Math.max(0, total - contentHeight)));
+  const visible = lines.slice(clampedOffset, clampedOffset + contentHeight);
+  const statusBar = buildStatusBar(clampedOffset, total, contentHeight, width);
+
+  return visible.join("\n") + "\n" + statusBar;
 }
 
 // ─── Placeholder Renderer ─────────────────────────────────────────────────────
