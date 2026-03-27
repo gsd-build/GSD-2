@@ -200,8 +200,38 @@ export class RetryHandler {
 					return true;
 				}
 
-				// No fallback available either
+				// No fallback available. For long-context entitlement errors, try
+				// downgrading from the [1m] variant to the base model before giving up.
 				if (errorType === "quota_exhausted") {
+					const currentModel = this._deps.getModel()!;
+					const downgraded = this._tryLongContextDowngrade(currentModel);
+					if (downgraded) {
+						this._deps.agent.setModel(downgraded);
+						this._deps.onModelChange(downgraded);
+						this._removeLastAssistantError();
+
+						this._deps.emit({
+							type: "fallback_provider_switch",
+							from: `${currentModel.provider}/${currentModel.id}`,
+							to: `${downgraded.provider}/${downgraded.id}`,
+							reason: "long context entitlement not available, downgrading to base model",
+						});
+
+						this._deps.emit({
+							type: "auto_retry_start",
+							attempt: this._retryAttempt + 1,
+							maxAttempts: settings.maxRetries,
+							delayMs: 0,
+							errorMessage: `${message.errorMessage} (downgrading to ${downgraded.id})`,
+						});
+
+						setTimeout(() => {
+							this._deps.agent.continue().catch(() => {});
+						}, 0);
+
+						return true;
+					}
+
 					this._deps.emit({
 						type: "fallback_chain_exhausted",
 						reason: `All providers exhausted for ${this._deps.getModel()!.provider}/${this._deps.getModel()!.id}`,
@@ -344,9 +374,26 @@ export class RetryHandler {
 	private _classifyErrorType(errorMessage: string): UsageLimitErrorType {
 		const err = errorMessage.toLowerCase();
 		if (/quota|billing|exceeded.*limit|usage.*limit/i.test(err)) return "quota_exhausted";
+		// "Extra usage is required for long context requests" is a permanent billing
+		// entitlement error for the [1m] model, not a transient rate limit.
+		// Classify as quota_exhausted to trigger downgrade/fallback instead of backoff loops.
+		if (/extra usage.*required|long context.*required|required.*long context/i.test(err)) return "quota_exhausted";
 		if (/rate.?limit|too many requests|429/i.test(err)) return "rate_limit";
 		if (/500|502|503|504|server.?error|internal.?error|service.?unavailable/i.test(err)) return "server_error";
 		return "unknown";
+	}
+
+	/**
+	 * If the current model is a long-context variant (e.g. "claude-opus-4-6[1m]"),
+	 * return the base model without the suffix. Returns null if not applicable.
+	 */
+	private _tryLongContextDowngrade(model: Model<any>): Model<any> | null {
+		const lcSuffix = /\[1m\]$/i;
+		if (!lcSuffix.test(model.id)) return null;
+
+		const baseId = model.id.replace(lcSuffix, "");
+		const baseModel = this._deps.modelRegistry.find(model.provider, baseId);
+		return baseModel ?? null;
 	}
 
 	/** Remove the last assistant error message from agent state */
