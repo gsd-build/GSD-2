@@ -20,6 +20,8 @@ export const EXIT_CANCELLED = 11
  * Map a headless session status string to its standardized exit code.
  *
  *   success   → 0
+ *   complete  → 0
+ *   completed → 0
  *   error     → 1
  *   timeout   → 1
  *   blocked   → 10
@@ -31,6 +33,7 @@ export function mapStatusToExitCode(status: string): number {
   switch (status) {
     case 'success':
     case 'complete':
+    case 'completed':
       return EXIT_SUCCESS
     case 'error':
     case 'timeout':

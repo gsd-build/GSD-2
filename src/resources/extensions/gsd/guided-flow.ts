@@ -178,6 +178,7 @@ export function checkAutoStartAfterDiscuss(): boolean {
   try { unlinkSync(manifestPath); } catch { /* may not exist for single-milestone */ }
 
   pendingAutoStart = null;
+  ctx.ui.notify(`Milestone ${milestoneId} ready.`, "info");
   startAuto(ctx, pi, basePath, false, { step }).catch((err) => {
     ctx.ui.notify(`Auto-start failed: ${getErrorMessage(err)}`, "error");
     if (process.env.GSD_DEBUG) console.error('[gsd] auto start error:', err);
