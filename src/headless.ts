@@ -43,9 +43,10 @@ import { VALID_OUTPUT_FORMATS } from './headless-types.js'
 import {
   handleExtensionUIRequest,
   formatProgress,
+  formatThinkingLine,
   startSupervisedStdinReader,
 } from './headless-ui.js'
-import type { ExtensionUIRequest } from './headless-ui.js'
+import type { ExtensionUIRequest, ProgressContext } from './headless-ui.js'
 
 import {
   loadContext,
@@ -370,6 +371,11 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
   let cumulativeCacheWriteTokens = 0
   let lastSessionId: string | undefined
 
+  // Verbose text-mode state
+  const toolStartTimes = new Map<string, number>()
+  let lastCostData: { costUsd: number; inputTokens: number; outputTokens: number } | undefined
+  let thinkingBuffer = ''
+
   // Emit HeadlessJsonResult to stdout for --output-format json batch mode
   function emitBatchJsonResult(): void {
     if (options.outputFormat !== 'json') return
@@ -504,8 +510,65 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
         lastSessionId = String((eventObj as Record<string, unknown>).sessionId ?? '')
       }
     } else if (!options.json) {
-      // Progress output to stderr
-      const line = formatProgress(eventObj, !!options.verbose)
+      // Progress output to stderr with verbose state tracking
+      const eventType = String(eventObj.type ?? '')
+
+      // Track cost_update events for agent_end summary
+      if (eventType === 'cost_update') {
+        const data = eventObj as Record<string, unknown>
+        const cumCost = data.cumulativeCost as Record<string, unknown> | undefined
+        if (cumCost) {
+          const tokens = data.tokens as Record<string, number> | undefined
+          lastCostData = {
+            costUsd: Number(cumCost.costUsd ?? 0),
+            inputTokens: tokens?.input ?? 0,
+            outputTokens: tokens?.output ?? 0,
+          }
+        }
+      }
+
+      // Accumulate thinking text from message_update text_delta events
+      if (eventType === 'message_update') {
+        const ame = eventObj.assistantMessageEvent as Record<string, unknown> | undefined
+        if (ame?.type === 'text_delta') {
+          thinkingBuffer += String(ame.text ?? '')
+        }
+      }
+
+      // Track tool execution start timestamps
+      if (eventType === 'tool_execution_start') {
+        const toolCallId = String(eventObj.toolCallId ?? eventObj.id ?? '')
+        if (toolCallId) toolStartTimes.set(toolCallId, Date.now())
+      }
+
+      // Flush thinking buffer before tool calls or message end
+      if (options.verbose && thinkingBuffer.trim() &&
+          (eventType === 'tool_execution_start' || eventType === 'message_end')) {
+        process.stderr.write(formatThinkingLine(thinkingBuffer) + '\n')
+        thinkingBuffer = ''
+      }
+
+      // Compute tool duration for tool_execution_end
+      let toolDuration: number | undefined
+      let isToolError = false
+      if (eventType === 'tool_execution_end') {
+        const toolCallId = String(eventObj.toolCallId ?? eventObj.id ?? '')
+        const startTime = toolStartTimes.get(toolCallId)
+        if (startTime) {
+          toolDuration = Date.now() - startTime
+          toolStartTimes.delete(toolCallId)
+        }
+        isToolError = eventObj.isError === true || eventObj.error != null
+      }
+
+      const ctx: ProgressContext = {
+        verbose: !!options.verbose,
+        toolDuration,
+        isError: isToolError,
+        lastCost: eventType === 'agent_end' ? lastCostData : undefined,
+      }
+
+      const line = formatProgress(eventObj, ctx)
       if (line) process.stderr.write(line + '\n')
     }
 
