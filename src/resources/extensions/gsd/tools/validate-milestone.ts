@@ -25,6 +25,7 @@ export interface ValidateMilestoneParams {
   sliceDeliveryAudit: string;
   crossSliceIntegration: string;
   requirementCoverage: string;
+  verificationClasses?: string;
   verdictRationale: string;
   remediationPlan?: string;
 }
@@ -55,6 +56,10 @@ ${params.crossSliceIntegration}
 ## Requirement Coverage
 ${params.requirementCoverage}
 
+${params.verificationClasses ? `## Verification Class Compliance
+${params.verificationClasses}
+
+` : ""}
 ## Verdict Rationale
 ${params.verdictRationale}
 `;

@@ -1,6 +1,6 @@
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, existsSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
@@ -24,6 +24,7 @@ const VALID_PARAMS = {
   sliceDeliveryAudit: "| S01 | delivered |",
   crossSliceIntegration: "No issues",
   requirementCoverage: "All covered",
+  verificationClasses: "- Contract: covered\n- Integration: covered\n- Operational: gap noted",
   verdictRationale: "Everything checks out",
 };
 
@@ -59,6 +60,27 @@ describe("handleValidateMilestone write ordering (#2725)", () => {
     // Disk file exists
     const filePath = join(base, ".gsd", "milestones", "M001", "M001-VALIDATION.md");
     assert.ok(existsSync(filePath), "VALIDATION.md should exist on disk");
+    const validationMd = readFileSync(filePath, "utf-8");
+    assert.match(validationMd, /## Verification Class Compliance/);
+    assert.match(validationMd, /- Contract: covered/);
+    assert.match(validationMd, /## Verdict Rationale/);
+  });
+
+  it("omits verification class section when no verification classes are supplied", async () => {
+    base = makeTmpBase();
+    const dbPath = join(base, ".gsd", "gsd.db");
+    openDatabase(dbPath);
+    insertMilestone({ id: "M001" });
+
+    const result = await handleValidateMilestone(
+      { ...VALID_PARAMS, verificationClasses: undefined },
+      base,
+    );
+    assert.ok(!("error" in result), `unexpected error: ${"error" in result ? result.error : ""}`);
+
+    const filePath = join(base, ".gsd", "milestones", "M001", "M001-VALIDATION.md");
+    const validationMd = readFileSync(filePath, "utf-8");
+    assert.doesNotMatch(validationMd, /## Verification Class Compliance/);
   });
 
   it("rolls back DB row when disk write fails", async () => {

@@ -26,7 +26,7 @@ All relevant context has been preloaded below — the roadmap, all slice summari
 4. Check **requirement coverage** — are all active requirements addressed by at least one slice?
 5. If **Verification Classes** are provided in the inlined context above, check each non-empty class:
    - For each verification class (Contract, Integration, Operational, UAT), determine whether slice summaries, UAT results, or observable behavior provide evidence that this verification tier was addressed.
-   - Document the compliance status of each class in your verdict rationale.
+   - Document the compliance status of each class in a dedicated verification classes section.
    - If `Operational` verification is non-empty and no evidence of operational verification exists, flag this explicitly — it means planned operational checks (migrations, deployments, runtime verification) were not proven.
    - A milestone with unaddressed verification classes may still pass if the gaps are minor, but the gaps MUST be documented in the Deferred Work Inventory.
 6. Determine a verdict:
@@ -36,7 +36,7 @@ All relevant context has been preloaded below — the roadmap, all slice summari
 
 ## Persist Validation
 
-**Persist validation results through `gsd_validate_milestone`.** Call it with: `milestoneId`, `verdict`, `remediationRound`, `successCriteriaChecklist`, `sliceDeliveryAudit`, `crossSliceIntegration`, `requirementCoverage`, `verdictRationale`, and `remediationPlan` (if verdict is `needs-remediation`). The tool writes the validation to the DB and renders VALIDATION.md to disk.
+**Persist validation results through `gsd_validate_milestone`.** Call it with: `milestoneId`, `verdict`, `remediationRound`, `successCriteriaChecklist`, `sliceDeliveryAudit`, `crossSliceIntegration`, `requirementCoverage`, `verificationClasses` (when non-empty), `verdictRationale`, and `remediationPlan` (if verdict is `needs-remediation`). The tool writes the validation to the DB and renders VALIDATION.md to disk.
 
 If verdict is `needs-remediation`:
 - After calling `gsd_validate_milestone`, use `gsd_reassess_roadmap` to add remediation slices. Pass `milestoneId`, a synthetic `completedSliceId` (e.g. "VALIDATION"), `verdict: "roadmap-adjusted"`, `assessment` text, and `sliceChanges` with the new slices in the `added` array. The tool persists the changes to the DB and re-renders ROADMAP.md.
