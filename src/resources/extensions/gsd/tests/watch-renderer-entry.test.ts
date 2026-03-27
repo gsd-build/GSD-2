@@ -13,6 +13,7 @@ import {
   resetQuitState,
   getEffectiveWidth,
   renderPlaceholder,
+  renderTree,
 } from "../watch/renderer-entry.js";
 
 describe("CLEANUP_SIGNALS", () => {
@@ -94,6 +95,81 @@ describe("getEffectiveWidth", () => {
       configurable: true,
       writable: true,
     });
+  });
+});
+
+describe("renderTree", () => {
+  let tmpDir: string;
+  let originalWrite: typeof process.stdout.write;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "renderer-entry-tree-test-"));
+    // Create a minimal .planning/phases/ directory structure with one phase
+    const planningDir = join(tmpDir, ".planning");
+    mkdirSync(join(planningDir, "phases", "02-foundation"), { recursive: true });
+    writeFileSync(join(planningDir, "phases", "02-foundation", "02-CONTEXT.md"), "# Context\n");
+    writeFileSync(join(planningDir, "phases", "02-foundation", "02-01-PLAN.md"), "# Plan\n");
+    originalWrite = process.stdout.write.bind(process.stdout);
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (process.stdout as any).write = originalWrite;
+  });
+
+  test("Test 11: renderTree output contains screen clear sequence", () => {
+    const chunks: string[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (process.stdout as any).write = (chunk: string) => {
+      chunks.push(chunk);
+      return true;
+    };
+
+    renderTree(tmpDir);
+
+    const output = chunks.join("");
+    assert.ok(
+      output.includes("\x1b[2J\x1b[H"),
+      `Expected screen clear sequence in output, got: ${JSON.stringify(output.slice(0, 100))}`
+    );
+  });
+
+  test("Test 12: renderTree output contains tree drawing characters (not placeholder)", () => {
+    const chunks: string[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (process.stdout as any).write = (chunk: string) => {
+      chunks.push(chunk);
+      return true;
+    };
+
+    renderTree(tmpDir);
+
+    const output = chunks.join("");
+    const hasTreeChars = output.includes("├──") || output.includes("└──");
+    assert.ok(
+      hasTreeChars,
+      `Expected tree drawing chars (├── or └──) in output, got: ${JSON.stringify(output.slice(0, 200))}`
+    );
+  });
+
+  test("Test 13: renderTree output is non-empty beyond the clear sequence", () => {
+    const chunks: string[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (process.stdout as any).write = (chunk: string) => {
+      chunks.push(chunk);
+      return true;
+    };
+
+    renderTree(tmpDir);
+
+    const output = chunks.join("");
+    // Strip the clear sequence — remaining content should be non-empty
+    const withoutClear = output.replace("\x1b[2J\x1b[H", "");
+    assert.ok(
+      withoutClear.trim().length > 0,
+      "Expected non-empty content beyond the clear sequence"
+    );
   });
 });
 

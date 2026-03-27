@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { startPlanningWatcher } from "./watcher.js";
 import { clearWatchLock } from "./orchestrator.js";
 import { gsdRoot } from "../paths.js";
+import { buildMilestoneTree } from "./tree-model.js";
+import { renderTreeLines } from "./tree-renderer.js";
 import type { FSWatcher } from "chokidar";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -131,6 +133,22 @@ export function renderPlaceholder(projectRoot: string): void {
   process.stdout.write("Loading project...\n");
 }
 
+// ─── Tree Renderer ────────────────────────────────────────────────────────────
+
+/**
+ * Render the full project tree to stdout.
+ * Replaces renderPlaceholder — reads filesystem, builds tree model, renders formatted output.
+ * Uses single atomic write to prevent flicker (Pitfall 5 from research).
+ */
+export function renderTree(projectRoot: string): void {
+  const width = getEffectiveWidth();
+  const milestone = buildMilestoneTree(projectRoot);
+
+  const lines = renderTreeLines(milestone, width);
+  // Atomic single write: clear screen + content in one call to prevent flicker
+  process.stdout.write("\x1b[2J\x1b[H" + lines.join("\n") + "\n");
+}
+
 // ─── Shutdown ─────────────────────────────────────────────────────────────────
 
 /**
@@ -169,12 +187,12 @@ if (isMainModule) {
   const gsdDir = gsdRoot(projectRoot);
   const planningDir = join(projectRoot, ".planning");
 
-  // Render initial placeholder
-  renderPlaceholder(projectRoot);
+  // Render initial tree
+  renderTree(projectRoot);
 
-  // Start file watcher — Phase 3 replaces this callback with tree rendering
+  // Start file watcher — re-render tree on file changes
   const watcher = startPlanningWatcher(planningDir, () =>
-    renderPlaceholder(projectRoot)
+    renderTree(projectRoot)
   );
 
   // Register signal handlers for clean exit on all termination paths
@@ -195,5 +213,5 @@ if (isMainModule) {
   }
 
   // Re-render on terminal resize
-  process.stdout.on("resize", () => renderPlaceholder(projectRoot));
+  process.stdout.on("resize", () => renderTree(projectRoot));
 }
