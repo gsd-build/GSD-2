@@ -16,6 +16,7 @@ import {
   getInFlightToolCount,
   getOldestInFlightToolStart,
   clearInFlightTools,
+  hasInteractiveToolInFlight,
 } from "./auto-tool-tracking.js";
 import { detectWorkingTreeActivity } from "./auto-supervisor.js";
 import { closeoutUnit, type CloseoutOptions } from "./auto-unit-closeout.js";
@@ -149,6 +150,15 @@ export function startUnitSupervision(sctx: SupervisionContext): void {
       // But only suppress recovery if the tool started recently.
       let stalledToolDetected = false;
       if (getInFlightToolCount() > 0) {
+        // User-interactive tools (ask_user_questions, secure_env_collect) block
+        // waiting for human input by design — never treat them as stalled (#2676).
+        if (hasInteractiveToolInFlight()) {
+          writeUnitRuntimeRecord(s.basePath, unitType, unitId, s.currentUnit.startedAt, {
+            lastProgressAt: Date.now(),
+            lastProgressKind: "interactive-tool-waiting",
+          });
+          return;
+        }
         const oldestStart = getOldestInFlightToolStart()!;
         const toolAgeMs = Date.now() - oldestStart;
         if (toolAgeMs < idleTimeoutMs) {

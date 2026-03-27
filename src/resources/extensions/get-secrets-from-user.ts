@@ -47,6 +47,12 @@ function shellEscapeSingle(value: string): string {
 	return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
+function hydrateProcessEnv(key: string, value: string): void {
+	// Make newly collected secrets immediately visible to the current session.
+	// Some extensions read process.env directly and do not reload .env on every call.
+	process.env[key] = value;
+}
+
 async function writeEnvKey(filePath: string, key: string, value: string): Promise<void> {
 	let content = "";
 	try {
@@ -312,6 +318,7 @@ async function applySecrets(
 			try {
 				await writeEnvKey(opts.envFilePath, key, value);
 				applied.push(key);
+				hydrateProcessEnv(key, value);
 			} catch (err: any) {
 				errors.push(`${key}: ${err.message}`);
 			}
@@ -330,6 +337,7 @@ async function applySecrets(
 					errors.push(`${key}: ${result.stderr.slice(0, 200)}`);
 				} else {
 					applied.push(key);
+					hydrateProcessEnv(key, value);
 				}
 			} catch (err: any) {
 				errors.push(`${key}: ${err.message}`);

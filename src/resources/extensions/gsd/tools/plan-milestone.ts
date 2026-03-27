@@ -1,4 +1,6 @@
 import { clearParseCache } from "../files.js";
+import { isClosedStatus } from "../status-guards.js";
+import { isNonEmptyString, validateStringArray } from "../validation.js";
 import {
   transaction,
   getMilestone,
@@ -6,7 +8,6 @@ import {
   insertSlice,
   upsertMilestonePlanning,
   upsertSlicePlanning,
-  _getAdapter,
 } from "../gsd-db.js";
 import { invalidateStateCache } from "../state.js";
 import { renderRoadmapFromDb } from "../markdown-renderer.js";
@@ -53,20 +54,6 @@ export interface PlanMilestoneParams {
 export interface PlanMilestoneResult {
   milestoneId: string;
   roadmapPath: string;
-}
-
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0;
-}
-
-function validateStringArray(value: unknown, field: string): string[] {
-  if (!Array.isArray(value)) {
-    throw new Error(`${field} must be an array`);
-  }
-  if (value.some((item) => !isNonEmptyString(item))) {
-    throw new Error(`${field} must contain only non-empty strings`);
-  }
-  return value;
 }
 
 function validateRiskEntries(value: unknown): Array<{ risk: string; whyItMatters: string }> {
@@ -197,7 +184,7 @@ export async function handlePlanMilestone(
   try {
     transaction(() => {
       const existingMilestone = getMilestone(params.milestoneId);
-      if (existingMilestone && (existingMilestone.status === "complete" || existingMilestone.status === "done")) {
+      if (existingMilestone && isClosedStatus(existingMilestone.status)) {
         guardError = `cannot re-plan milestone ${params.milestoneId}: it is already complete`;
         return;
       }
@@ -210,7 +197,7 @@ export async function handlePlanMilestone(
             guardError = `depends_on references unknown milestone: ${depId}`;
             return;
           }
-          if (dep.status !== "complete" && dep.status !== "done") {
+          if (!isClosedStatus(dep.status)) {
             guardError = `depends_on milestone ${depId} is not yet complete (status: ${dep.status})`;
             return;
           }

@@ -59,7 +59,7 @@ test("solo mode applies correct defaults", () => {
   const result = applyModeDefaults("solo", { mode: "solo" });
   assert.equal(result.git?.auto_push, true);
   assert.equal(result.git?.push_branches, false);
-  assert.equal(result.git?.pre_merge_check, false);
+  assert.equal(result.git?.pre_merge_check, "auto");
   assert.equal(result.git?.merge_strategy, "squash");
   assert.equal(result.git?.isolation, "none");
   assert.equal(result.unique_milestone_ids, false);

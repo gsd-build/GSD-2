@@ -105,6 +105,50 @@ export class GsdSidebarProvider implements vscode.WebviewViewProvider {
 				case "copyLastResponse":
 					await vscode.commands.executeCommand("gsd.copyLastResponse");
 					break;
+				case "autoMode":
+					if (this.client.isConnected) {
+						await this.client.sendPrompt("/gsd auto").catch(() => {});
+					}
+					break;
+				case "nextUnit":
+					if (this.client.isConnected) {
+						await this.client.sendPrompt("/gsd next").catch(() => {});
+					}
+					break;
+				case "quickTask": {
+					const quickInput = await vscode.window.showInputBox({
+						prompt: "Describe the quick task",
+						placeHolder: "e.g. fix the typo in README",
+					});
+					if (quickInput && this.client.isConnected) {
+						await this.client.sendPrompt(`/gsd quick ${quickInput}`).catch(() => {});
+					}
+					break;
+				}
+				case "capture": {
+					const thought = await vscode.window.showInputBox({
+						prompt: "Capture a thought",
+						placeHolder: "e.g. we should also handle the edge case for...",
+					});
+					if (thought && this.client.isConnected) {
+						await this.client.sendPrompt(`/gsd capture ${thought}`).catch(() => {});
+					}
+					break;
+				}
+				case "status":
+					if (this.client.isConnected) {
+						await this.client.sendPrompt("/gsd status").catch(() => {});
+					}
+					break;
+				case "forkSession":
+					await vscode.commands.executeCommand("gsd.forkSession");
+					break;
+				case "toggleSteeringMode":
+					await vscode.commands.executeCommand("gsd.toggleSteeringMode");
+					break;
+				case "toggleFollowUpMode":
+					await vscode.commands.executeCommand("gsd.toggleFollowUpMode");
+					break;
 			}
 		});
 
@@ -134,6 +178,9 @@ export class GsdSidebarProvider implements vscode.WebviewViewProvider {
 		let autoCompaction = false;
 		let autoRetry = false;
 		let stats: SessionStats | null = null;
+		let contextWindow = 0;
+		let steeringMode: "all" | "one-at-a-time" = "all";
+		let followUpMode: "all" | "one-at-a-time" = "all";
 
 		if (this.client.isConnected) {
 			autoRetry = this.client.autoRetryEnabled;
@@ -150,6 +197,9 @@ export class GsdSidebarProvider implements vscode.WebviewViewProvider {
 				isStreaming = state.isStreaming;
 				isCompacting = state.isCompacting;
 				autoCompaction = state.autoCompactionEnabled;
+				contextWindow = state.model?.contextWindow ?? 0;
+				steeringMode = state.steeringMode;
+				followUpMode = state.followUpMode;
 			} catch {
 				// State fetch failed, show defaults
 			}
@@ -176,6 +226,9 @@ export class GsdSidebarProvider implements vscode.WebviewViewProvider {
 			autoCompaction,
 			autoRetry,
 			stats,
+			contextWindow,
+			steeringMode,
+			followUpMode,
 		});
 	}
 
@@ -201,6 +254,9 @@ export class GsdSidebarProvider implements vscode.WebviewViewProvider {
 		autoCompaction: boolean;
 		autoRetry: boolean;
 		stats: SessionStats | null;
+		contextWindow: number;
+		steeringMode: "all" | "one-at-a-time";
+		followUpMode: "all" | "one-at-a-time";
 	}): string {
 		const statusColor = info.connected ? "#4ec9b0" : "#f44747";
 		const statusText = info.connected
@@ -236,6 +292,21 @@ export class GsdSidebarProvider implements vscode.WebviewViewProvider {
 		const streamingIndicator = info.isStreaming
 			? `<div class="streaming-indicator"><span class="spinner"></span> Agent is working...</div>`
 			: "";
+
+		// Context window usage
+		const totalTokens = (info.stats?.inputTokens ?? 0) + (info.stats?.outputTokens ?? 0);
+		const contextPct = info.contextWindow > 0 ? Math.min(100, Math.round((totalTokens / info.contextWindow) * 100)) : 0;
+		const contextColor = contextPct > 80 ? "#f44747" : contextPct > 50 ? "#cca700" : "#4ec9b0";
+		const contextLabel = info.contextWindow > 0
+			? `${contextPct}% (${Math.round(totalTokens / 1000)}k / ${Math.round(info.contextWindow / 1000)}k)`
+			: "N/A";
+
+		const steeringBadge = info.steeringMode === "one-at-a-time"
+			? `<span class="badge">1-at-a-time</span>`
+			: `<span class="badge muted">all</span>`;
+		const followUpBadge = info.followUpMode === "one-at-a-time"
+			? `<span class="badge">1-at-a-time</span>`
+			: `<span class="badge muted">all</span>`;
 
 		const nonce = getNonce();
 
@@ -376,6 +447,23 @@ export class GsdSidebarProvider implements vscode.WebviewViewProvider {
 			text-align: right;
 			font-variant-numeric: tabular-nums;
 		}
+		.context-bar-outer {
+			width: 100%;
+			height: 6px;
+			background: var(--vscode-editor-background);
+			border-radius: 3px;
+			overflow: hidden;
+			margin: 4px 0 2px;
+		}
+		.context-bar-inner {
+			height: 100%;
+			border-radius: 3px;
+			transition: width 0.3s ease;
+		}
+		.context-label {
+			font-size: 11px;
+			opacity: 0.7;
+		}
 	</style>
 </head>
 <body>
@@ -410,6 +498,14 @@ export class GsdSidebarProvider implements vscode.WebviewViewProvider {
 				<td>Auto-retry</td>
 				<td>${autoRetryBadge}</td>
 			</tr>
+			<tr>
+				<td>Steering</td>
+				<td><span class="badge clickable" data-command="toggleSteeringMode">${info.steeringMode === "one-at-a-time" ? "1-at-a-time" : "all"}</span></td>
+			</tr>
+			<tr>
+				<td>Follow-up</td>
+				<td><span class="badge clickable" data-command="toggleFollowUpMode">${info.followUpMode === "one-at-a-time" ? "1-at-a-time" : "all"}</span></td>
+			</tr>
 		</table>
 	</div>
 
@@ -431,6 +527,36 @@ export class GsdSidebarProvider implements vscode.WebviewViewProvider {
 			<span class="value">${duration}</span>
 			<span class="label">Cost</span>
 			<span class="value">${cost}</span>
+		</div>
+	</div>
+
+	${info.contextWindow > 0 ? `
+	<div class="section">
+		<div class="section-title">Context Window</div>
+		<div class="context-bar-outer">
+			<div class="context-bar-inner" style="width: ${contextPct}%; background: ${contextColor};"></div>
+		</div>
+		<div class="context-label">${contextLabel}</div>
+	</div>
+	` : ""}
+	` : ""}
+
+	${info.connected ? `
+	<div class="section">
+		<div class="section-title">Workflow</div>
+		<div class="btn-group">
+			<div class="btn-row">
+				<button data-command="autoMode">Auto</button>
+				<button class="secondary" data-command="nextUnit">Next</button>
+			</div>
+			<div class="btn-row">
+				<button class="secondary" data-command="quickTask">Quick</button>
+				<button class="secondary" data-command="capture">Capture</button>
+			</div>
+			<div class="btn-row">
+				<button class="secondary" data-command="status">Status</button>
+				<button class="secondary" data-command="forkSession">Fork</button>
+			</div>
 		</div>
 	</div>
 	` : ""}

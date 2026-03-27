@@ -110,6 +110,16 @@ test("isValidationTerminal returns true for verdict: passed (#1429)", () => {
   assert.equal(isValidationTerminal(content), true);
 });
 
+test("isValidationTerminal returns true for verdict: fail (#2769)", () => {
+  const content = "---\nverdict: fail\nremediation_round: 1\n---\n\n# Validation";
+  assert.equal(isValidationTerminal(content), true);
+});
+
+test("isValidationTerminal returns true for any arbitrary verdict string (#2769)", () => {
+  const content = "---\nverdict: custom-verdict\nremediation_round: 0\n---\n\n# Validation";
+  assert.equal(isValidationTerminal(content), true);
+});
+
 test("isValidationTerminal returns false for missing frontmatter", () => {
   const content = "# Validation\nNo frontmatter here.";
   assert.equal(isValidationTerminal(content), false);
@@ -327,14 +337,14 @@ test("verifyExpectedArtifact rejects VALIDATION with missing verdict field", () 
   }
 });
 
-test("verifyExpectedArtifact rejects VALIDATION with unrecognized verdict", () => {
+test("verifyExpectedArtifact accepts VALIDATION with any extracted verdict", () => {
   const base = makeTmpBase();
   try {
     writeValidation(base, "M001", "---\nverdict: unknown-value\nremediation_round: 0\n---\n\n# Validation");
     clearPathCache();
     clearParseCache();
     const result = verifyExpectedArtifact("validate-milestone", "M001", base);
-    assert.equal(result, false, "VALIDATION with unrecognized verdict should fail verification");
+    assert.equal(result, true, "VALIDATION with any extracted verdict should pass verification");
   } finally {
     cleanup(base);
   }

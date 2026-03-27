@@ -37,6 +37,15 @@ import { writeUnitRuntimeRecord } from "../unit-runtime.js";
 // ─── generateMilestoneReport ──────────────────────────────────────────────────
 
 /**
+ * Resolve the base path for milestone reports.
+ * Prefers originalBasePath (project root) over basePath (which may be a worktree).
+ * Exported for testing as _resolveReportBasePath.
+ */
+export function _resolveReportBasePath(s: Pick<AutoSession, "originalBasePath" | "basePath">): string {
+  return s.originalBasePath || s.basePath;
+}
+
+/**
  * Generate and write an HTML milestone report snapshot.
  * Extracted from the milestone-transition block in autoLoop.
  */
@@ -50,13 +59,15 @@ async function generateMilestoneReport(
   const { writeReportSnapshot } = await importExtensionModule<typeof import("../reports.js")>(import.meta.url, "../reports.js");
   const { basename } = await import("node:path");
 
-  const snapData = await loadVisualizerData(s.basePath);
+  const reportBasePath = _resolveReportBasePath(s);
+
+  const snapData = await loadVisualizerData(reportBasePath);
   const completedMs = snapData.milestones.find(
     (m: { id: string }) => m.id === milestoneId,
   );
   const msTitle = completedMs?.title ?? milestoneId;
   const gsdVersion = process.env.GSD_VERSION ?? "0.0.0";
-  const projName = basename(s.basePath);
+  const projName = basename(reportBasePath);
   const doneSlices = snapData.milestones.reduce(
     (acc: number, m: { slices: { done: boolean }[] }) =>
       acc + m.slices.filter((sl: { done: boolean }) => sl.done).length,
@@ -67,10 +78,10 @@ async function generateMilestoneReport(
     0,
   );
   const outPath = writeReportSnapshot({
-    basePath: s.basePath,
+    basePath: reportBasePath,
     html: generateHtmlReport(snapData, {
       projectName: projName,
-      projectPath: s.basePath,
+      projectPath: reportBasePath,
       gsdVersion,
       milestoneId,
       indexRelPath: "index.html",
@@ -79,7 +90,7 @@ async function generateMilestoneReport(
     milestoneTitle: msTitle,
     kind: "milestone",
     projectName: projName,
-    projectPath: s.basePath,
+    projectPath: reportBasePath,
     gsdVersion,
     totalCost: snapData.totals?.cost ?? 0,
     totalTokens: snapData.totals?.tokens.total ?? 0,
@@ -250,8 +261,14 @@ export async function runPreDispatch(
         await deps.stopAuto(ctx, pi, `Merge conflict on milestone ${s.currentMilestoneId}`);
         return { action: "break", reason: "merge-conflict" };
       }
-      // Non-conflict merge errors — log and continue
-      logWarning("engine", "Milestone merge failed with non-conflict error", { milestone: s.currentMilestoneId!, error: String(mergeErr) });
+      // Non-conflict merge errors — stop auto to avoid advancing with unmerged work
+      logError("engine", "Milestone merge failed with non-conflict error", { milestone: s.currentMilestoneId!, error: String(mergeErr) });
+      ctx.ui.notify(
+        `Merge failed: ${mergeErr instanceof Error ? mergeErr.message : String(mergeErr)}. Resolve and run /gsd auto to resume.`,
+        "error",
+      );
+      await deps.stopAuto(ctx, pi, `Merge error on milestone ${s.currentMilestoneId}: ${String(mergeErr)}`);
+      return { action: "break", reason: "merge-failed" };
     }
 
     // PR creation (auto_pr) is handled inside mergeMilestoneToMain (#2302)
@@ -344,6 +361,13 @@ export async function runPreDispatch(
             await deps.stopAuto(ctx, pi, `Merge conflict on milestone ${s.currentMilestoneId}`);
             return { action: "break", reason: "merge-conflict" };
           }
+          logError("engine", "Milestone merge failed with non-conflict error", { milestone: s.currentMilestoneId!, error: String(mergeErr) });
+          ctx.ui.notify(
+            `Merge failed: ${mergeErr instanceof Error ? mergeErr.message : String(mergeErr)}. Resolve and run /gsd auto to resume.`,
+            "error",
+          );
+          await deps.stopAuto(ctx, pi, `Merge error on milestone ${s.currentMilestoneId}: ${String(mergeErr)}`);
+          return { action: "break", reason: "merge-failed" };
         }
 
         // PR creation (auto_pr) is handled inside mergeMilestoneToMain (#2302)
@@ -441,6 +465,13 @@ export async function runPreDispatch(
           await deps.stopAuto(ctx, pi, `Merge conflict on milestone ${s.currentMilestoneId}`);
           return { action: "break", reason: "merge-conflict" };
         }
+        logError("engine", "Milestone merge failed with non-conflict error", { milestone: s.currentMilestoneId!, error: String(mergeErr) });
+        ctx.ui.notify(
+          `Merge failed: ${mergeErr instanceof Error ? mergeErr.message : String(mergeErr)}. Resolve and run /gsd auto to resume.`,
+          "error",
+        );
+        await deps.stopAuto(ctx, pi, `Merge error on milestone ${s.currentMilestoneId}: ${String(mergeErr)}`);
+        return { action: "break", reason: "merge-failed" };
       }
 
       // PR creation (auto_pr) is handled inside mergeMilestoneToMain (#2302)
@@ -1069,6 +1100,12 @@ export async function runUnitPhase(
   }
 
   if (unitResult.status === "cancelled") {
+    // Provider-error pause: pauseAuto already handled cleanup and scheduled
+    // recovery. Don't hard-stop — just break out of the loop (#2762).
+    if (unitResult.errorContext?.category === "provider") {
+      debugLog("autoLoop", { phase: "exit", reason: "provider-pause", isTransient: unitResult.errorContext.isTransient });
+      return { action: "break", reason: "provider-pause" };
+    }
     ctx.ui.notify(
       `Session creation timed out or was cancelled for ${unitType} ${unitId}. Will retry.`,
       "warning",

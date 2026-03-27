@@ -33,7 +33,12 @@ async function pauseTransientWithBackoff(
   if (!allowAutoResume) {
     ctx.ui.notify(`Transient provider errors persisted after ${MAX_TRANSIENT_AUTO_RESUMES} auto-resume attempts. Pausing for manual review.`, "warning");
   }
-  await pauseAutoForProviderError(ctx.ui, errorDetail, () => pauseAuto(ctx, pi), {
+  await pauseAutoForProviderError(ctx.ui, errorDetail, () => pauseAuto(ctx, pi, {
+    message: `Provider error: ${errorDetail}`,
+    category: "provider",
+    isTransient: allowAutoResume,
+    retryAfterMs,
+  }), {
     isRateLimit,
     isTransient: allowAutoResume,
     retryAfterMs,
@@ -102,16 +107,9 @@ export async function handleAgentEnd(
       ctx.ui.notify(`Network retries exhausted for ${currentModelId}. Attempting model fallback.`, "warning");
     }
 
-    // --- Rate limit: skip model fallback, go straight to pause ---
-    // Rate-limiting is a provider issue, not a model issue.
-    // Switching models won't help if the provider is throttling you.
-    if (cls.kind === "rate-limit") {
-      await pauseTransientWithBackoff(cls, pi, ctx, errorDetail, true);
-      return;
-    }
-
-    // --- Server/connection/stream errors: try model fallback first ---
-    if (cls.kind === "network" || cls.kind === "server" || cls.kind === "connection" || cls.kind === "stream") {
+    // --- Transient errors: try model fallback first, then pause ---
+    // Rate limits are often per-model, so switching models can bypass them.
+    if (cls.kind === "rate-limit" || cls.kind === "network" || cls.kind === "server" || cls.kind === "connection" || cls.kind === "stream") {
       // Try model fallback
       const dash = getAutoDashboardData();
       if (dash.currentUnit) {
@@ -156,12 +154,16 @@ export async function handleAgentEnd(
 
     // --- Transient fallback: pause with auto-resume ---
     if (isTransient(cls)) {
-      await pauseTransientWithBackoff(cls, pi, ctx, errorDetail, false);
+      await pauseTransientWithBackoff(cls, pi, ctx, errorDetail, cls.kind === "rate-limit");
       return;
     }
 
     // --- Permanent / unknown: pause indefinitely ---
-    await pauseAutoForProviderError(ctx.ui, errorDetail, () => pauseAuto(ctx, pi), {
+    await pauseAutoForProviderError(ctx.ui, errorDetail, () => pauseAuto(ctx, pi, {
+      message: `Provider error: ${errorDetail}`,
+      category: "provider",
+      isTransient: false,
+    }), {
       isRateLimit: false,
       isTransient: false,
       retryAfterMs: 0,

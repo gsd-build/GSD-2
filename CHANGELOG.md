@@ -6,6 +6,72 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.53.0] - 2026-03-27
+
+### Added
+- **vscode**: activity feed, workflow controls, session forking, enhanced code lens [2/3] (#2656)
+- **gsd**: enable safety mechanisms by default (snapshots, pre-merge checks) (#2678)
+
+### Fixed
+- hydrate collected secrets for current session (#2788)
+- resolve stash pop conflicts and stop swallowing merge errors (#2780)
+- treat any extracted verdict as terminal in isValidationTerminal (#2774)
+- use localStorage for auth token to enable multi-tab usage (#2785)
+- guard activeMilestone.id access in discuss and headless paths (#2776)
+- clean up zombie parallel workers stuck in error state (#2782)
+- relax milestone validation gate to accept prose evidence (#2779)
+- write milestone reports to project root instead of worktree (#2778)
+- auto-resolve build artifact conflicts in milestone merge (#2777)
+- let rate-limit errors attempt model fallback before pausing (#2775)
+- prevent gsd next from self-killing via stale crash lock (#2784)
+- add shell flag for Windows spawn in VSCode extension (#2781)
+
+### Changed
+- **gsd**: extract duplicated status guards and validation helpers (#2767)
+
+## [2.52.0] - 2026-03-27
+
+### Added
+- **vscode**: status bar, file decorations, bash terminal, session tree, conversation history, code lens [1/2] (#2651)
+- **web**: Dark mode contrast — raise token floor and flatten opacity tier system (#2734)
+- Wire --bare mode across headless → pi-coding-agent → resource-loa…
+- Added runId generation on prompt/steer/follow_up commands, event…
+- Added RPC protocol v2 types, init handshake with version detectio…
+
+### Fixed
+- auto-mode stops after provider errors (#2762) (#2764)
+- add missing runtime stage name to Dockerfile (#2765)
+- make transaction() re-entrant and add slice_dependencies to initSchema
+- remove preferences.md from ROOT_STATE_FILES to prevent back-sync overwrite
+- wire tool handlers through DB port layer, remove _getAdapter from all tools
+- **gsd**: move state machine guards inside transaction in 5 tool handlers (#2752)
+- reconcile disk milestones into empty DB before deriveStateFromDb guard (#2686)
+- **gsd**: seed preferences.md into auto-mode worktrees (#2693)
+- **claude-import**: discover marketplace plugins nested inside container directories (#2718)
+- exempt interactive tools from idle watchdog stall detection (#2676)
+- guard allSlicesDone against vacuous truth on empty slice array (#2679)
+- block complete-milestone dispatch when VALIDATION is needs-remediation (#2682)
+- **gsd**: sync milestone DB status in parkMilestone and unparkMilestone (#2696)
+- **web**: auth token gate — synthetic 401 on missing token, unauthenticated boot state, and recovery screen (#2740)
+- **remote-questions**: empty-key entry in auth.json shadows valid Discord bot token (#2737)
+- idle watchdog stalled-tool detection overridden by filesystem activity (#2697)
+- surface exhausted Claude SDK streams as errors (#2719)
+- **docker**: overhaul fragile setup, adopt proven container patterns (#2716)
+- **gsd**: write DB before disk in validate-milestone to match engine pattern (#2742)
+- **gsd**: extract and honor milestone argument in /gsd auto and /gsd next (#2729)
+- **windows**: prevent EINVAL by disabling detached process groups on Win32 (#2744)
+- **gsd**: delete orphaned verification_evidence rows on complete-task rollback (#2746)
+- **gsd**: wire setLogBasePath into engine init to resurrect audit log (#2745)
+- Remove premature pendingTools.delete in webSearchResult handler (#2743)
+- **gsd**: remove redundant assertions that fail TS2367 typecheck
+- include preferences.md in worktree sync and initial seed
+
+### Changed
+- **pi-ai**: replace model-ID pattern matching with capability metadata (#2548)
+- **gsd-db**: comprehensive SQLite audit fixes — indexes, caching, safety, reconciliation
+- rename preferences.md to PREFERENCES.md for consistency (#2700) (#2738)
+- **gsd**: unify three overlapping error classifiers into single classify→decide→act pipeline
+
 ## [2.51.0] - 2026-03-26
 
 ### Added
@@ -2007,7 +2073,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - License updated to MIT
 
-[Unreleased]: https://github.com/gsd-build/gsd-2/compare/v2.51.0...HEAD
+[Unreleased]: https://github.com/gsd-build/gsd-2/compare/v2.53.0...HEAD
+[2.53.0]: https://github.com/gsd-build/gsd-2/compare/v2.52.0...v2.53.0
+[2.52.0]: https://github.com/gsd-build/gsd-2/compare/v2.51.0...v2.52.0
 [2.51.0]: https://github.com/gsd-build/gsd-2/compare/v2.50.0...v2.51.0
 [2.50.0]: https://github.com/gsd-build/gsd-2/compare/v2.49.0...v2.50.0
 [2.49.0]: https://github.com/gsd-build/gsd-2/compare/v2.48.0...v2.49.0

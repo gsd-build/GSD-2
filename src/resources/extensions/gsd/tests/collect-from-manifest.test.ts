@@ -227,6 +227,45 @@ test("collectSecretsFromManifest: manifest statuses are updated after collection
 		"KEY_TO_SKIP should have status 'skipped' after user skipped it");
 });
 
+test("collectSecretsFromManifest: applied keys hydrate process.env for the running session", async (t) => {
+	const { collectSecretsFromManifest } = await loadOrchestrator();
+
+	const tmp = makeTempDir("manifest-live-env");
+	const envKey = "CONTEXT7_API_KEY";
+	const saved = process.env[envKey];
+	t.after(() => {
+		if (saved === undefined) delete process.env[envKey];
+		else process.env[envKey] = saved;
+		rmSync(tmp, { recursive: true, force: true });
+	});
+
+	delete process.env[envKey];
+
+	const manifest = makeManifest([
+		{ key: envKey, status: "pending" },
+	]);
+	await writeManifestFile(tmp, manifest);
+
+	let callIndex = 0;
+	const mockCtx = {
+		cwd: tmp,
+		hasUI: true,
+		ui: {
+			custom: async (_factory: any) => {
+				callIndex++;
+				if (callIndex <= 1) return null; // summary screen dismiss
+				return "c7_live_test_key";
+			},
+		},
+	};
+
+	const result = await collectSecretsFromManifest(tmp, "M001", mockCtx as any);
+
+	assert.ok(result.applied.includes(envKey), "CONTEXT7_API_KEY should be applied");
+	assert.equal(process.env[envKey], "c7_live_test_key",
+		"applied keys should be available through process.env without restarting");
+});
+
 // ─── showSecretsSummary: render output ────────────────────────────────────────
 
 test("showSecretsSummary: produces lines with correct status glyphs for each entry status", async () => {

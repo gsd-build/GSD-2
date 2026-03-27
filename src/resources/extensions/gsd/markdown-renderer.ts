@@ -9,6 +9,7 @@
 // parseRoadmap(), parsePlan(), parseSummary() in files.ts.
 
 import { readFileSync, existsSync, mkdirSync } from "node:fs";
+import { isClosedStatus } from "./status-guards.js";
 import { join, relative } from "node:path";
 import { createRequire } from "node:module";
 import {
@@ -337,7 +338,7 @@ function renderSlicePlanMarkdown(slice: SliceRow, tasks: TaskRow[], gates: GateR
   lines.push("## Tasks");
   lines.push("");
   for (const task of tasks) {
-    const done = task.status === "done" || task.status === "complete" ? "x" : " ";
+    const done = isClosedStatus(task.status) ? "x" : " ";
     const estimate = task.estimate.trim() ? ` \`est:${task.estimate.trim()}\`` : "";
     lines.push(`- [${done}] **${task.id}: ${task.title || task.id}**${estimate}`);
     if (task.description.trim()) {
@@ -573,7 +574,7 @@ export async function renderPlanCheckboxes(
   // Apply checkbox patches for each task
   let updated = content;
   for (const task of tasks) {
-    const isDone = task.status === "done" || task.status === "complete";
+    const isDone = isClosedStatus(task.status);
     const tid = task.id;
 
     if (isDone) {
@@ -857,7 +858,7 @@ export function detectStaleRenders(basePath: string): StaleEntry[] {
           const parsed = parsePlan(content);
 
           for (const task of tasks) {
-            const isDoneInDb = task.status === "done" || task.status === "complete";
+            const isDoneInDb = isClosedStatus(task.status);
             const planTask = parsed.tasks.find((t: { id: string }) => t.id === task.id);
             if (!planTask) continue;
 
@@ -880,7 +881,7 @@ export function detectStaleRenders(basePath: string): StaleEntry[] {
 
       // Check missing task summary files
       for (const task of tasks) {
-        if ((task.status === "done" || task.status === "complete") && task.full_summary_md) {
+        if (isClosedStatus(task.status) && task.full_summary_md) {
           const slicePath = resolveSlicePath(basePath, milestone.id, slice.id);
           if (slicePath) {
             const tasksDir = join(slicePath, "tasks");

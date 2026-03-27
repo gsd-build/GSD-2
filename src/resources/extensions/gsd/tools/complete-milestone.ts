@@ -14,9 +14,10 @@ import {
   getMilestone,
   getMilestoneSlices,
   getSliceTasks,
-  _getAdapter,
+  updateMilestoneStatus,
 } from "../gsd-db.js";
 import { resolveMilestonePath, clearPathCache } from "../paths.js";
+import { isClosedStatus } from "../status-guards.js";
 import { saveFile, clearParseCache } from "../files.js";
 import { invalidateStateCache } from "../state.js";
 import { renderAllProjections } from "../workflow-projections.js";
@@ -134,7 +135,7 @@ export async function handleCompleteMilestone(
       guardError = `milestone not found: ${params.milestoneId}`;
       return;
     }
-    if (milestone.status === "complete" || milestone.status === "done") {
+    if (isClosedStatus(milestone.status)) {
       guardError = `milestone ${params.milestoneId} is already complete`;
       return;
     }
@@ -146,7 +147,7 @@ export async function handleCompleteMilestone(
       return;
     }
 
-    const incompleteSlices = slices.filter(s => s.status !== "complete" && s.status !== "done");
+    const incompleteSlices = slices.filter(s => !isClosedStatus(s.status));
     if (incompleteSlices.length > 0) {
       const incompleteIds = incompleteSlices.map(s => `${s.id} (status: ${s.status})`).join(", ");
       guardError = `incomplete slices: ${incompleteIds}`;
@@ -156,7 +157,7 @@ export async function handleCompleteMilestone(
     // Deep check: verify all tasks in all slices are complete
     for (const slice of slices) {
       const tasks = getSliceTasks(params.milestoneId, slice.id);
-      const incompleteTasks = tasks.filter(t => t.status !== "complete" && t.status !== "done");
+      const incompleteTasks = tasks.filter(t => !isClosedStatus(t.status));
       if (incompleteTasks.length > 0) {
         const ids = incompleteTasks.map(t => `${t.id} (status: ${t.status})`).join(", ");
         guardError = `slice ${slice.id} has incomplete tasks: ${ids}`;
@@ -165,13 +166,7 @@ export async function handleCompleteMilestone(
     }
 
     // All guards passed — perform write
-    const adapter = _getAdapter()!;
-    adapter.prepare(
-      `UPDATE milestones SET status = 'complete', completed_at = :completed_at WHERE id = :mid`,
-    ).run({
-      ":completed_at": completedAt,
-      ":mid": params.milestoneId,
-    });
+    updateMilestoneStatus(params.milestoneId, 'complete', completedAt);
   });
 
   if (guardError) {
@@ -199,12 +194,7 @@ export async function handleCompleteMilestone(
     process.stderr.write(
       `gsd-db: complete_milestone — disk render failed, rolling back DB status: ${(renderErr as Error).message}\n`,
     );
-    const rollbackAdapter = _getAdapter();
-    if (rollbackAdapter) {
-      rollbackAdapter.prepare(
-        `UPDATE milestones SET status = 'active', completed_at = NULL WHERE id = :mid`,
-      ).run({ ":mid": params.milestoneId });
-    }
+    updateMilestoneStatus(params.milestoneId, 'active', null);
     invalidateStateCache();
     return { error: `disk render failed: ${(renderErr as Error).message}` };
   }

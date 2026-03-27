@@ -172,7 +172,10 @@ export class AsyncJobManager {
 
 	private deliverResult(job: Job): void {
 		if (!this.onJobComplete) return;
-		this.onJobComplete(job);
+		// Defer delivery by one microtask so await_job's .then() chain runs first
+		// and can set job.awaited = true before onJobComplete checks it (#2762).
+		const cb = this.onJobComplete;
+		queueMicrotask(() => cb(job));
 	}
 
 	private scheduleEviction(id: string): void {

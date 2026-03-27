@@ -33,7 +33,7 @@ export const MODE_DEFAULTS: Record<WorkflowMode, Partial<GSDPreferences>> = {
     git: {
       auto_push: true,
       push_branches: false,
-      pre_merge_check: false,
+      pre_merge_check: "auto",
       merge_strategy: "squash",
       isolation: "none",
     },

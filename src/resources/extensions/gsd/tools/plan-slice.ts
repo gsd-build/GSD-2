@@ -1,4 +1,6 @@
 import { clearParseCache } from "../files.js";
+import { isClosedStatus } from "../status-guards.js";
+import { isNonEmptyString, validateStringArray } from "../validation.js";
 import {
   transaction,
   getMilestone,
@@ -7,7 +9,6 @@ import {
   upsertSlicePlanning,
   upsertTaskPlanning,
   insertGateRow,
-  _getAdapter,
 } from "../gsd-db.js";
 import type { GateId } from "../types.js";
 import { invalidateStateCache } from "../state.js";
@@ -49,20 +50,6 @@ export interface PlanSliceResult {
   sliceId: string;
   planPath: string;
   taskPlanPaths: string[];
-}
-
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0;
-}
-
-function validateStringArray(value: unknown, field: string): string[] {
-  if (!Array.isArray(value)) {
-    throw new Error(`${field} must be an array`);
-  }
-  if (value.some((item) => !isNonEmptyString(item))) {
-    throw new Error(`${field} must contain only non-empty strings`);
-  }
-  return value;
 }
 
 function validateTasks(value: unknown): PlanSliceTaskInput[] {
@@ -158,7 +145,7 @@ export async function handlePlanSlice(
         guardError = `milestone not found: ${params.milestoneId}`;
         return;
       }
-      if (parentMilestone.status === "complete" || parentMilestone.status === "done") {
+      if (isClosedStatus(parentMilestone.status)) {
         guardError = `cannot plan slice in a closed milestone: ${params.milestoneId} (status: ${parentMilestone.status})`;
         return;
       }
@@ -168,7 +155,7 @@ export async function handlePlanSlice(
         guardError = `missing parent slice: ${params.milestoneId}/${params.sliceId}`;
         return;
       }
-      if (parentSlice.status === "complete" || parentSlice.status === "done") {
+      if (isClosedStatus(parentSlice.status)) {
         guardError = `cannot re-plan slice ${params.sliceId}: it is already complete — use gsd_slice_reopen first`;
         return;
       }

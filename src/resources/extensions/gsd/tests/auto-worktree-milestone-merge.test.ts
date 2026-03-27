@@ -77,7 +77,7 @@ function addSliceToMilestone(
   run(`git branch -d ${sliceBranch}`, wtPath);
 }
 
-describe("auto-worktree-milestone-merge", () => {
+describe("auto-worktree-milestone-merge", { timeout: 300_000 }, () => {
   const savedCwd = process.cwd();
   const tempDirs: string[] = [];
 

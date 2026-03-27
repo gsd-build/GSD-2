@@ -245,7 +245,7 @@ export function registerHooks(pi: ExtensionAPI): void {
 
   pi.on("tool_execution_start", async (event) => {
     if (!isAutoActive()) return;
-    markToolStart(event.toolCallId);
+    markToolStart(event.toolCallId, event.toolName);
   });
 
   pi.on("tool_execution_end", async (event) => {

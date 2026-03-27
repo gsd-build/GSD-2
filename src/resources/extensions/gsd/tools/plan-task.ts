@@ -1,4 +1,6 @@
 import { clearParseCache } from "../files.js";
+import { isClosedStatus } from "../status-guards.js";
+import { isNonEmptyString, validateStringArray } from "../validation.js";
 import { transaction, getSlice, getTask, insertTask, upsertTaskPlanning } from "../gsd-db.js";
 import { invalidateStateCache } from "../state.js";
 import { renderTaskPlanFromDb } from "../markdown-renderer.js";
@@ -30,20 +32,6 @@ export interface PlanTaskResult {
   sliceId: string;
   taskId: string;
   taskPlanPath: string;
-}
-
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0;
-}
-
-function validateStringArray(value: unknown, field: string): string[] {
-  if (!Array.isArray(value)) {
-    throw new Error(`${field} must be an array`);
-  }
-  if (value.some((item) => !isNonEmptyString(item))) {
-    throw new Error(`${field} must contain only non-empty strings`);
-  }
-  return value;
 }
 
 function validateParams(params: PlanTaskParams): PlanTaskParams {
@@ -89,13 +77,13 @@ export async function handlePlanTask(
         guardError = `missing parent slice: ${params.milestoneId}/${params.sliceId}`;
         return;
       }
-      if (parentSlice.status === "complete" || parentSlice.status === "done") {
+      if (isClosedStatus(parentSlice.status)) {
         guardError = `cannot plan task in a closed slice: ${params.sliceId} (status: ${parentSlice.status})`;
         return;
       }
 
       const existingTask = getTask(params.milestoneId, params.sliceId, params.taskId);
-      if (existingTask && (existingTask.status === "complete" || existingTask.status === "done")) {
+      if (existingTask && isClosedStatus(existingTask.status)) {
         guardError = `cannot re-plan task ${params.taskId}: it is already complete — use gsd_task_reopen first`;
         return;
       }

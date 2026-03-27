@@ -5,6 +5,7 @@ import { delimiter, join } from "node:path";
 
 const GSD_RTK_PATH_ENV = "GSD_RTK_PATH";
 const GSD_RTK_DISABLED_ENV = "GSD_RTK_DISABLED";
+const GSD_RTK_REWRITE_TIMEOUT_MS_ENV = "GSD_RTK_REWRITE_TIMEOUT_MS";
 const RTK_TELEMETRY_DISABLED_ENV = "RTK_TELEMETRY_DISABLED";
 const RTK_REWRITE_TIMEOUT_MS = 5_000;
 
@@ -12,6 +13,14 @@ function isTruthy(value: string | undefined): boolean {
   if (!value) return false;
   const normalized = value.trim().toLowerCase();
   return normalized === "1" || normalized === "true" || normalized === "yes";
+}
+
+function getRewriteTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {
+  const configured = Number.parseInt(env[GSD_RTK_REWRITE_TIMEOUT_MS_ENV] ?? "", 10);
+  if (Number.isFinite(configured) && configured > 0) {
+    return configured;
+  }
+  return RTK_REWRITE_TIMEOUT_MS;
 }
 
 export function isRtkEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -96,18 +105,27 @@ export function resolveRtkBinaryPath(options: ResolveRtkBinaryPathOptions = {}):
   return resolveSystemRtkPath(options.pathValue ?? getPathValue(env), platform);
 }
 
-export function rewriteCommandWithRtk(command: string, env: NodeJS.ProcessEnv = process.env): string {
+interface RewriteCommandOptions {
+  binaryPath?: string;
+  env?: NodeJS.ProcessEnv;
+  spawnSyncImpl?: typeof spawnSync;
+}
+
+export function rewriteCommandWithRtk(command: string, options: RewriteCommandOptions = {}): string {
+  const env = options.env ?? process.env;
+
   if (!command.trim()) return command;
   if (!isRtkEnabled(env)) return command;
 
-  const binaryPath = resolveRtkBinaryPath({ env });
+  const binaryPath = options.binaryPath ?? resolveRtkBinaryPath({ env });
   if (!binaryPath) return command;
 
-  const result = spawnSync(binaryPath, ["rewrite", command], {
+  const run = options.spawnSyncImpl ?? spawnSync;
+  const result = run(binaryPath, ["rewrite", command], {
     encoding: "utf-8",
     env: buildRtkEnv(env),
     stdio: ["ignore", "pipe", "ignore"],
-    timeout: RTK_REWRITE_TIMEOUT_MS,
+    timeout: getRewriteTimeoutMs(env),
     // .cmd/.bat wrappers (used by fake-rtk in tests) require shell:true on Windows
     shell: /\.(cmd|bat)$/i.test(binaryPath),
   });

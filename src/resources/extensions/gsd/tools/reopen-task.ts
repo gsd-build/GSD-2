@@ -18,6 +18,7 @@ import {
   transaction,
 } from "../gsd-db.js";
 import { invalidateStateCache } from "../state.js";
+import { isClosedStatus } from "../status-guards.js";
 import { renderAllProjections } from "../workflow-projections.js";
 import { writeManifest } from "../workflow-manifest.js";
 import { appendEvent } from "../workflow-events.js";
@@ -63,7 +64,7 @@ export async function handleReopenTask(
       guardError = `milestone not found: ${params.milestoneId}`;
       return;
     }
-    if (milestone.status === "complete" || milestone.status === "done") {
+    if (isClosedStatus(milestone.status)) {
       guardError = `cannot reopen task in a closed milestone: ${params.milestoneId} (status: ${milestone.status})`;
       return;
     }
@@ -73,8 +74,8 @@ export async function handleReopenTask(
       guardError = `slice not found: ${params.milestoneId}/${params.sliceId}`;
       return;
     }
-    if (slice.status === "complete" || slice.status === "done") {
-      guardError = `cannot reopen task inside a closed slice: ${params.sliceId} (status: ${slice.status}) — use gsd_slice_reopen first`;
+    if (isClosedStatus(slice.status)) {
+      guardError = `cannot reopen task in a closed slice: ${params.sliceId} (status: ${slice.status}) — use gsd_slice_reopen first`;
       return;
     }
 
@@ -83,7 +84,7 @@ export async function handleReopenTask(
       guardError = `task not found: ${params.milestoneId}/${params.sliceId}/${params.taskId}`;
       return;
     }
-    if (task.status !== "complete" && task.status !== "done") {
+    if (!isClosedStatus(task.status)) {
       guardError = `task ${params.taskId} is not complete (status: ${task.status}) — nothing to reopen`;
       return;
     }

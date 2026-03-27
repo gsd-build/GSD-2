@@ -4,6 +4,10 @@ import { join } from "node:path";
 
 export type FakeRtkResponse = string | { status?: number; stdout?: string };
 
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\"'\"'`)}'`;
+}
+
 export function createFakeRtk(mapping: Record<string, FakeRtkResponse>): { path: string; cleanup: () => void } {
   const dir = mkdtempSync(join(tmpdir(), "gsd-fake-rtk-"));
   const payload = JSON.stringify(mapping);
@@ -36,7 +40,33 @@ process.exit(match.status ?? 0);
   }
 
   const binaryPath = join(dir, "rtk");
-  writeFileSync(binaryPath, jsSource, "utf-8");
+  const cases = Object.entries(mapping).map(([key, response], index) => {
+    const output = typeof response === "string" ? response : (response.stdout ?? "");
+    const status = typeof response === "string" ? 0 : (response.status ?? 0);
+    return `
+if [ "$full_input" = ${shellQuote(key)} ]; then
+  printf '%s' ${shellQuote(output)}
+  exit ${status}
+fi
+if [ -n "$rewrite_input" ] && [ "$rewrite_input" = ${shellQuote(key)} ]; then
+  printf '%s' ${shellQuote(output)}
+  exit ${status}
+fi`.trimStart();
+  }).join("\n\n");
+
+  const shellSource = `#!/bin/sh
+full_input="$*"
+rewrite_input=""
+if [ "$1" = "rewrite" ]; then
+  shift
+  rewrite_input="$*"
+fi
+
+${cases}
+
+exit 1
+`;
+  writeFileSync(binaryPath, shellSource, "utf-8");
   chmodSync(binaryPath, 0o755);
   return {
     path: binaryPath,

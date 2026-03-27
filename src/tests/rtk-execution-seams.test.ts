@@ -14,11 +14,35 @@ import { createFakeRtk } from "./rtk-test-utils.ts";
 
 const noopSignal = new AbortController().signal;
 
+async function waitFor(predicate: () => boolean, timeoutMs = 2_000, pollMs = 25): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+  }
+  throw new Error(`condition not met within ${timeoutMs}ms`);
+}
+
+async function waitForOutputMatch(
+  getOutput: () => string,
+  pattern: RegExp,
+  timeoutMs = 2_000,
+): Promise<string> {
+  let latest = getOutput();
+  await waitFor(() => {
+    latest = getOutput();
+    return pattern.test(latest);
+  }, timeoutMs);
+  return latest;
+}
+
 function withFakeRtk<T>(mapping: Record<string, string | { status?: number; stdout?: string }>, run: () => Promise<T> | T): Promise<T> | T {
   const fake = createFakeRtk(mapping);
   const previousPath = process.env.GSD_RTK_PATH;
   const previousDisabled = process.env.GSD_RTK_DISABLED;
+  const previousTimeout = process.env.GSD_RTK_REWRITE_TIMEOUT_MS;
   process.env.GSD_RTK_PATH = fake.path;
+  process.env.GSD_RTK_REWRITE_TIMEOUT_MS = "20000";
   delete process.env.GSD_RTK_DISABLED;
 
   const finalize = () => {
@@ -26,6 +50,8 @@ function withFakeRtk<T>(mapping: Record<string, string | { status?: number; stdo
     else process.env.GSD_RTK_PATH = previousPath;
     if (previousDisabled === undefined) delete process.env.GSD_RTK_DISABLED;
     else process.env.GSD_RTK_DISABLED = previousDisabled;
+    if (previousTimeout === undefined) delete process.env.GSD_RTK_REWRITE_TIMEOUT_MS;
+    else process.env.GSD_RTK_REWRITE_TIMEOUT_MS = previousTimeout;
     fake.cleanup();
   };
 
@@ -56,13 +82,16 @@ function withManagedFakeRtk<T>(mapping: Record<string, string | { status?: numbe
   const previousHome = process.env.GSD_HOME;
   const previousPath = process.env.GSD_RTK_PATH;
   const previousDisabled = process.env.GSD_RTK_DISABLED;
+  const previousTimeout = process.env.GSD_RTK_REWRITE_TIMEOUT_MS;
   process.env.GSD_HOME = managedHome;
+  process.env.GSD_RTK_REWRITE_TIMEOUT_MS = "20000";
   delete process.env.GSD_RTK_PATH;
   delete process.env.GSD_RTK_DISABLED;
 
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     GSD_HOME: managedHome,
+    GSD_RTK_REWRITE_TIMEOUT_MS: "20000",
   };
   delete env.GSD_RTK_PATH;
 
@@ -73,6 +102,8 @@ function withManagedFakeRtk<T>(mapping: Record<string, string | { status?: numbe
     else process.env.GSD_RTK_PATH = previousPath;
     if (previousDisabled === undefined) delete process.env.GSD_RTK_DISABLED;
     else process.env.GSD_RTK_DISABLED = previousDisabled;
+    if (previousTimeout === undefined) delete process.env.GSD_RTK_REWRITE_TIMEOUT_MS;
+    else process.env.GSD_RTK_REWRITE_TIMEOUT_MS = previousTimeout;
     fake.cleanup();
     rmSync(managedHome, { recursive: true, force: true });
   };
@@ -162,8 +193,10 @@ test("bg_shell start and runOnSession both execute RTK-rewritten commands", asyn
       ownerSessionFile: "session-rtk",
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    assert.match(oneshot.output.map((line) => line.line).join("\n"), /rewritten/);
+    assert.match(
+      await waitForOutputMatch(() => oneshot.output.map((line) => line.line).join("\n"), /rewritten/),
+      /rewritten/,
+    );
 
     const shellSession = startProcess({
       command: "",
@@ -172,7 +205,7 @@ test("bg_shell start and runOnSession both execute RTK-rewritten commands", asyn
       type: "shell",
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await waitFor(() => shellSession.status === "ready" || !shellSession.alive);
     const result = await runOnSession(shellSession, "echo raw", 2_000);
     assert.equal(result.exitCode, 0);
     assert.match(result.output, /rewritten/);

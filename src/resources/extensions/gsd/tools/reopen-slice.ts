@@ -20,6 +20,7 @@ import {
   transaction,
 } from "../gsd-db.js";
 import { invalidateStateCache } from "../state.js";
+import { isClosedStatus } from "../status-guards.js";
 import { renderAllProjections } from "../workflow-projections.js";
 import { writeManifest } from "../workflow-manifest.js";
 import { appendEvent } from "../workflow-events.js";
@@ -62,8 +63,8 @@ export async function handleReopenSlice(
       guardError = `milestone not found: ${params.milestoneId}`;
       return;
     }
-    if (milestone.status === "complete" || milestone.status === "done") {
-      guardError = `cannot reopen slice inside a closed milestone: ${params.milestoneId} (status: ${milestone.status})`;
+    if (isClosedStatus(milestone.status)) {
+      guardError = `cannot reopen slice in a closed milestone: ${params.milestoneId} (status: ${milestone.status})`;
       return;
     }
 
@@ -72,7 +73,7 @@ export async function handleReopenSlice(
       guardError = `slice not found: ${params.milestoneId}/${params.sliceId}`;
       return;
     }
-    if (slice.status !== "complete" && slice.status !== "done") {
+    if (!isClosedStatus(slice.status)) {
       guardError = `slice ${params.sliceId} is not complete (status: ${slice.status}) — nothing to reopen`;
       return;
     }

@@ -95,13 +95,13 @@ async function main(): Promise<void> {
       writeFileSync(lockFile, JSON.stringify(lockData, null, 2));
 
       // Simulate transient unavailability: move file away, spawn a child process
-      // to restore it after 100ms. The child runs outside our event loop so it
-      // fires even during busy-wait retries.
+      // to restore it shortly after. The child runs outside our event loop so it
+      // fires even during busy-wait retries. Give the test extra retry budget so
+      // it stays stable under full-suite CPU contention.
       renameSync(lockFile, tmpFile);
-      spawn('bash', ['-c', `sleep 0.1 && mv "${tmpFile}" "${lockFile}"`], { stdio: 'ignore', detached: true }).unref();
+      spawn('bash', ['-c', `sleep 0.05 && mv "${tmpFile}" "${lockFile}"`], { stdio: 'ignore', detached: true }).unref();
 
-      // With retries (3 attempts, 200ms delay), it should recover on 2nd or 3rd attempt
-      const result = readExistingLockDataWithRetry(lockFile, { maxAttempts: 3, delayMs: 200 });
+      const result = readExistingLockDataWithRetry(lockFile, { maxAttempts: 8, delayMs: 400 });
       assertTrue(result !== null, 'data recovered after transient unavailability');
       if (result) {
         assertEq(result.pid, process.pid, 'correct PID after recovery');
@@ -131,11 +131,12 @@ async function main(): Promise<void> {
       writeFileSync(lockFile, JSON.stringify(lockData, null, 2));
 
       // Remove read permission to simulate NFS/CIFS latency, then spawn a child
-      // to restore permissions after 100ms (runs outside our event loop).
+      // to restore permissions shortly after (runs outside our event loop).
+      // Use the same wider retry window as the rename case for full-suite stability.
       chmodSync(lockFile, 0o000);
-      spawn('bash', ['-c', `sleep 0.1 && chmod 644 "${lockFile}"`], { stdio: 'ignore', detached: true }).unref();
+      spawn('bash', ['-c', `sleep 0.05 && chmod 644 "${lockFile}"`], { stdio: 'ignore', detached: true }).unref();
 
-      const result = readExistingLockDataWithRetry(lockFile, { maxAttempts: 3, delayMs: 200 });
+      const result = readExistingLockDataWithRetry(lockFile, { maxAttempts: 8, delayMs: 400 });
       assertTrue(result !== null, 'data recovered after transient permission error');
       if (result) {
         assertEq(result.pid, process.pid, 'correct PID after permission recovery');

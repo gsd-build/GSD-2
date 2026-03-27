@@ -110,25 +110,35 @@ function createAdapter(rawDb: unknown): DbAdapter {
     close(): void;
   };
 
+  const stmtCache = new Map<string, DbStatement>();
+
+  function wrapStmt(raw: { run(...a: unknown[]): unknown; get(...a: unknown[]): unknown; all(...a: unknown[]): unknown[] }): DbStatement {
+    return {
+      run(...params: unknown[]): unknown {
+        return raw.run(...params);
+      },
+      get(...params: unknown[]): Record<string, unknown> | undefined {
+        return normalizeRow(raw.get(...params));
+      },
+      all(...params: unknown[]): Record<string, unknown>[] {
+        return normalizeRows(raw.all(...params));
+      },
+    };
+  }
+
   return {
     exec(sql: string): void {
       db.exec(sql);
     },
     prepare(sql: string): DbStatement {
-      const stmt = db.prepare(sql);
-      return {
-        run(...params: unknown[]): unknown {
-          return stmt.run(...params);
-        },
-        get(...params: unknown[]): Record<string, unknown> | undefined {
-          return normalizeRow(stmt.get(...params));
-        },
-        all(...params: unknown[]): Record<string, unknown>[] {
-          return normalizeRows(stmt.all(...params));
-        },
-      };
+      let cached = stmtCache.get(sql);
+      if (cached) return cached;
+      cached = wrapStmt(db.prepare(sql));
+      stmtCache.set(sql, cached);
+      return cached;
     },
     close(): void {
+      stmtCache.clear();
       db.close();
     },
   };
@@ -149,11 +159,16 @@ function openRawDb(path: string): unknown {
   return new Database(path);
 }
 
-const SCHEMA_VERSION = 12;
+const SCHEMA_VERSION = 14;
 
 function initSchema(db: DbAdapter, fileBacked: boolean): void {
   if (fileBacked) db.exec("PRAGMA journal_mode=WAL");
   if (fileBacked) db.exec("PRAGMA busy_timeout = 5000");
+  if (fileBacked) db.exec("PRAGMA synchronous = NORMAL");
+  if (fileBacked) db.exec("PRAGMA auto_vacuum = INCREMENTAL");
+  if (fileBacked) db.exec("PRAGMA cache_size = -8000");   // 8 MB page cache
+  if (fileBacked) db.exec("PRAGMA mmap_size = 67108864");  // 64 MB mmap
+  db.exec("PRAGMA temp_store = MEMORY");
   db.exec("PRAGMA foreign_keys = ON");
 
   db.exec("BEGIN");
@@ -273,7 +288,7 @@ function initSchema(db: DbAdapter, fileBacked: boolean): void {
         proof_level TEXT NOT NULL DEFAULT '',
         integration_closure TEXT NOT NULL DEFAULT '',
         observability_impact TEXT NOT NULL DEFAULT '',
-        sequence INTEGER DEFAULT 0, -- DEAD CODE: no tool exposes sequence — always 0
+        sequence INTEGER DEFAULT 0, -- Ordering hint: tools may set this to control execution order
         replan_triggered_at TEXT DEFAULT NULL,
         PRIMARY KEY (milestone_id, id),
         FOREIGN KEY (milestone_id) REFERENCES milestones(id)
@@ -306,7 +321,7 @@ function initSchema(db: DbAdapter, fileBacked: boolean): void {
         expected_output TEXT NOT NULL DEFAULT '[]',
         observability_impact TEXT NOT NULL DEFAULT '',
         full_plan_md TEXT NOT NULL DEFAULT '',
-        sequence INTEGER DEFAULT 0, -- DEAD CODE: no tool exposes sequence — always 0
+        sequence INTEGER DEFAULT 0, -- Ordering hint: tools may set this to control execution order
         PRIMARY KEY (milestone_id, slice_id, id),
         FOREIGN KEY (milestone_id, slice_id) REFERENCES slices(milestone_id, id)
       )
@@ -372,8 +387,30 @@ function initSchema(db: DbAdapter, fileBacked: boolean): void {
       )
     `);
 
+    // Slice dependency junction table (v14)
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS slice_dependencies (
+        milestone_id TEXT NOT NULL,
+        slice_id TEXT NOT NULL,
+        depends_on_slice_id TEXT NOT NULL,
+        PRIMARY KEY (milestone_id, slice_id, depends_on_slice_id),
+        FOREIGN KEY (milestone_id, slice_id) REFERENCES slices(milestone_id, id),
+        FOREIGN KEY (milestone_id, depends_on_slice_id) REFERENCES slices(milestone_id, id)
+      )
+    `);
+
     db.exec("CREATE INDEX IF NOT EXISTS idx_memories_active ON memories(superseded_by)");
     db.exec("CREATE INDEX IF NOT EXISTS idx_replan_history_milestone ON replan_history(milestone_id, created_at)");
+
+    // v13 indexes — hot-path dispatch queries
+    db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_active ON tasks(milestone_id, slice_id, status)");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_slices_active ON slices(milestone_id, status)");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_milestones_status ON milestones(status)");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_quality_gates_pending ON quality_gates(milestone_id, slice_id, status)");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_verification_evidence_task ON verification_evidence(milestone_id, slice_id, task_id)");
+
+    // v14 index — slice dependency lookups
+    db.exec("CREATE INDEX IF NOT EXISTS idx_slice_deps_target ON slice_dependencies(milestone_id, depends_on_slice_id)");
 
     db.exec(`CREATE VIEW IF NOT EXISTS active_decisions AS SELECT * FROM decisions WHERE superseded_by IS NULL`);
     db.exec(`CREATE VIEW IF NOT EXISTS active_requirements AS SELECT * FROM requirements WHERE superseded_by IS NULL`);
@@ -677,6 +714,37 @@ function migrateSchema(db: DbAdapter): void {
       });
     }
 
+    if (currentVersion < 13) {
+      // Hot-path indexes for auto-loop dispatch queries
+      db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_active ON tasks(milestone_id, slice_id, status)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_slices_active ON slices(milestone_id, status)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_milestones_status ON milestones(status)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_quality_gates_pending ON quality_gates(milestone_id, slice_id, status)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_verification_evidence_task ON verification_evidence(milestone_id, slice_id, task_id)");
+      db.prepare("INSERT INTO schema_version (version, applied_at) VALUES (:version, :applied_at)").run({
+        ":version": 13,
+        ":applied_at": new Date().toISOString(),
+      });
+    }
+
+    if (currentVersion < 14) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS slice_dependencies (
+          milestone_id TEXT NOT NULL,
+          slice_id TEXT NOT NULL,
+          depends_on_slice_id TEXT NOT NULL,
+          PRIMARY KEY (milestone_id, slice_id, depends_on_slice_id),
+          FOREIGN KEY (milestone_id, slice_id) REFERENCES slices(milestone_id, id),
+          FOREIGN KEY (milestone_id, depends_on_slice_id) REFERENCES slices(milestone_id, id)
+        )
+      `);
+      db.exec("CREATE INDEX IF NOT EXISTS idx_slice_deps_target ON slice_dependencies(milestone_id, depends_on_slice_id)");
+      db.prepare("INSERT INTO schema_version (version, applied_at) VALUES (:version, :applied_at)").run({
+        ":version": 14,
+        ":applied_at": new Date().toISOString(),
+      });
+    }
+
     db.exec("COMMIT");
   } catch (err) {
     db.exec("ROLLBACK");
@@ -732,6 +800,10 @@ export function closeDatabase(): void {
       currentDb.exec('PRAGMA wal_checkpoint(TRUNCATE)');
     } catch { /* non-fatal — best effort before close */ }
     try {
+      // Incremental vacuum to reclaim space without blocking
+      currentDb.exec('PRAGMA incremental_vacuum(64)');
+    } catch { /* non-fatal */ }
+    try {
       currentDb.close();
     } catch {
       // swallow close errors
@@ -742,8 +814,31 @@ export function closeDatabase(): void {
   }
 }
 
+/** Run a full VACUUM — call sparingly (e.g. after milestone completion). */
+export function vacuumDatabase(): void {
+  if (!currentDb) return;
+  try {
+    currentDb.exec('VACUUM');
+  } catch { /* non-fatal */ }
+}
+
+let _txDepth = 0;
+
 export function transaction<T>(fn: () => T): T {
   if (!currentDb) throw new GSDError(GSD_STALE_STATE, "gsd-db: No database open");
+
+  // Re-entrant: if already inside a transaction, just run fn() without
+  // starting a new one. SQLite does not support nested BEGIN/COMMIT.
+  if (_txDepth > 0) {
+    _txDepth++;
+    try {
+      return fn();
+    } finally {
+      _txDepth--;
+    }
+  }
+
+  _txDepth++;
   currentDb.exec("BEGIN");
   try {
     const result = fn();
@@ -752,6 +847,8 @@ export function transaction<T>(fn: () => T): T {
   } catch (err) {
     currentDb.exec("ROLLBACK");
     throw err;
+  } finally {
+    _txDepth--;
   }
 }
 
@@ -1308,6 +1405,20 @@ export function updateSliceStatus(milestoneId: string, sliceId: string, status: 
   });
 }
 
+export function setTaskSummaryMd(milestoneId: string, sliceId: string, taskId: string, md: string): void {
+  if (!currentDb) throw new GSDError(GSD_STALE_STATE, "gsd-db: No database open");
+  currentDb.prepare(
+    `UPDATE tasks SET full_summary_md = :md WHERE milestone_id = :mid AND slice_id = :sid AND id = :tid`,
+  ).run({ ":mid": milestoneId, ":sid": sliceId, ":tid": taskId, ":md": md });
+}
+
+export function setSliceSummaryMd(milestoneId: string, sliceId: string, summaryMd: string, uatMd: string): void {
+  if (!currentDb) throw new GSDError(GSD_STALE_STATE, "gsd-db: No database open");
+  currentDb.prepare(
+    `UPDATE slices SET full_summary_md = :summary_md, full_uat_md = :uat_md WHERE milestone_id = :mid AND id = :sid`,
+  ).run({ ":mid": milestoneId, ":sid": sliceId, ":summary_md": summaryMd, ":uat_md": uatMd });
+}
+
 export interface TaskRow {
   milestone_id: string;
   slice_id: string;
@@ -1490,11 +1601,11 @@ export function getMilestone(id: string): MilestoneRow | null {
  * Used by park/unpark to keep the DB in sync with the filesystem marker.
  * See: https://github.com/gsd-build/gsd-2/issues/2694
  */
-export function updateMilestoneStatus(milestoneId: string, status: string): void {
+export function updateMilestoneStatus(milestoneId: string, status: string, completedAt?: string | null): void {
   if (!currentDb) throw new GSDError(GSD_STALE_STATE, "gsd-db: No database open");
   currentDb.prepare(
-    `UPDATE milestones SET status = :status WHERE id = :id`,
-  ).run({ ":status": status, ":id": milestoneId });
+    `UPDATE milestones SET status = :status, completed_at = :completed_at WHERE id = :id`,
+  ).run({ ":status": status, ":completed_at": completedAt ?? null, ":id": milestoneId });
 }
 
 export function getActiveMilestoneFromDb(): MilestoneRow | null {
@@ -1508,23 +1619,24 @@ export function getActiveMilestoneFromDb(): MilestoneRow | null {
 
 export function getActiveSliceFromDb(milestoneId: string): SliceRow | null {
   if (!currentDb) return null;
-  const rows = currentDb.prepare(
-    "SELECT * FROM slices WHERE milestone_id = :mid AND status NOT IN ('complete', 'done') ORDER BY sequence, id",
-  ).all({ ":mid": milestoneId });
-  if (rows.length === 0) return null;
 
-  const completedRows = currentDb.prepare(
-    "SELECT id FROM slices WHERE milestone_id = :mid AND status IN ('complete', 'done')",
-  ).all({ ":mid": milestoneId });
-  const completedIds = new Set(completedRows.map((r) => r["id"] as string));
-
-  for (const row of rows) {
-    const slice = rowToSlice(row);
-    if (slice.depends.length === 0 || slice.depends.every((d) => completedIds.has(d))) {
-      return slice;
-    }
-  }
-  return null;
+  // Single query: find the first non-complete slice whose dependencies are all satisfied.
+  // Uses json_each() to expand the JSON depends array and checks each dep is complete.
+  const row = currentDb.prepare(
+    `SELECT s.* FROM slices s
+     WHERE s.milestone_id = :mid
+       AND s.status NOT IN ('complete', 'done')
+       AND NOT EXISTS (
+         SELECT 1 FROM json_each(s.depends) AS dep
+         WHERE dep.value NOT IN (
+           SELECT id FROM slices WHERE milestone_id = :mid AND status IN ('complete', 'done')
+         )
+       )
+     ORDER BY s.sequence, s.id
+     LIMIT 1`,
+  ).get({ ":mid": milestoneId });
+  if (!row) return null;
+  return rowToSlice(row);
 }
 
 export function getActiveTaskFromDb(milestoneId: string, sliceId: string): TaskRow | null {
@@ -1549,6 +1661,73 @@ export function getArtifact(path: string): ArtifactRow | null {
   return rowToArtifact(row);
 }
 
+// ─── Lightweight Query Variants (hot-path optimized) ─────────────────────
+
+/** Fast milestone status check — avoids deserializing JSON planning fields. */
+export function getActiveMilestoneIdFromDb(): { id: string; status: string } | null {
+  if (!currentDb) return null;
+  const row = currentDb.prepare(
+    "SELECT id, status FROM milestones WHERE status NOT IN ('complete', 'parked') ORDER BY id LIMIT 1",
+  ).get();
+  if (!row) return null;
+  return { id: row["id"] as string, status: row["status"] as string };
+}
+
+/** Fast slice status check — avoids deserializing JSON depends/planning fields. */
+export function getSliceStatusSummary(milestoneId: string): Array<{ id: string; status: string }> {
+  if (!currentDb) return [];
+  return currentDb.prepare(
+    "SELECT id, status FROM slices WHERE milestone_id = :mid ORDER BY sequence, id",
+  ).all({ ":mid": milestoneId }).map((r) => ({ id: r["id"] as string, status: r["status"] as string }));
+}
+
+/** Fast task status check — avoids deserializing JSON arrays and large text fields. */
+export function getActiveTaskIdFromDb(milestoneId: string, sliceId: string): { id: string; status: string; title: string } | null {
+  if (!currentDb) return null;
+  const row = currentDb.prepare(
+    "SELECT id, status, title FROM tasks WHERE milestone_id = :mid AND slice_id = :sid AND status NOT IN ('complete', 'done') ORDER BY sequence, id LIMIT 1",
+  ).get({ ":mid": milestoneId, ":sid": sliceId });
+  if (!row) return null;
+  return { id: row["id"] as string, status: row["status"] as string, title: row["title"] as string };
+}
+
+/** Count tasks by status for a slice — useful for progress reporting without full row load. */
+export function getSliceTaskCounts(milestoneId: string, sliceId: string): { total: number; done: number; pending: number } {
+  if (!currentDb) return { total: 0, done: 0, pending: 0 };
+  const row = currentDb.prepare(
+    `SELECT
+       COUNT(*) as total,
+       SUM(CASE WHEN status IN ('complete', 'done') THEN 1 ELSE 0 END) as done,
+       SUM(CASE WHEN status NOT IN ('complete', 'done') THEN 1 ELSE 0 END) as pending
+     FROM tasks WHERE milestone_id = :mid AND slice_id = :sid`,
+  ).get({ ":mid": milestoneId, ":sid": sliceId });
+  if (!row) return { total: 0, done: 0, pending: 0 };
+  return { total: (row["total"] as number) ?? 0, done: (row["done"] as number) ?? 0, pending: (row["pending"] as number) ?? 0 };
+}
+
+// ─── Slice Dependencies (junction table) ─────────────────────────────────
+
+/** Sync the slice_dependencies junction table from a slice's JSON depends array. */
+export function syncSliceDependencies(milestoneId: string, sliceId: string, depends: string[]): void {
+  if (!currentDb) return;
+  currentDb.prepare(
+    "DELETE FROM slice_dependencies WHERE milestone_id = :mid AND slice_id = :sid",
+  ).run({ ":mid": milestoneId, ":sid": sliceId });
+  for (const dep of depends) {
+    currentDb.prepare(
+      "INSERT OR IGNORE INTO slice_dependencies (milestone_id, slice_id, depends_on_slice_id) VALUES (:mid, :sid, :dep)",
+    ).run({ ":mid": milestoneId, ":sid": sliceId, ":dep": dep });
+  }
+}
+
+/** Get all slices that depend on a given slice. */
+export function getDependentSlices(milestoneId: string, sliceId: string): string[] {
+  if (!currentDb) return [];
+  return currentDb.prepare(
+    "SELECT slice_id FROM slice_dependencies WHERE milestone_id = :mid AND depends_on_slice_id = :sid",
+  ).all({ ":mid": milestoneId, ":sid": sliceId }).map((r) => r["slice_id"] as string);
+}
+
 // ─── Worktree DB Helpers ──────────────────────────────────────────────────
 
 export function copyWorktreeDb(srcDbPath: string, destDbPath: string): boolean {
@@ -1564,18 +1743,28 @@ export function copyWorktreeDb(srcDbPath: string, destDbPath: string): boolean {
   }
 }
 
-export function reconcileWorktreeDb(
-  mainDbPath: string,
-  worktreeDbPath: string,
-): {
+export interface ReconcileResult {
   decisions: number;
   requirements: number;
   artifacts: number;
+  milestones: number;
+  slices: number;
+  tasks: number;
+  memories: number;
+  verification_evidence: number;
   conflicts: string[];
-} {
-  const zero = { decisions: 0, requirements: 0, artifacts: 0, conflicts: [] as string[] };
+}
+
+export function reconcileWorktreeDb(
+  mainDbPath: string,
+  worktreeDbPath: string,
+): ReconcileResult {
+  const zero: ReconcileResult = { decisions: 0, requirements: 0, artifacts: 0, milestones: 0, slices: 0, tasks: 0, memories: 0, verification_evidence: 0, conflicts: [] };
   if (!existsSync(worktreeDbPath)) return zero;
-  if (worktreeDbPath.includes("'")) {
+  // Sanitize path: reject any characters that could break ATTACH syntax.
+  // ATTACH DATABASE doesn't support parameterized paths in all providers,
+  // so we use strict allowlist validation instead.
+  if (/['";\x00]/.test(worktreeDbPath)) {
     process.stderr.write("gsd-db: worktree DB reconciliation failed: path contains unsafe characters\n");
     return zero;
   }
@@ -1606,20 +1795,24 @@ export function reconcileWorktreeDb(
       ).all();
       for (const row of reqConf) conflicts.push(`requirement ${(row as Record<string, unknown>)["id"]}: modified in both`);
 
-      const merged = { decisions: 0, requirements: 0, artifacts: 0 };
+      const merged: Omit<ReconcileResult, "conflicts"> = { decisions: 0, requirements: 0, artifacts: 0, milestones: 0, slices: 0, tasks: 0, memories: 0, verification_evidence: 0 };
+
+      function countChanges(result: unknown): number {
+        return typeof result === "object" && result !== null ? ((result as { changes?: number }).changes ?? 0) : 0;
+      }
+
       adapter.exec("BEGIN");
       try {
-        const dR = adapter.prepare(`
+        merged.decisions = countChanges(adapter.prepare(`
           INSERT OR REPLACE INTO decisions (
             id, when_context, scope, decision, choice, rationale, revisable, made_by, superseded_by
           )
           SELECT id, when_context, scope, decision, choice, rationale, revisable, ${
             hasMadeBy ? "made_by" : "'agent'"
           }, superseded_by FROM wt.decisions
-        `).run();
-        merged.decisions = typeof dR === "object" && dR !== null ? ((dR as { changes?: number }).changes ?? 0) : 0;
+        `).run());
 
-        const rR = adapter.prepare(`
+        merged.requirements = countChanges(adapter.prepare(`
           INSERT OR REPLACE INTO requirements (
             id, class, status, description, why, source, primary_owner,
             supporting_slices, validation, notes, full_content, superseded_by
@@ -1627,17 +1820,80 @@ export function reconcileWorktreeDb(
           SELECT id, class, status, description, why, source, primary_owner,
                  supporting_slices, validation, notes, full_content, superseded_by
           FROM wt.requirements
-        `).run();
-        merged.requirements = typeof rR === "object" && rR !== null ? ((rR as { changes?: number }).changes ?? 0) : 0;
+        `).run());
 
-        const aR = adapter.prepare(`
+        merged.artifacts = countChanges(adapter.prepare(`
           INSERT OR REPLACE INTO artifacts (
             path, artifact_type, milestone_id, slice_id, task_id, full_content, imported_at
           )
           SELECT path, artifact_type, milestone_id, slice_id, task_id, full_content, imported_at
           FROM wt.artifacts
-        `).run();
-        merged.artifacts = typeof aR === "object" && aR !== null ? ((aR as { changes?: number }).changes ?? 0) : 0;
+        `).run());
+
+        // Merge milestones — worktree may have updated status/planning fields
+        merged.milestones = countChanges(adapter.prepare(`
+          INSERT OR REPLACE INTO milestones (
+            id, title, status, depends_on, created_at, completed_at,
+            vision, success_criteria, key_risks, proof_strategy,
+            verification_contract, verification_integration, verification_operational, verification_uat,
+            definition_of_done, requirement_coverage, boundary_map_markdown
+          )
+          SELECT id, title, status, depends_on, created_at, completed_at,
+                 vision, success_criteria, key_risks, proof_strategy,
+                 verification_contract, verification_integration, verification_operational, verification_uat,
+                 definition_of_done, requirement_coverage, boundary_map_markdown
+          FROM wt.milestones
+        `).run());
+
+        // Merge slices — preserve worktree progress (status, summaries, planning)
+        merged.slices = countChanges(adapter.prepare(`
+          INSERT OR REPLACE INTO slices (
+            milestone_id, id, title, status, risk, depends, demo, created_at, completed_at,
+            full_summary_md, full_uat_md, goal, success_criteria, proof_level,
+            integration_closure, observability_impact, sequence, replan_triggered_at
+          )
+          SELECT milestone_id, id, title, status, risk, depends, demo, created_at, completed_at,
+                 full_summary_md, full_uat_md, goal, success_criteria, proof_level,
+                 integration_closure, observability_impact, sequence, replan_triggered_at
+          FROM wt.slices
+        `).run());
+
+        // Merge tasks — preserve execution results, status, summaries
+        merged.tasks = countChanges(adapter.prepare(`
+          INSERT OR REPLACE INTO tasks (
+            milestone_id, slice_id, id, title, status, one_liner, narrative,
+            verification_result, duration, completed_at, blocker_discovered,
+            deviations, known_issues, key_files, key_decisions, full_summary_md,
+            description, estimate, files, verify, inputs, expected_output,
+            observability_impact, full_plan_md, sequence
+          )
+          SELECT milestone_id, slice_id, id, title, status, one_liner, narrative,
+                 verification_result, duration, completed_at, blocker_discovered,
+                 deviations, known_issues, key_files, key_decisions, full_summary_md,
+                 description, estimate, files, verify, inputs, expected_output,
+                 observability_impact, full_plan_md, sequence
+          FROM wt.tasks
+        `).run());
+
+        // Merge memories — keep worktree-learned insights
+        merged.memories = countChanges(adapter.prepare(`
+          INSERT OR REPLACE INTO memories (
+            seq, id, category, content, confidence, source_unit_type, source_unit_id,
+            created_at, updated_at, superseded_by, hit_count
+          )
+          SELECT seq, id, category, content, confidence, source_unit_type, source_unit_id,
+                 created_at, updated_at, superseded_by, hit_count
+          FROM wt.memories
+        `).run());
+
+        // Merge verification evidence — append-only, use INSERT OR IGNORE to avoid duplicates
+        merged.verification_evidence = countChanges(adapter.prepare(`
+          INSERT OR IGNORE INTO verification_evidence (
+            task_id, slice_id, milestone_id, command, exit_code, verdict, duration_ms, created_at
+          )
+          SELECT task_id, slice_id, milestone_id, command, exit_code, verdict, duration_ms, created_at
+          FROM wt.verification_evidence
+        `).run());
 
         adapter.exec("COMMIT");
       } catch (txErr) {
@@ -1706,29 +1962,53 @@ export function insertAssessment(entry: {
   });
 }
 
-export function deleteTask(milestoneId: string, sliceId: string, taskId: string): void {
+export function deleteAssessmentByScope(milestoneId: string, scope: string): void {
   if (!currentDb) throw new GSDError(GSD_STALE_STATE, "gsd-db: No database open");
-  // Must delete verification_evidence first (FK constraint)
+  currentDb.prepare(
+    `DELETE FROM assessments WHERE milestone_id = :mid AND scope = :scope`,
+  ).run({ ":mid": milestoneId, ":scope": scope });
+}
+
+export function deleteVerificationEvidence(milestoneId: string, sliceId: string, taskId: string): void {
+  if (!currentDb) throw new GSDError(GSD_STALE_STATE, "gsd-db: No database open");
   currentDb.prepare(
     `DELETE FROM verification_evidence WHERE milestone_id = :mid AND slice_id = :sid AND task_id = :tid`,
   ).run({ ":mid": milestoneId, ":sid": sliceId, ":tid": taskId });
-  currentDb.prepare(
-    `DELETE FROM tasks WHERE milestone_id = :mid AND slice_id = :sid AND id = :tid`,
-  ).run({ ":mid": milestoneId, ":sid": sliceId, ":tid": taskId });
+}
+
+export function deleteTask(milestoneId: string, sliceId: string, taskId: string): void {
+  if (!currentDb) throw new GSDError(GSD_STALE_STATE, "gsd-db: No database open");
+  transaction(() => {
+    // Must delete verification_evidence first (FK constraint)
+    currentDb!.prepare(
+      `DELETE FROM verification_evidence WHERE milestone_id = :mid AND slice_id = :sid AND task_id = :tid`,
+    ).run({ ":mid": milestoneId, ":sid": sliceId, ":tid": taskId });
+    currentDb!.prepare(
+      `DELETE FROM tasks WHERE milestone_id = :mid AND slice_id = :sid AND id = :tid`,
+    ).run({ ":mid": milestoneId, ":sid": sliceId, ":tid": taskId });
+  });
 }
 
 export function deleteSlice(milestoneId: string, sliceId: string): void {
   if (!currentDb) throw new GSDError(GSD_STALE_STATE, "gsd-db: No database open");
-  // Cascade-style manual deletion: evidence → tasks → slice
-  currentDb.prepare(
-    `DELETE FROM verification_evidence WHERE milestone_id = :mid AND slice_id = :sid`,
-  ).run({ ":mid": milestoneId, ":sid": sliceId });
-  currentDb.prepare(
-    `DELETE FROM tasks WHERE milestone_id = :mid AND slice_id = :sid`,
-  ).run({ ":mid": milestoneId, ":sid": sliceId });
-  currentDb.prepare(
-    `DELETE FROM slices WHERE milestone_id = :mid AND id = :sid`,
-  ).run({ ":mid": milestoneId, ":sid": sliceId });
+  transaction(() => {
+    // Cascade-style manual deletion: evidence → tasks → dependencies → slice
+    currentDb!.prepare(
+      `DELETE FROM verification_evidence WHERE milestone_id = :mid AND slice_id = :sid`,
+    ).run({ ":mid": milestoneId, ":sid": sliceId });
+    currentDb!.prepare(
+      `DELETE FROM tasks WHERE milestone_id = :mid AND slice_id = :sid`,
+    ).run({ ":mid": milestoneId, ":sid": sliceId });
+    currentDb!.prepare(
+      `DELETE FROM slice_dependencies WHERE milestone_id = :mid AND slice_id = :sid`,
+    ).run({ ":mid": milestoneId, ":sid": sliceId });
+    currentDb!.prepare(
+      `DELETE FROM slice_dependencies WHERE milestone_id = :mid AND depends_on_slice_id = :sid`,
+    ).run({ ":mid": milestoneId, ":sid": sliceId });
+    currentDb!.prepare(
+      `DELETE FROM slices WHERE milestone_id = :mid AND id = :sid`,
+    ).run({ ":mid": milestoneId, ":sid": sliceId });
+  });
 }
 
 export function updateSliceFields(milestoneId: string, sliceId: string, fields: {

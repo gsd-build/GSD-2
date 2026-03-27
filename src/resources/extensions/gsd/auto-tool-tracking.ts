@@ -4,15 +4,27 @@
  * can distinguish "waiting for tool completion" from "truly idle".
  */
 
-const inFlightTools = new Map<string, number>();
+interface InFlightTool {
+  startedAt: number;
+  toolName: string;
+}
+
+const inFlightTools = new Map<string, InFlightTool>();
+
+/**
+ * Tools that block waiting for human input by design.
+ * The idle watchdog must not treat these as stalled.
+ */
+const INTERACTIVE_TOOLS = new Set(["ask_user_questions", "secure_env_collect"]);
 
 /**
  * Mark a tool execution as in-flight.
- * Records start time so the idle watchdog can detect tools hung longer than the idle timeout.
+ * Records start time and tool name so the idle watchdog can detect tools
+ * hung longer than the idle timeout while exempting interactive tools.
  */
-export function markToolStart(toolCallId: string, isActive: boolean): void {
+export function markToolStart(toolCallId: string, isActive: boolean, toolName?: string): void {
   if (!isActive) return;
-  inFlightTools.set(toolCallId, Date.now());
+  inFlightTools.set(toolCallId, { startedAt: Date.now(), toolName: toolName ?? "unknown" });
 }
 
 /**
@@ -29,7 +41,7 @@ export function getOldestInFlightToolAgeMs(): number {
   if (inFlightTools.size === 0) return 0;
   let oldestStart = Infinity;
   for (const t of inFlightTools.values()) {
-    if (t < oldestStart) oldestStart = t;
+    if (t.startedAt < oldestStart) oldestStart = t.startedAt;
   }
   return Date.now() - oldestStart;
 }
@@ -48,9 +60,21 @@ export function getOldestInFlightToolStart(): number | undefined {
   if (inFlightTools.size === 0) return undefined;
   let oldest = Infinity;
   for (const t of inFlightTools.values()) {
-    if (t < oldest) oldest = t;
+    if (t.startedAt < oldest) oldest = t.startedAt;
   }
   return oldest;
+}
+
+/**
+ * Returns true if any currently in-flight tool is a user-interactive tool
+ * (e.g. ask_user_questions, secure_env_collect) that blocks waiting for
+ * human input. These must be exempt from idle stall detection.
+ */
+export function hasInteractiveToolInFlight(): boolean {
+  for (const { toolName } of inFlightTools.values()) {
+    if (INTERACTIVE_TOOLS.has(toolName)) return true;
+  }
+  return false;
 }
 
 /**

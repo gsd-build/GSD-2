@@ -229,7 +229,8 @@ export function resolveRtkBinaryPath(options: ResolveRtkBinaryPathOptions = {}):
   const env = options.env ?? process.env;
   const platform = options.platform ?? process.platform;
 
-  const explicitPath = options.binaryPath ?? env[GSD_RTK_PATH_ENV];
+  if (options.binaryPath) return options.binaryPath;
+  const explicitPath = env[GSD_RTK_PATH_ENV];
   if (explicitPath && existsSync(explicitPath)) {
     return explicitPath;
   }

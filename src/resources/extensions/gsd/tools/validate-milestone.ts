@@ -9,7 +9,8 @@ import { join } from "node:path";
 
 import {
   transaction,
-  _getAdapter,
+  insertAssessment,
+  deleteAssessmentByScope,
 } from "../gsd-db.js";
 import { resolveMilestonePath, clearPathCache } from "../paths.js";
 import { saveFile, clearParseCache } from "../files.js";
@@ -97,16 +98,14 @@ export async function handleValidateMilestone(
   const validatedAt = new Date().toISOString();
 
   transaction(() => {
-    const adapter = _getAdapter()!;
-    adapter.prepare(
-      `INSERT OR REPLACE INTO assessments (path, milestone_id, slice_id, task_id, status, scope, full_content, created_at)
-       VALUES (:path, :mid, NULL, NULL, :verdict, 'milestone-validation', :content, :created_at)`,
-    ).run({
-      ":path": validationPath,
-      ":mid": params.milestoneId,
-      ":verdict": params.verdict,
-      ":content": validationMd,
-      ":created_at": validatedAt,
+    insertAssessment({
+      path: validationPath,
+      milestoneId: params.milestoneId,
+      sliceId: null,
+      taskId: null,
+      status: params.verdict,
+      scope: 'milestone-validation',
+      fullContent: validationMd,
     });
   });
 
@@ -118,12 +117,7 @@ export async function handleValidateMilestone(
     process.stderr.write(
       `gsd-db: validate_milestone — disk render failed, rolling back DB row: ${(renderErr as Error).message}\n`,
     );
-    const rollbackAdapter = _getAdapter();
-    if (rollbackAdapter) {
-      rollbackAdapter.prepare(
-        `DELETE FROM assessments WHERE milestone_id = :mid AND scope = 'milestone-validation'`,
-      ).run({ ":mid": params.milestoneId });
-    }
+    deleteAssessmentByScope(params.milestoneId, 'milestone-validation');
     return { error: `disk render failed: ${(renderErr as Error).message}` };
   }
 

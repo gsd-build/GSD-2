@@ -1,4 +1,7 @@
+import { join } from "node:path";
 import { clearParseCache } from "../files.js";
+import { isClosedStatus } from "../status-guards.js";
+import { isNonEmptyString } from "../validation.js";
 import {
   transaction,
   getMilestone,
@@ -14,7 +17,6 @@ import { renderRoadmapFromDb, renderAssessmentFromDb } from "../markdown-rendere
 import { renderAllProjections } from "../workflow-projections.js";
 import { writeManifest } from "../workflow-manifest.js";
 import { appendEvent } from "../workflow-events.js";
-import { join } from "node:path";
 
 export interface SliceChangeInput {
   sliceId: string;
@@ -47,9 +49,6 @@ export interface ReassessRoadmapResult {
   roadmapPath: string;
 }
 
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0;
-}
 
 function validateParams(params: ReassessRoadmapParams): ReassessRoadmapParams {
   if (!isNonEmptyString(params?.milestoneId)) throw new Error("milestoneId is required");
@@ -125,7 +124,7 @@ export async function handleReassessRoadmap(
         guardError = `milestone not found: ${params.milestoneId}`;
         return;
       }
-      if (milestone.status === "complete" || milestone.status === "done") {
+      if (isClosedStatus(milestone.status)) {
         guardError = `cannot reassess a closed milestone: ${params.milestoneId} (status: ${milestone.status})`;
         return;
       }
@@ -136,7 +135,7 @@ export async function handleReassessRoadmap(
         guardError = `completedSliceId not found: ${params.milestoneId}/${params.completedSliceId}`;
         return;
       }
-      if (completedSlice.status !== "complete" && completedSlice.status !== "done") {
+      if (!isClosedStatus(completedSlice.status)) {
         guardError = `completedSliceId ${params.completedSliceId} is not complete (status: ${completedSlice.status}) — reassess can only be called after a slice finishes`;
         return;
       }
@@ -145,7 +144,7 @@ export async function handleReassessRoadmap(
       const existingSlices = getMilestoneSlices(params.milestoneId);
       const completedSliceIds = new Set<string>();
       for (const slice of existingSlices) {
-        if (slice.status === "complete" || slice.status === "done") {
+        if (isClosedStatus(slice.status)) {
           completedSliceIds.add(slice.id);
         }
       }

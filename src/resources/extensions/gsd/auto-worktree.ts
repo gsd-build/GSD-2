@@ -82,6 +82,10 @@ const ROOT_STATE_FILES = [
   "QUEUE.md",
   "completed-units.json",
   "metrics.json",
+  // NOTE: preferences.md is intentionally NOT in ROOT_STATE_FILES.
+  // Forward-sync (main → worktree) is handled explicitly in syncGsdStateToWorktree().
+  // Back-sync (worktree → main) must NEVER overwrite the project root's copy
+  // because the project root is authoritative for preferences (#2684).
 ] as const;
 
 /**
@@ -152,6 +156,25 @@ function clearProjectRootStateFiles(basePath: string, milestoneId: string): void
     }
   }
 }
+
+// ─── Build Artifact Auto-Resolve ─────────────────────────────────────────────
+
+/** Patterns for machine-generated build artifacts that can be safely
+ * auto-resolved by accepting --theirs during merge. These files are
+ * regenerable and never contain meaningful manual edits. */
+export const SAFE_AUTO_RESOLVE_PATTERNS: RegExp[] = [
+  /\.tsbuildinfo$/,
+  /\.pyc$/,
+  /\/__pycache__\//,
+  /\.DS_Store$/,
+  /\.map$/,
+];
+
+/** Returns true if the file path is safe to auto-resolve during merge.
+ * Covers `.gsd/` state files and common build artifacts. */
+export const isSafeToAutoResolve = (filePath: string): boolean =>
+  filePath.startsWith(".gsd/") ||
+  SAFE_AUTO_RESOLVE_PATTERNS.some((re) => re.test(filePath));
 
 // ─── Dispatch-Level Sync (project root ↔ worktree) ──────────────────────────
 
@@ -1404,30 +1427,30 @@ export function mergeMilestoneToMain(
         : nativeConflictFiles(originalBasePath_);
 
     if (conflictedFiles.length > 0) {
-      // Separate .gsd/ state file conflicts from real code conflicts.
-      // GSD state files (STATE.md, auto.lock, etc.)
-      // diverge between branches during normal operation — always prefer the
-      // milestone branch version since it has the latest execution state.
-      const gsdConflicts = conflictedFiles.filter((f) => f.startsWith(".gsd/"));
+      // Separate auto-resolvable conflicts (GSD state files + build artifacts)
+      // from real code conflicts. GSD state files diverge between branches
+      // during normal operation. Build artifacts are machine-generated and
+      // regenerable. Both are safe to accept from the milestone branch.
+      const autoResolvable = conflictedFiles.filter(isSafeToAutoResolve);
       const codeConflicts = conflictedFiles.filter(
-        (f) => !f.startsWith(".gsd/"),
+        (f) => !isSafeToAutoResolve(f),
       );
 
-      // Auto-resolve .gsd/ conflicts by accepting the milestone branch version
-      if (gsdConflicts.length > 0) {
-        for (const gsdFile of gsdConflicts) {
+      // Auto-resolve safe conflicts by accepting the milestone branch version
+      if (autoResolvable.length > 0) {
+        for (const safeFile of autoResolvable) {
           try {
-            nativeCheckoutTheirs(originalBasePath_, [gsdFile]);
-            nativeAddPaths(originalBasePath_, [gsdFile]);
+            nativeCheckoutTheirs(originalBasePath_, [safeFile]);
+            nativeAddPaths(originalBasePath_, [safeFile]);
           } catch {
             // If checkout --theirs fails, try removing the file from the merge
             // (it's a runtime file that shouldn't be committed anyway)
-            nativeRmForce(originalBasePath_, [gsdFile]);
+            nativeRmForce(originalBasePath_, [safeFile]);
           }
         }
       }
 
-      // If there are still non-.gsd conflicts, escalate
+      // If there are still real code conflicts, escalate
       if (codeConflicts.length > 0) {
         // Pop stash before throwing so local work is not lost (#2151).
         if (stashed) {
@@ -1476,7 +1499,47 @@ export function mergeMilestoneToMain(
         encoding: "utf-8",
       });
     } catch {
-      // Stash pop conflict is non-fatal — stash entry persists for manual resolution.
+      // Stash pop after squash merge can conflict on .gsd/ state files that
+      // diverged between branches.  Left unresolved, these UU entries block
+      // every subsequent merge.  Auto-resolve them the same way we handle
+      // .gsd/ conflicts during the merge itself: accept HEAD (the just-committed
+      // version) and drop the now-applied stash.
+      const uu = nativeConflictFiles(originalBasePath_);
+      const gsdUU = uu.filter((f) => f.startsWith(".gsd/"));
+      const nonGsdUU = uu.filter((f) => !f.startsWith(".gsd/"));
+
+      if (gsdUU.length > 0) {
+        for (const f of gsdUU) {
+          try {
+            // Accept the committed (HEAD) version of the state file
+            execFileSync("git", ["checkout", "HEAD", "--", f], {
+              cwd: originalBasePath_,
+              stdio: ["ignore", "pipe", "pipe"],
+              encoding: "utf-8",
+            });
+            nativeAddPaths(originalBasePath_, [f]);
+          } catch {
+            // Last resort: remove the conflicted state file
+            nativeRmForce(originalBasePath_, [f]);
+          }
+        }
+      }
+
+      if (nonGsdUU.length === 0) {
+        // All conflicts were .gsd/ files — safe to drop the stash
+        try {
+          execFileSync("git", ["stash", "drop"], {
+            cwd: originalBasePath_,
+            stdio: ["ignore", "pipe", "pipe"],
+            encoding: "utf-8",
+          });
+        } catch { /* stash may already be consumed */ }
+      } else {
+        // Non-.gsd conflicts remain — leave stash for manual resolution
+        logWarning("reconcile", "Stash pop conflict on non-.gsd files after merge", {
+          files: nonGsdUU.join(", "),
+        });
+      }
     }
   }
 

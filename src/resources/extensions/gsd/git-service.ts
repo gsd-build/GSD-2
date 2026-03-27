@@ -605,11 +605,12 @@ export class GitServiceImpl {
 
   /**
    * Create a snapshot ref for the given label (typically a slice branch name).
-   * Gated on prefs.snapshots === true. Ref path: refs/gsd/snapshots/<label>/<timestamp>
+   * Enabled by default; opt out with prefs.snapshots === false.
+   * Ref path: refs/gsd/snapshots/<label>/<timestamp>
    * The ref points at HEAD, capturing the current commit before destructive operations.
    */
   createSnapshot(label: string): void {
-    if (this.prefs.snapshots !== true) return;
+    if (this.prefs.snapshots === false) return;
 
     const now = new Date();
     const ts = now.getFullYear().toString()
@@ -631,7 +632,7 @@ export class GitServiceImpl {
    * Stub: to be implemented in T03.
    */
   runPreMergeCheck(): PreMergeCheckResult {
-    if (this.prefs.pre_merge_check === false || this.prefs.pre_merge_check === undefined) {
+    if (this.prefs.pre_merge_check === false) {
       return { passed: true, skipped: true };
     }
 

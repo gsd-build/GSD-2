@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { mkdirSync, existsSync } from "node:fs";
 
 import type { CompleteTaskParams } from "../types.js";
+import { isClosedStatus } from "../status-guards.js";
 import {
   transaction,
   insertMilestone,
@@ -20,7 +21,9 @@ import {
   getMilestone,
   getSlice,
   getTask,
-  _getAdapter,
+  updateTaskStatus,
+  setTaskSummaryMd,
+  deleteVerificationEvidence,
 } from "../gsd-db.js";
 import { resolveSliceFile, resolveTasksDir, clearPathCache } from "../paths.js";
 import { checkOwnership, taskUnitKey } from "../unit-ownership.js";
@@ -157,19 +160,19 @@ export async function handleCompleteTask(
     // Milestone/slice not existing is OK — insertMilestone/insertSlice below will auto-create.
     // Only block if they exist and are closed.
     const milestone = getMilestone(params.milestoneId);
-    if (milestone && (milestone.status === "complete" || milestone.status === "done")) {
+    if (milestone && isClosedStatus(milestone.status)) {
       guardError = `cannot complete task in a closed milestone: ${params.milestoneId} (status: ${milestone.status})`;
       return;
     }
 
     const slice = getSlice(params.milestoneId, params.sliceId);
-    if (slice && (slice.status === "complete" || slice.status === "done")) {
+    if (slice && isClosedStatus(slice.status)) {
       guardError = `cannot complete task in a closed slice: ${params.sliceId} (status: ${slice.status})`;
       return;
     }
 
     const existingTask = getTask(params.milestoneId, params.sliceId, params.taskId);
-    if (existingTask && (existingTask.status === "complete" || existingTask.status === "done")) {
+    if (existingTask && isClosedStatus(existingTask.status)) {
       guardError = `task ${params.taskId} is already complete — use gsd_task_reopen first if you need to redo it`;
       return;
     }
@@ -248,42 +251,17 @@ export async function handleCompleteTask(
     process.stderr.write(
       `gsd-db: complete_task — disk render failed, rolling back DB status: ${(renderErr as Error).message}\n`,
     );
-    const rollbackAdapter = _getAdapter();
-    if (rollbackAdapter) {
-      // Delete orphaned verification_evidence rows first (FK constraint
-      // references tasks, so evidence must go before status change).
-      // Without this, retries accumulate duplicate evidence rows (#2724).
-      rollbackAdapter.prepare(
-        `DELETE FROM verification_evidence WHERE milestone_id = :mid AND slice_id = :sid AND task_id = :tid`,
-      ).run({
-        ":mid": params.milestoneId,
-        ":sid": params.sliceId,
-        ":tid": params.taskId,
-      });
-      rollbackAdapter.prepare(
-        `UPDATE tasks SET status = 'pending' WHERE milestone_id = :mid AND slice_id = :sid AND id = :tid`,
-      ).run({
-        ":mid": params.milestoneId,
-        ":sid": params.sliceId,
-        ":tid": params.taskId,
-      });
-    }
+    // Delete orphaned verification_evidence rows first (FK constraint
+    // references tasks, so evidence must go before status change).
+    // Without this, retries accumulate duplicate evidence rows (#2724).
+    deleteVerificationEvidence(params.milestoneId, params.sliceId, params.taskId);
+    updateTaskStatus(params.milestoneId, params.sliceId, params.taskId, 'pending');
     invalidateStateCache();
     return { error: `disk render failed: ${(renderErr as Error).message}` };
   }
 
   // Store rendered markdown in DB for D004 recovery
-  const adapter = _getAdapter();
-  if (adapter) {
-    adapter.prepare(
-      `UPDATE tasks SET full_summary_md = :md WHERE milestone_id = :mid AND slice_id = :sid AND id = :tid`,
-    ).run({
-      ":md": summaryMd,
-      ":mid": params.milestoneId,
-      ":sid": params.sliceId,
-      ":tid": params.taskId,
-    });
-  }
+  setTaskSummaryMd(params.milestoneId, params.sliceId, params.taskId, summaryMd);
 
   // Invalidate all caches
   invalidateStateCache();

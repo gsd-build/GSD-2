@@ -73,6 +73,7 @@ import {
   getOldestInFlightToolAgeMs as _getOldestInFlightToolAgeMs,
   getInFlightToolCount,
   getOldestInFlightToolStart,
+  hasInteractiveToolInFlight,
   clearInFlightTools,
 } from "./auto-tool-tracking.js";
 import { closeoutUnit } from "./auto-unit-closeout.js";
@@ -185,7 +186,7 @@ import {
   postUnitPostVerification,
 } from "./auto-post-unit.js";
 import { bootstrapAutoSession, type BootstrapDeps } from "./auto-start.js";
-import { autoLoop, resolveAgentEnd, resolveAgentEndCancelled, _resetPendingResolve, isSessionSwitchInFlight, type LoopDeps } from "./auto-loop.js";
+import { autoLoop, resolveAgentEnd, resolveAgentEndCancelled, _resetPendingResolve, isSessionSwitchInFlight, type LoopDeps, type ErrorContext } from "./auto-loop.js";
 import {
   WorktreeResolver,
   type WorktreeResolverDeps,
@@ -375,8 +376,8 @@ export function getAutoModeStartModel(): {
 }
 
 // Tool tracking — delegates to auto-tool-tracking.ts
-export function markToolStart(toolCallId: string): void {
-  _markToolStart(toolCallId, s.active);
+export function markToolStart(toolCallId: string, toolName?: string): void {
+  _markToolStart(toolCallId, s.active, toolName);
 }
 
 export function markToolEnd(toolCallId: string): void {
@@ -413,6 +414,13 @@ export function stopAutoRemote(projectRoot: string): {
   const lock = readCrashLock(projectRoot);
   if (!lock) return { found: false };
 
+  // Never SIGTERM ourselves — a stale lock with our own PID is not a remote
+  // session, it is leftover from a prior loop exit in this process. (#2730)
+  if (lock.pid === process.pid) {
+    clearLock(projectRoot);
+    return { found: false };
+  }
+
   if (!isLockProcessAlive(lock)) {
     // Stale lock — clean it up
     clearLock(projectRoot);
@@ -443,6 +451,10 @@ export function checkRemoteAutoSession(projectRoot: string): {
 } {
   const lock = readCrashLock(projectRoot);
   if (!lock) return { running: false };
+
+  // Our own PID is not a "remote" session — it is a stale lock left by this
+  // process (e.g. after step-mode exit without full cleanup). (#2730)
+  if (lock.pid === process.pid) return { running: false };
 
   if (!isLockProcessAlive(lock)) {
     // Stale lock from a dead process — not a live remote session
@@ -546,6 +558,16 @@ function cleanupAfterLoopExit(ctx: ExtensionContext): void {
   s.currentUnit = null;
   s.active = false;
   clearUnitTimeout();
+
+  // Clear crash lock and release session lock so the next `/gsd next` does
+  // not see a stale lock with the current PID and treat it as a "remote"
+  // session (which would cause it to SIGTERM itself). (#2730)
+  try {
+    if (lockBase()) clearLock(lockBase());
+    if (lockBase()) releaseSessionLock(lockBase());
+  } catch {
+    /* best-effort — mirror stopAuto cleanup */
+  }
 
   ctx.ui.setStatus("gsd-auto", undefined);
   ctx.ui.setWidget("gsd-progress", undefined);
@@ -799,11 +821,14 @@ export async function stopAuto(
 export async function pauseAuto(
   ctx?: ExtensionContext,
   _pi?: ExtensionAPI,
+  _errorContext?: ErrorContext,
 ): Promise<void> {
   if (!s.active) return;
   clearUnitTimeout();
   // Unblock any pending unit promise so the auto-loop is not orphaned.
-  resolveAgentEndCancelled();
+  // Pass errorContext so runUnitPhase can distinguish user-initiated pause
+  // from provider-error pause and avoid hard-stopping (#2762).
+  resolveAgentEndCancelled(_errorContext);
 
   s.pausedSessionFile = ctx?.sessionManager?.getSessionFile() ?? null;
 

@@ -27,55 +27,78 @@ One command. Walk away. Come back to a built project with clean git history.
 
 ---
 
-## What's New in v2.46.0
+## What's New in v2.52.0
 
-### Single-Writer State Engine
+### VS Code Extension & Web UI
 
-The biggest architectural change since DB-backed planning tools. The single-writer engine enforces disciplined state transitions through three iterations:
+- **VS Code integration** — status bar, file decorations, bash terminal, session tree, conversation history, and code lens. (#2651)
+- **Dark mode contrast** — raised token floor and flattened opacity tier system for better readability. (#2734)
+- **Auth token gate** — synthetic 401 on missing token, unauthenticated boot state, and recovery screen. (#2740)
 
-- **v2 — discipline layer** — adds a write-side discipline layer on top of the DB architecture, ensuring all state mutations flow through controlled tool calls.
-- **v3 — state machine guards, actor identity, reversibility** — introduces formal state machine guards, tracks which actor (human vs agent) initiated each transition, and makes transitions reversible.
-- **Hardened** — closes TOCTOU race conditions, intercepts bypass attempts, and resolves status inconsistencies.
+### Capability Metadata & Model Routing
 
-All prompts are now aligned with the single-writer tool API, and a new **workflow-logger** is wired into the engine, tool, manifest, and reconcile paths for full observability. (#2494)
-
-### v2.45.0 — New Commands and Capabilities
-
-- **`/gsd rethink`** — conversational project reorganization. Rethink your milestone structure, slice decomposition, or overall approach through guided discussion. (#2459)
-- **`/gsd mcp`** — MCP server status and connectivity. Check which MCP servers are configured, connected, and healthy. (#2362)
-- **Complete offline mode** — GSD now works fully offline with local models. (#2429)
-- **Global KNOWLEDGE.md injection** — `~/.gsd/agent/KNOWLEDGE.md` is injected into the system prompt, so cross-project knowledge persists globally. (#2331)
-- **Mobile-responsive web UI** — the browser interface now works on phones and tablets. (#2354)
-- **DB tool previews** — `renderCall`/`renderResult` previews on DB tools show what each tool call does before and after execution. (#2273)
-- **Message timestamps** — user and assistant messages now include timestamps. (#2368)
+- **Capability-based model selection** — replaced model-ID pattern matching with capability metadata, making custom provider integration more reliable. (#2548)
 
 ### Key Changes
 
-- **Default isolation mode changed to `none`** — `git.isolation` now defaults to `none` instead of `worktree`. Projects that rely on worktree isolation should set `git.isolation: worktree` explicitly in preferences. (#2481)
-- **Startup checks** — GSD now validates Node.js version and git availability at startup, with clear error messages. (#2463)
-- **Worktree lifecycle journaling** — worktree create, switch, merge, and remove events are recorded in the event journal. (#2486)
-- **Milestone verification gate** — milestone completion is blocked when verification fails, preventing premature closure. (#2500)
+- **`--bare` mode** — wired across headless, pi-coding-agent, and resource-loader for minimal-output operation.
+- **RPC protocol v2** — new types, init handshake with version detection, and runId generation on prompt/steer/follow_up commands.
+- **PREFERENCES.md rename** — `preferences.md` renamed to `PREFERENCES.md` for consistency. (#2700, #2738)
+- **Comprehensive SQLite audit** — indexes, caching, safety, and reconciliation fixes across gsd-db.
+- **Unified error classifier** — three overlapping error classifiers consolidated into a single classify-decide-act pipeline.
 
 ### Key Fixes
 
-- **Auto-mode stability** — recovery attempts reset on unit re-dispatch (#2424), survivor branch recovery handles `phase=complete` (#2427), and auto mode stops on real merge conflicts (#2428).
-- **Supervision timeouts** — now respect task `est:` annotations, so complex tasks get proportionally longer timeouts. (#2434)
-- **`auto_pr: true` fixed** — three interacting bugs prevented auto-PR creation; all three are resolved. (#2433)
-- **Rich task plan preservation** — plans survive DB roundtrip without losing structured content. (#2453)
-- **Artifact truncation prevention** — `saveArtifactToDb` no longer overwrites larger files with truncated content. (#2447)
-- **Worktree teardown** — submodule state is detected and preserved during teardown (#2425), and worktree merge back to main works after `stopAuto` on milestone completion (#2430).
-- **Windows portability** — `retentionDays=0` handling and CRLF fixes on Windows. (#2460)
-- **Voice on Linux** — misleading portaudio error on PEP 668 systems replaced with actionable guidance. (#2407)
+- **Auto-mode stops on provider errors** — auto loop now halts after provider errors instead of retrying indefinitely. (#2762, #2764)
+- **Transaction safety** — state machine guards moved inside transactions in 5 tool handlers (#2752), and `transaction()` made re-entrant.
+- **Worktree seeding** — `preferences.md` seeded into auto-mode worktrees and included in worktree sync. (#2693)
+- **Idle watchdog** — interactive tools exempted from stall detection (#2676), and filesystem activity no longer overrides stalled-tool detection. (#2697)
+- **Milestone guards** — `allSlicesDone` guarded against vacuous truth on empty slice arrays (#2679), and `complete-milestone` dispatch blocked when validation is `needs-remediation`. (#2682)
+- **Docker overhaul** — fragile setup replaced with proven container patterns. (#2716)
+- **Windows** — EINVAL prevented by disabling detached process groups on Win32. (#2744)
+- **Audit log** — `setLogBasePath` wired into engine init to resurrect audit logging. (#2745)
 
-### Previous highlights (v2.42–v2.44)
+### v2.51.0 — Skills, RTK, and Verification
 
+- **`/terminal` command** — direct shell execution from the slash command interface. (#2349)
+- **Managed RTK integration** — RTK binary auto-provisioned with opt-in preference and web UI toggle. (#2620)
+- **Verification classes** — compliance checked before milestone completion, with classes injected into validation prompts. (#2621, #2623)
+- **Skills overhaul** — 30+ new skill packs covering major frameworks, databases, and cloud platforms; curated catalog with `~/.agents/skills/` as primary directory.
+
+### v2.50.0 — Quality Gates
+
+- **Quality gates** — 8-question quality gates added to planning and completion templates, with parallel evaluation via `evaluating-gates` phase.
+- **Structured error propagation** — errors wired through `UnitResult` for better diagnostics.
+
+### v2.49.0 — Git Trailers & Yolo Mode
+
+- **`--yolo` flag** — `/gsd auto --yolo` for non-interactive project init.
+- **Git trailers** — GSD metadata moved from commit subject scopes to git trailers.
+
+### v2.48.0 — Forensics & Discussion
+
+- **`/gsd discuss` for queued milestones** — target milestones still in the queue. (#2349)
+- **Enhanced forensics** — journal and activity log awareness added to `/gsd forensics`.
+
+### v2.47.0 — External Providers
+
+- **External tool execution mode** — `externalToolExecution` mode for external providers in agent-core.
+- **Claude Code CLI provider** — new provider extension for Claude Code CLI. (#2382)
+
+### Previous highlights (v2.42–v2.46)
+
+- **Single-writer state engine** — disciplined state transitions with machine guards, actor identity, reversibility, and TOCTOU hardening. (#2494)
+- **`/gsd rethink`** — conversational project reorganization. (#2459)
+- **`/gsd mcp`** — MCP server status and connectivity. (#2362)
+- **Complete offline mode** — fully offline with local models. (#2429)
+- **Global KNOWLEDGE.md injection** — cross-project knowledge via `~/.gsd/agent/KNOWLEDGE.md`. (#2331)
+- **Mobile-responsive web UI** — browser interface works on phones and tablets. (#2354)
+- **Default isolation mode changed to `none`** — set `git.isolation: worktree` explicitly if needed. (#2481)
 - **Non-API-key provider extensions** — support for Claude Code CLI and similar providers. (#2382)
 - **Docker sandbox template** — official Docker template for isolated auto mode. (#2360)
 - **DB-backed planning tools** — write-side state transitions use atomic SQLite tool calls. (#2141)
 - **Declarative workflow engine** — YAML workflows through auto-loop. (#2024)
 - **`/gsd fast`** — toggle service tier for prioritized API routing. (#1862)
-- **Forensics dedup** — duplicate detection before issue creation. (#2105)
-- **Startup optimizations** — pre-compiled extensions, compile cache, batch discovery. (#2125)
 
 ---
 
