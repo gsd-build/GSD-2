@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, rmSync, readFileSync, existsSync, writeFileSync
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-import { openDatabase, closeDatabase, getMilestone, getMilestoneSlices } from '../gsd-db.ts';
+import { openDatabase, closeDatabase, getMilestone, getMilestoneSlices, insertMilestone } from '../gsd-db.ts';
 import { handlePlanMilestone } from '../tools/plan-milestone.ts';
 import { parseRoadmap } from '../parsers-legacy.ts';
 
@@ -193,6 +193,35 @@ test('handlePlanMilestone reruns idempotently and updates existing planning stat
     assert.equal(slices.length, 2);
     assert.equal(slices[0]?.goal, 'Updated goal');
     assert.equal(slices[0]?.observability_impact, 'Updated observability');
+  } finally {
+    cleanup(base);
+  }
+});
+
+test('handlePlanMilestone sets title even when DB row was pre-created without one (issue #2879)', async () => {
+  const base = makeTmpBase();
+  const dbPath = join(base, '.gsd', 'gsd.db');
+  openDatabase(dbPath);
+
+  try {
+    // Simulate state reconciliation: inserts a milestone row without a title
+    insertMilestone({ id: 'M001', status: 'active' });
+
+    const milestone_before = getMilestone('M001');
+    assert.equal(milestone_before?.title, '', 'title should be empty after reconciliation insert');
+
+    // Now plan the milestone — this should set the title
+    const result = await handlePlanMilestone(validParams(), base);
+    assert.ok(!('error' in result), `unexpected error: ${'error' in result ? result.error : ''}`);
+
+    const milestone_after = getMilestone('M001');
+    assert.ok(milestone_after, 'milestone should exist');
+    assert.equal(milestone_after?.title, 'DB-backed planning', 'title must be set by upsertMilestonePlanning');
+
+    // Verify the rendered roadmap includes the title
+    const roadmapPath = join(base, '.gsd', 'milestones', 'M001', 'M001-ROADMAP.md');
+    const roadmap = readFileSync(roadmapPath, 'utf-8');
+    assert.match(roadmap, /# M001: DB-backed planning/);
   } finally {
     cleanup(base);
   }

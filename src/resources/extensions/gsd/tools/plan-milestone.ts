@@ -212,6 +212,7 @@ export async function handlePlanMilestone(
       });
 
       upsertMilestonePlanning(params.milestoneId, {
+        title: params.title,
         vision: params.vision,
         successCriteria: params.successCriteria,
         keyRisks: params.keyRisks,
