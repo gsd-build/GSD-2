@@ -18,25 +18,6 @@ const { existsSync, statSync, readdirSync } = require('fs')
 const { resolve, join } = require('path')
 const { execSync } = require('child_process')
 
-const root = resolve(__dirname, '..')
-const packagesDir = join(root, 'packages')
-
-// Skip if packages/ doesn't exist (published tarball / end-user install)
-if (!existsSync(packagesDir)) process.exit(0)
-
-// Skip in CI — the pipeline runs `npm run build` explicitly
-if (process.env.CI === 'true' || process.env.CI === '1') process.exit(0)
-
-// Workspace packages that need dist/index.js at runtime.
-// Order matters: dependencies must build before dependents.
-const WORKSPACE_PACKAGES = [
-  'native',
-  'pi-tui',
-  'pi-ai',
-  'pi-agent-core',
-  'pi-coding-agent',
-]
-
 /**
  * Returns the most recent mtime (ms) of any .ts file under dir, recursively.
  * Returns 0 if no .ts files found.
@@ -56,31 +37,54 @@ function newestSrcMtime(dir) {
   return newest
 }
 
-const stale = []
-for (const pkg of WORKSPACE_PACKAGES) {
-  const distIndex = join(packagesDir, pkg, 'dist', 'index.js')
-  if (!existsSync(distIndex)) {
-    stale.push(pkg)
-    continue
+if (require.main === module) {
+  const root = resolve(__dirname, '..')
+  const packagesDir = join(root, 'packages')
+
+  // Skip if packages/ doesn't exist (published tarball / end-user install)
+  if (!existsSync(packagesDir)) process.exit(0)
+
+  // Skip in CI — the pipeline runs `npm run build` explicitly
+  if (process.env.CI === 'true' || process.env.CI === '1') process.exit(0)
+
+  // Workspace packages that need dist/index.js at runtime.
+  // Order matters: dependencies must build before dependents.
+  const WORKSPACE_PACKAGES = [
+    'native',
+    'pi-tui',
+    'pi-ai',
+    'pi-agent-core',
+    'pi-coding-agent',
+  ]
+
+  const stale = []
+  for (const pkg of WORKSPACE_PACKAGES) {
+    const distIndex = join(packagesDir, pkg, 'dist', 'index.js')
+    if (!existsSync(distIndex)) {
+      stale.push(pkg)
+      continue
+    }
+    const distMtime = statSync(distIndex).mtimeMs
+    const srcMtime = newestSrcMtime(join(packagesDir, pkg, 'src'))
+    if (srcMtime > distMtime) {
+      stale.push(pkg)
+    }
   }
-  const distMtime = statSync(distIndex).mtimeMs
-  const srcMtime = newestSrcMtime(join(packagesDir, pkg, 'src'))
-  if (srcMtime > distMtime) {
-    stale.push(pkg)
+
+  if (stale.length === 0) process.exit(0)
+
+  process.stderr.write(`  Building ${stale.length} workspace package(s) with stale or missing dist/: ${stale.join(', ')}\n`)
+
+  for (const pkg of stale) {
+    const pkgDir = join(packagesDir, pkg)
+    try {
+      execSync('npm run build', { cwd: pkgDir, stdio: 'pipe' })
+      process.stderr.write(`  ✓ ${pkg}\n`)
+    } catch (err) {
+      process.stderr.write(`  ✗ ${pkg} build failed: ${err.message}\n`)
+      // Non-fatal — the user can run `npm run build` manually
+    }
   }
 }
 
-if (stale.length === 0) process.exit(0)
-
-process.stderr.write(`  Building ${stale.length} workspace package(s) with stale or missing dist/: ${stale.join(', ')}\n`)
-
-for (const pkg of stale) {
-  const pkgDir = join(packagesDir, pkg)
-  try {
-    execSync('npm run build', { cwd: pkgDir, stdio: 'pipe' })
-    process.stderr.write(`  ✓ ${pkg}\n`)
-  } catch (err) {
-    process.stderr.write(`  ✗ ${pkg} build failed: ${err.message}\n`)
-    // Non-fatal — the user can run `npm run build` manually
-  }
-}
+module.exports = { newestSrcMtime }
