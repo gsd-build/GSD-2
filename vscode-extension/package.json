@@ -1,9 +1,9 @@
 {
   "name": "gsd-2",
   "displayName": "GSD-2",
-  "description": "VS Code integration for the GSD-2 coding agent — sidebar dashboard, @gsd chat participant, conversation history, code lens, slash command completion, and 25 commands",
+  "description": "VS Code integration for the GSD-2 coding agent — sidebar dashboard, @gsd chat participant, activity feed, conversation history, code lens, session forking, slash command completion, workflow controls, and 33 commands",
   "publisher": "FluxLabs",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "icon": "logo.jpg",
   "license": "MIT",
   "repository": {
@@ -139,6 +139,35 @@
       {
         "command": "gsd.askAboutSymbol",
         "title": "GSD: Ask About Symbol"
+      },
+      {
+        "command": "gsd.clearActivity",
+        "title": "GSD: Clear Activity Feed",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "gsd.forkSession",
+        "title": "GSD: Fork Session"
+      },
+      {
+        "command": "gsd.toggleSteeringMode",
+        "title": "GSD: Toggle Steering Mode"
+      },
+      {
+        "command": "gsd.toggleFollowUpMode",
+        "title": "GSD: Toggle Follow-Up Mode"
+      },
+      {
+        "command": "gsd.refactorSymbol",
+        "title": "GSD: Refactor Symbol"
+      },
+      {
+        "command": "gsd.findBugsSymbol",
+        "title": "GSD: Find Bugs in Symbol"
+      },
+      {
+        "command": "gsd.generateTestsSymbol",
+        "title": "GSD: Generate Tests for Symbol"
       }
     ],
     "keybindings": [
@@ -192,6 +221,10 @@
         {
           "id": "gsd-sessions",
           "name": "Sessions"
+        },
+        {
+          "id": "gsd-activity",
+          "name": "Activity"
         }
       ]
     },
@@ -200,6 +233,11 @@
         {
           "command": "gsd.refreshSessions",
           "when": "view == gsd-sessions",
+          "group": "navigation"
+        },
+        {
+          "command": "gsd.clearActivity",
+          "when": "view == gsd-activity",
           "group": "navigation"
         }
       ]
@@ -235,6 +273,30 @@
           "type": "boolean",
           "default": true,
           "description": "Show 'Ask GSD' code lens above functions and classes"
+        },
+        "gsd.showProgressNotifications": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show progress notification while the agent is working"
+        },
+        "gsd.activityFeedMaxItems": {
+          "type": "number",
+          "default": 100,
+          "minimum": 10,
+          "maximum": 500,
+          "description": "Maximum number of items shown in the Activity feed"
+        },
+        "gsd.showContextWarning": {
+          "type": "boolean",
+          "default": true,
+          "description": "Warn when context window usage exceeds the threshold"
+        },
+        "gsd.contextWarningThreshold": {
+          "type": "number",
+          "default": 80,
+          "minimum": 50,
+          "maximum": 95,
+          "description": "Context window usage percentage that triggers a warning"
         }
       }
     }

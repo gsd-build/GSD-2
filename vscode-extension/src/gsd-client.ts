@@ -492,6 +492,48 @@ export class GsdClient implements vscode.Disposable {
 		return (response.data as { commands: SlashCommand[] }).commands;
 	}
 
+	// =========================================================================
+	// Fork
+	// =========================================================================
+
+	/**
+	 * Get messages that can be used as fork points.
+	 */
+	async getForkMessages(): Promise<{ entryId: string; text: string }[]> {
+		const response = await this.send({ type: "get_fork_messages" });
+		this.assertSuccess(response);
+		return (response.data as { messages: { entryId: string; text: string }[] }).messages;
+	}
+
+	/**
+	 * Fork the session at the given entry point.
+	 */
+	async forkSession(entryId: string): Promise<{ text: string; cancelled: boolean }> {
+		const response = await this.send({ type: "fork", entryId });
+		this.assertSuccess(response);
+		return response.data as { text: string; cancelled: boolean };
+	}
+
+	// =========================================================================
+	// Queue Modes
+	// =========================================================================
+
+	/**
+	 * Set steering queue mode.
+	 */
+	async setSteeringMode(mode: "all" | "one-at-a-time"): Promise<void> {
+		const response = await this.send({ type: "set_steering_mode", mode });
+		this.assertSuccess(response);
+	}
+
+	/**
+	 * Set follow-up queue mode.
+	 */
+	async setFollowUpMode(mode: "all" | "one-at-a-time"): Promise<void> {
+		const response = await this.send({ type: "set_follow_up_mode", mode });
+		this.assertSuccess(response);
+	}
+
 	dispose(): void {
 		this.stop();
 		for (const d of this.disposables) {

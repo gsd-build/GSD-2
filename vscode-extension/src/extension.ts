@@ -8,11 +8,13 @@ import { GsdSessionTreeProvider } from "./session-tree.js";
 import { GsdConversationHistoryPanel } from "./conversation-history.js";
 import { GsdSlashCompletionProvider } from "./slash-completion.js";
 import { GsdCodeLensProvider } from "./code-lens.js";
+import { GsdActivityFeedProvider } from "./activity-feed.js";
 
 let client: GsdClient | undefined;
 let sidebarProvider: GsdSidebarProvider | undefined;
 let fileDecorations: GsdFileDecorationProvider | undefined;
 let sessionTreeProvider: GsdSessionTreeProvider | undefined;
+let activityFeedProvider: GsdActivityFeedProvider | undefined;
 
 function requireConnected(): boolean {
 	if (!client?.isConnected) {
@@ -117,6 +119,98 @@ export function activate(context: vscode.ExtensionContext): void {
 		sessionTreeProvider,
 		vscode.window.registerTreeDataProvider(GsdSessionTreeProvider.viewId, sessionTreeProvider),
 	);
+
+	// -- Activity feed -----------------------------------------------------
+
+	activityFeedProvider = new GsdActivityFeedProvider(client);
+	context.subscriptions.push(
+		activityFeedProvider,
+		vscode.window.registerTreeDataProvider(GsdActivityFeedProvider.viewId, activityFeedProvider),
+	);
+
+	// -- Progress notifications --------------------------------------------
+
+	let currentProgress: { resolve: () => void } | undefined;
+
+	client.onEvent((evt) => {
+		const showProgress = vscode.workspace.getConfiguration("gsd").get<boolean>("showProgressNotifications", true);
+		if (!showProgress) return;
+
+		if (evt.type === "agent_start" && !currentProgress) {
+			vscode.window.withProgress(
+				{
+					location: vscode.ProgressLocation.Notification,
+					title: "GSD Agent",
+					cancellable: true,
+				},
+				(progress, token) => {
+					token.onCancellationRequested(() => {
+						client?.abort().catch(() => {});
+					});
+
+					// Listen for tool events to update progress message
+					const toolListener = client!.onEvent((toolEvt) => {
+						if (toolEvt.type === "tool_execution_start") {
+							const toolName = String(toolEvt.toolName ?? "");
+							progress.report({ message: `Running ${toolName}...` });
+						}
+					});
+
+					return new Promise<void>((resolve) => {
+						currentProgress = { resolve };
+						// Also clean up if disposed
+						token.onCancellationRequested(() => {
+							toolListener.dispose();
+							currentProgress = undefined;
+							resolve();
+						});
+					}).finally(() => {
+						toolListener.dispose();
+					});
+				},
+			);
+		} else if (evt.type === "agent_end" && currentProgress) {
+			currentProgress.resolve();
+			currentProgress = undefined;
+		}
+	});
+
+	// -- Context window warning --------------------------------------------
+
+	let lastContextWarning = 0;
+	client.onEvent(async (evt) => {
+		if (evt.type !== "message_end") return;
+		const showWarning = vscode.workspace.getConfiguration("gsd").get<boolean>("showContextWarning", true);
+		if (!showWarning) return;
+
+		// Throttle: at most once per 60 seconds
+		if (Date.now() - lastContextWarning < 60_000) return;
+
+		try {
+			const [state, stats] = await Promise.all([
+				client!.getState().catch(() => null),
+				client!.getSessionStats().catch(() => null),
+			]);
+			const contextWindow = state?.model?.contextWindow ?? 0;
+			const totalTokens = (stats?.inputTokens ?? 0) + (stats?.outputTokens ?? 0);
+			if (contextWindow <= 0) return;
+
+			const threshold = vscode.workspace.getConfiguration("gsd").get<number>("contextWarningThreshold", 80);
+			const pct = Math.round((totalTokens / contextWindow) * 100);
+			if (pct >= threshold) {
+				lastContextWarning = Date.now();
+				const action = await vscode.window.showWarningMessage(
+					`Context window ${pct}% full (${Math.round(totalTokens / 1000)}k / ${Math.round(contextWindow / 1000)}k). Consider compacting.`,
+					"Compact Now",
+				);
+				if (action === "Compact Now") {
+					await vscode.commands.executeCommand("gsd.compact");
+				}
+			}
+		} catch {
+			// ignore
+		}
+	});
 
 	// -- Chat participant ---------------------------------------------------
 
@@ -515,6 +609,121 @@ export function activate(context: vscode.ExtensionContext): void {
 		}),
 	);
 
+	// Clear Activity Feed
+	context.subscriptions.push(
+		vscode.commands.registerCommand("gsd.clearActivity", () => {
+			activityFeedProvider?.clear();
+		}),
+	);
+
+	// Fork Session
+	context.subscriptions.push(
+		vscode.commands.registerCommand("gsd.forkSession", async () => {
+			if (!requireConnected()) return;
+			try {
+				const messages = await client!.getForkMessages();
+				if (messages.length === 0) {
+					vscode.window.showInformationMessage("No fork points available.");
+					return;
+				}
+				const items = messages.map((m) => ({
+					label: m.text.slice(0, 80) + (m.text.length > 80 ? "..." : ""),
+					description: m.entryId,
+					entryId: m.entryId,
+				}));
+				const selected = await vscode.window.showQuickPick(items, {
+					placeHolder: "Select a message to fork from",
+				});
+				if (!selected) return;
+				const result = await client!.forkSession(selected.entryId);
+				if (!result.cancelled) {
+					vscode.window.showInformationMessage("Session forked successfully.");
+					sidebarProvider?.refresh();
+					sessionTreeProvider?.refresh();
+				}
+			} catch (err) {
+				handleError(err, "Failed to fork session");
+			}
+		}),
+	);
+
+	// Toggle Steering Mode
+	context.subscriptions.push(
+		vscode.commands.registerCommand("gsd.toggleSteeringMode", async () => {
+			if (!requireConnected()) return;
+			try {
+				const state = await client!.getState();
+				const next = state.steeringMode === "all" ? "one-at-a-time" : "all";
+				await client!.setSteeringMode(next);
+				vscode.window.showInformationMessage(`Steering mode: ${next}`);
+				sidebarProvider?.refresh();
+			} catch (err) {
+				handleError(err, "Failed to toggle steering mode");
+			}
+		}),
+	);
+
+	// Toggle Follow-Up Mode
+	context.subscriptions.push(
+		vscode.commands.registerCommand("gsd.toggleFollowUpMode", async () => {
+			if (!requireConnected()) return;
+			try {
+				const state = await client!.getState();
+				const next = state.followUpMode === "all" ? "one-at-a-time" : "all";
+				await client!.setFollowUpMode(next);
+				vscode.window.showInformationMessage(`Follow-up mode: ${next}`);
+				sidebarProvider?.refresh();
+			} catch (err) {
+				handleError(err, "Failed to toggle follow-up mode");
+			}
+		}),
+	);
+
+	// Refactor Symbol (code lens)
+	context.subscriptions.push(
+		vscode.commands.registerCommand(
+			"gsd.refactorSymbol",
+			async (symbolName: string, fileName: string, lineNumber: number) => {
+				if (!requireConnected()) return;
+				try {
+					await client!.sendPrompt(`Refactor the \`${symbolName}\` function/class in ${fileName} (line ${lineNumber}). Improve clarity, performance, or structure while preserving behavior.`);
+				} catch (err) {
+					handleError(err, "Failed to send refactor request");
+				}
+			},
+		),
+	);
+
+	// Find Bugs in Symbol (code lens)
+	context.subscriptions.push(
+		vscode.commands.registerCommand(
+			"gsd.findBugsSymbol",
+			async (symbolName: string, fileName: string, lineNumber: number) => {
+				if (!requireConnected()) return;
+				try {
+					await client!.sendPrompt(`Review the \`${symbolName}\` function/class in ${fileName} (line ${lineNumber}) for potential bugs, edge cases, and issues.`);
+				} catch (err) {
+					handleError(err, "Failed to send bug review request");
+				}
+			},
+		),
+	);
+
+	// Generate Tests for Symbol (code lens)
+	context.subscriptions.push(
+		vscode.commands.registerCommand(
+			"gsd.generateTestsSymbol",
+			async (symbolName: string, fileName: string, lineNumber: number) => {
+				if (!requireConnected()) return;
+				try {
+					await client!.sendPrompt(`Generate comprehensive tests for the \`${symbolName}\` function/class in ${fileName} (line ${lineNumber}). Cover success paths, edge cases, and error scenarios.`);
+				} catch (err) {
+					handleError(err, "Failed to send test generation request");
+				}
+			},
+		),
+	);
+
 	// Toggle Auto-Retry
 	context.subscriptions.push(
 		vscode.commands.registerCommand("gsd.toggleAutoRetry", async () => {
@@ -592,8 +801,10 @@ export function deactivate(): void {
 	sidebarProvider?.dispose();
 	fileDecorations?.dispose();
 	sessionTreeProvider?.dispose();
+	activityFeedProvider?.dispose();
 	client = undefined;
 	sidebarProvider = undefined;
 	fileDecorations = undefined;
 	sessionTreeProvider = undefined;
+	activityFeedProvider = undefined;
 }
