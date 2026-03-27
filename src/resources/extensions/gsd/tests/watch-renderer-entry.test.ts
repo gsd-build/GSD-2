@@ -1,4 +1,4 @@
-// GSD Watch — Unit tests for renderer-entry signal handling, quit key detection, and placeholder rendering
+// GSD Watch — Unit tests for renderer-entry signal handling, quit key detection, placeholder rendering, and viewport scrolling
 // Copyright (c) 2026 Jeremy McSpadden <jeremy@fluxlabs.net>
 
 import { describe, test, beforeEach, afterEach } from "node:test";
@@ -14,6 +14,12 @@ import {
   getEffectiveWidth,
   renderPlaceholder,
   renderTree,
+  getEffectiveHeight,
+  parseArrowKey,
+  renderViewport,
+  scrollViewport,
+  resetViewportState,
+  getViewportOffset,
 } from "../watch/renderer-entry.js";
 
 describe("CLEANUP_SIGNALS", () => {
@@ -246,5 +252,160 @@ describe("renderPlaceholder", () => {
       output.includes("Loading project..."),
       `expected 'Loading project...' in output, got: ${output}`
     );
+  });
+});
+
+// ─── Viewport Scrolling Tests (Tests 14–28) ───────────────────────────────────
+
+describe("getEffectiveHeight", () => {
+  test("Test 14: returns process.stdout.rows when >= 3", () => {
+    const original = process.stdout.rows;
+    Object.defineProperty(process.stdout, "rows", {
+      value: 24,
+      configurable: true,
+      writable: true,
+    });
+    const height = getEffectiveHeight();
+    assert.ok(height >= 24, `expected height >= 24, got ${height}`);
+    Object.defineProperty(process.stdout, "rows", {
+      value: original,
+      configurable: true,
+      writable: true,
+    });
+  });
+
+  test("Test 15: returns 3 (MIN_HEIGHT) when process.stdout.rows is 0 or undefined", () => {
+    const original = process.stdout.rows;
+    Object.defineProperty(process.stdout, "rows", {
+      value: 0,
+      configurable: true,
+      writable: true,
+    });
+    const height = getEffectiveHeight();
+    assert.equal(height, 3, `expected minimum height 3, got ${height}`);
+    Object.defineProperty(process.stdout, "rows", {
+      value: original,
+      configurable: true,
+      writable: true,
+    });
+  });
+});
+
+describe("parseArrowKey", () => {
+  test("Test 16: parseArrowKey(\"\\x1b[A\") returns \"up\"", () => {
+    const result = parseArrowKey("\x1b[A");
+    assert.equal(result, "up", `expected "up", got ${JSON.stringify(result)}`);
+  });
+
+  test("Test 17: parseArrowKey(\"\\x1b[B\") returns \"down\"", () => {
+    const result = parseArrowKey("\x1b[B");
+    assert.equal(result, "down", `expected "down", got ${JSON.stringify(result)}`);
+  });
+
+  test("Test 18: parseArrowKey(\"q\") returns null (non-arrow input)", () => {
+    const result = parseArrowKey("q");
+    assert.equal(result, null, `expected null, got ${JSON.stringify(result)}`);
+  });
+
+  test("Test 19: parseArrowKey(\"\\x1b\") returns null (lone Esc is not an arrow key)", () => {
+    const result = parseArrowKey("\x1b");
+    assert.equal(result, null, `expected null for lone Esc, got ${JSON.stringify(result)}`);
+  });
+});
+
+describe("renderViewport", () => {
+  const makeLines = (count: number): string[] =>
+    Array.from({ length: count }, (_, i) => `line ${i + 1}`);
+
+  test("Test 20: returns all lines joined when total <= height (no status bar)", () => {
+    const lines = makeLines(5);
+    const output = renderViewport(lines, 0, 10, 80);
+    assert.ok(!output.includes("▲"), `expected no ▲ in non-scrollable output, got: ${JSON.stringify(output)}`);
+    assert.ok(!output.includes("▼"), `expected no ▼ in non-scrollable output, got: ${JSON.stringify(output)}`);
+    assert.ok(output.includes("line 1"), "expected line 1 in output");
+    assert.ok(output.includes("line 5"), "expected line 5 in output");
+  });
+
+  test("Test 21: slices lines to contentHeight when total > height, returns sliced output + status bar", () => {
+    const lines = makeLines(20);
+    const output = renderViewport(lines, 0, 10, 80);
+    // With 20 lines and height=10, contentHeight=9, offset=0 → lines 1-9 visible
+    assert.ok(output.includes("line 1"), "expected line 1 in sliced output");
+    assert.ok(!output.includes("line 20"), "expected line 20 NOT in sliced output (out of viewport)");
+    // Status bar should appear
+    assert.ok(output.includes("▼"), "expected ▼ in status bar for scrollable output");
+  });
+
+  test("Test 22: status bar hides ▲ when offset=0 (replaces with space)", () => {
+    const lines = makeLines(20);
+    const output = renderViewport(lines, 0, 10, 80);
+    // At offset=0, ▲ should NOT appear (replaced with space)
+    assert.ok(!output.includes("▲"), `expected no ▲ at offset=0, got: ${JSON.stringify(output.slice(-40))}`);
+    assert.ok(output.includes("▼"), "expected ▼ at offset=0 (content below)");
+  });
+
+  test("Test 23: status bar hides ▼ when at bottom (offset + contentHeight >= total)", () => {
+    const lines = makeLines(12);
+    // height=10, contentHeight=9, offset=3 → bottom: 3+9=12 >= 12 total
+    const output = renderViewport(lines, 3, 10, 80);
+    assert.ok(!output.includes("▼"), `expected no ▼ at bottom, got: ${JSON.stringify(output.slice(-40))}`);
+    assert.ok(output.includes("▲"), "expected ▲ at bottom (content above)");
+  });
+
+  test("Test 24: status bar shows both ▲ and ▼ when in the middle", () => {
+    const lines = makeLines(20);
+    // height=10, contentHeight=9, offset=5 → not at top, not at bottom (5+9=14 < 20)
+    const output = renderViewport(lines, 5, 10, 80);
+    assert.ok(output.includes("▲"), `expected ▲ in middle, got: ${JSON.stringify(output.slice(-40))}`);
+    assert.ok(output.includes("▼"), `expected ▼ in middle, got: ${JSON.stringify(output.slice(-40))}`);
+  });
+});
+
+describe("scrollViewport", () => {
+  beforeEach(() => {
+    resetViewportState();
+  });
+
+  test("Test 25: clamps offset at 0 when scrolling up past top", () => {
+    // viewportOffset starts at 0, scroll up (-1) → should stay at 0
+    scrollViewport(-1, 20, 9);
+    assert.equal(getViewportOffset(), 0, `expected offset=0 at top, got ${getViewportOffset()}`);
+  });
+
+  test("Test 26: clamps offset at max (totalLines - contentHeight) when scrolling down past bottom", () => {
+    // max = 20 - 9 = 11; scroll down 100 times
+    scrollViewport(100, 20, 9);
+    assert.equal(getViewportOffset(), 11, `expected offset=11 at bottom, got ${getViewportOffset()}`);
+  });
+});
+
+describe("resetViewportState", () => {
+  test("Test 27: resetViewportState() resets viewportOffset to 0 (verified via getViewportOffset)", () => {
+    // Scroll down first
+    scrollViewport(5, 20, 9);
+    assert.ok(getViewportOffset() > 0, "expected offset > 0 after scrolling down");
+    // Now reset
+    resetViewportState();
+    assert.equal(getViewportOffset(), 0, `expected offset=0 after reset, got ${getViewportOffset()}`);
+  });
+});
+
+describe("arrow key and quit sequence isolation", () => {
+  beforeEach(() => {
+    resetQuitState();
+    resetViewportState();
+  });
+
+  test("Test 28: parseArrowKey does NOT interfere with parseQuitSequence — after arrow key, qq still triggers quit", () => {
+    // Parse an arrow key first
+    const arrowResult = parseArrowKey("\x1b[A");
+    assert.equal(arrowResult, "up", "arrow key should return 'up'");
+
+    // Simulate what the data handler does: arrow was handled, parseQuitSequence NOT called for arrow chunk
+    // Now verify quit state machine is clean: two q presses should still quit
+    const firstQ = parseQuitSequence("q");
+    assert.equal(firstQ, false, "first q should not quit");
+    const secondQ = parseQuitSequence("q");
+    assert.equal(secondQ, true, "second q should quit (parseArrowKey did not corrupt quit state)");
   });
 });
