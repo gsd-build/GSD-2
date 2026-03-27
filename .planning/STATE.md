@@ -5,14 +5,14 @@ milestone_name: milestone
 current_phase: 03
 current_plan: 1
 status: executing
-stopped_at: Completed 03-01-PLAN.md
-last_updated: "2026-03-27T05:40:23.288Z"
+stopped_at: Completed 03-02-PLAN.md
+last_updated: "2026-03-27T05:47:36.140Z"
 last_activity: 2026-03-27
 progress:
   total_phases: 4
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 5
-  completed_plans: 4
+  completed_plans: 5
 ---
 
 # Project State
@@ -68,6 +68,8 @@ Phases complete: 0/4 | Plans complete: 0/?
 - [Phase 03]: readMilestoneLabel extracts text after em/en-dash from ROADMAP.md heading for concise label
 - [Phase 03]: derivePhaseStatus ignores badges — status derived from plan files only
 - [Phase 03]: scanPlans filters /^\d{2}-\d{2}-PLAN\.md$/ strictly — plan files only in plans array
+- [Phase 03-core-renderer]: Badge string formatted as ' ' + 7 circles — leading space provides visual separation; MIN_NAME_WITH_BADGES=4 drops badges entirely when space is tight
+- [Phase 03-core-renderer]: renderPlaceholder retained in renderer-entry.ts for backward compatibility — renderTree replaces all 3 call sites in main block
 
 ## Critical Pitfalls (from research)
 
@@ -86,5 +88,5 @@ None.
 
 ## Last Session
 
-**Stopped at:** Completed 03-01-PLAN.md
+**Stopped at:** Completed 03-02-PLAN.md
 **Timestamp:** 2026-03-27T04:40:43Z

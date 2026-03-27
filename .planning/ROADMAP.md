@@ -7,7 +7,7 @@
 ## Phases
 
 - [x] **Phase 2: Foundation** — Process lifecycle, tmux pane management, file watching infrastructure (completed 2026-03-27)
-- [ ] **Phase 3: Core Renderer** — Tree model, lifecycle badges, status icons, ANSI-safe layout
+- [x] **Phase 3: Core Renderer** — Tree model, lifecycle badges, status icons, ANSI-safe layout (completed 2026-03-27)
 - [ ] **Phase 4: Renderer Entry + Command Integration** — Subprocess wiring, viewport scrolling, `/gsd watch` registration
 - [ ] **Phase 5: Navigation** — Vim keybindings, expand/collapse, help overlay, collapse state persistence
 
@@ -38,11 +38,11 @@ Plans:
   2. Each phase row displays exactly 7 lifecycle badge slots (CONTEXT, RESEARCH, UI-SPEC, PLAN, SUMMARY, VERIFICATION, HUMAN-UAT) as flat icons with no color — filled when the corresponding file is present, empty otherwise.
   3. Status icons (done/active/pending/blocked) appear next to each node, matching the current state derived from plan files.
   4. No ANSI rendering artifacts or line overflow occur in a pane as narrow as 30 columns.
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [x] 03-01-PLAN.md — Tree data types, filesystem scanner, badge detection, and status derivation (DISP-01, DISP-02)
-- [ ] 03-02-PLAN.md — Tree renderer layout engine, badge formatting, and renderer-entry integration (DISP-01, DISP-02)
+- [x] 03-02-PLAN.md — Tree renderer layout engine, badge formatting, and renderer-entry integration (DISP-01, DISP-02)
 
 ### Phase 4: Renderer Entry + Command Integration
 **Goal**: The renderer subprocess runs as a standalone process wired to stdin/stdout, supports viewport scrolling for tall trees, and the `/gsd watch` command is registered end-to-end in the GSD dispatcher.
@@ -70,7 +70,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 2. Foundation | 3/3 | Complete   | 2026-03-27 |
-| 3. Core Renderer | 1/2 | In Progress|  |
+| 3. Core Renderer | 2/2 | Complete   | 2026-03-27 |
 | 4. Renderer Entry + Command Integration | 0/? | Not started | — |
 | 5. Navigation | 0/? | Not started | — |
 
