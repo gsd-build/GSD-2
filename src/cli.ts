@@ -133,21 +133,6 @@ const isPrintMode = cliFlags.print || cliFlags.mode !== undefined
 
 // Early resource-skew check — must run before TTY gate so version mismatch
 // errors surface even in non-TTY environments.
-exitIfManagedResourcesAreNewer(agentDir)
-
-// Early TTY check — must come before heavy initialization to avoid dangling
-// handles that prevent process.exit() from completing promptly.
-const hasSubcommand = cliFlags.messages.length > 0
-if (!process.stdin.isTTY && !isPrintMode && !hasSubcommand && !cliFlags.listModels && !cliFlags.web) {
-  process.stderr.write('[gsd] Error: Interactive mode requires a terminal (TTY).\n')
-  process.stderr.write('[gsd] Non-interactive alternatives:\n')
-  process.stderr.write('[gsd]   gsd --print "your message"     Single-shot prompt\n')
-  process.stderr.write('[gsd]   gsd --mode rpc                 JSON-RPC over stdin/stdout\n')
-  process.stderr.write('[gsd]   gsd --mode mcp                 MCP server over stdin/stdout\n')
-  process.stderr.write('[gsd]   gsd --mode text "message"      Text output mode\n')
-  process.exit(1)
-}
-
 async function ensureRtkBootstrap(): Promise<void> {
   if ((ensureRtkBootstrap as { _done?: boolean })._done) return
 
@@ -168,6 +153,28 @@ async function ensureRtkBootstrap(): Promise<void> {
   if (!rtkStatus.available && rtkStatus.supported && rtkStatus.enabled && rtkStatus.reason) {
     process.stderr.write(`[gsd] Warning: RTK unavailable — continuing without shell-command compression (${rtkStatus.reason}).\n`)
   }
+}
+
+// `gsd update` — update to the latest version via npm
+if (cliFlags.messages[0] === 'update') {
+  const { runUpdate } = await import('./update-cmd.js')
+  await runUpdate()
+  process.exit(0)
+}
+
+exitIfManagedResourcesAreNewer(agentDir)
+
+// Early TTY check — must come before heavy initialization to avoid dangling
+// handles that prevent process.exit() from completing promptly.
+const hasSubcommand = cliFlags.messages.length > 0
+if (!process.stdin.isTTY && !isPrintMode && !hasSubcommand && !cliFlags.listModels && !cliFlags.web) {
+  process.stderr.write('[gsd] Error: Interactive mode requires a terminal (TTY).\n')
+  process.stderr.write('[gsd] Non-interactive alternatives:\n')
+  process.stderr.write('[gsd]   gsd --print "your message"     Single-shot prompt\n')
+  process.stderr.write('[gsd]   gsd --mode rpc                 JSON-RPC over stdin/stdout\n')
+  process.stderr.write('[gsd]   gsd --mode mcp                 MCP server over stdin/stdout\n')
+  process.stderr.write('[gsd]   gsd --mode text "message"      Text output mode\n')
+  process.exit(1)
 }
 
 // `gsd <subcommand> --help` — show subcommand-specific help
@@ -196,13 +203,6 @@ if (cliFlags.messages[0] === 'config') {
   const authStorage = AuthStorage.create(authFilePath)
   loadStoredEnvKeys(authStorage)
   await runOnboarding(authStorage)
-  process.exit(0)
-}
-
-// `gsd update` — update to the latest version via npm
-if (cliFlags.messages[0] === 'update') {
-  const { runUpdate } = await import('./update-cmd.js')
-  await runUpdate()
   process.exit(0)
 }
 
@@ -688,4 +688,3 @@ const interactiveMode = new InteractiveMode(session)
 markStartup('InteractiveMode')
 printStartupTimings()
 await interactiveMode.run()
-

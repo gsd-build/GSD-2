@@ -187,6 +187,19 @@ test("loader MIN_NODE_MAJOR matches package.json engines field", () => {
     `loader MIN_NODE_MAJOR (${loaderMin}) must match package.json engines.node (>=${engineMin}.0.0)`);
 });
 
+test("cli.ts lets gsd update bypass the managed-resource mismatch gate", () => {
+  const cliSrc = readFileSync(join(projectRoot, "src", "cli.ts"), "utf-8");
+  const updateBranchIndex = cliSrc.indexOf("if (cliFlags.messages[0] === 'update')")
+  const mismatchGateIndex = cliSrc.indexOf("exitIfManagedResourcesAreNewer(agentDir)")
+
+  assert.ok(updateBranchIndex !== -1, "cli.ts contains an update branch")
+  assert.ok(mismatchGateIndex !== -1, "cli.ts contains the managed-resource mismatch gate")
+  assert.ok(
+    updateBranchIndex < mismatchGateIndex,
+    "gsd update must run before the managed-resource mismatch gate",
+  )
+});
+
 // ═══════════════════════════════════════════════════════════════════════════
 // 3. resource-loader syncs bundled resources
 // ═══════════════════════════════════════════════════════════════════════════
