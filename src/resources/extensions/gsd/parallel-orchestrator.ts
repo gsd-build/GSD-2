@@ -196,7 +196,17 @@ function appendWorkerLog(basePath: string, milestoneId: string, chunk: string): 
 }
 
 function restoreRuntimeState(basePath: string): boolean {
-  if (state?.active) return true;
+  if (state?.active) {
+    // Verify at least one worker is alive — if all are in terminal states,
+    // the cached state is stale and we should fall through to cleanup.
+    const hasLiveWorker = [...state.workers.values()].some(
+      (w) => w.state !== "error" && w.state !== "stopped",
+    );
+    if (hasLiveWorker) return true;
+
+    // All workers dead — clear stale state so restoreState() can clean up.
+    state = null;
+  }
 
   const restored = restoreState(basePath);
   if (restored && restored.workers.length > 0) {
@@ -930,6 +940,18 @@ export function refreshWorkerStatuses(
   state.totalCost = 0;
   for (const worker of state.workers.values()) {
     state.totalCost += worker.cost;
+  }
+
+  // If all workers are in a terminal state (error/stopped), the orchestration
+  // is finished — deactivate and clean up so zombie workers don't persist.
+  const allDead = [...state.workers.values()].every(
+    (w) => w.state === "error" || w.state === "stopped",
+  );
+  if (allDead) {
+    state.active = false;
+    removeStateFile(basePath);
+    state = null;
+    return;
   }
 
   // Persist updated state for crash recovery
