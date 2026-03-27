@@ -414,6 +414,13 @@ export function stopAutoRemote(projectRoot: string): {
   const lock = readCrashLock(projectRoot);
   if (!lock) return { found: false };
 
+  // Never SIGTERM ourselves — a stale lock with our own PID is not a remote
+  // session, it is leftover from a prior loop exit in this process. (#2730)
+  if (lock.pid === process.pid) {
+    clearLock(projectRoot);
+    return { found: false };
+  }
+
   if (!isLockProcessAlive(lock)) {
     // Stale lock — clean it up
     clearLock(projectRoot);
@@ -444,6 +451,10 @@ export function checkRemoteAutoSession(projectRoot: string): {
 } {
   const lock = readCrashLock(projectRoot);
   if (!lock) return { running: false };
+
+  // Our own PID is not a "remote" session — it is a stale lock left by this
+  // process (e.g. after step-mode exit without full cleanup). (#2730)
+  if (lock.pid === process.pid) return { running: false };
 
   if (!isLockProcessAlive(lock)) {
     // Stale lock from a dead process — not a live remote session
@@ -547,6 +558,16 @@ function cleanupAfterLoopExit(ctx: ExtensionContext): void {
   s.currentUnit = null;
   s.active = false;
   clearUnitTimeout();
+
+  // Clear crash lock and release session lock so the next `/gsd next` does
+  // not see a stale lock with the current PID and treat it as a "remote"
+  // session (which would cause it to SIGTERM itself). (#2730)
+  try {
+    if (lockBase()) clearLock(lockBase());
+    if (lockBase()) releaseSessionLock(lockBase());
+  } catch {
+    /* best-effort — mirror stopAuto cleanup */
+  }
 
   ctx.ui.setStatus("gsd-auto", undefined);
   ctx.ui.setWidget("gsd-progress", undefined);
