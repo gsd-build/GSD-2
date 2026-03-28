@@ -1,3 +1,4 @@
+import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { clearParseCache } from "../files.js";
 import { isClosedStatus } from "../status-guards.js";
@@ -10,9 +11,11 @@ import {
   insertSlice,
   updateSliceFields,
   insertAssessment,
+  deleteAssessmentByScope,
   deleteSlice,
 } from "../gsd-db.js";
 import { invalidateStateCache } from "../state.js";
+import { clearPathCache, resolveMilestonePath } from "../paths.js";
 import { renderRoadmapFromDb, renderAssessmentFromDb } from "../markdown-renderer.js";
 import { renderAllProjections } from "../workflow-projections.js";
 import { writeManifest } from "../workflow-manifest.js";
@@ -110,6 +113,14 @@ export async function handleReassessRoadmap(
     "slices", params.completedSliceId,
     `${params.completedSliceId}-ASSESSMENT.md`,
   );
+  const roadmapChanged =
+    params.sliceChanges.modified.length > 0 ||
+    params.sliceChanges.added.length > 0 ||
+    params.sliceChanges.removed.length > 0;
+  const milestoneDir =
+    resolveMilestonePath(basePath, params.milestoneId)
+    ?? join(basePath, ".gsd", "milestones", params.milestoneId);
+  const validationPath = join(milestoneDir, `${params.milestoneId}-VALIDATION.md`);
 
   // ── Guards + DB writes inside a single transaction (prevents TOCTOU) ───
   // Guards must be inside the transaction so the state they check cannot
@@ -173,6 +184,13 @@ export async function handleReassessRoadmap(
         fullContent: params.assessment,
       });
 
+      if (roadmapChanged) {
+        // Any roadmap mutation invalidates prior milestone validation. Without
+        // this, a stale needs-remediation verdict can survive remediation work
+        // and dead-end completion instead of re-entering validate-milestone.
+        deleteAssessmentByScope(params.milestoneId, "milestone-validation");
+      }
+
       // Apply slice modifications
       for (const mod of params.sliceChanges.modified) {
         updateSliceFields(params.milestoneId, mod.sliceId, {
@@ -211,6 +229,10 @@ export async function handleReassessRoadmap(
 
   // ── Render artifacts ──────────────────────────────────────────────
   try {
+    if (roadmapChanged && existsSync(validationPath)) {
+      rmSync(validationPath, { force: true });
+    }
+
     const roadmapResult = await renderRoadmapFromDb(basePath, params.milestoneId);
     const assessmentResult = await renderAssessmentFromDb(basePath, params.milestoneId, params.completedSliceId, {
       verdict: params.verdict,
@@ -221,6 +243,7 @@ export async function handleReassessRoadmap(
     // ── Invalidate caches ─────────────────────────────────────────
     invalidateStateCache();
     clearParseCache();
+    clearPathCache();
 
     // ── Post-mutation hook: projections, manifest, event log ─────
     try {
