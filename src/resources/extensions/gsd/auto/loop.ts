@@ -81,6 +81,20 @@ export async function autoLoop(
       // ── Blanket try/catch: one bad iteration must not kill the session
       const prefs = deps.loadEffectiveGSDPreferences()?.preferences;
 
+      // ── Proactive rate limiting ──
+      // Sleep if less than min_request_interval_ms has elapsed since the last
+      // LLM request, preventing 429s on rate-limited providers (#2996).
+      const minInterval = prefs?.min_request_interval_ms ?? 0;
+      if (minInterval > 0 && s.lastRequestTimestamp > 0) {
+        const elapsed = Date.now() - s.lastRequestTimestamp;
+        if (elapsed < minInterval) {
+          const waitMs = minInterval - elapsed;
+          debugLog("autoLoop", { phase: "rate-limit-wait", waitMs });
+          await new Promise<void>(r => setTimeout(r, waitMs));
+        }
+      }
+      s.lastRequestTimestamp = Date.now();
+
       // ── Check sidecar queue before deriveState ──
       let sidecarItem: SidecarItem | undefined;
       if (s.sidecarQueue.length > 0) {

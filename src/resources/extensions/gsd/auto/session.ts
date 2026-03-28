@@ -132,6 +132,10 @@ export class AutoSession {
   // ── Dispatch circuit breakers ──────────────────────────────────────
   rewriteAttemptCount = 0;
 
+  // ── Rate limiting ────────────────────────────────────────────────────────
+  /** Timestamp of the last LLM request dispatch (ms since epoch). Used for proactive rate limiting. */
+  lastRequestTimestamp = 0;
+
   // ── Metrics ──────────────────────────────────────────────────────────────
   autoStartTime = 0;
   lastPromptCharCount: number | undefined;
@@ -204,6 +208,9 @@ export class AutoSession {
     this.pausedSessionFile = null;
     this.resourceVersionOnStart = null;
     this.lastStateRebuildAt = 0;
+
+    // Rate limiting
+    this.lastRequestTimestamp = 0;
 
     // Metrics
     this.autoStartTime = 0;

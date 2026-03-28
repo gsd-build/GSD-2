@@ -93,6 +93,7 @@ export const KNOWN_PREFERENCE_KEYS = new Set<string>([
   "service_tier",
   "forensics_dedup",
   "show_token_cost",
+  "min_request_interval_ms",
   "experimental",
 ]);
 
@@ -252,6 +253,8 @@ export interface GSDPreferences {
   forensics_dedup?: boolean;
   /** Opt-in: show per-prompt and cumulative session token cost in the footer. Default: false. */
   show_token_cost?: boolean;
+  /** Proactive rate limiting: minimum milliseconds between auto-mode LLM requests. Prevents 429s on rate-limited providers. 0 = disabled (default). */
+  min_request_interval_ms?: number;
   /**
    * Opt-in experimental features. All features here are disabled by default.
    * See the preferences reference for details on each feature.
