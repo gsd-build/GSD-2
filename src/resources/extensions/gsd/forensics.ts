@@ -106,13 +106,13 @@ interface ForensicReport {
 // ─── Duplicate Detection ──────────────────────────────────────────────────────
 
 const DEDUP_PROMPT_SECTION = `
-## Duplicate Detection (REQUIRED before issue creation)
-
-Before offering to create a GitHub issue, you MUST search for existing issues and PRs that may already address this bug. This step uses the user's AI tokens for analysis.
+Before reading more GSD source code, you MUST search for existing issues and PRs that may already address this bug.
+Use keywords from the user's problem description and the anomaly summaries in the forensic report.
+This step should happen before deep investigation so the user does not spend tokens on already-known fixes.
 
 ### Search Steps
 
-1. **Search closed issues** for similar keywords from your diagnosis:
+1. **Search closed issues** for similar keywords from the symptom, likely subsystem, and anomaly summaries:
    \`\`\`
    gh issue list --repo gsd-build/gsd-2 --state closed --search "<keywords from root cause>" --limit 20
    \`\`\`
@@ -127,22 +127,20 @@ Before offering to create a GitHub issue, you MUST search for existing issues an
    gh pr list --repo gsd-build/gsd-2 --state merged --search "<keywords>" --limit 10
    \`\`\`
 
-### Analysis
+### Decision Gate
 
-For each result, compare it against your root-cause diagnosis:
+- **Merged PR clearly fixes the described symptom** → report "Already fixed by PR #X" with a brief explanation and skip the full investigation.
+- **Open issue clearly matches** → report "Existing issue #Y already covers this." Offer to add forensic evidence instead of repeating the full investigation unless the user asks for deeper analysis.
+- **No good matches** → continue to the full investigation below.
+
+### If You Continue
+
+When you proceed to the full investigation, compare any promising matches against your eventual diagnosis:
 - Does the issue describe the same code path or file?
 - Does the PR modify the same file:line you identified?
 - Is the symptom description semantically similar even if keywords differ?
 
-### Present Findings
-
-If you find potential matches, present them to the user:
-
-1. **"Already fixed by PR #X — skip issue creation"** — when a merged PR or closed issue clearly addresses the same root cause. Explain why you believe it matches.
-2. **"Add my findings to existing issue #Y"** — when an open issue exists for the same bug. Use \`gh issue comment #Y --repo gsd-build/gsd-2\` to add forensic evidence.
-3. **"Create new issue anyway"** — when existing results do not cover this specific failure.
-
-Only proceed to issue creation if no matches were found OR the user explicitly chooses "Create new issue anyway".
+Only continue to the full investigation when you did not find a clearly matching fix or already-open issue.
 `;
 
 async function writeForensicsDedupPref(ctx: ExtensionCommandContext, enabled: boolean): Promise<void> {
