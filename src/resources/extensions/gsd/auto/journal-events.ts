@@ -33,6 +33,60 @@ export type JournalErrorType =
   | "session-failed"
   | "unknown";
 
+// ─── Error classification ─────────────────────────────────────────────────────
+
+const MAX_ERROR_DETAIL_LENGTH = 200;
+
+/**
+ * Maps ErrorContext.category to JournalErrorType exhaustively.
+ * The switch is intentionally exhaustive: if a new category is added to
+ * ErrorContext, TypeScript will error here, forcing an explicit mapping decision.
+ */
+export function errorContextCategoryToJournalType(category: ErrorContext["category"]): JournalErrorType {
+  switch (category) {
+    case "timeout":
+    case "idle":
+      return "timeout";
+    case "provider":
+      return "provider-error";
+    case "network":
+      return "network-error";
+    case "aborted":
+      return "aborted";
+    case "session-failed":
+      return "session-failed";
+    case "unknown":
+      return "unknown";
+    default: {
+      // TypeScript errors here if a new category is added to ErrorContext without
+      // updating this switch. At runtime we fall back gracefully — journal annotation
+      // is best-effort and must never crash the auto-loop.
+      const _: never = category;
+      return "unknown";
+    }
+  }
+}
+
+const ERROR_PATTERNS: Array<[RegExp, JournalErrorType]> = [
+  [/context.*overflow|token.*limit|context.*window/i, "context-overflow"],
+  [/tool.*(?:error|fail)|permission denied|command failed/i, "tool-error"],
+  [/timeout|timed? out/i, "timeout"],
+];
+
+// Returns the last error found — in a failing unit the most recent error is the most diagnostic
+// (earlier errors may have been recovered from).
+export function classifyMessageError(messages: unknown[]): { detail: string; type: JournalErrorType } | undefined {
+  const RE_INDICATOR = /error|fail|exception/i;
+  let result: { detail: string; type: JournalErrorType } | undefined;
+  for (const msg of messages) {
+    const str = typeof msg === "string" ? msg : JSON.stringify(msg);
+    if (!RE_INDICATOR.test(str)) continue;
+    const type = ERROR_PATTERNS.find(([re]) => re.test(str))?.[1] ?? "unknown";
+    result = { detail: str.slice(0, MAX_ERROR_DETAIL_LENGTH), type };
+  }
+  return result;
+}
+
 // ─── Builder functions ────────────────────────────────────────────────────────
 
 export interface IterationStartParams {
