@@ -74,12 +74,13 @@ Plans:
   2. When Tailscale is connected, the Remote Access section displays the tailnet URL as a copyable link and shows an accurate connection status with a connect/disconnect toggle
   3. Clicking "Set up Tailscale" in settings launches a step-by-step assistant that detects the OS, provides the correct install command (brew on macOS, official script on Linux), runs `tailscale up`, surfaces the auth URL when browser login is required, and confirms successful connection with hostname and tailnet info
   4. Attempting to start `gsd --web --tailscale` without a password configured returns an error message that directs the user to set a password first
-**Plans**: 4 plans
+**Plans**: 5 plans
 Plans:
 - [x] 04-00-PLAN.md — Wave 0 test stub files for Phase 4 validation targets
 - [x] 04-01-PLAN.md — Password change API endpoint + Tailscale status API endpoint
 - [x] 04-02-PLAN.md — Tailscale setup assistant streaming API endpoint
 - [x] 04-03-PLAN.md — RemoteAccessPanel UI component + settings section registration
+- [ ] 04-04-PLAN.md — Replace test stubs with real assertions (gap closure)
 **UI hint**: yes
 
 ## Progress
@@ -92,4 +93,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | 1. Password Auth and Cookie Sessions | 3/3 | Complete   | 2026-03-28 |
 | 2. Tailscale Serve Integration | 1/2 | In Progress|  |
 | 3. SSE Cursor-Based Event Replay | 3/3 | Complete   | 2026-03-28 |
-| 4. Remote Access Settings UI | 4/4 | Complete   | 2026-03-28 |
+| 4. Remote Access Settings UI | 4/5 | In Progress | |
