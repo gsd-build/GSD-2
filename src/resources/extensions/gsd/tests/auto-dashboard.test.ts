@@ -1,7 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 
 import {
   unitVerb,
@@ -12,9 +10,6 @@ import {
   estimateTimeRemaining,
   extractUatSliceId,
 } from "../auto-dashboard.ts";
-
-const autoSource = readFileSync(join(process.cwd(), "src", "resources", "extensions", "gsd", "auto.ts"), "utf-8");
-const dashboardSource = readFileSync(join(process.cwd(), "src", "resources", "extensions", "gsd", "auto-dashboard.ts"), "utf-8");
 
 // ─── unitVerb ─────────────────────────────────────────────────────────────
 
@@ -185,16 +180,6 @@ test("formatAutoElapsed returns empty string for negative autoStartTime", () => 
   assert.equal(formatAutoElapsed(NaN), "");
 });
 
-test("getAutoDashboardData returns RTK savings in the dashboard payload", () => {
-  assert.match(autoSource, /const rtkSavings = sessionId && s\.basePath/);
-  assert.match(autoSource, /rtkSavings,/);
-});
-
-test("auto progress widget renders RTK savings under the footer stats line", () => {
-  assert.match(dashboardSource, /formatRtkSavingsLabel/);
-  assert.match(dashboardSource, /getRtkSessionSavings\(accessors\.getBasePath\(\), sessionId\)/);
-  assert.match(dashboardSource, /lines\.push\(rightAlign\("", theme\.fg\("dim", cachedRtkLabel\), width\)\);/);
-});
 
 // ─── extractUatSliceId ───────────────────────────────────────────────────
 

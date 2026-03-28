@@ -14,6 +14,7 @@ import { getLedger, getProjectTotals } from "./metrics.js";
 import {
   resolveMilestoneFile,
   resolveSliceFile,
+  resolveRtkRuntimeDir,
 } from "./paths.js";
 import { isDbAvailable, getMilestoneSlices, getSliceTasks } from "./gsd-db.js";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
@@ -490,10 +491,11 @@ export function updateProgressWidget(
     let cachedWidth: number | undefined;
     let cachedRtkLabel: string | null | undefined;
 
+    const rtkRuntimeDir = resolveRtkRuntimeDir(accessors.getBasePath());
     const refreshRtkLabel = (): void => {
       try {
         const sessionId = ctx.sessionManager.getSessionId();
-        const savings = sessionId ? getRtkSessionSavings(accessors.getBasePath(), sessionId) : null;
+        const savings = sessionId ? getRtkSessionSavings(rtkRuntimeDir, sessionId) : null;
         cachedRtkLabel = formatRtkSavingsLabel(savings);
       } catch {
         cachedRtkLabel = null;

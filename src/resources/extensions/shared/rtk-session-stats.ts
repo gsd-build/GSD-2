@@ -2,7 +2,6 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { gsdRoot } from "../gsd/paths.js";
 import { formatTokenCount } from "./format-utils.js";
 import { buildRtkEnv, isRtkEnabled, resolveRtkBinaryPath } from "./rtk.js";
 
@@ -45,20 +44,16 @@ interface BaselineStore {
 
 let cachedSummary: { at: number; binaryPath: string; summary: RtkGainSummary | null } | null = null;
 
-function getRuntimeDir(basePath: string): string {
-  return join(gsdRoot(basePath), "runtime");
-}
-
-function getBaselinesPath(basePath: string): string {
-  return join(getRuntimeDir(basePath), SESSION_BASELINES_FILE);
+function getBaselinesPath(runtimeDir: string): string {
+  return join(runtimeDir, SESSION_BASELINES_FILE);
 }
 
 function defaultStore(): BaselineStore {
   return { version: 1, sessions: {} };
 }
 
-function loadBaselineStore(basePath: string): BaselineStore {
-  const path = getBaselinesPath(basePath);
+function loadBaselineStore(runtimeDir: string): BaselineStore {
+  const path = getBaselinesPath(runtimeDir);
   if (!existsSync(path)) return defaultStore();
   try {
     const parsed = JSON.parse(readFileSync(path, "utf-8")) as Partial<BaselineStore>;
@@ -74,8 +69,7 @@ function loadBaselineStore(basePath: string): BaselineStore {
   }
 }
 
-function saveBaselineStore(basePath: string, store: BaselineStore): void {
-  const runtimeDir = getRuntimeDir(basePath);
+function saveBaselineStore(runtimeDir: string, store: BaselineStore): void {
   mkdirSync(runtimeDir, { recursive: true });
 
   const entries = Object.entries(store.sessions)
@@ -87,7 +81,7 @@ function saveBaselineStore(basePath: string, store: BaselineStore): void {
     sessions: Object.fromEntries(entries),
   };
 
-  writeFileSync(getBaselinesPath(basePath), JSON.stringify(normalized, null, 2), "utf-8");
+  writeFileSync(getBaselinesPath(runtimeDir), JSON.stringify(normalized, null, 2), "utf-8");
 }
 
 function normalizeSummary(raw: unknown): RtkGainSummary | null {
@@ -165,7 +159,7 @@ function computeSavingsDelta(current: RtkGainSummary, baseline: RtkGainSummary):
 }
 
 export function ensureRtkSessionBaseline(
-  basePath: string,
+  runtimeDir: string,
   sessionId: string,
   env: NodeJS.ProcessEnv = process.env,
 ): RtkGainSummary | null {
@@ -174,7 +168,7 @@ export function ensureRtkSessionBaseline(
   const current = readCurrentRtkGainSummary(env);
   if (!current) return null;
 
-  const store = loadBaselineStore(basePath);
+  const store = loadBaselineStore(runtimeDir);
   const existing = store.sessions[sessionId];
   if (existing) return existing.summary;
 
@@ -184,12 +178,12 @@ export function ensureRtkSessionBaseline(
     createdAt: now,
     updatedAt: now,
   };
-  saveBaselineStore(basePath, store);
+  saveBaselineStore(runtimeDir, store);
   return current;
 }
 
 export function getRtkSessionSavings(
-  basePath: string,
+  runtimeDir: string,
   sessionId: string | null | undefined,
   env: NodeJS.ProcessEnv = process.env,
 ): RtkSessionSavings | null {
@@ -198,7 +192,7 @@ export function getRtkSessionSavings(
   const current = readCurrentRtkGainSummary(env);
   if (!current) return null;
 
-  const store = loadBaselineStore(basePath);
+  const store = loadBaselineStore(runtimeDir);
   const existing = store.sessions[sessionId];
   if (!existing) {
     const now = new Date().toISOString();
@@ -207,7 +201,7 @@ export function getRtkSessionSavings(
       createdAt: now,
       updatedAt: now,
     };
-    saveBaselineStore(basePath, store);
+    saveBaselineStore(runtimeDir, store);
     return computeSavingsDelta(current, current);
   }
 
@@ -222,21 +216,21 @@ export function getRtkSessionSavings(
       createdAt: existing.createdAt,
       updatedAt: now,
     };
-    saveBaselineStore(basePath, store);
+    saveBaselineStore(runtimeDir, store);
     return computeSavingsDelta(current, current);
   }
 
   existing.updatedAt = new Date().toISOString();
-  saveBaselineStore(basePath, store);
+  saveBaselineStore(runtimeDir, store);
   return computeSavingsDelta(current, existing.summary);
 }
 
-export function clearRtkSessionBaseline(basePath: string, sessionId: string): void {
+export function clearRtkSessionBaseline(runtimeDir: string, sessionId: string): void {
   if (!sessionId) return;
-  const store = loadBaselineStore(basePath);
+  const store = loadBaselineStore(runtimeDir);
   if (!(sessionId in store.sessions)) return;
   delete store.sessions[sessionId];
-  saveBaselineStore(basePath, store);
+  saveBaselineStore(runtimeDir, store);
 }
 
 export function formatRtkSavingsLabel(savings: RtkSessionSavings | null | undefined): string | null {
