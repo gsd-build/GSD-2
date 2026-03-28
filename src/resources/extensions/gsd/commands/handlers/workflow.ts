@@ -184,7 +184,7 @@ export async function handleWorkflowCommand(trimmed: string, ctx: ExtensionComma
     return true;
   }
   if (trimmed === "discuss") {
-    await showDiscuss(ctx, pi, projectRoot());
+    await showDiscuss(ctx, pi, projectRoot(), { onAutoStart: startAuto });
     return true;
   }
   if (trimmed === "quick" || trimmed.startsWith("quick ")) {
@@ -205,10 +205,10 @@ export async function handleWorkflowCommand(trimmed: string, ctx: ExtensionComma
     if (existsSync(headlessContextPath)) {
       const seedContext = readFileSync(headlessContextPath, "utf-8");
       try { unlinkSync(headlessContextPath); } catch { /* non-fatal */ }
-      await showHeadlessMilestoneCreation(ctx, pi, basePath, seedContext);
+      await showHeadlessMilestoneCreation(ctx, pi, basePath, seedContext, { onAutoStart: startAuto });
     } else {
       const { showSmartEntry } = await import("../../guided-flow.js");
-      await showSmartEntry(ctx, pi, basePath);
+      await showSmartEntry(ctx, pi, basePath, { onAutoStart: startAuto });
     }
     return true;
   }

@@ -1227,6 +1227,7 @@ export async function startAuto(
     registerSigtermHandler,
     lockBase,
     buildResolver,
+    onAutoStart: startAuto,
   };
 
   const ready = await bootstrapAutoSession(
