@@ -38,27 +38,15 @@ function mockModelRegistry(oauthJson?: string) {
   };
 }
 
-test("fix: google-search uses OAuth if GEMINI_API_KEY is missing", async (t) => {
+test("fix: google-search rejects OAuth-only auth when GEMINI_API_KEY is missing", async (t) => {
   const originalKey = process.env.GEMINI_API_KEY;
   delete process.env.GEMINI_API_KEY;
 
   const originalFetch = global.fetch;
-  (global as any).fetch = async (url: string, options: any) => {
-    assert.ok(url.includes("cloudcode-pa.googleapis.com"), "Should use Cloud Code Assist endpoint");
-    assert.equal(options.headers.Authorization, "Bearer mock-token", "Should use correct bearer token");
-    return {
-      ok: true,
-      json: async () => ({
-        response: {
-          candidates: [{ content: { parts: [{ text: "Mocked AI Answer" }] } }]
-        }
-      }),
-      text: async () => JSON.stringify({
-        response: {
-          candidates: [{ content: { parts: [{ text: "Mocked AI Answer" }] } }]
-        }
-      }),
-    };
+  let fetchCalls = 0;
+  (global as any).fetch = async () => {
+    fetchCalls += 1;
+    throw new Error("google_search should not attempt OAuth fallback fetch");
   };
 
   t.after(() => {
@@ -78,8 +66,10 @@ test("fix: google-search uses OAuth if GEMINI_API_KEY is missing", async (t) => 
   const registeredTool = (pi as any).registeredTool;
   const result = await registeredTool.execute("call-1", { query: "test" }, new AbortController().signal, () => {}, mockCtx);
 
-  assert.equal(result.isError, undefined);
-  assert.ok(result.content[0].text.includes("Mocked AI Answer"));
+  assert.equal(fetchCalls, 0, "Should not call the unsupported OAuth fallback");
+  assert.equal(result.isError, true);
+  assert.ok(result.content[0].text.includes("GEMINI_API_KEY"));
+  assert.ok(result.content[0].text.includes("OAuth fallback is currently unavailable"));
 });
 
 test("google-search warns if NO authentication is present", async (t) => {
@@ -98,12 +88,12 @@ test("google-search warns if NO authentication is present", async (t) => {
 
   await pi.fire("session_start", {}, mockCtx);
   assert.equal(notifications.length, 1);
-  assert.ok(notifications[0].msg.includes("No authentication set"));
+  assert.ok(notifications[0].msg.includes("GEMINI_API_KEY"));
 
   const registeredTool = (pi as any).registeredTool;
   const result = await registeredTool.execute("call-2", { query: "test" }, new AbortController().signal, () => {}, mockCtx);
   assert.equal(result.isError, true);
-  assert.ok(result.content[0].text.includes("No authentication found"));
+  assert.ok(result.content[0].text.includes("GEMINI_API_KEY"));
 });
 
 test("google-search uses GEMINI_API_KEY if present (precedence)", async (t) => {
