@@ -1,7 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 
 import {
   unitVerb,
@@ -12,9 +10,8 @@ import {
   estimateTimeRemaining,
   extractUatSliceId,
 } from "../auto-dashboard.ts";
-
-const autoSource = readFileSync(join(process.cwd(), "src", "resources", "extensions", "gsd", "auto.ts"), "utf-8");
-const dashboardSource = readFileSync(join(process.cwd(), "src", "resources", "extensions", "gsd", "auto-dashboard.ts"), "utf-8");
+import { getAutoDashboardData } from "../auto.ts";
+import { formatRtkSavingsLabel } from "../../shared/rtk-session-stats.ts";
 
 // ─── unitVerb ─────────────────────────────────────────────────────────────
 
@@ -172,28 +169,45 @@ test("estimateTimeRemaining is exported and callable", () => {
 });
 
 // ─── getAutoDashboardData elapsed guard ──────────────────────────────────────
-// These tests verify the elapsed time calculation in getAutoDashboardData()
-// doesn't produce absurd values when autoStartTime is 0 (uninitialized).
-// The actual function is in auto.ts and tested structurally here by verifying
-// that formatAutoElapsed properly handles the zero case.
 
 test("formatAutoElapsed returns empty string for negative autoStartTime", () => {
-  // A negative value should be treated as invalid — the guard in
-  // getAutoDashboardData prevents this, but formatAutoElapsed should also
-  // handle it gracefully via its falsy check.
   assert.equal(formatAutoElapsed(-1), "");
   assert.equal(formatAutoElapsed(NaN), "");
 });
 
-test("getAutoDashboardData returns RTK savings in the dashboard payload", () => {
-  assert.match(autoSource, /const rtkSavings = sessionId && s\.basePath/);
-  assert.match(autoSource, /rtkSavings,/);
+test("getAutoDashboardData includes rtkSavings in payload", () => {
+  const data = getAutoDashboardData();
+  assert.ok("rtkSavings" in data, "rtkSavings key must be present in dashboard payload");
+  // No active session in test environment — savings are null
+  assert.equal(data.rtkSavings, null);
 });
 
-test("auto progress widget renders RTK savings under the footer stats line", () => {
-  assert.match(dashboardSource, /formatRtkSavingsLabel/);
-  assert.match(dashboardSource, /getRtkSessionSavings\(accessors\.getBasePath\(\), sessionId\)/);
-  assert.match(dashboardSource, /lines\.push\(rightAlign\("", theme\.fg\("dim", cachedRtkLabel\), width\)\);/);
+// ─── formatRtkSavingsLabel ───────────────────────────────────────────────────
+
+test("formatRtkSavingsLabel returns null for null input", () => {
+  assert.equal(formatRtkSavingsLabel(null), null);
+  assert.equal(formatRtkSavingsLabel(undefined), null);
+});
+
+test("formatRtkSavingsLabel returns waiting message when no commands", () => {
+  const label = formatRtkSavingsLabel({ commands: 0, savedTokens: 0, inputTokens: 0, outputTokens: 0, savingsPct: 0 });
+  assert.equal(label, "rtk: waiting for shell usage");
+});
+
+test("formatRtkSavingsLabel returns active message when commands but no tokens", () => {
+  const label = formatRtkSavingsLabel({ commands: 3, savedTokens: 0, inputTokens: 0, outputTokens: 0, savingsPct: 0 });
+  assert.equal(label, "rtk: active (3 cmds)");
+});
+
+test("formatRtkSavingsLabel uses singular cmd for one command", () => {
+  const label = formatRtkSavingsLabel({ commands: 1, savedTokens: 0, inputTokens: 0, outputTokens: 0, savingsPct: 0 });
+  assert.equal(label, "rtk: active (1 cmd)");
+});
+
+test("formatRtkSavingsLabel formats savings with token count and percentage", () => {
+  const label = formatRtkSavingsLabel({ commands: 5, savedTokens: 1500, inputTokens: 500, outputTokens: 200, savingsPct: 42 });
+  assert.ok(label?.startsWith("rtk:"), "label should start with rtk:");
+  assert.ok(label?.includes("42%"), "label should include savings percentage");
 });
 
 // ─── extractUatSliceId ───────────────────────────────────────────────────
