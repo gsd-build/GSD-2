@@ -128,6 +128,48 @@ function parseCliArgs(argv: string[]): CliFlags {
   return flags
 }
 
+/**
+ * Validate the configured default model against the registry and reset it if
+ * it no longer exists.  Must run AFTER extensions have registered their
+ * providers so that extension models (e.g. pi-claude-cli) are visible.
+ */
+function validateConfiguredModel(
+  modelRegistry: ModelRegistry,
+  settingsManager: SettingsManager,
+): void {
+  const configuredProvider = settingsManager.getDefaultProvider()
+  const configuredModel = settingsManager.getDefaultModel()
+  const allModels = modelRegistry.getAll()
+  const availableModels = modelRegistry.getAvailable()
+  const configuredExists = configuredProvider && configuredModel &&
+    allModels.some((m) => m.provider === configuredProvider && m.id === configuredModel)
+  const configuredAvailable = configuredProvider && configuredModel &&
+    availableModels.some((m) => m.provider === configuredProvider && m.id === configuredModel)
+
+  if (!configuredModel || !configuredExists) {
+    // Model not configured at all, or removed from registry — pick a fallback.
+    // Only fires when the model is genuinely unknown (not just temporarily unavailable).
+    const piDefault = getPiDefaultModelAndProvider()
+    const preferred =
+      (piDefault
+        ? availableModels.find((m) => m.provider === piDefault.provider && m.id === piDefault.model)
+        : undefined) ||
+      availableModels.find((m) => m.provider === 'openai' && m.id === 'gpt-5.4') ||
+      availableModels.find((m) => m.provider === 'openai') ||
+      availableModels.find((m) => m.provider === 'anthropic' && m.id === 'claude-opus-4-6') ||
+      availableModels.find((m) => m.provider === 'anthropic' && m.id.includes('opus')) ||
+      availableModels.find((m) => m.provider === 'anthropic') ||
+      availableModels[0]
+    if (preferred) {
+      settingsManager.setDefaultModelAndProvider(preferred.provider, preferred.id)
+    }
+  }
+
+  if (settingsManager.getDefaultThinkingLevel() !== 'off' && !configuredExists) {
+    settingsManager.setDefaultThinkingLevel('off')
+  }
+}
+
 const cliFlags = parseCliArgs(process.argv)
 const isPrintMode = cliFlags.print || cliFlags.mode !== undefined
 
@@ -348,8 +390,23 @@ if (!isPrintMode && process.stdout.columns && process.stdout.columns < 40) {
   )
 }
 
-// --list-models: print available models and exit (no TTY needed)
+// --list-models: load extensions so that extension-registered providers (e.g.
+// pi-claude-cli) appear in the listing, then flush their pending registrations
+// into the model registry before printing.
 if (cliFlags.listModels !== undefined) {
+  exitIfManagedResourcesAreNewer(agentDir)
+  initResources(agentDir)
+  const listModelsLoader = new DefaultResourceLoader({
+    agentDir,
+    additionalExtensionPaths: cliFlags.extensions.length > 0 ? cliFlags.extensions : undefined,
+  })
+  await listModelsLoader.reload()
+  const listModelsExtensions = listModelsLoader.getExtensions()
+  for (const { name, config } of listModelsExtensions.runtime.pendingProviderRegistrations) {
+    modelRegistry.registerProvider(name, config)
+  }
+  listModelsExtensions.runtime.pendingProviderRegistrations = []
+
   const models = modelRegistry.getAvailable()
   if (models.length === 0) {
     console.log('No models available. Set API keys in environment variables.')
@@ -389,42 +446,6 @@ if (cliFlags.listModels !== undefined) {
     console.log(row.map((c, i) => pad(c, widths[i])).join('  '))
   }
   process.exit(0)
-}
-
-// Validate configured model on startup — catches stale settings from prior installs
-// (e.g. grok-2 which no longer exists) and fresh installs with no settings.
-// Only resets the default when the configured model no longer exists in the registry;
-// never overwrites a valid user choice.
-const configuredProvider = settingsManager.getDefaultProvider()
-const configuredModel = settingsManager.getDefaultModel()
-const allModels = modelRegistry.getAll()
-const availableModels = modelRegistry.getAvailable()
-const configuredExists = configuredProvider && configuredModel &&
-  allModels.some((m) => m.provider === configuredProvider && m.id === configuredModel)
-const configuredAvailable = configuredProvider && configuredModel &&
-  availableModels.some((m) => m.provider === configuredProvider && m.id === configuredModel)
-
-if (!configuredModel || !configuredExists) {
-  // Model not configured at all, or removed from registry — pick a fallback.
-  // Only fires when the model is genuinely unknown (not just temporarily unavailable).
-  const piDefault = getPiDefaultModelAndProvider()
-  const preferred =
-    (piDefault
-      ? availableModels.find((m) => m.provider === piDefault.provider && m.id === piDefault.model)
-      : undefined) ||
-    availableModels.find((m) => m.provider === 'openai' && m.id === 'gpt-5.4') ||
-    availableModels.find((m) => m.provider === 'openai') ||
-    availableModels.find((m) => m.provider === 'anthropic' && m.id === 'claude-opus-4-6') ||
-    availableModels.find((m) => m.provider === 'anthropic' && m.id.includes('opus')) ||
-    availableModels.find((m) => m.provider === 'anthropic') ||
-    availableModels[0]
-  if (preferred) {
-    settingsManager.setDefaultModelAndProvider(preferred.provider, preferred.id)
-  }
-}
-
-if (settingsManager.getDefaultThinkingLevel() !== 'off' && !configuredExists) {
-  settingsManager.setDefaultThinkingLevel('off')
 }
 
 // GSD always uses quiet startup — the gsd extension renders its own branded header
@@ -467,6 +488,20 @@ if (isPrintMode) {
   })
   await resourceLoader.reload()
   markStartup('resourceLoader.reload')
+
+  // Flush pending provider registrations so extension models are visible for
+  // validation BEFORE createAgentSession() reads the thinking level.
+  {
+    const { runtime } = resourceLoader.getExtensions()
+    for (const { name, config } of runtime.pendingProviderRegistrations) {
+      modelRegistry.registerProvider(name, config)
+    }
+    runtime.pendingProviderRegistrations = []
+  }
+
+  // Validate configured model before session creation so the thinking level
+  // reset takes effect before createAgentSession() reads it.
+  validateConfiguredModel(modelRegistry, settingsManager)
 
   const { session, extensionsResult } = await createAgentSession({
     authStorage,
@@ -601,6 +636,20 @@ const resourceLoadPromise = resourceLoader.reload()
 // Then await the resource promise before creating the agent session.
 await resourceLoadPromise
 markStartup('resourceLoader.reload')
+
+// Flush pending provider registrations so extension models are visible for
+// validation BEFORE createAgentSession() reads the thinking level.
+{
+  const { runtime } = resourceLoader.getExtensions()
+  for (const { name, config } of runtime.pendingProviderRegistrations) {
+    modelRegistry.registerProvider(name, config)
+  }
+  runtime.pendingProviderRegistrations = []
+}
+
+// Validate configured model before session creation so the thinking level
+// reset takes effect before createAgentSession() reads it.
+validateConfiguredModel(modelRegistry, settingsManager)
 
 const { session, extensionsResult } = await createAgentSession({
   authStorage,
