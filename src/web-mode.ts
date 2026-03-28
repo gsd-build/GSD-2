@@ -975,5 +975,19 @@ export async function launchWebMode(
     stderr.write(`[gsd] Ready → ${authenticatedUrl}\n`)
   }
   emitLaunchStatus(stderr, success)
+
+  // In Tailscale mode, keep the parent process alive so SIGINT/SIGTERM cleanup
+  // handlers can fire and run `tailscale serve reset`. Without this, the parent
+  // returns, the event loop drains, and the process exits — killing the child
+  // and leaving orphaned Tailscale serve config.
+  if (options.tailscale) {
+    await new Promise<void>((resolve) => {
+      spawnResult.child.once('exit', () => resolve())
+      // Also resolve if parent receives SIGINT/SIGTERM (cleanup handlers already registered)
+      process.once('SIGINT', () => resolve())
+      process.once('SIGTERM', () => resolve())
+    })
+  }
+
   return success
 }
