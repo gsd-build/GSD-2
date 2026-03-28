@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import * as fs from 'node:fs';
-import { closeDatabase, isDbAvailable, getDecisionById } from '../gsd-db.ts';
+import { closeDatabase, isDbAvailable, getDecisionById, getRequirementById } from '../gsd-db.ts';
 
 function makeTmpDir(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gsd-ensure-db-'));
@@ -101,10 +101,10 @@ describe('ensure-db-open', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // ensureDbOpen opens existing DB without re-migration
+  // ensureDbOpen opens existing DB and backfills missing requirements from markdown
   // ═══════════════════════════════════════════════════════════════════════════
 
-  test('ensureDbOpen: opens existing DB', async () => {
+  test('ensureDbOpen: opens existing DB and syncs missing requirements', async () => {
     const tmpDir = makeTmpDir();
     const gsdDir = path.join(tmpDir, '.gsd');
     fs.mkdirSync(gsdDir, { recursive: true });
@@ -114,6 +114,20 @@ describe('ensure-db-open', () => {
     const { openDatabase } = await import('../gsd-db.ts');
     openDatabase(dbPath);
     closeDatabase();
+
+    fs.writeFileSync(path.join(gsdDir, 'REQUIREMENTS.md'), `# Requirements
+
+## Active
+
+### R001 — Sync missing requirements from markdown
+- Class: functional
+- Status: active
+- Description: Sync missing requirements from markdown
+- Why it matters: Requirement updates need DB rows to exist
+- Source: issue-2919
+- Primary owning slice: M005/S07
+- Validation: update succeeds
+`);
 
     assert.ok(fs.existsSync(dbPath), 'DB file should exist from manual create');
 
@@ -125,6 +139,9 @@ describe('ensure-db-open', () => {
       const result = await ensureDbOpen();
       assert.ok(result === true, 'ensureDbOpen should open existing DB');
       assert.ok(isDbAvailable(), 'DB should be available');
+      const requirement = getRequirementById('R001');
+      assert.ok(requirement !== null, 'missing requirement should be synced from REQUIREMENTS.md');
+      assert.deepStrictEqual(requirement?.description, 'Sync missing requirements from markdown', 'synced requirement keeps markdown fields');
     } finally {
       process.cwd = origCwd;
       closeDatabase();

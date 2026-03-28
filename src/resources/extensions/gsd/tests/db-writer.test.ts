@@ -22,6 +22,7 @@ import {
   generateRequirementsMd,
   nextDecisionId,
   saveDecisionToDb,
+  saveRequirementToDb,
   updateRequirementInDb,
   saveArtifactToDb,
 } from '../db-writer.ts';
@@ -352,6 +353,45 @@ describe('db-writer', () => {
       const mdContent2 = fs.readFileSync(mdPath, 'utf-8');
       const parsed2 = parseDecisionsTable(mdContent2);
       assert.deepStrictEqual(parsed2.length, 2, 'DECISIONS.md now has 2 decisions');
+    } finally {
+      closeDatabase();
+      cleanupDir(tmpDir);
+    }
+  });
+
+  test('saveRequirementToDb', async () => {
+    const tmpDir = makeTmpDir();
+    const dbPath = path.join(tmpDir, '.gsd', 'gsd.db');
+    openDatabase(dbPath);
+
+    try {
+      const result = await saveRequirementToDb({
+        id: 'R001',
+        class: 'functional',
+        description: 'Persist new requirements through the DB tool path',
+        why: 'Requirement updates need a create path first',
+        source: 'issue-2919',
+        primary_owner: 'M005/S07',
+        validation: 'Tool round-trip succeeds',
+      }, tmpDir);
+
+      assert.deepStrictEqual(result.id, 'R001', 'saveRequirementToDb returns the provided requirement ID');
+
+      const saved = getRequirementById('R001');
+      assert.ok(!!saved, 'requirement exists in DB after save');
+      assert.deepStrictEqual(saved?.status, 'active', 'save defaults status to active');
+      assert.deepStrictEqual(saved?.description, 'Persist new requirements through the DB tool path', 'DB requirement has correct description');
+
+      const mdPath = path.join(tmpDir, '.gsd', 'REQUIREMENTS.md');
+      assert.ok(fs.existsSync(mdPath), 'REQUIREMENTS.md file created');
+
+      const mdContent = fs.readFileSync(mdPath, 'utf-8');
+      assert.ok(mdContent.includes('R001'), 'REQUIREMENTS.md contains requirement ID');
+      assert.ok(mdContent.includes('Persist new requirements through the DB tool path'), 'REQUIREMENTS.md contains requirement description');
+
+      const parsed = parseRequirementsSections(mdContent);
+      assert.deepStrictEqual(parsed.length, 1, 'written REQUIREMENTS.md parses to 1 requirement');
+      assert.deepStrictEqual(parsed[0].id, 'R001', 'parsed requirement has correct ID');
     } finally {
       closeDatabase();
       cleanupDir(tmpDir);

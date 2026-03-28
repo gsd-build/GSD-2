@@ -329,6 +329,97 @@ export async function saveDecisionToDb(
   }
 }
 
+function loadAllRequirements(adapter: { prepare: (sql: string) => { all: () => Record<string, unknown>[] } } | null): Requirement[] {
+  if (!adapter) return [];
+  const rows = adapter.prepare('SELECT * FROM requirements ORDER BY id').all();
+  return rows.map(row => ({
+    id: row['id'] as string,
+    class: row['class'] as string,
+    status: row['status'] as string,
+    description: row['description'] as string,
+    why: row['why'] as string,
+    source: row['source'] as string,
+    primary_owner: row['primary_owner'] as string,
+    supporting_slices: row['supporting_slices'] as string,
+    validation: row['validation'] as string,
+    notes: row['notes'] as string,
+    full_content: row['full_content'] as string,
+    superseded_by: (row['superseded_by'] as string) ?? null,
+  }));
+}
+
+async function regenerateRequirementsMarkdown(basePath: string, requirements: Requirement[]): Promise<void> {
+  const nonSuperseded = requirements.filter(r => r.superseded_by == null);
+  const md = generateRequirementsMd(nonSuperseded);
+  await saveFile(resolveGsdRootFile(basePath, 'REQUIREMENTS'), md);
+}
+
+export interface SaveRequirementFields {
+  id: string;
+  class: string;
+  status?: string;
+  description: string;
+  why?: string;
+  source?: string;
+  primary_owner?: string;
+  supporting_slices?: string;
+  validation?: string;
+  notes?: string;
+  full_content?: string;
+  superseded_by?: string | null;
+}
+
+/**
+ * Save or upsert a requirement in DB and regenerate REQUIREMENTS.md.
+ * Uses the provided ID because requirements are human-scoped contract entries.
+ */
+export async function saveRequirementToDb(
+  fields: SaveRequirementFields,
+  basePath: string,
+): Promise<{ id: string }> {
+  try {
+    const db = await import('./gsd-db.js');
+    const existing = db.getRequirementById(fields.id);
+    const adapter = db._getAdapter();
+    const requirement: Requirement = {
+      id: fields.id,
+      class: fields.class,
+      status: fields.status ?? existing?.status ?? 'active',
+      description: fields.description,
+      why: fields.why ?? existing?.why ?? '',
+      source: fields.source ?? existing?.source ?? '',
+      primary_owner: fields.primary_owner ?? existing?.primary_owner ?? '',
+      supporting_slices: fields.supporting_slices ?? existing?.supporting_slices ?? '',
+      validation: fields.validation ?? existing?.validation ?? '',
+      notes: fields.notes ?? existing?.notes ?? '',
+      full_content: fields.full_content ?? existing?.full_content ?? '',
+      superseded_by: fields.superseded_by ?? existing?.superseded_by ?? null,
+    };
+
+    db.upsertRequirement(requirement);
+
+    try {
+      await regenerateRequirementsMarkdown(basePath, loadAllRequirements(adapter));
+    } catch (diskErr) {
+      logError('manifest', 'disk write failed, reverting DB row', { fn: 'saveRequirementToDb', error: String((diskErr as Error).message) });
+      if (existing) {
+        db.upsertRequirement(existing);
+      } else {
+        adapter?.prepare('DELETE FROM requirements WHERE id = :id').run({ ':id': fields.id });
+      }
+      throw diskErr;
+    }
+
+    invalidateStateCache();
+    clearPathCache();
+    clearParseCache();
+    return { id: fields.id };
+  } catch (err) {
+    logError('manifest', 'saveRequirementToDb failed', { fn: 'saveRequirementToDb', error: String((err as Error).message) });
+    throw err;
+  }
+}
+
 // ─── Update Requirement in DB + Regenerate Markdown ───────────────────────
 
 /**
@@ -357,35 +448,9 @@ export async function updateRequirementInDb(
 
     db.upsertRequirement(merged);
 
-    // Fetch ALL requirements (including superseded) for full file regeneration
     const adapter = db._getAdapter();
-    let allRequirements: Requirement[] = [];
-    if (adapter) {
-      const rows = adapter.prepare('SELECT * FROM requirements ORDER BY id').all();
-      allRequirements = rows.map(row => ({
-        id: row['id'] as string,
-        class: row['class'] as string,
-        status: row['status'] as string,
-        description: row['description'] as string,
-        why: row['why'] as string,
-        source: row['source'] as string,
-        primary_owner: row['primary_owner'] as string,
-        supporting_slices: row['supporting_slices'] as string,
-        validation: row['validation'] as string,
-        notes: row['notes'] as string,
-        full_content: row['full_content'] as string,
-        superseded_by: (row['superseded_by'] as string) ?? null,
-      }));
-    }
-
-    // Filter to non-superseded for the markdown file
-    // (superseded requirements don't appear in section headings)
-    const nonSuperseded = allRequirements.filter(r => r.superseded_by == null);
-
-    const md = generateRequirementsMd(nonSuperseded);
-    const filePath = resolveGsdRootFile(basePath, 'REQUIREMENTS');
     try {
-      await saveFile(filePath, md);
+      await regenerateRequirementsMarkdown(basePath, loadAllRequirements(adapter));
     } catch (diskErr) {
       logError('manifest', 'disk write failed, reverting DB row', { fn: 'updateRequirementInDb', error: String((diskErr as Error).message) });
       db.upsertRequirement(existing);

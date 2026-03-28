@@ -50,7 +50,17 @@ export async function ensureDbOpen(): Promise<boolean> {
     // Open existing DB file (may be at project root for worktrees)
     if (existsSync(dbPath)) {
       const opened = db.openDatabase(dbPath);
-      if (opened) setLogBasePath(projectRoot);
+      if (opened) {
+        setLogBasePath(projectRoot);
+        try {
+          const { syncRequirementsFromMarkdown } = await import("../md-importer.js");
+          syncRequirementsFromMarkdown(basePath);
+        } catch (err) {
+          process.stderr.write(
+            `gsd-db: ensureDbOpen requirement sync failed: ${(err as Error).message}\n`,
+          );
+        }
+      }
       return opened;
     }
 
@@ -154,4 +164,3 @@ export function registerDynamicTools(pi: ExtensionAPI): void {
     },
   } as any);
 }
-

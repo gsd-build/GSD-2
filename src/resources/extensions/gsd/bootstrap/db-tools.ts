@@ -110,6 +110,97 @@ export function registerDbTools(pi: ExtensionAPI): void {
   pi.registerTool(decisionSaveTool);
   registerAlias(pi, decisionSaveTool, "gsd_save_decision", "gsd_decision_save");
 
+  // ─── gsd_requirement_save (formerly gsd_save_requirement) ────────────────
+
+  const requirementSaveExecute = async (_toolCallId: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) => {
+    const dbAvailable = await ensureDbOpen();
+    if (!dbAvailable) {
+      return {
+        content: [{ type: "text" as const, text: "Error: GSD database is not available. Cannot save requirement." }],
+        details: { operation: "save_requirement", id: params.id, error: "db_unavailable" } as any,
+      };
+    }
+    try {
+      const { saveRequirementToDb } = await import("../db-writer.js");
+      const { id } = await saveRequirementToDb(
+        {
+          id: params.id,
+          class: params.class,
+          status: params.status,
+          description: params.description,
+          why: params.why,
+          source: params.source,
+          primary_owner: params.primary_owner,
+          supporting_slices: params.supporting_slices,
+          validation: params.validation,
+          notes: params.notes,
+          full_content: params.full_content,
+          superseded_by: params.superseded_by,
+        },
+        process.cwd(),
+      );
+      return {
+        content: [{ type: "text" as const, text: `Saved requirement ${id}` }],
+        details: { operation: "save_requirement", id } as any,
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logError("tool", `gsd_requirement_save tool failed: ${msg}`, { tool: "gsd_requirement_save", error: String(err) });
+      return {
+        content: [{ type: "text" as const, text: `Error saving requirement: ${msg}` }],
+        details: { operation: "save_requirement", id: params.id, error: msg } as any,
+      };
+    }
+  };
+
+  const requirementSaveTool = {
+    name: "gsd_requirement_save",
+    label: "Save Requirement",
+    description:
+      "Create or upsert a requirement in the GSD database and regenerate REQUIREMENTS.md. " +
+      "Use this when introducing a requirement that is not yet present in the DB.",
+    promptSnippet: "Create or upsert a GSD requirement by ID (regenerates REQUIREMENTS.md)",
+    promptGuidelines: [
+      "Use gsd_requirement_save when creating a requirement or syncing a newly authored requirement into the DB.",
+      "The id parameter is required and should use the canonical RXXX format.",
+      "Provide the full requirement shape you want persisted; omitted optional fields default to empty strings.",
+      "Use gsd_requirement_update for incremental edits to an existing DB-backed requirement.",
+    ],
+    parameters: Type.Object({
+      id: Type.String({ description: "The requirement ID (e.g. R001, R014)" }),
+      class: Type.String({ description: "Requirement class (e.g. functional, non-functional, failure-visibility)" }),
+      description: Type.String({ description: "Short requirement description" }),
+      status: Type.Optional(Type.String({ description: "Status (defaults to active)" })),
+      why: Type.Optional(Type.String({ description: "Why the requirement matters" })),
+      source: Type.Optional(Type.String({ description: "Where the requirement came from" })),
+      primary_owner: Type.Optional(Type.String({ description: "Primary owning slice or milestone" })),
+      supporting_slices: Type.Optional(Type.String({ description: "Supporting slices" })),
+      validation: Type.Optional(Type.String({ description: "Validation or proof plan" })),
+      notes: Type.Optional(Type.String({ description: "Additional notes" })),
+      full_content: Type.Optional(Type.String({ description: "Optional full requirement body" })),
+      superseded_by: Type.Optional(Type.String({ description: "Superseding requirement ID, if any" })),
+    }),
+    execute: requirementSaveExecute,
+    renderCall(args: any, theme: any) {
+      let text = theme.fg("toolTitle", theme.bold("requirement_save "));
+      if (args.id) text += theme.fg("accent", args.id);
+      if (args.description) text += theme.fg("muted", ` — ${args.description}`);
+      return new Text(text, 0, 0);
+    },
+    renderResult(result: any, _options: any, theme: any) {
+      const d = result.details;
+      if (result.isError || d?.error) {
+        return new Text(theme.fg("error", `Error: ${d?.error ?? "unknown"}`), 0, 0);
+      }
+      let text = theme.fg("success", `Requirement ${d?.id ?? ""} saved`);
+      text += theme.fg("dim", " → REQUIREMENTS.md");
+      return new Text(text, 0, 0);
+    },
+  };
+
+  pi.registerTool(requirementSaveTool);
+  registerAlias(pi, requirementSaveTool, "gsd_save_requirement", "gsd_requirement_save");
+
   // ─── gsd_requirement_update (formerly gsd_update_requirement) ───────────
 
   const requirementUpdateExecute = async (_toolCallId: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) => {
@@ -122,7 +213,12 @@ export function registerDbTools(pi: ExtensionAPI): void {
     }
     try {
       const db = await import("../gsd-db.js");
-      const existing = db.getRequirementById(params.id);
+      let existing = db.getRequirementById(params.id);
+      if (!existing) {
+        const { syncRequirementsFromMarkdown } = await import("../md-importer.js");
+        syncRequirementsFromMarkdown(process.cwd());
+        existing = db.getRequirementById(params.id);
+      }
       if (!existing) {
         return {
           content: [{ type: "text" as const, text: `Error: Requirement ${params.id} not found.` }],
@@ -163,7 +259,7 @@ export function registerDbTools(pi: ExtensionAPI): void {
       "Use gsd_requirement_update to change status, validation, notes, or other fields on an existing requirement.",
       "The id parameter is required — it must be an existing RXXX identifier.",
       "All other fields are optional — only provided fields are updated.",
-      "The tool verifies the requirement exists before updating.",
+      "The tool verifies the requirement exists before updating and backfills missing rows from REQUIREMENTS.md when possible.",
     ],
     parameters: Type.Object({
       id: Type.String({ description: "The requirement ID (e.g. R001, R014)" }),

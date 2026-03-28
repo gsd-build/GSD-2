@@ -575,6 +575,8 @@ export async function bootstrapAutoSession(
     if (existsSync(gsdDbPath) && !isDbAvailable()) {
       try {
         openDatabase(gsdDbPath);
+        const { syncRequirementsFromMarkdown } = await import("./md-importer.js");
+        syncRequirementsFromMarkdown(s.basePath);
       } catch (err) {
         process.stderr.write(
           `gsd-db: failed to open existing database: ${(err as Error).message}\n`,

@@ -2,7 +2,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 // gsd-tools — Structured LLM tool tests
 //
-// Tests the three registered tools: gsd_decision_save, gsd_requirement_update, gsd_summary_save.
+// Tests the core registered tools around decisions, requirements, and artifacts.
 // Each tool is tested via direct function invocation against an in-memory DB.
 
 import * as path from 'node:path';
@@ -20,11 +20,13 @@ import {
 } from '../gsd-db.ts';
 import {
   saveDecisionToDb,
+  saveRequirementToDb,
   updateRequirementInDb,
   saveArtifactToDb,
   nextDecisionId,
 } from '../db-writer.ts';
 import type { Requirement } from '../types.ts';
+import { registerDbTools } from '../bootstrap/db-tools.ts';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Helpers
@@ -40,6 +42,14 @@ function cleanupDir(dir: string): void {
   try {
     fs.rmSync(dir, { recursive: true, force: true });
   } catch { /* swallow */ }
+}
+
+function makeMockPi() {
+  const tools: any[] = [];
+  return {
+    registerTool: (tool: any) => tools.push(tool),
+    tools,
+  } as any;
 }
 
 /**
@@ -175,6 +185,81 @@ describe('gsd-tools', () => {
 
       closeDatabase();
     } finally {
+      cleanupDir(tmpDir);
+    }
+  });
+
+  test('gsd_requirement_save', async () => {
+    const tmpDir = makeTmpDir();
+    try {
+      const dbPath = path.join(tmpDir, '.gsd', 'gsd.db');
+      openDatabase(dbPath);
+
+      const result = await saveRequirementToDb(
+        {
+          id: 'R002',
+          class: 'functional',
+          description: 'Persist requirements through the DB tool path',
+          why: 'Requirement updates need rows to exist first',
+          source: 'issue-2919',
+        },
+        tmpDir,
+      );
+
+      assert.deepStrictEqual(result.id, 'R002', 'saveRequirementToDb should return the provided requirement ID');
+      const saved = getRequirementById('R002');
+      assert.ok(saved !== null, 'R002 should exist after save');
+      assert.deepStrictEqual(saved!.status, 'active', 'saveRequirementToDb defaults status to active');
+    } finally {
+      closeDatabase();
+      cleanupDir(tmpDir);
+    }
+  });
+
+  test('gsd_requirement_update syncs missing markdown requirement before update', async () => {
+    const tmpDir = makeTmpDir();
+    try {
+      const dbPath = path.join(tmpDir, '.gsd', 'gsd.db');
+      openDatabase(dbPath);
+      fs.writeFileSync(path.join(tmpDir, '.gsd', 'REQUIREMENTS.md'), `# Requirements
+
+## Active
+
+### R010 — Sync on update miss
+- Class: functional
+- Status: active
+- Description: Sync on update miss
+- Why it matters: The DB may lag behind markdown
+- Source: issue-2919
+- Primary owning slice: M005/S07
+- Validation: update succeeds after sync
+`);
+
+      const origCwd = process.cwd;
+      process.cwd = () => tmpDir;
+
+      try {
+        const pi = makeMockPi();
+        registerDbTools(pi);
+        const tool = pi.tools.find((entry: any) => entry.name === 'gsd_requirement_update');
+        assert.ok(tool, 'gsd_requirement_update tool should be registered');
+
+        const result = await tool.execute('call-1', {
+          id: 'R010',
+          status: 'validated',
+          validation: 'synced from markdown before update',
+        });
+
+        assert.ok(!result.details?.error, 'tool should succeed after syncing the missing requirement');
+        const saved = getRequirementById('R010');
+        assert.ok(saved !== null, 'R010 should exist after update-triggered sync');
+        assert.deepStrictEqual(saved!.status, 'validated', 'status should be updated after sync');
+        assert.deepStrictEqual(saved!.validation, 'synced from markdown before update', 'validation should reflect update payload');
+      } finally {
+        process.cwd = origCwd;
+      }
+    } finally {
+      closeDatabase();
       cleanupDir(tmpDir);
     }
   });

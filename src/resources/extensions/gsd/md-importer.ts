@@ -8,6 +8,7 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import type { Decision, Requirement } from './types.js';
 import {
+  getRequirementById,
   upsertDecision,
   upsertRequirement,
   insertArtifact,
@@ -299,6 +300,27 @@ function importRequirements(gsdDir: string): number {
   }
 
   return requirements.length;
+}
+
+/**
+ * Backfill requirements that exist in REQUIREMENTS.md but are missing from the DB.
+ * This preserves already-imported rows and avoids re-running the full migration.
+ */
+export function syncRequirementsFromMarkdown(gsdDir: string): number {
+  const filePath = resolveGsdRootFile(gsdDir, 'REQUIREMENTS');
+  if (!existsSync(filePath)) return 0;
+
+  const content = readFileSync(filePath, 'utf-8');
+  const requirements = parseRequirementsSections(content);
+  let imported = 0;
+
+  for (const requirement of requirements) {
+    if (getRequirementById(requirement.id)) continue;
+    upsertRequirement(requirement);
+    imported += 1;
+  }
+
+  return imported;
 }
 
 // ─── Hierarchy Artifact Walker ─────────────────────────────────────────────
