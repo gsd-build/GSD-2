@@ -5,7 +5,8 @@ const pkgPath = new URL("../package.json", import.meta.url);
 const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
 
 const shortSha = execFileSync("git", ["rev-parse", "--short", "HEAD"], { encoding: "utf8" }).trim();
-const devVersion = `${pkg.version}-dev.${shortSha}`;
+const baseVersion = pkg.version.replace(/-dev\..*$/, "");
+const devVersion = `${baseVersion}-dev.${shortSha}`;
 
 pkg.version = devVersion;
 writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
