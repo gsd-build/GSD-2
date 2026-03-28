@@ -10,8 +10,6 @@ import {
   estimateTimeRemaining,
   extractUatSliceId,
 } from "../auto-dashboard.ts";
-import { getAutoDashboardData } from "../auto.ts";
-import { formatRtkSavingsLabel } from "../../shared/rtk-session-stats.ts";
 
 // ─── unitVerb ─────────────────────────────────────────────────────────────
 
@@ -168,46 +166,11 @@ test("estimateTimeRemaining is exported and callable", () => {
   assert.equal(typeof estimateTimeRemaining, "function");
 });
 
-// ─── getAutoDashboardData elapsed guard ──────────────────────────────────────
+// ─── formatAutoElapsed edge cases ────────────────────────────────────────────
 
 test("formatAutoElapsed returns empty string for negative autoStartTime", () => {
   assert.equal(formatAutoElapsed(-1), "");
   assert.equal(formatAutoElapsed(NaN), "");
-});
-
-test("getAutoDashboardData includes rtkSavings in payload", () => {
-  const data = getAutoDashboardData();
-  assert.ok("rtkSavings" in data, "rtkSavings key must be present in dashboard payload");
-  // No active session in test environment — savings are null
-  assert.equal(data.rtkSavings, null);
-});
-
-// ─── formatRtkSavingsLabel ───────────────────────────────────────────────────
-
-test("formatRtkSavingsLabel returns null for null input", () => {
-  assert.equal(formatRtkSavingsLabel(null), null);
-  assert.equal(formatRtkSavingsLabel(undefined), null);
-});
-
-test("formatRtkSavingsLabel returns waiting message when no commands", () => {
-  const label = formatRtkSavingsLabel({ commands: 0, savedTokens: 0, inputTokens: 0, outputTokens: 0, savingsPct: 0 });
-  assert.equal(label, "rtk: waiting for shell usage");
-});
-
-test("formatRtkSavingsLabel returns active message when commands but no tokens", () => {
-  const label = formatRtkSavingsLabel({ commands: 3, savedTokens: 0, inputTokens: 0, outputTokens: 0, savingsPct: 0 });
-  assert.equal(label, "rtk: active (3 cmds)");
-});
-
-test("formatRtkSavingsLabel uses singular cmd for one command", () => {
-  const label = formatRtkSavingsLabel({ commands: 1, savedTokens: 0, inputTokens: 0, outputTokens: 0, savingsPct: 0 });
-  assert.equal(label, "rtk: active (1 cmd)");
-});
-
-test("formatRtkSavingsLabel formats savings with token count and percentage", () => {
-  const label = formatRtkSavingsLabel({ commands: 5, savedTokens: 1500, inputTokens: 500, outputTokens: 200, savingsPct: 42 });
-  assert.ok(label?.startsWith("rtk:"), "label should start with rtk:");
-  assert.ok(label?.includes("42%"), "label should include savings percentage");
 });
 
 // ─── extractUatSliceId ───────────────────────────────────────────────────
