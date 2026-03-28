@@ -303,6 +303,28 @@ test('memory-store: ID generation', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+// memory-store: applyMemoryActions with unknown action is non-fatal
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('memory-store: applyMemoryActions unknown action is non-fatal, valid actions before it are rolled back', () => {
+  openDatabase(':memory:');
+
+  // The default branch throws inside the transaction, which rolls back.
+  // The outer catch{} swallows the error — so no throw propagates.
+  // Net result: the transaction is rolled back and no memories are created.
+  applyMemoryActions([
+    { action: 'CREATE', category: 'gotcha', content: 'should be rolled back', confidence: 0.8 },
+    { action: 'UNKNOWN' } as any,
+  ]);
+
+  // Transaction rolled back — no memories should exist
+  const active = getActiveMemories();
+  assert.equal(active.length, 0, 'transaction should be rolled back on unknown action');
+
+  closeDatabase();
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
 // memory-store: schema migration (v2 → v3)
 // ═══════════════════════════════════════════════════════════════════════════
 

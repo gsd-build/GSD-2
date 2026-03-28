@@ -160,6 +160,20 @@ test('integration: mixed action lifecycle', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+// memory-extractor: unknown action is skipped
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('memory-extractor: unknown action is skipped, known actions still parsed', () => {
+  const response = JSON.stringify([
+    { action: 'UNKNOWN_ACTION', id: 'MEM999' },
+    { action: 'REINFORCE', id: 'MEM001' },
+  ]);
+  const actions = parseMemoryResponse(response);
+  assert.equal(actions.length, 1, 'unknown action should be skipped');
+  assert.equal(actions[0].action, 'REINFORCE');
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
 // memory-extractor: _resetExtractionState
 // ═══════════════════════════════════════════════════════════════════════════
 
