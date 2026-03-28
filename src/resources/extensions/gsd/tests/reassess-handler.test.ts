@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -12,9 +12,11 @@ import {
   getSlice,
   getMilestoneSlices,
   getAssessment,
+  insertAssessment,
   _getAdapter,
 } from '../gsd-db.ts';
 import { handleReassessRoadmap } from '../tools/reassess-roadmap.ts';
+import { deriveState } from '../state.ts';
 
 function makeTmpBase(): string {
   const base = mkdtempSync(join(tmpdir(), 'gsd-reassess-'));
@@ -234,6 +236,40 @@ test('handleReassessRoadmap cache invalidation: getMilestoneSlices reflects muta
 
     // S04 should exist (added)
     assert.ok(sliceIds.includes('S04'), 'S04 should exist after addition');
+  } finally {
+    cleanup(base);
+  }
+});
+
+test('handleReassessRoadmap invalidates stale milestone validation after roadmap mutation', async () => {
+  const base = makeTmpBase();
+  openDatabase(join(base, '.gsd', 'gsd.db'));
+
+  try {
+    seedMilestoneWithSlices({ s01Status: 'complete', s02Status: 'pending', s03Status: 'pending' });
+
+    const validationPath = join(base, '.gsd', 'milestones', 'M001', 'M001-VALIDATION.md');
+    writeFileSync(
+      validationPath,
+      '---\nverdict: needs-remediation\nremediation_round: 0\n---\n\n# Validation\nRemediation required.\n',
+    );
+    insertAssessment({
+      path: validationPath,
+      milestoneId: 'M001',
+      status: 'needs-remediation',
+      scope: 'milestone-validation',
+      fullContent: readFileSync(validationPath, 'utf-8'),
+    });
+
+    const result = await handleReassessRoadmap(validReassessParams(), base);
+    assert.ok(!('error' in result), `unexpected error: ${'error' in result ? result.error : ''}`);
+
+    assert.equal(existsSync(validationPath), false, 'stale VALIDATION.md should be removed after roadmap mutation');
+    assert.equal(getAssessment(validationPath), null, 'milestone-validation assessment row should be removed');
+
+    const state = await deriveState(base);
+    assert.notEqual(state.phase, 'completing-milestone', 'stale validation must not leave the milestone in completion after roadmap mutation');
+    assert.equal(state.activeMilestone?.id, 'M001', 'the milestone remains active after validation invalidation');
   } finally {
     cleanup(base);
   }
