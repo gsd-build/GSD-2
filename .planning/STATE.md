@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04-remote-access-settings-ui plan 00
-last_updated: "2026-03-28T20:22:38.414Z"
+stopped_at: Completed 04-remote-access-settings-ui plan 02
+last_updated: "2026-03-28T20:23:34.711Z"
 last_activity: 2026-03-28
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 12
-  completed_plans: 9
+  completed_plans: 11
   percent: 0
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-03-28)
 ## Current Position
 
 Phase: 04 (remote-access-settings-ui) — EXECUTING
-Plan: 2 of 4
+Plan: 4 of 4
 Status: Ready to execute
 Last activity: 2026-03-28
 
@@ -61,6 +61,8 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 03-sse-cursor-based-event-replay P02 | 2 | 1 tasks | 1 files |
 | Phase 03-sse-cursor-based-event-replay P03 | 15 | 2 tasks | 3 files |
 | Phase 04-remote-access-settings-ui P00 | 112 | 1 tasks | 4 files |
+| Phase 04-remote-access-settings-ui P01 | 8 | 2 tasks | 2 files |
+| Phase 04-remote-access-settings-ui P02 | 5 | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -95,6 +97,10 @@ Recent decisions affecting current work:
 - [Phase 03-sse-cursor-based-event-replay]: REPLAY_UNSAFE_EVENT_TYPES filters live_state_invalidation and extension_ui_request during replay to prevent side effects
 - [Phase 03-sse-cursor-based-event-replay]: isCatchingUp set before EventSource creation so banner appears immediately on reconnect (D-01)
 - [Phase 04-remote-access-settings-ui]: Test stubs placed at src/web/ (not __tests__/) per plan frontmatter spec
+- [Phase 04-remote-access-settings-ui]: Password change at /api/settings/password (not /api/auth/) to require authentication via middleware
+- [Phase 04-remote-access-settings-ui]: Tailscale route maps fqdn->dnsName and url->tailnetUrl to bridge Phase 2 field names to Phase 4 UI contract
+- [Phase 04-remote-access-settings-ui]: getInstallCommand returns display string not array — split on space at call site for spawn
+- [Phase 04-remote-access-settings-ui]: getTailscaleStatus returns discriminated union { ok, info } — verify step checks result.ok
 
 ### Pending Todos
 
@@ -108,6 +114,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-28T20:22:38.412Z
-Stopped at: Completed 04-remote-access-settings-ui plan 00
+Last session: 2026-03-28T20:23:34.707Z
+Stopped at: Completed 04-remote-access-settings-ui plan 02
 Resume file: None
