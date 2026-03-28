@@ -8,10 +8,10 @@ import { fileURLToPath } from 'node:url'
 import { appRoot, webPidFilePath as defaultWebPidFilePath, webPreferencesPath as defaultWebPreferencesPath, webAuthPath as defaultWebAuthPath } from './app-paths.js'
 
 // src/web/ is excluded from tsc compilation (runs with Node.js type-stripping).
-// Use dynamic imports resolved from source directory to avoid dist/ path mismatch.
-const _srcDir = dirname(fileURLToPath(import.meta.url))
-const _webSessionAuthPath = join(_srcDir, 'web', 'web-session-auth.ts')
-const _tailscalePath = join(_srcDir, 'web', 'tailscale.ts')
+// Resolve from project root (one level up from dist/ or src/) to always find src/web/.
+const _projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const _webSessionAuthPath = join(_projectRoot, 'src', 'web', 'web-session-auth.ts')
+const _tailscalePath = join(_projectRoot, 'src', 'web', 'tailscale.ts')
 
 type TailscaleInfo = { hostname: string; tailnet: string; fqdn: string; url: string }
 class TailscaleServeError extends Error { exitCode: number; stderr: string; constructor(msg: string, exitCode: number, stderr: string) { super(msg); this.exitCode = exitCode; this.stderr = stderr } }
