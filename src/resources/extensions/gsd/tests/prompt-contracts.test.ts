@@ -58,18 +58,25 @@ test("guided-resume-task prompt preserves recovery state until work is supersede
   assert.doesNotMatch(prompt, /Delete the continue file after reading it/i);
 });
 
-// ─── Prompt migration: execute-task → gsd_complete_task ───────────────
+// ─── Prompt migration: execute-task → gsd_task_complete ───────────────
 
-test("execute-task prompt references gsd_complete_task tool", () => {
+test("execute-task prompt references gsd_task_complete tool", () => {
   const prompt = readPrompt("execute-task");
-  assert.match(prompt, /gsd_complete_task/);
+  assert.match(prompt, /gsd_task_complete/);
+  assert.doesNotMatch(prompt, /gsd_complete_task/);
 });
 
 test("execute-task prompt instructs writing task summary before tool call", () => {
   const prompt = readPrompt("execute-task");
   // The prompt instructs writing the summary file AND calling the tool
   assert.match(prompt, /\{\{taskSummaryPath\}\}/);
-  assert.match(prompt, /gsd_complete_task/);
+  assert.match(prompt, /gsd_task_complete/);
+});
+
+test("execute-task prompt uses camelCase completion parameters", () => {
+  const prompt = readPrompt("execute-task");
+  assert.match(prompt, /milestoneId,\s*sliceId,\s*taskId/);
+  assert.doesNotMatch(prompt, /milestone_id|slice_id|task_id/);
 });
 
 test("execute-task prompt does not instruct LLM to toggle checkboxes manually", () => {
@@ -94,11 +101,12 @@ test("guided-execute-task prompt does not instruct manual file write", () => {
   assert.doesNotMatch(prompt, /Write `?\{\{taskId\}\}-SUMMARY\.md`?.*mark it done/i);
 });
 
-// ─── Prompt migration: complete-slice → gsd_complete_slice ────────────
+// ─── Prompt migration: complete-slice → gsd_slice_complete ────────────
 
-test("complete-slice prompt references gsd_complete_slice tool", () => {
+test("complete-slice prompt references gsd_slice_complete tool", () => {
   const prompt = readPrompt("complete-slice");
-  assert.match(prompt, /gsd_complete_slice/);
+  assert.match(prompt, /gsd_slice_complete/);
+  assert.doesNotMatch(prompt, /gsd_complete_slice/);
 });
 
 test("complete-slice prompt does not instruct LLM to toggle checkboxes manually", () => {
@@ -116,7 +124,14 @@ test("complete-slice prompt instructs writing summary and UAT files before tool 
   // The prompt instructs writing the summary AND UAT files, then calling the tool
   assert.match(prompt, /\{\{sliceSummaryPath\}\}/);
   assert.match(prompt, /\{\{sliceUatPath\}\}/);
-  assert.match(prompt, /gsd_complete_slice/);
+  assert.match(prompt, /gsd_slice_complete/);
+});
+
+test("complete-slice prompt uses camelCase completion parameters", () => {
+  const prompt = readPrompt("complete-slice");
+  assert.match(prompt, /milestoneId,\s*sliceId/);
+  assert.match(prompt, /uatContent/);
+  assert.doesNotMatch(prompt, /milestone_id|slice_id|uat_result/);
 });
 
 test("complete-slice prompt preserves decisions and knowledge review steps", () => {

@@ -71,6 +71,10 @@ test('write-intercept: BLOCKED_WRITE_ERROR is a non-empty string', () => {
 });
 
 test('write-intercept: BLOCKED_WRITE_ERROR mentions engine tool calls', () => {
-  assert.ok(BLOCKED_WRITE_ERROR.includes('gsd_complete_task'), 'should mention gsd_complete_task');
+  assert.ok(BLOCKED_WRITE_ERROR.includes('gsd_task_complete'), 'should mention gsd_task_complete');
+  assert.ok(BLOCKED_WRITE_ERROR.includes('gsd_slice_complete'), 'should mention gsd_slice_complete');
+  assert.ok(BLOCKED_WRITE_ERROR.includes('taskId'), 'should mention camelCase taskId');
+  assert.ok(BLOCKED_WRITE_ERROR.includes('sliceId'), 'should mention camelCase sliceId');
+  assert.ok(!BLOCKED_WRITE_ERROR.includes('task_id'), 'should not mention snake_case task_id');
   assert.ok(BLOCKED_WRITE_ERROR.includes('engine tool calls'), 'should mention engine tool calls');
 });
