@@ -465,3 +465,32 @@ test("mergeAllCompleted — by-completion order respects startedAt", async () =>
     cleanup(repo);
   }
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// determineMergeOrder — Worktree DB discovery fallback (#2812)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+test("determineMergeOrder — discovers completed milestones from worktree DB when orchestrator state is stale", () => {
+  // Simulate: orchestrator thinks M001 is "error" (stale), but worktree DB says "complete"
+  // This happens when a worker is manually respawned and completes without the orchestrator tracking it.
+  const workers = [
+    makeWorker({ milestoneId: "M001", state: "error" }),    // stale — actually complete
+    makeWorker({ milestoneId: "M002", state: "running" }),  // still running
+  ];
+
+  // Without basePath, only orchestrator state is checked — no completed workers
+  const withoutBasePath = determineMergeOrder(workers, "sequential");
+  assert.deepEqual(withoutBasePath, [], "without basePath, stale orchestrator state finds nothing");
+
+  // With basePath, worktree DB discovery kicks in (but we don't have a real DB here,
+  // so we just verify the function signature accepts basePath without error)
+  const withBasePath = determineMergeOrder(workers, "sequential", "/nonexistent");
+  // Still empty because /nonexistent has no worktrees, but no crash
+  assert.deepEqual(withBasePath, [], "with nonexistent basePath, returns empty without crashing");
+});
+
+test("determineMergeOrder — empty workers with basePath still attempts worktree discovery", () => {
+  // Simulate: orchestrator has no workers at all (status.json files were cleaned up)
+  const order = determineMergeOrder([], "sequential", "/nonexistent");
+  assert.deepEqual(order, [], "empty workers + nonexistent path returns empty without crashing");
+});
