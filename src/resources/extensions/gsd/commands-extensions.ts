@@ -11,6 +11,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, 
 import { dirname, join, resolve } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
+import semver from "semver";
 
 const gsdHome = process.env.GSD_HOME || join(homedir(), ".gsd");
 
@@ -318,6 +319,134 @@ function handleUninstall(id: string | undefined, ctx: ExtensionCommandContext): 
   ctx.ui.notify(`Uninstalled "${id}". Restart GSD to deactivate.`, "info");
 }
 
+// ─── Update subcommand ───────────────────────────────────────────────────────
+
+async function getLatestNpmVersion(packageName: string): Promise<string | null> {
+  try {
+    const res = await fetch(`https://registry.npmjs.org/${packageName}/latest`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as { version?: string };
+    return data.version ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function handleUpdate(id: string | undefined, ctx: ExtensionCommandContext): Promise<void> {
+  const registry = loadRegistry();
+
+  if (id) {
+    // Update single extension (D-12)
+    await updateSingleExtension(id, registry, ctx);
+  } else {
+    // Update all installed extensions (D-11)
+    await updateAllExtensions(registry, ctx);
+  }
+}
+
+async function updateSingleExtension(
+  id: string,
+  registry: ExtensionRegistry,
+  ctx: ExtensionCommandContext,
+): Promise<void> {
+  const entry = registry.entries[id];
+
+  if (!entry || entry.source !== "user") {
+    ctx.ui.notify(
+      `Extension "${id}" not found in registry. Run /gsd extensions list to see installed extensions.`,
+      "warning",
+    );
+    return;
+  }
+
+  // Git and local installs: "reinstall to update" hint (D-10, D-12)
+  if (entry.installType !== "npm") {
+    const source = entry.installType ?? "unknown";
+    const hint = entry.installedFrom ? `gsd extensions install ${entry.installedFrom}` : `gsd extensions install <specifier>`;
+    ctx.ui.notify(
+      `"${id}" was installed from ${source}. Reinstall to update: ${hint}`,
+      "warning",
+    );
+    return;
+  }
+
+  // npm extension: check for newer version (D-09)
+  const current = entry.version ?? "0.0.0";
+  const packageName = entry.installedFrom;
+  if (!packageName) {
+    ctx.ui.notify(`"${id}" has no recorded install source. Reinstall manually.`, "warning");
+    return;
+  }
+
+  const latest = await getLatestNpmVersion(packageName);
+  if (!latest) {
+    ctx.ui.notify(`Could not fetch latest version for "${id}".`, "warning");
+    return;
+  }
+
+  if (semver.gt(latest, current)) {
+    ctx.ui.notify(`Updating "${id}": v${current} → v${latest}...`, "info");
+    await handleInstall(packageName, ctx);
+  } else {
+    ctx.ui.notify(`"${id}" is already at the latest version (v${current}).`, "info");
+  }
+}
+
+async function updateAllExtensions(
+  registry: ExtensionRegistry,
+  ctx: ExtensionCommandContext,
+): Promise<void> {
+  // Find all user-installed extensions
+  const userEntries = Object.values(registry.entries).filter(e => e.source === "user");
+
+  if (userEntries.length === 0) {
+    ctx.ui.notify("No user-installed extensions found. Use: gsd extensions install <package> to add one.", "warning");
+    return;
+  }
+
+  ctx.ui.notify(`Checking ${userEntries.length} installed extension(s) for updates...`, "info");
+
+  let updated = 0;
+  let skipped = 0;
+
+  for (const entry of userEntries) {
+    // Skip non-npm installs (D-11)
+    if (entry.installType !== "npm") {
+      const source = entry.installType ?? "unknown";
+      ctx.ui.notify(`  ${entry.id}: installed from ${source} — reinstall to update`, "info");
+      skipped++;
+      continue;
+    }
+
+    const current = entry.version ?? "0.0.0";
+    const packageName = entry.installedFrom;
+    if (!packageName) {
+      ctx.ui.notify(`  ${entry.id}: no recorded install source — skip`, "info");
+      skipped++;
+      continue;
+    }
+
+    const latest = await getLatestNpmVersion(packageName);
+    if (!latest) {
+      ctx.ui.notify(`  ${entry.id}: could not fetch latest version — skip`, "info");
+      skipped++;
+      continue;
+    }
+
+    if (semver.gt(latest, current)) {
+      ctx.ui.notify(`  ${entry.id}: v${current} → v${latest} (updating)`, "info");
+      await handleInstall(packageName, ctx);
+      updated++;
+    } else {
+      ctx.ui.notify(`  ${entry.id}: v${current} (already up to date)`, "info");
+    }
+  }
+
+  ctx.ui.notify(`Updated ${updated} extension(s). ${skipped} skipped (git/local — reinstall to update).`, "info");
+}
+
 // ─── Install subcommand ──────────────────────────────────────────────────────
 
 async function handleInstall(specifier: string | undefined, ctx: ExtensionCommandContext): Promise<void> {
@@ -490,6 +619,11 @@ export async function handleExtensions(args: string, ctx: ExtensionCommandContex
     return;
   }
 
+  if (subCmd === "update") {
+    await handleUpdate(parts[1], ctx);
+    return;
+  }
+
   ctx.ui.notify(
     `Unknown: /gsd extensions ${subCmd}. Usage: /gsd extensions [list|enable|disable|info|install|uninstall|update]`,
     "warning",
@@ -531,6 +665,19 @@ function handleList(ctx: ExtensionCommandContext): void {
       padRight(String(toolCount), 7) +
       String(cmdCount),
     );
+
+    // Show source indicator and install info for user-installed extensions
+    const regEntry = registry.entries[m.id];
+    if (regEntry?.source === "user") {
+      // Append [user] tag to the last line
+      const lastLine = lines[lines.length - 1];
+      lines[lines.length - 1] = lastLine + "      [user]";
+      if (regEntry.installedFrom) {
+        const typePrefix = regEntry.installType ? `${regEntry.installType}:` : "";
+        const versionSuffix = regEntry.version ? `@${regEntry.version}` : "";
+        lines.push(`  installed from: ${typePrefix}${regEntry.installedFrom}${versionSuffix}`);
+      }
+    }
 
     if (!enabled) {
       lines.push(`  ↳ gsd extensions enable ${m.id}`);
@@ -644,6 +791,16 @@ function handleInfo(id: string | undefined, ctx: ExtensionCommandContext): void 
   }
   if (entry?.disabledReason) {
     lines.push(`  Reason:      ${entry.disabledReason}`);
+  }
+
+  // Phase 8 fields for user-installed extensions (per UI-SPEC)
+  if (entry?.source === "user") {
+    if (entry.installedFrom) {
+      lines.push(`  Installed from: ${entry.installedFrom}`);
+    }
+    if (entry.installType) {
+      lines.push(`  Install type:   ${entry.installType}`);
+    }
   }
 
   if (manifest.provides) {
