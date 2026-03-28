@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { readManifest, readManifestFromEntryPath } from './extension-registry.js'
 
 function isExtensionFile(name: string): boolean {
   return name.endsWith('.ts') || name.endsWith('.js')
@@ -77,4 +78,42 @@ export function discoverExtensionEntryPaths(extensionsDir: string): string[] {
   }
 
   return discovered
+}
+
+/**
+ * Merge bundled and installed extension entry paths.
+ * Installed extensions with the same manifest ID as a bundled extension take precedence (D-14).
+ * Loader stays dumb — receives a pre-merged path list (D-15).
+ */
+export function mergeExtensionEntryPaths(bundledPaths: string[], installedExtDir: string): string[] {
+  if (!existsSync(installedExtDir)) return bundledPaths
+
+  // Build map: manifest ID → entry paths for installed extensions
+  const installedById = new Map<string, string[]>()
+  for (const entry of readdirSync(installedExtDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+    const dir = join(installedExtDir, entry.name)
+    const manifest = readManifest(dir)
+    const entries = resolveExtensionEntries(dir)
+    if (manifest && entries.length > 0) {
+      installedById.set(manifest.id, entries)
+    }
+  }
+
+  if (installedById.size === 0) return bundledPaths
+
+  // Filter bundled paths: skip any whose manifest id is shadowed by installed
+  const merged: string[] = []
+  for (const entryPath of bundledPaths) {
+    const manifest = readManifestFromEntryPath(entryPath)
+    if (manifest && installedById.has(manifest.id)) continue // shadowed by installed
+    merged.push(entryPath)
+  }
+
+  // Append all installed entries
+  for (const entries of installedById.values()) {
+    merged.push(...entries)
+  }
+
+  return merged
 }
