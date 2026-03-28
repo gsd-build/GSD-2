@@ -69,14 +69,15 @@ Plans:
 ### Phase 4: Remote Access Settings UI
 **Goal**: Users can manage their Remote Access configuration entirely within the GSD web UI — setting or changing their password, viewing Tailscale connection status and the tailnet URL, toggling Tailscale on/off, and following a guided assistant to install and connect Tailscale for the first time
 **Depends on**: Phase 2, Phase 3
-**Requirements**: SETT-01, SETT-02, SETT-03, SETT-04, SETT-05, TAIL-09, TAIL-10, TAIL-11
+**Requirements**: SETT-01, SETT-02, SETT-03, SETT-04, TAIL-09, TAIL-10, TAIL-11
 **Success Criteria** (what must be TRUE):
   1. GSD settings page contains a "Remote Access" section where the user can set or change their password without touching the CLI
-  2. When Tailscale is connected, the Remote Access section displays the tailnet URL as a copyable link and shows an accurate connection status
+  2. When Tailscale is connected, the Remote Access section displays the tailnet URL as a copyable link and shows an accurate connection status with a connect/disconnect toggle
   3. Clicking "Set up Tailscale" in settings launches a step-by-step assistant that detects the OS, provides the correct install command (brew on macOS, official script on Linux), runs `tailscale up`, surfaces the auth URL when browser login is required, and confirms successful connection with hostname and tailnet info
   4. Attempting to start `gsd --web --tailscale` without a password configured returns an error message that directs the user to set a password first
-**Plans**: 3 plans
+**Plans**: 4 plans
 Plans:
+- [ ] 04-00-PLAN.md — Wave 0 test stub files for Phase 4 validation targets
 - [ ] 04-01-PLAN.md — Password change API endpoint + Tailscale status API endpoint
 - [ ] 04-02-PLAN.md — Tailscale setup assistant streaming API endpoint
 - [ ] 04-03-PLAN.md — RemoteAccessPanel UI component + settings section registration
@@ -92,4 +93,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | 1. Password Auth and Cookie Sessions | 0/4 | Planning complete | - |
 | 2. Tailscale Serve Integration | 0/2 | Planning complete | - |
 | 3. SSE Cursor-Based Event Replay | 0/3 | Planning complete | - |
-| 4. Remote Access Settings UI | 0/3 | Planning complete | - |
+| 4. Remote Access Settings UI | 0/4 | Planning complete | - |
