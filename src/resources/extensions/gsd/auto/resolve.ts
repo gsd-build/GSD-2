@@ -98,6 +98,14 @@ export function _resetPendingResolve(): void {
 }
 
 /**
+ * Returns true when a pending resolve is registered. Only exported for tests
+ * so they can poll instead of using arbitrary setTimeout delays.
+ */
+export function _hasPendingResolve(): boolean {
+  return _currentResolve !== null;
+}
+
+/**
  * No-op for backward compatibility with tests that previously set the
  * active session. The module no longer holds a session reference.
  */

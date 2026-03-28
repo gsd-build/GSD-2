@@ -1,8 +1,13 @@
-import { describe, it } from "node:test";
+import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdirSync, rmSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { tmpdir } from "node:os";
+import { randomUUID } from "node:crypto";
+
+import { buildForensicReport } from "../forensics.js";
+import { emitJournalEvent } from "../journal.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const gsdDir = join(__dirname, "..");
@@ -158,5 +163,41 @@ describe("forensics journal & activity log awareness", () => {
       promptSrc.includes("journal timeline") || promptSrc.includes("journal events"),
       "investigation protocol must reference journal data for tracing",
     );
+  });
+});
+
+// ─── scanJournalForForensics metric tests (via buildForensicReport) ───────────
+
+describe("scanJournalForForensics — metric accumulation", () => {
+  let base: string;
+
+  beforeEach(() => {
+    base = join(tmpdir(), `gsd-forensics-test-${randomUUID()}`);
+    mkdirSync(base, { recursive: true });
+  });
+
+  afterEach(() => {
+    try { rmSync(base, { recursive: true, force: true }); } catch { /* ignore */ }
+  });
+
+  it("slowUnitCount increments when unit-end durationMs exceeds 120000", async () => {
+    emitJournalEvent(base, { ts: "2026-03-28T10:00:00.000Z", flowId: "flow-aaa", seq: 0, eventType: "unit-end", data: { unitType: "execute-task", unitId: "M001/S01/T01", status: "completed", durationMs: 130_000 } });
+    emitJournalEvent(base, { ts: "2026-03-28T10:01:00.000Z", flowId: "flow-aaa", seq: 1, eventType: "unit-end", data: { unitType: "execute-task", unitId: "M001/S01/T02", status: "completed", durationMs: 50_000 } });
+
+    const report = await buildForensicReport(base);
+    assert.ok(report.journalSummary !== null, "journalSummary should be populated");
+    assert.equal(report.journalSummary!.slowUnitCount, 1, "exactly one unit exceeds the 120s threshold");
+  });
+
+  it("errorUnitCount and errorTypes accumulate from unit-end events with error field", async () => {
+    emitJournalEvent(base, { ts: "2026-03-28T11:00:00.000Z", flowId: "flow-bbb", seq: 0, eventType: "unit-end", data: { unitType: "execute-task", unitId: "M001/S01/T01", status: "failed", durationMs: 5000, error: "Bash tool failed", errorType: "tool-error" } });
+    emitJournalEvent(base, { ts: "2026-03-28T11:01:00.000Z", flowId: "flow-bbb", seq: 1, eventType: "unit-end", data: { unitType: "execute-task", unitId: "M001/S01/T02", status: "failed", durationMs: 3000, error: "Timed out", errorType: "timeout" } });
+    emitJournalEvent(base, { ts: "2026-03-28T11:02:00.000Z", flowId: "flow-bbb", seq: 2, eventType: "unit-end", data: { unitType: "execute-task", unitId: "M001/S01/T03", status: "completed", durationMs: 2000 } });
+
+    const report = await buildForensicReport(base);
+    assert.ok(report.journalSummary !== null, "journalSummary should be populated");
+    assert.equal(report.journalSummary!.errorUnitCount, 2, "two unit-end events have error field");
+    assert.equal(report.journalSummary!.errorTypes["tool-error"], 1, "one tool-error");
+    assert.equal(report.journalSummary!.errorTypes["timeout"], 1, "one timeout");
   });
 });

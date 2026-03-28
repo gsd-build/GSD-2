@@ -29,6 +29,9 @@ import {
 import { debugLog } from "../debug-logger.js";
 import { isInfrastructureError } from "./infra-errors.js";
 import { resolveEngine } from "../engine-resolver.js";
+import { buildIterationStartEvent } from "./journal-events.js";
+
+const GSD_VERSION = process.env.GSD_VERSION ?? "0.0.0";
 
 /**
  * Main auto-mode execution loop. Iterates: derive → dispatch → guards →
@@ -115,7 +118,15 @@ export async function autoLoop(
       }
 
       const ic: IterationContext = { ctx, pi, s, deps, prefs, iteration, flowId, nextSeq };
-      deps.emitJournalEvent({ ts: new Date().toISOString(), flowId, seq: nextSeq(), eventType: "iteration-start", data: { iteration } });
+      const stuckRef = loopState.lastStuckRef;
+      if (stuckRef) loopState.lastStuckRef = undefined;
+      deps.emitJournalEvent(buildIterationStartEvent({
+        flowId,
+        seq: nextSeq(),
+        iteration,
+        resource: { gsdVersion: GSD_VERSION, model: ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "unknown", cwd: s.basePath },
+        causedBy: stuckRef,
+      }));
       let iterData: IterationData;
 
       // ── Custom engine path ──────────────────────────────────────────────
