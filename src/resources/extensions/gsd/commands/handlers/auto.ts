@@ -126,7 +126,7 @@ export async function handleAutoCommand(trimmed: string, ctx: ExtensionCommandCo
       // then auto-mode starts automatically via checkAutoStartAfterDiscuss
       // when the LLM says "Milestone X ready."
       const { showHeadlessMilestoneCreation } = await import("../../guided-flow.js");
-      await showHeadlessMilestoneCreation(ctx, pi, projectRoot(), seedContent);
+      await showHeadlessMilestoneCreation(ctx, pi, projectRoot(), seedContent, { onAutoStart: startAuto });
     } else if (milestoneId) {
       // Target a specific milestone — use GSD_MILESTONE_LOCK so state
       // derivation only sees this milestone (#2521).

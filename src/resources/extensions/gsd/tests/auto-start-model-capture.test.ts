@@ -10,7 +10,7 @@ test("bootstrapAutoSession snapshots ctx.model before guided-flow entry (#2829)"
   const snapshotIdx = source.indexOf("const startModelSnapshot = ctx.model");
   assert.ok(snapshotIdx > -1, "auto-start.ts should snapshot ctx.model at bootstrap start");
 
-  const firstDiscussIdx = source.indexOf('await showSmartEntry(ctx, pi, base, { step: requestedStepMode });');
+  const firstDiscussIdx = source.indexOf('await showSmartEntry(ctx, pi, base, { step: requestedStepMode, onAutoStart });');
   assert.ok(firstDiscussIdx > -1, "auto-start.ts should route through showSmartEntry during guided flow");
 
   assert.ok(

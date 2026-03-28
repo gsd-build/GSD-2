@@ -69,6 +69,7 @@ import {
 } from "./debug-logger.js";
 import { parseUnitId } from "./unit-id.js";
 import { setLogBasePath } from "./workflow-logger.js";
+import { clearPendingAutoStart } from "./guided-flow.js";
 import type { AutoSession } from "./auto/session.js";
 import {
   existsSync,
@@ -77,8 +78,7 @@ import {
   statSync,
   unlinkSync,
 } from "node:fs";
-import { join } from "node:path";
-import { sep as pathSep } from "node:path";
+import { join, resolve as resolvePath, sep as pathSep } from "node:path";
 
 import type { WorktreeResolver } from "./worktree-resolver.js";
 
@@ -87,6 +87,14 @@ export interface BootstrapDeps {
   registerSigtermHandler: (basePath: string) => void;
   lockBase: () => string;
   buildResolver: () => WorktreeResolver;
+  /** Callback to start auto-mode — injected to avoid auto-start.ts → auto.ts circular import */
+  onAutoStart: (
+    ctx: ExtensionCommandContext,
+    pi: ExtensionAPI,
+    base: string,
+    verboseMode: boolean,
+    options?: { step?: boolean },
+  ) => Promise<void>;
 }
 
 /**
@@ -98,12 +106,35 @@ export interface BootstrapDeps {
  * concurrent session detected). Returns true when ready to dispatch.
  */
 
-/** Guard: tracks consecutive bootstrap attempts that found phase === "complete".
+/** Guard: tracks consecutive bootstrap attempts that found phase === "complete",
+ *  keyed by normalized basePath so concurrent sessions for different projects
+ *  each maintain their own independent counter.
  *  Prevents the recursive dialog loop described in #1348 where
  *  bootstrapAutoSession → showSmartEntry → checkAutoStartAfterDiscuss → startAuto
  *  cycles indefinitely when the discuss workflow doesn't produce a milestone. */
-let _consecutiveCompleteBootstraps = 0;
+const _consecutiveCompleteBootstraps = new Map<string, number>();
 const MAX_CONSECUTIVE_COMPLETE_BOOTSTRAPS = 2;
+
+/** @internal Test-seam: returns the current counter value for a given basePath. */
+export function _getConsecutiveCompleteCount(basePath: string): number {
+  return _consecutiveCompleteBootstraps.get(basePath) ?? 0;
+}
+
+/** @internal Test-seam: resets the counter for one or all basePaths (for test isolation). */
+export function _resetConsecutiveCompleteBootstraps(basePath?: string): void {
+  if (basePath !== undefined) {
+    _consecutiveCompleteBootstraps.delete(basePath);
+  } else {
+    _consecutiveCompleteBootstraps.clear();
+  }
+}
+
+/** @internal Test-seam: increments the counter for a given basePath and returns the new value. */
+export function _incrementConsecutiveCompleteCount(basePath: string): number {
+  const next = (_consecutiveCompleteBootstraps.get(basePath) ?? 0) + 1;
+  _consecutiveCompleteBootstraps.set(basePath, next);
+  return next;
+}
 
 async function openProjectDbIfPresent(basePath: string): Promise<void> {
   const gsdDbPath = resolveProjectRootDbPath(basePath);
@@ -132,6 +163,7 @@ export async function bootstrapAutoSession(
     registerSigtermHandler,
     lockBase,
     buildResolver,
+    onAutoStart,
   } = deps;
 
   const lockResult = acquireSessionLock(base);
@@ -140,7 +172,10 @@ export async function bootstrapAutoSession(
     return false;
   }
 
+  const baseKey = resolvePath(base);
+
   function releaseLockAndReturn(): false {
+    _consecutiveCompleteBootstraps.delete(baseKey);
     releaseSessionLock(base);
     clearLock(base);
     return false;
@@ -336,7 +371,7 @@ export async function bootstrapAutoSession(
     // auto-mode, which would immediately stop with "needs discussion".
     if (hasSurvivorBranch && state.phase === "needs-discussion") {
       const { showSmartEntry } = await import("./guided-flow.js");
-      await showSmartEntry(ctx, pi, base, { step: requestedStepMode });
+      await showSmartEntry(ctx, pi, base, { step: requestedStepMode, onAutoStart });
 
       invalidateAllCaches();
       const postState = await deriveState(base);
@@ -382,9 +417,10 @@ export async function bootstrapAutoSession(
         // Guard against recursive dialog loop (#1348):
         // If we've entered this branch multiple times in quick succession,
         // the discuss workflow isn't producing a milestone. Break the cycle.
-        _consecutiveCompleteBootstraps++;
-        if (_consecutiveCompleteBootstraps > MAX_CONSECUTIVE_COMPLETE_BOOTSTRAPS) {
-          _consecutiveCompleteBootstraps = 0;
+        const _count = (_consecutiveCompleteBootstraps.get(baseKey) ?? 0) + 1;
+        _consecutiveCompleteBootstraps.set(baseKey, _count);
+        if (_count > MAX_CONSECUTIVE_COMPLETE_BOOTSTRAPS) {
+          _consecutiveCompleteBootstraps.delete(baseKey);
           ctx.ui.notify(
             "All milestones are complete and the discussion didn't produce a new one. " +
             "Run /gsd to start a new milestone manually.",
@@ -394,7 +430,7 @@ export async function bootstrapAutoSession(
         }
 
         const { showSmartEntry } = await import("./guided-flow.js");
-        await showSmartEntry(ctx, pi, base, { step: requestedStepMode });
+        await showSmartEntry(ctx, pi, base, { step: requestedStepMode, onAutoStart });
 
         invalidateAllCaches();
         const postState = await deriveState(base);
@@ -403,7 +439,7 @@ export async function bootstrapAutoSession(
           postState.phase !== "complete" &&
           postState.phase !== "pre-planning"
         ) {
-          _consecutiveCompleteBootstraps = 0; // Successfully advanced past "complete"
+          _consecutiveCompleteBootstraps.delete(baseKey); // Successfully advanced past "complete"
           state = postState;
         } else if (
           postState.activeMilestone &&
@@ -436,7 +472,7 @@ export async function bootstrapAutoSession(
         const hasContext = !!(contextFile && (await loadFile(contextFile)));
         if (!hasContext) {
           const { showSmartEntry } = await import("./guided-flow.js");
-          await showSmartEntry(ctx, pi, base, { step: requestedStepMode });
+          await showSmartEntry(ctx, pi, base, { step: requestedStepMode, onAutoStart });
 
           invalidateAllCaches();
           const postState = await deriveState(base);
@@ -455,7 +491,7 @@ export async function bootstrapAutoSession(
       // Active milestone has CONTEXT-DRAFT but no full context — needs discussion
       if (state.phase === "needs-discussion") {
         const { showSmartEntry } = await import("./guided-flow.js");
-        await showSmartEntry(ctx, pi, base, { step: requestedStepMode });
+        await showSmartEntry(ctx, pi, base, { step: requestedStepMode, onAutoStart });
 
         invalidateAllCaches();
         const postState = await deriveState(base);
@@ -477,12 +513,12 @@ export async function bootstrapAutoSession(
     // Unreachable safety check
     if (!state.activeMilestone) {
       const { showSmartEntry } = await import("./guided-flow.js");
-      await showSmartEntry(ctx, pi, base, { step: requestedStepMode });
+      await showSmartEntry(ctx, pi, base, { step: requestedStepMode, onAutoStart });
       return releaseLockAndReturn();
     }
 
     // Successfully resolved an active milestone — reset the re-entry guard
-    _consecutiveCompleteBootstraps = 0;
+    _consecutiveCompleteBootstraps.delete(baseKey);
 
     // ── Initialize session state ──
     s.active = true;
@@ -511,8 +547,12 @@ export async function bootstrapAutoSession(
     s.originalModelId = ctx.model?.id ?? null;
     s.originalModelProvider = ctx.model?.provider ?? null;
 
-    // Register SIGTERM handler
+    // Register SIGTERM handler and clear any stale pending auto-start entry.
+    // The entry may have been created by showSmartEntry → maybeRegisterAutoStart
+    // above; if the session exits abnormally this prevents a stale map entry
+    // from blocking re-entry for the same basePath.
     registerSigtermHandler(base);
+    clearPendingAutoStart(base);
 
     // Capture integration branch
     if (s.currentMilestoneId) {
