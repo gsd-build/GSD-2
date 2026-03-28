@@ -80,7 +80,7 @@ Plans:
 - [x] 04-01-PLAN.md — Password change API endpoint + Tailscale status API endpoint
 - [x] 04-02-PLAN.md — Tailscale setup assistant streaming API endpoint
 - [x] 04-03-PLAN.md — RemoteAccessPanel UI component + settings section registration
-- [ ] 04-04-PLAN.md — Replace test stubs with real assertions (gap closure)
+- [x] 04-04-PLAN.md — Replace test stubs with real assertions (gap closure)
 **UI hint**: yes
 
 ## Progress
@@ -93,4 +93,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | 1. Password Auth and Cookie Sessions | 3/3 | Complete   | 2026-03-28 |
 | 2. Tailscale Serve Integration | 1/2 | In Progress|  |
 | 3. SSE Cursor-Based Event Replay | 3/3 | Complete   | 2026-03-28 |
-| 4. Remote Access Settings UI | 4/5 | In Progress | |
+| 4. Remote Access Settings UI | 5/5 | Complete   | 2026-03-28 |

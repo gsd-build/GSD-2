@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: verifying
-stopped_at: Completed 04-remote-access-settings-ui plan 03
-last_updated: "2026-03-28T20:35:07.089Z"
+stopped_at: Completed 04-remote-access-settings-ui plan 04
+last_updated: "2026-03-28T21:00:39.911Z"
 last_activity: 2026-03-28
 progress:
   total_phases: 4
   completed_phases: 4
-  total_plans: 12
-  completed_plans: 12
+  total_plans: 13
+  completed_plans: 13
   percent: 0
 ---
 
@@ -65,6 +65,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 04-remote-access-settings-ui P02 | 5 | 1 tasks | 1 files |
 | Phase 04-remote-access-settings-ui P03 | 5 | 2 tasks | 3 files |
 | Phase 04-remote-access-settings-ui P03 | 5 | 2 tasks | 3 files |
+| Phase 04-remote-access-settings-ui P04 | 8 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -107,6 +108,7 @@ Recent decisions affecting current work:
 - [Phase 04-remote-access-settings-ui]: Set up Tailscale button hidden when connected or no password configured — prevents setup confusion
 - [Phase 04-remote-access-settings-ui]: Shield icon (not ShieldCheck) used for remote-access section to distinguish from auth section
 - [Phase 04-remote-access-settings-ui]: Set up Tailscale button hidden when connected or no password configured — prevents setup confusion
+- [Phase 04-remote-access-settings-ui]: AUTH_URL_PATTERN re-declared locally in tailscale-setup.test.ts — not exported from route, local decl documents contract
 
 ### Pending Todos
 
@@ -120,6 +122,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-28T20:35:07.086Z
-Stopped at: Completed 04-remote-access-settings-ui plan 03
+Last session: 2026-03-28T21:00:35.646Z
+Stopped at: Completed 04-remote-access-settings-ui plan 04
 Resume file: None
