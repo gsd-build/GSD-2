@@ -36,7 +36,7 @@ import { ensurePreferencesFile, serializePreferencesToFrontmatter } from "./comm
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface ForensicAnomaly {
+export interface ForensicAnomaly {
   type: "stuck-loop" | "cost-spike" | "timeout" | "missing-artifact" | "crash" | "doctor-issue" | "error-trace" | "journal-stuck" | "journal-guard-block" | "journal-rapid-iterations" | "journal-worktree-failure";
   severity: "info" | "warning" | "error";
   unitType?: string;
@@ -69,7 +69,7 @@ interface ActivityLogMeta {
  * daily files are fully parsed. Older files are line-counted for totals.
  * Event counts and flow IDs reflect only recent files.
  */
-interface JournalSummary {
+export interface JournalSummary {
   /** Total journal entries across all files (recent parsed + older line-counted) */
   totalEntries: number;
   /** Distinct flow IDs from recent files (each = one auto-mode iteration) */
@@ -445,7 +445,7 @@ const MAX_JOURNAL_RECENT_EVENTS = 20;
  * - Line-count older files for approximate totals (no JSON parsing)
  * - Extract only the last 20 events for the timeline
  */
-function scanJournalForForensics(basePath: string): JournalSummary | null {
+export function scanJournalForForensics(basePath: string): JournalSummary | null {
   try {
     const journalDir = join(gsdRoot(basePath), "journal");
     if (!existsSync(journalDir)) return null;
@@ -717,7 +717,7 @@ function detectErrorTraces(traces: UnitTrace[], anomalies: ForensicAnomaly[]): v
   }
 }
 
-function detectJournalAnomalies(journal: JournalSummary | null, anomalies: ForensicAnomaly[]): void {
+export function detectJournalAnomalies(journal: JournalSummary | null, anomalies: ForensicAnomaly[]): void {
   if (!journal) return;
 
   // Detect stuck-detected events from the journal
