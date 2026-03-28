@@ -4,9 +4,9 @@ import { writeFileSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { parseCliArgs } from '../cli-web-branch.ts'
-import { launchWebMode } from '../web-mode.ts'
-import { TailscaleServeError } from '../web/tailscale.ts'
+import { parseCliArgs } from '../../cli-web-branch.ts'
+import { launchWebMode } from '../../web-mode.ts'
+import { TailscaleServeError } from '../tailscale.ts'
 
 // ─── Shared test data ─────────────────────────────────────────────────────────
 
@@ -32,7 +32,16 @@ function buildMockDeps(overrides?: Record<string, unknown>) {
     spawn: (_cmd: string, _args: string[], opts: Record<string, unknown>) => {
       spawnOptions = opts
       Object.assign(capturedEnv, opts.env)
-      return { once: () => {}, unref: () => {}, pid: 12345 }
+      const listeners: Record<string, Function[]> = {}
+      const child = {
+        once: (event: string, cb: Function) => { (listeners[event] ??= []).push(cb) },
+        unref: () => {},
+        pid: 12345,
+        _emit: (event: string, ...args: unknown[]) => { listeners[event]?.forEach(cb => cb(...args)) },
+      }
+      // Auto-emit exit after a tick so launchWebMode's await resolves
+      setTimeout(() => child._emit('exit', 0, null), 50)
+      return child
     },
     waitForBootReady: () => Promise.resolve(),
     openBrowser: () => { calls.push('openBrowser') },
@@ -227,7 +236,7 @@ test('cleanupFired guard is present in web-mode.ts source (idempotency guard)', 
   const { dirname, resolve } = await import('node:path')
 
   const dir = dirname(fileURLToPath(import.meta.url))
-  const webModePath = resolve(dir, '../web-mode.ts')
+  const webModePath = resolve(dir, '../../web-mode.ts')
   const source = readFileSync(webModePath, 'utf-8')
   // Variable is named tailscaleCleanupFired (idempotency guard for double-signal protection)
   assert.ok(
