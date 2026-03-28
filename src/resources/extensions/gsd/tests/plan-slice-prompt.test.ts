@@ -25,6 +25,7 @@ const BASE_VARS = {
   outputPath: "/tmp/test-project/.gsd/milestones/M001/slices/S01/S01-PLAN.md",
   inlinedContext: "--- test inlined context ---",
   dependencySummaries: "", executorContextConstraints: "",
+  milestoneIntentSection: "",
   sourceFilePaths: "- **Requirements**: `.gsd/REQUIREMENTS.md`",
   skillActivation: "Load the relevant skills.",
 };
@@ -110,6 +111,7 @@ test("skillActivation default leaves no unresolved placeholder", () => {
     taskSummaryPath: "/tmp/test-project/.gsd/milestones/M001/slices/S01/tasks/T01-SUMMARY.md",
     inlinedTemplates: "Template",
     verificationBudget: "~10K chars",
+    milestoneIntentSection: "",
     overridesSection: "",
   });
 
@@ -135,6 +137,7 @@ test("custom skillActivation is substituted into execute-task", () => {
     taskSummaryPath: "/tmp/test-project/.gsd/milestones/M001/slices/S01/tasks/T01-SUMMARY.md",
     inlinedTemplates: "Template",
     verificationBudget: "~10K chars",
+    milestoneIntentSection: "",
     overridesSection: "",
     skillActivation: "Load React and accessibility skills first.",
   });
