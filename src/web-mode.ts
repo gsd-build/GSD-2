@@ -39,6 +39,8 @@ export interface WebModeLaunchOptions {
   port?: number
   /** Additional allowed origins for CORS (forwarded as GSD_WEB_ALLOWED_ORIGINS). */
   allowedOrigins?: string[]
+  /** Activate Tailscale Serve mode: `--tailscale` */
+  tailscale?: boolean
 }
 
 export interface ResolvedWebHostBootstrap {
@@ -105,6 +107,13 @@ export interface WebModeDeps {
   deletePidFile?: (path: string) => void
   /** Path to the multi-instance registry JSON (for testing). */
   registryPath?: string
+  /** Tailscale wrapper functions (for testing) */
+  isTailscaleInstalled?: () => boolean
+  getTailscaleStatus?: () => import('./web/tailscale.js').TailscaleStatusResult
+  startTailscaleServe?: (port: number) => Promise<void>
+  stopTailscaleServe?: (options?: { strict?: boolean }) => Promise<void>
+  stopTailscaleServeSync?: () => void
+  readPasswordHash?: () => string | null
 }
 
 export interface WebModeStopResult {
@@ -122,6 +131,8 @@ export interface WebInstanceEntry {
   url: string
   cwd: string
   startedAt: string
+  /** Tailscale URL when instance was started with --tailscale */
+  tailscaleUrl?: string
 }
 
 export type WebInstanceRegistry = Record<string, WebInstanceEntry>
