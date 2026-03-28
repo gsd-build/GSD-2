@@ -89,6 +89,19 @@ export function getDiscussionMilestoneId(): string | null {
   return pendingAutoStart?.milestoneId ?? null;
 }
 
+/**
+ * Treat a project as bootstrapped only when it has user-facing init artifacts,
+ * not merely a `.gsd/` directory created by external-state symlink setup.
+ */
+export function hasProjectBootstrapArtifacts(
+  detection: ReturnType<typeof detectProjectState>,
+): boolean {
+  return !!(
+    detection.v2
+    && (detection.v2.hasPreferences || detection.v2.milestoneCount > 0)
+  );
+}
+
 /** Called from agent_end to check if auto-mode should start after discuss */
 export function checkAutoStartAfterDiscuss(): boolean {
   if (!pendingAutoStart) return false;
@@ -974,8 +987,8 @@ export async function showSmartEntry(
   }
 
   // ── Detection preamble — run before any bootstrap ────────────────────
-  if (!existsSync(gsdRoot(basePath))) {
-    const detection = detectProjectState(basePath);
+  const detection = detectProjectState(basePath);
+  if (!hasProjectBootstrapArtifacts(detection)) {
 
     // v1 .planning/ detected — offer migration before anything else
     if (detection.state === "v1-planning" && detection.v1) {
@@ -989,7 +1002,8 @@ export async function showSmartEntry(
       // "fresh" — fall through to init wizard
     }
 
-    // No .gsd/ — run the project init wizard
+    // Missing bootstrap artifacts — run the project init wizard. This also
+    // covers zombie external-state dirs that only contain repo-meta.json.
     const result = await showProjectInit(ctx, pi, basePath, detection);
     if (!result.completed) return; // User cancelled
 

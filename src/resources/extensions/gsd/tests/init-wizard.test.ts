@@ -92,6 +92,22 @@ test("init-wizard: empty .gsd/ (no milestones) returns v2-gsd-empty", (t) => {
   }
 });
 
+test("init-wizard: repo-meta-only .gsd/ still counts as v2-gsd-empty", (t) => {
+  const dir = makeTempDir("repo-meta-only");
+  try {
+    mkdirSync(join(dir, ".gsd"), { recursive: true });
+    writeFileSync(join(dir, ".gsd", "repo-meta.json"), "{\n  \"projectId\": \"abc123\"\n}\n", "utf-8");
+
+    const detection = detectProjectState(dir);
+    assert.equal(detection.state, "v2-gsd-empty");
+    assert.ok(detection.v2);
+    assert.equal(detection.v2!.milestoneCount, 0);
+    assert.equal(detection.v2!.hasPreferences, false);
+  } finally {
+    cleanup(dir);
+  }
+});
+
 test("init-wizard: project signals populate from Node.js project", (t) => {
   const dir = makeTempDir("node-project");
   try {
