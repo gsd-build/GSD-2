@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Password Auth and Cookie Sessions** - Complete password-protected login flow with HMAC-signed session cookies (completed 2026-03-28)
 - [ ] **Phase 2: Tailscale Serve Integration** - `gsd --web --tailscale` exposes the app via HTTPS within the tailnet
-- [ ] **Phase 3: SSE Cursor-Based Event Replay** - Reconnecting browsers recover all missed agent output from a persistent log
+- [x] **Phase 3: SSE Cursor-Based Event Replay** - Reconnecting browsers recover all missed agent output from a persistent log (completed 2026-03-28)
 - [ ] **Phase 4: Remote Access Settings UI** - In-app Remote Access section with password management and Tailscale setup assistant
 
 ## Phase Details
@@ -63,7 +63,7 @@ Plans:
 Plans:
 - [x] 03-01-PLAN.md — EventLog module + bridge-service _seq wrapping and event persistence
 - [x] 03-02-PLAN.md — SSE endpoint cursor-based replay with live buffering and stale cursor handling
-- [ ] 03-03-PLAN.md — Client cursor tracking in localStorage + catching-up banner UI
+- [x] 03-03-PLAN.md — Client cursor tracking in localStorage + catching-up banner UI
 
 ### Phase 4: Remote Access Settings UI
 **Goal**: Users can manage their Remote Access configuration entirely within the GSD web UI — setting or changing their password, viewing Tailscale connection status and the tailnet URL, toggling Tailscale on/off, and following a guided assistant to install and connect Tailscale for the first time
@@ -91,5 +91,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 |-------|----------------|--------|-----------|
 | 1. Password Auth and Cookie Sessions | 3/3 | Complete   | 2026-03-28 |
 | 2. Tailscale Serve Integration | 1/2 | In Progress|  |
-| 3. SSE Cursor-Based Event Replay | 1/3 | In Progress|  |
+| 3. SSE Cursor-Based Event Replay | 3/3 | Complete   | 2026-03-28 |
 | 4. Remote Access Settings UI | 0/4 | Planning complete | - |
