@@ -28,6 +28,7 @@ import { deriveState } from "./state.js";
 import { isAutoActive } from "./auto.js";
 import { loadPrompt } from "./prompt-loader.js";
 import { gsdRoot } from "./paths.js";
+import type { JournalResource } from "./auto/journal-events.js";
 import { formatDuration } from "../shared/format-utils.js";
 import { getAutoWorktreePath } from "./auto-worktree.js";
 import { loadEffectiveGSDPreferences, loadGlobalGSDPreferences, getGlobalGSDPreferencesPath } from "./preferences.js";
@@ -90,7 +91,7 @@ interface JournalSummary {
   /** Error type distribution (from recent files) */
   errorTypes: Record<string, number>;
   /** Resource info from most recent iteration-start (if available) */
-  latestResource?: { gsdVersion: string; model: string; cwd: string };
+  latestResource?: JournalResource;
 }
 
 interface ForensicReport {
@@ -497,7 +498,10 @@ function scanJournalForForensics(basePath: string): JournalSummary | null {
     let slowUnitCount = 0;
     let errorUnitCount = 0;
     const errorTypes: Record<string, number> = {};
-    let latestResource: { gsdVersion: string; model: string; cwd: string } | undefined;
+    // recentFiles is in oldest-first order (sorted by filename, which encodes date).
+    // Iterating oldest-to-newest means each iteration-start overwrites the previous,
+    // so latestResource ends up as the most recent iteration-start in the window — correct.
+    let latestResource: JournalResource | undefined;
 
     for (const file of recentFiles) {
       try {
@@ -518,23 +522,33 @@ function scanJournalForForensics(basePath: string): JournalSummary | null {
               flowId: entry.flowId,
               eventType: entry.eventType,
               rule: entry.rule,
-              unitId: entry.data?.unitId as string | undefined,
+              unitId: typeof entry.data?.unitId === "string" ? entry.data.unitId : undefined,
             });
             if (recentParsedEntries.length > MAX_JOURNAL_RECENT_EVENTS) {
               recentParsedEntries.shift();
             }
 
             if (entry.eventType === "unit-end" && entry.data) {
-              const dur = entry.data.durationMs as number | undefined;
+              const dur = typeof entry.data.durationMs === "number" ? entry.data.durationMs : undefined;
               if (dur !== undefined && dur > SLOW_UNIT_THRESHOLD_MS) slowUnitCount++;
               if (entry.data.error) {
                 errorUnitCount++;
-                const et = (entry.data.errorType as string) ?? "unknown";
+                const et = typeof entry.data.errorType === "string" ? entry.data.errorType : "unknown";
                 errorTypes[et] = (errorTypes[et] ?? 0) + 1;
               }
             }
             if (entry.eventType === "iteration-start" && entry.data?.resource) {
-              latestResource = entry.data.resource as { gsdVersion: string; model: string; cwd: string };
+              const r = entry.data.resource;
+              if (
+                r !== null &&
+                typeof r === "object" &&
+                !Array.isArray(r) &&
+                typeof (r as Record<string, unknown>).gsdVersion === "string" &&
+                typeof (r as Record<string, unknown>).model === "string" &&
+                typeof (r as Record<string, unknown>).cwd === "string"
+              ) {
+                latestResource = r as JournalResource;
+              }
             }
           } catch { /* skip malformed lines */ }
         }

@@ -15,6 +15,7 @@ import type { PostUnitContext, PreVerificationOpts } from "../auto-post-unit.js"
 import {
   MAX_RECOVERY_CHARS,
   BUDGET_THRESHOLDS,
+  type ErrorContext,
   type PhaseResult,
   type IterationContext,
   type LoopState,
@@ -34,9 +35,46 @@ import { atomicWriteSync } from "../atomic-write.js";
 import { verifyExpectedArtifact } from "../auto-recovery.js";
 import { writeUnitRuntimeRecord } from "../unit-runtime.js";
 
+import {
+  type JournalErrorType,
+  buildUnitStartEvent,
+  buildUnitEndEvent,
+  buildStuckDetectedEvent,
+} from "./journal-events.js";
+
 // ─── Unit-end error classification ───────────────────────────────────────────
 
-type JournalErrorType = "tool-error" | "timeout" | "context-overflow" | "unknown";
+const MAX_ERROR_DETAIL_LENGTH = 200;
+
+/**
+ * Maps ErrorContext.category to JournalErrorType exhaustively.
+ * The switch is intentionally exhaustive: if a new category is added to
+ * ErrorContext, TypeScript will error here, forcing an explicit mapping decision.
+ */
+function errorContextCategoryToJournalType(category: ErrorContext["category"]): JournalErrorType {
+  switch (category) {
+    case "timeout":
+    case "idle":
+      return "timeout";
+    case "provider":
+      return "provider-error";
+    case "network":
+      return "network-error";
+    case "aborted":
+      return "aborted";
+    case "session-failed":
+      return "session-failed";
+    case "unknown":
+      return "unknown";
+    default: {
+      // TypeScript errors here if a new category is added to ErrorContext without
+      // updating this switch. At runtime we fall back gracefully — journal annotation
+      // is best-effort and must never crash the auto-loop.
+      const _: never = category;
+      return "unknown";
+    }
+  }
+}
 
 const ERROR_PATTERNS: Array<[RegExp, JournalErrorType]> = [
   [/context.*overflow|token.*limit|context.*window/i, "context-overflow"],
@@ -44,6 +82,8 @@ const ERROR_PATTERNS: Array<[RegExp, JournalErrorType]> = [
   [/timeout|timed? out/i, "timeout"],
 ];
 
+// Returns the last error found — in a failing unit the most recent error is the most diagnostic
+// (earlier errors may have been recovered from).
 function classifyMessageError(messages: unknown[]): { detail: string; type: JournalErrorType } | undefined {
   const RE_INDICATOR = /error|fail|exception/i;
   let result: { detail: string; type: JournalErrorType } | undefined;
@@ -51,7 +91,7 @@ function classifyMessageError(messages: unknown[]): { detail: string; type: Jour
     const str = typeof msg === "string" ? msg : JSON.stringify(msg);
     if (!RE_INDICATOR.test(str)) continue;
     const type = ERROR_PATTERNS.find(([re]) => re.test(str))?.[1] ?? "unknown";
-    result = { detail: str.slice(0, 200), type };
+    result = { detail: str.slice(0, MAX_ERROR_DETAIL_LENGTH), type };
   }
   return result;
 }
@@ -617,7 +657,7 @@ export async function runDispatch(
         // Level 1: try verifying the artifact, then cache invalidation + retry
         loopState.stuckRecoveryAttempts++;
         const stuckSeq1 = ic.nextSeq();
-        deps.emitJournalEvent({ ts: new Date().toISOString(), flowId: ic.flowId, seq: stuckSeq1, eventType: "stuck-detected", data: { unitType, unitId, reason: stuckSignal.reason, level: 1 } });
+        deps.emitJournalEvent(buildStuckDetectedEvent({ flowId: ic.flowId, seq: stuckSeq1, unitType, unitId, reason: stuckSignal.reason, level: 1 }));
         loopState.lastStuckRef = { flowId: ic.flowId, seq: stuckSeq1 };
         const artifactExists = verifyExpectedArtifact(
           unitType,
@@ -644,7 +684,7 @@ export async function runDispatch(
         deps.invalidateAllCaches();
       } else {
         // Level 2: hard stop — genuinely stuck
-        deps.emitJournalEvent({ ts: new Date().toISOString(), flowId: ic.flowId, seq: ic.nextSeq(), eventType: "stuck-detected", data: { unitType, unitId, reason: stuckSignal.reason, level: 2 } });
+        deps.emitJournalEvent(buildStuckDetectedEvent({ flowId: ic.flowId, seq: ic.nextSeq(), unitType, unitId, reason: stuckSignal.reason, level: 2 }));
         debugLog("autoLoop", {
           phase: "stuck-detected",
           unitType,
@@ -937,7 +977,14 @@ export async function runUnitPhase(
 
   s.currentUnit = { type: unitType, id: unitId, startedAt: Date.now() };
   const unitStartSeq = ic.nextSeq();
-  deps.emitJournalEvent({ ts: new Date().toISOString(), flowId: ic.flowId, seq: unitStartSeq, eventType: "unit-start", data: { unitType, unitId, sessionId: ctx.sessionManager?.getSessionFile?.() ?? "unknown", messageOffset: ctx.sessionManager?.getEntries?.()?.length ?? 0 } });
+  deps.emitJournalEvent(buildUnitStartEvent({
+    flowId: ic.flowId,
+    seq: unitStartSeq,
+    unitType,
+    unitId,
+    sessionId: ctx.sessionManager?.getSessionFile?.() ?? "unknown",
+    messageOffset: ctx.sessionManager?.getEntries?.()?.length ?? 0,
+  }));
   deps.captureAvailableSkills();
   writeUnitRuntimeRecord(
     s.basePath,
@@ -1222,7 +1269,6 @@ export async function runUnitPhase(
     s.unitRecoveryCount.delete(`${unitType}/${unitId}`);
   }
 
-  // Derive error detail for journal: structured errorContext > status > message regex
   const errFromCtx = unitResult.errorContext;
   const errFromMsg = unitResult.event?.messages?.length
     ? classifyMessageError(unitResult.event.messages)
@@ -1232,7 +1278,7 @@ export async function runUnitPhase(
   let errorType: JournalErrorType | undefined;
   if (errFromCtx) {
     errorDetail = errFromCtx.message;
-    errorType = errFromCtx.category === "timeout" || errFromCtx.category === "idle" ? "timeout" : "unknown";
+    errorType = errorContextCategoryToJournalType(errFromCtx.category);
   } else if (unitResult.status !== "completed") {
     errorDetail = `${unitResult.status}:${unitType}/${unitId}`;
     errorType = unitResult.status === "error" ? "unknown" : "timeout";
@@ -1241,7 +1287,19 @@ export async function runUnitPhase(
     errorType = errFromMsg.type;
   }
 
-  deps.emitJournalEvent({ ts: new Date().toISOString(), flowId: ic.flowId, seq: ic.nextSeq(), eventType: "unit-end", data: { unitType, unitId, status: unitResult.status, artifactVerified, durationMs: Date.now() - s.currentUnit.startedAt, ...(errorDetail && { error: errorDetail, errorType }), ...(unitResult.errorContext ? { errorContext: unitResult.errorContext } : {}) }, causedBy: { flowId: ic.flowId, seq: unitStartSeq } });
+  deps.emitJournalEvent(buildUnitEndEvent({
+    flowId: ic.flowId,
+    seq: ic.nextSeq(),
+    unitType,
+    unitId,
+    status: unitResult.status,
+    artifactVerified,
+    durationMs: Date.now() - s.currentUnit.startedAt,
+    error: errorDetail,
+    errorType,
+    errorContext: unitResult.errorContext,
+    causedBy: { flowId: ic.flowId, seq: unitStartSeq },
+  }));
 
   return { action: "next", data: { unitStartedAt: s.currentUnit.startedAt } };
 }
