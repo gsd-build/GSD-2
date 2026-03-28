@@ -9,7 +9,7 @@
  * `resetAllState()` (called by closeBrowser).
  */
 
-import type { Browser, BrowserContext, Frame, Page } from "playwright";
+import type { BrowserEngine, BrowserSessionContext, BrowserFrame, BrowserPage } from "./browser-types.js";
 import type { ExtensionAPI } from "@gsd/pi-coding-agent";
 import path from "node:path";
 import {
@@ -187,23 +187,23 @@ export interface BrowserAssertionCheckInput {
 // ---------------------------------------------------------------------------
 
 // 1. browser
-let _browser: Browser | null = null;
-export function getBrowser(): Browser | null { return _browser; }
-export function setBrowser(b: Browser | null): void { _browser = b; }
+let _browser: BrowserEngine | null = null;
+export function getBrowser(): BrowserEngine | null { return _browser; }
+export function setBrowser(b: BrowserEngine | null): void { _browser = b; }
 
 // 2. context
-let _context: BrowserContext | null = null;
-export function getContext(): BrowserContext | null { return _context; }
-export function setContext(c: BrowserContext | null): void { _context = c; }
+let _context: BrowserSessionContext | null = null;
+export function getContext(): BrowserSessionContext | null { return _context; }
+export function setContext(c: BrowserSessionContext | null): void { _context = c; }
 
 // 3. pageRegistry (object with internal state — export the instance directly + getter)
 export const pageRegistry = createPageRegistry();
 export function getPageRegistry() { return pageRegistry; }
 
 // 4. activeFrame
-let _activeFrame: Frame | null = null;
-export function getActiveFrame(): Frame | null { return _activeFrame; }
-export function setActiveFrame(f: Frame | null): void { _activeFrame = f; }
+let _activeFrame: BrowserFrame | null = null;
+export function getActiveFrame(): BrowserFrame | null { return _activeFrame; }
+export function setActiveFrame(f: BrowserFrame | null): void { _activeFrame = f; }
 
 // 5. logPusher (bounded log push function — stateless utility, export directly)
 export const logPusher = createBoundedLogPusher(1000);
@@ -224,8 +224,8 @@ export function getDialogLogs(): DialogEntry[] { return _dialogLogs; }
 export function setDialogLogs(logs: DialogEntry[]): void { _dialogLogs = logs; }
 
 // 9. pendingCriticalRequestsByPage (WeakMap — can't be reassigned, just cleared by replacing)
-let _pendingCriticalRequestsByPage = new WeakMap<Page, number>();
-export function getPendingCriticalRequestsByPage(): WeakMap<Page, number> { return _pendingCriticalRequestsByPage; }
+let _pendingCriticalRequestsByPage = new WeakMap<BrowserPage, number>();
+export function getPendingCriticalRequestsByPage(): WeakMap<BrowserPage, number> { return _pendingCriticalRequestsByPage; }
 export function resetPendingCriticalRequestsByPage(): void { _pendingCriticalRequestsByPage = new WeakMap(); }
 
 // 10. currentRefMap
@@ -323,37 +323,37 @@ export function resetAllState(): void {
  */
 export interface ToolDeps {
 	// Lifecycle
-	ensureBrowser: () => Promise<{ browser: Browser; context: BrowserContext; page: Page }>;
+	ensureBrowser: () => Promise<{ browser: BrowserEngine; context: BrowserSessionContext; page: BrowserPage }>;
 	closeBrowser: () => Promise<void>;
-	getActivePage: () => Page;
-	getActiveTarget: () => Page | Frame;
-	getActivePageOrNull: () => Page | null;
+	getActivePage: () => BrowserPage;
+	getActiveTarget: () => BrowserPage | BrowserFrame;
+	getActivePageOrNull: () => BrowserPage | null;
 
 	// Page event wiring
-	attachPageListeners: (p: Page, pageId: number) => void;
+	attachPageListeners: (p: BrowserPage, pageId: number) => void;
 
 	// Capture & summary
 	captureCompactPageState: (
-		p: Page,
-		options?: { selectors?: string[]; includeBodyText?: boolean; target?: Page | Frame }
+		p: BrowserPage,
+		options?: { selectors?: string[]; includeBodyText?: boolean; target?: BrowserPage | BrowserFrame }
 	) => Promise<CompactPageState>;
-	postActionSummary: (p: Page, target?: Page | Frame) => Promise<string>;
+	postActionSummary: (p: BrowserPage, target?: BrowserPage | BrowserFrame) => Promise<string>;
 	formatCompactStateSummary: (state: CompactPageState) => string;
-	constrainScreenshot: (page: Page, buffer: Buffer, mimeType: string, quality: number) => Promise<Buffer>;
-	captureErrorScreenshot: (p: Page | null) => Promise<{ data: string; mimeType: string } | null>;
+	constrainScreenshot: (page: BrowserPage, buffer: Buffer, mimeType: string, quality: number) => Promise<Buffer>;
+	captureErrorScreenshot: (p: BrowserPage | null) => Promise<{ data: string; mimeType: string } | null>;
 	getRecentErrors: (pageUrl: string) => string;
 
 	// Settle
-	settleAfterActionAdaptive: (p: Page, opts?: AdaptiveSettleOptions) => Promise<AdaptiveSettleDetails>;
-	ensureMutationCounter: (p: Page) => Promise<void>;
+	settleAfterActionAdaptive: (p: BrowserPage, opts?: AdaptiveSettleOptions) => Promise<AdaptiveSettleDetails>;
+	ensureMutationCounter: (p: BrowserPage) => Promise<void>;
 
 	// Refs
 	buildRefSnapshot: (
-		target: Page | Frame,
+		target: BrowserPage | BrowserFrame,
 		options: { selector?: string; interactiveOnly: boolean; limit: number; mode?: string }
 	) => Promise<Array<Omit<RefNode, "ref">>>;
 	resolveRefTarget: (
-		target: Page | Frame,
+		target: BrowserPage | BrowserFrame,
 		node: RefNode
 	) => Promise<{ ok: true; selector: string } | { ok: false; reason: string }>;
 	parseRef: (input: string) => ParsedRefSpec;
@@ -382,15 +382,15 @@ export interface ToolDeps {
 	verificationFromChecks: (checks: BrowserVerificationCheck[], retryHint?: string) => BrowserVerificationResult;
 	verificationLine: (verification: BrowserVerificationResult) => string;
 	collectAssertionState: (
-		p: Page,
+		p: BrowserPage,
 		checks: BrowserAssertionCheckInput[],
-		target?: Page | Frame
+		target?: BrowserPage | BrowserFrame
 	) => Promise<Record<string, unknown>>;
 	formatAssertionText: (result: ReturnType<typeof import("./core.js").evaluateAssertionChecks>) => string;
 	formatDiffText: (diff: ReturnType<typeof import("./core.js").diffCompactStates>) => string;
 	getUrlHash: (url: string) => string;
-	captureClickTargetState: (target: Page | Frame, selector: string) => Promise<ClickTargetStateSnapshot>;
-	readInputLikeValue: (target: Page | Frame, selector?: string) => Promise<string | null>;
+	captureClickTargetState: (target: BrowserPage | BrowserFrame, selector: string) => Promise<ClickTargetStateSnapshot>;
+	readInputLikeValue: (target: BrowserPage | BrowserFrame, selector?: string) => Promise<string | null>;
 	firstErrorLine: (err: unknown) => string;
 	captureAccessibilityMarkdown: (selector?: string) => Promise<{ snapshot: string; scope: string; source: string }>;
 	resolveAccessibilityScope: (selector?: string) => Promise<{ selector?: string; scope: string; source: string }>;

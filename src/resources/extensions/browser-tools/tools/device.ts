@@ -118,11 +118,11 @@ export function registerDeviceTools(pi: ExtensionAPI, deps: ToolDeps): void {
 
 				// Reset state for new session
 				resetAllState();
-				setBrowser(browser);
-				setContext(context);
+				setBrowser(browser as unknown as import("../browser-types.js").BrowserEngine);
+				setContext(context as unknown as import("../browser-types.js").BrowserSessionContext);
 				setSessionStartedAt(Date.now());
 
-				const page = await context.newPage();
+				const page = await context.newPage() as unknown as import("../browser-types.js").BrowserPage;
 				const entry = registryAddPage(pageRegistry, {
 					page,
 					title: "",

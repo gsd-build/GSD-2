@@ -5,7 +5,7 @@
  * Used by tool implementations for post-action feedback.
  */
 
-import type { Frame, Page } from "playwright";
+import type { BrowserFrame, BrowserPage } from "./browser-types.js";
 import sharp from "sharp";
 import type { CompactPageState, CompactSelectorState } from "./state.js";
 import { formatCompactStateSummary } from "./utils.js";
@@ -53,8 +53,8 @@ export function getScreenshotQualityDefault(fallback: number): number {
 // ---------------------------------------------------------------------------
 
 export async function captureCompactPageState(
-	p: Page,
-	options: { selectors?: string[]; includeBodyText?: boolean; target?: Page | Frame } = {},
+	p: BrowserPage,
+	options: { selectors?: string[]; includeBodyText?: boolean; target?: BrowserPage | BrowserFrame } = {},
 ): Promise<CompactPageState> {
 	const selectors = Array.from(new Set((options.selectors ?? []).filter(Boolean)));
 	const target = options.target ?? p;
@@ -140,7 +140,7 @@ export async function captureCompactPageState(
 // ---------------------------------------------------------------------------
 
 /** Lightweight page summary after an action. Returns ~50-150 tokens instead of full tree. */
-export async function postActionSummary(p: Page, target?: Page | Frame): Promise<string> {
+export async function postActionSummary(p: BrowserPage, target?: BrowserPage | BrowserFrame): Promise<string> {
 	try {
 		const state = await captureCompactPageState(p, { target });
 		return formatCompactStateSummary(state);
@@ -163,7 +163,7 @@ export async function postActionSummary(p: Page, target?: Page | Frame): Promise
  * but is no longer used — all processing is server-side via sharp.
  */
 export async function constrainScreenshot(
-	_page: Page,
+	_page: BrowserPage,
 	buffer: Buffer,
 	mimeType: string,
 	quality: number,
@@ -172,14 +172,22 @@ export async function constrainScreenshot(
 	const width = meta.width;
 	const height = meta.height;
 
+	// Detect actual format from sharp metadata (cmux browser always returns
+	// PNG regardless of request). meta.format is authoritative — no manual
+	// magic byte checks needed.
+	const actualMimeType = meta.format === "png" ? "image/png" : mimeType;
+
 	if (width === undefined || height === undefined) return buffer;
-	if (width <= MAX_SCREENSHOT_WIDTH && height <= MAX_SCREENSHOT_HEIGHT) return buffer;
+
+	// If format matches request and size is within limits, return as-is
+	if (actualMimeType === mimeType && width <= MAX_SCREENSHOT_WIDTH && height <= MAX_SCREENSHOT_HEIGHT) return buffer;
 
 	const resizer = sharp(buffer).resize(MAX_SCREENSHOT_WIDTH, MAX_SCREENSHOT_HEIGHT, {
 		fit: "inside",
 		withoutEnlargement: true,
 	});
 
+	// Convert to requested format
 	if (mimeType === "image/png") {
 		return Buffer.from(await resizer.png().toBuffer());
 	}
@@ -187,7 +195,7 @@ export async function constrainScreenshot(
 }
 
 /** Capture a JPEG screenshot for error debugging. Returns base64 or null. */
-export async function captureErrorScreenshot(p: Page | null): Promise<{ data: string; mimeType: string } | null> {
+export async function captureErrorScreenshot(p: BrowserPage | null): Promise<{ data: string; mimeType: string } | null> {
 	if (!p) return null;
 	try {
 		let buf = await p.screenshot({ type: "jpeg", quality: 60, scale: "css" });

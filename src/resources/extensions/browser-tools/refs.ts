@@ -1,3 +1,4 @@
+/// <reference lib="dom" />
 /**
  * browser-tools — ref snapshot and resolution
  *
@@ -9,7 +10,7 @@
  *   - matchesMode, computeNearestHeading, computeFormOwnership
  */
 
-import type { Frame, Page } from "playwright";
+import type { BrowserFrame, BrowserPage } from "./browser-types.js";
 import type { RefNode } from "./state.js";
 import { getSnapshotModeConfig } from "./core.js";
 
@@ -18,7 +19,7 @@ import { getSnapshotModeConfig } from "./core.js";
 // ---------------------------------------------------------------------------
 
 export async function buildRefSnapshot(
-	target: Page | Frame,
+	target: BrowserPage | BrowserFrame,
 	options: { selector?: string; interactiveOnly: boolean; limit: number; mode?: string },
 ): Promise<Array<Omit<RefNode, "ref">>> {
 	// Resolve mode config in Node context and serialize it as plain data for the evaluate callback
@@ -179,7 +180,7 @@ export async function buildRefSnapshot(
 // ---------------------------------------------------------------------------
 
 export async function resolveRefTarget(
-	target: Page | Frame,
+	target: BrowserPage | BrowserFrame,
 	node: RefNode,
 ): Promise<{ ok: true; selector: string } | { ok: false; reason: string }> {
 	return await target.evaluate((refNode) => {
