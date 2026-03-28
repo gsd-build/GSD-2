@@ -131,11 +131,13 @@ test("buildDesktopNotificationCommand returns sound-only command on win32 with k
 
 test("buildDesktopNotificationCommand maps error level to Hand sound on win32", () => {
   const command = buildDesktopNotificationCommand("win32", "GSD", "Error", "error", "sound");
+  assert.ok(command);
   assert.ok(command.args.some(a => a.includes("Hand")));
 });
 
 test("buildDesktopNotificationCommand maps warning level to Exclamation sound on win32", () => {
   const command = buildDesktopNotificationCommand("win32", "GSD", "Warning", "warning", "sound");
+  assert.ok(command);
   assert.ok(command.args.some(a => a.includes("Exclamation")));
 });
 
