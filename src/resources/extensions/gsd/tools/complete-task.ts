@@ -59,11 +59,11 @@ function paramsToTaskRow(params: CompleteTaskParams, completedAt: string): TaskR
     verification_result: params.verification,
     duration: "",
     completed_at: completedAt,
-    blocker_discovered: params.blockerDiscovered,
+    blocker_discovered: params.blockerDiscovered ?? false,
     deviations: params.deviations,
     known_issues: params.knownIssues,
-    key_files: params.keyFiles,
-    key_decisions: params.keyDecisions,
+    key_files: params.keyFiles ?? [],
+    key_decisions: params.keyDecisions ?? [],
     full_summary_md: "",
     description: "",
     estimate: "",
@@ -151,14 +151,14 @@ export async function handleCompleteTask(
       narrative: params.narrative,
       verificationResult: params.verification,
       duration: "",
-      blockerDiscovered: params.blockerDiscovered,
-      deviations: params.deviations,
-      knownIssues: params.knownIssues,
-      keyFiles: params.keyFiles,
-      keyDecisions: params.keyDecisions,
+      blockerDiscovered: params.blockerDiscovered ?? false,
+      deviations: params.deviations ?? "None.",
+      knownIssues: params.knownIssues ?? "None.",
+      keyFiles: params.keyFiles ?? [],
+      keyDecisions: params.keyDecisions ?? [],
     });
 
-    for (const evidence of params.verificationEvidence) {
+    for (const evidence of (params.verificationEvidence ?? [])) {
       insertVerificationEvidence({
         taskId: params.taskId,
         sliceId: params.sliceId,
@@ -181,7 +181,7 @@ export async function handleCompleteTask(
 
   // Render summary markdown via the single source of truth (#2720)
   const taskRow = paramsToTaskRow(params, completedAt);
-  const summaryMd = renderSummaryContent(taskRow, params.sliceId, params.milestoneId, params.verificationEvidence);
+  const summaryMd = renderSummaryContent(taskRow, params.sliceId, params.milestoneId, params.verificationEvidence ?? []);
 
   // Resolve and write summary to disk
   let summaryPath: string;
