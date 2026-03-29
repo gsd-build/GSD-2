@@ -6,6 +6,93 @@ import { SettingsManager } from "../core/settings-manager.js";
 
 let cachedShellConfig: { shell: string; args: string[] } | null = null;
 
+interface ResolveCustomShellConfigOptions {
+	existsSyncImpl?: typeof existsSync;
+	spawnSyncImpl?: typeof spawnSync;
+	settingsPath?: string;
+}
+
+function formatShellCompatibilityError(
+	customShellPath: string,
+	settingsPath: string,
+	probeResult?: {
+		status?: number | null;
+		signal?: NodeJS.Signals | null;
+		stderr?: string | Buffer | null;
+		error?: unknown;
+	},
+): Error {
+	const details: string[] = [
+		`Custom shell path is not a compatible shell: ${customShellPath}`,
+		`The shellPath setting must point to a shell that accepts '-c <command>' (for example: bash, sh, zsh, pwsh).`,
+	];
+
+	if (probeResult?.status !== undefined && probeResult.status !== null) {
+		details.push(`Probe exit status: ${probeResult.status}`);
+	}
+
+	if (probeResult?.signal) {
+		details.push(`Probe signal: ${probeResult.signal}`);
+	}
+
+	const stderr =
+		typeof probeResult?.stderr === "string"
+			? probeResult.stderr.trim()
+			: Buffer.isBuffer(probeResult?.stderr)
+				? probeResult.stderr.toString("utf-8").trim()
+				: "";
+	if (stderr) {
+		details.push(`Probe stderr: ${stderr.slice(0, 300)}`);
+	}
+
+	if (probeResult?.error instanceof Error && probeResult.error.message) {
+		details.push(`Probe error: ${probeResult.error.message}`);
+	}
+
+	details.push(
+		`This usually means shellPath points at a non-shell executable (for example node.exe or python.exe).`,
+		`Please update or remove shellPath in ${settingsPath}`,
+	);
+
+	return new Error(details.join("\n"));
+}
+
+export function resolveCustomShellConfig(
+	customShellPath: string,
+	options: ResolveCustomShellConfigOptions = {},
+): { shell: string; args: string[] } {
+	const existsSyncImpl = options.existsSyncImpl ?? existsSync;
+	const spawnSyncImpl = options.spawnSyncImpl ?? spawnSync;
+	const settingsPath = options.settingsPath ?? getSettingsPath();
+
+	if (!existsSyncImpl(customShellPath)) {
+		throw new Error(
+			`Custom shell path not found: ${customShellPath}\nPlease update shellPath in ${settingsPath}`,
+		);
+	}
+
+	try {
+		const probe = spawnSyncImpl(customShellPath, ["-c", "exit 0"], {
+			encoding: "utf-8",
+			timeout: 5000,
+			stdio: "pipe",
+			windowsHide: true,
+		});
+
+		if (probe.status === 0 && !probe.error) {
+			return { shell: customShellPath, args: ["-c"] };
+		}
+
+		throw formatShellCompatibilityError(customShellPath, settingsPath, probe);
+	} catch (error) {
+		if (error instanceof Error && error.message.includes("not a compatible shell")) {
+			throw error;
+		}
+
+		throw formatShellCompatibilityError(customShellPath, settingsPath, { error });
+	}
+}
+
 /**
  * Find bash executable on PATH (cross-platform)
  */
@@ -58,13 +145,8 @@ export function getShellConfig(): { shell: string; args: string[] } {
 
 	// 1. Check user-specified shell path
 	if (customShellPath) {
-		if (existsSync(customShellPath)) {
-			cachedShellConfig = { shell: customShellPath, args: ["-c"] };
-			return cachedShellConfig;
-		}
-		throw new Error(
-			`Custom shell path not found: ${customShellPath}\nPlease update shellPath in ${getSettingsPath()}`,
-		);
+		cachedShellConfig = resolveCustomShellConfig(customShellPath);
+		return cachedShellConfig;
 	}
 
 	if (process.platform === "win32") {
