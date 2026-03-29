@@ -81,8 +81,12 @@ Plans:
   3. The "Auto Mode Active/Inactive" label in the dashboard matches actual agent auto-mode state
   4. "Start Auto" button reads "Auto Running" and is disabled while auto-mode is active
   5. Any auto-mode state change (start, stop, pause) is reflected in the UI within 2 seconds without a page reload
-**Plans**: TBD
-**UI hint**: yes
+**Plans**: 3 plans
+
+Plans:
+- [ ] 06-01-PLAN.md — SessionStatePayload type and session_state store handler
+- [ ] 06-02-PLAN.md — Three-state button (Start/Stop/Resume) with spinner in dashboard, sidebar, chat-mode
+- [ ] 06-03-PLAN.md — ProjectCard session badge (green/amber/gray dot) and session subtitle
 
 ## Progress
 
@@ -93,4 +97,4 @@ Plans:
 | 3. SSE Cursor-Based Event Replay | v1.0 | 3/3 | Complete | 2026-03-28 |
 | 4. Remote Access Settings UI | v1.0 | 4/4 | Complete | 2026-03-28 |
 | 5. Session State API | v1.1 | 2/2 | Complete   | 2026-03-29 |
-| 6. Active Session UI | v1.1 | 0/? | Not started | - |
+| 6. Active Session UI | v1.1 | 0/3 | Not started | - |
