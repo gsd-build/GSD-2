@@ -61,7 +61,9 @@ export function registerGsdExtension(pi: ExtensionAPI): void {
 
   // Wire cmux event subscriptions — cmux is a library (no pi), so gsd sets up
   // the event listeners on its behalf using the shared event channel contract.
-  void import("../../cmux/index.js").then(({ initCmuxEventListeners }) => {
-    initCmuxEventListeners(pi.events);
-  });
+  if (pi.events) {
+    void import("../../cmux/index.js").then(({ initCmuxEventListeners }) => {
+      initCmuxEventListeners(pi.events);
+    });
+  }
 }
