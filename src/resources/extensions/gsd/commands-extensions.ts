@@ -132,6 +132,64 @@ function readManifest(dir: string): ExtensionManifest | null {
   }
 }
 
+// ─── Package Validation (mirrored — D-14, no src/ imports) ────────────────
+
+export interface ValidationResult {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+}
+
+export function validateExtensionPackage(packageDir: string): ValidationResult {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  // Check package.json exists
+  const pkgPath = join(packageDir, "package.json");
+  if (!existsSync(pkgPath)) {
+    return { valid: false, errors: ["package.json not found"], warnings };
+  }
+
+  let pkg: Record<string, unknown>;
+  try {
+    pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+  } catch {
+    return { valid: false, errors: ["package.json is invalid JSON"], warnings };
+  }
+
+  // (a) gsd.extension: true marker (D-12a)
+  const gsdField = pkg.gsd as Record<string, unknown> | undefined;
+  if (gsdField?.extension !== true) {
+    errors.push('package.json missing "gsd": { "extension": true }');
+  }
+
+  // (b) pi.extensions entry paths exist and are resolvable (D-12b)
+  const piField = pkg.pi as Record<string, unknown> | undefined;
+  const piExtensions = piField?.extensions;
+  if (!Array.isArray(piExtensions) || piExtensions.length === 0) {
+    errors.push('package.json missing "pi": { "extensions": [...] }');
+  } else {
+    for (const entry of piExtensions) {
+      if (typeof entry === "string") {
+        const resolved = join(packageDir, entry);
+        if (!existsSync(resolved)) {
+          errors.push(`pi.extensions entry not found: ${entry}`);
+        }
+      }
+    }
+  }
+
+  // (c) @gsd/* packages must be in peerDependencies, not dependencies (D-12c)
+  const deps = (pkg.dependencies as Record<string, unknown> | undefined) ?? {};
+  for (const dep of Object.keys(deps)) {
+    if (dep.startsWith("@gsd/")) {
+      errors.push(`"${dep}" must be in peerDependencies, not dependencies`);
+    }
+  }
+
+  return { valid: errors.length === 0, errors, warnings };
+}
+
 function discoverManifests(): Map<string, ExtensionManifest> {
   const manifests = new Map<string, ExtensionManifest>();
   // Scan both bundled/agent dir and user-installed dir so CLI (list/info/
@@ -173,21 +231,24 @@ function detectInstallType(specifier: string): "npm" | "git" | "local" {
   return "npm";
 }
 
-// ─── Validation (mirrored from extension-validator.ts) ──────────────────────
+// ─── Manifest Validation (mirrored from extension-validator.ts) ─────────────
+// Note: distinct from validateExtensionPackage above (which validates a package
+// directory on disk and returns string errors). This one validates an already-
+// parsed package.json object and returns structured errors, used by install.
 
-interface ValidationError {
+interface ManifestValidationError {
   code: string;
   message: string;
   field?: string;
 }
 
-interface ValidationResult {
+interface ManifestValidationResult {
   valid: boolean;
-  errors: ValidationError[];
+  errors: ManifestValidationError[];
 }
 
-function validateExtensionPackage(pkg: unknown, opts: { extensionId?: string; allowGsdNamespace?: boolean } = {}): ValidationResult {
-  const errors: ValidationError[] = [];
+function validateExtensionManifest(pkg: unknown, opts: { extensionId?: string; allowGsdNamespace?: boolean } = {}): ManifestValidationResult {
+  const errors: ManifestValidationError[] = [];
 
   // Check gsd.extension === true (strict)
   if (typeof pkg !== "object" || pkg === null) {
@@ -267,7 +328,7 @@ function postInstallValidate(
   const extensionId = manifest?.id;
 
   // Validate
-  const validation = validateExtensionPackage(pkgJson, { extensionId });
+  const validation = validateExtensionManifest(pkgJson, { extensionId });
   if (!validation.valid) {
     const msgs = validation.errors.map(e => e.message).join("\n");
     ctx.ui.notify(`Cannot install "${specifier}": ${msgs}`, "error");
@@ -728,8 +789,13 @@ export async function handleExtensions(args: string, ctx: ExtensionCommandContex
     return;
   }
 
+  if (subCmd === "validate") {
+    handleValidate(parts[1], ctx);
+    return;
+  }
+
   ctx.ui.notify(
-    `Unknown: /gsd extensions ${subCmd}. Usage: /gsd extensions [list|enable|disable|info|install|uninstall|update]`,
+    `Unknown: /gsd extensions ${subCmd}. Usage: /gsd extensions [list|enable|disable|info|install|uninstall|update|validate]`,
     "warning",
   );
 }
@@ -938,6 +1004,28 @@ function handleInfo(id: string | undefined, ctx: ExtensionCommandContext): void 
   }
 
   ctx.ui.notify(lines.join("\n"), "info");
+}
+
+function handleValidate(path: string | undefined, ctx: ExtensionCommandContext): void {
+  if (!path) {
+    ctx.ui.notify("Usage: /gsd extensions validate <path>", "warning");
+    return;
+  }
+  const resolved = resolve(path);
+  if (!existsSync(resolved)) {
+    ctx.ui.notify(`Path not found: ${resolved}`, "warning");
+    return;
+  }
+  const result = validateExtensionPackage(resolved);
+  if (result.valid) {
+    ctx.ui.notify(`Valid extension package: ${resolved}`, "info");
+  } else {
+    ctx.ui.notify(
+      `Invalid extension package: ${resolved}\n` +
+      result.errors.map(e => `  - ${e}`).join("\n"),
+      "warning",
+    );
+  }
 }
 
 function padRight(str: string, len: number): string {
