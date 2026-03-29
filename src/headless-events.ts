@@ -65,6 +65,8 @@ export function mapStatusToExitCode(status: string): number {
  * Blocked detection is separate — checked via isBlockedNotification.
  */
 export const TERMINAL_PREFIXES = ['auto-mode stopped', 'step-mode stopped']
+export const PAUSE_PREFIXES = ['auto-mode paused', 'step-mode paused']
+export const AUTO_RESUME_RE = /auto-resuming in (\d+)s/i
 export const IDLE_TIMEOUT_MS = 15_000
 // new-milestone is a long-running creative task where the LLM may pause
 // between tool calls (e.g. after mkdir, before writing files). Use a
@@ -75,6 +77,28 @@ export function isTerminalNotification(event: Record<string, unknown>): boolean 
   if (event.type !== 'extension_ui_request' || event.method !== 'notify') return false
   const message = String(event.message ?? '').toLowerCase()
   return TERMINAL_PREFIXES.some((prefix) => message.startsWith(prefix))
+}
+
+/**
+ * Detect auto-mode pause notification.
+ * These are emitted by pauseAuto() and indicate the auto-loop exited but
+ * the session may be resumable (e.g. after a provider error recovery delay).
+ */
+export function isPauseNotification(event: Record<string, unknown>): boolean {
+  if (event.type !== 'extension_ui_request' || event.method !== 'notify') return false
+  const message = String(event.message ?? '').toLowerCase()
+  return PAUSE_PREFIXES.some((prefix) => message.startsWith(prefix))
+}
+
+/**
+ * Extract auto-resume delay from a notification like "Auto-resuming in 30s...".
+ * Returns the delay in milliseconds, or null if not an auto-resume notification.
+ */
+export function extractAutoResumeDelay(event: Record<string, unknown>): number | null {
+  if (event.type !== 'extension_ui_request' || event.method !== 'notify') return null
+  const message = String(event.message ?? '')
+  const match = AUTO_RESUME_RE.exec(message)
+  return match ? parseInt(match[1], 10) * 1000 : null
 }
 
 export function isBlockedNotification(event: Record<string, unknown>): boolean {

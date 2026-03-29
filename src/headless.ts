@@ -26,6 +26,8 @@ import {
   isTerminalNotification,
   isBlockedNotification,
   isMilestoneReadyNotification,
+  isPauseNotification,
+  extractAutoResumeDelay,
   isQuickCommand,
   FIRE_AND_FORGET_METHODS,
   IDLE_TIMEOUT_MS,
@@ -364,6 +366,7 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
   let completed = false
   let exitCode = 0
   let milestoneReady = false  // tracks "Milestone X ready." for auto-chaining
+  let pendingAutoResumeMs = 0 // delay (ms) from "Auto-resuming in Xs..." notification
   const recentEvents: TrackedEvent[] = []
 
   // JSON batch mode: cost aggregation (cumulative-max pattern per K004)
@@ -665,6 +668,17 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
         milestoneReady = true
       }
 
+      // Capture "Auto-resuming in Xs..." delay for provider-error recovery.
+      // When auto-mode pauses due to a transient error and schedules a resume,
+      // we need to keep the headless process alive and re-send /gsd auto after
+      // the delay — otherwise the process exits and the resume timer dies (#2815).
+      if (isMultiTurnCommand) {
+        const resumeDelay = extractAutoResumeDelay(eventObj)
+        if (resumeDelay != null) {
+          pendingAutoResumeMs = resumeDelay
+        }
+      }
+
       if (isTerminalNotification(eventObj)) {
         completed = true
       }
@@ -809,6 +823,16 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
   if (internalProcess) {
     internalProcess.on('exit', (code) => {
       if (!completed) {
+        // When auto-mode pauses for a transient provider error, the RPC child
+        // exits (command handler returned). If we captured a pending auto-resume
+        // delay, don't treat this as a fatal exit — we'll wait and re-send
+        // /gsd auto after the delay. Without this, the headless process exits
+        // and the scheduled resume timer dies with it (#2815).
+        if (isMultiTurnCommand && pendingAutoResumeMs > 0) {
+          process.stderr.write(`[headless] Child exited after provider-error pause. Waiting ${pendingAutoResumeMs / 1000}s for auto-resume...\n`)
+          // Don't set exitCode to error — we're going to retry
+          return
+        }
         const msg = `[headless] Child process exited unexpectedly with code ${code ?? 'null'}\n`
         process.stderr.write(msg)
         exitCode = EXIT_ERROR
@@ -833,6 +857,86 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
   // Wait for completion
   if (exitCode === EXIT_SUCCESS || exitCode === EXIT_BLOCKED) {
     await completionPromise
+  }
+
+  // ── Provider-error auto-resume ─────────────────────────────────────────────
+  // When auto-mode paused due to a transient provider error (rate limit, 500,
+  // overloaded) and we captured a "Auto-resuming in Xs..." delay, wait for the
+  // delay then re-send /gsd auto. The RPC child exited (pauseAuto returns to
+  // command handler which exits), so we need to start a new RPC session.
+  // This loop retries until we get a terminal notification or a clean exit.
+  while (isMultiTurnCommand && pendingAutoResumeMs > 0 && !completed && exitCode !== EXIT_CANCELLED) {
+    const delaySec = Math.ceil(pendingAutoResumeMs / 1000)
+    process.stderr.write(`[headless] Provider error — waiting ${delaySec}s before auto-resume...\n`)
+    await new Promise(r => setTimeout(r, pendingAutoResumeMs + 2000)) // +2s buffer
+
+    pendingAutoResumeMs = 0  // Reset — will be set again if another error occurs
+    completed = false
+    blocked = false
+    exitCode = EXIT_SUCCESS
+
+    // Start a fresh RPC session for the retry
+    const retryClient = new RpcClient(clientOptions)
+    retryClient.onEvent((event) => {
+      const eventObj = event as Record<string, unknown>
+      trackEvent(eventObj)
+      resetIdleTimer()
+
+      if (options.json && options.outputFormat === 'stream-json') {
+        const eventType = String(eventObj.type ?? '')
+        if (!options.eventFilter || options.eventFilter.has(eventType)) {
+          process.stdout.write(JSON.stringify(eventObj) + '\n')
+        }
+      }
+
+      // Terminal and pause detection
+      if (eventObj.type === 'extension_ui_request') {
+        if (isTerminalNotification(eventObj)) {
+          completed = true
+        }
+        const resumeDelay = extractAutoResumeDelay(eventObj)
+        if (resumeDelay != null) {
+          pendingAutoResumeMs = resumeDelay
+        }
+        handleExtensionUIRequest(eventObj as unknown as ExtensionUIRequest, retryClient)
+        if (completed) {
+          exitCode = blocked ? EXIT_BLOCKED : EXIT_SUCCESS
+          resolveCompletion()
+          return
+        }
+      }
+    })
+
+    const retryCompletion = new Promise<void>((resolve) => {
+      resolveCompletion = resolve
+    })
+
+    try {
+      await retryClient.start()
+      process.stderr.write('[headless] Auto-resume: sending /gsd auto...\n')
+      await retryClient.prompt('/gsd auto')
+    } catch (err) {
+      process.stderr.write(`[headless] Auto-resume failed: ${err instanceof Error ? err.message : String(err)}\n`)
+      exitCode = EXIT_ERROR
+      break
+    }
+
+    const retryProcess = (retryClient as any).process as ChildProcess
+    if (retryProcess) {
+      retryProcess.on('exit', (code) => {
+        if (!completed) {
+          if (pendingAutoResumeMs > 0) {
+            process.stderr.write(`[headless] Child exited after pause. Will retry in ${pendingAutoResumeMs / 1000}s...\n`)
+            return
+          }
+          exitCode = code === 0 ? EXIT_SUCCESS : EXIT_ERROR
+          resolveCompletion()
+        }
+      })
+    }
+
+    await retryCompletion
+    await retryClient.stop().catch(() => {})
   }
 
   // Auto-mode chaining: if --auto and milestone creation succeeded, send /gsd auto
