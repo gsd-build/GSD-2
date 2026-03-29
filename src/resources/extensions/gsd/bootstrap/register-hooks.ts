@@ -12,7 +12,7 @@ import { getDiscussionMilestoneId } from "../guided-flow.js";
 import { loadToolApiKeys } from "../commands-config.js";
 import { loadFile, saveFile, formatContinue } from "../files.js";
 import { deriveState } from "../state.js";
-import { getAutoDashboardData, isAutoActive, isAutoPaused, markToolEnd, markToolStart } from "../auto.js";
+import { getAutoDashboardData, isAutoActive, isAutoPaused, markToolEnd, markToolStart, recordToolInvocationError } from "../auto.js";
 import { isParallelActive, shutdownParallel } from "../parallel-orchestrator.js";
 import { checkToolCallLoop, resetToolCallLoopGuard } from "./tool-call-loop-guard.js";
 import { saveActivityLog } from "../activity-log.js";
@@ -250,6 +250,14 @@ export function registerHooks(pi: ExtensionAPI): void {
 
   pi.on("tool_execution_end", async (event) => {
     markToolEnd(event.toolCallId);
+    // #2883: Capture tool invocation errors (malformed/truncated JSON arguments)
+    // so postUnitPreVerification can break the retry loop instead of re-dispatching.
+    if (event.isError && event.toolName.startsWith("gsd_")) {
+      const errorText = typeof event.result === "string"
+        ? event.result
+        : (typeof event.result?.content?.[0]?.text === "string" ? event.result.content[0].text : String(event.result));
+      recordToolInvocationError(event.toolName, errorText);
+    }
   });
 
   pi.on("model_select", async (_event, ctx) => {

@@ -120,6 +120,11 @@ export class AutoSession {
   // ── Sidecar queue ─────────────────────────────────────────────────────
   sidecarQueue: SidecarItem[] = [];
 
+  // ── Tool invocation errors (#2883) ──────────────────────────────────
+  /** Set when a GSD tool execution ends with isError due to malformed/truncated
+   *  JSON arguments. Checked by postUnitPreVerification to break retry loops. */
+  lastToolInvocationError: string | null = null;
+
   // ── Isolation degradation ────────────────────────────────────────────
   /** Set to true when worktree creation fails; prevents merge of nonexistent branch. */
   isolationDegraded = false;
@@ -212,6 +217,7 @@ export class AutoSession {
     this.pendingQuickTasks = [];
     this.sidecarQueue = [];
     this.rewriteAttemptCount = 0;
+    this.lastToolInvocationError = null;
     this.isolationDegraded = false;
     this.milestoneMergedInPhases = false;
 

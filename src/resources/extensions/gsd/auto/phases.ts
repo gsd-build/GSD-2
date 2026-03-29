@@ -910,6 +910,7 @@ export async function runUnitPhase(
   const previousTier = s.currentUnitRouting?.tier;
 
   s.currentUnit = { type: unitType, id: unitId, startedAt: Date.now() };
+  s.lastToolInvocationError = null; // #2883: clear stale error from previous unit
   const unitStartSeq = ic.nextSeq();
   deps.emitJournalEvent({ ts: new Date().toISOString(), flowId: ic.flowId, seq: unitStartSeq, eventType: "unit-start", data: { unitType, unitId } });
   deps.captureAvailableSkills();

@@ -466,6 +466,18 @@ export async function postUnitPreVerification(pctx: PostUnitContext, opts?: PreV
       // artifact, return "retry" so the caller re-dispatches with failure context
       // instead of blindly re-dispatching the same unit (#1571).
       if (!triggerArtifactVerified) {
+        // #2883: If the artifact is missing because the tool invocation itself
+        // failed (malformed/truncated JSON arguments), retrying will produce the
+        // same failure. Pause auto-mode instead of entering a stuck retry loop.
+        if (s.lastToolInvocationError) {
+          const errMsg = `Tool invocation failed for ${s.currentUnit.type}: ${s.lastToolInvocationError}. Structured argument generation failed — pausing auto-mode.`;
+          debugLog("postUnit", { phase: "tool-invocation-error-pause", unitType: s.currentUnit.type, unitId: s.currentUnit.id, error: s.lastToolInvocationError });
+          ctx.ui.notify(errMsg, "error");
+          s.lastToolInvocationError = null;
+          await pauseAuto(ctx, pi);
+          return "dispatched";
+        }
+
         const hasExpectedArtifact = resolveExpectedArtifactPath(s.currentUnit.type, s.currentUnit.id, s.basePath) !== null;
         if (hasExpectedArtifact) {
           const retryKey = `${s.currentUnit.type}:${s.currentUnit.id}`;

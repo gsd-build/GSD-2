@@ -75,6 +75,7 @@ import {
   getOldestInFlightToolStart,
   hasInteractiveToolInFlight,
   clearInFlightTools,
+  isToolInvocationError,
 } from "./auto-tool-tracking.js";
 import { closeoutUnit } from "./auto-unit-closeout.js";
 import { recoverTimedOutUnit } from "./auto-timeout-recovery.js";
@@ -382,6 +383,19 @@ export function markToolStart(toolCallId: string, toolName?: string): void {
 
 export function markToolEnd(toolCallId: string): void {
   _markToolEnd(toolCallId);
+}
+
+/**
+ * Record a tool invocation error on the current session (#2883).
+ * Called from tool_execution_end when a GSD tool fails with isError.
+ * Only stores the error if it matches the tool-invocation-error pattern
+ * (malformed/truncated JSON), not normal business-logic errors.
+ */
+export function recordToolInvocationError(toolName: string, errorMsg: string): void {
+  if (!s.active) return;
+  if (isToolInvocationError(errorMsg)) {
+    s.lastToolInvocationError = `${toolName}: ${errorMsg}`;
+  }
 }
 
 export function getOldestInFlightToolAgeMs(): number {
