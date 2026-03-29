@@ -900,6 +900,16 @@ export function createAutoWorktree(
   basePath: string,
   milestoneId: string,
 ): string {
+  // Check if repo has commits — git worktree requires a valid HEAD
+  try {
+    execFileSync("git", ["rev-parse", "--verify", "HEAD"], { cwd: basePath, stdio: "pipe" });
+  } catch {
+    throw new GSDError(
+      GSD_GIT_ERROR,
+      `Cannot create worktree: repository has no commits yet. Worktree isolation requires at least one commit.`,
+    );
+  }
+
   const branch = autoWorktreeBranch(milestoneId);
 
   // Check if the milestone branch already exists — it survives auto-mode
