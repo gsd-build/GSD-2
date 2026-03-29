@@ -21,12 +21,14 @@ interface MinimalModelRegistry {
   getAvailable(): MinimalModel[]
 }
 
+type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
+
 interface MinimalSettingsManager {
   getDefaultProvider(): string | undefined
   getDefaultModel(): string | undefined
-  getDefaultThinkingLevel(): string
+  getDefaultThinkingLevel(): ThinkingLevel | undefined
   setDefaultModelAndProvider(provider: string, modelId: string): void
-  setDefaultThinkingLevel(level: string): void
+  setDefaultThinkingLevel(level: ThinkingLevel): void
 }
 
 /**
