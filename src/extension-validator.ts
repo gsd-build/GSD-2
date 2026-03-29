@@ -1,5 +1,4 @@
 // GSD-2 — Extension Package Format Validator
-// Copyright (c) 2026 Jeremy McSpadden <jeremy@fluxlabs.net>
 
 /**
  * Install-time validator for GSD extension packages. Called by the install command

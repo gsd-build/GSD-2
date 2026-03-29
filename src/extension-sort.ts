@@ -1,5 +1,4 @@
 // GSD-2 — Extension Sort: Topological dependency ordering
-// Copyright (c) 2026 Jeremy McSpadden <jeremy@fluxlabs.net>
 
 import { readManifestFromEntryPath } from './extension-registry.js'
 
