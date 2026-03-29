@@ -193,4 +193,123 @@ describe('sortExtensionPaths', () => {
     const bIdx = result.sortedPaths.indexOf(pathB)
     assert.ok(aIdx < bIdx, 'A must be before B (dependency order)')
   })
+
+  test('Test 9: string deps instead of array — treated as empty, no crash, extension in output', (t) => {
+    const dir = makeTempDir()
+    t.after(() => rmSync(dir, { recursive: true, force: true }))
+
+    const extDir = join(dir, 'bad.deps')
+    mkdirSync(extDir, { recursive: true })
+    writeFileSync(join(extDir, 'extension-manifest.json'), JSON.stringify({
+      id: 'bad.deps', name: 'bad.deps', version: '1.0.0',
+      description: 'test', tier: 'bundled', requires: { platform: 'node' },
+      dependencies: { extensions: 'not-an-array' }
+    }))
+    writeFileSync(join(extDir, 'index.ts'), 'export default function() {}')
+    const pathBadDeps = join(extDir, 'index.ts')
+
+    const result = sortExtensionPaths([pathBadDeps])
+
+    assert.equal(result.warnings.length, 0, 'no warnings expected for string deps')
+    assert.equal(result.sortedPaths.length, 1, 'extension still in output')
+    assert.ok(result.sortedPaths.includes(pathBadDeps), 'pathBadDeps in output')
+  })
+
+  test('Test 10: null deps — treated as empty, no crash, extension in output', (t) => {
+    const dir = makeTempDir()
+    t.after(() => rmSync(dir, { recursive: true, force: true }))
+
+    const extDir = join(dir, 'null.deps')
+    mkdirSync(extDir, { recursive: true })
+    writeFileSync(join(extDir, 'extension-manifest.json'), JSON.stringify({
+      id: 'null.deps', name: 'null.deps', version: '1.0.0',
+      description: 'test', tier: 'bundled', requires: { platform: 'node' },
+      dependencies: { extensions: null }
+    }))
+    writeFileSync(join(extDir, 'index.ts'), 'export default function() {}')
+    const pathNullDeps = join(extDir, 'index.ts')
+
+    const result = sortExtensionPaths([pathNullDeps])
+
+    assert.equal(result.warnings.length, 0, 'no warnings expected for null deps')
+    assert.equal(result.sortedPaths.length, 1, 'extension still in output')
+    assert.ok(result.sortedPaths.includes(pathNullDeps), 'pathNullDeps in output')
+  })
+
+  test('Test 11: numeric deps — treated as empty, no crash, extension in output', (t) => {
+    const dir = makeTempDir()
+    t.after(() => rmSync(dir, { recursive: true, force: true }))
+
+    const extDir = join(dir, 'num.deps')
+    mkdirSync(extDir, { recursive: true })
+    writeFileSync(join(extDir, 'extension-manifest.json'), JSON.stringify({
+      id: 'num.deps', name: 'num.deps', version: '1.0.0',
+      description: 'test', tier: 'bundled', requires: { platform: 'node' },
+      dependencies: { extensions: 42 }
+    }))
+    writeFileSync(join(extDir, 'index.ts'), 'export default function() {}')
+    const pathNumDeps = join(extDir, 'index.ts')
+
+    const result = sortExtensionPaths([pathNumDeps])
+
+    assert.equal(result.warnings.length, 0, 'no warnings expected for numeric deps')
+    assert.equal(result.sortedPaths.length, 1, 'extension still in output')
+    assert.ok(result.sortedPaths.includes(pathNumDeps), 'pathNumDeps in output')
+  })
+
+  test('Test 12: chain with missing middle — A depends on B, B depends on missing C', (t) => {
+    const dir = makeTempDir()
+    t.after(() => rmSync(dir, { recursive: true, force: true }))
+
+    const pathA = makeExtension(dir, 'chain.mid.a', ['chain.mid.b'])
+    const pathB = makeExtension(dir, 'chain.mid.b', ['chain.mid.c']) // C is not installed
+
+    const result = sortExtensionPaths([pathA, pathB])
+
+    // Missing dep warning for B→C
+    assert.equal(result.warnings.length, 1, 'one missing dep warning for B→C')
+    assert.equal(result.warnings[0].declaringId, 'chain.mid.b')
+    assert.equal(result.warnings[0].missingId, 'chain.mid.c')
+
+    // No cycle warning
+    const hasCycleWarning = result.warnings.some(w => w.message.includes('form a dependency cycle'))
+    assert.ok(!hasCycleWarning, 'no cycle warning expected')
+
+    // Both A and B in output
+    assert.equal(result.sortedPaths.length, 2)
+    assert.ok(result.sortedPaths.includes(pathA), 'pathA in output')
+    assert.ok(result.sortedPaths.includes(pathB), 'pathB in output')
+
+    // B before A (B is a dependency of A)
+    const aIdx = result.sortedPaths.indexOf(pathA)
+    const bIdx = result.sortedPaths.indexOf(pathB)
+    assert.ok(bIdx < aIdx, 'B must appear before A')
+  })
+
+  test('Test 13: duplicate dependency declarations — A declares B twice, no double-counting', (t) => {
+    const dir = makeTempDir()
+    t.after(() => rmSync(dir, { recursive: true, force: true }))
+
+    const pathB = makeExtension(dir, 'dup.b')
+    const pathA = makeExtension(dir, 'dup.a', ['dup.b', 'dup.b'])
+
+    const result = sortExtensionPaths([pathA, pathB])
+
+    // B before A
+    assert.equal(result.sortedPaths.length, 2)
+    const aIdx = result.sortedPaths.indexOf(pathA)
+    const bIdx = result.sortedPaths.indexOf(pathB)
+    assert.ok(bIdx < aIdx, 'B must appear before A')
+
+    // No cycle warning
+    const hasCycleWarning = result.warnings.some(w => w.message.includes('form a dependency cycle'))
+    assert.ok(!hasCycleWarning, 'no cycle warning expected for duplicate deps')
+  })
+
+  test('Test 14: empty paths array — returns empty result with no warnings', (_t) => {
+    const result = sortExtensionPaths([])
+
+    assert.equal(result.warnings.length, 0, 'no warnings for empty input')
+    assert.equal(result.sortedPaths.length, 0, 'no paths in output')
+  })
 })

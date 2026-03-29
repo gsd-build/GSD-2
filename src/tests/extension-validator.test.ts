@@ -40,6 +40,25 @@ describe('checkInstallDiscriminator', () => {
     assert.ok(result !== null)
     assert.equal(result.code, 'MISSING_GSD_MARKER')
   })
+
+  test('returns error when gsd.extension is undefined', () => {
+    const result = checkInstallDiscriminator({ gsd: {} })
+    assert.ok(result !== null)
+    assert.equal(result.code, 'MISSING_GSD_MARKER')
+    assert.equal(result.field, 'gsd.extension')
+  })
+
+  test('returns error when gsd is an array (not object)', () => {
+    const result = checkInstallDiscriminator({ gsd: ['extension'] })
+    assert.ok(result !== null)
+    assert.equal(result.code, 'MISSING_GSD_MARKER')
+  })
+
+  test('returns error when input is a string (not object)', () => {
+    const result = checkInstallDiscriminator('{"gsd":{"extension":true}}')
+    assert.ok(result !== null)
+    assert.equal(result.code, 'MISSING_GSD_MARKER')
+  })
 })
 
 describe('checkNamespaceReservation', () => {
@@ -111,6 +130,21 @@ describe('checkDependencyPlacement', () => {
     const errors = checkDependencyPlacement({})
     assert.equal(errors.length, 0)
   })
+
+  test('returns empty errors when dependencies is a string instead of object', () => {
+    const errors = checkDependencyPlacement({ dependencies: '@gsd/pi-coding-agent' })
+    assert.equal(errors.length, 0, 'string in dependencies field should be gracefully skipped')
+  })
+
+  test('returns empty errors when dependencies is null', () => {
+    const errors = checkDependencyPlacement({ dependencies: null })
+    assert.equal(errors.length, 0, 'null dependencies should be gracefully skipped')
+  })
+
+  test('returns empty errors when dependencies is an array', () => {
+    const errors = checkDependencyPlacement({ dependencies: ['@gsd/pi-coding-agent'] })
+    assert.equal(errors.length, 0, 'array in dependencies field should be gracefully skipped')
+  })
 })
 
 describe('validateExtensionPackage', () => {
@@ -155,5 +189,15 @@ describe('validateExtensionPackage', () => {
     assert.equal(result.valid, true)
     assert.equal(result.warnings.length, 1)
     assert.equal(result.warnings[0].code, 'NAMESPACE_CHECK_SKIPPED')
+  })
+})
+
+describe('edge cases — field types', () => {
+  test('does not flag @gsd/ package nested in sub-object of dependencies (only top-level keys matter)', () => {
+    // The checker iterates Object.keys(deps) — a sub-object value is a value, not a key name
+    const errors = checkDependencyPlacement({
+      dependencies: { nested: { '@gsd/foo': '1.0' } },
+    })
+    assert.equal(errors.length, 0, 'nested @gsd/ in a sub-object value should not be flagged')
   })
 })

@@ -48,7 +48,8 @@ export function sortExtensionPaths(paths: string[]): SortResult {
 
   for (const [id, path] of idToPath) {
     const manifest = readManifestFromEntryPath(path)
-    const deps = manifest?.dependencies?.extensions ?? []
+    const rawDeps = manifest?.dependencies?.extensions ?? []
+    const deps = Array.isArray(rawDeps) ? rawDeps : []
 
     for (const depId of deps) {
       // Silently ignore self-deps
@@ -110,7 +111,8 @@ export function sortExtensionPaths(paths: string[]): SortResult {
     for (const id of cycleIds) {
       const path = idToPath.get(id)!
       const manifest = readManifestFromEntryPath(path)
-      const deps = manifest?.dependencies?.extensions ?? []
+      const rawDeps = manifest?.dependencies?.extensions ?? []
+      const deps = Array.isArray(rawDeps) ? rawDeps : []
 
       for (const depId of deps) {
         if (depId === id) continue

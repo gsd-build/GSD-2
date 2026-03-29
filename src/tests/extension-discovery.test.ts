@@ -81,6 +81,22 @@ describe('resolveExtensionEntries', () => {
 })
 
 describe('discoverExtensionEntryPaths', () => {
+  test('falls back to index.ts detection when extension directory has malformed package.json', (t) => {
+    const root = makeTempDir()
+    t.after(() => rmSync(root, { recursive: true, force: true }))
+
+    const extDir = join(root, 'malformed-ext')
+    mkdirSync(extDir)
+    // Write deliberately invalid JSON — resolveExtensionEntries catches the parse error and falls through
+    writeFileSync(join(extDir, 'package.json'), '{ "pi": { INVALID')
+    writeFileSync(join(extDir, 'index.ts'), 'export default function() {}')
+
+    const paths = discoverExtensionEntryPaths(root)
+    assert.equal(paths.length, 1, 'should discover the extension via index.ts fallback')
+    assert.ok(paths[0].includes('malformed-ext'), 'discovered path should be from malformed-ext')
+    assert.ok(paths[0].endsWith('index.ts'), 'should have fallen back to index.ts')
+  })
+
   test('skips library directories with pi: {} opt-out', (t) => {
     const root = makeTempDir()
     t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -166,6 +182,39 @@ describe('mergeExtensionEntryPaths', () => {
     assert.equal(result.length, 1, 'only one entry: installed takes precedence over bundled')
     assert.ok(!result.includes(bundledEntryPath), 'bundled entry should be excluded')
     assert.ok(result.some(p => p.includes('my-ext-installed')), 'installed entry should be present')
+  })
+
+  test('silently skips installed extension with corrupt/unreadable manifest (invalid JSON)', (t) => {
+    const root = join(tmpdir(), `installed-corrupt-manifest-${Date.now()}`)
+    t.after(() => rmSync(root, { recursive: true, force: true }))
+
+    const installedDir = join(root, 'installed')
+    const corruptExtDir = join(installedDir, 'corrupt-ext')
+    mkdirSync(corruptExtDir, { recursive: true })
+    // Write deliberately invalid JSON to extension-manifest.json
+    writeFileSync(join(corruptExtDir, 'extension-manifest.json'), '{ "id": "corrupt-ext" INVALID JSON')
+    writeFileSync(join(corruptExtDir, 'index.ts'), 'export default function() {}')
+
+    const bundled = ['/fake/bundled/ext-a/index.ts']
+    const result = mergeExtensionEntryPaths(bundled, installedDir)
+
+    assert.deepEqual(result, bundled, 'corrupt manifest should be silently skipped, bundled paths unchanged')
+  })
+
+  test('skips installed extension directory with no index.ts/index.js even if manifest is valid', (t) => {
+    const root = join(tmpdir(), `installed-no-entries-${Date.now()}`)
+    t.after(() => rmSync(root, { recursive: true, force: true }))
+
+    const installedDir = join(root, 'installed')
+    const emptyExtDir = join(installedDir, 'empty-ext')
+    mkdirSync(emptyExtDir, { recursive: true })
+    // Valid manifest but no index.ts/index.js
+    writeFileSync(join(emptyExtDir, 'extension-manifest.json'), makeManifest('empty-ext'))
+
+    const bundled = ['/fake/bundled/ext-a/index.ts']
+    const result = mergeExtensionEntryPaths(bundled, installedDir)
+
+    assert.deepEqual(result, bundled, 'extension with no entry files should be skipped even if manifest is valid')
   })
 
   test('handles multiple installed extensions, some shadowing, some additive', (t) => {
