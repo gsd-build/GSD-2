@@ -311,6 +311,7 @@ export function ProjectsPanel({
   const [devRoot, setDevRoot] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [activeSessionState, setActiveSessionState] = useState<ProjectSessionState | null>(null)
 
   const loadProjects = useCallback(async (root: string) => {
     const projRes = await authFetch(`/api/projects?root=${encodeURIComponent(root)}&detail=true`)
@@ -341,6 +342,21 @@ export function ProjectsPanel({
         setDevRoot(prefs.devRoot)
         const discovered = await loadProjects(prefs.devRoot)
         if (!cancelled) setProjects(discovered)
+
+        // Fetch session state for the active project (one-shot; only the active project has a bridge)
+        try {
+          const sessionRes = await authFetch("/api/session/state")
+          if (sessionRes.ok) {
+            const sessionData = await sessionRes.json()
+            if (!cancelled) setActiveSessionState(sessionData as ProjectSessionState)
+          } else {
+            // 503 = no bridge; treat as no active session
+            if (!cancelled) setActiveSessionState(null)
+          }
+        } catch {
+          // Network error — no session badge
+          if (!cancelled) setActiveSessionState(null)
+        }
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Unknown error")
@@ -353,6 +369,7 @@ export function ProjectsPanel({
     load()
     return () => {
       cancelled = true
+      setActiveSessionState(null)
     }
   }, [open, loadProjects])
 
@@ -475,6 +492,7 @@ export function ProjectsPanel({
             project={project}
             isActive={activeProjectCwd === project.path}
             onClick={() => handleSelectProject(project)}
+            sessionState={activeProjectCwd === project.path ? activeSessionState : null}
           />
         ))}
 
