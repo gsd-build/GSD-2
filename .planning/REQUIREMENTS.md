@@ -7,15 +7,15 @@
 
 ### Session Awareness
 
-- [ ] **SESS-10**: Project selector shows a "running" indicator (green dot + pulse) for projects with an active agent session
-- [ ] **SESS-11**: Project selector shows session details: current mode (auto/interactive), current phase/task when available
+- [x] **SESS-10**: Project selector shows a "running" indicator (green dot + pulse) for projects with an active agent session
+- [x] **SESS-11**: Project selector shows session details: current mode (auto/interactive), current phase/task when available
 - [x] **SESS-12**: Session status updates in real-time via SSE (not just on page load)
 
 ### Auto-Mode State
 
-- [ ] **AUTO-01**: "Auto Mode Active/Inactive" label in dashboard correctly reflects the agent's actual auto-mode state
+- [x] **AUTO-01**: "Auto Mode Active/Inactive" label in dashboard correctly reflects the agent's actual auto-mode state
 - [ ] **AUTO-02**: "Start Auto" button shows "Auto Running" (disabled) when auto-mode is already active
-- [ ] **AUTO-03**: Auto-mode state change (start/stop/pause) reflects in the UI within 2 seconds
+- [x] **AUTO-03**: Auto-mode state change (start/stop/pause) reflects in the UI within 2 seconds
 
 ## Out of Scope
 

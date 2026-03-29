@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Active Session Indicators
 status: executing
-stopped_at: Completed 06-01-PLAN.md
-last_updated: "2026-03-29T08:58:14.158Z"
+stopped_at: Completed 06-03-PLAN.md
+last_updated: "2026-03-29T09:02:23.270Z"
 last_activity: 2026-03-29
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 5
-  completed_plans: 3
+  completed_plans: 4
   percent: 0
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-03-29)
 ## Current Position
 
 Phase: 06 (active-session-ui) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-03-29
 
@@ -55,6 +55,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 05-session-state-api P01 | 5 | 2 tasks | 2 files |
 | Phase 05 P02 | 8 | 2 tasks | 2 files |
 | Phase 06-active-session-ui P01 | 2 | 2 tasks | 1 files |
+| Phase 06-active-session-ui P03 | 2 | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -72,6 +73,8 @@ Recent decisions affecting current work:
 - [Phase 05]: Emit session_state asynchronously in subscribe callback — avoids blocking synchronous event queue
 - [Phase 05]: SSE session_state event order: bridge_status (sync), live_state_invalidation (sync), session_state x2 (async after await)
 - [Phase 06-active-session-ui]: SessionStatePayload added to WorkspaceEvent union with session_state in Exclude<> catch-all; handleSessionStateEvent guards against null pre-boot auto state
+- [Phase 06-active-session-ui]: ProjectSessionState defined as local interface with 4 fields needed for badge rendering
+- [Phase 06-active-session-ui]: Session state fetched once in ProjectsPanel.load() after projects discovery — avoids N requests
 
 ### Pending Todos
 
@@ -84,6 +87,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-29T08:58:14.156Z
-Stopped at: Completed 06-01-PLAN.md
+Last session: 2026-03-29T09:02:23.267Z
+Stopped at: Completed 06-03-PLAN.md
 Resume file: None
