@@ -22,6 +22,15 @@ import type {
 	StreamFn,
 } from "./types.js";
 
+/**
+ * Maximum number of consecutive turns where ALL tool calls in the turn fail
+ * schema validation before the loop terminates. This prevents unbounded retry
+ * loops when the LLM repeatedly emits tool calls with arguments that cannot
+ * pass validation (e.g., schema overload, truncated JSON, missing required
+ * fields). See: https://github.com/gsd-build/gsd-2/issues/2783
+ */
+export const MAX_CONSECUTIVE_VALIDATION_FAILURES = 3;
+
 export const ZERO_USAGE = {
 	input: 0,
 	output: 0,
@@ -175,6 +184,12 @@ async function runLoop(
 	// Check for steering messages at start (user may have typed while waiting)
 	let pendingMessages: AgentMessage[] = (await config.getSteeringMessages?.()) || [];
 
+	// Track consecutive turns where ALL tool calls fail validation.
+	// When the LLM repeatedly emits tool calls with schema-overloaded or malformed
+	// arguments, each turn produces only error tool results. Without a cap, this
+	// creates an unbounded retry loop that burns budget. (#2783)
+	let consecutiveAllToolErrorTurns = 0;
+
 	// Outer loop: continues when queued follow-up messages arrive after agent would stop
 	while (true) {
 		let hasMoreToolCalls = true;
@@ -276,6 +291,44 @@ async function runLoop(
 				for (const result of toolResults) {
 					currentContext.messages.push(result);
 					newMessages.push(result);
+				}
+
+				// Schema overload detection (#2783): if EVERY tool result in this turn
+				// is an error (validation failure, missing tool, etc.), increment the
+				// consecutive failure counter. If any tool succeeded, reset to zero.
+				const allToolsFailed = toolResults.length > 0 && toolResults.every((r) => r.isError);
+				if (allToolsFailed) {
+					consecutiveAllToolErrorTurns++;
+				} else {
+					consecutiveAllToolErrorTurns = 0;
+				}
+
+				if (consecutiveAllToolErrorTurns >= MAX_CONSECUTIVE_VALIDATION_FAILURES) {
+					// Force-stop: the LLM is stuck retrying broken tool calls.
+					// Emit the turn_end and terminate the agent loop cleanly.
+					stream.push({ type: "turn_end", message, toolResults });
+					const stopMessage: AssistantMessage = {
+						role: "assistant",
+						content: [
+							{
+								type: "text",
+								text: `Agent stopped: ${consecutiveAllToolErrorTurns} consecutive turns with all tool calls failing. This usually means the model is repeatedly sending arguments that do not match the tool schema.`,
+							},
+						],
+						api: config.model.api,
+						provider: config.model.provider,
+						model: config.model.id,
+						usage: ZERO_USAGE,
+						stopReason: "error",
+						errorMessage: "Schema overload: consecutive tool validation failures exceeded cap",
+						timestamp: Date.now(),
+					};
+					emitMessagePair(stream, stopMessage);
+					newMessages.push(stopMessage);
+					stream.push({ type: "turn_end", message: stopMessage, toolResults: [] });
+					stream.push({ type: "agent_end", messages: newMessages });
+					stream.end(newMessages);
+					return;
 				}
 			}
 
