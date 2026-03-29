@@ -23,7 +23,7 @@ import { Type } from "@sinclair/typebox";
 import { Client } from "@modelcontextprotocol/sdk/client";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -54,20 +54,53 @@ interface ManagedConnection {
 const connections = new Map<string, ManagedConnection>();
 let configCache: McpServerConfig[] | null = null;
 const toolCache = new Map<string, McpToolSchema[]>();
+let configMtimes = new Map<string, number>();
 
-function readConfigs(): McpServerConfig[] {
-	if (configCache) return configCache;
+function readConfigs(refresh = false, baseDir = process.cwd()): McpServerConfig[] {
+	if (!refresh && configCache !== null) {
+		// Auto-detect changes via mtime so .gsd/mcp.json updates don't require manual refresh
+		const configPaths = [
+			join(baseDir, ".mcp.json"),
+			join(baseDir, ".gsd", "mcp.json"),
+		];
+		let needsRefresh = false;
+		for (const p of configPaths) {
+			try {
+				if (existsSync(p)) {
+					const stats = statSync(p);
+					const current = stats.mtimeMs;
+					const cached = configMtimes.get(p) || 0;
+					if (current > cached) {
+						needsRefresh = true;
+						break;
+					}
+				}
+			} catch {
+				// ignore
+			}
+		}
+		if (!needsRefresh) return configCache!;
+	}
 
 	const servers: McpServerConfig[] = [];
 	const seen = new Set<string>();
 	const configPaths = [
-		join(process.cwd(), ".mcp.json"),
-		join(process.cwd(), ".gsd", "mcp.json"),
+		join(baseDir, ".mcp.json"),
+		join(baseDir, ".gsd", "mcp.json"),
 	];
+
+	configMtimes.clear();
 
 	for (const configPath of configPaths) {
 		try {
-			if (!existsSync(configPath)) continue;
+			if (!existsSync(configPath)) {
+				configMtimes.set(configPath, 0);
+				continue;
+			}
+
+			const stats = statSync(configPath);
+			configMtimes.set(configPath, stats.mtimeMs);
+
 			const raw = readFileSync(configPath, "utf-8");
 			const data = JSON.parse(raw) as Record<string, unknown>;
 			const mcpServers = (data.mcpServers ?? data.servers) as
@@ -101,8 +134,9 @@ function readConfigs(): McpServerConfig[] {
 					...(hasUrl && { url: config.url as string }),
 				});
 			}
-		} catch {
+		} catch (e) {
 			// Non-fatal — config file may not exist or be malformed
+			console.warn(`[MCP] Failed to read ${configPath}:`, e);
 		}
 	}
 
@@ -258,14 +292,13 @@ export default function (pi: ExtensionAPI) {
 		}),
 
 		async execute(_id, params) {
-			if (params.refresh) configCache = null;
-
-			const servers = readConfigs();
+			const refresh = !!params.refresh;
+			const servers = readConfigs(refresh);
 			return {
 				content: [{ type: "text", text: formatServerList(servers) }],
 				details: {
 					serverCount: servers.length,
-					cached: !params.refresh && configCache !== null,
+					cached: !refresh,
 				},
 			};
 		},
@@ -293,14 +326,15 @@ export default function (pi: ExtensionAPI) {
 		name: "mcp_discover",
 		label: "MCP Discover",
 		description:
-			"Get detailed tool signatures and JSON schemas for a specific MCP server. " +
-			"Connects to the server on first call (lazy connection). " +
+			"Get detailed tool signatures and JSON schemas for a specific MCP server from .mcp.json or .gsd/mcp.json. " +
+			"Connects on first call (lazy). Supports refresh to bypass cache. " +
 			"Use this to understand what tools a server provides and what arguments they accept " +
 			"before calling them with mcp_call.",
 		promptSnippet:
 			"Get tool schemas for a specific MCP server before calling its tools",
 		promptGuidelines: [
-			"Call mcp_discover with a server name to see the full tool signatures before calling mcp_call.",
+			"Call mcp_discover(server) to see full tool signatures. Add refresh:true to force reload.",
+			"Both .mcp.json and .gsd/mcp.json are fully supported (caches auto-invalidate on file changes).",
 			"The schemas show required and optional parameters with types and descriptions.",
 		],
 		parameters: Type.Object({
@@ -308,13 +342,21 @@ export default function (pi: ExtensionAPI) {
 				description:
 					"MCP server name (from mcp_servers output), e.g. 'railway', 'twitter-mcp', 'linear'",
 			}),
+			refresh: Type.Optional(
+				Type.Boolean({ description: "Force refresh and clear cache for this server (default: use cache)" }),
+			),
 		}),
 
 		async execute(_id, params, signal) {
 			try {
+				const refresh = !!params.refresh;
+				if (refresh) {
+					toolCache.delete(params.server);
+				}
+
 				// Return cached tools if available
 				const cached = toolCache.get(params.server);
-				if (cached) {
+				if (cached && !refresh) {
 					const text = formatToolList(params.server, cached);
 					const truncation = truncateHead(text, { maxLines: DEFAULT_MAX_LINES, maxBytes: DEFAULT_MAX_BYTES });
 					let finalText = truncation.content;
@@ -345,7 +387,7 @@ export default function (pi: ExtensionAPI) {
 
 				return {
 					content: [{ type: "text", text: finalText }],
-					details: { server: params.server, toolCount: tools.length, cached: false },
+					details: { server: params.server, toolCount: tools.length, cached: false, refreshed: refresh },
 				};
 			} catch (err: unknown) {
 				const msg = err instanceof Error ? err.message : String(err);
@@ -356,6 +398,7 @@ export default function (pi: ExtensionAPI) {
 		renderCall(args, theme) {
 			let text = theme.fg("toolTitle", theme.bold("mcp_discover "));
 			text += theme.fg("accent", args.server);
+			if (args.refresh) text += theme.fg("warning", " (refresh)");
 			return new Text(text, 0, 0);
 		},
 
@@ -498,3 +541,4 @@ export default function (pi: ExtensionAPI) {
 		configCache = null;
 	});
 }
+
