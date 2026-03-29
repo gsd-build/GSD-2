@@ -170,7 +170,7 @@ function ChatModeHeader({ onPrimaryAction, onSecondaryAction }: ChatModeHeaderPr
 
   const boot = state.boot
   const workspace = boot?.workspace ?? null
-  const auto = boot?.auto ?? null
+  const auto = getLiveAutoDashboard(state)
 
   const workflowAction = deriveWorkflowAction({
     phase: workspace?.active.phase ?? "pre-planning",
