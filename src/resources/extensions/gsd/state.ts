@@ -47,6 +47,7 @@ import { extractVerdict } from './verdict-parser.js';
 import {
   isDbAvailable,
   getAllMilestones,
+  getMilestone,
   getMilestoneSlices,
   getSliceTasks,
   getReplanHistory,
@@ -64,8 +65,29 @@ import {
  * files like CONTEXT, CONTEXT-DRAFT, ROADMAP, or SUMMARY).  These appear when
  * a milestone is created but never initialised.  Treating them as active causes
  * auto-mode to stall or falsely declare completion.
+ *
+ * However, a milestone is NOT a ghost if:
+ * - It has a DB row with a meaningful status (queued, active, etc.) — the DB
+ *   knows about it even if content files haven't been created yet.
+ * - It has a worktree directory — a worktree proves the milestone was
+ *   legitimately created and is expected to be populated.
+ *
+ * Fixes #2921: queued milestones with worktrees were incorrectly classified
+ * as ghosts, causing auto-mode to skip them entirely.
  */
 export function isGhostMilestone(basePath: string, mid: string): boolean {
+  // If the milestone has a DB row, it's a known milestone — not a ghost.
+  if (isDbAvailable()) {
+    const dbRow = getMilestone(mid);
+    if (dbRow) return false;
+  }
+
+  // If a worktree exists for this milestone, it was legitimately created.
+  const root = gsdRoot(basePath);
+  const wtPath = join(root, 'worktrees', mid);
+  if (existsSync(wtPath)) return false;
+
+  // Fall back to content-file check: no substantive files means ghost.
   const context   = resolveMilestoneFile(basePath, mid, "CONTEXT");
   const draft     = resolveMilestoneFile(basePath, mid, "CONTEXT-DRAFT");
   const roadmap   = resolveMilestoneFile(basePath, mid, "ROADMAP");

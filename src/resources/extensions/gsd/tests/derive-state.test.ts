@@ -930,6 +930,35 @@ slice: S01
     }
   });
 
+  // ─── Test: queued milestone with worktree not flagged as ghost (#2921) ──
+  test('queued milestone with worktree not flagged as ghost (#2921)', async () => {
+    const base = createFixtureBase();
+    try {
+      // Create a milestone directory with only an empty slices subdir — no content files.
+      // This would normally be a ghost, but it has a worktree directory.
+      const milestoneDir = join(base, '.gsd', 'milestones', 'M002');
+      mkdirSync(join(milestoneDir, 'slices'), { recursive: true });
+
+      // Create a worktree directory for M002, simulating an active worktree
+      const worktreeDir = join(base, '.gsd', 'worktrees', 'M002');
+      mkdirSync(worktreeDir, { recursive: true });
+
+      // isGhostMilestone should return false because the worktree exists
+      assert.ok(!isGhostMilestone(base, 'M002'), 'M002 with worktree should NOT be a ghost');
+
+      // Also create a completed M001 so deriveState has something before M002
+      writeMilestoneSummary(base, 'M001', '# M001 Summary\n\nDone.');
+
+      const state = await deriveState(base);
+      // M002 should appear in the registry (not filtered as ghost)
+      const m002Entry = state.registry.find(e => e.id === 'M002');
+      assert.ok(m002Entry !== undefined, 'M002 should be in registry when worktree exists');
+      assert.deepStrictEqual(state.activeMilestone?.id, 'M002', 'M002 should be active milestone');
+    } finally {
+      cleanup(base);
+    }
+  });
+
   // ─── Test: zero-slice roadmap → pre-planning, not blocked (#1785) ────
   test('zero-slice roadmap → pre-planning, not blocked (#1785)', async () => {
     const base = createFixtureBase();
