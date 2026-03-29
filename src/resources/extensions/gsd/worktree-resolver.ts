@@ -492,20 +492,35 @@ export class WorktreeResolver {
           const p = join(gitDir, f);
           if (existsSync(p)) unlinkSync(p);
         }
-      } catch { /* best-effort */ }
+      } catch (cleanupErr) {
+        debugLog("WorktreeResolver", {
+          action: "mergeAndExit",
+          milestoneId,
+          phase: "merge-state-cleanup-failed",
+          error: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
+        });
+      }
 
       // Error recovery: always restore to project root
       if (originalBase) {
         try {
           process.chdir(originalBase);
-        } catch {
-          /* best-effort */
+        } catch (chdirErr) {
+          debugLog("WorktreeResolver", {
+            action: "mergeAndExit",
+            milestoneId,
+            phase: "error-recovery-chdir-failed",
+            error: chdirErr instanceof Error ? chdirErr.message : String(chdirErr),
+          });
         }
       }
 
       // Re-throw MergeConflictError so the auto loop can detect real code
       // conflicts and stop instead of retrying forever (#2330).
+      // Restore basePath BEFORE re-throwing so s.basePath stays in sync
+      // with process.cwd() — prevents downstream path desync (#3141).
       if (err instanceof MergeConflictError) {
+        this.restoreToProjectRoot();
         throw err;
       }
     }
