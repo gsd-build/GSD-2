@@ -10,6 +10,7 @@ import { StringDecoder } from "node:string_decoder";
 const repoRoot = process.cwd();
 const bridge = await import("../../web/bridge-service.ts");
 const stateRoute = await import("../../../web/app/api/session/state/route.ts");
+const eventsRoute = await import("../../../web/app/api/session/events/route.ts");
 
 class FakeRpcChild extends EventEmitter {
   stdin = new PassThrough();
@@ -105,6 +106,40 @@ function createSessionFile(projectCwd: string, sessionsDir: string, sessionId: s
 
 function waitForMicrotasks(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+async function readSseEvents(response: Response, count: number): Promise<any[]> {
+  const reader = response.body?.getReader();
+  assert.ok(reader, "SSE response has a body reader");
+  const decoder = new TextDecoder();
+  const events: any[] = [];
+  let buffer = "";
+
+  while (events.length < count) {
+    const result = await Promise.race([
+      reader.read(),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timed out reading SSE events")), 1_500)),
+    ]);
+
+    if (result.done) break;
+    buffer += decoder.decode(result.value, { stream: true });
+
+    while (true) {
+      const boundary = buffer.indexOf("\n\n");
+      if (boundary === -1) break;
+      const chunk = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 2);
+      const dataLine = chunk.split("\n").find((line) => line.startsWith("data: "));
+      if (!dataLine) continue;
+      events.push(JSON.parse(dataLine.slice(6)));
+      if (events.length >= count) {
+        return events;
+      }
+    }
+  }
+
+  await reader.cancel();
+  return events;
 }
 
 function fakeAutoDashboardData() {
@@ -373,9 +408,76 @@ test("GET /api/session/state returns autoActive:true and currentUnit when auto-m
 });
 
 // ---------------------------------------------------------------------------
-// Test 3 (placeholder): SSE stream emits session_state event on live_state_invalidation
+// Test 3: SSE stream emits session_state event following live_state_invalidation
 // ---------------------------------------------------------------------------
 
-test("SSE stream emits session_state event on live_state_invalidation", (t) => {
-  t.todo("implemented in plan 05-02");
+test("SSE stream emits session_state event following live_state_invalidation", async (t) => {
+  const fixture = makeWorkspaceFixture();
+  const sessionPath = createSessionFile(fixture.projectCwd, fixture.sessionsDir, "sess-sse-state", "SSE State Session");
+  const harness = createHarness((command, current) => {
+    if (command.type === "get_state") {
+      current.emit({
+        id: command.id, type: "response", command: "get_state", success: true,
+        data: {
+          sessionId: "sess-sse-state", sessionFile: sessionPath,
+          thinkingLevel: "off", isStreaming: false, isCompacting: false,
+          steeringMode: "all", followUpMode: "all",
+          autoCompactionEnabled: false, autoRetryEnabled: false,
+          retryInProgress: false, retryAttempt: 0,
+          messageCount: 0, pendingMessageCount: 0,
+        },
+      });
+      return;
+    }
+    assert.fail(`unexpected command: ${command.type}`);
+  });
+
+  bridge.configureBridgeServiceForTests({
+    env: {
+      ...process.env,
+      GSD_WEB_PROJECT_CWD: fixture.projectCwd,
+      GSD_WEB_PROJECT_SESSIONS_DIR: fixture.sessionsDir,
+      GSD_WEB_PACKAGE_ROOT: repoRoot,
+    },
+    spawn: harness.spawn,
+    indexWorkspace: async () => fakeWorkspaceIndex(),
+    getAutoDashboardData: () => fakeAutoDashboardData(),
+    getOnboardingNeeded: () => false,
+  });
+
+  t.after(async () => {
+    await bridge.resetBridgeServiceForTests();
+    fixture.cleanup();
+  });
+
+  const controller = new AbortController();
+  const response = await eventsRoute.GET(
+    new Request("http://localhost/api/session/events", { signal: controller.signal }),
+  );
+
+  // On subscribe, bridge emits bridge_status immediately (sync).
+  // We then emit live_state_invalidation (sync), which arrives before the async session_state from bridge_status.
+  // buildSessionStateEvent is async (awaits collectSelectiveLiveStatePayload), so session_state events
+  // arrive after both synchronous events. Expected order:
+  //   [0] bridge_status (sync)
+  //   [1] live_state_invalidation (sync, emitted before reading starts)
+  //   [2] session_state (async, triggered by bridge_status)
+  //   [3] session_state (async, triggered by live_state_invalidation)
+  harness.emit({ type: "live_state_invalidation", at: new Date().toISOString(), reason: "agent_end", source: "rpc_command", domains: ["auto"], workspaceIndexCacheInvalidated: false });
+  const events = await readSseEvents(response, 4);
+
+  assert.equal(events[0].type, "bridge_status");
+  assert.equal(events[1].type, "live_state_invalidation");
+
+  // Both async session_state events arrive after the synchronous events
+  assert.equal(events[2].type, "session_state", "bridge_status must trigger session_state emission");
+  assert.ok("autoActive" in events[2], "session_state must have autoActive field");
+  assert.ok("bridgePhase" in events[2], "session_state must have bridgePhase field");
+  assert.ok("currentUnit" in events[2], "session_state must have currentUnit field");
+  assert.equal(typeof events[2].autoActive, "boolean");
+
+  assert.equal(events[3].type, "session_state", "live_state_invalidation must trigger session_state emission");
+
+  controller.abort();
+  await waitForMicrotasks();
 });
