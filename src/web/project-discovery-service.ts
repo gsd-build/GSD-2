@@ -105,11 +105,21 @@ export function discoverProjects(devRootPath: string, includeProgress?: boolean)
     const projects: ProjectMetadata[] = [];
 
     for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
+      if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
       if (entry.name.startsWith(".")) continue;
       if (EXCLUDED_DIRS.has(entry.name)) continue;
 
       const fullPath = join(devRootPath, entry.name);
+
+      // For symlinks, verify the target is a directory
+      if (entry.isSymbolicLink()) {
+        try {
+          const targetStat = statSync(fullPath);
+          if (!targetStat.isDirectory()) continue;
+        } catch {
+          continue; // broken symlink
+        }
+      }
       const { kind, signals } = detectProjectKind(fullPath);
       const stat = statSync(fullPath);
 
