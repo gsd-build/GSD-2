@@ -31,10 +31,23 @@ type SetupEvent =
 // Helpers
 // ---------------------------------------------------------------------------
 
+/** Sanitize CLI output lines — strip file paths, home directory references, and control chars */
+function sanitizeLine(line: string): string {
+  return line
+    .replace(/\/Users\/[^\s/]+/g, '/Users/***')      // macOS home dirs
+    .replace(/\/home\/[^\s/]+/g, '/home/***')         // Linux home dirs
+    .replace(/C:\\Users\\[^\s\\]+/g, 'C:\\Users\\***') // Windows home dirs
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')    // control chars (keep \n \r \t)
+}
+
 function sendEvent(
   controller: ReadableStreamDefaultController,
   event: SetupEvent,
 ): void {
+  // Sanitize output lines before sending to client
+  if (event.type === "output") {
+    event = { ...event, line: sanitizeLine(event.line) };
+  }
   try {
     controller.enqueue(
       new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`),

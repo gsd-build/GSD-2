@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
-import { setPassword } from "../../../../../src/web/web-password-storage.ts";
-import { createSessionToken, getOrCreateSessionSecret } from "../../../../../src/web/web-session-auth.ts";
+import { setPassword, getPasswordHash } from "../../../../../src/web/web-password-storage.ts";
+import { verifyPassword, createSessionToken, getOrCreateSessionSecret } from "../../../../../src/web/web-session-auth.ts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,7 +23,7 @@ export async function POST(request: Request): Promise<Response> {
       return Response.json({ error: "invalid_request" }, { status: 400 });
     }
 
-    const { newPassword } = body as Record<string, unknown>;
+    const { currentPassword, newPassword } = body as Record<string, unknown>;
 
     if (!newPassword || typeof newPassword !== "string" || newPassword.length < 4) {
       return Response.json(
@@ -31,6 +31,25 @@ export async function POST(request: Request): Promise<Response> {
         { status: 400 },
       );
     }
+
+    // ── Verify current password (required when password already set) ─────
+    const existingHash = await getPasswordHash();
+    if (existingHash !== null) {
+      // Password already configured — require current password to change
+      if (!currentPassword || typeof currentPassword !== "string") {
+        return Response.json(
+          { error: "Current password is required" },
+          { status: 400 },
+        );
+      }
+      if (!verifyPassword(currentPassword, existingHash)) {
+        return Response.json(
+          { error: "Current password is incorrect" },
+          { status: 403 },
+        );
+      }
+    }
+    // If no password exists yet (first-time setup), skip current password check
 
     // ── Store password and rotate session secret (AUTH-07) ───────────────
     // setPassword hashes with scrypt, stores in ~/.gsd/web-auth.json,
