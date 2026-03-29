@@ -306,9 +306,9 @@ describe("complete-milestone", () => {
     assert.deepStrictEqual(sanitized.keyFiles, []);
     assert.deepStrictEqual(sanitized.lessonsLearned, ["lesson one", "lesson two"]);
 
-    // Optional fields
+    // Optional fields — toStr() returns "" for undefined/null
     assert.strictEqual(sanitized.followUps, "follow up");
-    assert.strictEqual(sanitized.deviations, undefined);
+    assert.strictEqual(sanitized.deviations, "");
 
     // Boolean coercion
     assert.strictEqual(sanitized.verificationPassed, true);
