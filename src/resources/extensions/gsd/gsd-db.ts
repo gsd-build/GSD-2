@@ -1536,7 +1536,7 @@ export function getVerificationEvidence(milestoneId: string, sliceId: string, ta
   const rows = currentDb.prepare(
     "SELECT * FROM verification_evidence WHERE milestone_id = :mid AND slice_id = :sid AND task_id = :tid ORDER BY id",
   ).all({ ":mid": milestoneId, ":sid": sliceId, ":tid": taskId });
-  return rows as VerificationEvidenceRow[];
+  return rows as unknown as VerificationEvidenceRow[];
 }
 
 export interface MilestoneRow {
