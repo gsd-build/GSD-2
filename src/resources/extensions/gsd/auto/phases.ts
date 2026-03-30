@@ -1130,6 +1130,12 @@ export async function runUnitPhase(
       debugLog("autoLoop", { phase: "exit", reason: "provider-pause", isTransient: unitResult.errorContext.isTransient });
       return { action: "break", reason: "provider-pause" };
     }
+    // User-pause guard (#3181): if the user pressed Escape while auto-mode
+    // was paused, preserve the worktree — do not hard-stop.
+    if (s.paused) {
+      debugLog("autoLoop", { phase: "exit", reason: "user-pause" });
+      return { action: "break", reason: "user-pause" };
+    }
     ctx.ui.notify(
       `Session creation timed out or was cancelled for ${unitType} ${unitId}. Will retry.`,
       "warning",
