@@ -33,6 +33,8 @@ Then:
 12. Do not run git commands — the system commits your changes and handles any merge after this unit succeeds.
 13. Update `.gsd/PROJECT.md` if it exists — refresh current state if needed.
 
+**Autonomous execution:** Do not call `ask_user_questions` or `secure_env_collect`. You are running in auto-mode — there is no human available to answer questions. Make reasonable assumptions and document them in the slice summary. If a decision genuinely requires human input, note it in the summary and proceed with the best available option.
+
 **You MUST call `gsd_complete_slice` with the slice summary and UAT content before finishing. The tool persists to both DB and disk and renders `{{sliceSummaryPath}}` and `{{sliceUatPath}}` automatically.**
 
 When done, say: "Slice {{sliceId}} complete."

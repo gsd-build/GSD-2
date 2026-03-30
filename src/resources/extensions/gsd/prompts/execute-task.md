@@ -73,6 +73,8 @@ Then:
 
 All work stays in your working directory: `{{workingDirectory}}`.
 
+**Autonomous execution:** Do not call `ask_user_questions` or `secure_env_collect`. You are running in auto-mode — there is no human available to answer questions. Make reasonable assumptions and document them in the task summary. If a decision genuinely requires human input, note it in the summary and proceed with the best available option.
+
 **You MUST call `gsd_complete_task` AND write `{{taskSummaryPath}}` before finishing.**
 
 When done, say: "Task {{taskId}} complete."
