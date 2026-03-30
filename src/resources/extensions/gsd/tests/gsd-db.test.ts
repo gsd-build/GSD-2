@@ -346,6 +346,18 @@ describe('gsd-db', () => {
     assert.deepStrictEqual(ar, [], 'getActiveRequirements returns [] when DB closed');
   });
 
+  test('gsd-db: closeDatabase catches errors and logs via debugLog', () => {
+    openDatabase(':memory:');
+    const adapter = _getAdapter()!;
+
+    // Sabotage the adapter: close it directly so closeDatabase's PRAGMAs fail
+    adapter.close();
+
+    // closeDatabase should NOT throw — errors are caught and logged via debugLog
+    assert.doesNotThrow(() => closeDatabase(), 'closeDatabase must not throw on broken adapter');
+    assert.ok(!isDbAvailable(), 'DB should be unavailable after close');
+  });
+
   // ─── Final Report ──────────────────────────────────────────────────────────
 
 });
