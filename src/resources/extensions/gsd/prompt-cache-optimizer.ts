@@ -5,7 +5,12 @@
  * Anthropic caches by prefix match (up to 4 breakpoints, 90% savings).
  * OpenAI auto-caches prompts with 1024+ stable prefix tokens (50% savings).
  * Both benefit from placing static content first and dynamic content last.
+ *
+ * Hash-based invalidation: tracks content hashes across turns to skip
+ * re-generation of unchanged blocks and report stability metrics.
  */
+
+import { createHash } from "node:crypto";
 
 /** Content classification for cache optimization */
 export type ContentRole = "static" | "semi-static" | "dynamic";
@@ -210,4 +215,80 @@ export function computeCacheHitRate(usage: {
   const denominator = usage.cacheRead + usage.input;
   if (denominator === 0) return 0;
   return (usage.cacheRead / denominator) * 100;
+}
+
+// ─── Hash-based block invalidation ──────────────────────────────────────────
+
+/** Result of a block hash check */
+export interface BlockHashResult {
+  /** Which blocks changed since last check */
+  invalidated: string[];
+  /** Which blocks were unchanged (cache hit) */
+  stable: string[];
+  /** Total blocks checked */
+  total: number;
+  /** Ratio of stable blocks to total (0.0-1.0) */
+  stabilityRate: number;
+}
+
+/** Compute a fast hash of content for change detection */
+function hashContent(content: string): string {
+  return createHash("sha256").update(content).digest("hex").slice(0, 16);
+}
+
+// Module-level cache: persists across calls within the same session
+const _blockHashes = new Map<string, string>();
+
+/**
+ * Check which prompt sections have changed since the last call.
+ * Updates the internal hash cache. Returns invalidation metrics.
+ *
+ * Use this to:
+ * - Skip expensive re-generation of unchanged blocks
+ * - Log which blocks are churning vs stable across turns
+ * - Identify the cache-friendly prefix length for providers
+ */
+export function checkBlockInvalidation(sections: PromptSection[]): BlockHashResult {
+  const invalidated: string[] = [];
+  const stable: string[] = [];
+
+  for (const s of sections) {
+    const hash = hashContent(s.content);
+    const prev = _blockHashes.get(s.label);
+
+    if (prev === hash) {
+      stable.push(s.label);
+    } else {
+      invalidated.push(s.label);
+      _blockHashes.set(s.label, hash);
+    }
+  }
+
+  return {
+    invalidated,
+    stable,
+    total: sections.length,
+    stabilityRate: sections.length > 0 ? stable.length / sections.length : 0,
+  };
+}
+
+/**
+ * Reset the block hash cache. Call on session start or when
+ * the entire prompt must be re-sent (e.g., model switch).
+ */
+export function resetBlockHashes(): void {
+  _blockHashes.clear();
+}
+
+/**
+ * Get the current cached content for a block label, or null if not cached.
+ * Used by system-context to skip re-reading files when content is stable.
+ */
+export function getCachedBlockContent(label: string): string | null {
+  return _blockHashes.has(label) ? label : null;
+}
+
+/** Exported for testing */
+export function _getBlockHashCount(): number {
+  return _blockHashes.size;
 }

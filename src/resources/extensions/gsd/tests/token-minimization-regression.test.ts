@@ -19,7 +19,7 @@ import { join } from "node:path";
 
 import { renderPreferencesForSystemPrompt } from "../preferences.ts";
 import type { GSDPreferences } from "../preferences.ts";
-import { section, optimizeForCaching } from "../prompt-cache-optimizer.ts";
+import { section, optimizeForCaching, checkBlockInvalidation, resetBlockHashes, _getBlockHashCount } from "../prompt-cache-optimizer.ts";
 
 // ---------------------------------------------------------------------------
 // Path helpers
@@ -701,5 +701,71 @@ describe("guided-flow.ts: uses condensed dispatch workflow", () => {
       "utf-8",
     );
     assert.ok(src.includes("GSD_WORKFLOW_PATH"), "guided-flow.ts should still reference full workflow as fallback");
+  });
+});
+
+// ===========================================================================
+// Hash-based block invalidation
+// ===========================================================================
+
+describe("checkBlockInvalidation: hash-based block caching", () => {
+  it("first call reports all blocks as invalidated (cold cache)", () => {
+    resetBlockHashes();
+    const sections = [
+      section("test-static", "content A", "static"),
+      section("test-dynamic", "content B", "dynamic"),
+    ];
+    const result = checkBlockInvalidation(sections);
+    assert.equal(result.invalidated.length, 2, "all blocks should be invalidated on first call");
+    assert.equal(result.stable.length, 0, "no stable blocks on first call");
+    assert.equal(result.stabilityRate, 0);
+  });
+
+  it("second call with same content reports all blocks as stable", () => {
+    resetBlockHashes();
+    const sections = [
+      section("hash-a", "unchanged content", "static"),
+      section("hash-b", "also unchanged", "semi-static"),
+    ];
+    checkBlockInvalidation(sections); // warm the cache
+    const result = checkBlockInvalidation(sections); // same content
+    assert.equal(result.stable.length, 2, "all blocks should be stable on repeat");
+    assert.equal(result.invalidated.length, 0);
+    assert.equal(result.stabilityRate, 1.0);
+  });
+
+  it("detects when a single block changes", () => {
+    resetBlockHashes();
+    const sections1 = [
+      section("block-x", "version 1", "static"),
+      section("block-y", "stays same", "semi-static"),
+    ];
+    checkBlockInvalidation(sections1);
+
+    const sections2 = [
+      section("block-x", "version 2", "static"), // changed
+      section("block-y", "stays same", "semi-static"), // same
+    ];
+    const result = checkBlockInvalidation(sections2);
+    assert.deepEqual(result.invalidated, ["block-x"]);
+    assert.deepEqual(result.stable, ["block-y"]);
+    assert.equal(result.stabilityRate, 0.5);
+  });
+
+  it("resetBlockHashes clears all cached hashes", () => {
+    resetBlockHashes();
+    checkBlockInvalidation([section("cached", "data", "static")]);
+    assert.ok(_getBlockHashCount() > 0, "should have cached hashes");
+    resetBlockHashes();
+    assert.equal(_getBlockHashCount(), 0, "reset should clear all hashes");
+  });
+
+  it("system-context.ts uses checkBlockInvalidation", () => {
+    const ctxSrc = readFileSync(
+      join(RESOURCES_DIR, "extensions/gsd/bootstrap/system-context.ts"),
+      "utf-8",
+    );
+    assert.ok(ctxSrc.includes("checkBlockInvalidation"), "should call checkBlockInvalidation");
+    assert.ok(ctxSrc.includes("blockStability"), "should log blockStability metric");
   });
 });

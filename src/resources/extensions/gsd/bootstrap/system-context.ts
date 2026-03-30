@@ -7,7 +7,7 @@ import type { ExtensionContext } from "@gsd/pi-coding-agent";
 import { debugTime, debugLog } from "../debug-logger.js";
 import { loadPrompt } from "../prompt-loader.js";
 import { resolveAllSkillReferences, renderPreferencesForSystemPrompt, loadEffectiveGSDPreferences } from "../preferences.js";
-import { section, optimizeForCaching, type PromptSection } from "../prompt-cache-optimizer.js";
+import { section, optimizeForCaching, checkBlockInvalidation, type PromptSection } from "../prompt-cache-optimizer.js";
 import { resolveGsdRootFile, resolveSliceFile, resolveSlicePath, resolveTaskFile, resolveTaskFiles, resolveTasksDir, relSliceFile, relSlicePath, relTaskFile } from "../paths.js";
 import { hasSkillSnapshot, detectNewSkills, formatSkillsXml } from "../skill-discovery.js";
 import { getActiveAutoWorktreeContext } from "../auto-worktree.js";
@@ -112,6 +112,11 @@ export async function buildBeforeAgentStartResult(
   if (newSkillsBlock) sections.push(section("new-skills", newSkillsBlock, "dynamic"));
   if (worktreeBlock) sections.push(section("worktree-context", worktreeBlock, "dynamic"));
 
+  // Check which blocks changed since last turn (hash-based invalidation).
+  // On first call all blocks are "invalidated" (cache miss). On subsequent
+  // calls, stable blocks indicate the provider's prefix cache can be reused.
+  const hashResult = checkBlockInvalidation(sections);
+
   const optimized = optimizeForCaching(sections);
   const fullSystem = optimized.prompt;
 
@@ -120,6 +125,9 @@ export async function buildBeforeAgentStartResult(
     cacheablePrefixChars: optimized.cacheablePrefixChars,
     totalChars: optimized.totalChars,
     sections: optimized.sectionCounts,
+    blockStability: `${(hashResult.stabilityRate * 100).toFixed(0)}%`,
+    invalidated: hashResult.invalidated.length > 0 ? hashResult.invalidated : "none",
+    stable: hashResult.stable.length > 0 ? hashResult.stable : "none",
   });
 
   stopContextTimer({
