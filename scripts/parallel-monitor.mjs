@@ -6,38 +6,28 @@
  * Zero dependencies — uses raw ANSI escape codes, Node.js builtins only.
  * 
  * Usage:
- *   node scripts/parallel-monitor.mjs                    # live dashboard, 5s refresh
- *   node scripts/parallel-monitor.mjs --interval 3       # faster refresh
- *   node scripts/parallel-monitor.mjs --once              # single snapshot, then exit
- *   node scripts/parallel-monitor.mjs --heal              # auto-respawn dead workers
- *   node scripts/parallel-monitor.mjs --heal --heal-retries 5 --heal-cooldown 60
+ *   node scripts/parallel-monitor.mjs                          # live dashboard, 5s refresh
+ *   node scripts/parallel-monitor.mjs --interval 3             # faster refresh
+ *   node scripts/parallel-monitor.mjs --once                   # single snapshot, then exit
+ *   node scripts/parallel-monitor.mjs --heal                   # auto-respawn dead workers
+ *   node scripts/parallel-monitor.mjs --heal --auto-pause      # + pause/resume on rate limit
  * 
  * Options:
- *   --interval <sec>      Refresh interval in seconds (default: 5)
- *   --once                Render once and exit (useful for scripting/piping)
- *   --heal                Auto-respawn dead workers (opt-in, off by default)
- *   --heal-retries <n>    Max respawn attempts per worker (default: 3)
- *   --heal-cooldown <sec> Seconds between respawn attempts (default: 30)
- *   --dir <path>          Status file directory (default: .gsd/parallel)
- *   --root <path>         Project root (default: cwd)
+ *   --interval <sec>         Refresh interval in seconds (default: 5)
+ *   --once                   Render once and exit (useful for scripting/piping)
+ *   --heal                   Auto-respawn dead workers (opt-in, off by default)
+ *   --heal-retries <n>       Max respawn attempts per worker (default: 3)
+ *   --heal-cooldown <sec>    Seconds between respawn attempts (default: 30)
+ *   --auto-pause             Detect rate limit exhaustion, pause all workers, probe
+ *                            for session reset, and auto-respawn when available
+ *   --probe-interval <sec>   Seconds between session probes while paused (default: 60)
  * 
  * Data sources:
- *   .gsd/parallel/M0xx.status.json  — heartbeat, cost, state (written by orchestrator)
- *   .gsd/worktrees/M0xx/.gsd/auto.lock — current unit type + ID (written by worker)
- *   .gsd/worktrees/M0xx/.gsd/gsd.db — task/slice completion (SQLite, queried via cli)
- *   .gsd/parallel/M0xx.stdout.log — NDJSON events (cost extraction, notify messages)
- *   .gsd/parallel/M0xx.stderr.log — error surfacing
- * 
- * Health indicators:
- *   ● green  — PID alive, fresh heartbeat (<30s)
- *   ● green  — PID alive, heartbeat stale (respawned worker, file mtime used as proxy)
- *   ○ red    — PID dead
- * 
- * Self-healing (--heal):
- *   When a dead worker is detected, the monitor writes a temp shell script and launches
- *   a new headless auto-mode process in the worker's worktree with the correct env vars.
- *   Cooldown prevents rapid respawn loops. Gives up after --heal-retries consecutive 
- *   failures. Resets retry count when a worker comes back alive.
+ *   .gsd/auto-M0xx.lock              — current unit type + ID (written by worker)
+ *   .gsd/gsd.db                      — task/slice completion (project root, shared-WAL)
+ *   .gsd/parallel/M0xx.status.json   — heartbeat, cost, state (written by orchestrator)
+ *   .gsd/parallel/M0xx.stdout.log    — NDJSON events (notify messages)
+ *   .gsd/parallel/M0xx.stderr.log    — headless progress lines
  */
 
 import fs from 'node:fs';
@@ -52,11 +42,26 @@ const PARALLEL_DIR = getArg('--dir', '.gsd/parallel');
 const PROJECT_ROOT = getArg('--root', process.cwd());
 const ONE_SHOT = args.includes('--once');
 const HEAL_MODE = args.includes('--heal');
+const AUTO_PAUSE = args.includes('--auto-pause');
 const HEAL_MAX_RETRIES = parseInt(getArg('--heal-retries', '3'), 10);
 const HEAL_COOLDOWN_SEC = parseInt(getArg('--heal-cooldown', '30'), 10);
+const PAUSE_PROBE_SEC = parseInt(getArg('--probe-interval', '60'), 10);
 
 // Per-worker heal state: { lastAttempt: number, retries: number }
 const healState = {};
+
+// ─── Auto-pause/resume state (--auto-pause) ─────────────────────────────────
+// Detects when ALL workers die from rate limits (session budget exhausted),
+// pauses, probes `claude --print "pong"` until the window resets, then respawns.
+let autoPauseState = {
+  paused: false,          // true when we've paused due to rate limit
+  pausedAt: 0,            // timestamp when pause began  
+  lastProbeAt: 0,         // timestamp of last probe attempt
+  probeCount: 0,          // number of probes sent
+  savedWorkers: [],       // worker mids to respawn on resume
+  consecutiveDeaths: 0,   // track rapid worker deaths (all dying = rate limit)
+  lastDeathAt: 0,         // timestamp of most recent death
+};
 
 function getArg(flag, defaultVal) {
   const idx = args.indexOf(flag);
@@ -141,9 +146,13 @@ function discoverWorkers() {
   }
   
   // From worktree directories that have auto.lock (actively running)
+  // Check both per-milestone locks at project root and worktree locks
   if (fs.existsSync(worktreeDir)) {
     for (const d of fs.readdirSync(worktreeDir)) {
-      if (d.startsWith('M') && fs.existsSync(path.join(worktreeDir, d, '.gsd', 'auto.lock'))) {
+      if (d.startsWith('M') && (
+        fs.existsSync(path.join(PROJECT_ROOT, '.gsd', `auto-${d}.lock`)) ||
+        fs.existsSync(path.join(worktreeDir, d, '.gsd', 'auto.lock'))
+      )) {
         mids.add(d);
       }
     }
@@ -157,13 +166,46 @@ function readWorkerStatus(mid) {
   return readJsonSafe(statusPath);
 }
 
+/**
+ * Read the last error message from a worker's NDJSON stdout log.
+ * Looks for notify events containing error keywords in the tail of the file.
+ */
+function getLastWorkerError(mid) {
+  const stdoutPath = path.resolve(PROJECT_ROOT, PARALLEL_DIR, `${mid}.stdout.log`);
+  if (!fs.existsSync(stdoutPath)) return null;
+  try {
+    const stat = fs.statSync(stdoutPath);
+    const readSize = Math.min(stat.size, 16384);
+    const fd = fs.openSync(stdoutPath, 'r');
+    const buf = Buffer.alloc(readSize);
+    fs.readSync(fd, buf, 0, readSize, Math.max(0, stat.size - readSize));
+    fs.closeSync(fd);
+    const lines = buf.toString('utf-8').trim().split('\n').reverse();
+    for (const line of lines) {
+      try {
+        const obj = JSON.parse(line);
+        if (obj.method === 'notify' && obj.message && /error|rate.?limit|429|500|502|503|overloaded/i.test(obj.message)) {
+          return obj.message;
+        }
+      } catch {}
+    }
+  } catch {}
+  return null;
+}
+
 function readAutoLock(mid) {
-  const lockPath = path.resolve(PROJECT_ROOT, `.gsd/worktrees/${mid}/.gsd/auto.lock`);
-  return readJsonSafe(lockPath);
+  // Parallel workers write per-milestone lock files (auto-<MID>.lock) in
+  // the project root .gsd/, not auto.lock inside the worktree.
+  const perMilestoneLock = path.resolve(PROJECT_ROOT, `.gsd/auto-${mid}.lock`);
+  const worktreeLock = path.resolve(PROJECT_ROOT, `.gsd/worktrees/${mid}/.gsd/auto.lock`);
+  return readJsonSafe(perMilestoneLock) || readJsonSafe(worktreeLock);
 }
 
 function querySliceProgress(mid) {
-  const dbPath = path.resolve(PROJECT_ROOT, `.gsd/worktrees/${mid}/.gsd/gsd.db`);
+  // Shared-WAL: use project root DB (worktree DB may be empty or missing)
+  const rootDbPath = path.resolve(PROJECT_ROOT, '.gsd/gsd.db');
+  const worktreeDbPath = path.resolve(PROJECT_ROOT, `.gsd/worktrees/${mid}/.gsd/gsd.db`);
+  const dbPath = fs.existsSync(rootDbPath) ? rootDbPath : worktreeDbPath;
   if (!fs.existsSync(dbPath)) return [];
   
   try {
@@ -274,38 +316,7 @@ function extractCostFromNdjson(mid) {
 
 // ─── Self-Healing ────────────────────────────────────────────────────────────
 
-// Auto-detect the GSD loader path — works across npm global, homebrew, and local installs
-function findGsdLoader() {
-  // 1. Check if we're running from inside the gsd-2 repo itself
-  const repoLoader = path.resolve(import.meta.dirname, '..', 'dist', 'loader.js');
-  if (fs.existsSync(repoLoader)) return repoLoader;
-  
-  // 2. Check common global install locations
-  try {
-    const globalRoot = execSync('npm root -g', { encoding: 'utf-8', timeout: 3000 }).trim();
-    const candidates = [
-      path.join(globalRoot, 'gsd-pi', 'dist', 'loader.js'),
-      path.join(globalRoot, '@gsd', 'pi', 'dist', 'loader.js'),
-    ];
-    for (const c of candidates) {
-      if (fs.existsSync(c)) return c;
-    }
-  } catch { /* skip */ }
-  
-  // 3. Try `which gsd` and resolve symlink
-  try {
-    const bin = execSync('which gsd', { encoding: 'utf-8', timeout: 3000 }).trim();
-    if (bin) {
-      const realBin = fs.realpathSync(bin);
-      const loader = path.resolve(path.dirname(realBin), '..', 'dist', 'loader.js');
-      if (fs.existsSync(loader)) return loader;
-    }
-  } catch { /* skip */ }
-  
-  return null;
-}
-
-const GSD_LOADER = findGsdLoader();
+const GSD_LOADER = '/opt/homebrew/lib/node_modules/gsd-pi/dist/loader.js';
 
 /**
  * Respawn a dead worker. Returns the new PID or null on failure.
@@ -401,6 +412,30 @@ function healWorkers(workers) {
       const remaining = Math.ceil((HEAL_COOLDOWN_SEC * 1000 - elapsed) / 1000);
       // Don't spam the feed — only note on first cooldown tick
       continue;
+    }
+    
+    // Check if the worker died from a transient API error — if so, back off longer
+    // to avoid a respawn-crash-respawn loop that burns retries on a temporary outage
+    const lastError = getLastWorkerError(wk.mid);
+    if (lastError && /rate.?limit|429|too many requests/i.test(lastError)) {
+      // Rate limit — don't respawn at all, let auto-pause handle it
+      if (!hs.rateLimited) {
+        events.push({ ts: now, mid: wk.mid, msg: `⏸️  ${wk.mid}: rate-limited, waiting for session reset` });
+        hs.rateLimited = true;
+      }
+      continue;
+    }
+    if (lastError && /server.error|500|502|503|overloaded|internal.server/i.test(lastError)) {
+      // Transient server error — wait 60s instead of the normal cooldown
+      const serverCooldown = 60 * 1000;
+      if (elapsed < serverCooldown) {
+        if (!hs.serverErrorLogged) {
+          events.push({ ts: now, mid: wk.mid, msg: `⏳ ${wk.mid}: server error, waiting 60s before respawn` });
+          hs.serverErrorLogged = true;
+        }
+        continue;
+      }
+      hs.serverErrorLogged = false;
     }
     
     // Check the milestone isn't already complete
@@ -515,7 +550,10 @@ function truncate(str, maxLen) {
  * Get recently completed tasks/slices from the worktree DB for the event feed.
  */
 function queryRecentCompletions(mid) {
-  const dbPath = path.resolve(PROJECT_ROOT, `.gsd/worktrees/${mid}/.gsd/gsd.db`);
+  // Shared-WAL: use project root DB (worktree DB may be empty or missing)
+  const rootDbPath = path.resolve(PROJECT_ROOT, '.gsd/gsd.db');
+  const wtDbPath = path.resolve(PROJECT_ROOT, `.gsd/worktrees/${mid}/.gsd/gsd.db`);
+  const dbPath = fs.existsSync(rootDbPath) ? rootDbPath : wtDbPath;
   if (!fs.existsSync(dbPath)) return [];
   
   try {
@@ -785,13 +823,154 @@ function render(workers) {
   const healInfo = HEAL_MODE 
     ? ` │ heal: ${HEAL_COOLDOWN_SEC}s cooldown, ${HEAL_MAX_RETRIES} max retries`
     : '';
-  buf.push(`  ${DIM}Ctrl+C to exit${allDone ? ' (monitoring stopped)' : ''}${healInfo}${RESET}`);
+  const pauseInfo = AUTO_PAUSE
+    ? autoPauseState.paused
+      ? ` │ ${FG.yellow}⏸ PAUSED${RESET}${DIM} — probing every ${PAUSE_PROBE_SEC}s (${autoPauseState.probeCount} probes sent)`
+      : ` │ ${FG.green}⚡ auto-pause${RESET}${DIM}`
+    : '';
+  buf.push(`  ${DIM}Ctrl+C to exit${allDone ? ' (monitoring stopped)' : ''}${healInfo}${pauseInfo}${RESET}`);
   
   // Write to screen
   process.stdout.write(CLEAR_SCREEN);
   process.stdout.write(buf.join('\n') + '\n');
   
   return allDone;
+}
+
+// ─── Auto-pause: rate limit detection & probing ─────────────────────────────
+
+/**
+ * Detect if all workers died from rate limiting.
+ * Heuristic: if ALL workers are dead and total cost > $1, assume rate limit.
+ * A single dead worker is normal (task crash) — all dead at once is rate limit.
+ */
+function detectRateLimitExhaustion(workers) {
+  if (!AUTO_PAUSE || autoPauseState.paused) return false;
+  if (workers.length === 0) return false;
+  
+  const alive = workers.filter(w => w.alive);
+  const dead = workers.filter(w => !w.alive);
+  const totalCost = workers.reduce((s, w) => s + (w.cost || 0), 0);
+  
+  // All workers dead and meaningful work was done (not just startup failures)
+  if (alive.length === 0 && dead.length >= 2 && totalCost > 1.0) {
+    return true;
+  }
+  
+  return false;
+}
+
+/**
+ * Kill all surviving workers, save their milestone IDs, enter paused state.
+ */
+function pauseAllWorkers(workers) {
+  const events = [];
+  autoPauseState.paused = true;
+  autoPauseState.pausedAt = Date.now();
+  autoPauseState.probeCount = 0;
+  autoPauseState.savedWorkers = workers.map(w => w.mid);
+  
+  // Kill any that are somehow still alive
+  for (const wk of workers) {
+    if (wk.alive && wk.pid) {
+      try { process.kill(wk.pid, 'SIGTERM'); } catch {}
+    }
+  }
+  
+  // Reset heal state so heal doesn't fight us
+  for (const mid of autoPauseState.savedWorkers) {
+    healState[mid] = { lastAttempt: 0, retries: HEAL_MAX_RETRIES + 1 };
+  }
+  
+  events.push({
+    ts: Date.now(),
+    mid: 'ALL',
+    msg: `⏸️  Rate limit detected — paused all workers. Probing every ${PAUSE_PROBE_SEC}s for session reset...`
+  });
+  
+  return events;
+}
+
+/**
+ * Probe Claude API to check if the session window has reset.
+ * Returns true if the API is available (session has budget).
+ */
+function probeSessionAvailable() {
+  try {
+    const result = execSync(
+      `perl -e 'alarm 15; exec @ARGV' -- claude --print "reply pong"`,
+      { encoding: 'utf-8', timeout: 20000, stdio: ['pipe', 'pipe', 'pipe'] }
+    ).trim();
+    return result.toLowerCase().includes('pong');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Check probe status and respawn workers when session resets.
+ * Called every tick while in paused state.
+ */
+function tickAutoPause() {
+  if (!autoPauseState.paused) return [];
+  
+  const events = [];
+  const now = Date.now();
+  const elapsed = now - autoPauseState.pausedAt;
+  
+  // Only probe every PAUSE_PROBE_SEC
+  if (now - autoPauseState.lastProbeAt < PAUSE_PROBE_SEC * 1000) return events;
+  
+  autoPauseState.lastProbeAt = now;
+  autoPauseState.probeCount++;
+  
+  const elapsedMin = Math.floor(elapsed / 60000);
+  events.push({
+    ts: now,
+    mid: 'SYS',
+    msg: `🔍 Probe #${autoPauseState.probeCount} (paused ${elapsedMin}m) — checking if session reset...`
+  });
+  
+  const available = probeSessionAvailable();
+  
+  if (available) {
+    events.push({
+      ts: now,
+      mid: 'SYS',
+      msg: `✅ Session available! Respawning ${autoPauseState.savedWorkers.length} workers...`
+    });
+    
+    // Respawn all saved workers
+    let respawned = 0;
+    for (const mid of autoPauseState.savedWorkers) {
+      // Reset heal state for fresh start
+      healState[mid] = { lastAttempt: 0, retries: 0 };
+      
+      const newPid = respawnWorker(mid);
+      if (newPid) {
+        respawned++;
+        events.push({ ts: now, mid, msg: `🟢 ${mid}: respawned as PID ${newPid}` });
+      } else {
+        events.push({ ts: now, mid, msg: `❌ ${mid}: respawn failed` });
+      }
+    }
+    
+    autoPauseState.paused = false;
+    autoPauseState.savedWorkers = [];
+    events.push({
+      ts: now,
+      mid: 'SYS',
+      msg: `🚀 Resumed: ${respawned}/${autoPauseState.savedWorkers.length || respawned} workers respawned`
+    });
+  } else {
+    events.push({
+      ts: now,
+      mid: 'SYS',
+      msg: `⏳ Session still rate-limited. Next probe in ${PAUSE_PROBE_SEC}s...`
+    });
+  }
+  
+  return events;
 }
 
 // ─── Main Loop ───────────────────────────────────────────────────────────────
@@ -829,7 +1008,25 @@ function main() {
   // Refresh loop
   const timer = setInterval(() => {
     try {
+      // ── Auto-pause: probe while paused ──
+      if (autoPauseState.paused) {
+        const probeEvents = tickAutoPause();
+        for (const evt of probeEvents) lastEventFeed.push(evt);
+        const workers = collectWorkerData();
+        render(workers);
+        return;
+      }
+      
       const workers = collectWorkerData();
+      
+      // ── Auto-pause: detect rate limit exhaustion ──
+      if (AUTO_PAUSE && detectRateLimitExhaustion(workers)) {
+        const pauseEvents = pauseAllWorkers(workers);
+        for (const evt of pauseEvents) lastEventFeed.push(evt);
+        render(workers);
+        return;
+      }
+      
       const healEvents = healWorkers(workers);
       for (const evt of healEvents) lastEventFeed.push(evt);
       done = render(workers);

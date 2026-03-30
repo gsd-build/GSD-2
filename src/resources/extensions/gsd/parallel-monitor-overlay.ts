@@ -113,7 +113,10 @@ function discoverWorkers(basePath: string): string[] {
   if (existsSync(worktreeDir)) {
     try {
       for (const d of readdirSync(worktreeDir)) {
-        if (d.startsWith("M") && existsSync(join(worktreeDir, d, ".gsd", "auto.lock"))) {
+        if (d.startsWith("M") && (
+          existsSync(join(basePath, ".gsd", `auto-${d}.lock`)) ||
+          existsSync(join(worktreeDir, d, ".gsd", "auto.lock"))
+        )) {
           mids.add(d);
         }
       }
@@ -124,7 +127,10 @@ function discoverWorkers(basePath: string): string[] {
 }
 
 function querySliceProgress(basePath: string, mid: string): SliceProgress[] {
-  const dbPath = join(basePath, ".gsd", "worktrees", mid, ".gsd", "gsd.db");
+  // Shared-WAL: prefer project root DB (worktree DB may be empty or missing)
+  const rootDbPath = join(basePath, ".gsd", "gsd.db");
+  const wtDbPath = join(basePath, ".gsd", "worktrees", mid, ".gsd", "gsd.db");
+  const dbPath = existsSync(rootDbPath) ? rootDbPath : wtDbPath;
   if (!existsSync(dbPath)) return [];
 
   try {
@@ -164,7 +170,9 @@ function extractCostFromNdjson(basePath: string, mid: string): number {
 }
 
 function queryRecentCompletions(basePath: string, mid: string): string[] {
-  const dbPath = join(basePath, ".gsd", "worktrees", mid, ".gsd", "gsd.db");
+  const rootDbPath = join(basePath, ".gsd", "gsd.db");
+  const wtDbPath = join(basePath, ".gsd", "worktrees", mid, ".gsd", "gsd.db");
+  const dbPath = existsSync(rootDbPath) ? rootDbPath : wtDbPath;
   if (!existsSync(dbPath)) return [];
   try {
     const sql = `SELECT id, slice_id, one_liner FROM tasks WHERE milestone_id='${mid}' AND status='complete' AND completed_at IS NOT NULL ORDER BY completed_at DESC LIMIT 5`;
@@ -187,7 +195,10 @@ function collectWorkerData(basePath: string): WorkerView[] {
 
   for (const mid of mids) {
     const status = readJsonSafe<StatusJson>(join(parallelDir, `${mid}.status.json`));
-    const lock = readJsonSafe<AutoLock>(join(basePath, ".gsd", "worktrees", mid, ".gsd", "auto.lock"));
+    // Parallel workers write per-milestone lock files (auto-<MID>.lock) at the
+    // project root .gsd/, not auto.lock inside the worktree .gsd/ (#2815).
+    const lock = readJsonSafe<AutoLock>(join(basePath, ".gsd", `auto-${mid}.lock`))
+      || readJsonSafe<AutoLock>(join(basePath, ".gsd", "worktrees", mid, ".gsd", "auto.lock"));
     const slices = querySliceProgress(basePath, mid);
 
     const pid = lock?.pid || status?.pid || 0;

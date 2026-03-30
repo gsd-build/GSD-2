@@ -297,16 +297,26 @@ export function syncProjectRootToWorktree(
     { force: true },
   );
 
-  // Delete worktree gsd.db so it rebuilds from the freshly synced files.
-  // Stale DB rows are the root cause of the infinite skip loop (#853).
-  try {
-    const wtDb = join(wtGsd, "gsd.db");
-    if (existsSync(wtDb)) {
-      unlinkSync(wtDb);
-    }
-  } catch {
-    /* non-fatal */
-  }
+  // NOTE: Do NOT delete the worktree gsd.db here.
+  //
+  // The shared-WAL design (R012) means workers resolve to the project root
+  // DB via resolveProjectRootDbPath(). Deleting the worktree DB was a fix
+  // for #853 (stale DB rows causing infinite skip loops), but that fix
+  // predates the shared-WAL architecture. Under shared-WAL, workers never
+  // read from the worktree DB — resolveProjectRootDbPath() always returns
+  // the project root path.
+  //
+  // Deleting the worktree DB here causes #2815: the deletion races with
+  // session startup paths that call openDatabase() or openRawDb(), which
+  // create a new 0-byte file at the worktree path. This empty DB has no
+  // tables, so getPendingSliceGateCount() falls through to the markdown
+  // parser, which re-inserts 'pending' gate rows, trapping the worker in
+  // an infinite evaluating-gates → skip → re-derive loop.
+  //
+  // A stale worktree DB is harmless — the DB path resolver directs all
+  // reads/writes to the project root DB. If a worktree DB somehow gets
+  // opened instead, reconcileWorktreeDb() handles merging on milestone
+  // completion.
 }
 
 /**
