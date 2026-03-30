@@ -1414,9 +1414,19 @@ export function mergeMilestoneToMain(
       encoding: "utf-8",
     }).trim();
     if (status) {
+      // Use --include-untracked to stash untracked files that would block
+      // the squash merge, but EXCLUDE .gsd/milestones/ (#2505).
+      // --include-untracked without exclusion sweeps queued milestone
+      // CONTEXT files into the stash. If stash pop later fails, those files
+      // are permanently trapped in the stash entry and lost on the next
+      // stash push or drop.
       execFileSync(
         "git",
-        ["stash", "push", "--include-untracked", "-m", `gsd: pre-merge stash for ${milestoneId}`],
+        [
+          "stash", "push", "--include-untracked",
+          "-m", `gsd: pre-merge stash for ${milestoneId}`,
+          "--", ":(exclude).gsd/milestones",
+        ],
         { cwd: originalBasePath_, stdio: ["ignore", "pipe", "pipe"], encoding: "utf-8" },
       );
       stashed = true;
@@ -1424,6 +1434,52 @@ export function mergeMilestoneToMain(
   } catch {
     // Stash failure is non-fatal — proceed without stash and let the merge
     // report the dirty tree if it fails.
+  }
+
+  // 7a. Shelter queued milestone directories before the squash merge (#2505).
+  // The milestone branch may contain copies of queued milestone dirs (via
+  // copyPlanningArtifacts), so `git merge --squash` rejects when those same
+  // files exist as untracked in the working tree. Temporarily move them to
+  // a backup location, then restore after the merge+commit.
+  const milestonesDir = join(gsdRoot(originalBasePath_), "milestones");
+  const shelterDir = join(gsdRoot(originalBasePath_), ".milestone-shelter");
+  const shelteredDirs: string[] = [];
+
+  // Helper: restore sheltered milestone directories (#2505).
+  // Called on both success and error paths to ensure queued CONTEXT files
+  // are never permanently lost.
+  const restoreShelter = (): void => {
+    if (shelteredDirs.length === 0) return;
+    for (const dirName of shelteredDirs) {
+      try {
+        mkdirSync(milestonesDir, { recursive: true });
+        cpSync(join(shelterDir, dirName), join(milestonesDir, dirName), { recursive: true, force: true });
+      } catch { /* best-effort */ }
+    }
+    try { rmSync(shelterDir, { recursive: true, force: true }); } catch { /* best-effort */ }
+  };
+
+  try {
+    if (existsSync(milestonesDir)) {
+      const entries = readdirSync(milestonesDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        // Only shelter directories that do NOT belong to the milestone being merged
+        if (entry.name === milestoneId) continue;
+        const srcDir = join(milestonesDir, entry.name);
+        const dstDir = join(shelterDir, entry.name);
+        try {
+          mkdirSync(shelterDir, { recursive: true });
+          cpSync(srcDir, dstDir, { recursive: true, force: true });
+          rmSync(srcDir, { recursive: true, force: true });
+          shelteredDirs.push(entry.name);
+        } catch {
+          // Non-fatal — if shelter fails, the merge may still succeed
+        }
+      }
+    }
+  } catch {
+    // Non-fatal — proceed with merge; untracked files may block it
   }
 
   // 8. Squash merge — auto-resolve .gsd/ state file conflicts (#530)
@@ -1444,6 +1500,7 @@ export function mergeMilestoneToMain(
           });
         } catch { /* stash pop conflict is non-fatal */ }
       }
+      restoreShelter();
       // Restore cwd so the caller is not stranded on the integration branch
       process.chdir(previousCwd);
       // Surface the actual dirty filenames from git stderr instead of
@@ -1500,6 +1557,7 @@ export function mergeMilestoneToMain(
             });
           } catch { /* stash pop conflict is non-fatal */ }
         }
+        restoreShelter();
         throw new MergeConflictError(
           codeConflicts,
           "squash",
@@ -1580,6 +1638,9 @@ export function mergeMilestoneToMain(
       }
     }
   }
+
+  // 9a-iii. Restore sheltered queued milestone directories (#2505).
+  restoreShelter();
 
   // 9b. Safety check (#1792): if nothing was committed, verify the milestone
   // work is already on the integration branch before allowing teardown.
