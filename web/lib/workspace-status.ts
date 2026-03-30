@@ -2,7 +2,7 @@ import type {
   WorkspaceMilestoneTarget,
   WorkspaceSliceTarget,
   WorkspaceTaskTarget,
-} from "./gsd-workspace-store.js"
+} from "./workspace-types.js"
 
 export type ItemStatus = "done" | "in-progress" | "pending"
 
