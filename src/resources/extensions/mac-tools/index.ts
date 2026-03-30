@@ -39,7 +39,9 @@ function getSourceMtime(): number {
 	// Check Package.swift
 	try {
 		latest = Math.max(latest, statSync(PACKAGE_SWIFT).mtimeMs);
-	} catch {}
+	} catch (err) {
+		if (process.env.GSD_DEBUG) console.error("[gsd:mac-tools]", err);
+	}
 	// Check all files in Sources/
 	try {
 		const files = readdirSync(SOURCES_DIR);
@@ -47,9 +49,13 @@ function getSourceMtime(): number {
 			try {
 				const mt = statSync(path.join(SOURCES_DIR, f)).mtimeMs;
 				if (mt > latest) latest = mt;
-			} catch {}
+			} catch (err) {
+				if (process.env.GSD_DEBUG) console.error("[gsd:mac-tools]", err);
+			}
 		}
-	} catch {}
+	} catch (err) {
+		if (process.env.GSD_DEBUG) console.error("[gsd:mac-tools]", err);
+	}
 	return latest;
 }
 
