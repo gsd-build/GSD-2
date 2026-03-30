@@ -1,6 +1,4 @@
 # GSD Workflow — Dispatch Protocol
-// GSD2 - Condensed workflow for LLM dispatch (full version: GSD-WORKFLOW.md)
-// Copyright (c) 2026 Jeremy McSpadden <jeremy@fluxlabs.net>
 
 > Condensed protocol for guided-flow dispatch. System prompt has directory structure, naming conventions, and hard rules — not repeated here.
 

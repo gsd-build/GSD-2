@@ -1,6 +1,5 @@
 /**
  * GSD / Token Minimization Regression Tests
- * Copyright (c) 2026 Jeremy McSpadden <jeremy@fluxlabs.net>
  *
  * Regression tests ensuring that token-minimization changes to tool
  * descriptions, agent prompts, preferences rendering, workflow dispatch,
