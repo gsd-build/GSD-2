@@ -167,7 +167,56 @@ describe("stream-adapter — Claude Code external tool results", () => {
 				},
 			},
 		]);
+
+	// ---------------------------------------------------------------------------
+// Bug #3168 — async_job_result / followUp skip guards
+// ---------------------------------------------------------------------------
+
+describe("buildPromptFromContext — followUp skip (#3168)", () => {
+	test("skips async_job_result message and returns prior genuine user message", () => {
+		const context: Context = {
+			messages: [
+				{ role: "user", content: "please run the build" } as Message,
+				{ role: "user", content: "**Background job done**", customType: "async_job_result" } as any,
+			],
+		};
+		const prompt = buildPromptFromContext(context);
+		assert.ok(prompt.includes("please run the build"), "must include genuine user message");
+		assert.ok(!prompt.includes("Background job done"), "must skip async_job_result message");
 	});
+
+	test("skips isFollowUp=true message and returns prior genuine user message", () => {
+		const context: Context = {
+			messages: [
+				{ role: "user", content: "deploy the app" } as Message,
+				{ role: "user", content: "job complete", isFollowUp: true } as any,
+			],
+		};
+		const prompt = buildPromptFromContext(context);
+		assert.ok(prompt.includes("deploy the app"), "must include genuine user message");
+		assert.ok(!prompt.includes("job complete"), "must skip isFollowUp message");
+	});
+
+	test("returns all user messages when no followUp or customType present", () => {
+		const context: Context = {
+			messages: [
+				{ role: "user", content: "first message" } as Message,
+				{ role: "user", content: "second message" } as Message,
+			],
+		};
+		const prompt = buildPromptFromContext(context);
+		assert.ok(prompt.includes("first message"), "must include first message");
+		assert.ok(prompt.includes("second message"), "must include second message");
+	});
+
+	test("returns empty string when all user messages are followUps", () => {
+		const context: Context = {
+			messages: [
+				{ role: "user", content: "job done", isFollowUp: true } as any,
+			],
+		};
+		const prompt = buildPromptFromContext(context);
+		assert.equal(prompt, "", "must return empty when all messages are skipped");	});
 });
 
 describe("stream-adapter — session persistence (#2859)", () => {
