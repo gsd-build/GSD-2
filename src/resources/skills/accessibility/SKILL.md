@@ -35,55 +35,21 @@ Comprehensive accessibility guidelines based on WCAG 2.1 and Lighthouse accessib
 ### Text alternatives (1.1)
 
 **Images require alt text:**
-```html
-<!-- ❌ Missing alt -->
-<img src="chart.png">
-
-<!-- ✅ Descriptive alt -->
-<img src="chart.png" alt="Bar chart showing 40% increase in Q3 sales">
-
-<!-- ✅ Decorative image (empty alt) -->
-<img src="decorative-border.png" alt="" role="presentation">
-
-<!-- ✅ Complex image with longer description -->
-<figure>
-  <img src="infographic.png" alt="2024 market trends infographic" 
-       aria-describedby="infographic-desc">
-  <figcaption id="infographic-desc">
-    <!-- Detailed description -->
-  </figcaption>
-</figure>
-```
+- ❌ `<img src="chart.png">` — missing alt
+- ✅ `<img src="chart.png" alt="Bar chart showing 40% increase in Q3 sales">`
+- ✅ `<img src="decorative-border.png" alt="" role="presentation">` — decorative image
+- ✅ Complex images: use `<figure>` with `aria-describedby` pointing to `<figcaption>`
 
 **Icon buttons need accessible names:**
-```html
-<!-- ❌ No accessible name -->
-<button><svg><!-- menu icon --></svg></button>
-
-<!-- ✅ Using aria-label -->
-<button aria-label="Open menu">
-  <svg aria-hidden="true"><!-- menu icon --></svg>
-</button>
-
-<!-- ✅ Using visually hidden text -->
-<button>
-  <svg aria-hidden="true"><!-- menu icon --></svg>
-  <span class="visually-hidden">Open menu</span>
-</button>
-```
+- ❌ `<button><svg><!-- icon --></svg></button>` — no accessible name
+- ✅ `<button aria-label="Open menu"><svg aria-hidden="true">...</svg></button>`
+- ✅ Alternative: `<span class="visually-hidden">Open menu</span>` inside button
 
 **Visually hidden class:**
 ```css
 .visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
 }
 ```
 
@@ -95,61 +61,16 @@ Comprehensive accessibility guidelines based on WCAG 2.1 and Lighthouse accessib
 | Large text (≥ 18px / ≥ 14px bold) | 3:1 | 4.5:1 |
 | UI components & graphics | 3:1 | 3:1 |
 
-```css
-/* ❌ Low contrast (2.5:1) */
-.low-contrast {
-  color: #999;
-  background: #fff;
-}
+- ❌ `color: #999; background: #fff;` — contrast 2.5:1
+- ✅ `color: #333; background: #fff;` — contrast 7:1
+- ✅ Focus states: `:focus-visible { outline: 2px solid #005fcc; outline-offset: 2px; }`
 
-/* ✅ Sufficient contrast (7:1) */
-.high-contrast {
-  color: #333;
-  background: #fff;
-}
-
-/* ✅ Focus states need contrast too */
-:focus-visible {
-  outline: 2px solid #005fcc;
-  outline-offset: 2px;
-}
-```
-
-**Don't rely on color alone:**
-```html
-<!-- ❌ Only color indicates error -->
-<input class="error-border">
-<style>.error-border { border-color: red; }</style>
-
-<!-- ✅ Color + icon + text -->
-<div class="field-error">
-  <input aria-invalid="true" aria-describedby="email-error">
-  <span id="email-error" class="error-message">
-    <svg aria-hidden="true"><!-- error icon --></svg>
-    Please enter a valid email address
-  </span>
-</div>
-```
+**Don't rely on color alone:** Use color + icon + text for errors. Mark fields with `aria-invalid="true"` and `aria-describedby` linking to error message.
 
 ### Media alternatives (1.2)
 
-```html
-<!-- Video with captions -->
-<video controls>
-  <source src="video.mp4" type="video/mp4">
-  <track kind="captions" src="captions.vtt" srclang="en" label="English" default>
-  <track kind="descriptions" src="descriptions.vtt" srclang="en" label="Descriptions">
-</video>
-
-<!-- Audio with transcript -->
-<audio controls>
-  <source src="podcast.mp3" type="audio/mp3">
-</audio>
-<details>
-  <summary>Transcript</summary>
-  <p>Full transcript text...</p>
-</details>
-```
+- Video: include `<track kind="captions">` and `<track kind="descriptions">`
+- Audio: provide a transcript (e.g., in a `<details>` element)
 
 ---
 
@@ -159,128 +80,31 @@ Comprehensive accessibility guidelines based on WCAG 2.1 and Lighthouse accessib
 
 **All functionality must be keyboard accessible:**
 ```javascript
-// ❌ Only handles click
-element.addEventListener('click', handleAction);
-
-// ✅ Handles both click and keyboard
-element.addEventListener('click', handleAction);
+// ❌ Only click handler — ✅ Add keydown for Enter/Space
 element.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' || e.key === ' ') {
-    e.preventDefault();
-    handleAction();
-  }
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleAction(); }
 });
 ```
 
-**No keyboard traps:**
-```javascript
-// Modal focus management
-function openModal(modal) {
-  const focusableElements = modal.querySelectorAll(
-    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-  );
-  const firstElement = focusableElements[0];
-  const lastElement = focusableElements[focusableElements.length - 1];
-  
-  // Trap focus within modal
-  modal.addEventListener('keydown', (e) => {
-    if (e.key === 'Tab') {
-      if (e.shiftKey && document.activeElement === firstElement) {
-        e.preventDefault();
-        lastElement.focus();
-      } else if (!e.shiftKey && document.activeElement === lastElement) {
-        e.preventDefault();
-        firstElement.focus();
-      }
-    }
-    if (e.key === 'Escape') {
-      closeModal();
-    }
-  });
-  
-  firstElement.focus();
-}
-```
+**Modal focus management:** Query all focusable elements, trap Tab/Shift+Tab between first/last, close on Escape, focus first element on open.
 
 ### Focus visible (2.4.7)
 
-```css
-/* ❌ Never remove focus outlines */
-*:focus { outline: none; }
-
-/* ✅ Use :focus-visible for keyboard-only focus */
-:focus {
-  outline: none;
-}
-
-:focus-visible {
-  outline: 2px solid #005fcc;
-  outline-offset: 2px;
-}
-
-/* ✅ Or custom focus styles */
-button:focus-visible {
-  box-shadow: 0 0 0 3px rgba(0, 95, 204, 0.5);
-}
-```
+- ❌ `*:focus { outline: none; }` — never remove focus outlines globally
+- ✅ Use `:focus-visible` for keyboard-only focus styles
+- ✅ `button:focus-visible { box-shadow: 0 0 0 3px rgba(0,95,204,0.5); }`
 
 ### Skip links (2.4.1)
 
-```html
-<body>
-  <a href="#main-content" class="skip-link">Skip to main content</a>
-  <header><!-- navigation --></header>
-  <main id="main-content" tabindex="-1">
-    <!-- main content -->
-  </main>
-</body>
-```
-
-```css
-.skip-link {
-  position: absolute;
-  top: -40px;
-  left: 0;
-  background: #000;
-  color: #fff;
-  padding: 8px 16px;
-  z-index: 100;
-}
-
-.skip-link:focus {
-  top: 0;
-}
-```
-
-### Timing (2.2)
-
-```javascript
-// Allow users to extend time limits
-function showSessionWarning() {
-  const modal = createModal({
-    title: 'Session Expiring',
-    content: 'Your session will expire in 2 minutes.',
-    actions: [
-      { label: 'Extend session', action: extendSession },
-      { label: 'Log out', action: logout }
-    ],
-    timeout: 120000 // 2 minutes to respond
-  });
-}
-```
+Add `<a href="#main-content" class="skip-link">Skip to main content</a>` before nav. Style off-screen, show on `:focus`.
 
 ### Motion (2.3)
 
 ```css
-/* Respect reduced motion preference */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important; animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important; scroll-behavior: auto !important;
   }
 }
 ```
@@ -291,88 +115,23 @@ function showSessionWarning() {
 
 ### Page language (3.1.1)
 
-```html
-<!-- ❌ No language specified -->
-<html>
-
-<!-- ✅ Language specified -->
-<html lang="en">
-
-<!-- ✅ Language changes within page -->
-<p>The French word for hello is <span lang="fr">bonjour</span>.</p>
-```
+- ❌ `<html>` — no language
+- ✅ `<html lang="en">` — language changes: `<span lang="fr">bonjour</span>`
 
 ### Consistent navigation (3.2.3)
 
-```html
-<!-- Navigation should be consistent across pages -->
-<nav aria-label="Main">
-  <ul>
-    <li><a href="/" aria-current="page">Home</a></li>
-    <li><a href="/products">Products</a></li>
-    <li><a href="/about">About</a></li>
-  </ul>
-</nav>
-```
+Navigation should be consistent across pages. Use `<nav aria-label="Main">` with `aria-current="page"` on active link.
 
 ### Form labels (3.3.2)
 
-```html
-<!-- ❌ No label association -->
-<input type="email" placeholder="Email">
-
-<!-- ✅ Explicit label -->
-<label for="email">Email address</label>
-<input type="email" id="email" name="email" 
-       autocomplete="email" required>
-
-<!-- ✅ Implicit label -->
-<label>
-  Email address
-  <input type="email" name="email" autocomplete="email" required>
-</label>
-
-<!-- ✅ With instructions -->
-<label for="password">Password</label>
-<input type="password" id="password" 
-       aria-describedby="password-requirements">
-<p id="password-requirements">
-  Must be at least 8 characters with one number.
-</p>
-```
+- ❌ `<input type="email" placeholder="Email">` — no label
+- ✅ `<label for="email">Email</label><input type="email" id="email" autocomplete="email" required>`
+- ✅ Link instructions via `aria-describedby` to requirement text
 
 ### Error handling (3.3.1, 3.3.3)
 
-```html
-<!-- Announce errors to screen readers -->
-<form novalidate>
-  <div class="field" aria-live="polite">
-    <label for="email">Email</label>
-    <input type="email" id="email" 
-           aria-invalid="true"
-           aria-describedby="email-error">
-    <p id="email-error" class="error" role="alert">
-      Please enter a valid email address (e.g., name@example.com)
-    </p>
-  </div>
-</form>
-```
-
-```javascript
-// Focus first error on submit
-form.addEventListener('submit', (e) => {
-  const firstError = form.querySelector('[aria-invalid="true"]');
-  if (firstError) {
-    e.preventDefault();
-    firstError.focus();
-    
-    // Announce error summary
-    const errorSummary = document.getElementById('error-summary');
-    errorSummary.textContent = `${errors.length} errors found. Please fix them and try again.`;
-    errorSummary.focus();
-  }
-});
-```
+- Announce errors: `<input aria-invalid="true" aria-describedby="email-error">` + `<p id="email-error" role="alert">...</p>`
+- On submit: focus first `[aria-invalid="true"]` element, announce error summary count
 
 ---
 
@@ -380,80 +139,23 @@ form.addEventListener('submit', (e) => {
 
 ### Valid HTML (4.1.1)
 
-```html
-<!-- ❌ Duplicate IDs -->
-<div id="content">...</div>
-<div id="content">...</div>
-
-<!-- ❌ Invalid nesting -->
-<a href="/"><button>Click</button></a>
-
-<!-- ✅ Unique IDs -->
-<div id="main-content">...</div>
-<div id="sidebar-content">...</div>
-
-<!-- ✅ Proper nesting -->
-<a href="/" class="button-link">Click</a>
-```
+- ❌ Duplicate IDs, `<a href="/"><button>Click</button></a>` (invalid nesting)
+- ✅ Unique IDs, proper element nesting
 
 ### ARIA usage (4.1.2)
 
 **Prefer native elements:**
-```html
-<!-- ❌ ARIA role on div -->
-<div role="button" tabindex="0">Click me</div>
+- ❌ `<div role="button" tabindex="0">` — ✅ `<button>Click me</button>`
+- ❌ `<div role="checkbox">` — ✅ `<label><input type="checkbox"> Option</label>`
 
-<!-- ✅ Native button -->
-<button>Click me</button>
-
-<!-- ❌ ARIA checkbox -->
-<div role="checkbox" aria-checked="false">Option</div>
-
-<!-- ✅ Native checkbox -->
-<label><input type="checkbox"> Option</label>
-```
-
-**When ARIA is needed:**
-```html
-<!-- Custom tabs component -->
-<div role="tablist" aria-label="Product information">
-  <button role="tab" id="tab-1" aria-selected="true" 
-          aria-controls="panel-1">Description</button>
-  <button role="tab" id="tab-2" aria-selected="false" 
-          aria-controls="panel-2" tabindex="-1">Reviews</button>
-</div>
-<div role="tabpanel" id="panel-1" aria-labelledby="tab-1">
-  <!-- Panel content -->
-</div>
-<div role="tabpanel" id="panel-2" aria-labelledby="tab-2" hidden>
-  <!-- Panel content -->
-</div>
-```
+**When ARIA is needed (e.g., custom tabs):**
+Use `role="tablist"`, `role="tab"` with `aria-selected`/`aria-controls`, `role="tabpanel"` with `aria-labelledby`, and `tabindex="-1"` on inactive tabs.
 
 ### Live regions (4.1.3)
 
-```html
-<!-- Status updates -->
-<div aria-live="polite" aria-atomic="true" class="status">
-  <!-- Content updates announced to screen readers -->
-</div>
-
-<!-- Urgent alerts -->
-<div role="alert" aria-live="assertive">
-  <!-- Interrupts current announcement -->
-</div>
-```
-
-```javascript
-// Announce dynamic content changes
-function showNotification(message, type = 'polite') {
-  const container = document.getElementById(`${type}-announcer`);
-  container.textContent = ''; // Clear first
-  requestAnimationFrame(() => {
-    container.textContent = message;
-  });
-}
-```
+- Status: `<div aria-live="polite" aria-atomic="true">` — polite updates
+- Alerts: `<div role="alert" aria-live="assertive">` — urgent interruptions
+- Dynamic updates: clear textContent, then set in `requestAnimationFrame`
 
 ---
 
@@ -461,12 +163,8 @@ function showNotification(message, type = 'polite') {
 
 ### Automated testing
 ```bash
-# Lighthouse accessibility audit
 npx lighthouse https://example.com --only-categories=accessibility
-
-# axe-core
-npm install @axe-core/cli -g
-axe https://example.com
+npx @axe-core/cli https://example.com
 ```
 
 ### Manual testing
