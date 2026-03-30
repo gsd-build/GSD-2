@@ -10,6 +10,7 @@ import { existsSync, copyFileSync, mkdirSync, realpathSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Decision, Requirement, GateRow, GateId, GateScope, GateStatus, GateVerdict } from "./types.js";
 import { GSDError, GSD_STALE_STATE } from "./errors.js";
+import { debugLog } from "./debug-logger.js";
 
 const _require = createRequire(import.meta.url);
 
@@ -801,7 +802,7 @@ export function openDatabase(path: string): boolean {
 
   if (!_exitHandlerRegistered) {
     _exitHandlerRegistered = true;
-    process.on("exit", () => { try { closeDatabase(); } catch {} });
+    process.on("exit", () => { try { closeDatabase(); } catch (err) { debugLog("closeDatabase on exit failed", { error: err instanceof Error ? err.message : String(err) }); } });
   }
 
   return true;
