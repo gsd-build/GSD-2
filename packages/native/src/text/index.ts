@@ -12,23 +12,59 @@ export type { ExtractSegmentsResult, SliceResult };
 export { EllipsisKind } from "./types.js";
 
 /**
+ * Pure-JS fallback for wrapTextWithAnsi.
+ * Does not handle ANSI codes — plain character-count wrap.
+ * Used only when the native addon is unavailable (e.g., linux-arm64
+ * devcontainers — #3212).
+ */
+function wrapTextWithAnsiJs(text: string, width: number): string[] {
+  if (width <= 0) return [text];
+  const lines: string[] = [];
+  for (const rawLine of text.split("\n")) {
+    if (rawLine.length <= width) {
+      lines.push(rawLine);
+      continue;
+    }
+    let remaining = rawLine;
+    while (remaining.length > width) {
+      // Prefer breaking at a space boundary within the width
+      let breakAt = width;
+      const lastSpace = remaining.lastIndexOf(" ", width - 1);
+      if (lastSpace > 0) breakAt = lastSpace;
+      lines.push(remaining.slice(0, breakAt));
+      remaining = remaining.slice(breakAt).replace(/^ /, "");
+    }
+    if (remaining.length > 0) lines.push(remaining);
+  }
+  return lines.length > 0 ? lines : [""];
+}
+
+/**
  * Word-wrap text to a visible width, preserving ANSI escape codes across
  * line breaks.
  *
  * Active SGR codes (colors, bold, etc.) are carried to continuation lines.
  * Underline and strikethrough are reset at line ends and restored on the
  * next line.
+ *
+ * Delegates to the native Rust implementation when available.
+ * Falls back to a plain JS implementation on platforms where the native
+ * addon is not built (e.g., linux-arm64 devcontainers — #3212).
  */
 export function wrapTextWithAnsi(
   text: string,
   width: number,
   tabWidth?: number,
 ): string[] {
-  return (native as Record<string, Function>).wrapTextWithAnsi(
-    text,
-    width,
-    tabWidth,
-  ) as string[];
+  try {
+    return (native as Record<string, Function>).wrapTextWithAnsi(
+      text,
+      width,
+      tabWidth,
+    ) as string[];
+  } catch {
+    return wrapTextWithAnsiJs(text, width);
+  }
 }
 
 /**
