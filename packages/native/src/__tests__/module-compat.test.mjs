@@ -60,29 +60,32 @@ describe("@gsd/native module compatibility (#2861)", () => {
     }
   });
 
-  test("native.ts source must not shadow require() with createRequire in CJS mode", () => {
-    // When compiled to CJS, __dirname and require are already available.
-    // Redefining them via import.meta.url (ESM-only) causes SyntaxError.
+  test("native.ts source must not use bare import.meta.url (parse-time error in CJS)", () => {
+    // When compiled to CJS, import.meta is a *parse-time* syntax error --
+    // typeof guards don't help because Node rejects the syntax before
+    // executing any code.  The source must wrap import.meta access in
+    // an indirect eval so the CJS parser never sees the bare syntax.
     const nativeSrc = readFileSync(
       path.resolve(__dirname, "..", "native.ts"),
       "utf8",
     );
 
-    // The source should use __dirname directly (available in CJS) or use
-    // a conditional pattern that works in both modes.
-    // Check that import.meta.url is NOT used to derive __dirname
-    const hasDirnameFromImportMeta = /path\.dirname\(.*fileURLToPath\(import\.meta\.url\)\)/.test(nativeSrc);
-    const hasRequireFromImportMeta = /createRequire\(import\.meta\.url\)/.test(nativeSrc);
+    // Bare import.meta.url (NOT wrapped) would crash at parse time in CJS.
+    // These regexes match direct usage like fileURLToPath(import.meta.url)
+    // and createRequire(import.meta.url), but NOT indirect patterns that
+    // hide import.meta from the CJS parser.
+    const hasBareImportMetaDirname = /path\.dirname\(.*fileURLToPath\(import\.meta\.url\)\)/.test(nativeSrc);
+    const hasBareImportMetaRequire = /createRequire\(import\.meta\.url\)/.test(nativeSrc);
 
     assert.ok(
-      !hasDirnameFromImportMeta,
-      "native.ts must not derive __dirname from import.meta.url — " +
-        "this is invalid in CJS mode and crashes with SyntaxError",
+      !hasBareImportMetaDirname,
+      "native.ts must not use bare import.meta.url in fileURLToPath() -- " +
+        "this is a parse-time syntax error in CJS; use indirect eval",
     );
     assert.ok(
-      !hasRequireFromImportMeta,
-      "native.ts must not create require() from import.meta.url — " +
-        "require is already available in CJS scope",
+      !hasBareImportMetaRequire,
+      "native.ts must not use bare import.meta.url in createRequire() -- " +
+        "this is a parse-time syntax error in CJS; use indirect eval",
     );
   });
 });
