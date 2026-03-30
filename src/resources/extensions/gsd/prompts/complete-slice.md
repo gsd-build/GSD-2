@@ -31,7 +31,7 @@ Then:
 10. Review task summaries for patterns, gotchas, or non-obvious lessons learned. If any would save future agents from repeating investigation or hitting the same issues, append them to `.gsd/KNOWLEDGE.md`. Only add entries that are genuinely useful — don't pad with obvious observations.
 11. Call `gsd_complete_slice` with milestone_id, slice_id, the slice summary, and the UAT result. Do NOT manually mark the roadmap checkbox — the tool writes to the DB and renders the ROADMAP.md projection automatically.
 12. Do not run git commands — the system commits your changes and handles any merge after this unit succeeds.
-13. Update `.gsd/PROJECT.md` if it exists: use the `write` tool with `path: ".gsd/PROJECT.md"` and `content` containing the full updated document reflecting current project state. Do NOT use the `edit` tool for this — PROJECT.md is a full-document refresh.
+13. Update `.gsd/PROJECT.md` if it exists — refresh current state if needed: use the `write` tool with `path: ".gsd/PROJECT.md"` and `content` containing the full updated document reflecting current project state. Do NOT use the `edit` tool for this — PROJECT.md is a full-document refresh.
 
 **You MUST call `gsd_complete_slice` with the slice summary and UAT content before finishing. The tool persists to both DB and disk and renders `{{sliceSummaryPath}}` and `{{sliceUatPath}}` automatically.**
 
