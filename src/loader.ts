@@ -143,6 +143,11 @@ const srcRes = join(gsdRoot, 'src', 'resources')
 const resourcesDir = existsSync(distRes) ? distRes : srcRes
 process.env.GSD_WORKFLOW_PATH = join(resourcesDir, 'GSD-WORKFLOW.md')
 
+// GSD_WORKFLOW_DISPATCH_PATH — condensed version for LLM dispatch (strips template
+// examples and content already present in system.md). Full version stays at
+// GSD_WORKFLOW_PATH for /gsd command display and user reference.
+process.env.GSD_WORKFLOW_DISPATCH_PATH = join(resourcesDir, 'GSD-WORKFLOW-DISPATCH.md')
+
 // GSD_BUNDLED_EXTENSION_PATHS — dynamically discovered bundled extension entry points.
 // Uses the shared discoverExtensionEntryPaths() to scan the bundled resources
 // directory, then remaps discovered paths to agentDir (~/.gsd/agent/extensions/)

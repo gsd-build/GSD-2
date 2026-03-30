@@ -22,14 +22,7 @@ This skill activates when standard troubleshooting has failed. The issue require
 </core_principle>
 
 <analysis_only_rule>
-**THIS SKILL IS READ-ONLY. DO NOT MODIFY CODE.**
-
-The entire purpose is deep analysis and diagnosis. Making changes during investigation:
-- Pollutes the evidence
-- Introduces new variables
-- Makes root cause harder to isolate
-
-You are a diagnostician, not a surgeon. Present findings, then let the user decide.
+**READ-ONLY. DO NOT MODIFY CODE.** Deep analysis and diagnosis only — changes during investigation pollute evidence and introduce new variables. Present findings, let user decide.
 </analysis_only_rule>
 
 <quick_start>
@@ -114,31 +107,20 @@ See [references/verification-patterns.md](references/verification-patterns.md) f
 
 <critical_rules>
 
-1. **NO DRIVE-BY FIXES**: If you can't explain WHY a change works, don't make it
-2. **VERIFY EVERYTHING**: Test your assumptions. Read the actual code. Check the actual behavior
-3. **USE ALL TOOLS**:
-   - MCP servers for external knowledge
-   - Web search for error messages, docs, known issues
-   - Extended thinking ("think deeply") for complex reasoning
-   - File reading for complete context
-4. **THINK OUT LOUD**: Document your reasoning at each step
-5. **ONE VARIABLE**: Change one thing at a time, verify, then proceed
-6. **COMPLETE READS**: Don't skim code. Read entire relevant files
-7. **CHASE DEPENDENCIES**: If the issue involves libraries, configs, or external systems, investigate those too
-8. **QUESTION PREVIOUS WORK**: Maybe the earlier "fix" was wrong. Re-examine with fresh eyes
+1. **NO DRIVE-BY FIXES** — explain WHY a change works before making it
+2. **VERIFY EVERYTHING** — test assumptions, read actual code, check actual behavior
+3. **USE ALL TOOLS** — MCP servers, web search, extended thinking, full file reads
+4. **THINK OUT LOUD** — document reasoning at each step
+5. **ONE VARIABLE** — change one thing, verify, then proceed
+6. **COMPLETE READS** — read entire relevant files, not just snippets
+7. **CHASE DEPENDENCIES** — investigate libraries, configs, external systems
+8. **QUESTION PREVIOUS WORK** — the earlier "fix" may have been wrong
 
 </critical_rules>
 
 <success_criteria>
 
-Before completing:
-- [ ] Do you understand WHY the issue occurred?
-- [ ] Have you identified a root cause with evidence?
-- [ ] Have you documented your reasoning?
-- [ ] Can you explain the issue to someone else?
-- [ ] Is your recommended fix specific and actionable?
-
-If you can't answer "yes" to all of these, keep investigating.
+Before completing, verify: WHY it occurred (root cause with evidence), documented reasoning, explainable to others, specific actionable fix recommendation.
 
 **CRITICAL**: Present findings via decision gate. Do NOT implement changes.
 

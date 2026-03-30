@@ -428,63 +428,44 @@ export function renderPreferencesForSystemPrompt(preferences: GSDPreferences, re
   const lines: string[] = ["## GSD Skill Preferences"];
 
   if (validated.errors.length > 0) {
-    lines.push("- Validation: some preference values were ignored because they were invalid.");
+    lines.push("(Some invalid preferences ignored.)");
   }
   for (const warning of validated.warnings) {
-    lines.push(`- Deprecation: ${warning}`);
+    lines.push(`Deprecation: ${warning}`);
   }
 
   preferences = validated.preferences;
 
-  lines.push(
-    "- Treat these as explicit skill-selection policy for GSD work.",
-    "- If a listed skill exists and is relevant, load and follow it instead of treating it as a vague suggestion.",
-    "- Current user instructions still override these defaults.",
-  );
+  lines.push("Load listed skills when relevant. User instructions override.");
 
   const fmt = (ref: string) => resolutions ? formatSkillRef(ref, resolutions) : ref;
 
   if (preferences.always_use_skills && preferences.always_use_skills.length > 0) {
-    lines.push("- Always use these skills when relevant:");
-    for (const skill of preferences.always_use_skills) {
-      lines.push(`  - ${fmt(skill)}`);
-    }
+    lines.push(`Always: ${preferences.always_use_skills.map(fmt).join(", ")}`);
   }
 
   if (preferences.prefer_skills && preferences.prefer_skills.length > 0) {
-    lines.push("- Prefer these skills when relevant:");
-    for (const skill of preferences.prefer_skills) {
-      lines.push(`  - ${fmt(skill)}`);
-    }
+    lines.push(`Prefer: ${preferences.prefer_skills.map(fmt).join(", ")}`);
   }
 
   if (preferences.avoid_skills && preferences.avoid_skills.length > 0) {
-    lines.push("- Avoid these skills unless clearly needed:");
-    for (const skill of preferences.avoid_skills) {
-      lines.push(`  - ${fmt(skill)}`);
-    }
+    lines.push(`Avoid: ${preferences.avoid_skills.map(fmt).join(", ")}`);
   }
 
   if (preferences.skill_rules && preferences.skill_rules.length > 0) {
-    lines.push("- Situational rules:");
+    lines.push("Rules:");
     for (const rule of preferences.skill_rules) {
-      lines.push(`  - When ${rule.when}:`);
-      if (rule.use && rule.use.length > 0) {
-        lines.push(`    - use: ${rule.use.map(fmt).join(", ")}`);
-      }
-      if (rule.prefer && rule.prefer.length > 0) {
-        lines.push(`    - prefer: ${rule.prefer.map(fmt).join(", ")}`);
-      }
-      if (rule.avoid && rule.avoid.length > 0) {
-        lines.push(`    - avoid: ${rule.avoid.map(fmt).join(", ")}`);
-      }
+      const parts: string[] = [];
+      if (rule.use?.length) parts.push(`use ${rule.use.map(fmt).join(", ")}`);
+      if (rule.prefer?.length) parts.push(`prefer ${rule.prefer.map(fmt).join(", ")}`);
+      if (rule.avoid?.length) parts.push(`avoid ${rule.avoid.map(fmt).join(", ")}`);
+      lines.push(`- When ${rule.when}: ${parts.join("; ")}`);
     }
   }
 
   if (preferences.custom_instructions && preferences.custom_instructions.length > 0) {
-    lines.push("- Additional instructions:");
     for (const instruction of preferences.custom_instructions) {
-      lines.push(`  - ${instruction}`);
+      lines.push(`- ${instruction}`);
     }
   }
 

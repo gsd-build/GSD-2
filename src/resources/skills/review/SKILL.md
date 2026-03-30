@@ -18,9 +18,7 @@ The reviewer reads both the diff and the surrounding source files to understand 
 </core_principle>
 
 <analysis_only_rule>
-**THIS SKILL IS READ-ONLY. DO NOT MODIFY CODE.**
-
-The purpose is to review and report findings. Making changes during review conflates the reviewer and author roles. Present findings and let the user decide what to act on.
+**READ-ONLY. DO NOT MODIFY CODE.** Review and report findings only — changes conflate reviewer and author roles. Present findings, let user decide.
 </analysis_only_rule>
 
 <quick_start>
@@ -133,14 +131,14 @@ Severity levels:
 
 <critical_rules>
 
-1. **READ THE FULL FILE**: Never review a diff without reading the complete source file for context
-2. **NO FALSE ALARMS**: Only report issues you can explain concretely. Do not report vague concerns
-3. **PRIORITIZE**: Lead with the most severe findings. Do not bury critical issues under style nits
-4. **BE SPECIFIC**: Include file paths, line numbers, and code references for every finding
-5. **EXPLAIN THE RISK**: For each finding, explain what could actually go wrong
-6. **CHECK TESTS**: Always check whether changes have corresponding test updates
-7. **CONSIDER THE STACK**: Apply language-specific and framework-specific knowledge to your review
-8. **DO NOT MODIFY CODE**: Present findings only. The user decides what to act on
+1. **READ FULL FILES** — never review diffs without complete source context
+2. **NO FALSE ALARMS** — only report concretely explainable issues
+3. **PRIORITIZE** — lead with most severe findings, not style nits
+4. **BE SPECIFIC** — file paths, line numbers, code references for every finding
+5. **EXPLAIN RISK** — what could actually go wrong for each finding
+6. **CHECK TESTS** — verify changes have corresponding test updates
+7. **CONSIDER STACK** — apply language/framework-specific knowledge
+8. **DO NOT MODIFY** — present findings only, user decides
 
 </critical_rules>
 

@@ -61,22 +61,19 @@ Then:
 
 ## Planning Doctrine
 
-Apply these when decomposing and ordering slices:
-
-- **Risk-first means proof-first.** The earliest slices should prove the hardest thing works by shipping the real feature through the uncertain path. If auth is the risk, the first slice ships a real login page with real session handling that a user can actually use — not a CLI command that returns "authenticated: true". Proof is the shipped feature working. There is no separate "proof" artifact. Do not plan spikes, proof-of-concept slices, or validation-only slices — the proof is the real feature, built through the risky path.
-- **Every slice is vertical, demoable, and shippable.** Every slice ships real, user-facing functionality. "Demoable" means the intended user can exercise the capability through its real interface — for a web app that's the UI, for a CLI tool that's the terminal, for an API that's a consuming client or curl. The test is: can someone *use* it, not just *assert* it passes. A slice that only proves something but doesn't ship real working code is not a slice — restructure it.
-- **Brownfield bias.** When planning against an existing codebase, ground slices in existing modules, conventions, and seams. Prefer extending real patterns over inventing new ones.
-- **Each slice should establish something downstream slices can depend on.** Think about what stable surface this slice creates for later work — an API, a data shape, a proven integration path.
-- **Avoid foundation-only slices.** If a slice doesn't produce something demoable end-to-end, it's probably a layer, not a vertical slice. Restructure it. Exception: if the infrastructure *is* the product surface (a new protocol, extension API, or provider interface), the slice is vertical by definition — the downstream consumer is the demo.
-- **Verification-first.** When planning slices, know what "done" looks like before detailing implementation. Each slice's demo line should describe concrete, verifiable evidence — not vague "it works" claims.
-- **Plan for integrated reality, not just local proof.** Distinguish contract proof from live integration proof. If the milestone involves multiple runtime boundaries, one slice must explicitly prove the assembled system through the real entrypoint or runtime path.
-- **Truthful demo lines only.** If a slice is proven by fixtures or tests only, say so. Do not phrase harness-level proof as if the user can already perform the live end-to-end behavior unless that has actually been exercised.
-- **Completion must imply capability.** If every slice in this roadmap were completed exactly as written, the milestone's promised outcome should actually work at the proof level claimed. Do not write slices that can all be checked off while the user-visible capability still does not exist.
-- **Don't invent risks.** If the project is straightforward, skip the proof strategy and just ship value in smart order. Not everything has major unknowns.
-- **Ship features, not proofs.** A completed slice should leave the product in a state where the new capability is actually usable through its real interface. A login flow slice ends with a working login page, not a middleware function. An API slice ends with endpoints that return real data from a real store, not hardcoded fixtures. A dashboard slice ends with a real dashboard rendering real data, not a component that renders mock props. If a slice can't ship the real thing yet because a dependency isn't built, it should ship with realistic stubs that are clearly marked for replacement — but the user-facing surface must be real.
-- **Dependency format is comma-separated, never range syntax.** Write `depends:[S01,S02,S03]` — not `depends:[S01-S03]`. Range syntax is not a valid format and permanently blocks the slice.
-- **Ambition matches the milestone.** The number and depth of slices should match the milestone's ambition. A milestone promising "core platform with auth, data model, and primary user loop" should have enough slices to actually deliver all three as working features — not two proof-of-concept slices and a note that "the rest will come in the next milestone." If the milestone's context promises an outcome, the roadmap must deliver it.
-- **Right-size the decomposition.** Match slice count to actual complexity. If the work is small enough to build and verify in one pass, it's one slice — don't split it into three just because you can identify sub-steps. Multiple requirements can share a single slice. Conversely, don't cram genuinely independent capabilities into one slice just to keep the count low. Let the work dictate the structure.
+- **Risk-first = proof-first.** Earliest slices prove the hardest thing by shipping the real feature through the uncertain path. No spikes or proof-of-concept slices — the proof IS the shipped feature.
+- **Every slice is vertical, demoable, shippable.** User can exercise the capability through its real interface. A slice that only proves but doesn't ship is not a slice.
+- **Brownfield bias.** Ground in existing modules, conventions, seams. Extend real patterns over inventing new.
+- **Establish surfaces.** Each slice creates something downstream slices depend on (API, data shape, integration path).
+- **No foundation-only slices.** No demoable end-to-end output = not a vertical slice. Exception: infrastructure that IS the product surface.
+- **Verification-first.** Know "done" before detailing implementation. Demo lines = concrete verifiable evidence.
+- **Integrated reality.** If multiple runtime boundaries, one slice must prove the assembled system through the real entrypoint.
+- **Truthful demos.** If proven by fixtures/tests only, say so. Don't phrase harness proof as live capability.
+- **Completion = capability.** All slices checked off → milestone outcome actually works.
+- **Ship features, not proofs.** Real interfaces, real data, real stores. Realistic stubs only when dependency isn't built yet.
+- **Dependencies: comma-separated only.** `depends:[S01,S02,S03]` — never range syntax `depends:[S01-S03]`.
+- **Ambition matches milestone.** If context promises an outcome, roadmap must deliver it.
+- **Right-size.** Simple work = 1 slice. Don't split for decomposition's sake. Don't cram independent capabilities together either.
 
 ## Single-Slice Fast Path
 

@@ -34,10 +34,7 @@ Then:
 4. Write or update tests as part of execution — tests are verification, not an afterthought. If the slice plan defines test files in its Verification section and this is the first task, create them (they should initially fail).
 5. When implementing non-trivial runtime behavior (async flows, API boundaries, background processes, error paths), add or preserve agent-usable observability. Skip this for simple changes where it doesn't apply.
 
-   **Background process rule:** Never use bare `command &` to run background processes. The shell's `&` operator leaves stdout/stderr attached to the parent, which causes the Bash tool to hang indefinitely waiting for those streams to close. Always redirect output before backgrounding:
-   - Correct: `command > /dev/null 2>&1 &` or `nohup command > /dev/null 2>&1 &`
-   - Example: `python -m http.server 8080 > /dev/null 2>&1 &` (NOT `python -m http.server 8080 &`)
-   - Preferred: use the `bg_shell` tool if available — it manages process lifecycle correctly without stream-inheritance issues
+   **Background process rule:** Never bare `command &` (hangs Bash tool). Always redirect: `command > /dev/null 2>&1 &`. Preferred: use `bg_shell` tool.
 6. If the task plan includes a **Failure Modes** section (Q5), implement the error/timeout/malformed handling specified. Verify each dependency's failure path is handled. Skip if the section is absent.
 7. If the task plan includes a **Load Profile** section (Q6), implement protections for the identified 10x breakpoint (connection pooling, rate limiting, pagination, etc.). Skip if absent.
 8. If the task plan includes a **Negative Tests** section (Q7), write the specified negative test cases alongside the happy-path tests — malformed inputs, error paths, and boundary conditions. Skip if absent.
@@ -56,13 +53,7 @@ Then:
 
     **Context budget:** You have approximately **{{verificationBudget}}** reserved for verification context. If you've used most of your context and haven't finished all steps, stop implementing and prioritize writing the task summary with clear notes on what's done and what remains. A partial summary that enables clean resumption is more valuable than one more half-finished step with no documentation. Never sacrifice summary quality for one more implementation step.
 
-    **Debugging discipline:** If a verification check fails or implementation hits unexpected behavior:
-    - Form a hypothesis first. State what you think is wrong and why, then test that specific theory. Don't shotgun-fix.
-    - Change one variable at a time. Make one change, test, observe. Multiple simultaneous changes mean you can't attribute what worked.
-    - Read completely. When investigating, read entire functions and their imports, not just the line that looks relevant.
-    - Distinguish "I know" from "I assume." Observable facts (the error says X) are strong evidence. Assumptions (this library should work this way) need verification.
-    - Know when to stop. If you've tried 3+ fixes without progress, your mental model is probably wrong. Stop. List what you know for certain. List what you've ruled out. Form fresh hypotheses from there.
-    - Don't fix symptoms. Understand *why* something fails before changing code. A test that passes after a change you don't understand is luck, not a fix.
+    **Debugging discipline:** Hypothesize first, then test. One variable at a time. Read entire functions, not just relevant lines. Distinguish observable facts from assumptions. After 3+ failed fixes, stop — your mental model is wrong; list known facts, ruled-out causes, form fresh hypotheses. Never fix symptoms without understanding the cause.
 15. **Blocker discovery:** If execution reveals that the remaining slice plan is fundamentally invalid — not just a bug or minor deviation, but a plan-invalidating finding like a wrong API, missing capability, or architectural mismatch — set `blocker_discovered: true` in the task summary frontmatter and describe the blocker clearly in the summary narrative. Do NOT set `blocker_discovered: true` for ordinary debugging, minor deviations, or issues that can be fixed within the current task or the remaining plan. This flag triggers an automatic replan of the slice.
 16. If you made an architectural, pattern, library, or observability decision during this task that downstream work should know about, append it to `.gsd/DECISIONS.md` (read the template at `~/.gsd/agent/extensions/gsd/templates/decisions.md` if the file doesn't exist yet). Not every task produces decisions — only append when a meaningful choice was made.
 17. If you discover a non-obvious rule, recurring gotcha, or useful pattern during execution, append it to `.gsd/KNOWLEDGE.md`. Only add entries that would save future agents from repeating your investigation. Don't add obvious things.

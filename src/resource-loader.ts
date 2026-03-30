@@ -446,6 +446,13 @@ export function initResources(agentDir: string): void {
     try { copyFileSync(workflowSrc, join(agentDir, 'GSD-WORKFLOW.md')) } catch { /* non-fatal */ }
   }
 
+  // Sync condensed dispatch version (used by guided-flow LLM dispatch instead
+  // of the full workflow doc — strips template examples and system.md overlap).
+  const dispatchSrc = join(resourcesDir, 'GSD-WORKFLOW-DISPATCH.md')
+  if (existsSync(dispatchSrc)) {
+    try { copyFileSync(dispatchSrc, join(agentDir, 'GSD-WORKFLOW-DISPATCH.md')) } catch { /* non-fatal */ }
+  }
+
   // Ensure all newly copied files are owner-writable so the next run can
   // overwrite them (covers extensions, agents, and skills in one walk).
   makeTreeWritable(agentDir)

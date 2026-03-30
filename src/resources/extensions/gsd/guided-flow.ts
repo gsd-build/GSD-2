@@ -244,8 +244,12 @@ async function dispatchWorkflow(
     }
   }
 
-  const workflowPath = process.env.GSD_WORKFLOW_PATH ?? join(process.env.HOME ?? "~", ".gsd", "agent", "GSD-WORKFLOW.md");
-  const workflow = readFileSync(workflowPath, "utf-8");
+  // Use condensed dispatch version (strips template examples and system.md overlap)
+  // to save ~2.5K-3.5K tokens per dispatch. Fall back to full version if dispatch
+  // version is not available (dev builds, older installs).
+  const dispatchPath = process.env.GSD_WORKFLOW_DISPATCH_PATH ?? join(process.env.HOME ?? "~", ".gsd", "agent", "GSD-WORKFLOW-DISPATCH.md");
+  const fullPath = process.env.GSD_WORKFLOW_PATH ?? join(process.env.HOME ?? "~", ".gsd", "agent", "GSD-WORKFLOW.md");
+  const workflow = existsSync(dispatchPath) ? readFileSync(dispatchPath, "utf-8") : readFileSync(fullPath, "utf-8");
 
   pi.sendMessage(
     {
