@@ -1142,14 +1142,18 @@ export async function runUnitPhase(
   // ── Immediate unit closeout (metrics, activity log, memory) ────────
   // Run right after runUnit() returns so telemetry is never lost to a
   // crash between iterations.
-  await deps.closeoutUnit(
-    ctx,
-    s.basePath,
-    unitType,
-    unitId,
-    s.currentUnit.startedAt,
-    deps.buildSnapshotOpts(unitType, unitId),
-  );
+  // Guard: stopAuto() may have nulled s.currentUnit via s.reset() while
+  // this coroutine was suspended at `await runUnit(...)` (#2939).
+  if (s.currentUnit) {
+    await deps.closeoutUnit(
+      ctx,
+      s.basePath,
+      unitType,
+      unitId,
+      s.currentUnit.startedAt,
+      deps.buildSnapshotOpts(unitType, unitId),
+    );
+  }
 
   // ── Zero tool-call guard (#1833) ──────────────────────────────────
   // An execute-task agent that completes with 0 tool calls made no
@@ -1159,7 +1163,7 @@ export async function runUnitPhase(
     const currentLedger = deps.getLedger() as { units: Array<{ type: string; id: string; startedAt: number; toolCalls: number }> } | null;
     if (currentLedger?.units) {
       const lastUnit = [...currentLedger.units].reverse().find(
-        (u: { type: string; id: string; startedAt: number; toolCalls: number }) => u.type === unitType && u.id === unitId && u.startedAt === s.currentUnit!.startedAt,
+        (u: { type: string; id: string; startedAt: number; toolCalls: number }) => u.type === unitType && u.id === unitId && u.startedAt === s.currentUnit?.startedAt,
       );
       if (lastUnit && lastUnit.toolCalls === 0) {
         debugLog("runUnitPhase", {
@@ -1174,7 +1178,7 @@ export async function runUnitPhase(
         );
         // Fall through to next iteration where dispatch will re-derive
         // and re-dispatch this task.
-        return { action: "next", data: { unitStartedAt: s.currentUnit.startedAt } };
+        return { action: "next", data: { unitStartedAt: s.currentUnit?.startedAt } };
       }
     }
   }
@@ -1198,7 +1202,7 @@ export async function runUnitPhase(
 
   deps.emitJournalEvent({ ts: new Date().toISOString(), flowId: ic.flowId, seq: ic.nextSeq(), eventType: "unit-end", data: { unitType, unitId, status: unitResult.status, artifactVerified, ...(unitResult.errorContext ? { errorContext: unitResult.errorContext } : {}) }, causedBy: { flowId: ic.flowId, seq: unitStartSeq } });
 
-  return { action: "next", data: { unitStartedAt: s.currentUnit.startedAt } };
+  return { action: "next", data: { unitStartedAt: s.currentUnit?.startedAt } };
 }
 
 // ─── runFinalize ──────────────────────────────────────────────────────────────
