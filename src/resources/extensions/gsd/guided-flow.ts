@@ -974,7 +974,15 @@ export async function showSmartEntry(
   }
 
   // ── Detection preamble — run before any bootstrap ────────────────────
-  if (!existsSync(gsdRoot(basePath))) {
+  // Check bootstrap completeness, not just .gsd/ directory existence.
+  // A zombie .gsd/ state (symlink exists but missing PREFERENCES.md and
+  // milestones/) must trigger the init wizard, not skip it (#2942).
+  const gsdPath = gsdRoot(basePath);
+  const hasBootstrapArtifacts = existsSync(gsdPath)
+    && (existsSync(join(gsdPath, "PREFERENCES.md"))
+        || existsSync(join(gsdPath, "milestones")));
+
+  if (!hasBootstrapArtifacts) {
     const detection = detectProjectState(basePath);
 
     // v1 .planning/ detected — offer migration before anything else
@@ -989,7 +997,7 @@ export async function showSmartEntry(
       // "fresh" — fall through to init wizard
     }
 
-    // No .gsd/ — run the project init wizard
+    // No .gsd/ or zombie .gsd/ — run the project init wizard
     const result = await showProjectInit(ctx, pi, basePath, detection);
     if (!result.completed) return; // User cancelled
 

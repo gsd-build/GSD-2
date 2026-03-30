@@ -198,10 +198,13 @@ export async function bootstrapAutoSession(
     ensureGitignore(base, { manageGitignore });
     if (manageGitignore !== false) untrackRuntimeFiles(base);
 
-    // Bootstrap .gsd/ if it doesn't exist
+    // Bootstrap milestones/ if it doesn't exist.
+    // Check milestones/ directly — ensureGsdSymlink above already created .gsd/,
+    // so checking .gsd/ existence would be dead code (#2942).
     const gsdDir = join(base, ".gsd");
-    if (!existsSync(gsdDir)) {
-      mkdirSync(join(gsdDir, "milestones"), { recursive: true });
+    const milestonesPath = join(gsdDir, "milestones");
+    if (!existsSync(milestonesPath)) {
+      mkdirSync(milestonesPath, { recursive: true });
       try {
         nativeAddAll(base);
         nativeCommit(base, "chore: init gsd");
