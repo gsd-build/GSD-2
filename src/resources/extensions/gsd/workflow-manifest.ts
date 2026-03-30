@@ -42,6 +42,23 @@ function requireDb() {
   return db;
 }
 
+/**
+ * Coerce a raw DB value to a number, returning `fallback` for
+ * null/undefined/non-numeric strings (e.g. "-", "N/A", "").
+ * SQLite can store TEXT in INTEGER columns after migrations or manual inserts.
+ */
+export function toNumeric(value: unknown, fallback: number | null = null): number | null {
+  if (value === null || value === undefined) return fallback;
+  if (typeof value === "number") return Number.isFinite(value) ? value : fallback;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed === "" || trimmed === "-" || trimmed === "N/A") return fallback;
+    const n = Number(trimmed);
+    return Number.isFinite(n) ? n : fallback;
+  }
+  return fallback;
+}
+
 // ─── snapshotState ───────────────────────────────────────────────────────
 
 /**
@@ -99,7 +116,7 @@ export function snapshotState(): StateManifest {
     proof_level: (r["proof_level"] as string) ?? "",
     integration_closure: (r["integration_closure"] as string) ?? "",
     observability_impact: (r["observability_impact"] as string) ?? "",
-    sequence: (r["sequence"] as number) ?? 0,
+    sequence: toNumeric(r["sequence"], 0) as number,
     replan_triggered_at: (r["replan_triggered_at"] as string) ?? null,
   }));
 
@@ -129,12 +146,12 @@ export function snapshotState(): StateManifest {
     expected_output: JSON.parse((r["expected_output"] as string) || "[]"),
     observability_impact: (r["observability_impact"] as string) ?? "",
     full_plan_md: (r["full_plan_md"] as string) ?? "",
-    sequence: (r["sequence"] as number) ?? 0,
+    sequence: toNumeric(r["sequence"], 0) as number,
   }));
 
   const rawDecisions = db.prepare("SELECT * FROM decisions ORDER BY seq").all() as Record<string, unknown>[];
   const decisions: Decision[] = rawDecisions.map((r) => ({
-    seq: r["seq"] as number,
+    seq: toNumeric(r["seq"], 0) as number,
     id: r["id"] as string,
     when_context: (r["when_context"] as string) ?? "",
     scope: (r["scope"] as string) ?? "",
@@ -153,9 +170,9 @@ export function snapshotState(): StateManifest {
     slice_id: r["slice_id"] as string,
     milestone_id: r["milestone_id"] as string,
     command: r["command"] as string,
-    exit_code: (r["exit_code"] as number) ?? null,
+    exit_code: toNumeric(r["exit_code"]),
     verdict: (r["verdict"] as string) ?? "",
-    duration_ms: (r["duration_ms"] as number) ?? null,
+    duration_ms: toNumeric(r["duration_ms"]),
     created_at: r["created_at"] as string,
   }));
 
