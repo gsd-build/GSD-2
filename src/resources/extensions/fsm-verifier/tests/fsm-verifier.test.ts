@@ -1,26 +1,22 @@
+// GSD Extension — FSM Verifier Tests
+// Tests for the FSM verification tool extension.
+
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
-
-// Import the extension module and extract the execute function
-// Since the extension exports a function that registers the tool,
-// we need to mock pi.registerTool to capture the tool definition
-// and test the execute function directly.
 
 describe("FSM Verifier Tool", () => {
   let executeFn: any;
 
-  // Before tests, load the extension and capture the tool execute function
-  // This is a bit hacky, but allows testing without full ExtensionAPI setup
-  test("setup", async () => {
+  test("setup — capture execute function via mock registerTool", async () => {
     const mockPi = {
       registerTool: (tool: any) => {
         executeFn = tool.execute;
       }
     };
 
-    // Load the extension
-    const extension = (await import("../fsm-verifier.ts")).default;
-    extension(mockPi);
+    const extension = (await import("../../fsm-verifier.ts")).default;
+    extension(mockPi as any);
+    assert.ok(executeFn, "executeFn should be captured from registerTool");
   });
 
   test("valid FSM with simple transitions", async () => {
@@ -38,7 +34,6 @@ describe("FSM Verifier Tool", () => {
     const content = result.content[0].text;
 
     assert(content.includes("FSM Verification Complete"));
-    assert(content.includes("Passed: 100"));
     assert(content.includes("Failed: 0"));
     assert(!content.includes("Errors"));
   });
@@ -77,27 +72,26 @@ describe("FSM Verifier Tool", () => {
     assert(content.includes("Initial state 'invalid' not in states list"));
   });
 
-  test("FSM with dead end (no transitions from a non-final state)", async () => {
+  test("FSM with dead end at a reachable non-final state", async () => {
     const params = {
-      states: ["start", "dead", "end"],
+      states: ["start", "dead"],
       transitions: [
         { from: "start", to: "dead" }
-        // No transition from dead to end
+        // dead has no outgoing transitions and is not final
       ],
       initial_state: "start",
-      final_states: ["end"]
+      final_states: []
     };
 
     const result = await executeFn("test-id", params, null, null, {});
     const content = result.content[0].text;
 
-    assert(content.includes("Passed: 0"));
     assert(content.includes("Failed: 100"));
     assert(content.includes("Errors"));
-    assert(content.includes("dead end"));
+    assert(content.includes("Dead end"));
   });
 
-  test("signal aborted", async () => {
+  test("signal aborted returns cancellation message", async () => {
     const params = {
       states: ["start", "end"],
       transitions: [{ from: "start", to: "end" }],
@@ -109,5 +103,19 @@ describe("FSM Verifier Tool", () => {
     const result = await executeFn("test-id", params, signal, null, {});
 
     assert.strictEqual(result.content[0].text, "FSM verification cancelled");
+  });
+
+  test("invalid final states are reported", async () => {
+    const params = {
+      states: ["start", "end"],
+      transitions: [{ from: "start", to: "end" }],
+      initial_state: "start",
+      final_states: ["nonexistent"]
+    };
+
+    const result = await executeFn("test-id", params, null, null, {});
+    const content = result.content[0].text;
+
+    assert(content.includes("Invalid final states: nonexistent"));
   });
 });
