@@ -213,11 +213,12 @@ export class CmuxClient {
         execFile("cmux", args, {
           encoding: "utf-8",
           timeout: 5000,
+          stdio: ["ignore", "pipe", "pipe"],
           env: process.env,
         }, (error, stdout, stderr) => {
           if (error) reject(error);
           else resolve({ stdout, stderr });
-        }).stdin?.end();
+        });
       });
       return result.stdout;
     } catch {
