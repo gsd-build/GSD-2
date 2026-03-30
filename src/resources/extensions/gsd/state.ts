@@ -659,13 +659,14 @@ export async function deriveStateFromDb(basePath: string): Promise<GSDState> {
       };
     }
 
-    // Has roadmap file but zero slices in DB — pre-planning (zero-slice roadmap guard)
+    // Has roadmap file but zero slices in DB — check for CONTEXT-DRAFT even in this branch (#3191)
+    const phase = activeMilestoneHasDraft ? 'needs-discussion' as const : 'pre-planning' as const;
+    const nextAction = activeMilestoneHasDraft
+      ? `Discuss draft context for milestone ${activeMilestone.id}.`
+      : `Milestone ${activeMilestone.id} has a roadmap but no slices defined. Add slices to the roadmap.`;
     return {
       activeMilestone, activeSlice: null, activeTask: null,
-      phase: 'pre-planning',
-      recentDecisions: [], blockers: [],
-      nextAction: `Milestone ${activeMilestone.id} has a roadmap but no slices defined. Add slices to the roadmap.`,
-      registry, requirements,
+      phase, recentDecisions: [], blockers: [], nextAction, registry, requirements,
       progress: {
         milestones: milestoneProgress,
         slices: { done: 0, total: 0 },
@@ -1236,6 +1237,9 @@ export async function _deriveStateImpl(basePath: string): Promise<GSDState> {
           activeMilestone = { id: mid, title };
           activeRoadmap = roadmap;
           activeMilestoneFound = true;
+          // Check for CONTEXT-DRAFT even when a roadmap exists — a stub roadmap can
+          // coexist with a CONTEXT-DRAFT that still needs discussion (#3191).
+          if (!contextContent && draftFile) activeMilestoneHasDraft = true;
           registry.push({ id: mid, title, status: 'active', ...(deps.length > 0 ? { dependsOn: deps } : {}) });
         }
       } else {
@@ -1368,16 +1372,21 @@ export async function _deriveStateImpl(basePath: string): Promise<GSDState> {
   // roadmap object but an empty slices array. Without this check the
   // slice-finding loop below finds nothing and returns phase: "blocked".
   // An empty slices array means the roadmap still needs slice definitions,
-  // so the correct phase is pre-planning.
+  // so the correct phase is pre-planning — unless a CONTEXT-DRAFT also
+  // exists, in which case the milestone still needs discussion (#3191).
   if (activeRoadmap.slices.length === 0) {
+    const zeroSlicePhase = activeMilestoneHasDraft ? 'needs-discussion' as const : 'pre-planning' as const;
+    const zeroSliceNextAction = activeMilestoneHasDraft
+      ? `Discuss draft context for milestone ${activeMilestone.id}.`
+      : `Milestone ${activeMilestone.id} has a roadmap but no slices defined. Add slices to the roadmap.`;
     return {
       activeMilestone,
       activeSlice: null,
       activeTask: null,
-      phase: 'pre-planning',
+      phase: zeroSlicePhase,
       recentDecisions: [],
       blockers: [],
-      nextAction: `Milestone ${activeMilestone.id} has a roadmap but no slices defined. Add slices to the roadmap.`,
+      nextAction: zeroSliceNextAction,
       registry,
       requirements,
       progress: {
