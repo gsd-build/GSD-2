@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import {
   buildHealthLines,
   detectHealthWidgetProjectState,
+  formatRelativeTime,
   type HealthWidgetData,
 } from "../health-widget-core.ts";
 
@@ -34,6 +35,8 @@ function activeData(overrides: Partial<HealthWidgetData> = {}): HealthWidgetData
     providerIssue: null,
     environmentErrorCount: 0,
     environmentWarningCount: 0,
+    lastCommitEpoch: null,
+    lastCommitMessage: null,
     lastRefreshed: Date.now(),
     ...overrides,
   };
@@ -96,6 +99,70 @@ test("buildHealthLines: active state with issues reports issue summary", (t) => 
   assert.match(lines[0]!, /✗ 2 issues/);
   assert.match(lines[0]!, /✗ OpenAI key missing/);
   assert.match(lines[0]!, /Env: 1 error/);
+});
+
+// ── Last commit display ──────────────────────────────────────────────────
+
+test("buildHealthLines: shows last commit with relative time and message", (t) => {
+  const epoch = Math.floor(Date.now() / 1000) - 300; // 5 minutes ago
+  const lines = buildHealthLines(activeData({
+    lastCommitEpoch: epoch,
+    lastCommitMessage: "feat(widget): add health display",
+  }));
+  assert.equal(lines.length, 1);
+  assert.match(lines[0]!, /Last commit: 5m ago/);
+  assert.match(lines[0]!, /feat\(widget\): add health display/);
+});
+
+test("buildHealthLines: truncates long commit messages", (t) => {
+  const epoch = Math.floor(Date.now() / 1000) - 60;
+  const longMsg = "a".repeat(80);
+  const lines = buildHealthLines(activeData({
+    lastCommitEpoch: epoch,
+    lastCommitMessage: longMsg,
+  }));
+  assert.equal(lines.length, 1);
+  assert.match(lines[0]!, /a{49}…/);
+  assert.ok(!lines[0]!.includes("a".repeat(51)), "message is truncated");
+});
+
+test("buildHealthLines: no last commit section when epoch is null", (t) => {
+  const lines = buildHealthLines(activeData({ lastCommitEpoch: null }));
+  assert.equal(lines.length, 1);
+  assert.ok(!lines[0]!.includes("Last commit"), "no last commit when null");
+});
+
+test("buildHealthLines: last commit without message shows only time", (t) => {
+  const epoch = Math.floor(Date.now() / 1000) - 3600; // 1 hour ago
+  const lines = buildHealthLines(activeData({
+    lastCommitEpoch: epoch,
+    lastCommitMessage: null,
+  }));
+  assert.equal(lines.length, 1);
+  assert.match(lines[0]!, /Last commit: 1h ago/);
+  assert.ok(!lines[0]!.includes(" — "), "no dash separator when no message");
+});
+
+// ── formatRelativeTime ───────────────────────────────────────────────────
+
+test("formatRelativeTime: just now for <60s", () => {
+  const epoch = Math.floor(Date.now() / 1000) - 30;
+  assert.equal(formatRelativeTime(epoch), "just now");
+});
+
+test("formatRelativeTime: minutes", () => {
+  const epoch = Math.floor(Date.now() / 1000) - 300;
+  assert.equal(formatRelativeTime(epoch), "5m ago");
+});
+
+test("formatRelativeTime: hours", () => {
+  const epoch = Math.floor(Date.now() / 1000) - 7200;
+  assert.equal(formatRelativeTime(epoch), "2h ago");
+});
+
+test("formatRelativeTime: days", () => {
+  const epoch = Math.floor(Date.now() / 1000) - 172800;
+  assert.equal(formatRelativeTime(epoch), "2d ago");
 });
 
 test("detectHealthWidgetProjectState: metrics file alone does not imply project", (t) => {
