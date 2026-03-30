@@ -223,7 +223,7 @@ export async function handlePlanMilestone(
         definitionOfDone: params.definitionOfDone,
         requirementCoverage: params.requirementCoverage,
         boundaryMapMarkdown: params.boundaryMapMarkdown,
-      });
+      }, params.title);
 
       for (const slice of params.slices) {
         insertSlice({
