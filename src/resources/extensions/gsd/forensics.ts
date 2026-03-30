@@ -250,6 +250,9 @@ export async function handleForensics(
     { customType: "gsd-forensics", content, display: false },
     { triggerTurn: true },
   );
+
+  // Persist forensics context so follow-up turns can re-inject it (#2941)
+  writeForensicsMarker(basePath, savedPath, content);
 }
 
 // ─── Report Builder ───────────────────────────────────────────────────────────
@@ -894,6 +897,42 @@ function saveForensicReport(basePath: string, report: ForensicReport, problemDes
 
   writeFileSync(filePath, sections.join("\n"), "utf-8");
   return filePath;
+}
+
+// ─── Forensics Session Marker ────────────────────────────────────────────────
+
+export interface ForensicsMarker {
+  reportPath: string;
+  promptContent: string;
+  createdAt: string;
+}
+
+/**
+ * Write a marker file so that buildBeforeAgentStartResult() can re-inject
+ * the forensics prompt on follow-up turns.  (#2941)
+ */
+export function writeForensicsMarker(basePath: string, reportPath: string, promptContent: string): void {
+  const dir = join(gsdRoot(basePath), "runtime");
+  mkdirSync(dir, { recursive: true });
+  const marker: ForensicsMarker = {
+    reportPath,
+    promptContent,
+    createdAt: new Date().toISOString(),
+  };
+  writeFileSync(join(dir, "active-forensics.json"), JSON.stringify(marker), "utf-8");
+}
+
+/**
+ * Read the active forensics marker, or null if none exists.
+ */
+export function readForensicsMarker(basePath: string): ForensicsMarker | null {
+  const markerPath = join(gsdRoot(basePath), "runtime", "active-forensics.json");
+  if (!existsSync(markerPath)) return null;
+  try {
+    return JSON.parse(readFileSync(markerPath, "utf-8")) as ForensicsMarker;
+  } catch {
+    return null;
+  }
 }
 
 // ─── Prompt Formatter ─────────────────────────────────────────────────────────
