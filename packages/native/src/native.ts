@@ -8,28 +8,13 @@
  *   3. native/addon/gsd_engine.dev.node (local debug build)
  */
 
-import { createRequire } from "node:module";
 import * as path from "node:path";
-import { fileURLToPath } from "node:url";
 
-// Dual CJS/ESM support.  When tsc compiles with module=NodeNext + type=commonjs,
-// the output is CJS where __dirname and require exist natively.  When the CI test
-// loader (esbuild format=esm) transpiles this file to ESM, __dirname/require are
-// absent and we fall back to import.meta.url.
-//
-// import.meta is a *parse-time* syntax error in CJS — typeof guards don't help
-// because Node rejects the syntax before executing any code.  We use indirect
-// eval ("new Function") to hide import.meta from the CJS parser; it's only ever
-// evaluated when __dirname/require are absent (i.e. running as ESM).
-const _dirname = typeof __dirname !== "undefined"
-  ? __dirname
-  // eslint-disable-next-line @typescript-eslint/no-implied-eval, no-new-func
-  : path.dirname(fileURLToPath(new Function("return import.meta.url")() as string));
-
-const _require = typeof require !== "undefined"
-  ? require
-  // eslint-disable-next-line @typescript-eslint/no-implied-eval, no-new-func
-  : createRequire(new Function("return import.meta.url")() as string);
+// __dirname and require are available in both execution contexts:
+//   - CJS (production build via tsc): provided natively by Node
+//   - ESM (CI test loader): injected by the dist-redirect.mjs preamble
+const _dirname = __dirname;
+const _require = require;
 
 const addonDir = path.resolve(_dirname, "..", "..", "..", "native", "addon");
 const platformTag = `${process.platform}-${process.arch}`;
