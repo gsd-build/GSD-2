@@ -36,10 +36,10 @@ async function syncServiceTierStatus(ctx: ExtensionContext): Promise<void> {
  */
 export function buildBeforeCompactHandler(
   isActiveOverride: () => boolean = isAutoActive,
-  _isPausedOverride: () => boolean = isAutoPaused,
+  _isPausedOverride?: () => boolean,
 ): () => Promise<{ cancel: true } | undefined> {
   return async () => {
-    if (isActiveOverride() || _isPausedOverride()) {
+    if (isActiveOverride()) {
       return { cancel: true };
     }
     return undefined;
@@ -121,7 +121,7 @@ export function registerHooks(pi: ExtensionAPI): void {
   });
 
   pi.on("session_before_compact", async () => {
-    if (isAutoActive() || isAutoPaused()) {
+    if (isAutoActive()) {
       return { cancel: true };
     }
     const basePath = process.cwd();
