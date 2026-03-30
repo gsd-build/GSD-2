@@ -154,6 +154,10 @@ export interface WorkspaceMilestoneTarget {
   id: string
   title: string
   roadmapPath?: string
+  /** Authoritative milestone lifecycle status from the GSD state registry. */
+  status?: "complete" | "active" | "pending" | "parked"
+  /** Milestone validation verdict, when validation has been performed. */
+  validationVerdict?: "pass" | "needs-attention" | "needs-remediation"
   slices: WorkspaceSliceTarget[]
 }
 

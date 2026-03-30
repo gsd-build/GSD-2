@@ -10,6 +10,20 @@ export function getMilestoneStatus(
   milestone: WorkspaceMilestoneTarget,
   active: { milestoneId?: string },
 ): ItemStatus {
+  // Prefer authoritative milestone status from GSD state registry (#2807)
+  if (milestone.status) {
+    switch (milestone.status) {
+      case "complete":
+        return "done"
+      case "active":
+        return "in-progress"
+      case "pending":
+      case "parked":
+        return "pending"
+    }
+  }
+
+  // Fallback: infer from slice completion (legacy / no status field)
   if (milestone.slices.length > 0 && milestone.slices.every((slice) => slice.done)) {
     return "done"
   }
