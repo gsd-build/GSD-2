@@ -57,6 +57,50 @@ function runtimePath(basePath: string, unitType: string, unitId: string): string
   return join(runtimeDir(basePath), `${sanitizedUnitType}-${sanitizedUnitId}.json`);
 }
 
+// ── In-memory cache for runtime records ─────────────────────────────────────
+// Eliminates redundant readFileSync + JSON.parse on every write (read-modify-write
+// pattern was called ~6x per 15s supervision cycle). Disk writes still happen for
+// durability, but reads hit the cache after the first access.
+const _runtimeCache = new Map<string, AutoUnitRuntimeRecord>();
+
+// ── Debounced disk flush ────────────────────────────────────────────────────
+// Multiple writes within a 500ms window are coalesced into a single writeFileSync.
+// The in-memory cache is always authoritative, so reads see latest data immediately.
+const _dirtyPaths = new Set<string>();
+let _flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleDiskFlush(path: string): void {
+  _dirtyPaths.add(path);
+  if (!_flushTimer) {
+    _flushTimer = setTimeout(flushDirtyRecords, 500);
+  }
+}
+
+function flushDirtyRecords(): void {
+  _flushTimer = null;
+  for (const path of _dirtyPaths) {
+    const record = _runtimeCache.get(path);
+    if (record) {
+      try {
+        writeFileSync(path, JSON.stringify(record, null, 2) + "\n", "utf-8");
+      } catch { /* best effort — directory may have been cleaned up */ }
+    }
+  }
+  _dirtyPaths.clear();
+}
+
+/** Flush all pending writes immediately. Also registered as a process exit handler. */
+export function flushAllRuntimeRecords(): void {
+  if (_flushTimer) {
+    clearTimeout(_flushTimer);
+    _flushTimer = null;
+  }
+  flushDirtyRecords();
+}
+
+// Ensure pending writes are flushed on process exit
+process.on("exit", () => { try { flushAllRuntimeRecords(); } catch {} });
+
 export function writeUnitRuntimeRecord(
   basePath: string,
   unitType: string,
@@ -67,7 +111,7 @@ export function writeUnitRuntimeRecord(
   const dir = runtimeDir(basePath);
   mkdirSync(dir, { recursive: true });
   const path = runtimePath(basePath, unitType, unitId);
-  const prev = readUnitRuntimeRecord(basePath, unitType, unitId);
+  const prev = _runtimeCache.get(path) ?? readUnitRuntimeRecordFromDisk(path);
   const next: AutoUnitRuntimeRecord = {
     version: 1,
     unitType,
@@ -85,12 +129,12 @@ export function writeUnitRuntimeRecord(
     recoveryAttempts: updates.recoveryAttempts ?? prev?.recoveryAttempts ?? 0,
     lastRecoveryReason: updates.lastRecoveryReason ?? prev?.lastRecoveryReason,
   };
-  writeFileSync(path, JSON.stringify(next, null, 2) + "\n", "utf-8");
+  _runtimeCache.set(path, next);
+  scheduleDiskFlush(path);
   return next;
 }
 
-export function readUnitRuntimeRecord(basePath: string, unitType: string, unitId: string): AutoUnitRuntimeRecord | null {
-  const path = runtimePath(basePath, unitType, unitId);
+function readUnitRuntimeRecordFromDisk(path: string): AutoUnitRuntimeRecord | null {
   if (!existsSync(path)) return null;
   try {
     return JSON.parse(readFileSync(path, "utf-8")) as AutoUnitRuntimeRecord;
@@ -99,8 +143,19 @@ export function readUnitRuntimeRecord(basePath: string, unitType: string, unitId
   }
 }
 
+export function readUnitRuntimeRecord(basePath: string, unitType: string, unitId: string): AutoUnitRuntimeRecord | null {
+  const path = runtimePath(basePath, unitType, unitId);
+  const cached = _runtimeCache.get(path);
+  if (cached) return cached;
+  const fromDisk = readUnitRuntimeRecordFromDisk(path);
+  if (fromDisk) _runtimeCache.set(path, fromDisk);
+  return fromDisk;
+}
+
 export function clearUnitRuntimeRecord(basePath: string, unitType: string, unitId: string): void {
   const path = runtimePath(basePath, unitType, unitId);
+  _runtimeCache.delete(path);
+  _dirtyPaths.delete(path);
   if (existsSync(path)) unlinkSync(path);
 }
 
