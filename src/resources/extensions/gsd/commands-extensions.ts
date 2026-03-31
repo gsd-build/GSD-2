@@ -6,6 +6,7 @@
  * via jiti at runtime from ~/.gsd/agent/, not compiled by tsc).
  */
 
+// ci-retrigger: 2026-03-31
 import type { ExtensionCommandContext } from "@gsd/pi-coding-agent";
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
