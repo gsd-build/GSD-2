@@ -24,7 +24,7 @@ import {
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gsdRoot } from "./paths.js";
-import { createWorktree, worktreePath } from "./worktree-manager.js";
+import { createWorktree, worktreePath, removeWorktree } from "./worktree-manager.js";
 import { autoWorktreeBranch, runWorktreePostCreateHook } from "./auto-worktree.js";
 import {
   writeSessionStatus,
@@ -55,6 +55,7 @@ export interface SliceOrchestratorState {
   budgetCeiling?: number;
   maxWorkers: number;
   startedAt: number;
+  basePath: string;
 }
 
 export interface StartSliceParallelOpts {
@@ -110,6 +111,7 @@ export async function startSliceParallel(
     budgetCeiling,
     maxWorkers,
     startedAt: Date.now(),
+    basePath,
   };
 
   const started: string[] = [];
@@ -157,6 +159,11 @@ export async function startSliceParallel(
       }
     } catch (err) {
       errors.push({ sid: slice.id, error: getErrorMessage(err) });
+      // Best-effort cleanup of partially created worktree
+      const wtName = `${milestoneId}-${slice.id}`;
+      try {
+        removeWorktree(basePath, wtName, { deleteBranch: true, force: true });
+      } catch { /* ignore cleanup failures */ }
     }
   }
 
@@ -184,6 +191,12 @@ export function stopSliceParallel(): void {
     worker.cleanup = undefined;
     worker.process = null;
     worker.state = "stopped";
+
+    // Clean up worktree created for this worker
+    const wtName = `${worker.milestoneId}-${worker.sliceId}`;
+    try {
+      removeWorktree(sliceState.basePath, wtName, { deleteBranch: true, force: true });
+    } catch { /* best-effort cleanup */ }
   }
 
   sliceState.active = false;

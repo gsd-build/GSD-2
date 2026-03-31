@@ -42,6 +42,7 @@ import { nativeBatchParseGsdFiles, type BatchParsedFile } from './native-parser-
 import { join, resolve } from 'path';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { debugCount, debugTime } from './debug-logger.js';
+import { logWarning } from './workflow-logger.js';
 import { extractVerdict } from './verdict-parser.js';
 import { logWarning, logError } from './workflow-logger.js';
 
@@ -684,6 +685,17 @@ export async function deriveStateFromDb(basePath: string): Promise<GSDState> {
     if (lockedSlice) {
       activeSlice = { id: lockedSlice.id, title: lockedSlice.title };
       activeSliceRow = lockedSlice;
+    } else {
+      logWarning("state", `GSD_SLICE_LOCK=${sliceLock} not found in active slices — worker has no assigned work`);
+      // Don't silently continue — this is a dispatch error
+      return {
+        activeMilestone, activeSlice: null, activeTask: null,
+        phase: 'blocked',
+        recentDecisions: [], blockers: [`GSD_SLICE_LOCK=${sliceLock} not found in active milestone slices`],
+        nextAction: 'Slice lock references a non-existent slice — check orchestrator dispatch.',
+        registry, requirements,
+        progress: { milestones: milestoneProgress, slices: sliceProgress },
+      };
     }
   } else {
     for (const s of activeMilestoneSlices) {
@@ -1344,6 +1356,23 @@ export async function _deriveStateImpl(basePath: string): Promise<GSDState> {
     const lockedSlice = activeRoadmap.slices.find(s => s.id === sliceLockLegacy);
     if (lockedSlice) {
       activeSlice = { id: lockedSlice.id, title: lockedSlice.title };
+    } else {
+      logWarning("state", `GSD_SLICE_LOCK=${sliceLockLegacy} not found in active slices — worker has no assigned work`);
+      return {
+        activeMilestone,
+        activeSlice: null,
+        activeTask: null,
+        phase: 'blocked',
+        recentDecisions: [],
+        blockers: [`GSD_SLICE_LOCK=${sliceLockLegacy} not found in active milestone slices`],
+        nextAction: 'Slice lock references a non-existent slice — check orchestrator dispatch.',
+        registry,
+        requirements,
+        progress: {
+          milestones: milestoneProgress,
+          slices: sliceProgress,
+        },
+      };
     }
   } else {
     for (const s of activeRoadmap.slices) {
