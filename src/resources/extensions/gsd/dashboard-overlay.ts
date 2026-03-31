@@ -85,7 +85,7 @@ export class GSDDashboardOverlay {
 
     this.refreshTimer = setInterval(() => {
       this.scheduleRefresh();
-    }, 2000);
+    }, 10_000);
   }
 
   private scheduleRefresh(initial = false): void {
