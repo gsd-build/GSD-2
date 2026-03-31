@@ -439,8 +439,8 @@ test("fresh gsd --web browser onboarding stays locked on failed validation and u
     if (port !== null) {
       await killProcessOnPort(port)
     }
-    rmSync(compileCacheRoot, { recursive: true, force: true, maxRetries: 25, retryDelay: 50 })
-    rmSync(tempRoot, { recursive: true, force: true, maxRetries: 25, retryDelay: 50 })
+    rmSync(compileCacheRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
+    rmSync(tempRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
   });
 
   const launch = await launchPackagedWebHost({
