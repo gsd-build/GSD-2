@@ -53,7 +53,21 @@ mkdirSync(distStandaloneRoot, { recursive: true })
 cpSync(standaloneAppRoot, distStandaloneRoot, COPY_OPTIONS)
 
 if (existsSync(standaloneNodeModulesRoot)) {
-  cpSync(standaloneNodeModulesRoot, join(distStandaloneRoot, 'node_modules'), COPY_OPTIONS)
+  const distNodeModulesRoot = join(distStandaloneRoot, 'node_modules')
+  mkdirSync(distNodeModulesRoot, { recursive: true })
+
+  // Next standalone output can place packages in both:
+  // - web/.next/standalone/web/node_modules
+  // - web/.next/standalone/node_modules
+  // Copying the whole directory on top of an existing node_modules tree can
+  // raise EEXIST on macOS for overlapping scoped packages, so replace each
+  // top-level entry explicitly.
+  for (const entry of readdirSync(standaloneNodeModulesRoot, { withFileTypes: true })) {
+    const src = join(standaloneNodeModulesRoot, entry.name)
+    const dest = join(distNodeModulesRoot, entry.name)
+    rmSync(dest, { recursive: true, force: true })
+    cpSync(src, dest, COPY_OPTIONS)
+  }
 }
 
 if (existsSync(staticRoot)) {
