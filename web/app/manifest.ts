@@ -8,6 +8,8 @@ export default function manifest(): MetadataRoute.Manifest {
       "The evolution of Get Shit Done — now a real coding agent. One command. Walk away. Come back to a built project.",
     start_url: "/",
     display: "standalone",
+    theme_color: "#0a0a0a",
+    background_color: "#0a0a0a",
     icons: [
       {
         src: "/icon.svg",

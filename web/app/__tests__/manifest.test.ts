@@ -32,6 +32,11 @@ describe("manifest", () => {
     assert.ok(sizes.includes("512x512"), "must include 512x512 icon")
   })
 
+  test("includes theme_color and background_color matching dark theme", () => {
+    assert.equal(result.theme_color, "#0a0a0a")
+    assert.equal(result.background_color, "#0a0a0a")
+  })
+
   test("all icons have required src and type", () => {
     for (const icon of result.icons!) {
       assert.ok(icon.src, "icon must have src")
