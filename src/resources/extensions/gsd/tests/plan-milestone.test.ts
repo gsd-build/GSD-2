@@ -85,8 +85,10 @@ test('handlePlanMilestone writes milestone and slice planning state and renders 
     const slices = getMilestoneSlices('M001');
     assert.equal(slices.length, 2);
     assert.equal(slices[0]?.id, 'S01');
+    assert.equal(slices[0]?.sequence, 1);
     assert.equal(slices[0]?.goal, 'Wire the handler.');
     assert.equal(slices[1]?.depends[0], 'S01');
+    assert.equal(slices[1]?.sequence, 2);
 
     const roadmapPath = join(base, '.gsd', 'milestones', 'M001', 'M001-ROADMAP.md');
     assert.ok(existsSync(roadmapPath), 'roadmap should be rendered to disk');

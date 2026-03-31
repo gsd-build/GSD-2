@@ -256,7 +256,8 @@ export async function handlePlanMilestone(
         boundaryMapMarkdown: params.boundaryMapMarkdown,
       });
 
-      for (const slice of params.slices) {
+      for (let i = 0; i < params.slices.length; i++) {
+        const slice = params.slices[i]!;
         // Preserve completed/done status on re-plan (#2558).
         // Without this, a re-plan after milestone transition would reset
         // already-completed slices back to "pending".
@@ -272,6 +273,7 @@ export async function handlePlanMilestone(
           risk: slice.risk,
           depends: slice.depends,
           demo: slice.demo,
+          sequence: i + 1,
         });
         upsertSlicePlanning(params.milestoneId, slice.sliceId, {
           goal: slice.goal,

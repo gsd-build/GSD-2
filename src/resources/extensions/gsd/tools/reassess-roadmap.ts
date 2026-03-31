@@ -27,6 +27,7 @@ export interface SliceChangeInput {
   risk?: string;
   depends?: string[];
   demo?: string;
+  sequence?: number;
 }
 
 export interface ReassessRoadmapParams {
@@ -81,6 +82,9 @@ function validateParams(params: ReassessRoadmapParams): ReassessRoadmapParams {
     if (!s || typeof s !== "object") throw new Error(`sliceChanges.modified[${i}] must be an object`);
     if (!isNonEmptyString(s.sliceId)) throw new Error(`sliceChanges.modified[${i}].sliceId is required`);
     if (!isNonEmptyString(s.title)) throw new Error(`sliceChanges.modified[${i}].title is required`);
+    if (s.sequence !== undefined && (!Number.isFinite(s.sequence) || !Number.isInteger(s.sequence))) {
+      throw new Error(`sliceChanges.modified[${i}].sequence must be an integer when provided`);
+    }
   }
 
   // Validate each added slice
@@ -89,6 +93,9 @@ function validateParams(params: ReassessRoadmapParams): ReassessRoadmapParams {
     if (!s || typeof s !== "object") throw new Error(`sliceChanges.added[${i}] must be an object`);
     if (!isNonEmptyString(s.sliceId)) throw new Error(`sliceChanges.added[${i}].sliceId is required`);
     if (!isNonEmptyString(s.title)) throw new Error(`sliceChanges.added[${i}].title is required`);
+    if (s.sequence !== undefined && (!Number.isFinite(s.sequence) || !Number.isInteger(s.sequence))) {
+      throw new Error(`sliceChanges.added[${i}].sequence must be an integer when provided`);
+    }
   }
 
   return params;
@@ -183,11 +190,20 @@ export async function handleReassessRoadmap(
           risk: mod.risk,
           depends: mod.depends,
           demo: mod.demo,
+          sequence: mod.sequence,
         });
       }
 
       // Insert new slices
+      let nextSequence = existingSlices.reduce(
+        (max, slice) => Math.max(max, slice.sequence ?? 0),
+        0,
+      );
       for (const added of params.sliceChanges.added) {
+        const sequence = added.sequence ?? (nextSequence += 1);
+        if (added.sequence !== undefined) {
+          nextSequence = Math.max(nextSequence, added.sequence);
+        }
         insertSlice({
           id: added.sliceId,
           milestoneId: params.milestoneId,
@@ -196,6 +212,7 @@ export async function handleReassessRoadmap(
           risk: added.risk,
           depends: added.depends,
           demo: added.demo ?? "",
+          sequence,
         });
       }
 
