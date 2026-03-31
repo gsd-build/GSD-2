@@ -57,6 +57,15 @@ export async function autoLoop(
     const flowId = randomUUID();
     let seqCounter = 0;
     const nextSeq = () => ++seqCounter;
+    const emitIterationEnd = (data?: Record<string, unknown>) => {
+      deps.emitJournalEvent({
+        ts: new Date().toISOString(),
+        flowId,
+        seq: nextSeq(),
+        eventType: "iteration-end",
+        data: { iteration, ...(data ?? {}) },
+      });
+    };
 
     if (iteration > MAX_LOOP_ITERATIONS) {
       debugLog("autoLoop", {
@@ -202,7 +211,7 @@ export async function autoLoop(
 
         deps.clearUnitTimeout();
         consecutiveErrors = 0;
-        deps.emitJournalEvent({ ts: new Date().toISOString(), flowId, seq: nextSeq(), eventType: "iteration-end", data: { iteration } });
+        emitIterationEnd();
         debugLog("autoLoop", { phase: "iteration-complete", iteration });
         continue;
       }
@@ -250,7 +259,7 @@ export async function autoLoop(
       if (finalizeResult.action === "continue") continue;
 
       consecutiveErrors = 0; // Iteration completed successfully
-      deps.emitJournalEvent({ ts: new Date().toISOString(), flowId, seq: nextSeq(), eventType: "iteration-end", data: { iteration } });
+      emitIterationEnd();
       debugLog("autoLoop", { phase: "iteration-complete", iteration });
     } catch (loopErr) {
       // ── Blanket catch: absorb unexpected exceptions, apply graduated recovery ──
@@ -261,6 +270,11 @@ export async function autoLoop(
       // LLM budget on guaranteed failures.
       const infraCode = isInfrastructureError(loopErr);
       if (infraCode) {
+        emitIterationEnd({
+          status: "error",
+          error: msg,
+          infrastructureCode: infraCode,
+        });
         debugLog("autoLoop", {
           phase: "infrastructure-error",
           iteration,
@@ -280,6 +294,11 @@ export async function autoLoop(
       }
 
       consecutiveErrors++;
+      emitIterationEnd({
+        status: "error",
+        error: msg,
+        consecutiveErrors,
+      });
       debugLog("autoLoop", {
         phase: "iteration-error",
         iteration,
