@@ -107,6 +107,19 @@ function isSamePath(a: string, b: string): boolean {
   }
 }
 
+function cleanupMergeStateFiles(basePath: string): void {
+  try {
+    const gitDir = resolveGitDir(basePath);
+    for (const file of ["SQUASH_MSG", "MERGE_MSG", "MERGE_HEAD"]) {
+      const path = join(gitDir, file);
+      if (existsSync(path)) unlinkSync(path);
+    }
+  } catch {
+    // Best-effort only. Missing or unreadable git state should not mask the
+    // primary merge outcome.
+  }
+}
+
 // ─── ASSESSMENT Force-Sync Helper (#2821) ─────────────────────────────────
 
 /** Regex matching YAML frontmatter `verdict:` field. */
@@ -1467,6 +1480,12 @@ export function mergeMilestoneToMain(
     nativeCheckoutBranch(originalBasePath_, mainBranch);
   }
 
+  // Clear stale merge state before starting a new squash merge. The success
+  // path already cleans MERGE_HEAD that libgit2 may create during the merge,
+  // but a leftover MERGE_HEAD from an earlier run blocks `git merge --squash`
+  // before we ever reach that later cleanup (#2912).
+  try { nativeMergeAbort(originalBasePath_); } catch { /* best-effort */ }
+
   // 6. Build rich commit message
   const dbMilestone = getMilestone(milestoneId);
   let milestoneTitle =
@@ -1649,6 +1668,10 @@ export function mergeMilestoneToMain(
   }
 
   // 8. Squash merge — auto-resolve .gsd/ state file conflicts (#530)
+  // Clean any stale merge bookkeeping before starting the next merge attempt.
+  // Success-path cleanup only runs after nativeMergeSquash/nativeCommit, which
+  // is too late if a previous run left MERGE_HEAD behind (#2912).
+  cleanupMergeStateFiles(originalBasePath_);
   const mergeResult = nativeMergeSquash(originalBasePath_, milestoneBranch);
 
   if (!mergeResult.success) {
@@ -1658,15 +1681,7 @@ export function mergeMilestoneToMain(
     if (mergeResult.conflicts.includes("__dirty_working_tree__")) {
       // Defensively clean merge state — the native path may leave MERGE_HEAD
       // even when the merge is rejected (#2912).
-      try {
-        const gitDir_ = resolveGitDir(originalBasePath_);
-        for (const f of ["SQUASH_MSG", "MERGE_MSG", "MERGE_HEAD"]) {
-          const p = join(gitDir_, f);
-          if (existsSync(p)) unlinkSync(p);
-        }
-      } catch (err) { /* best-effort */
-        logError("worktree", `merge state cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
-      }
+      cleanupMergeStateFiles(originalBasePath_);
 
       // Pop stash before throwing so local work is not lost.
       if (stashed) {
@@ -1734,15 +1749,7 @@ export function mergeMilestoneToMain(
         try { nativeMergeAbort(originalBasePath_); } catch (err) { /* best-effort */
           logError("worktree", `git merge-abort failed: ${err instanceof Error ? err.message : String(err)}`);
         }
-        try {
-          const gitDir_ = resolveGitDir(originalBasePath_);
-          for (const f of ["SQUASH_MSG", "MERGE_MSG", "MERGE_HEAD"]) {
-            const p = join(gitDir_, f);
-            if (existsSync(p)) unlinkSync(p);
-          }
-        } catch (err) { /* best-effort */
-          logError("worktree", `merge state file cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
-        }
+        cleanupMergeStateFiles(originalBasePath_);
 
         // Pop stash before throwing so local work is not lost (#2151).
         if (stashed) {
@@ -1778,15 +1785,7 @@ export function mergeMilestoneToMain(
   // of which trigger git's SQUASH_MSG cleanup.  MERGE_HEAD is created by
   // libgit2's merge even in squash mode and is not removed by nativeCommit.
   // If left on disk, doctor reports `corrupt_merge_state` on every subsequent run.
-  try {
-    const gitDir_ = resolveGitDir(originalBasePath_);
-    for (const f of ["SQUASH_MSG", "MERGE_MSG", "MERGE_HEAD"]) {
-      const p = join(gitDir_, f);
-      if (existsSync(p)) unlinkSync(p);
-    }
-  } catch (err) { /* best-effort */
-    logError("worktree", `post-commit merge state cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
-  }
+  cleanupMergeStateFiles(originalBasePath_);
 
   // 9a-ii. Restore stashed files now that the merge+commit is complete (#2151).
   // Pop after commit so stashed changes do not interfere with the squash merge
@@ -1999,4 +1998,3 @@ export function mergeMilestoneToMain(
 
   return { commitMessage, pushed, prCreated, codeFilesChanged };
 }
-
