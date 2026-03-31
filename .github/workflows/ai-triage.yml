@@ -119,16 +119,79 @@ jobs:
             const data = await response.json();
             const text = data.content[0].text;
 
-            // Extract JSON from response (handle markdown code blocks)
-            const jsonMatch = text.match(/\{[\s\S]*\}/);
-            if (!jsonMatch) {
+            function findFirstBalancedJsonObject(source) {
+              const start = source.indexOf('{');
+              if (start === -1) return null;
+
+              let depth = 0;
+              let inString = false;
+              let escaped = false;
+
+              for (let i = start; i < source.length; i += 1) {
+                const ch = source[i];
+
+                if (inString) {
+                  if (escaped) {
+                    escaped = false;
+                    continue;
+                  }
+
+                  if (ch === '\\') {
+                    escaped = true;
+                    continue;
+                  }
+
+                  if (ch === '"') {
+                    inString = false;
+                  }
+
+                  continue;
+                }
+
+                if (ch === '"') {
+                  inString = true;
+                  continue;
+                }
+
+                if (ch === '{') depth += 1;
+                if (ch === '}') {
+                  depth -= 1;
+                  if (depth === 0) {
+                    return source.slice(start, i + 1);
+                  }
+                }
+              }
+
+              return null;
+            }
+
+            function extractJsonCandidate(sourceText) {
+              // Claude sometimes wraps the JSON in a fenced block and then adds prose after it.
+              const fencedBlock = sourceText.match(/```(?:json)?\s*([\s\S]*?)```/i);
+              const candidates = [];
+
+              if (fencedBlock?.[1]) {
+                candidates.push(fencedBlock[1].trim());
+              }
+              candidates.push(sourceText);
+
+              for (const candidate of candidates) {
+                const json = findFirstBalancedJsonObject(candidate);
+                if (json) return json;
+              }
+
+              return null;
+            }
+
+            const jsonText = extractJsonCandidate(text);
+            if (!jsonText) {
               core.setFailed(`Could not parse Claude response: ${text}`);
               return;
             }
 
             let result;
             try {
-              result = JSON.parse(jsonMatch[0]);
+              result = JSON.parse(jsonText);
             } catch (e) {
               core.setFailed(`JSON parse error: ${e.message}\nRaw text: ${text}`);
               return;
