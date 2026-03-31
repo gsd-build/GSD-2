@@ -32,6 +32,37 @@ test("git.isolation accepts valid values and rejects invalid", () => {
   assert.ok(errors[0].includes("worktree, branch, none"));
 });
 
+test("git.subject_line_limit accepts valid values and rejects invalid", () => {
+  // 0 disables truncation
+  {
+    const { errors, preferences } = validatePreferences({ git: { subject_line_limit: 0 } } as any);
+    assert.equal(errors.length, 0, "0 is valid (disables truncation)");
+    assert.equal(preferences.git?.subject_line_limit, 0);
+  }
+  // Positive integer
+  {
+    const { errors, preferences } = validatePreferences({ git: { subject_line_limit: 100 } } as any);
+    assert.equal(errors.length, 0, "100 is valid");
+    assert.equal(preferences.git?.subject_line_limit, 100);
+  }
+  // Negative number rejected
+  {
+    const { errors } = validatePreferences({ git: { subject_line_limit: -1 } } as any);
+    assert.ok(errors.length > 0, "negative rejected");
+    assert.ok(errors[0].includes("non-negative integer"));
+  }
+  // Float rejected
+  {
+    const { errors } = validatePreferences({ git: { subject_line_limit: 72.5 } } as any);
+    assert.ok(errors.length > 0, "float rejected");
+  }
+  // String rejected
+  {
+    const { errors } = validatePreferences({ git: { subject_line_limit: "72" } } as any);
+    assert.ok(errors.length > 0, "string rejected");
+  }
+});
+
 test("git.merge_to_main produces deprecation warning", () => {
   for (const val of ["milestone", "slice"]) {
     const { warnings } = validatePreferences({ git: { merge_to_main: val } } as any);

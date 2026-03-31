@@ -8,6 +8,8 @@ import { execSync } from "node:child_process";
 import {
   inferCommitType,
   buildTaskCommitMessage,
+  formatSubjectLine,
+  DEFAULT_SUBJECT_LINE_LIMIT,
   GitServiceImpl,
   MergeConflictError,
   RUNTIME_EXCLUSION_PATHS,
@@ -1399,6 +1401,64 @@ describe('git-service', async () => {
     assert.ok(!msg.includes("Resolves"), "buildTaskCommitMessage omits Resolves trailer when issueNumber is absent");
     assert.ok(msg.includes("GSD-Task: S01/T04"), "GSD-Task trailer still present");
   }
+
+  // ─── formatSubjectLine ─────────────────────────────────────────────────
+
+  test('formatSubjectLine: default truncation at 72 chars', () => {
+    const long = "a".repeat(100);
+    const result = formatSubjectLine("feat", long, DEFAULT_SUBJECT_LINE_LIMIT);
+    assert.ok(result.length <= DEFAULT_SUBJECT_LINE_LIMIT, `subject should be <= ${DEFAULT_SUBJECT_LINE_LIMIT} chars, got ${result.length}`);
+    assert.ok(result.endsWith("…"), "truncated subject ends with ellipsis");
+    assert.ok(result.startsWith("feat: "), "preserves type prefix");
+  });
+
+  test('formatSubjectLine: no truncation when limit is 0', () => {
+    const long = "a".repeat(200);
+    const result = formatSubjectLine("feat", long, 0);
+    assert.strictEqual(result, `feat: ${"a".repeat(200)}`, "full description preserved when limit is 0");
+  });
+
+  test('formatSubjectLine: custom limit', () => {
+    const desc = "a".repeat(100);
+    const result = formatSubjectLine("feat", desc, 50);
+    assert.ok(result.length <= 50, `subject should be <= 50 chars, got ${result.length}`);
+    assert.ok(result.endsWith("…"), "truncated subject ends with ellipsis");
+  });
+
+  test('formatSubjectLine: short description not truncated', () => {
+    const result = formatSubjectLine("fix", "short", 72);
+    assert.strictEqual(result, "fix: short", "short description passes through unchanged");
+  });
+
+  // ─── buildTaskCommitMessage with subject_line_limit option ────────────
+
+  test('buildTaskCommitMessage: respects subjectLineLimit 0 (no truncation)', () => {
+    const longDesc = "implement the entire authentication subsystem with JWT refresh tokens and session management";
+    const msg = buildTaskCommitMessage(
+      { taskId: "S01/T01", taskTitle: "auth", oneLiner: longDesc },
+      { subjectLineLimit: 0 },
+    );
+    const subject = msg.split("\n")[0];
+    assert.ok(subject.includes(longDesc), "full description in subject when limit is 0");
+    assert.ok(!subject.includes("…"), "no ellipsis when limit is disabled");
+  });
+
+  test('buildTaskCommitMessage: respects custom subjectLineLimit', () => {
+    const longDesc = "implement the entire authentication subsystem with JWT refresh tokens";
+    const msg = buildTaskCommitMessage(
+      { taskId: "S01/T01", taskTitle: "auth", oneLiner: longDesc },
+      { subjectLineLimit: 50 },
+    );
+    const subject = msg.split("\n")[0];
+    assert.ok(subject.length <= 50, `subject should be <= 50 chars, got ${subject.length}`);
+  });
+
+  test('buildTaskCommitMessage: default behavior unchanged without opts', () => {
+    const longDesc = "a".repeat(100);
+    const msg = buildTaskCommitMessage({ taskId: "S01/T01", taskTitle: longDesc });
+    const subject = msg.split("\n")[0];
+    assert.ok(subject.length <= DEFAULT_SUBJECT_LINE_LIMIT, "default limit applied");
+  });
 
   // ─── runPreMergeCheck: skips when no package.json ────────────────────────
 

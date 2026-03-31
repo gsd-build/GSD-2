@@ -77,6 +77,11 @@ export interface GitPreferences {
    *  Default: the main branch (from `main_branch` or auto-detected).
    */
   pr_target_branch?: string;
+  /** Maximum character length for the commit subject line.
+   *  0 disables truncation entirely — the full description is used as-is.
+   *  Default: 72 (conventional commit best practice).
+   */
+  subject_line_limit?: number;
 }
 
 export const VALID_BRANCH_NAME = /^[a-zA-Z0-9_\-\/.]+$/;
@@ -87,6 +92,27 @@ export interface CommitOptions {
 }
 
 // ─── Meaningful Commit Message Generation ───────────────────────────────────
+
+/** Default subject line limit (conventional commit best practice). */
+export const DEFAULT_SUBJECT_LINE_LIMIT = 72;
+
+/**
+ * Format a commit subject line from type + description, respecting the limit.
+ * When limit is 0, no truncation is applied.
+ * When limit > 0, truncates with "…" if the description exceeds the budget.
+ */
+export function formatSubjectLine(type: string, description: string, limit: number): string {
+  const prefix = `${type}: `;
+  if (limit <= 0) return `${prefix}${description}`;
+
+  const maxDescLen = limit - prefix.length;
+  if (maxDescLen <= 0) return `${prefix}${description}`;
+
+  const truncated = description.length > maxDescLen
+    ? description.slice(0, maxDescLen - 1).trimEnd() + "…"
+    : description;
+  return `${prefix}${truncated}`;
+}
 
 /** Context for generating a meaningful commit message from task execution results. */
 export interface TaskCommitContext {
@@ -110,17 +136,12 @@ export interface TaskCommitContext {
  * The description is the task summary one-liner if available (it describes
  * what was actually built), falling back to the task title (what was planned).
  */
-export function buildTaskCommitMessage(ctx: TaskCommitContext): string {
+export function buildTaskCommitMessage(ctx: TaskCommitContext, opts?: { subjectLineLimit?: number }): string {
   const description = ctx.oneLiner || ctx.taskTitle;
   const type = inferCommitType(ctx.taskTitle, ctx.oneLiner);
 
-  // Truncate description to ~72 chars for subject line (full budget without scope)
-  const maxDescLen = 70 - type.length;
-  const truncated = description.length > maxDescLen
-    ? description.slice(0, maxDescLen - 1).trimEnd() + "…"
-    : description;
-
-  const subject = `${type}: ${truncated}`;
+  const limit = opts?.subjectLineLimit ?? DEFAULT_SUBJECT_LINE_LIMIT;
+  const subject = formatSubjectLine(type, description, limit);
 
   // Build body with key files if available
   const bodyParts: string[] = [];
@@ -141,6 +162,16 @@ export function buildTaskCommitMessage(ctx: TaskCommitContext): string {
   }
 
   return `${subject}\n\n${bodyParts.join("\n\n")}`;
+}
+
+/**
+ * Format the generic auto-commit fallback message, respecting subject_line_limit.
+ */
+function formatAutoCommitMessage(unitType: string, unitId: string, limit?: number): string {
+  const effectiveLimit = limit ?? DEFAULT_SUBJECT_LINE_LIMIT;
+  const description = `auto-commit after ${unitType}`;
+  const subject = formatSubjectLine("chore", description, effectiveLimit);
+  return `${subject}\n\nGSD-Unit: ${unitId}`;
 }
 
 /**
@@ -559,9 +590,11 @@ export class GitServiceImpl {
     // (all changes might have been runtime files that got excluded)
     if (!nativeHasStagedChanges(this.basePath)) return null;
 
+    const subjectLineLimit = this.prefs.subject_line_limit;
+    const commitOpts = subjectLineLimit !== undefined ? { subjectLineLimit } : undefined;
     const message = taskContext
-      ? buildTaskCommitMessage(taskContext)
-      : `chore: auto-commit after ${unitType}\n\nGSD-Unit: ${unitId}`;
+      ? buildTaskCommitMessage(taskContext, commitOpts)
+      : formatAutoCommitMessage(unitType, unitId, subjectLineLimit);
     nativeCommit(this.basePath, message, { allowEmpty: false });
     return message;
   }
