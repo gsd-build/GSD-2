@@ -506,7 +506,7 @@ export function updateProgressWidget(
       pulseBright = !pulseBright;
       cachedLines = undefined;
       tui.requestRender();
-    }, 800);
+    }, 2000);
 
     // Refresh progress cache from disk every 15s so the widget reflects
     // task/slice completion mid-unit. Without this, the progress bar only
