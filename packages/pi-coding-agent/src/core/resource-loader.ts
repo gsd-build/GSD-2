@@ -129,6 +129,12 @@ export interface DefaultResourceLoaderOptions {
 	appendSystemPrompt?: string;
 	/** Names of bundled extensions (used to identify built-in extensions in conflict detection). */
 	bundledExtensionNames?: Set<string>;
+	/**
+	 * Transform extension paths before loading. Receives the merged list of all
+	 * discovered extension paths and returns a (possibly reordered/filtered) list.
+	 * Use this to apply dependency sorting or registry-based filtering.
+	 */
+	extensionPathsTransform?: (paths: string[]) => { paths: string[]; diagnostics?: string[] };
 	extensionsOverride?: (base: LoadExtensionsResult) => LoadExtensionsResult;
 	skillsOverride?: (base: { skills: Skill[]; diagnostics: ResourceDiagnostic[] }) => {
 		skills: Skill[];
@@ -167,6 +173,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 	private systemPromptSource?: string;
 	private appendSystemPromptSource?: string;
 	private bundledExtensionNames: Set<string>;
+	private extensionPathsTransform?: (paths: string[]) => { paths: string[]; diagnostics?: string[] };
 	private extensionsOverride?: (base: LoadExtensionsResult) => LoadExtensionsResult;
 	private skillsOverride?: (base: { skills: Skill[]; diagnostics: ResourceDiagnostic[] }) => {
 		skills: Skill[];
@@ -223,6 +230,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.systemPromptSource = options.systemPrompt;
 		this.appendSystemPromptSource = options.appendSystemPrompt;
 		this.bundledExtensionNames = options.bundledExtensionNames ?? new Set();
+		this.extensionPathsTransform = options.extensionPathsTransform;
 		this.extensionsOverride = options.extensionsOverride;
 		this.skillsOverride = options.skillsOverride;
 		this.promptsOverride = options.promptsOverride;
@@ -378,9 +386,20 @@ export class DefaultResourceLoader implements ResourceLoader {
 		const cliEnabledPrompts = getEnabledPaths(cliExtensionPaths.prompts);
 		const cliEnabledThemes = getEnabledPaths(cliExtensionPaths.themes);
 
-		const extensionPaths = this.noExtensions
+		let extensionPaths = this.noExtensions
 			? cliEnabledExtensions
 			: this.mergePaths(cliEnabledExtensions, enabledExtensions);
+
+		// Apply path transform (dependency sorting, registry filtering) if provided
+		if (this.extensionPathsTransform) {
+			const transformed = this.extensionPathsTransform(extensionPaths);
+			extensionPaths = transformed.paths;
+			if (transformed.diagnostics?.length) {
+				for (const msg of transformed.diagnostics) {
+					process.stderr.write(`[extensions] ${msg}\n`);
+				}
+			}
+		}
 
 		const extensionsResult = await loadExtensions(extensionPaths, this.cwd, this.eventBus);
 		const inlineExtensions = await this.loadExtensionFactories(extensionsResult.runtime);

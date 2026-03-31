@@ -941,6 +941,11 @@ function discoverExtensionsInDir(dir: string): string[] {
 
 /**
  * Discover and load extensions from standard locations.
+ *
+ * @deprecated Use DefaultResourceLoader.reload() instead — this function is
+ * not called in the GSD loading flow. Extension discovery happens through
+ * DefaultPackageManager.resolve() → addAutoDiscoveredResources(). Kept for
+ * backwards compatibility with direct pi-coding-agent consumers.
  */
 export async function discoverAndLoadExtensions(
 	configuredPaths: string[],

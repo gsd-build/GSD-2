@@ -1,4 +1,4 @@
-import { DefaultResourceLoader } from '@gsd/pi-coding-agent'
+import { DefaultResourceLoader, sortExtensionPaths } from '@gsd/pi-coding-agent'
 import { createHash } from 'node:crypto'
 import { homedir } from 'node:os'
 import { chmodSync, copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, openSync, closeSync, readFileSync, readlinkSync, readdirSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
@@ -603,5 +603,21 @@ export function buildResourceLoader(agentDir: string): DefaultResourceLoader {
     agentDir,
     additionalExtensionPaths: piExtensionPaths,
     bundledExtensionNames: bundledKeys,
+    extensionPathsTransform: (paths: string[]) => {
+      // 1. Filter community extensions through the GSD registry
+      const filteredPaths = paths.filter((entryPath) => {
+        const manifest = readManifestFromEntryPath(entryPath)
+        if (!manifest) return true // no manifest = always load
+        return isExtensionEnabled(registry, manifest.id)
+      })
+
+      // 2. Sort in topological dependency order
+      const { sortedPaths, warnings } = sortExtensionPaths(filteredPaths)
+
+      return {
+        paths: sortedPaths,
+        diagnostics: warnings.map((w) => w.message),
+      }
+    },
   } as ConstructorParameters<typeof DefaultResourceLoader>[0])
 }
