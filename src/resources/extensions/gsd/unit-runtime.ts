@@ -117,7 +117,6 @@ export function readUnitRuntimeRecord(basePath: string, unitType: string, unitId
 export function clearUnitRuntimeRecord(basePath: string, unitType: string, unitId: string): void {
   const path = runtimePath(basePath, unitType, unitId);
   _runtimeCache.delete(path);
-  _dirtyPaths.delete(path);
   if (existsSync(path)) unlinkSync(path);
 }
 
