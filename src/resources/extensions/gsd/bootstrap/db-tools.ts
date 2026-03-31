@@ -738,6 +738,7 @@ export function registerDbTools(pi: ExtensionAPI): void {
     promptGuidelines: [
       "Use gsd_task_complete (or gsd_complete_task) when a task is finished and needs to be recorded.",
       "All string fields are required. verificationEvidence is an array of objects with command, exitCode, verdict, durationMs.",
+      "keyFiles and keyDecisions may be provided either as arrays or as newline bullet-list strings; the tool normalizes both forms.",
       "The tool validates required fields and returns an error message if any are missing.",
       "On success, returns the summaryPath where the SUMMARY.md was written.",
       "Idempotent — calling with the same params twice will upsert (INSERT OR REPLACE) without error.",
@@ -751,8 +752,14 @@ export function registerDbTools(pi: ExtensionAPI): void {
       verification: Type.String({ description: "What was verified and how — commands run, tests passed, behavior confirmed" }),
       deviations: Type.String({ description: "Deviations from the task plan, or 'None.'" }),
       knownIssues: Type.String({ description: "Known issues discovered but not fixed, or 'None.'" }),
-      keyFiles: Type.Array(Type.String(), { description: "List of key files created or modified" }),
-      keyDecisions: Type.Array(Type.String(), { description: "List of key decisions made during this task" }),
+      keyFiles: Type.Union([
+        Type.Array(Type.String(), { description: "List of key files created or modified" }),
+        Type.String({ description: "Newline bullet-list string of key files; will be coerced to an array" }),
+      ]),
+      keyDecisions: Type.Union([
+        Type.Array(Type.String(), { description: "List of key decisions made during this task" }),
+        Type.String({ description: "Newline bullet-list string of key decisions; will be coerced to an array" }),
+      ]),
       blockerDiscovered: Type.Boolean({ description: "Whether a plan-invalidating blocker was discovered" }),
       verificationEvidence: Type.Array(
         Type.Object({

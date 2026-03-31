@@ -221,6 +221,46 @@ console.log('\n=== complete-task: accessor CRUD ===');
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// complete-task: Bullet-list string coercion
+// ═══════════════════════════════════════════════════════════════════════════
+
+console.log('\n=== complete-task: bullet-list string coercion ===');
+{
+  const { basePath } = createTempProject();
+  const dbPath = path.join(basePath, '.gsd', 'gsd.db');
+  openDatabase(dbPath);
+
+  insertMilestone({ id: 'M001', title: 'Test Milestone' });
+  insertSlice({ id: 'S01', milestoneId: 'M001', title: 'Test Slice', risk: 'medium' });
+
+  const params = makeValidParams() as any;
+  params.keyFiles = '- src/test.ts\n- src/test.test.ts';
+  params.keyDecisions = '- Keep arrays on the DB side\n- Accept bullet-list strings at the tool boundary';
+
+  const result = await handleCompleteTask(params, basePath);
+  assertTrue(!('error' in result), `unexpected error: ${'error' in result ? result.error : ''}`);
+  if ('error' in result) {
+    throw new Error(result.error);
+  }
+
+  const task = getTask('M001', 'S01', 'T01');
+  assertTrue(task !== null, 'task should not be null after bullet coercion');
+  assertEq(task!.key_files, ['src/test.ts', 'src/test.test.ts'], 'bullet list string should coerce to key_files array');
+  assertEq(
+    task!.key_decisions,
+    ['Keep arrays on the DB side', 'Accept bullet-list strings at the tool boundary'],
+    'bullet list string should coerce to key_decisions array',
+  );
+
+  const summaryContent = fs.readFileSync(result.summaryPath, 'utf8');
+  assertTrue(summaryContent.includes('- src/test.ts'), 'summary should render key_files bullets');
+  assertTrue(summaryContent.includes('- Keep arrays on the DB side'), 'summary should render key_decisions bullets');
+
+  cleanup(dbPath);
+  cleanupDir(basePath);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // complete-task: Accessor stale-state error
 // ═══════════════════════════════════════════════════════════════════════════
 

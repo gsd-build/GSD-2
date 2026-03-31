@@ -43,11 +43,48 @@ export interface CompleteTaskResult {
 
 import type { TaskRow } from "../gsd-db.js";
 
+type CompleteTaskParamsNormalized = Omit<CompleteTaskParams, "keyFiles" | "keyDecisions"> & {
+  keyFiles: string[];
+  keyDecisions: string[];
+};
+
+function normalizeListInput(value: string[] | string | undefined): string[] {
+  if (Array.isArray(value)) {
+    return value.map(item => item.trim()).filter(item => item.length > 0);
+  }
+
+  if (typeof value !== "string") {
+    return [];
+  }
+
+  const trimmed = value.trim();
+  if (trimmed.length === 0 || /^none\.?$/i.test(trimmed)) {
+    return [];
+  }
+
+  const items = trimmed
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(line => line.length > 0)
+    .map(line => line.replace(/^[-*]\s+/, "").replace(/^\d+\.\s+/, "").trim())
+    .filter(line => line.length > 0 && !/^none\.?$/i.test(line));
+
+  return items.length > 0 ? items : [trimmed];
+}
+
+function normalizeCompleteTaskParams(params: CompleteTaskParams): CompleteTaskParamsNormalized {
+  return {
+    ...params,
+    keyFiles: normalizeListInput(params.keyFiles),
+    keyDecisions: normalizeListInput(params.keyDecisions),
+  };
+}
+
 /**
  * Build a TaskRow-shaped object from CompleteTaskParams so the unified
  * renderSummaryContent() can be used at completion time (#2720).
  */
-function paramsToTaskRow(params: CompleteTaskParams, completedAt: string): TaskRow {
+function paramsToTaskRow(params: CompleteTaskParamsNormalized, completedAt: string): TaskRow {
   return {
     milestone_id: params.milestoneId,
     slice_id: params.sliceId,
@@ -91,22 +128,24 @@ export async function handleCompleteTask(
   params: CompleteTaskParams,
   basePath: string,
 ): Promise<CompleteTaskResult | { error: string }> {
+  const normalizedParams = normalizeCompleteTaskParams(params);
+
   // ── Validate required fields ────────────────────────────────────────────
-  if (!params.taskId || typeof params.taskId !== "string" || params.taskId.trim() === "") {
+  if (!normalizedParams.taskId || typeof normalizedParams.taskId !== "string" || normalizedParams.taskId.trim() === "") {
     return { error: "taskId is required and must be a non-empty string" };
   }
-  if (!params.sliceId || typeof params.sliceId !== "string" || params.sliceId.trim() === "") {
+  if (!normalizedParams.sliceId || typeof normalizedParams.sliceId !== "string" || normalizedParams.sliceId.trim() === "") {
     return { error: "sliceId is required and must be a non-empty string" };
   }
-  if (!params.milestoneId || typeof params.milestoneId !== "string" || params.milestoneId.trim() === "") {
+  if (!normalizedParams.milestoneId || typeof normalizedParams.milestoneId !== "string" || normalizedParams.milestoneId.trim() === "") {
     return { error: "milestoneId is required and must be a non-empty string" };
   }
 
   // ── Ownership check (opt-in: only enforced when claim file exists) ──────
   const ownershipErr = checkOwnership(
     basePath,
-    taskUnitKey(params.milestoneId, params.sliceId, params.taskId),
-    params.actorName,
+    taskUnitKey(normalizedParams.milestoneId, normalizedParams.sliceId, normalizedParams.taskId),
+    normalizedParams.actorName,
   );
   if (ownershipErr) {
     return { error: ownershipErr };
@@ -120,49 +159,49 @@ export async function handleCompleteTask(
     // State machine preconditions (inside txn for atomicity).
     // Milestone/slice not existing is OK — insertMilestone/insertSlice below will auto-create.
     // Only block if they exist and are closed.
-    const milestone = getMilestone(params.milestoneId);
+    const milestone = getMilestone(normalizedParams.milestoneId);
     if (milestone && isClosedStatus(milestone.status)) {
-      guardError = `cannot complete task in a closed milestone: ${params.milestoneId} (status: ${milestone.status})`;
+      guardError = `cannot complete task in a closed milestone: ${normalizedParams.milestoneId} (status: ${milestone.status})`;
       return;
     }
 
-    const slice = getSlice(params.milestoneId, params.sliceId);
+    const slice = getSlice(normalizedParams.milestoneId, normalizedParams.sliceId);
     if (slice && isClosedStatus(slice.status)) {
-      guardError = `cannot complete task in a closed slice: ${params.sliceId} (status: ${slice.status})`;
+      guardError = `cannot complete task in a closed slice: ${normalizedParams.sliceId} (status: ${slice.status})`;
       return;
     }
 
-    const existingTask = getTask(params.milestoneId, params.sliceId, params.taskId);
+    const existingTask = getTask(normalizedParams.milestoneId, normalizedParams.sliceId, normalizedParams.taskId);
     if (existingTask && isClosedStatus(existingTask.status)) {
-      guardError = `task ${params.taskId} is already complete — use gsd_task_reopen first if you need to redo it`;
+      guardError = `task ${normalizedParams.taskId} is already complete — use gsd_task_reopen first if you need to redo it`;
       return;
     }
 
     // All guards passed — perform writes
-    insertMilestone({ id: params.milestoneId });
-    insertSlice({ id: params.sliceId, milestoneId: params.milestoneId });
+    insertMilestone({ id: normalizedParams.milestoneId });
+    insertSlice({ id: normalizedParams.sliceId, milestoneId: normalizedParams.milestoneId });
     insertTask({
-      id: params.taskId,
-      sliceId: params.sliceId,
-      milestoneId: params.milestoneId,
-      title: params.oneLiner,
+      id: normalizedParams.taskId,
+      sliceId: normalizedParams.sliceId,
+      milestoneId: normalizedParams.milestoneId,
+      title: normalizedParams.oneLiner,
       status: "complete",
-      oneLiner: params.oneLiner,
-      narrative: params.narrative,
-      verificationResult: params.verification,
+      oneLiner: normalizedParams.oneLiner,
+      narrative: normalizedParams.narrative,
+      verificationResult: normalizedParams.verification,
       duration: "",
-      blockerDiscovered: params.blockerDiscovered,
-      deviations: params.deviations,
-      knownIssues: params.knownIssues,
-      keyFiles: params.keyFiles,
-      keyDecisions: params.keyDecisions,
+      blockerDiscovered: normalizedParams.blockerDiscovered,
+      deviations: normalizedParams.deviations,
+      knownIssues: normalizedParams.knownIssues,
+      keyFiles: normalizedParams.keyFiles,
+      keyDecisions: normalizedParams.keyDecisions,
     });
 
-    for (const evidence of params.verificationEvidence) {
+    for (const evidence of normalizedParams.verificationEvidence) {
       insertVerificationEvidence({
-        taskId: params.taskId,
-        sliceId: params.sliceId,
-        milestoneId: params.milestoneId,
+        taskId: normalizedParams.taskId,
+        sliceId: normalizedParams.sliceId,
+        milestoneId: normalizedParams.milestoneId,
         command: evidence.command,
         exitCode: evidence.exitCode,
         verdict: evidence.verdict,
@@ -180,32 +219,32 @@ export async function handleCompleteTask(
   // verifyExpectedArtifact() stay consistent (both say "not done").
 
   // Render summary markdown via the single source of truth (#2720)
-  const taskRow = paramsToTaskRow(params, completedAt);
-  const summaryMd = renderSummaryContent(taskRow, params.sliceId, params.milestoneId, params.verificationEvidence);
+  const taskRow = paramsToTaskRow(normalizedParams, completedAt);
+  const summaryMd = renderSummaryContent(taskRow, normalizedParams.sliceId, normalizedParams.milestoneId, normalizedParams.verificationEvidence);
 
   // Resolve and write summary to disk
   let summaryPath: string;
-  const tasksDir = resolveTasksDir(basePath, params.milestoneId, params.sliceId);
+  const tasksDir = resolveTasksDir(basePath, normalizedParams.milestoneId, normalizedParams.sliceId);
   if (tasksDir) {
-    summaryPath = join(tasksDir, `${params.taskId}-SUMMARY.md`);
+    summaryPath = join(tasksDir, `${normalizedParams.taskId}-SUMMARY.md`);
   } else {
     // Tasks dir doesn't exist on disk yet — build path manually and ensure dirs
     const gsdDir = join(basePath, ".gsd");
-    const manualTasksDir = join(gsdDir, "milestones", params.milestoneId, "slices", params.sliceId, "tasks");
+    const manualTasksDir = join(gsdDir, "milestones", normalizedParams.milestoneId, "slices", normalizedParams.sliceId, "tasks");
     mkdirSync(manualTasksDir, { recursive: true });
-    summaryPath = join(manualTasksDir, `${params.taskId}-SUMMARY.md`);
+    summaryPath = join(manualTasksDir, `${normalizedParams.taskId}-SUMMARY.md`);
   }
 
   try {
     await saveFile(summaryPath, summaryMd);
 
     // Toggle plan checkbox via renderer module
-    const planPath = resolveSliceFile(basePath, params.milestoneId, params.sliceId, "PLAN");
+    const planPath = resolveSliceFile(basePath, normalizedParams.milestoneId, normalizedParams.sliceId, "PLAN");
     if (planPath) {
-      await renderPlanCheckboxes(basePath, params.milestoneId, params.sliceId);
+      await renderPlanCheckboxes(basePath, normalizedParams.milestoneId, normalizedParams.sliceId);
     } else {
       process.stderr.write(
-        `gsd-db: complete_task — could not find plan file for ${params.sliceId}/${params.milestoneId}, skipping checkbox toggle\n`,
+        `gsd-db: complete_task — could not find plan file for ${normalizedParams.sliceId}/${normalizedParams.milestoneId}, skipping checkbox toggle\n`,
       );
     }
   } catch (renderErr) {
@@ -216,14 +255,14 @@ export async function handleCompleteTask(
     // Delete orphaned verification_evidence rows first (FK constraint
     // references tasks, so evidence must go before status change).
     // Without this, retries accumulate duplicate evidence rows (#2724).
-    deleteVerificationEvidence(params.milestoneId, params.sliceId, params.taskId);
-    updateTaskStatus(params.milestoneId, params.sliceId, params.taskId, 'pending');
+    deleteVerificationEvidence(normalizedParams.milestoneId, normalizedParams.sliceId, normalizedParams.taskId);
+    updateTaskStatus(normalizedParams.milestoneId, normalizedParams.sliceId, normalizedParams.taskId, 'pending');
     invalidateStateCache();
     return { error: `disk render failed: ${(renderErr as Error).message}` };
   }
 
   // Store rendered markdown in DB for D004 recovery
-  setTaskSummaryMd(params.milestoneId, params.sliceId, params.taskId, summaryMd);
+  setTaskSummaryMd(normalizedParams.milestoneId, normalizedParams.sliceId, normalizedParams.taskId, summaryMd);
 
   // Invalidate all caches
   invalidateStateCache();
@@ -232,15 +271,15 @@ export async function handleCompleteTask(
 
   // ── Post-mutation hook: projections, manifest, event log ───────────────
   try {
-    await renderAllProjections(basePath, params.milestoneId);
+    await renderAllProjections(basePath, normalizedParams.milestoneId);
     writeManifest(basePath);
     appendEvent(basePath, {
       cmd: "complete-task",
-      params: { milestoneId: params.milestoneId, sliceId: params.sliceId, taskId: params.taskId },
+      params: { milestoneId: normalizedParams.milestoneId, sliceId: normalizedParams.sliceId, taskId: normalizedParams.taskId },
       ts: new Date().toISOString(),
       actor: "agent",
-      actor_name: params.actorName,
-      trigger_reason: params.triggerReason,
+      actor_name: normalizedParams.actorName,
+      trigger_reason: normalizedParams.triggerReason,
     });
   } catch (hookErr) {
     process.stderr.write(
@@ -249,9 +288,9 @@ export async function handleCompleteTask(
   }
 
   return {
-    taskId: params.taskId,
-    sliceId: params.sliceId,
-    milestoneId: params.milestoneId,
+    taskId: normalizedParams.taskId,
+    sliceId: normalizedParams.sliceId,
+    milestoneId: normalizedParams.milestoneId,
     summaryPath,
   };
 }
