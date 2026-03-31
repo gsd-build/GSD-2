@@ -58,6 +58,15 @@ export async function autoLoop(
     const flowId = randomUUID();
     let seqCounter = 0;
     const nextSeq = () => ++seqCounter;
+    const emitIterationEnd = (data?: Record<string, unknown>) => {
+      deps.emitJournalEvent({
+        ts: new Date().toISOString(),
+        flowId,
+        seq: nextSeq(),
+        eventType: "iteration-end",
+        data: { iteration, ...(data ?? {}) },
+      });
+    };
 
     if (iteration > MAX_LOOP_ITERATIONS) {
       debugLog("autoLoop", {
@@ -204,7 +213,7 @@ export async function autoLoop(
         deps.clearUnitTimeout();
         consecutiveErrors = 0;
         recentErrorMessages.length = 0;
-        deps.emitJournalEvent({ ts: new Date().toISOString(), flowId, seq: nextSeq(), eventType: "iteration-end", data: { iteration } });
+        emitIterationEnd();
         debugLog("autoLoop", { phase: "iteration-complete", iteration });
         continue;
       }
@@ -253,7 +262,7 @@ export async function autoLoop(
 
       consecutiveErrors = 0; // Iteration completed successfully
       recentErrorMessages.length = 0;
-      deps.emitJournalEvent({ ts: new Date().toISOString(), flowId, seq: nextSeq(), eventType: "iteration-end", data: { iteration } });
+      emitIterationEnd();
       debugLog("autoLoop", { phase: "iteration-complete", iteration });
     } catch (loopErr) {
       // ── Blanket catch: absorb unexpected exceptions, apply graduated recovery ──
@@ -262,13 +271,16 @@ export async function autoLoop(
       // Always emit iteration-end on error so the journal records iteration
       // completion even on failure (#2344). Without this, errors in
       // runFinalize leave the journal incomplete, making diagnosis harder.
-      deps.emitJournalEvent({ ts: new Date().toISOString(), flowId, seq: nextSeq(), eventType: "iteration-end", data: { iteration, error: msg } });
-
       // ── Infrastructure errors: immediate stop, no retry ──
       // These are unrecoverable (disk full, OOM, etc.). Retrying just burns
       // LLM budget on guaranteed failures.
       const infraCode = isInfrastructureError(loopErr);
       if (infraCode) {
+        emitIterationEnd({
+          status: "error",
+          error: msg,
+          infrastructureCode: infraCode,
+        });
         debugLog("autoLoop", {
           phase: "infrastructure-error",
           iteration,
@@ -289,6 +301,11 @@ export async function autoLoop(
 
       consecutiveErrors++;
       recentErrorMessages.push(msg.length > 120 ? msg.slice(0, 120) + "..." : msg);
+      emitIterationEnd({
+        status: "error",
+        error: msg,
+        consecutiveErrors,
+      });
       debugLog("autoLoop", {
         phase: "iteration-error",
         iteration,

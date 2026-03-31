@@ -918,6 +918,59 @@ test("autoLoop handles verification retry by continuing loop", async (t) => {
   );
 });
 
+test("autoLoop emits iteration-end when an iteration throws", async () => {
+  _resetPendingResolve();
+
+  const ctx = makeMockCtx();
+  ctx.ui.setStatus = () => {};
+  const pi = makeMockPi();
+  const s = makeLoopSession();
+  const journalEvents: Array<{ flowId: string; eventType: string; data?: Record<string, unknown> }> = [];
+  let dispatchCalls = 0;
+
+  const deps = makeMockDeps({
+    emitJournalEvent: (event: { flowId: string; eventType: string; data?: Record<string, unknown> }) => {
+      journalEvents.push(event);
+    },
+    resolveDispatch: async () => {
+      dispatchCalls++;
+      deps.callLog.push("resolveDispatch");
+      if (dispatchCalls === 1) {
+        throw new Error("boom");
+      }
+      return {
+        action: "stop" as const,
+        reason: "done",
+        level: "info" as const,
+      };
+    },
+  });
+
+  await autoLoop(ctx, pi, s, deps);
+
+  const firstFlowId = journalEvents.find((event) => event.eventType === "iteration-start")?.flowId;
+  assert.ok(firstFlowId, "first iteration should emit iteration-start");
+
+  const firstIterationEvents = journalEvents.filter((event) => event.flowId === firstFlowId);
+  assert.deepEqual(
+    firstIterationEvents.map((event) => event.eventType),
+    ["iteration-start", "iteration-end"],
+    "erroring iteration should still emit iteration-end",
+  );
+  const iterationEndEvent = firstIterationEvents[1];
+  assert.ok(iterationEndEvent, "erroring iteration should have an iteration-end event");
+  assert.equal(
+    iterationEndEvent.data?.status,
+    "error",
+    "erroring iteration should annotate iteration-end with error status",
+  );
+  assert.equal(
+    iterationEndEvent.data?.error,
+    "boom",
+    "iteration-end should include the thrown error message",
+  );
+});
+
 test("autoLoop handles dispatch stop action", async (t) => {
   _resetPendingResolve();
 
