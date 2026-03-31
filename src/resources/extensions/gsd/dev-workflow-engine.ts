@@ -5,6 +5,7 @@
  * and dispatch logic. This is the "dev" engine — it wraps the current GSD
  * auto-mode behavior behind the engine-polymorphic interface.
  */
+// ci-retrigger: 2026-03-31
 
 import type { WorkflowEngine } from "./workflow-engine.js";
 import type {
