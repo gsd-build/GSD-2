@@ -585,7 +585,8 @@ export function migrateHierarchyToDb(basePath: string): {
     // Parse roadmap for slices
     if (!roadmap) continue;
 
-    for (const sliceEntry of roadmap.slices) {
+    for (let i = 0; i < roadmap.slices.length; i++) {
+      const sliceEntry = roadmap.slices[i]!;
       // Per K002: use 'complete' not 'done'
       const sliceStatus = sliceEntry.done ? 'complete' : 'pending';
 
@@ -605,6 +606,7 @@ export function migrateHierarchyToDb(basePath: string): {
         risk: sliceEntry.risk,
         depends: sliceEntry.depends,
         demo: sliceEntry.demo,
+        sequence: i + 1,
         planning: {
           goal: plan?.goal ?? '',
         },

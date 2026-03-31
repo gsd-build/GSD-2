@@ -8,6 +8,7 @@ import {
   getActiveDecisions,
   getRequirementById,
   getActiveRequirements,
+  getMilestoneSlices,
   insertArtifact,
   _getAdapter,
 } from '../gsd-db.ts';
@@ -92,6 +93,18 @@ const REQUIREMENTS_MD = `# Requirements
 - Notes: Excluded in PRD
 `;
 
+const M001_ROADMAP = `# M001: Import Test Milestone
+
+**Vision:** Verify importer sequence persistence.
+
+## Slices
+
+- [ ] **S01: Alpha** \`risk:low\` \`depends:[]\`
+  > First slice.
+- [ ] **S02: Beta** \`risk:medium\` \`depends:[S01]\`
+  > Second slice.
+`;
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Helpers
 // ═══════════════════════════════════════════════════════════════════════════
@@ -106,7 +119,7 @@ function createFixtureTree(baseDir: string): void {
   // Create milestone hierarchy
   const m001 = path.join(gsd, 'milestones', 'M001');
   fs.mkdirSync(m001, { recursive: true });
-  fs.writeFileSync(path.join(m001, 'M001-ROADMAP.md'), '# M001 Roadmap\nTest roadmap content.');
+  fs.writeFileSync(path.join(m001, 'M001-ROADMAP.md'), M001_ROADMAP);
   fs.writeFileSync(path.join(m001, 'M001-CONTEXT.md'), '# M001 Context\nTest context.');
 
   // Create slice
@@ -286,6 +299,13 @@ test('md-importer: migrateFromMarkdown orchestrator', () => {
     assert.ok(!!roadmap, 'ROADMAP artifact should exist');
     assert.deepStrictEqual(roadmap?.milestone_id, 'M001', 'ROADMAP should be in M001');
 
+    const slices = getMilestoneSlices('M001');
+    assert.equal(slices.length, 2, 'should import 2 roadmap slices');
+    assert.equal(slices[0]?.id, 'S01');
+    assert.equal(slices[0]?.sequence, 1, 'S01 sequence should preserve roadmap order');
+    assert.equal(slices[1]?.id, 'S02');
+    assert.equal(slices[1]?.sequence, 2, 'S02 sequence should preserve roadmap order');
+
     const taskPlan = adapter?.prepare('SELECT * FROM artifacts WHERE task_id = :taskId AND artifact_type = :type').get({
       ':taskId': 'T01',
       ':type': 'PLAN',
@@ -413,4 +433,3 @@ test('md-importer: round-trip fidelity', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-

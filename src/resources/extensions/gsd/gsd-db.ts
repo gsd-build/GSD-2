@@ -2057,6 +2057,7 @@ export function updateSliceFields(milestoneId: string, sliceId: string, fields: 
   risk?: string;
   depends?: string[];
   demo?: string;
+  sequence?: number;
 }): void {
   if (!currentDb) throw new GSDError(GSD_STALE_STATE, "gsd-db: No database open");
   currentDb.prepare(
@@ -2064,7 +2065,8 @@ export function updateSliceFields(milestoneId: string, sliceId: string, fields: 
       title = COALESCE(:title, title),
       risk = COALESCE(:risk, risk),
       depends = COALESCE(:depends, depends),
-      demo = COALESCE(:demo, demo)
+      demo = COALESCE(:demo, demo),
+      sequence = COALESCE(:sequence, sequence)
      WHERE milestone_id = :milestone_id AND id = :id`,
   ).run({
     ":milestone_id": milestoneId,
@@ -2073,6 +2075,7 @@ export function updateSliceFields(milestoneId: string, sliceId: string, fields: 
     ":risk": fields.risk ?? null,
     ":depends": fields.depends ? JSON.stringify(fields.depends) : null,
     ":demo": fields.demo ?? null,
+    ":sequence": fields.sequence ?? null,
   });
 }
 

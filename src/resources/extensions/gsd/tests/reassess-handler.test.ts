@@ -36,9 +36,9 @@ function seedMilestoneWithSlices(opts?: {
   s03Status?: string;
 }): void {
   insertMilestone({ id: 'M001', title: 'Test Milestone', status: 'active' });
-  insertSlice({ id: 'S01', milestoneId: 'M001', title: 'Slice One', status: opts?.s01Status ?? 'complete', demo: 'Demo one.' });
-  insertSlice({ id: 'S02', milestoneId: 'M001', title: 'Slice Two', status: opts?.s02Status ?? 'pending', demo: 'Demo two.' });
-  insertSlice({ id: 'S03', milestoneId: 'M001', title: 'Slice Three', status: opts?.s03Status ?? 'pending', demo: 'Demo three.' });
+  insertSlice({ id: 'S01', milestoneId: 'M001', title: 'Slice One', status: opts?.s01Status ?? 'complete', demo: 'Demo one.', sequence: 1 });
+  insertSlice({ id: 'S02', milestoneId: 'M001', title: 'Slice Two', status: opts?.s02Status ?? 'pending', demo: 'Demo two.', sequence: 2 });
+  insertSlice({ id: 'S03', milestoneId: 'M001', title: 'Slice Three', status: opts?.s03Status ?? 'pending', demo: 'Demo three.', sequence: 3 });
 }
 
 function validReassessParams() {
@@ -204,6 +204,57 @@ test('handleReassessRoadmap succeeds when modifying only pending slices', async 
     const assessmentContent = readFileSync(assessmentDiskPath, 'utf-8');
     assert.ok(assessmentContent.includes('confirmed'), 'ASSESSMENT.md should contain verdict');
     assert.ok(assessmentContent.includes('S01'), 'ASSESSMENT.md should reference completed slice');
+  } finally {
+    cleanup(base);
+  }
+});
+
+test('handleReassessRoadmap persists explicit sequence updates for modified and added slices', async () => {
+  const base = makeTmpBase();
+  openDatabase(join(base, '.gsd', 'gsd.db'));
+
+  try {
+    seedMilestoneWithSlices({ s01Status: 'complete', s02Status: 'pending', s03Status: 'pending' });
+
+    const result = await handleReassessRoadmap({
+      milestoneId: 'M001',
+      completedSliceId: 'S01',
+      verdict: 'roadmap-adjusted',
+      assessment: 'Reordered roadmap slices while keeping the same scope.',
+      sliceChanges: {
+        modified: [
+          {
+            sliceId: 'S02',
+            title: 'Updated Slice Two',
+            risk: 'high',
+            depends: ['S01'],
+            demo: 'Updated demo two.',
+            sequence: 5,
+          },
+        ],
+        added: [
+          {
+            sliceId: 'S04',
+            title: 'New Slice Four',
+            risk: 'low',
+            depends: ['S02'],
+            demo: 'Demo four.',
+            sequence: 4,
+          },
+        ],
+        removed: [],
+      },
+    }, base);
+
+    assert.ok(!('error' in result), `unexpected error: ${'error' in result ? result.error : ''}`);
+
+    const s02 = getSlice('M001', 'S02');
+    assert.ok(s02, 'S02 should still exist');
+    assert.equal(s02?.sequence, 5, 'modified slice should persist explicit sequence');
+
+    const s04 = getSlice('M001', 'S04');
+    assert.ok(s04, 'S04 should exist as a new slice');
+    assert.equal(s04?.sequence, 4, 'added slice should persist explicit sequence');
   } finally {
     cleanup(base);
   }

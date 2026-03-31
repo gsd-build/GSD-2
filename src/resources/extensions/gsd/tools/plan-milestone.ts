@@ -237,7 +237,8 @@ export async function handlePlanMilestone(
         boundaryMapMarkdown: params.boundaryMapMarkdown,
       }, params.title);
 
-      for (const slice of params.slices) {
+      for (let i = 0; i < params.slices.length; i++) {
+        const slice = params.slices[i]!;
         insertSlice({
           id: slice.sliceId,
           milestoneId: params.milestoneId,
@@ -246,6 +247,7 @@ export async function handlePlanMilestone(
           risk: slice.risk,
           depends: slice.depends,
           demo: slice.demo,
+          sequence: i + 1,
         });
         upsertSlicePlanning(params.milestoneId, slice.sliceId, {
           goal: slice.goal,

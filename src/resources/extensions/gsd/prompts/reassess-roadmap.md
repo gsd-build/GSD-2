@@ -57,7 +57,7 @@ Use `gsd_reassess_roadmap` with `verdict: "roadmap-confirmed"`, an empty `sliceC
 
 **If changes are needed:**
 
-**Persist changes through `gsd_reassess_roadmap`.** Pass: `milestoneId`, `completedSliceId`, `verdict` (e.g. "roadmap-adjusted"), `assessment` (text explaining the decision), and `sliceChanges` with `modified` (array of sliceId, title, risk, depends, demo), `added` (same shape), `removed` (array of slice ID strings). The tool structurally enforces preservation of completed slices, writes the assessment to the DB, re-renders `{{roadmapPath}}`, and renders `{{assessmentPath}}`.
+**Persist changes through `gsd_reassess_roadmap`.** Pass: `milestoneId`, `completedSliceId`, `verdict` (e.g. "roadmap-adjusted"), `assessment` (text explaining the decision), and `sliceChanges` with `modified` (array of sliceId, title, risk, depends, demo, optional sequence), `added` (same shape), `removed` (array of slice ID strings). The tool structurally enforces preservation of completed slices, writes the assessment to the DB, re-renders `{{roadmapPath}}`, and renders `{{assessmentPath}}`.
 
 If `.gsd/REQUIREMENTS.md` exists and requirement ownership or status changed, update it.
 
