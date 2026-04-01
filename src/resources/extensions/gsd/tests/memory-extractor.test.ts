@@ -206,15 +206,50 @@ test('memory-extractor: buildMemoryLLMCall resolves API key from modelRegistry f
 });
 
 test('memory-extractor: buildMemoryLLMCall returns null when no models available', () => {
+  const notifications: Array<{ message: string; level: string }> = [];
   const ctx = {
     modelRegistry: {
       getAvailable: () => [],
       getApiKey: async () => undefined,
     },
+    ui: {
+      notify: (message: string, level: string) => {
+        notifications.push({ message, level });
+      },
+    },
   } as any;
 
+  _resetExtractionState();
   const llmCallFn = buildMemoryLLMCall(ctx);
   assert.strictEqual(llmCallFn, null, 'should return null when no models available');
+  assert.deepStrictEqual(notifications, [
+    {
+      message: 'GSD: memory extraction skipped — no model available in registry.',
+      level: 'warning',
+    },
+  ], 'should emit a one-time warning when memory extraction is disabled');
+});
+
+test('memory-extractor: no-model warning is emitted at most once per session', () => {
+  const notifications: string[] = [];
+  const ctx = {
+    modelRegistry: {
+      getAvailable: () => [],
+      getApiKey: async () => undefined,
+    },
+    ui: {
+      notify: (message: string) => {
+        notifications.push(message);
+      },
+    },
+  } as any;
+
+  _resetExtractionState();
+  assert.strictEqual(buildMemoryLLMCall(ctx), null);
+  assert.strictEqual(buildMemoryLLMCall(ctx), null);
+  assert.deepStrictEqual(notifications, [
+    'GSD: memory extraction skipped — no model available in registry.',
+  ], 'repeated closeout attempts should not spam the same warning');
 });
 
 test('memory-extractor: buildMemoryLLMCall prefers haiku model', async () => {
@@ -251,4 +286,3 @@ test('memory-extractor: buildMemoryLLMCall prefers haiku model', async () => {
   assert.strictEqual(resolvedModelId, 'claude-3-5-haiku-20241022',
     'should resolve API key for haiku model, not sonnet');
 });
-
