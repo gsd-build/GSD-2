@@ -611,6 +611,7 @@ export async function buildCarryForwardSection(priorSummaryPaths: string[], base
     if (patterns) parts.push(`patterns: ${patterns}`);
     if (keyFiles) parts.push(`key_files: ${keyFiles}`);
     if (diagnostics) parts.push(`diagnostics: ${oneLine(diagnostics)}`);
+    if (summary.pendingActions.length > 0) parts.push(`pending_actions: ${summary.pendingActions.slice(0, 3).join('; ')}`);
 
     return `- \`${relPath}\` — ${parts.join(" | ")}`;
   }));
@@ -1484,8 +1485,8 @@ export async function buildReplanSlicePrompt(
   inlined.push(await inlineFile(roadmapPath, roadmapRel, "Milestone Roadmap"));
   inlined.push(await inlineFile(slicePlanPath, slicePlanRel, "Current Slice Plan"));
 
-  // Find the blocker task summary — the completed task with blocker_discovered: true
   let blockerTaskId = "";
+  let pendingActionContext = "(none)";
   const tDir = resolveTasksDir(base, mid, sid);
   if (tDir) {
     const summaryFiles = resolveTaskFiles(tDir, "SUMMARY").sort();
@@ -1498,7 +1499,23 @@ export async function buildReplanSlicePrompt(
       const relPath = `${sRel}/tasks/${file}`;
       if (summary.frontmatter.blocker_discovered) {
         blockerTaskId = summary.frontmatter.id || file.replace(/-SUMMARY\.md$/i, "");
-        inlined.push(`### Blocker Task Summary: ${blockerTaskId}\nSource: \`${relPath}\`\n\n${content.trim()}`);
+        inlined.push(`### Trigger Task Summary: ${blockerTaskId}\nSource: \`${relPath}\`\n\n${content.trim()}`);
+      }
+    }
+
+    if (!blockerTaskId) {
+      for (const file of [...summaryFiles].reverse()) {
+        const absPath = join(tDir, file);
+        const content = await loadFile(absPath);
+        if (!content) continue;
+        const summary = parseSummary(content);
+        if (summary.pendingActions.length === 0) continue;
+        const sRel = relSlicePath(base, mid, sid);
+        const relPath = `${sRel}/tasks/${file}`;
+        blockerTaskId = summary.frontmatter.id || file.replace(/-SUMMARY\.md$/i, "");
+        pendingActionContext = summary.pendingActions.map(action => `- ${action}`).join("\n");
+        inlined.push(`### Trigger Task Summary: ${blockerTaskId}\nSource: \`${relPath}\`\n\n${content.trim()}`);
+        break;
       }
     }
   }
@@ -1536,6 +1553,7 @@ export async function buildReplanSlicePrompt(
     slicePath: relSlicePath(base, mid, sid),
     planPath: join(base, slicePlanRel),
     blockerTaskId,
+    pendingActionContext,
     inlinedContext,
     replanPath,
     captureContext,
@@ -1545,7 +1563,7 @@ export async function buildReplanSlicePrompt(
       milestoneTitle: midTitle,
       sliceId: sid,
       sliceTitle: sTitle,
-      extraContext: [inlinedContext, captureContext],
+      extraContext: [inlinedContext, pendingActionContext, captureContext],
     }),
   });
 }

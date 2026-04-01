@@ -122,6 +122,27 @@ export function isValidationTerminal(validationContent: string): boolean {
   return extractVerdict(validationContent) != null;
 }
 
+async function getLatestPendingActionTask(
+  basePath: string,
+  milestoneId: string,
+  sliceId: string,
+  completedTaskIds: string[],
+  load: (path: string) => Promise<string | null>,
+): Promise<{ taskId: string; actions: string[] } | null> {
+  for (let i = completedTaskIds.length - 1; i >= 0; i--) {
+    const taskId = completedTaskIds[i];
+    const summaryFile = resolveTaskFile(basePath, milestoneId, sliceId, taskId, "SUMMARY");
+    if (!summaryFile) continue;
+    const summaryContent = await load(summaryFile);
+    if (!summaryContent) continue;
+    const summary = parseSummary(summaryContent);
+    if (summary.pendingActions.length > 0) {
+      return { taskId, actions: summary.pendingActions };
+    }
+  }
+  return null;
+}
+
 // ─── State Derivation ──────────────────────────────────────────────────────
 
 // ── deriveState memoization ─────────────────────────────────────────────────
@@ -741,6 +762,33 @@ export async function deriveStateFromDb(basePath: string): Promise<GSDState> {
   };
 
   const activeTaskRow = tasks.find(t => !isStatusDone(t.status));
+  const activeTask: ActiveRef | null = activeTaskRow ? { id: activeTaskRow.id, title: activeTaskRow.title } : null;
+  const completedTaskIds = tasks.filter(t => isStatusDone(t.status)).map(t => t.id);
+  const latestPendingActionTask = await getLatestPendingActionTask(
+    basePath,
+    activeMilestone.id,
+    activeSlice.id,
+    completedTaskIds,
+    loadFile,
+  );
+
+  if (latestPendingActionTask) {
+    const replanHistory = getReplanHistory(activeMilestone.id, activeSlice.id);
+    const alreadyHandled = replanHistory.some(
+      (entry) => String(entry["task_id"] ?? "") === latestPendingActionTask.taskId,
+    );
+    if (!alreadyHandled) {
+      return {
+        activeMilestone, activeSlice, activeTask,
+        phase: 'replanning-slice',
+        recentDecisions: [],
+        blockers: [`Task ${latestPendingActionTask.taskId} recorded pending carry-forward actions: ${latestPendingActionTask.actions.join('; ')}`],
+        nextAction: `Task ${latestPendingActionTask.taskId} recorded pending actions. Replan slice ${activeSlice.id} before continuing.`,
+        registry, requirements,
+        progress: { milestones: milestoneProgress, slices: sliceProgress, tasks: taskProgress },
+      };
+    }
+  }
 
   if (!activeTaskRow && tasks.length > 0) {
     // All tasks done but slice not marked complete → summarizing
@@ -765,8 +813,6 @@ export async function deriveStateFromDb(basePath: string): Promise<GSDState> {
       progress: { milestones: milestoneProgress, slices: sliceProgress, tasks: taskProgress },
     };
   }
-
-  const activeTask: ActiveRef = { id: activeTaskRow.id, title: activeTaskRow.title };
 
   // ── Task plan file check (#909) ─────────────────────────────────────
   const tasksDir = resolveTasksDir(basePath, activeMilestone.id, activeSlice.id);
@@ -864,14 +910,15 @@ export async function deriveStateFromDb(basePath: string): Promise<GSDState> {
   const continueFile = sDir ? resolveSliceFile(basePath, activeMilestone.id, activeSlice.id, "CONTINUE") : null;
   const hasInterrupted = !!(continueFile && await loadFile(continueFile)) ||
     !!(sDir && await loadFile(join(sDir, "continue.md")));
+  const executingTask = activeTask!;
 
   return {
-    activeMilestone, activeSlice, activeTask,
+    activeMilestone, activeSlice, activeTask: executingTask,
     phase: 'executing',
     recentDecisions: [], blockers: [],
     nextAction: hasInterrupted
-      ? `Resume interrupted work on ${activeTask.id}: ${activeTask.title} in slice ${activeSlice.id}. Read continue.md first.`
-      : `Execute ${activeTask.id}: ${activeTask.title} in slice ${activeSlice.id}.`,
+      ? `Resume interrupted work on ${executingTask.id}: ${executingTask.title} in slice ${activeSlice.id}. Read continue.md first.`
+      : `Execute ${executingTask.id}: ${executingTask.title} in slice ${activeSlice.id}.`,
     registry, requirements,
     progress: { milestones: milestoneProgress, slices: sliceProgress, tasks: taskProgress },
   };
@@ -1390,6 +1437,48 @@ export async function _deriveStateImpl(basePath: string): Promise<GSDState> {
     total: slicePlan.tasks.length,
   };
   const activeTaskEntry = slicePlan.tasks.find(t => !t.done);
+  const activeTask: ActiveRef | null = activeTaskEntry
+    ? {
+        id: activeTaskEntry.id,
+        title: activeTaskEntry.title,
+      }
+    : null;
+  const completedTaskIds = slicePlan.tasks.filter(t => t.done).map(t => t.id);
+  const latestPendingActionTask = await getLatestPendingActionTask(
+    basePath,
+    activeMilestone.id,
+    activeSlice.id,
+    completedTaskIds,
+    cachedLoadFile,
+  );
+
+  if (latestPendingActionTask) {
+    const replanFile = resolveSliceFile(basePath, activeMilestone.id, activeSlice.id, "REPLAN");
+    const replanHistory = getReplanHistory(activeMilestone.id, activeSlice.id);
+    const alreadyHandled = replanHistory.some(
+      (entry) => String(entry["task_id"] ?? "") === latestPendingActionTask.taskId,
+    );
+    if (!replanFile && !alreadyHandled) {
+      return {
+        activeMilestone,
+        activeSlice,
+        activeTask,
+        phase: 'replanning-slice',
+        recentDecisions: [],
+        blockers: [`Task ${latestPendingActionTask.taskId} recorded pending carry-forward actions: ${latestPendingActionTask.actions.join('; ')}`],
+        nextAction: `Task ${latestPendingActionTask.taskId} recorded pending actions. Replan slice ${activeSlice.id} before continuing.`,
+
+        activeWorkspace: undefined,
+        registry,
+        requirements,
+        progress: {
+          milestones: milestoneProgress,
+          slices: sliceProgress,
+          tasks: taskProgress,
+        },
+      };
+    }
+  }
 
   if (!activeTaskEntry && slicePlan.tasks.length > 0) {
     // All tasks done but slice not marked complete
@@ -1432,11 +1521,6 @@ export async function _deriveStateImpl(basePath: string): Promise<GSDState> {
       },
     };
   }
-
-  const activeTask: ActiveRef = {
-    id: activeTaskEntry.id,
-    title: activeTaskEntry.title,
-  };
 
   // ── Task plan file check (#909) ──────────────────────────────────────
   // The slice plan may reference tasks but per-task plan files may be
@@ -1549,17 +1633,18 @@ export async function _deriveStateImpl(basePath: string): Promise<GSDState> {
   // Also check legacy continue.md
   const hasInterrupted = !!(continueFile && await cachedLoadFile(continueFile)) ||
     !!(sDir && await cachedLoadFile(join(sDir, "continue.md")));
+  const executingTask = activeTask!;
 
   return {
     activeMilestone,
     activeSlice,
-    activeTask,
+    activeTask: executingTask,
     phase: 'executing',
     recentDecisions: [],
     blockers: [],
     nextAction: hasInterrupted
-      ? `Resume interrupted work on ${activeTask.id}: ${activeTask.title} in slice ${activeSlice.id}. Read continue.md first.`
-      : `Execute ${activeTask.id}: ${activeTask.title} in slice ${activeSlice.id}.`,
+      ? `Resume interrupted work on ${executingTask.id}: ${executingTask.title} in slice ${activeSlice.id}. Read continue.md first.`
+      : `Execute ${executingTask.id}: ${executingTask.title} in slice ${activeSlice.id}.`,
     registry,
     requirements,
     progress: {

@@ -58,6 +58,13 @@ blocker_discovered: false
 
 ## Known Issues
 
+<!-- If required work remains for later tasks in this same slice, encode it at the top of this section exactly as:
+Pending actions:
+- <action 1>
+- <action 2>
+
+Then leave a blank line and continue with ordinary known issues. Use this only for concrete unfinished work that still must happen for the slice/project to be fully built. If nothing remains, write None. -->
+
 {{issuesDiscoveredButNotFixed_OR_none}}
 
 ## Files Created/Modified

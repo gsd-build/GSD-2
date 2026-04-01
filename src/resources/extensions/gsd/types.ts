@@ -159,6 +159,8 @@ export interface Summary {
   filesModified: FileModified[];
   followUps: string;
   knownLimitations: string;
+  knownIssues: string;
+  pendingActions: string[];
 }
 
 // ─── Continue-Here ─────────────────────────────────────────────────────────

@@ -26,6 +26,12 @@ A researcher explored the codebase and a planner decomposed the work — you are
 - Prior task summaries in this slice:
 {{priorTaskLines}}
 
+If the Carry-Forward Context above includes `pending_actions:`, treat those items as unresolved required follow-up from earlier completed tasks. Finish them here when that is truthful and in-scope. If they still remain, preserve them in `## Known Issues` using this exact shape so replanning and later tasks can carry them forward:
+
+Pending actions:
+- <action 1>
+- <action 2>
+
 Then:
 0. Narrate step transitions, key implementation decisions, and verification outcomes as you work. Keep it terse — one line between tool-call clusters, not between every call — but write complete sentences in user-facing prose, not shorthand notes or scratchpad fragments.
 1. {{skillActivation}} Follow any activated skills before writing code. If no skills match this task, skip this step.
