@@ -712,29 +712,30 @@ describe("state-machine-live-validation", () => {
   // PHASE 4: Phantom parents and auto-creation (H6)
   // ─────────────────────────────────────────────────────────────────────────
 
-  describe("phantom parent auto-creation (H6)", () => {
-    test("completing task for non-existent milestone/slice auto-creates them", async () => {
+  describe("completion hierarchy guards (H6)", () => {
+    test("completing task for non-existent milestone/slice returns a planning-hierarchy error", async () => {
       base = createFullFixture();
       openDatabase(join(base, ".gsd", "gsd.db"));
-      // No milestone or slice pre-inserted — handler will auto-create
+      // No milestone or slice pre-inserted — handler should reject the write.
 
       const result = await handleCompleteTask(makeTaskParams("T01", "S99", "M099") as any, base);
-      assert.ok(!("error" in result), `expected success: ${JSON.stringify(result)}`);
+      assert.ok("error" in result, `expected hierarchy guard error: ${JSON.stringify(result)}`);
+      assert.match(
+        result.error,
+        /milestone M099 does not exist — complete_task can only update planned hierarchy/,
+      );
 
-      // Phantom milestone created
       const milestone = getMilestone("M099");
-      assert.ok(milestone, "phantom milestone M099 should exist");
-      assert.equal(milestone!.title, "", "phantom milestone has empty title");
+      assert.equal(milestone, null, "phantom milestone M099 should not be created");
 
-      // Phantom slice created
       const slice = getSlice("M099", "S99");
-      assert.ok(slice, "phantom slice S99 should exist");
+      assert.equal(slice, null, "phantom slice S99 should not be created");
     });
 
-    test("completing slice for non-existent milestone auto-creates it", async () => {
+    test("completing slice succeeds when the planned hierarchy already exists", async () => {
       base = createFullFixture();
       openDatabase(join(base, ".gsd", "gsd.db"));
-      // Insert task to satisfy completion guard
+      // Seed the planned hierarchy explicitly; complete_slice should only update it.
       insertMilestone({ id: "M099" });
       insertSlice({ id: "S99", milestoneId: "M099" });
       insertTask({ id: "T01", sliceId: "S99", milestoneId: "M099", status: "complete" });

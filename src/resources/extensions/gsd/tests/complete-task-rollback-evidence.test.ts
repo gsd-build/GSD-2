@@ -12,6 +12,7 @@ import {
   _getAdapter,
   insertMilestone,
   insertSlice,
+  insertTask,
 } from "../gsd-db.js";
 import { clearPathCache } from "../paths.js";
 import { clearParseCache } from "../files.js";
@@ -21,6 +22,18 @@ function makeTmpBase(): string {
   // Create the full tasks directory so the success path works
   mkdirSync(join(base, ".gsd", "milestones", "M001", "slices", "S01", "tasks"), { recursive: true });
   return base;
+}
+
+function seedPlannedTask(): void {
+  insertMilestone({ id: "M001" });
+  insertSlice({ id: "S01", milestoneId: "M001" });
+  insertTask({
+    id: "T01",
+    sliceId: "S01",
+    milestoneId: "M001",
+    status: "pending",
+    title: "Test task",
+  });
 }
 
 const VALID_PARAMS = {
@@ -56,8 +69,7 @@ describe("complete-task rollback cleans up verification_evidence (#2724)", () =>
   it("inserts verification_evidence rows on success", async () => {
     base = makeTmpBase();
     openDatabase(join(base, ".gsd", "gsd.db"));
-    insertMilestone({ id: "M001" });
-    insertSlice({ id: "S01", milestoneId: "M001" });
+    seedPlannedTask();
 
     // Write a minimal slice plan so renderPlanCheckboxes doesn't error
     writeFileSync(
@@ -78,8 +90,7 @@ describe("complete-task rollback cleans up verification_evidence (#2724)", () =>
   it("deletes verification_evidence rows on disk-render rollback", async () => {
     base = makeTmpBase();
     openDatabase(join(base, ".gsd", "gsd.db"));
-    insertMilestone({ id: "M001" });
-    insertSlice({ id: "S01", milestoneId: "M001" });
+    seedPlannedTask();
 
     // Replace the tasks directory with a file so disk write fails (cross-platform)
     const tasksDir = join(base, ".gsd", "milestones", "M001", "slices", "S01", "tasks");
