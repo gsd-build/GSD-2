@@ -1,4 +1,5 @@
-import type { ExtensionAPI, ExtensionContext, Model } from "@gsd/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@gsd/pi-coding-agent";
+import type { Model } from "@gsd/pi-ai";
 
 import { logWarning } from "../workflow-logger.js";
 import { checkAutoStartAfterDiscuss } from "../guided-flow.js";
