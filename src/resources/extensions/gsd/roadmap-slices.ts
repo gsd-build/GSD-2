@@ -65,18 +65,29 @@ function extractSlicesSection(content: string): string {
 function parseTableSlices(section: string): RoadmapSliceEntry[] {
   const lines = section.split("\n");
   const slices: RoadmapSliceEntry[] = [];
+  let headerCells: string[] | null = null;
 
   for (const line of lines) {
     // Skip non-table lines, separator lines (|---|---|), and header rows
     if (!line.includes("|")) continue;
     if (/^\s*\|[\s:-]+\|/.test(line) && !/S\d+/.test(line)) continue;
 
+    const cells = line.split("|").map(c => c.trim()).filter(Boolean);
+    if (!headerCells) {
+      const looksLikeHeader = cells.length > 0
+        && cells.every((cell) => !/\bS\d+\b/.test(cell))
+        && cells.some((cell) => /slice|title|description|risk|status|depends|deps/i.test(cell));
+      if (looksLikeHeader) {
+        headerCells = cells;
+        continue;
+      }
+    }
+
     // Extract a slice ID from the row
     const idMatch = line.match(/\b(S\d+)\b/);
     if (!idMatch) continue;
 
     const id = idMatch[1]!;
-    const cells = line.split("|").map(c => c.trim()).filter(Boolean);
 
     // Determine completion status from any cell containing [x], "Done", or "Complete"
     const fullRow = line.toLowerCase();
@@ -97,7 +108,13 @@ function parseTableSlices(section: string): RoadmapSliceEntry[] {
 
     // Extract dependencies from cells containing S-prefixed IDs (excluding the slice's own ID)
     let depends: string[] = [];
-    for (const cell of cells) {
+    const dependsIndexes = (headerCells ?? [])
+      .map((cell, index) => (/depends|deps/i.test(cell) ? index : -1))
+      .filter((index) => index >= 0);
+    const dependencyCells = dependsIndexes.length > 0
+      ? dependsIndexes.map((index) => cells[index] ?? "")
+      : cells.filter((cell) => /depends|deps/i.test(cell));
+    for (const cell of dependencyCells) {
       if (/depends|deps/i.test(cell) || (cell.match(/S\d+/g)?.length ?? 0) > 0) {
         const depIds = (cell.match(/S\d+/g) ?? []).filter(d => d !== id);
         if (depIds.length > 0 || /none|—|-/i.test(cell)) {
