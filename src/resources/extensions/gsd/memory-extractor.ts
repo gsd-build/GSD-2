@@ -24,6 +24,7 @@ export type LLMCallFn = (system: string, user: string) => Promise<string>;
 
 let _extracting = false;
 let _lastExtractionTime = 0;
+let _warnedMemoryModelUnavailable = false;
 
 const MIN_EXTRACTION_INTERVAL_MS = 30_000;
 
@@ -71,7 +72,10 @@ function redactSecrets(text: string): string {
 export function buildMemoryLLMCall(ctx: ExtensionContext): LLMCallFn | null {
   try {
     const available = ctx.modelRegistry.getAvailable();
-    if (!available || available.length === 0) return null;
+    if (!available || available.length === 0) {
+      warnMemoryExtractionDisabled(ctx, "GSD: memory extraction skipped — no model available in registry.");
+      return null;
+    }
 
     // Prefer Haiku by ID substring match
     let model = available.find(m =>
@@ -83,7 +87,10 @@ export function buildMemoryLLMCall(ctx: ExtensionContext): LLMCallFn | null {
       model = [...available].sort((a, b) => a.cost.input - b.cost.input)[0];
     }
 
-    if (!model) return null;
+    if (!model) {
+      warnMemoryExtractionDisabled(ctx, "GSD: memory extraction skipped — no model available in registry.");
+      return null;
+    }
 
     const selectedModel = model as Model<Api>;
 
@@ -111,8 +118,31 @@ export function buildMemoryLLMCall(ctx: ExtensionContext): LLMCallFn | null {
         .map(c => c.text);
       return textParts.join('');
     };
-  } catch {
+  } catch (error) {
+    warnMemoryExtractionDisabled(
+      ctx,
+      "GSD: memory extraction skipped — failed to resolve a memory model.",
+      error,
+    );
     return null;
+  }
+}
+
+function warnMemoryExtractionDisabled(
+  ctx: ExtensionContext,
+  message: string,
+  error?: unknown,
+): void {
+  if (_warnedMemoryModelUnavailable) return;
+  _warnedMemoryModelUnavailable = true;
+  try {
+    ctx.ui?.notify?.(message, "warning");
+  } catch {
+    console.warn(message);
+  }
+  if (process.env.GSD_DEBUG && error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error(`[gsd] memory extraction model resolution failed: ${detail}`);
   }
 }
 
@@ -357,4 +387,5 @@ export async function extractMemoriesFromUnit(
 export function _resetExtractionState(): void {
   _extracting = false;
   _lastExtractionTime = 0;
+  _warnedMemoryModelUnavailable = false;
 }
