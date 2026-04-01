@@ -1,4 +1,5 @@
-import type { ExtensionAPI, ExtensionContext, Model } from "@gsd/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@gsd/pi-coding-agent";
+import type { Model } from "@gsd/pi-ai";
 
 import { checkAutoStartAfterDiscuss } from "../guided-flow.js";
 import { getAutoDashboardData, getAutoModeStartModel, isAutoActive, pauseAuto } from "../auto.js";
