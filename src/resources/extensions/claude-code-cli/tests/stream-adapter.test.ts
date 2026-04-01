@@ -102,7 +102,8 @@ describe("stream-adapter — full context prompt (#2859)", () => {
 					role: "user",
 					content: "**Background job done: bg_123**\n\nlint passed",
 					customType: "async_job_result",
-				} as Message,
+					timestamp: Date.now(),
+				} as unknown as Message,
 				{ role: "assistant", content: [{ type: "text", text: "I found three issues." }] } as Message,
 			],
 		};
@@ -121,7 +122,8 @@ describe("stream-adapter — full context prompt (#2859)", () => {
 					role: "user",
 					content: "Queued informational follow-up",
 					isFollowUp: true,
-				} as Message,
+					timestamp: Date.now(),
+				} as unknown as Message,
 			],
 		};
 
