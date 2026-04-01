@@ -198,10 +198,12 @@ function loadPreferencesFile(path: string, scope: "global" | "project"): LoadedG
 }
 
 let _warnedUnrecognizedFormat = false;
+let _warnedFrontmatterParseError = false;
 
 /** @internal Reset the warn-once flag — exported for testing only. */
 export function _resetParseWarningFlag(): void {
   _warnedUnrecognizedFormat = false;
+  _warnedFrontmatterParseError = false;
 }
 
 /** @internal Exported for testing only */
@@ -237,7 +239,11 @@ function parseFrontmatterBlock(frontmatter: string): GSDPreferences {
     }
     return parsed as GSDPreferences;
   } catch (e) {
-    console.error("[parseFrontmatterBlock] YAML parse error:", e);
+    if (process.env.GSD_DEBUG && !_warnedFrontmatterParseError) {
+      _warnedFrontmatterParseError = true;
+      const message = e instanceof Error ? e.message : String(e);
+      console.error(`[parseFrontmatterBlock] YAML parse error: ${message}`);
+    }
     return {} as GSDPreferences;
   }
 }
