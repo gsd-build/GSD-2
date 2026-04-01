@@ -278,6 +278,16 @@ export function startUnitSupervision(sctx: SupervisionContext): void {
     prefs as Parameters<typeof resolveExecutorContextWindow>[1],
     ctx.model?.contextWindow,
   );
+  if (supervisor.disable_context_pressure_wrapup) {
+    if (s.verbose) {
+      ctx.ui.notify(
+        "Context-pressure continue-here monitor disabled by auto_supervisor.disable_context_pressure_wrapup.",
+        "info",
+      );
+    }
+    return;
+  }
+
   const continueHereThreshold = computeBudgets(executorContextWindow).continueThresholdPercent;
   s.continueHereHandle = setInterval(() => {
     if (!s.active || !s.currentUnit || !s.cmdCtx) return;

@@ -123,6 +123,7 @@ Setting `prefer_skills: []` does **not** disable skill discovery — it just mea
   - `soft_timeout_minutes`: minutes before the supervisor issues a soft warning (default: 20).
   - `idle_timeout_minutes`: minutes of inactivity before the supervisor intervenes (default: 10).
   - `hard_timeout_minutes`: minutes before the supervisor forces termination (default: 30).
+  - `disable_context_pressure_wrapup`: boolean — opt-in. Disables the context-pressure continue-here / wrap-up monitor while keeping the soft, idle, and hard timeout supervisor checks active. Default: `false`.
 
 - `git`: configures GSD's git behavior. All fields are optional — omit any to use defaults. Keys:
   - `auto_push`: boolean — automatically push commits to the remote after committing. Default: `false`.
