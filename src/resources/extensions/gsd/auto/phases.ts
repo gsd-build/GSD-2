@@ -332,6 +332,32 @@ export async function runPreDispatch(
     } catch (e) {
       logWarning("engine", "STATE.md rebuild failed after milestone transition", { error: String(e) });
     }
+
+    // bootstrapAutoSession already stops for milestones that need an
+    // interactive discuss pass. Mirror that checkpoint here so a milestone
+    // transition inside the auto-loop does not dispatch discuss-milestone as
+    // an unattended unit and fall into artifact-verification retries.
+    const contextFile = mid ? deps.resolveMilestoneFile(s.basePath, mid, "CONTEXT") : null;
+    const hasContext = !!(contextFile && deps.existsSync(contextFile));
+    const needsInteractiveDiscussion = !!mid
+      && (state.phase === "needs-discussion" || (state.phase === "pre-planning" && !hasContext));
+
+    if (needsInteractiveDiscussion && mid) {
+      s.currentMilestoneId = mid;
+      deps.setActiveMilestoneId(s.basePath, mid);
+      ctx.ui.notify(
+        `Milestone ${mid} needs a discussion session to create its context. Run /gsd to start the discussion, then /gsd auto to resume.`,
+        "warning",
+      );
+      await deps.pauseAuto(ctx, pi);
+      debugLog("autoLoop", {
+        phase: "exit",
+        reason: "milestone-discussion-required",
+        milestoneId: mid,
+        statePhase: state.phase,
+      });
+      return { action: "break", reason: "milestone-discussion-required" };
+    }
   }
 
   if (mid) {

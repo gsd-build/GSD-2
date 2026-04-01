@@ -561,6 +561,93 @@ test("milestone-transition event is emitted when milestone changes", async () =>
   assert.equal(transitionEvents[0].flowId, ic.flowId);
 });
 
+test("milestone transition pauses instead of dispatching when next milestone needs discussion", async () => {
+  const capture = createEventCapture();
+  let pauseCount = 0;
+  const notifications: Array<{ message: string; level: string }> = [];
+  let deriveCalls = 0;
+
+  const deps = makeMockDeps(capture, {
+    deriveState: async () => {
+      deriveCalls++;
+      return {
+        phase: "needs-discussion",
+        activeMilestone: { id: "M002", title: "Next Milestone", status: "active" },
+        activeSlice: null,
+        activeTask: null,
+        registry: [
+          { id: "M001", status: "complete" },
+          { id: "M002", status: "active" },
+        ],
+        blockers: [],
+      } as any;
+    },
+    pauseAuto: async () => {
+      pauseCount++;
+    },
+    resolveMilestoneFile: () => null,
+  });
+
+  const ic = makeIC(deps, {
+    ctx: {
+      ui: {
+        notify: (message: string, level: string) => {
+          notifications.push({ message, level });
+        },
+        setStatus: () => {},
+      },
+      model: { id: "test-model" },
+      modelRegistry: { getAvailable: () => [] },
+    } as any,
+  });
+  ic.s.currentMilestoneId = "M001";
+
+  const result = await runPreDispatch(ic, { recentUnits: [], stuckRecoveryAttempts: 0 });
+
+  assert.equal(result.action, "break");
+  assert.equal((result as any).reason, "milestone-discussion-required");
+  assert.equal(deriveCalls, 2, "transition path should re-derive state before deciding");
+  assert.equal(pauseCount, 1, "should pause auto-mode for the interactive milestone");
+  assert.ok(
+    notifications.some((entry) => entry.level === "warning" && entry.message.includes("Milestone M002 needs a discussion session")),
+    "should notify the user how to resume after discussion",
+  );
+
+  const transitionEvents = capture.events.filter(e => e.eventType === "milestone-transition");
+  assert.equal(transitionEvents.length, 1, "should still emit milestone-transition before pausing");
+});
+
+test("milestone transition pauses for pre-planning milestone when CONTEXT.md is still missing", async () => {
+  const capture = createEventCapture();
+  let pauseCount = 0;
+  const deps = makeMockDeps(capture, {
+    deriveState: async () => ({
+      phase: "pre-planning",
+      activeMilestone: { id: "M002", title: "Next Milestone", status: "active" },
+      activeSlice: null,
+      activeTask: null,
+      registry: [
+        { id: "M001", status: "complete" },
+        { id: "M002", status: "active" },
+      ],
+      blockers: [],
+    }) as any,
+    pauseAuto: async () => {
+      pauseCount++;
+    },
+    resolveMilestoneFile: () => null,
+  });
+
+  const ic = makeIC(deps);
+  ic.s.currentMilestoneId = "M001";
+
+  const result = await runPreDispatch(ic, { recentUnits: [], stuckRecoveryAttempts: 0 });
+
+  assert.equal(result.action, "break");
+  assert.equal((result as any).reason, "milestone-discussion-required");
+  assert.equal(pauseCount, 1, "pre-planning without context should pause before dispatch");
+});
+
 test("unit-end event contains errorContext when unit is cancelled with structured error", async () => {
   const capture = createEventCapture();
   const { resolveAgentEndCancelled, _resetPendingResolve } = await import("../auto-loop.js");
