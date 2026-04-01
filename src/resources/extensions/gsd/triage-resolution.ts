@@ -13,7 +13,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createRequire } from "node:module";
-import { gsdRoot, milestonesDir } from "./paths.js";
+import { gsdRoot, milestonesDir, buildTaskFileName } from "./paths.js";
 import { MILESTONE_ID_RE } from "./milestone-ids.js";
 import type { Classification, CaptureEntry } from "./captures.js";
 import {
@@ -23,6 +23,7 @@ import {
   markCaptureResolved,
   markCaptureExecuted,
 } from "./captures.js";
+import { isDbAvailable, insertTask, getSliceTasks } from "./gsd-db.js";
 
 // ─── Resolution Executors ─────────────────────────────────────────────────────
 
@@ -68,6 +69,63 @@ export function executeInject(
     } else {
       // No Files section — append at end
       writeFileSync(planPath, content.trimEnd() + "\n\n" + newTask + "\n", "utf-8");
+    }
+
+    // Insert into DB so deriveState() sees the task and dispatches it.
+    // Without this, the state machine reads tasks from the DB only and
+    // skips markdown-only tasks, causing injected work to be lost (#2890).
+    if (isDbAvailable()) {
+      try {
+        const existingTasks = getSliceTasks(mid, sid);
+        const maxSequence = existingTasks.reduce(
+          (max, t) => Math.max(max, t.sequence ?? 0), 0,
+        );
+        insertTask({
+          id: newId,
+          sliceId: sid,
+          milestoneId: mid,
+          title: capture.text,
+          status: "pending",
+          sequence: maxSequence + 1,
+          planning: {
+            description: `Injected from capture ${capture.id}: ${capture.text}`,
+            estimate: "30m",
+          },
+        });
+      } catch (dbErr) {
+        // DB insert is best-effort — the markdown write already succeeded,
+        // and the reconciliation path in state.ts may pick it up eventually.
+        process.stderr.write(
+          `gsd-inject: DB insert for ${newId} failed: ${(dbErr as Error).message}\n`,
+        );
+      }
+    }
+
+    // Write a minimal task plan file so the dispatch rule does not
+    // fall back to plan-slice regeneration (#909 guard).
+    try {
+      const tasksDir = join(gsdRoot(basePath), "milestones", mid, "slices", sid, "tasks");
+      if (!existsSync(tasksDir)) mkdirSync(tasksDir, { recursive: true });
+      const taskPlanPath = join(tasksDir, buildTaskFileName(newId, "PLAN"));
+      if (!existsSync(taskPlanPath)) {
+        const taskPlanContent = [
+          `# ${newId}: ${capture.text}`,
+          ``,
+          `**Injected from:** capture ${capture.id}`,
+          `**Estimate:** 30m`,
+          ``,
+          `## Steps`,
+          ``,
+          `1. ${capture.text}`,
+          ``,
+          `## Verify`,
+          ``,
+          `- Capture intent fulfilled`,
+        ].join("\n");
+        writeFileSync(taskPlanPath, taskPlanContent, "utf-8");
+      }
+    } catch {
+      // Non-fatal — dispatch will trigger plan-slice if plan file is missing
     }
 
     return newId;

@@ -104,6 +104,31 @@ test("resolution: executeInject returns null when plan doesn't exist", () => {
   }
 });
 
+test("resolution: executeInject creates task plan file in tasks/ directory", () => {
+  const tmp = makeTempDir("res-inject-planfile");
+  try {
+    setupPlanFile(tmp, "M001", "S01", SAMPLE_PLAN);
+    const captureId = appendCapture(tmp, "add error handling");
+    const captures = loadAllCaptures(tmp);
+
+    const newId = executeInject(tmp, "M001", "S01", captures[0]);
+    assert.strictEqual(newId, "T04");
+
+    // Verify task plan file was created
+    const taskPlanPath = join(
+      tmp, ".gsd", "milestones", "M001", "slices", "S01", "tasks", "T04-PLAN.md",
+    );
+    assert.ok(existsSync(taskPlanPath), "task plan file should exist");
+
+    const planContent = readFileSync(taskPlanPath, "utf-8");
+    assert.ok(planContent.includes("# T04:"), "should have task heading");
+    assert.ok(planContent.includes("add error handling"), "should include capture text");
+    assert.ok(planContent.includes(captures[0].id), "should reference capture ID");
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 // ─── executeReplan ────────────────────────────────────────────────────────────
 
 test("resolution: executeReplan writes REPLAN-TRIGGER.md", () => {
