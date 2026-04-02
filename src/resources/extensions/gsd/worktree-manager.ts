@@ -36,6 +36,7 @@ import {
   nativeWorktreeList,
   nativeWorktreePrune,
   nativeWorktreeRemove,
+  nativeWorkingTreeStatus,
 } from "./native-git-bridge.js";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -360,7 +361,7 @@ export function removeWorktree(
 ): void {
   let wtPath = worktreePath(basePath, name);
   const branch = opts.branch ?? worktreeBranchName(name);
-  const { deleteBranch = true, force = true } = opts;
+  const { deleteBranch = true, force = false } = opts;
 
   // Resolve the ACTUAL worktree path from git's worktree list.
   // The computed path may differ when .gsd/ is (or was) a symlink to an
@@ -390,6 +391,17 @@ export function removeWorktree(
     if (deleteBranch) {
       try { nativeBranchDelete(basePath, branch, true); } catch { /* branch may not exist */ }
     }
+    return;
+  }
+
+  const worktreeStatus = nativeWorkingTreeStatus(resolvedWtPath);
+  const hasDirtyState = worktreeStatus.trim() !== "";
+  if (hasDirtyState && !force) {
+    logWarning(
+      "reconcile",
+      `Refusing to remove dirty worktree without explicit force: ${resolvedWtPath}`,
+      { worktree: name, status: worktreeStatus },
+    );
     return;
   }
 
