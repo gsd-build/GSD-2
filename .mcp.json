@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "GSD-2 Code": {
+      "url": "https://gitmcp.io/gsd-build/gsd-2"
+    },
+  "GSD-2 Docs": {
+      "url": "https://gsd.build/docs/mcp"
+    }
+  }
+}
