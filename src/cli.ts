@@ -22,6 +22,7 @@ import { shouldRunOnboarding, runOnboarding } from './onboarding.js'
 import chalk from 'chalk'
 import { checkForUpdates } from './update-check.js'
 import { printHelp, printSubcommandHelp } from './help-text.js'
+import { applySecurityOverrides } from './security-overrides.js'
 import {
   parseCliArgs as parseWebCliArgs,
   runWebCliBranch,
@@ -337,6 +338,7 @@ const modelsJsonPath = resolveModelsJsonPath()
 const modelRegistry = new ModelRegistry(authStorage, modelsJsonPath)
 markStartup('ModelRegistry')
 const settingsManager = SettingsManager.create(agentDir)
+applySecurityOverrides(settingsManager)
 markStartup('SettingsManager.create')
 
 // Run onboarding wizard on first launch (no LLM provider configured)

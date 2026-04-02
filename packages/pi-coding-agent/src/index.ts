@@ -225,6 +225,11 @@ export {
 	SettingsManager,
 	type TaskIsolationSettings,
 } from "./core/settings-manager.js";
+export {
+	SAFE_COMMAND_PREFIXES,
+	setAllowedCommandPrefixes,
+	getAllowedCommandPrefixes,
+} from "./core/resolve-config-value.js";
 // Skills
 export {
 	ECOSYSTEM_SKILLS_DIR,
