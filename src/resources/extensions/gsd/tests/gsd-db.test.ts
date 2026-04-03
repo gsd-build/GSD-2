@@ -16,6 +16,7 @@ import {
   getActiveRequirements,
   transaction,
   _getAdapter,
+  _selectSqliteFilePragmas,
   _resetProvider,
 } from '../gsd-db.ts';
 
@@ -276,6 +277,18 @@ describe('gsd-db', () => {
     assert.deepStrictEqual(mode?.['journal_mode'], 'wal', 'journal_mode should be wal for file-backed DB');
 
     cleanup(dbPath);
+  });
+
+  test('gsd-db: pragma profile disables WAL and mmap on FUSE filesystems', () => {
+    const pragmas = _selectSqliteFilePragmas(0x65735546n);
+    assert.deepStrictEqual(pragmas.journalMode, 'DELETE', 'FUSE-backed DBs should avoid WAL');
+    assert.deepStrictEqual(pragmas.mmapSize, 0, 'FUSE-backed DBs should disable mmap');
+  });
+
+  test('gsd-db: pragma profile preserves WAL and mmap on non-FUSE filesystems', () => {
+    const pragmas = _selectSqliteFilePragmas(0x1234n);
+    assert.deepStrictEqual(pragmas.journalMode, 'WAL', 'non-FUSE file-backed DBs should keep WAL');
+    assert.deepStrictEqual(pragmas.mmapSize, 67108864, 'non-FUSE file-backed DBs should keep mmap');
   });
 
   test('gsd-db: transaction rollback on error', () => {

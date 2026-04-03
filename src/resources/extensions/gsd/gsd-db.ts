@@ -6,7 +6,7 @@
 // Schema is initialized on first open with WAL mode for file-backed DBs.
 
 import { createRequire } from "node:module";
-import { existsSync, copyFileSync, mkdirSync, realpathSync } from "node:fs";
+import { existsSync, copyFileSync, mkdirSync, realpathSync, statfsSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Decision, Requirement, GateRow, GateId, GateScope, GateStatus, GateVerdict } from "./types.js";
 import { GSDError, GSD_STALE_STATE } from "./errors.js";
@@ -161,14 +161,46 @@ function openRawDb(path: string): unknown {
 }
 
 const SCHEMA_VERSION = 14;
+const FUSE_SUPER_MAGIC = 0x65735546n;
 
-function initSchema(db: DbAdapter, fileBacked: boolean): void {
-  if (fileBacked) db.exec("PRAGMA journal_mode=WAL");
+interface SqliteFilePragmas {
+  journalMode: "WAL" | "DELETE";
+  mmapSize: number;
+}
+
+export function _selectSqliteFilePragmas(fsType?: number | bigint | null): SqliteFilePragmas {
+  const normalizedFsType = fsType == null ? null : BigInt(fsType);
+  if (normalizedFsType === FUSE_SUPER_MAGIC) {
+    return {
+      journalMode: "DELETE",
+      mmapSize: 0,
+    };
+  }
+  return {
+    journalMode: "WAL",
+    mmapSize: 67108864,
+  };
+}
+
+function detectFilesystemType(dbPath: string): bigint | null {
+  const probePath = existsSync(dbPath) ? dbPath : dirname(dbPath);
+  try {
+    return BigInt(statfsSync(realpathSync(probePath)).type);
+  } catch {
+    return null;
+  }
+}
+
+function initSchema(db: DbAdapter, path: string, fileBacked: boolean): void {
+  if (fileBacked) {
+    const pragmas = _selectSqliteFilePragmas(detectFilesystemType(path));
+    db.exec(`PRAGMA journal_mode=${pragmas.journalMode}`);
+    db.exec(`PRAGMA mmap_size = ${pragmas.mmapSize}`);
+  }
   if (fileBacked) db.exec("PRAGMA busy_timeout = 5000");
   if (fileBacked) db.exec("PRAGMA synchronous = NORMAL");
   if (fileBacked) db.exec("PRAGMA auto_vacuum = INCREMENTAL");
   if (fileBacked) db.exec("PRAGMA cache_size = -8000");   // 8 MB page cache
-  if (fileBacked) db.exec("PRAGMA mmap_size = 67108864");  // 64 MB mmap
   db.exec("PRAGMA temp_store = MEMORY");
   db.exec("PRAGMA foreign_keys = ON");
 
@@ -777,14 +809,14 @@ export function openDatabase(path: string): boolean {
   const adapter = createAdapter(rawDb);
   const fileBacked = path !== ":memory:";
   try {
-    initSchema(adapter, fileBacked);
+    initSchema(adapter, path, fileBacked);
   } catch (err) {
     // Corrupt freelist: DDL fails with "malformed" but VACUUM can rebuild.
     // Attempt VACUUM recovery before giving up (see #2519).
     if (fileBacked && err instanceof Error && err.message?.includes("malformed")) {
       try {
         adapter.exec("VACUUM");
-        initSchema(adapter, fileBacked);
+        initSchema(adapter, path, fileBacked);
         process.stderr.write("gsd-db: recovered corrupt database via VACUUM\n");
       } catch (retryErr) {
         try { adapter.close(); } catch { /* swallow */ }
