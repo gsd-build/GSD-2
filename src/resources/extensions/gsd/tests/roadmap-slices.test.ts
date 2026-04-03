@@ -148,6 +148,20 @@ test("parseRoadmapSlices: table with dependencies column (#1736)", () => {
   assert.deepEqual(slices[2]?.depends, ["S01", "S02"]);
 });
 
+test("parseRoadmapSlices: table titles containing slice ids do not create fake dependencies (#3336)", () => {
+  const tableContent = [
+    "# M004: False deps", "", "## Slices", "",
+    "| Slice | Title | Risk | Depends | Status |", "|---|---|---|---|---|",
+    "| S01 | Recover S01-S02 code from orphaned commits | Low | — | Done |",
+    "| S02 | Fix bugs | Low | S01 | Pending |", "",
+  ].join("\n");
+
+  const slices = parseRoadmapSlices(tableContent);
+  assert.equal(slices.length, 2);
+  assert.deepEqual(slices[0]?.depends, []);
+  assert.deepEqual(slices[1]?.depends, ["S01"]);
+});
+
 test("parseRoadmapSlices: standard checkbox format still works (#1736)", () => {
   const checkboxContent = [
     "# M005: Unchanged", "", "## Slices", "",
