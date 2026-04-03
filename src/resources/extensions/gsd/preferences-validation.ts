@@ -857,5 +857,38 @@ export function validatePreferences(preferences: GSDPreferences): {
     }
   }
 
+  // ─── Enhanced Verification ──────────────────────────────────────────────────
+  if (preferences.enhanced_verification !== undefined) {
+    if (typeof preferences.enhanced_verification === "boolean") {
+      validated.enhanced_verification = preferences.enhanced_verification;
+    } else {
+      errors.push("enhanced_verification must be a boolean");
+    }
+  }
+
+  if (preferences.enhanced_verification_pre !== undefined) {
+    if (typeof preferences.enhanced_verification_pre === "boolean") {
+      validated.enhanced_verification_pre = preferences.enhanced_verification_pre;
+    } else {
+      errors.push("enhanced_verification_pre must be a boolean");
+    }
+  }
+
+  if (preferences.enhanced_verification_post !== undefined) {
+    if (typeof preferences.enhanced_verification_post === "boolean") {
+      validated.enhanced_verification_post = preferences.enhanced_verification_post;
+    } else {
+      errors.push("enhanced_verification_post must be a boolean");
+    }
+  }
+
+  if (preferences.enhanced_verification_strict !== undefined) {
+    if (typeof preferences.enhanced_verification_strict === "boolean") {
+      validated.enhanced_verification_strict = preferences.enhanced_verification_strict;
+    } else {
+      errors.push("enhanced_verification_strict must be a boolean");
+    }
+  }
+
   return { preferences: validated, errors, warnings };
 }

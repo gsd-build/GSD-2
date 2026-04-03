@@ -103,6 +103,10 @@ export const KNOWN_PREFERENCE_KEYS = new Set<string>([
   "stale_commit_threshold_minutes",
   "context_management",
   "experimental",
+  "enhanced_verification",
+  "enhanced_verification_pre",
+  "enhanced_verification_post",
+  "enhanced_verification_strict",
 ]);
 
 /** Canonical list of all dispatch unit types. */
@@ -275,6 +279,30 @@ export interface GSDPreferences {
    * See the preferences reference for details on each feature.
    */
   experimental?: ExperimentalPreferences;
+
+  // ─── Enhanced Verification ──────────────────────────────────────────────────
+  /**
+   * Enable enhanced verification (both pre-execution and post-execution checks).
+   * Default: true (opt-out, not opt-in). Set false to disable all enhanced verification.
+   */
+  enhanced_verification?: boolean;
+  /**
+   * Enable pre-execution checks (package existence, file references, etc.).
+   * Only applies when enhanced_verification is true.
+   * Default: true.
+   */
+  enhanced_verification_pre?: boolean;
+  /**
+   * Enable post-execution checks (runtime error detection, audit warnings, etc.).
+   * Only applies when enhanced_verification is true.
+   * Default: true.
+   */
+  enhanced_verification_post?: boolean;
+  /**
+   * Strict mode: treat any pre-execution check failure as blocking.
+   * Default: false (warnings only for non-critical failures).
+   */
+  enhanced_verification_strict?: boolean;
 }
 
 export interface LoadedGSDPreferences {
