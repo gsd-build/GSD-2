@@ -257,13 +257,48 @@ export function registerHooks(pi: ExtensionAPI): void {
   });
 
   pi.on("before_provider_request", async (event) => {
-    const modelId = event.model?.id;
-    if (!modelId) return;
-    const { getEffectiveServiceTier, supportsServiceTier } = await import("../service-tier.js");
-    const tier = getEffectiveServiceTier();
-    if (!tier || !supportsServiceTier(modelId)) return;
     const payload = event.payload as Record<string, unknown> | null;
     if (!payload || typeof payload !== "object") return;
+
+    // ── Observation Masking ─────────────────────────────────────────────
+    // Replace old tool results with placeholders to reduce context bloat.
+    // Only active during auto-mode when context_management.observation_masking is enabled.
+    if (isAutoActive()) {
+      try {
+        const { loadEffectiveGSDPreferences } = await import("../preferences.js");
+        const prefs = loadEffectiveGSDPreferences();
+        const cmConfig = prefs?.preferences.context_management;
+
+        // Observation masking: replace old tool results with placeholders
+        if (cmConfig?.observation_masking !== false) {
+          const keepTurns = cmConfig?.observation_mask_turns ?? 8;
+          const { createObservationMask } = await import("../context-masker.js");
+          const mask = createObservationMask(keepTurns);
+          const messages = payload.messages;
+          if (Array.isArray(messages)) {
+            payload.messages = mask(messages);
+          }
+        }
+
+        // Tool result truncation: cap individual tool result content length
+        const maxChars = cmConfig?.tool_result_max_chars ?? 800;
+        const messages = payload.messages;
+        if (Array.isArray(messages)) {
+          for (const msg of messages) {
+            if (typeof msg?.content === "string" && (msg.type === "toolResult" || msg.role === "tool") && msg.content.length > maxChars) {
+              msg.content = msg.content.slice(0, maxChars) + "\n…[truncated]";
+            }
+          }
+        }
+      } catch { /* non-fatal */ }
+    }
+
+    // ── Service Tier ────────────────────────────────────────────────────
+    const modelId = event.model?.id;
+    if (!modelId) return payload;
+    const { getEffectiveServiceTier, supportsServiceTier } = await import("../service-tier.js");
+    const tier = getEffectiveServiceTier();
+    if (!tier || !supportsServiceTier(modelId)) return payload;
     payload.service_tier = tier;
     return payload;
   });
