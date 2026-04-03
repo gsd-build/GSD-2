@@ -228,36 +228,14 @@ export async function deriveState(basePath: string): Promise<GSDState> {
   const stopTimer = debugTime("derive-state-impl");
   let result: GSDState;
 
-  // Dual-path: try DB-backed derivation first when hierarchy tables are populated
+  // Dual-path: when the DB is open, derive through the DB path even if the
+  // milestones table is currently empty. deriveStateFromDb() owns the
+  // disk→DB reconciliation that can repopulate an empty hierarchy (#2631).
   if (isDbAvailable()) {
-    let dbMilestones = getAllMilestones();
-
-    // Disk→DB reconciliation when DB is empty but disk has milestones (#2631).
-    // deriveStateFromDb() does its own reconciliation, but deriveState() skips
-    // it entirely when the DB is empty. Sync here so the DB path is used when
-    // disk milestones exist but haven't been migrated yet.
-    if (dbMilestones.length === 0) {
-      const diskIds = findMilestoneIds(basePath);
-      let synced = false;
-      for (const diskId of diskIds) {
-        if (!isGhostMilestone(basePath, diskId)) {
-          insertMilestone({ id: diskId, status: 'active' });
-          synced = true;
-        }
-      }
-      if (synced) dbMilestones = getAllMilestones();
-    }
-
-    if (dbMilestones.length > 0) {
-      const stopDbTimer = debugTime("derive-state-db");
-      result = await deriveStateFromDb(basePath);
-      stopDbTimer({ phase: result.phase, milestone: result.activeMilestone?.id });
-      _telemetry.dbDeriveCount++;
-    } else {
-      // DB open but no milestones on disk either — use filesystem path
-      result = await _deriveStateImpl(basePath);
-      _telemetry.markdownDeriveCount++;
-    }
+    const stopDbTimer = debugTime("derive-state-db");
+    result = await deriveStateFromDb(basePath);
+    stopDbTimer({ phase: result.phase, milestone: result.activeMilestone?.id });
+    _telemetry.dbDeriveCount++;
   } else {
     result = await _deriveStateImpl(basePath);
     _telemetry.markdownDeriveCount++;
