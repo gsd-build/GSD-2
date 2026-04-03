@@ -198,10 +198,11 @@ export async function handleQuick(
   const branchName = `gsd/quick/${taskNum}-${slug}`;
   let originalBranch = git.getCurrentBranch();
 
+  const isolationMode = gitPrefs.isolation ?? "none";
   let branchCreated = false;
   try {
     const current = originalBranch;
-    if (current !== branchName) {
+    if (isolationMode !== "none" && current !== branchName) {
       // Auto-commit any dirty state before switching
       try {
         git.autoCommit("quick-task", `Q${taskNum}`, []);
