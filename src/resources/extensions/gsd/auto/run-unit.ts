@@ -78,6 +78,9 @@ export async function runUnit(
         `Failed to restore ${s.currentUnitModel.provider}/${s.currentUnitModel.id} after session creation. Using session default.`,
         "warning",
       );
+      // Clear so the widget shows the actual model the unit runs on,
+      // not the override that failed to apply (#3418).
+      s.currentUnitModel = null;
     }
   }
 

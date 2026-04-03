@@ -265,6 +265,31 @@ test("runUnit re-applies the selected unit model after newSession before dispatc
   assert.equal(pi.calls.length, 1);
 });
 
+test("runUnit clears currentUnitModel when setModel restore fails after newSession (#3418)", async () => {
+  _resetPendingResolve();
+
+  const ctx = makeMockCtx();
+  const pi = makeMockPi();
+  // setModel returns false — restore failed, unit will run on session default
+  pi.setModel = async () => false;
+
+  const s = makeMockSession();
+  s.currentUnitModel = { provider: "anthropic", id: "claude-opus-4-6" };
+
+  const resultPromise = runUnit(ctx, pi, s, "task", "T01", "prompt");
+
+  await new Promise((r) => setTimeout(r, 10));
+  resolveAgentEnd(makeEvent());
+  await resultPromise;
+
+  // Widget must not show the override model when execution fell back to session default
+  assert.equal(
+    s.currentUnitModel,
+    null,
+    "currentUnitModel must be cleared when setModel restore fails so widget does not show wrong model (#3418)",
+  );
+});
+
 // ─── Structural assertions ───────────────────────────────────────────────────
 
 test("auto-loop.ts exports autoLoop, runUnit, resolveAgentEnd", async () => {
