@@ -1,4 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@gsd/pi-coding-agent";
+import type { Model } from "@gsd/pi-ai";
 
 import { checkAutoStartAfterDiscuss } from "../guided-flow.js";
 import { getAutoDashboardData, getAutoModeStartModel, isAutoActive, pauseAuto } from "../auto.js";
@@ -19,6 +20,34 @@ import {
 const retryState = createRetryState();
 const MAX_NETWORK_RETRIES = 2;
 const MAX_TRANSIENT_AUTO_RESUMES = 3;
+
+function pickProviderRecoveryModel(
+  currentModel: Pick<Model<any>, "provider" | "id"> | undefined,
+  availableModels: Model<any>[],
+): Model<any> | undefined {
+  if (availableModels.length === 0) return undefined;
+
+  const currentProvider = currentModel?.provider;
+  const currentId = currentModel?.id;
+  const sameProvider = currentProvider
+    ? availableModels.filter((model) => model.provider === currentProvider && model.id !== currentId)
+    : [];
+
+  if (currentProvider === "anthropic") {
+    const preferredOpus = sameProvider.find((model) => model.id === "claude-opus-4-6");
+    if (preferredOpus) return preferredOpus;
+    const anyOpus = sameProvider.find((model) => /opus/i.test(model.id));
+    if (anyOpus) return anyOpus;
+  }
+
+  if (currentProvider === "openai") {
+    const preferredGpt = sameProvider.find((model) => model.id === "gpt-5.4");
+    if (preferredGpt) return preferredGpt;
+  }
+
+  return sameProvider[0]
+    ?? availableModels.find((model) => model.provider !== currentProvider || model.id !== currentId);
+}
 
 async function pauseTransientWithBackoff(
   cls: ErrorClass,
@@ -141,7 +170,7 @@ export async function handleAgentEnd(
 
     // --- Transient errors: try model fallback first, then pause ---
     // Rate limits are often per-model, so switching models can bypass them.
-    if (cls.kind === "rate-limit" || cls.kind === "network" || cls.kind === "server" || cls.kind === "connection" || cls.kind === "stream") {
+    if (cls.kind === "rate-limit" || cls.kind === "network" || cls.kind === "server" || cls.kind === "connection" || cls.kind === "stream" || cls.kind === "model-error") {
       // Try model fallback
       const dash = getAutoDashboardData();
       if (dash.currentUnit) {
@@ -179,6 +208,25 @@ export async function handleAgentEnd(
               pi.sendMessage({ customType: "gsd-auto-timeout-recovery", content: "Continue execution.", display: false }, { triggerTurn: true });
               return;
             }
+          }
+        }
+      }
+
+      if (cls.kind === "model-error") {
+        const availableModels = ctx.modelRegistry.getAvailable();
+        const recoveryModel = pickProviderRecoveryModel(ctx.model, availableModels);
+        if (recoveryModel) {
+          const previousModelLabel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "unknown model";
+          const ok = await pi.setModel(recoveryModel, { persist: false });
+          if (ok) {
+            retryState.networkRetryCount = 0;
+            retryState.currentRetryModelId = undefined;
+            ctx.ui.notify(
+              `Model ${previousModelLabel}${errorDetail}. Switched to ${recoveryModel.provider}/${recoveryModel.id} and resuming.`,
+              "warning",
+            );
+            pi.sendMessage({ customType: "gsd-auto-timeout-recovery", content: "Continue execution.", display: false }, { triggerTurn: true });
+            return;
           }
         }
       }

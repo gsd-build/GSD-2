@@ -85,6 +85,12 @@ test("classifyError detects 502 bad gateway", () => {
   assert.ok(isTransient(result));
 });
 
+test("classifyError detects model-not-found errors as model-error", () => {
+  const result = classifyError('404 {"type":"error","error":{"type":"not_found_error","message":"model: claude-3-opus-20240229"}}');
+  assert.equal(result.kind, "model-error");
+  assert.ok(!isTransient(result));
+});
+
 test("classifyError detects auth error as permanent", () => {
   const result = classifyError("unauthorized: invalid API key");
   assert.ok(!isTransient(result));
@@ -423,6 +429,31 @@ test("agent-end-recovery.ts applies escalating delay for repeated transient erro
   assert.ok(
     src.includes("2 ** Math.max(0, retryState.consecutiveTransientCount"),
     "agent-end-recovery.ts must escalate retryAfterMs exponentially for consecutive transient errors (#1166)",
+  );
+});
+
+test("agent-end-recovery.ts picks a provider-local recovery model for removed models before pausing", () => {
+  const src = readFileSync(join(__dirname, "..", "bootstrap", "agent-end-recovery.ts"), "utf-8");
+
+  assert.ok(
+    src.includes("pickProviderRecoveryModel"),
+    "agent-end-recovery.ts must pick a provider-local recovery model for removed models (#3359)",
+  );
+  assert.ok(
+    src.includes('if (cls.kind === "model-error")'),
+    'agent-end-recovery.ts must keep a dedicated model-error recovery step before indefinite pause (#3359)',
+  );
+  assert.ok(
+    src.includes('model.id === "claude-opus-4-6"'),
+    "removed Anthropic models should prefer claude-opus-4-6 as the recovery target when available (#3359)",
+  );
+  assert.ok(
+    src.includes('model.id === "gpt-5.4"'),
+    "removed OpenAI models should prefer gpt-5.4 as the recovery target when available (#3359)",
+  );
+  assert.ok(
+    src.includes("and resuming."),
+    "successful removed-model recovery must resume auto-mode after switching models (#3359)",
   );
 });
 
