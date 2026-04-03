@@ -104,7 +104,7 @@ export interface BootstrapDeps {
  * to markdown-only data, producing stale or incomplete state.  Opening the
  * DB first ensures deriveState sees the full picture on its very first run.
  */
-async function openProjectDbIfPresent(basePath: string): Promise<void> {
+export async function openProjectDbIfPresent(basePath: string): Promise<void> {
   const gsdDbPath = resolveProjectRootDbPath(basePath);
   if (!existsSync(gsdDbPath)) return;
   if (isDbAvailable()) return;
