@@ -1,6 +1,8 @@
 import { clearParseCache } from "../files.js";
 import { isClosedStatus } from "../status-guards.js";
 import { isNonEmptyString, validateStringArray } from "../validation.js";
+import { resolveMilestoneFile } from "../paths.js";
+import { readFileSync } from "node:fs";
 import {
   transaction,
   getMilestone,
@@ -169,12 +171,42 @@ function validateParams(params: PlanMilestoneParams): PlanMilestoneParams {
 export async function handlePlanMilestone(
   rawParams: PlanMilestoneParams,
   basePath: string,
-): Promise<PlanMilestoneResult | { error: string }> {
+): Promise<PlanMilestoneResult | { error: string; kernWarning?: string }> {
   let params: PlanMilestoneParams;
   try {
     params = validateParams(rawParams);
   } catch (err) {
     return { error: `validation failed: ${(err as Error).message}` };
+  }
+
+  // ── KERN Priority Heuristic ─────────────────────────────────────────────
+  // Read CONTEXT.md and check if the KERN priority appears to be addressed
+  // by at least one slice. Produces a warning, not a hard block.
+  let kernWarning: string | undefined;
+  try {
+    const contextFile = resolveMilestoneFile(basePath, params.milestoneId, "CONTEXT");
+    if (contextFile) {
+      const contextContent = readFileSync(contextFile, "utf-8");
+      const kernMatch = contextContent.match(/\d+\.\s+(.+?)\s*—\s*\*\*KERN\*\*/i);
+      if (kernMatch) {
+        const kernText = kernMatch[1].toLowerCase().trim();
+        const stopWords = new Set(["that", "this", "with", "from", "have", "been", "will", "must", "should", "into", "when", "what", "which"]);
+        const kernWords = kernText.split(/\W+/).filter(w => w.length > 3 && !stopWords.has(w));
+        if (kernWords.length > 0) {
+          const sliceTexts = params.slices.map(s =>
+            `${s.title} ${s.goal} ${s.demo}`.toLowerCase()
+          );
+          const hasKernSlice = sliceTexts.some(text =>
+            kernWords.some(word => text.includes(word))
+          );
+          if (!hasKernSlice) {
+            kernWarning = `⚠️ KERN Priority Warning: The KERN requirement "${kernMatch[1].trim()}" does not appear to be addressed by any slice's title, goal, or demo line. Verify that at least one early slice directly delivers the KERN.`;
+          }
+        }
+      }
+    }
+  } catch {
+    // Non-fatal — KERN check is advisory
   }
 
   // ── Guards + DB writes inside a single transaction (prevents TOCTOU) ───
@@ -297,8 +329,13 @@ export async function handlePlanMilestone(
     );
   }
 
-  return {
+  const result: PlanMilestoneResult & { kernWarning?: string } = {
     milestoneId: params.milestoneId,
     roadmapPath,
   };
+  if (kernWarning) {
+    result.kernWarning = kernWarning;
+    process.stderr.write(`[gsd:plan-milestone] ${kernWarning}\n`);
+  }
+  return result;
 }

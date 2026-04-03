@@ -24,7 +24,11 @@ All relevant context has been preloaded below — the roadmap, all slice summari
 2. For each **slice** in the roadmap, verify its demo/deliverable claim against its summary. Flag any slice whose summary does not substantiate its claimed output.
 3. Check **cross-slice integration points** — do boundary map entries (produces/consumes) align with what was actually built?
 4. Check **requirement coverage** — are all active requirements addressed by at least one slice?
-5. If **Verification Classes** are provided in the inlined context above, check each non-empty class:
+5. **KERN Priority Validation** — If the Milestone Intent section is present in the inlined context:
+   - Verify that the **KERN priority** (the non-negotiable item from the Priority Stack) was actually delivered by at least one slice. Check the slice summary for concrete evidence — not just that a slice was *planned* for the KERN, but that it *delivered* it.
+   - If the KERN was deferred, descoped, or only partially addressed, this is a **mandatory flag** in the verdict rationale. A milestone that missed its KERN priority cannot receive a `pass` verdict without explicit justification.
+   - Check whether the **Core Problem Being Eliminated** was actually eliminated. Can the user still reproduce the original pain? If yes, that is a gap.
+6. If **Verification Classes** are provided in the inlined context above, check each non-empty class:
    - For each verification class (Contract, Integration, Operational, UAT), determine whether slice summaries, UAT results, or observable behavior provide evidence that this verification tier was addressed.
    - Document the compliance status of each class in a dedicated verification classes section.
    - If `Operational` verification is non-empty and no evidence of operational verification exists, flag this explicitly — it means planned operational checks (migrations, deployments, runtime verification) were not proven.

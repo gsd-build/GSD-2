@@ -40,6 +40,14 @@ Ask yourself:
 - Did this slice's Operational Readiness reveal monitoring gaps that remaining slices should address?
 - Should any Horizontal Checklist items be updated based on what was actually built?
 
+### KERN Priority Check
+
+If the Milestone Intent section is present in the inlined context, verify:
+
+1. **Is the KERN priority addressed by at least one remaining slice?** If the KERN was supposed to be in a completed slice that didn't deliver it, flag this as a **blocking issue**. The KERN cannot be silently dropped.
+2. **Is the KERN priority still in the earliest possible remaining slice?** If it got pushed to later slices by completed work that didn't address it, flag this — the KERN should not drift toward the end of the roadmap.
+3. **Would the proposed changes (if any) remove the last remaining slice that addresses the KERN?** If so, this is a **blocking issue** — do not accept changes that orphan the KERN.
+
 ### Success-Criterion Coverage Check
 
 Before deciding whether changes are needed, enumerate each success criterion from the roadmap's `## Success Criteria` section and map it to the remaining (unchecked) slice(s) that prove it. Each criterion must have at least one remaining owning slice. If any criterion has no remaining owner after the proposed changes, flag it as a **blocking issue** — do not accept changes that leave a criterion unproved.

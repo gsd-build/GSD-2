@@ -20,10 +20,11 @@ After you finish, each slice goes through its own plan → execute cycle. Slice 
 
 Before decomposing, build your understanding:
 
-1. **Codebase exploration.** For small/familiar codebases, use `rg`, `find`, and targeted reads. For large or unfamiliar codebases, use `scout` to build a broad map efficiently before diving in.
-2. **Library docs.** Use `resolve_library` / `get_library_docs` for unfamiliar libraries — skip this for libraries already used in the codebase.
-3. **Skill Discovery ({{skillDiscoveryMode}}):**{{skillDiscoveryInstructions}}
-4. **Requirements analysis.** If `.gsd/REQUIREMENTS.md` exists, research against it. Identify which Active requirements are table stakes, likely omissions, overbuilt risks, or domain-standard behaviors.
+1. **Seed Material.** If the CONTEXT.md contains a `## Seed Material` section, **read those files first**. They contain the user's deep thinking, research, and vision that CONTEXT.md summarizes but cannot fully capture. For large files (>20K chars), focus on sections relevant to the Priority Stack and Core Problem. Do NOT skip seed material — it is the primary source of depth that prevents shallow decomposition.
+2. **Codebase exploration.** For small/familiar codebases, use `rg`, `find`, and targeted reads. For large or unfamiliar codebases, use `scout` to build a broad map efficiently before diving in.
+3. **Library docs.** Use `resolve_library` / `get_library_docs` for unfamiliar libraries — skip this for libraries already used in the codebase.
+4. **Skill Discovery ({{skillDiscoveryMode}}):**{{skillDiscoveryInstructions}}
+5. **Requirements analysis.** If `.gsd/REQUIREMENTS.md` exists, research against it. Identify which Active requirements are table stakes, likely omissions, overbuilt risks, or domain-standard behaviors.
 
 ### Strategic Questions to Answer
 
@@ -62,6 +63,27 @@ Then:
 ## Planning Doctrine
 
 Apply these when decomposing and ordering slices:
+
+### Milestone Intent Governs Decomposition
+
+Before decomposing, **read the Milestone Intent section** in the CONTEXT.md. If present, it contains:
+- **Core Problem Being Eliminated** — what the user does today that must stop after this milestone
+- **Priority Stack** — what is KERN (non-negotiable) vs. nice-to-have
+- **Milestone Class** — `feature` or `transformation`
+
+The KERN priority from the Intent MUST appear in the earliest slices. If the KERN is "eliminate manual context transfer between tools" and the plan produces 7 slices of dashboard work without addressing the KERN, the plan has failed — regardless of how many demoable vertical slices it contains.
+
+### Transformation Milestones
+
+When the milestone class is `transformation` (or when the Core Problem is behavioral rather than feature-based):
+
+- **"Demoable" means "the user's workflow measurably changes"** — not "a new page exists." A transformation demo is: "I open Claude Code and it already has my memory context — no manual transfer." Not: "The /unified-layer page shows a processor chain visualization."
+- **Order slices by behavioral change impact, not visual output.** The first slice should deliver the highest-pain elimination, even if it produces no new UI.
+- **Foundation slices that enable behavioral change ARE valid.** If building an orchestration layer is necessary for the workflow to change, that IS a vertical slice — the demo is the changed workflow, not a screenshot.
+- **Don't default to extending existing dashboards.** When a codebase already has a dashboard/cockpit/admin panel, the brownfield bias will steer work toward "add a new page to the existing dashboard." For transformation milestones, ask: "Does adding this page eliminate the user's pain, or does it just VISUALIZE the pain?" Prefer changing how data flows over showing how data flows.
+- **The KERN requirement cannot be deferred.** If the Priority Stack marks something as KERN, it cannot appear in scope as "deferred to future milestone." If it genuinely can't be delivered in this milestone, surface that as a blocker during planning — don't silently defer it.
+
+### Standard Doctrine (Feature Milestones)
 
 - **Risk-first means proof-first.** The earliest slices should prove the hardest thing works by shipping the real feature through the uncertain path. If auth is the risk, the first slice ships a real login page with real session handling that a user can actually use — not a CLI command that returns "authenticated: true". Proof is the shipped feature working. There is no separate "proof" artifact. Do not plan spikes, proof-of-concept slices, or validation-only slices — the proof is the real feature, built through the risky path.
 - **Every slice is vertical, demoable, and shippable.** Every slice ships real, user-facing functionality. "Demoable" means the intended user can exercise the capability through its real interface — for a web app that's the UI, for a CLI tool that's the terminal, for an API that's a consuming client or curl. The test is: can someone *use* it, not just *assert* it passes. A slice that only proves something but doesn't ship real working code is not a slice — restructure it.
@@ -104,5 +126,16 @@ If this milestone requires any external API keys or secrets:
    - Numbered step-by-step guidance for obtaining the key (navigate to dashboard → create project → generate key → copy)
 
 If this milestone does not require any external API keys or secrets, skip this step entirely — do not create an empty manifest.
+
+## Post-Plan KERN Integrity Check
+
+After calling `gsd_plan_milestone`, verify the KERN priority from the Milestone Intent was not lost:
+
+1. **Locate the KERN** from the `## Milestone Intent` → `### Priority Stack` → the item marked **KERN**
+2. **Verify KERN ownership:** At least one slice in the roadmap must directly address the KERN requirement. The KERN must appear in the slice's goal or demo line — not as a side-effect, but as a primary deliverable.
+3. **Verify KERN position:** The KERN should be in one of the earliest slices (typically S01-S03). If the KERN appears only in the last slice, the roadmap risks never delivering it if earlier slices consume the budget.
+4. **If the KERN is missing or deferred:** This is a planning failure. Restructure the roadmap so the KERN appears as a primary deliverable in an early slice. Do NOT proceed with a roadmap that defers the KERN to "future work."
+
+This check is non-negotiable for transformation milestones. For feature milestones, apply it as a strong recommendation.
 
 When done, say: "Milestone {{milestoneId}} planned."
