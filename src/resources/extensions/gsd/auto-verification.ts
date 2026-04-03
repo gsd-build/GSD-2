@@ -11,9 +11,10 @@
  */
 
 import type { ExtensionContext, ExtensionAPI } from "@gsd/pi-coding-agent";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { resolveSliceFile, resolveSlicePath } from "./paths.js";
 import { parseUnitId } from "./unit-id.js";
-import { isDbAvailable, getTask } from "./gsd-db.js";
+import { isDbAvailable, getTask, getSliceTasks, type TaskRow } from "./gsd-db.js";
 import { loadEffectiveGSDPreferences } from "./preferences.js";
 import {
   runVerificationGate,
@@ -21,8 +22,10 @@ import {
   captureRuntimeErrors,
   runDependencyAudit,
 } from "./verification-gate.js";
-import { writeVerificationJSON } from "./verification-evidence.js";
+import { writeVerificationJSON, type PostExecutionCheckJSON, type EvidenceJSON } from "./verification-evidence.js";
+import { runPostExecutionChecks, type PostExecutionResult } from "./post-execution-checks.js";
 import type { AutoSession } from "./auto/session.js";
+import type { VerificationResult as VerificationGateResult } from "./types.js";
 import { join } from "node:path";
 
 export interface VerificationContext {
@@ -184,6 +187,128 @@ export async function runPostUnitVerification(
       return "continue";
     }
 
+    // ── Post-execution checks (run after main verification passes for execute-task units) ──
+    let postExecChecks: PostExecutionCheckJSON[] | undefined;
+    let postExecBlockingFailure = false;
+
+    if (result.passed && mid && sid && tid) {
+      // Check preferences — respect enhanced_verification and enhanced_verification_post
+      const enhancedEnabled = prefs?.enhanced_verification !== false; // default true
+      const postEnabled = prefs?.enhanced_verification_post !== false; // default true
+
+      if (enhancedEnabled && postEnabled && isDbAvailable()) {
+        try {
+          // Get the completed task from DB
+          const taskRow = getTask(mid, sid, tid);
+          if (taskRow && taskRow.key_files && taskRow.key_files.length > 0) {
+            // Get all tasks in the slice
+            const allTasks = getSliceTasks(mid, sid);
+            // Filter to prior completed tasks (status = 'complete' or 'done', before current task)
+            const priorTasks = allTasks.filter(
+              (t: TaskRow) =>
+                (t.status === "complete" || t.status === "done") &&
+                t.id !== tid &&
+                t.sequence < taskRow.sequence
+            );
+
+            // Run post-execution checks
+            const postExecResult: PostExecutionResult = runPostExecutionChecks(
+              taskRow,
+              priorTasks,
+              s.basePath
+            );
+
+            // Store checks for evidence JSON
+            postExecChecks = postExecResult.checks;
+
+            // Log summary to stderr with gsd-post-exec: prefix
+            const emoji =
+              postExecResult.status === "pass"
+                ? "✅"
+                : postExecResult.status === "warn"
+                  ? "⚠️"
+                  : "❌";
+            process.stderr.write(
+              `gsd-post-exec: ${emoji} Post-execution checks ${postExecResult.status} for ${mid}/${sid}/${tid} (${postExecResult.durationMs}ms)\n`
+            );
+
+            // Log individual check results
+            for (const check of postExecResult.checks) {
+              const checkEmoji = check.passed
+                ? "✓"
+                : check.blocking
+                  ? "✗"
+                  : "⚠";
+              process.stderr.write(
+                `gsd-post-exec:   ${checkEmoji} [${check.category}] ${check.target}: ${check.message}\n`
+              );
+            }
+
+            // Check for blocking failures
+            if (postExecResult.status === "fail") {
+              postExecBlockingFailure = true;
+              const blockingCount = postExecResult.checks.filter(
+                (c) => !c.passed && c.blocking
+              ).length;
+              ctx.ui.notify(
+                `Post-execution checks failed: ${blockingCount} blocking issue${blockingCount === 1 ? "" : "s"} found`,
+                "error"
+              );
+            } else if (postExecResult.status === "warn") {
+              ctx.ui.notify(
+                `Post-execution checks passed with warnings`,
+                "warning"
+              );
+              // Strict mode: treat warnings as blocking
+              if (prefs?.enhanced_verification_strict === true) {
+                postExecBlockingFailure = true;
+              }
+            }
+          }
+        } catch (postExecErr) {
+          // Post-execution check errors are non-fatal — log and continue
+          process.stderr.write(
+            `gsd-post-exec: error — ${(postExecErr as Error).message}\n`
+          );
+        }
+      }
+    }
+
+    // Re-write verification evidence JSON with post-execution checks
+    if (postExecChecks && postExecChecks.length > 0 && mid && sid && tid) {
+      try {
+        const sDir = resolveSlicePath(s.basePath, mid, sid);
+        if (sDir) {
+          const tasksDir = join(sDir, "tasks");
+          // Add postExecutionChecks to the result for the JSON write
+          const resultWithPostExec = {
+            ...result,
+            // Mark as failed if there was a blocking post-exec failure
+            passed: result.passed && !postExecBlockingFailure,
+          };
+          // Manually write with postExecutionChecks field
+          writeVerificationJSONWithPostExec(
+            resultWithPostExec,
+            tasksDir,
+            tid,
+            s.currentUnit.id,
+            postExecChecks,
+            postExecBlockingFailure ? attempt + 1 : undefined,
+            postExecBlockingFailure ? maxRetries : undefined
+          );
+        }
+      } catch (evidenceErr) {
+        process.stderr.write(
+          `verification-evidence: post-exec write error — ${(evidenceErr as Error).message}\n`
+        );
+      }
+    }
+
+    // Update result.passed based on post-execution checks
+    if (postExecBlockingFailure) {
+      result.passed = false;
+    }
+
     // ── Auto-fix retry logic ──
     if (result.passed) {
       s.verificationRetryCount.delete(s.currentUnit.id);
@@ -222,4 +347,60 @@ export async function runPostUnitVerification(
     );
     return "continue";
   }
+}
+
+/**
+ * Write verification evidence JSON with post-execution checks included.
+ * This is a variant of writeVerificationJSON that adds the postExecutionChecks field.
+ */
+function writeVerificationJSONWithPostExec(
+  result: VerificationGateResult,
+  tasksDir: string,
+  taskId: string,
+  unitId: string,
+  postExecutionChecks: PostExecutionCheckJSON[],
+  retryAttempt?: number,
+  maxRetries?: number,
+): void {
+  mkdirSync(tasksDir, { recursive: true });
+
+  const evidence: EvidenceJSON = {
+    schemaVersion: 1,
+    taskId,
+    unitId: unitId ?? taskId,
+    timestamp: result.timestamp,
+    passed: result.passed,
+    discoverySource: result.discoverySource,
+    checks: result.checks.map((check) => ({
+      command: check.command,
+      exitCode: check.exitCode,
+      durationMs: check.durationMs,
+      verdict: check.exitCode === 0 ? "pass" : "fail",
+    })),
+    ...(retryAttempt !== undefined ? { retryAttempt } : {}),
+    ...(maxRetries !== undefined ? { maxRetries } : {}),
+    postExecutionChecks,
+  };
+
+  if (result.runtimeErrors && result.runtimeErrors.length > 0) {
+    evidence.runtimeErrors = result.runtimeErrors.map(e => ({
+      source: e.source,
+      severity: e.severity,
+      message: e.message,
+      blocking: e.blocking,
+    }));
+  }
+
+  if (result.auditWarnings && result.auditWarnings.length > 0) {
+    evidence.auditWarnings = result.auditWarnings.map(w => ({
+      name: w.name,
+      severity: w.severity,
+      title: w.title,
+      url: w.url,
+      fixAvailable: w.fixAvailable,
+    }));
+  }
+
+  const filePath = join(tasksDir, `${taskId}-VERIFY.json`);
+  writeFileSync(filePath, JSON.stringify(evidence, null, 2) + "\n", "utf-8");
 }
