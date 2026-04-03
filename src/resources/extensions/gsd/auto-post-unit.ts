@@ -629,7 +629,14 @@ export async function postUnitPostVerification(pctx: PostUnitContext): Promise<"
             });
 
             if (s.currentUnit) {
-              await closeoutUnit(ctx, s.basePath, s.currentUnit.type, s.currentUnit.id, s.currentUnit.startedAt);
+              await closeoutUnit(
+                ctx,
+                s.basePath,
+                s.currentUnit.type,
+                s.currentUnit.id,
+                s.currentUnit.startedAt,
+                buildSnapshotOpts(s.currentUnit.type, s.currentUnit.id),
+              );
             }
 
             const triageUnitId = `${mid}/${sid}/triage`;
@@ -661,7 +668,14 @@ export async function postUnitPostVerification(pctx: PostUnitContext): Promise<"
       const prompt = buildQuickTaskPrompt(capture);
 
       if (s.currentUnit) {
-        await closeoutUnit(ctx, s.basePath, s.currentUnit.type, s.currentUnit.id, s.currentUnit.startedAt);
+        await closeoutUnit(
+          ctx,
+          s.basePath,
+          s.currentUnit.type,
+          s.currentUnit.id,
+          s.currentUnit.startedAt,
+          buildSnapshotOpts(s.currentUnit.type, s.currentUnit.id),
+        );
       }
 
       markCaptureExecuted(s.basePath, capture.id);
