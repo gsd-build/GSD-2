@@ -236,8 +236,14 @@ export async function dispatchSlashCommand(
 		return true;
 	}
 
-	// If input starts with "/" but no command matched, show unknown command feedback
+	// If input starts with "/" but no command matched, check extension commands first
 	if (text.startsWith("/")) {
+		const spaceIndex = text.indexOf(" ");
+		const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
+		// Check extension-registered commands before showing unknown command error
+		if (ctx.session.extensionRunner?.getCommand(commandName)) {
+			return false; // Let the extension handle it
+		}
 		const command = text.split(/\s/)[0];
 		ctx.showError(`Unknown command: ${command}. Type /help for available commands.`);
 		return true;
