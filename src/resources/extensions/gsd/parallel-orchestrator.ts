@@ -431,9 +431,12 @@ export async function startParallel(
       try {
         wtPath = createMilestoneWorktree(basePath, mid);
       } catch {
-        // Worktree creation may fail in test environments or when git
-        // is not available. Fall back to a placeholder path.
+        // Worktree already exists (e.g. restart after error) or git is
+        // unavailable. Fall back to the existing path and ensure .gsd/
+        // state is synced — createMilestoneWorktree handles sync
+        // internally, but the fallback path skips it.
         wtPath = worktreePath(basePath, mid);
+        syncGsdStateToWorktree(basePath, wtPath);
       }
 
       const worker: WorkerInfo = {
