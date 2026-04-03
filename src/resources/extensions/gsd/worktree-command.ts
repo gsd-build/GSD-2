@@ -13,7 +13,7 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@gsd/pi-coding-agent";
 import { loadPrompt } from "./prompt-loader.js";
 import { autoCommitCurrentBranch, getMainBranch, resolveGitHeadPath, nudgeGitBranchCache } from "./worktree.js";
-import { runWorktreePostCreateHook } from "./auto-worktree.js";
+import { runWorktreePostCreateHook, syncGsdStateToWorktree } from "./auto-worktree.js";
 import { showConfirm } from "../shared/tui.js";
 import { gsdRoot, milestonesDir } from "./paths.js";
 import {
@@ -328,6 +328,9 @@ async function handleCreate(
     if (hookError) {
       ctx.ui.notify(hookError, "warning");
     }
+
+    // Sync .gsd/ state from main into the new worktree (#3427)
+    syncGsdStateToWorktree(mainBase, info.path);
 
     // Track original cwd before switching
     if (!originalCwd) originalCwd = basePath;
