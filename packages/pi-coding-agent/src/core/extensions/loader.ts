@@ -561,8 +561,8 @@ function createExtensionAPI(
 			return runtime.getCommands();
 		},
 
-		setModel(model) {
-			return runtime.setModel(model);
+		setModel(model, options) {
+			return runtime.setModel(model, options);
 		},
 
 		getThinkingLevel() {
