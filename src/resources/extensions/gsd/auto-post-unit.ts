@@ -600,8 +600,12 @@ export async function postUnitPostVerification(pctx: PostUnitContext): Promise<"
   if (s.currentUnit && s.currentUnit.type !== "triage-captures") {
     try {
       const pending = loadPendingCaptures(s.basePath);
-      const STOP_PATTERN = /\b(stop|halt|abort|don'?t continue|pause|cease)\b/i;
-      const stopCapture = pending.find(c => STOP_PATTERN.test(c.text));
+      // Match only when the capture text starts with a stop/halt directive word,
+      // or the entire text is short and dominated by such a word. This avoids
+      // false positives on captures like "add a pause button" or "stop the timer
+      // from re-rendering" — those are feature descriptions, not halt directives.
+      const STOP_PATTERN = /^(stop|halt|abort|don'?t continue|pause|cease)\b/i;
+      const stopCapture = pending.find(c => STOP_PATTERN.test(c.text.trim()));
       if (stopCapture) {
         ctx.ui.notify(
           `Stop directive detected in pending capture ${stopCapture.id}: "${stopCapture.text}" — pausing auto-mode.`,

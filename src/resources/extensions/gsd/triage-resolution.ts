@@ -10,7 +10,7 @@
  * Also provides detectFileOverlap() for surfacing downstream impact on quick tasks.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { createRequire } from "node:module";
 import { gsdRoot, milestonesDir } from "./paths.js";
@@ -247,7 +247,6 @@ export function clearBacktrackTrigger(basePath: string): void {
   const triggerPath = join(gsdRoot(basePath), "BACKTRACK-TRIGGER.md");
   try {
     if (existsSync(triggerPath)) {
-      const { unlinkSync } = require("node:fs");
       unlinkSync(triggerPath);
     }
   } catch { /* best-effort */ }
