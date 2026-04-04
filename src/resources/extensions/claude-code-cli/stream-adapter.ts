@@ -85,6 +85,11 @@ function extractMessageText(msg: { role: string; content: unknown }): string {
 	return "";
 }
 
+function isInformationalFollowUpMessage(msg: { role: string; content: unknown }): boolean {
+	const message = msg as { customType?: unknown; isFollowUp?: unknown };
+	return message.customType === "async_job_result" || message.isFollowUp === true;
+}
+
 /**
  * Build a full conversational prompt from GSD's context messages.
  *
@@ -101,6 +106,10 @@ export function buildPromptFromContext(context: Context): string {
 	}
 
 	for (const msg of context.messages) {
+		if (msg.role === "user" && isInformationalFollowUpMessage(msg)) {
+			continue;
+		}
+
 		const text = extractMessageText(msg);
 		if (!text) continue;
 

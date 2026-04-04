@@ -94,6 +94,44 @@ describe("stream-adapter — full context prompt (#2859)", () => {
 		assert.ok(prompt.includes("Follow-up"), "prompt must include follow-up message");
 	});
 
+	test("buildPromptFromContext skips informational async job follow-ups", () => {
+		const context: Context = {
+			messages: [
+				{ role: "user", content: "Audit this page" } as Message,
+				{
+					role: "user",
+					content: "**Background job done: bg_123**\n\nlint passed",
+					customType: "async_job_result",
+					timestamp: Date.now(),
+				} as unknown as Message,
+				{ role: "assistant", content: [{ type: "text", text: "I found three issues." }] } as Message,
+			],
+		};
+
+		const prompt = buildPromptFromContext(context);
+		assert.ok(prompt.includes("Audit this page"), "real user prompt should remain");
+		assert.ok(prompt.includes("I found three issues."), "assistant context should remain");
+		assert.ok(!prompt.includes("Background job done"), "async follow-up should not become the next SDK prompt");
+	});
+
+	test("buildPromptFromContext skips generic follow-up user messages when flagged", () => {
+		const context: Context = {
+			messages: [
+				{ role: "user", content: "Continue with the original task" } as Message,
+				{
+					role: "user",
+					content: "Queued informational follow-up",
+					isFollowUp: true,
+					timestamp: Date.now(),
+				} as unknown as Message,
+			],
+		};
+
+		const prompt = buildPromptFromContext(context);
+		assert.ok(prompt.includes("Continue with the original task"));
+		assert.ok(!prompt.includes("Queued informational follow-up"));
+	});
+
 	test("buildPromptFromContext returns empty string for empty messages", () => {
 		const context: Context = { messages: [] };
 		const prompt = buildPromptFromContext(context);
