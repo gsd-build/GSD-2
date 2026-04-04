@@ -3,6 +3,7 @@
 import Image from "next/image"
 import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from "react"
 import { Menu, X } from "lucide-react"
+import { useTranslations } from "next-intl"
 import { Sidebar, MilestoneExplorer, CollapsedMilestoneSidebar } from "@/components/gsd/sidebar"
 import { ShellTerminal } from "@/components/gsd/shell-terminal"
 import { Dashboard } from "@/components/gsd/dashboard"
@@ -43,6 +44,7 @@ function viewStorageKey(projectCwd: string): string {
 }
 
 function WorkspaceChrome() {
+  const t = useTranslations("shell")
   const [activeView, setActiveView] = useState("dashboard")
   const [isTerminalExpanded, setIsTerminalExpanded] = useState(false)
   const [terminalHeight, setTerminalHeight] = useState(300)
@@ -227,8 +229,8 @@ function WorkspaceChrome() {
   // Persistent loading toast — dismissed the moment boot completes
   useEffect(() => {
     if (!isConnecting) return
-    const id = toast.loading("Connecting to workspace…", {
-      description: "Establishing the live bridge session",
+    const id = toast.loading(t('connectingToWorkspace'), {
+      description: t('establishingBridge'),
       duration: Infinity,
     })
     return () => {
@@ -267,13 +269,16 @@ function WorkspaceChrome() {
           className="shrink-0 h-4 w-auto hidden dark:block"
         />
         <div className="flex flex-col items-center gap-2">
-          <h1 className="text-lg font-semibold text-foreground">Authentication Required</h1>
+          <h1 className="text-lg font-semibold text-foreground">{t('authenticationRequired')}</h1>
           <p className="max-w-sm text-sm text-muted-foreground">
-            This workspace requires an auth token. Copy the full URL from your terminal
-            (including the{" "}
-            <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">#token=…</code>{" "}
-            part) or restart with{" "}
-            <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">gsd --web</code>.
+            {t.rich('authDescription', {
+              code: (chunks) => (
+                <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">{chunks}</code>
+              ),
+              code2: (chunks) => (
+                <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">{chunks}</code>
+              ),
+            })}
           </p>
         </div>
       </div>
@@ -288,7 +293,7 @@ function WorkspaceChrome() {
           <button
             className="flex md:hidden h-10 w-10 items-center justify-center rounded-md text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
             onClick={() => setMobileNavOpen(!mobileNavOpen)}
-            aria-label={mobileNavOpen ? "Close navigation" : "Open navigation"}
+            aria-label={mobileNavOpen ? t('closeNavigation') : t('openNavigation')}
             data-testid="mobile-nav-toggle"
           >
             {mobileNavOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -361,7 +366,7 @@ function WorkspaceChrome() {
               retryDisabled && "cursor-not-allowed opacity-50",
             )}
           >
-            Retry
+            {t('retry')}
           </button>
         </div>
       )}
@@ -471,7 +476,7 @@ function WorkspaceChrome() {
                 }}
               >
                 <div className="flex items-center gap-2 text-muted-foreground">
-                  <span className="font-medium text-foreground">Terminal</span>
+                  <span className="font-medium text-foreground">{t('terminal')}</span>
                   <span className="text-[10px] text-muted-foreground">
                     {isTerminalExpanded ? "▼" : "▲"}
                   </span>
@@ -534,7 +539,7 @@ function WorkspaceChrome() {
             className="flex h-10 items-center gap-2 rounded-md px-3 text-xs font-medium text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
             data-testid="mobile-milestone-toggle"
           >
-            Milestones
+            {t('milestones')}
           </button>
         </div>
       )}

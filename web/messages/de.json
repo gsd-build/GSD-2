@@ -1,0 +1,14 @@
+{
+  "shell": {
+    "connectingToWorkspace": "Verbinde mit Workspace…",
+    "establishingBridge": "Stelle Live-Bridge-Sitzung her",
+    "authenticationRequired": "Authentifizierung erforderlich",
+    "authDescription": "Dieses Workspace erfordert einen Authentifizierungs-Token. Kopiere die vollständige URL aus deinem Terminal (einschließlich des {code}#token=…{/code}-Teils) oder starte neu mit {code2}gsd --web{/code2}.",
+    "retry": "Erneut versuchen",
+    "openNavigation": "Navigation öffnen",
+    "closeNavigation": "Navigation schließen",
+    "terminal": "Terminal",
+    "milestones": "Meilensteine",
+    "beta": "Beta"
+  }
+}
