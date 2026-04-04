@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, parse } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -95,6 +95,25 @@ test("buildResourceLoader excludes duplicate top-level pi extensions when bundle
     additionalExtensionPaths.some((entryPath) => entryPath.endsWith("custom-extension.ts")),
     true,
     "non-duplicate pi extensions should still load",
+  );
+});
+
+test("initResources tracks mod.ts-based extension dirs in managed-resources.json installedExtensionDirs", async (t) => {
+  const { initResources } = await import("../resource-loader.ts");
+  const tmp = mkdtempSync(join(tmpdir(), "gsd-resource-loader-manifest-"));
+  const fakeAgentDir = join(tmp, "agent");
+  const manifestPath = join(fakeAgentDir, "managed-resources.json");
+
+  t.after(() => { rmSync(tmp, { recursive: true, force: true }); });
+
+  initResources(fakeAgentDir);
+
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
+  const dirs: string[] = manifest.installedExtensionDirs ?? [];
+
+  assert.ok(
+    dirs.includes("remote-questions"),
+    `remote-questions must be in installedExtensionDirs (uses mod.ts entry point, not index.ts) — found: [${dirs.join(", ")}]`,
   );
 });
 

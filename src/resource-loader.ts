@@ -90,6 +90,7 @@ function writeManagedResourceManifest(agentDir: string): void {
           // Only track directories that are actual extensions (contain index.js or index.ts)
           const dirPath = join(bundledExtensionsDir, e.name)
           return existsSync(join(dirPath, 'index.js')) || existsSync(join(dirPath, 'index.ts'))
+            || existsSync(join(dirPath, 'mod.js')) || existsSync(join(dirPath, 'mod.ts'))
         })
         .map(e => e.name)
     }
