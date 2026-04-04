@@ -1,5 +1,6 @@
 "use client"
 
+import { useTranslations } from "next-intl"
 import { useEffect, useRef, useCallback, useState } from "react"
 import { useTheme } from "next-themes"
 import { Plus, X, TerminalSquare, Loader2, ImagePlus } from "lucide-react"
@@ -388,7 +389,7 @@ function TerminalInstance({
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-terminal">
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
           <span className="text-xs text-muted-foreground">
-            {command ? "Starting GSD…" : "Connecting…"}
+            {command ? t("startingGsd") : t("connecting")}
           </span>
         </div>
       )}
@@ -494,6 +495,7 @@ export function ShellTerminal({
 }: ShellTerminalProps) {
   const { resolvedTheme } = useTheme()
   const isDark = resolvedTheme !== "light"
+  const t = useTranslations("terminal")
   const defaultId = deriveProjectScopedSessionId(projectCwd, sessionPrefix, command)
   const commandLabel = deriveCommandLabel(command)
   const [tabs, setTabs] = useState<TerminalTab[]>([
@@ -672,7 +674,7 @@ export function ShellTerminal({
         {isDragOver && (
           <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-background backdrop-blur-sm border-2 border-dashed border-primary rounded-md pointer-events-none">
             <ImagePlus className="h-8 w-8 text-primary" />
-            <span className="text-sm font-medium text-primary">Drop image here</span>
+            <span className="text-sm font-medium text-primary">{t("dropImage")}</span>
           </div>
         )}
       </div>
@@ -683,7 +685,7 @@ export function ShellTerminal({
           <button
             onClick={createTab}
             className="flex h-[30px] w-full items-center justify-center text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-            title="New terminal"
+            title={t("newTab")}
           >
             <Plus className="h-3 w-3" />
           </button>
@@ -728,7 +730,7 @@ export function ShellTerminal({
                       closeTab(tab.id)
                     }}
                     className="absolute -right-0.5 -top-0.5 z-10 hidden h-3.5 w-3.5 items-center justify-center rounded-full bg-accent text-muted-foreground hover:bg-destructive/20 hover:text-destructive group-hover:flex"
-                    title="Kill terminal"
+                    title={t("killTab")}
                   >
                     <X className="h-2 w-2" />
                   </button>

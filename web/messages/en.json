@@ -393,6 +393,10 @@
   "remainingPanels": {
     "quickTask": {
       "title": "Quick Task",
+      "description": "Create a quick one-off task outside the current plan. Useful for small fixes, experiments, or ad-hoc work that doesn't fit into the milestone structure.",
+      "usage": "Usage",
+      "examples": "Examples",
+      "note": "Quick tasks run as standalone units — they don't affect milestone progress, slices, or the plan. Use them for work that should happen now without ceremony.",
       "examples": {
         "1": "Fix the typo in README.md header",
         "2": "Add .env.example with required keys",
@@ -400,8 +404,50 @@
         "4": "Run prettier on the whole project"
       }
     },
+    "status": {
+      "title": "Status"
+    },
+    "hooks": {
+      "singular": "hook",
+      "plural": "hooks",
+      "nameHeader": "Name",
+      "typeHeader": "Type",
+      "statusHeader": "Status",
+      "targetsHeader": "Targets",
+      "cyclesHeader": "Cycles",
+      "enabled": "enabled",
+      "disabled": "disabled",
+      "allTargets": "all"
+    },
+    "inspect": {
+      "recentDecisions": "Recent Decisions",
+      "recentRequirements": "Recent Requirements",
+      "decision": "Decision",
+      "choice": "Choice",
+      "status": "Status",
+      "description": "Description"
+    },
+    "status": {
+      "title": "Status"
+    },
     "steer": {
-      "placeholder": "Enter steering instructions for the agent…"
+      "title": "Steer",
+      "placeholder": "Enter steering instructions for the agent…",
+      "successMessage": "Steering message sent successfully.",
+      "currentOverrides": "Current Overrides",
+      "noOverrides": "No active overrides",
+      "sendSteering": "Send Steering Message",
+      "send": "Send"
+    },
+    "undo": {
+      "success": "Undo Successful",
+      "failed": "Undo Failed",
+      "lastUnit": "Last Completed Unit",
+      "associatedCommits": "Associated Commits",
+      "undoButton": "Undo Last Unit",
+      "confirmLabel": "Confirm Undo",
+      "cancel": "Cancel",
+      "warningMessage": "This will revert the last unit and its git commits."
     },
     "sections": {
       "history": "History & Metrics",
@@ -419,7 +465,16 @@
       "bySlice": "By slice",
       "byModel": "By model"
     },
+    "history": {
+      "phaseHeader": "Phase",
+      "sliceHeader": "Slice",
+      "modelHeader": "Model",
+      "recentUnitsHeader": "Recent Units"
+    },
     "labels": {
+      "type": "Type",
+      "id": "ID",
+      "model": "Model",
       "units": "Units",
       "cost": "Cost",
       "duration": "Duration",
@@ -428,7 +483,42 @@
       "requirements": "Requirements",
       "artifacts": "Artifacts",
       "completedUnits": "Completed Units",
-      "commits": "Commits"
+      "commits": "Commits",
+      "recentDecisions": "Recent Decisions",
+      "recentRequirements": "Recent Requirements",
+      "branches": "Branches",
+      "snapshots": "Snapshots",
+      "deleteMerged": "Delete Merged",
+      "pruneSnapshots": "Prune Snapshots",
+      "status": "Status",
+      "ref": "Ref",
+      "date": "Date",
+      "branch": "Branch",
+      "cleanUpComplete": "Cleanup Complete",
+      "generateExport": "Generate Export",
+      "exportReady": "Export Ready",
+      "downloadAgain": "Download Again",
+      "format": "Format",
+      "activeContext": "Active Context",
+      "milestoneHeader": "Milestone",
+      "sliceHeader": "Slice",
+      "taskHeader": "Task",
+      "phaseHeader": "Phase",
+      "overallProgress": "Overall Progress",
+      "noStatus": "No plan loaded — run /gsd to initialize",
+      "milestones": "Milestones",
+      "milestoneSingular": "milestone",
+      "slices": "Slices",
+      "slicesProgress": "slices",
+      "statusIdle": "idle",
+      "statusNone": "none",
+      "queueBranches": "Branches",
+      "queueMerged": "merged",
+      "queueActive": "active",
+      "queueSnapshotDate": "Date",
+      "queueActiveLabel": "active",
+      "queueCurrentLabel": "current",
+      "queueHeader": "Queue"
     },
     "empty": {
       "noHistory": "No unit history recorded yet",
@@ -521,6 +611,19 @@
       "doctor": "Running health check…",
       "skills": "Analyzing skill health…"
     },
+    "sections": {
+      "forensic": "Forensic Analysis",
+      "doctor": "Doctor Health Check",
+      "skillHealth": "Skill Health",
+      "recentUnits": "Recent Units",
+      "staleSkills": "Stale Skills",
+      "decliningSkills": "Declining Skills"
+    },
+    "loading": {
+      "forensic": "Running forensic analysis…",
+      "doctor": "Running health check…",
+      "skills": "Analyzing skill health…"
+    },
     "labels": {
       "units": "Units",
       "cost": "Cost",
@@ -534,22 +637,44 @@
       "skills": "Skills",
       "stale": "Stale",
       "declining": "Declining",
-      "totalUnits": "Total units"
+      "totalUnits": "Total units",
+      "crashLockActive": "Crash Lock Active",
+      "anomalies": "Anomalies",
+      "applyFixes": "Apply Fixes",
+      "fixesApplied": "Fixes Applied",
+      "issues": "Issues",
+      "suggestions": "Suggestions",
+      "type": "Type",
+      "id": "ID",
+      "model": "Model",
+      "tablePid": "PID",
+      "tableStarted": "Started",
+      "tableUnit": "Unit",
+      "fixableBadge": "fixable",
+      "successRate": "Success",
+      "tokens": "Tokens",
+      "trend": "Trend",
+      "staleDays": "Stale",
+      "skillName": "Skill",
+      "uses": "Uses"
     },
     "empty": {
       "noAnomalies": "No anomalies detected",
+      "noCrashLock": "No crash lock",
       "healthy": "No issues found — workspace is healthy",
       "noSkillData": "No skill usage data available"
     }
   },
   "terminal": {
+    "newTab": "New terminal",
+    "killTab": "Kill terminal",
+    "dropImage": "Drop image here",
+    "startingGsd": "Starting GSD…",
+    "connecting": "Connecting…",
     "abort": "Abort",
     "agentThinking": "Agent is thinking…",
     "steer": "Steer",
     "streaming": "{commandName}…",
-    "newTerminal": "New terminal",
-    "killTerminal": "Kill terminal",
-    "dropImage": "Drop image here",
     "loading": "Loading terminal…",
     "waitingForSession": "Waiting for live session…",
     "aboveEditor": "Above editor",
@@ -563,6 +688,32 @@
       "followUp": "Agent is active — type a follow-up or /state",
       "steer": "Type a steering message to redirect the agent…"
     }
+  },
+  "knowledgeCaptures": {
+    "tabs": {
+      "knowledge": "Knowledge",
+      "captures": "Captures"
+    },
+    "labels": {
+      "pending": "Pending",
+      "pendingCount": "pending",
+      "rule": "Rule",
+      "pattern": "Pattern",
+      "lesson": "Lesson",
+      "freeform": "Freeform",
+      "triaged": "Triaged",
+      "resolved": "Resolved",
+      "lastModified": "Last modified"
+    },
+    "empty": {
+      "noKnowledge": "No knowledge entries found",
+      "noCaptures": "No captures found"
+    },
+    "loading": {
+      "knowledge": "Loading knowledge base…",
+      "captures": "Loading captures…"
+    },
+    "resolveError": "Resolve error: {error}"
   },
   "loadingSkeletons": {
     "currentUnit": "Current Unit",

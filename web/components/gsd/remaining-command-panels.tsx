@@ -1,5 +1,6 @@
 "use client"
 
+import { useTranslations } from "next-intl"
 import { useState } from "react"
 import {
   AlertTriangle,
@@ -148,10 +149,12 @@ function formatDuration(ms: number): string {
 // ═══════════════════════════════════════════════════════════════════════
 
 export function QuickPanel() {
+  const t = useTranslations("remainingPanels")
+
   return (
     <div className="space-y-4" data-testid="gsd-surface-gsd-quick">
       <PanelHeader
-        title="Quick Task"
+        title={t("quickTask.title")}
         icon={<Zap className="h-3.5 w-3.5" />}
       />
 
@@ -162,20 +165,20 @@ export function QuickPanel() {
         </p>
 
         <div className="space-y-2">
-          <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Usage</h4>
+          <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">{t("quickTask.usage")}</h4>
           <div className="rounded-md border border-border/50 bg-background/50 px-3 py-2 font-mono text-[11px] text-foreground/80">
             /gsd quick &lt;description&gt;
           </div>
         </div>
 
         <div className="space-y-2">
-          <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Examples</h4>
+          <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">{t("quickTask.examples")}</h4>
           <div className="space-y-1.5">
             {[
-              "Fix the typo in README.md header",
-              "Add .env.example with required keys",
-              "Update the LICENSE year to 2026",
-              "Run prettier on the whole project",
+              t("quickTask.examples.1"),
+              t("quickTask.examples.2"),
+              t("quickTask.examples.3"),
+              t("quickTask.examples.4"),
             ].map((example) => (
               <div key={example} className="flex items-center gap-2 text-[11px]">
                 <span className="text-muted-foreground">$</span>
@@ -201,6 +204,7 @@ export function QuickPanel() {
 type HistoryTab = "phase" | "slice" | "model" | "units"
 
 export function HistoryPanel() {
+  const t = useTranslations("remainingPanels")
   const workspace = useGSDWorkspaceState()
   const { loadHistoryData } = useGSDWorkspaceActions()
   const state = workspace.commandSurface.remainingCommands.history
@@ -211,23 +215,23 @@ export function HistoryPanel() {
   return (
     <div className="space-y-4" data-testid="gsd-surface-gsd-history">
       <PanelHeader
-        title="History & Metrics"
+        title={t("sections.history")}
         icon={<Clock className="h-3.5 w-3.5" />}
         onRefresh={() => void loadHistoryData()}
         refreshing={busy}
       />
 
       {state.error && <PanelError message={state.error} />}
-      {busy && !data && <PanelLoading label="Loading history data…" />}
+      {busy && !data && <PanelLoading label={t("loading.history")} />}
 
       {data && (
         <>
           {/* Totals summary */}
           <div className="flex flex-wrap gap-2">
-            <InfoPill label="Units" value={data.totals.units} />
-            <InfoPill label="Cost" value={formatCost(data.totals.cost)} variant="warning" />
-            <InfoPill label="Duration" value={formatDuration(data.totals.duration)} />
-            <InfoPill label="Tool Calls" value={data.totals.toolCalls} />
+            <InfoPill label={t("labels.units")} value={data.totals.units} />
+            <InfoPill label={t("labels.cost")} value={formatCost(data.totals.cost)} variant="warning" />
+            <InfoPill label={t("labels.duration")} value={formatDuration(data.totals.duration)} />
+            <InfoPill label={t("labels.toolCalls")} value={data.totals.toolCalls} />
           </div>
 
           {/* Tab switcher */}
@@ -244,7 +248,7 @@ export function HistoryPanel() {
                     : "text-muted-foreground hover:text-muted-foreground",
                 )}
               >
-                {tab === "units" ? "Recent" : `By ${tab}`}
+                {tab === "units" ? t("tabs.recent") : t(`tabs.by${tab.charAt(0).toUpperCase() + tab.slice(1)}`)}
               </button>
             ))}
           </div>
@@ -255,10 +259,10 @@ export function HistoryPanel() {
               <table className="w-full text-[11px]">
                 <thead>
                   <tr className="border-b border-border/50 bg-card/50">
-                    <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">Phase</th>
-                    <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">Units</th>
-                    <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">Cost</th>
-                    <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">Duration</th>
+                    <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">{t("history.phaseHeader")}</th>
+                    <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">{t("labels.units")}</th>
+                    <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">{t("labels.cost")}</th>
+                    <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">{t("labels.duration")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -281,10 +285,10 @@ export function HistoryPanel() {
               <table className="w-full text-[11px]">
                 <thead>
                   <tr className="border-b border-border/50 bg-card/50">
-                    <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">Slice</th>
-                    <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">Units</th>
-                    <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">Cost</th>
-                    <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">Duration</th>
+                    <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">{t("history.sliceHeader")}</th>
+                    <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">{t("labels.units")}</th>
+                    <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">{t("labels.cost")}</th>
+                    <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">{t("labels.duration")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -307,9 +311,9 @@ export function HistoryPanel() {
               <table className="w-full text-[11px]">
                 <thead>
                   <tr className="border-b border-border/50 bg-card/50">
-                    <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">Model</th>
-                    <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">Units</th>
-                    <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">Cost</th>
+                    <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">{t("history.modelHeader")}</th>
+                    <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">{t("labels.units")}</th>
+                    <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">{t("labels.cost")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -333,11 +337,12 @@ export function HistoryPanel() {
                   <table className="w-full text-[11px]">
                     <thead>
                       <tr className="border-b border-border/50 bg-card/50">
-                        <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">Type</th>
-                        <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">ID</th>
-                        <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">Model</th>
-                        <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">Cost</th>
-                        <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">Duration</th>
+                        <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">{t("history.recentUnitsHeader")}</th>
+                        <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">{t("labels.type")}</th>
+                        <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">{t("labels.id")}</th>
+                        <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">{t("labels.model")}</th>
+                        <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">{t("labels.cost")}</th>
+                        <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">{t("labels.duration")}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -354,14 +359,14 @@ export function HistoryPanel() {
                   </table>
                 </div>
               ) : (
-                <PanelEmpty message="No unit history recorded yet" />
+                <PanelEmpty message={t("empty.noHistory")} />
               )}
             </>
           )}
 
-          {activeTab === "phase" && data.byPhase.length === 0 && <PanelEmpty message="No phase breakdown available" />}
-          {activeTab === "slice" && data.bySlice.length === 0 && <PanelEmpty message="No slice breakdown available" />}
-          {activeTab === "model" && data.byModel.length === 0 && <PanelEmpty message="No model breakdown available" />}
+          {activeTab === "phase" && data.byPhase.length === 0 && <PanelEmpty message={t("empty.noPhaseBreakdown")} />}
+          {activeTab === "slice" && data.bySlice.length === 0 && <PanelEmpty message={t("empty.noSliceBreakdown")} />}
+          {activeTab === "model" && data.byModel.length === 0 && <PanelEmpty message={t("empty.noModelBreakdown")} />}
         </>
       )}
     </div>
@@ -373,6 +378,7 @@ export function HistoryPanel() {
 // ═══════════════════════════════════════════════════════════════════════
 
 export function UndoPanel() {
+  const t = useTranslations("remainingPanels")
   const workspace = useGSDWorkspaceState()
   const { loadUndoInfo, executeUndoAction } = useGSDWorkspaceActions()
   const state = workspace.commandSurface.remainingCommands.undo
@@ -397,14 +403,14 @@ export function UndoPanel() {
   return (
     <div className="space-y-4" data-testid="gsd-surface-gsd-undo">
       <PanelHeader
-        title="Undo Last Unit"
+        title={t("sections.undo")}
         icon={<Undo2 className="h-3.5 w-3.5" />}
         onRefresh={() => { setResult(null); setConfirming(false); void loadUndoInfo() }}
         refreshing={busy}
       />
 
       {state.error && <PanelError message={state.error} />}
-      {busy && !data && <PanelLoading label="Loading undo info…" />}
+      {busy && !data && <PanelLoading label={t("loading.undo")} />}
 
       {/* Result banner */}
       {result && (
@@ -416,7 +422,7 @@ export function UndoPanel() {
         )}>
           <div className="flex items-center gap-2">
             {result.success ? <CheckCircle2 className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}
-            <span className="font-medium">{result.success ? "Undo Successful" : "Undo Failed"}</span>
+            <span className="font-medium">{result.success ? t("undo.success") : t("undo.failed")}</span>
           </div>
           <p className="mt-1 text-[11px] text-muted-foreground">{result.message}</p>
         </div>
@@ -428,11 +434,11 @@ export function UndoPanel() {
             <>
               {/* Last unit info */}
               <div className="rounded-lg border border-border/50 bg-card/50 px-3 py-2.5 space-y-1.5">
-                <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Last Completed Unit</h4>
+                <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">{t("undo.lastUnit")}</h4>
                 <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[11px]">
-                  <span className="text-muted-foreground">Type</span>
+                  <span className="text-muted-foreground">{t("labels.type")}</span>
                   <span className="font-mono text-foreground/80">{data.lastUnitType}</span>
-                  <span className="text-muted-foreground">ID</span>
+                  <span className="text-muted-foreground">{t("labels.id")}</span>
                   <span className="font-mono text-foreground/80 truncate">{data.lastUnitId ?? "—"}</span>
                   <span className="text-muted-foreground">Key</span>
                   <span className="font-mono text-foreground/80 truncate">{data.lastUnitKey ?? "—"}</span>
@@ -440,16 +446,16 @@ export function UndoPanel() {
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <InfoPill label="Completed Units" value={data.completedCount} />
+                <InfoPill label={t("labels.completedUnits")} value={data.completedCount} />
                 {data.commits.length > 0 && (
-                  <InfoPill label="Commits" value={data.commits.length} variant="info" />
+                  <InfoPill label={t("labels.commits")} value={data.commits.length} variant="info" />
                 )}
               </div>
 
               {/* Commit SHAs */}
               {data.commits.length > 0 && (
                 <div className="space-y-1.5">
-                  <h4 className="text-[11px] font-medium text-muted-foreground">Associated Commits</h4>
+                  <h4 className="text-[11px] font-medium text-muted-foreground">{t("undo.associatedCommits")}</h4>
                   <div className="flex flex-wrap gap-1">
                     {data.commits.map((sha) => (
                       <Badge key={sha} variant="outline" className="text-[10px] px-1.5 py-0 font-mono">
@@ -471,13 +477,13 @@ export function UndoPanel() {
                   className="h-7 gap-1.5 text-xs"
                 >
                   <RotateCcw className="h-3 w-3" />
-                  Undo Last Unit
+                  {t("undo.undoButton")}
                 </Button>
               ) : (
                 <div className="rounded-lg border border-warning/20 bg-warning/5 px-3 py-2.5 space-y-2">
                   <div className="flex items-center gap-2 text-xs text-warning">
                     <AlertTriangle className="h-3.5 w-3.5" />
-                    <span className="font-medium">This will revert the last unit and its git commits.</span>
+                    <span className="font-medium">{t("undo.warningMessage")}</span>
                   </div>
                   <div className="flex gap-2">
                     <Button
@@ -489,7 +495,7 @@ export function UndoPanel() {
                       className="h-7 gap-1.5 text-xs"
                     >
                       {executing ? <LoaderCircle className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
-                      Confirm Undo
+                      {t("undo.confirmLabel")}
                     </Button>
                     <Button
                       type="button"
@@ -499,14 +505,14 @@ export function UndoPanel() {
                       disabled={executing}
                       className="h-7 text-xs"
                     >
-                      Cancel
+                      {t("undo.cancel")}
                     </Button>
                   </div>
                 </div>
               )}
             </>
           ) : (
-            <PanelEmpty message="No completed units to undo" />
+            <PanelEmpty message={t("empty.noUndo")} />
           )}
         </>
       )}
@@ -519,6 +525,7 @@ export function UndoPanel() {
 // ═══════════════════════════════════════════════════════════════════════
 
 export function SteerPanel() {
+  const t = useTranslations("remainingPanels")
   const workspace = useGSDWorkspaceState()
   const { loadSteerData, sendSteer } = useGSDWorkspaceActions()
   const state = workspace.commandSurface.remainingCommands.steer
@@ -546,44 +553,44 @@ export function SteerPanel() {
   return (
     <div className="space-y-4" data-testid="gsd-surface-gsd-steer">
       <PanelHeader
-        title="Steer"
+        title={t("steer.title")}
         icon={<Navigation className="h-3.5 w-3.5" />}
         onRefresh={() => { setSent(false); void loadSteerData() }}
         refreshing={busy}
       />
 
       {state.error && <PanelError message={state.error} />}
-      {busy && !data && <PanelLoading label="Loading steer data…" />}
+      {busy && !data && <PanelLoading label={t("loading.steer")} />}
 
       {/* Success banner */}
       {sent && (
         <div className="rounded-lg border border-success/20 bg-success/5 px-3 py-2.5 text-xs text-success flex items-center gap-2">
           <CheckCircle2 className="h-3.5 w-3.5" />
-          Steering message sent successfully.
+          {t("steer.successMessage")}
         </div>
       )}
 
       {/* Current overrides */}
       <div className="space-y-2">
-        <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Current Overrides</h4>
+        <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">{t("steer.currentOverrides")}</h4>
         {data?.overridesContent ? (
           <div className="rounded-lg border border-border/50 bg-background/50 px-3 py-2.5 text-[11px] font-mono text-foreground/80 whitespace-pre-wrap max-h-[200px] overflow-y-auto leading-relaxed">
             {data.overridesContent}
           </div>
         ) : (
           <div className="rounded-lg border border-border/50 bg-card/50 px-3 py-2.5 text-[11px] text-muted-foreground italic">
-            No active overrides
+            {t("steer.noOverrides")}
           </div>
         )}
       </div>
 
       {/* Steer message form */}
       <div className="space-y-2">
-        <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Send Steering Message</h4>
+        <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">{t("steer.sendSteering")}</h4>
         <Textarea
           value={message}
           onChange={(e) => setMessage(e.target.value)}
-          placeholder="Enter steering instructions for the agent…"
+          placeholder={t("steer.placeholder")}
           className="min-h-[80px] text-xs resize-none"
         />
         <Button
@@ -595,7 +602,7 @@ export function SteerPanel() {
           className="h-7 gap-1.5 text-xs"
         >
           {sending ? <LoaderCircle className="h-3 w-3 animate-spin" /> : <Navigation className="h-3 w-3" />}
-          Send
+          {t("steer.send")}
         </Button>
       </div>
     </div>
@@ -607,6 +614,7 @@ export function SteerPanel() {
 // ═══════════════════════════════════════════════════════════════════════
 
 export function HooksPanel() {
+  const t = useTranslations("remainingPanels")
   const workspace = useGSDWorkspaceState()
   const { loadHooksData } = useGSDWorkspaceActions()
   const state = workspace.commandSurface.remainingCommands.hooks
@@ -616,11 +624,11 @@ export function HooksPanel() {
   return (
     <div className="space-y-4" data-testid="gsd-surface-gsd-hooks">
       <PanelHeader
-        title="Hooks"
+        title={t("sections.hooks")}
         icon={<Layers className="h-3.5 w-3.5" />}
         status={data ? (
           <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-            {data.entries.length} {data.entries.length === 1 ? "hook" : "hooks"}
+            {data.entries.length} {data.entries.length === 1 ? t("hooks.singular") : t("hooks.plural")}
           </Badge>
         ) : null}
         onRefresh={() => void loadHooksData()}
@@ -628,7 +636,7 @@ export function HooksPanel() {
       />
 
       {state.error && <PanelError message={state.error} />}
-      {busy && !data && <PanelLoading label="Loading hooks…" />}
+      {busy && !data && <PanelLoading label={t("loading.hooks")} />}
 
       {data && (
         <>
@@ -637,11 +645,11 @@ export function HooksPanel() {
               <table className="w-full text-[11px]">
                 <thead>
                   <tr className="border-b border-border/50 bg-card/50">
-                    <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">Name</th>
-                    <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">Type</th>
-                    <th className="px-2.5 py-1.5 text-center font-medium text-muted-foreground">Status</th>
-                    <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">Targets</th>
-                    <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">Cycles</th>
+                    <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">{t("hooks.nameHeader")}</th>
+                    <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">{t("hooks.typeHeader")}</th>
+                    <th className="px-2.5 py-1.5 text-center font-medium text-muted-foreground">{t("hooks.statusHeader")}</th>
+                    <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">{t("hooks.targetsHeader")}</th>
+                    <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">{t("hooks.cyclesHeader")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -663,11 +671,11 @@ export function HooksPanel() {
                               entry.enabled ? "border-success/30 text-success" : "text-muted-foreground",
                             )}
                           >
-                            {entry.enabled ? "enabled" : "disabled"}
+                            {entry.enabled ? t("hooks.enabled") : t("hooks.disabled")}
                           </Badge>
                         </td>
                         <td className="px-2.5 py-1.5 text-muted-foreground">
-                          {entry.targets.length > 0 ? entry.targets.join(", ") : "all"}
+                          {entry.targets.length > 0 ? entry.targets.join(", ") : t("hooks.allTargets")}
                         </td>
                         <td className="px-2.5 py-1.5 text-right tabular-nums text-foreground/80">
                           {totalCycles}
@@ -679,7 +687,7 @@ export function HooksPanel() {
               </table>
             </div>
           ) : (
-            <PanelEmpty message="No hooks configured" />
+            <PanelEmpty message={t("empty.noHooks")} />
           )}
 
           {/* Formatted status */}
@@ -699,6 +707,7 @@ export function HooksPanel() {
 // ═══════════════════════════════════════════════════════════════════════
 
 export function InspectPanel() {
+  const t = useTranslations("remainingPanels")
   const workspace = useGSDWorkspaceState()
   const { loadInspectData } = useGSDWorkspaceActions()
   const state = workspace.commandSurface.remainingCommands.inspect
@@ -708,7 +717,7 @@ export function InspectPanel() {
   return (
     <div className="space-y-4" data-testid="gsd-surface-gsd-inspect">
       <PanelHeader
-        title="Inspect Database"
+        title={t("sections.database")}
         icon={<Database className="h-3.5 w-3.5" />}
         subtitle={data?.schemaVersion != null ? `v${data.schemaVersion}` : null}
         onRefresh={() => void loadInspectData()}
@@ -716,28 +725,28 @@ export function InspectPanel() {
       />
 
       {state.error && <PanelError message={state.error} />}
-      {busy && !data && <PanelLoading label="Loading database…" />}
+      {busy && !data && <PanelLoading label={t("loading.database")} />}
 
       {data && (
         <>
           {/* Counts */}
           <div className="flex flex-wrap gap-2">
-            <InfoPill label="Decisions" value={data.counts.decisions} variant="info" />
-            <InfoPill label="Requirements" value={data.counts.requirements} variant="info" />
-            <InfoPill label="Artifacts" value={data.counts.artifacts} />
+            <InfoPill label={t("labels.decisions")} value={data.counts.decisions} variant="info" />
+            <InfoPill label={t("labels.requirements")} value={data.counts.requirements} variant="info" />
+            <InfoPill label={t("labels.artifacts")} value={data.counts.artifacts} />
           </div>
 
           {/* Recent decisions */}
           {data.recentDecisions.length > 0 && (
             <div className="space-y-2">
-              <h4 className="text-xs font-medium text-muted-foreground">Recent Decisions ({data.recentDecisions.length})</h4>
+              <h4 className="text-xs font-medium text-muted-foreground">{t("labels.recentDecisions")} ({data.recentDecisions.length})</h4>
               <div className="overflow-x-auto rounded-lg border border-border/50">
                 <table className="w-full text-[11px]">
                   <thead>
                     <tr className="border-b border-border/50 bg-card/50">
-                      <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">ID</th>
-                      <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">Decision</th>
-                      <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">Choice</th>
+                      <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">{t("labels.id")}</th>
+                      <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">{t("inspect.decision")}</th>
+                      <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">{t("inspect.choice")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -757,14 +766,14 @@ export function InspectPanel() {
           {/* Recent requirements */}
           {data.recentRequirements.length > 0 && (
             <div className="space-y-2">
-              <h4 className="text-xs font-medium text-muted-foreground">Recent Requirements ({data.recentRequirements.length})</h4>
+              <h4 className="text-xs font-medium text-muted-foreground">{t("labels.recentRequirements")} ({data.recentRequirements.length})</h4>
               <div className="overflow-x-auto rounded-lg border border-border/50">
                 <table className="w-full text-[11px]">
                   <thead>
                     <tr className="border-b border-border/50 bg-card/50">
-                      <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">ID</th>
-                      <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">Status</th>
-                      <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">Description</th>
+                      <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">{t("labels.id")}</th>
+                      <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">{t("labels.status")}</th>
+                      <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">{t("inspect.description")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -794,7 +803,7 @@ export function InspectPanel() {
           )}
 
           {data.recentDecisions.length === 0 && data.recentRequirements.length === 0 && (
-            <PanelEmpty message="Database is empty — no decisions or requirements recorded" />
+            <PanelEmpty message={t("empty.noDatabase")} />
           )}
         </>
       )}
@@ -807,6 +816,7 @@ export function InspectPanel() {
 // ═══════════════════════════════════════════════════════════════════════
 
 export function ExportPanel() {
+  const t = useTranslations("remainingPanels")
   const workspace = useGSDWorkspaceState()
   const { loadExportData } = useGSDWorkspaceActions()
   const state = workspace.commandSurface.remainingCommands.exportData
@@ -835,7 +845,7 @@ export function ExportPanel() {
   return (
     <div className="space-y-4" data-testid="gsd-surface-gsd-export">
       <PanelHeader
-        title="Export"
+        title={t("sections.export")}
         icon={<Download className="h-3.5 w-3.5" />}
       />
 
@@ -843,7 +853,7 @@ export function ExportPanel() {
 
       {/* Format selector */}
       <div className="space-y-2">
-        <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Format</h4>
+        <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">{t("labels.format")}</h4>
         <div className="flex gap-1 rounded-lg border border-border/50 bg-card/50 p-0.5">
           {(["markdown", "json"] as const).map((f) => (
             <button
@@ -857,7 +867,7 @@ export function ExportPanel() {
                   : "text-muted-foreground hover:text-muted-foreground",
               )}
             >
-              {f === "markdown" ? "Markdown" : "JSON"}
+              {f === "markdown" ? t("export.markdown") : t("export.json")}
             </button>
           ))}
         </div>
@@ -873,7 +883,7 @@ export function ExportPanel() {
         className="h-7 gap-1.5 text-xs"
       >
         {busy ? <LoaderCircle className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
-        Generate Export
+        {t("labels.generateExport")}
       </Button>
 
       {/* Download result */}
@@ -881,7 +891,7 @@ export function ExportPanel() {
         <div className="rounded-lg border border-success/20 bg-success/5 px-3 py-2.5 space-y-2">
           <div className="flex items-center gap-2 text-xs text-success">
             <CheckCircle2 className="h-3.5 w-3.5" />
-            <span className="font-medium">Export Ready</span>
+            <span className="font-medium">{t("labels.exportReady")}</span>
           </div>
           <div className="flex items-center justify-between gap-2">
             <span className="text-[11px] font-mono text-muted-foreground">{data.filename}</span>
@@ -893,7 +903,7 @@ export function ExportPanel() {
               className="h-6 gap-1 text-[10px]"
             >
               <Download className="h-2.5 w-2.5" />
-              Download Again
+              {t("labels.downloadAgain")}
             </Button>
           </div>
         </div>
@@ -907,6 +917,7 @@ export function ExportPanel() {
 // ═══════════════════════════════════════════════════════════════════════
 
 export function CleanupPanel() {
+  const t = useTranslations("remainingPanels")
   const workspace = useGSDWorkspaceState()
   const { loadCleanupData, executeCleanupAction } = useGSDWorkspaceActions()
   const state = workspace.commandSurface.remainingCommands.cleanup
@@ -918,12 +929,12 @@ export function CleanupPanel() {
   const mergedBranches = data?.branches.filter((b: CleanupBranch) => b.merged) ?? []
   const oldSnapshots = data?.snapshots ?? []
 
-  const handleCleanup = async (type: "branches" | "snapshots") => {
+  const handleCleanup = async (cleanupType: "branches" | "snapshots") => {
     setExecuting(true)
     setResult(null)
     try {
-      const branches = type === "branches" ? mergedBranches.map((b: CleanupBranch) => b.name) : []
-      const snapshots = type === "snapshots" ? oldSnapshots.map((s: CleanupSnapshot) => s.ref) : []
+      const branches = cleanupType === "branches" ? mergedBranches.map((b: CleanupBranch) => b.name) : []
+      const snapshots = cleanupType === "snapshots" ? oldSnapshots.map((s: CleanupSnapshot) => s.ref) : []
       const res = await executeCleanupAction(branches, snapshots)
       setResult(res)
       // Reload after cleanup
@@ -936,21 +947,21 @@ export function CleanupPanel() {
   return (
     <div className="space-y-4" data-testid="gsd-surface-gsd-cleanup">
       <PanelHeader
-        title="Cleanup"
+        title={t("sections.cleanup")}
         icon={<Trash2 className="h-3.5 w-3.5" />}
         onRefresh={() => { setResult(null); void loadCleanupData() }}
         refreshing={busy}
       />
 
       {state.error && <PanelError message={state.error} />}
-      {busy && !data && <PanelLoading label="Scanning for cleanup targets…" />}
+      {busy && !data && <PanelLoading label={t("loading.cleanup")} />}
 
       {/* Result banner */}
       {result && (
         <div className="rounded-lg border border-success/20 bg-success/5 px-3 py-2.5 text-xs text-success">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="h-3.5 w-3.5" />
-            <span className="font-medium">Cleanup Complete</span>
+            <span className="font-medium">{t("labels.cleanUpComplete")}</span>
           </div>
           <p className="mt-1 text-[11px] text-muted-foreground">{result.message}</p>
         </div>
@@ -961,7 +972,7 @@ export function CleanupPanel() {
           {/* Branches table */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <h4 className="text-xs font-medium text-muted-foreground">Branches ({data.branches.length})</h4>
+              <h4 className="text-xs font-medium text-muted-foreground">{t("labels.branches")} ({data.branches.length})</h4>
               {mergedBranches.length > 0 && (
                 <Button
                   type="button"
@@ -972,7 +983,7 @@ export function CleanupPanel() {
                   className="h-6 gap-1 text-[10px]"
                 >
                   {executing ? <LoaderCircle className="h-2.5 w-2.5 animate-spin" /> : <Scissors className="h-2.5 w-2.5" />}
-                  Delete Merged ({mergedBranches.length})
+                  {t("labels.deleteMerged")} ({mergedBranches.length})
                 </Button>
               )}
             </div>
@@ -981,8 +992,8 @@ export function CleanupPanel() {
                 <table className="w-full text-[11px]">
                   <thead>
                     <tr className="border-b border-border/50 bg-card/50">
-                      <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">Branch</th>
-                      <th className="px-2.5 py-1.5 text-center font-medium text-muted-foreground">Status</th>
+                      <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">{t("labels.branch")}</th>
+                      <th className="px-2.5 py-1.5 text-center font-medium text-muted-foreground">{t("labels.status")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1002,7 +1013,7 @@ export function CleanupPanel() {
                               b.merged ? "border-success/30 text-success" : "text-muted-foreground",
                             )}
                           >
-                            {b.merged ? "merged" : "active"}
+                            {b.merged ? t("labels.queueMerged") : t("labels.queueActive")}
                           </Badge>
                         </td>
                       </tr>
@@ -1011,14 +1022,14 @@ export function CleanupPanel() {
                 </table>
               </div>
             ) : (
-              <PanelEmpty message="No branches to clean up" />
+              <PanelEmpty message={t("empty.noBranchesToClean")} />
             )}
           </div>
 
           {/* Snapshots table */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <h4 className="text-xs font-medium text-muted-foreground">Snapshots ({data.snapshots.length})</h4>
+              <h4 className="text-xs font-medium text-muted-foreground">{t("labels.snapshots")} ({data.snapshots.length})</h4>
               {oldSnapshots.length > 0 && (
                 <Button
                   type="button"
@@ -1029,7 +1040,7 @@ export function CleanupPanel() {
                   className="h-6 gap-1 text-[10px]"
                 >
                   {executing ? <LoaderCircle className="h-2.5 w-2.5 animate-spin" /> : <Archive className="h-2.5 w-2.5" />}
-                  Prune Snapshots ({oldSnapshots.length})
+                  {t("labels.pruneSnapshots")} ({oldSnapshots.length})
                 </Button>
               )}
             </div>
@@ -1038,8 +1049,8 @@ export function CleanupPanel() {
                 <table className="w-full text-[11px]">
                   <thead>
                     <tr className="border-b border-border/50 bg-card/50">
-                      <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">Ref</th>
-                      <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">Date</th>
+                      <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">{t("labels.ref")}</th>
+                      <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">{t("labels.date")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1053,7 +1064,7 @@ export function CleanupPanel() {
                 </table>
               </div>
             ) : (
-              <PanelEmpty message="No snapshots to prune" />
+              <PanelEmpty message={t("empty.noSnapshotsToPrune")} />
             )}
           </div>
         </>
@@ -1072,6 +1083,7 @@ function sliceProgress(slices: WorkspaceSliceTarget[]): { done: number; total: n
 }
 
 export function QueuePanel() {
+  const t = useTranslations("remainingPanels")
   const workspace = useGSDWorkspaceState()
   const workspaceIndex = getLiveWorkspaceIndex(workspace)
   const milestones = workspaceIndex?.milestones ?? []
@@ -1080,11 +1092,11 @@ export function QueuePanel() {
   return (
     <div className="space-y-4" data-testid="gsd-surface-gsd-queue">
       <PanelHeader
-        title="Queue"
+        title={t("labels.queueHeader")}
         icon={<ListChecks className="h-3.5 w-3.5" />}
         status={
           <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-            {milestones.length} {milestones.length === 1 ? "milestone" : "milestones"}
+            {milestones.length} {milestones.length === 1 ? t("labels.milestoneSingular") : t("labels.milestones")}
           </Badge>
         }
       />
@@ -1110,12 +1122,12 @@ export function QueuePanel() {
                     <span className="text-xs text-foreground truncate">{m.title}</span>
                     {isActive && (
                       <Badge variant="secondary" className="text-[10px] px-1.5 py-0 border-info/30 text-info">
-                        active
+                        {t("labels.queueActiveLabel")}
                       </Badge>
                     )}
                   </div>
                   <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">
-                    {progress.done}/{progress.total} slices
+                    {progress.done}/{progress.total} {t("labels.slicesProgress")}
                   </span>
                 </div>
 
@@ -1153,7 +1165,7 @@ export function QueuePanel() {
                           {s.title}
                         </span>
                         {active?.sliceId === s.id && !s.done && (
-                          <Badge variant="outline" className="text-[9px] px-1 py-0 text-info">current</Badge>
+                          <Badge variant="outline" className="text-[9px] px-1 py-0 text-info">{t("labels.queueCurrentLabel")}</Badge>
                         )}
                       </div>
                     ))}
@@ -1164,7 +1176,7 @@ export function QueuePanel() {
           })}
         </div>
       ) : (
-        <PanelEmpty message="No milestones in the plan" />
+        <PanelEmpty message={t("empty.noMilestones")} />
       )}
     </div>
   )
@@ -1175,6 +1187,7 @@ export function QueuePanel() {
 // ═══════════════════════════════════════════════════════════════════════
 
 export function StatusPanel() {
+  const t = useTranslations("remainingPanels")
   const workspace = useGSDWorkspaceState()
   const workspaceIndex = getLiveWorkspaceIndex(workspace)
   const active = workspaceIndex?.active
@@ -1189,59 +1202,59 @@ export function StatusPanel() {
   return (
     <div className="space-y-4" data-testid="gsd-surface-gsd-status">
       <PanelHeader
-        title="Status"
+        title={t("status.title")}
         icon={<Terminal className="h-3.5 w-3.5" />}
       />
 
       {/* Active context card */}
       <div className="rounded-lg border border-border/50 bg-card/50 px-3 py-3 space-y-2">
-        <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Active Context</h4>
+        <h4 className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">{t("labels.activeContext")}</h4>
         <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[11px]">
           <span className="text-muted-foreground">Phase</span>
           <span className="font-mono text-foreground/80">
             {active?.phase ? (
               <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{active.phase}</Badge>
             ) : (
-              <span className="text-muted-foreground italic">idle</span>
+              <span className="text-muted-foreground italic">{t("labels.statusIdle")}</span>
             )}
           </span>
 
-          <span className="text-muted-foreground">Milestone</span>
+          <span className="text-muted-foreground">{t("labels.milestoneHeader")}</span>
           <span className="font-mono text-foreground/80">
             {currentMilestone ? (
               <span>{currentMilestone.id} — {currentMilestone.title}</span>
             ) : (
-              <span className="text-muted-foreground italic">none</span>
+              <span className="text-muted-foreground italic">{t("labels.statusNone")}</span>
             )}
           </span>
 
-          <span className="text-muted-foreground">Slice</span>
+          <span className="text-muted-foreground">{t("labels.sliceHeader")}</span>
           <span className="font-mono text-foreground/80">
             {currentSlice ? (
               <span>{currentSlice.id} — {currentSlice.title}</span>
             ) : (
-              <span className="text-muted-foreground italic">none</span>
+              <span className="text-muted-foreground italic">{t("labels.statusNone")}</span>
             )}
           </span>
 
-          <span className="text-muted-foreground">Task</span>
+          <span className="text-muted-foreground">{t("labels.taskHeader")}</span>
           <span className="font-mono text-foreground/80">
-            {active?.taskId ?? <span className="text-muted-foreground italic">none</span>}
+            {active?.taskId ?? <span className="text-muted-foreground italic">{t("labels.statusNone")}</span>}
           </span>
         </div>
       </div>
 
       {/* Overall progress */}
       <div className="flex flex-wrap gap-2">
-        <InfoPill label="Milestones" value={milestones.length} />
-        <InfoPill label="Slices" value={`${doneSlices}/${totalSlices}`} variant={doneSlices === totalSlices && totalSlices > 0 ? "success" : "info"} />
+        <InfoPill label={t("labels.milestones")} value={milestones.length} />
+        <InfoPill label={t("labels.slices")} value={`${doneSlices}/${totalSlices}`} variant={doneSlices === totalSlices && totalSlices > 0 ? "success" : "info"} />
       </div>
 
       {/* Progress bar */}
       {totalSlices > 0 && (
         <div className="space-y-1">
           <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-            <span>Overall Progress</span>
+            <span>{t("labels.overallProgress")}</span>
             <span className="tabular-nums">{Math.round((doneSlices / totalSlices) * 100)}%</span>
           </div>
           <div className="h-1.5 rounded-full bg-border/50 overflow-hidden">
@@ -1257,7 +1270,7 @@ export function StatusPanel() {
       )}
 
       {milestones.length === 0 && (
-        <PanelEmpty message="No plan loaded — run /gsd to initialize" />
+        <PanelEmpty message={t("empty.noPlan")} />
       )}
     </div>
   )

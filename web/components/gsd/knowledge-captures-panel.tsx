@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { useTranslations } from "next-intl"
 import {
   BookOpen,
   InboxIcon,
@@ -109,16 +110,16 @@ function StatPill({ label, value, variant }: { label: string; value: number | st
 // KNOWLEDGE TYPE STYLING
 // ═══════════════════════════════════════════════════════════════════════
 
-function knowledgeTypeBadge(type: KnowledgeEntry["type"]) {
+function knowledgeTypeBadge(t: ReturnType<typeof useTranslations<"knowledgeCaptures.labels">>, type: KnowledgeEntry["type"]) {
   switch (type) {
     case "rule":
-      return { label: "Rule", className: "border-violet-500/30 bg-violet-500/10 text-violet-400" }
+      return { label: t("rule"), className: "border-violet-500/30 bg-violet-500/10 text-violet-400" }
     case "pattern":
-      return { label: "Pattern", className: "border-info/30 bg-info/10 text-info" }
+      return { label: t("pattern"), className: "border-info/30 bg-info/10 text-info" }
     case "lesson":
-      return { label: "Lesson", className: "border-warning/30 bg-warning/10 text-warning" }
+      return { label: t("lesson"), className: "border-warning/30 bg-warning/10 text-warning" }
     case "freeform":
-      return { label: "Freeform", className: "border-success/30 bg-success/10 text-success" }
+      return { label: t("freeform"), className: "border-success/30 bg-success/10 text-success" }
   }
 }
 
@@ -140,14 +141,14 @@ function KnowledgeTypeIcon({ type, className }: { type: KnowledgeEntry["type"]; 
 // CAPTURE STATUS STYLING
 // ═══════════════════════════════════════════════════════════════════════
 
-function captureStatusStyle(status: CaptureEntry["status"]) {
+function captureStatusStyle(t: ReturnType<typeof useTranslations<"knowledgeCaptures.labels">>, status: CaptureEntry["status"]) {
   switch (status) {
     case "pending":
-      return { label: "Pending", className: "border-warning/30 bg-warning/10 text-warning" }
+      return { label: t("pending"), className: "border-warning/30 bg-warning/10 text-warning" }
     case "triaged":
-      return { label: "Triaged", className: "border-info/30 bg-info/10 text-info" }
+      return { label: t("triaged"), className: "border-info/30 bg-info/10 text-info" }
     case "resolved":
-      return { label: "Resolved", className: "border-success/30 bg-success/10 text-success" }
+      return { label: t("resolved"), className: "border-success/30 bg-success/10 text-success" }
   }
 }
 
@@ -207,21 +208,22 @@ function KnowledgeTabContent({
   phase,
   error,
   onRefresh,
+  t,
 }: {
   data: KnowledgeData | null
   phase: string
   error: string | null
   onRefresh: () => void
+  t: ReturnType<typeof useTranslations<"knowledgeCaptures">>
 }) {
-  if (phase === "loading") return <PanelLoading label="Loading knowledge base…" />
+  if (phase === "loading") return <PanelLoading label={t("loading.knowledge")} />
   if (phase === "error" && error) return <PanelError message={error} />
-  if (!data || data.entries.length === 0) return <PanelEmpty message="No knowledge entries found" />
+  if (!data || data.entries.length === 0) return <PanelEmpty message={t("empty.noKnowledge")} />
 
   return (
     <div className="space-y-3">
       <PanelHeader
-        title="Knowledge Base"
-        subtitle={`${data.entries.length} entries`}
+        title={`${data.entries.length} entries`}
         onRefresh={onRefresh}
         refreshing={phase === "loading"}
       />
@@ -232,7 +234,7 @@ function KnowledgeTabContent({
       </div>
       {data.lastModified && (
         <p className="pt-2 text-[10px] text-muted-foreground">
-          Last modified: {new Date(data.lastModified).toLocaleString()}
+          {t("labels.lastModified")}: {new Date(data.lastModified).toLocaleString()}
         </p>
       )}
     </div>
@@ -316,6 +318,7 @@ function CapturesTabContent({
   resolveError,
   onRefresh,
   onResolve,
+  t,
 }: {
   data: CapturesData | null
   phase: string
@@ -324,19 +327,19 @@ function CapturesTabContent({
   resolveError: string | null
   onRefresh: () => void
   onResolve: (captureId: string, classification: Classification) => void
+  t: ReturnType<typeof useTranslations<"knowledgeCaptures">>
 }) {
-  if (phase === "loading") return <PanelLoading label="Loading captures…" />
+  if (phase === "loading") return <PanelLoading label={t("loading.captures")} />
   if (phase === "error" && error) return <PanelError message={error} />
-  if (!data || data.entries.length === 0) return <PanelEmpty message="No captures found" />
+  if (!data || data.entries.length === 0) return <PanelEmpty message={t("empty.noCaptures")} />
 
   return (
     <div className="space-y-3">
       <PanelHeader
-        title="Captures"
-        subtitle={`${data.entries.length} total`}
+        title={`${data.entries.length} total`}
         status={
           <div className="flex gap-1.5">
-            <StatPill label="Pending" value={data.pendingCount} variant={data.pendingCount > 0 ? "warning" : "default"} />
+            <StatPill label={t("labels.pending")} value={data.pendingCount} variant={data.pendingCount > 0 ? "warning" : "default"} />
             <StatPill label="Actionable" value={data.actionableCount} variant={data.actionableCount > 0 ? "info" : "default"} />
           </div>
         }
@@ -346,7 +349,7 @@ function CapturesTabContent({
 
       {resolveError && (
         <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-[11px] text-destructive">
-          Resolve error: {resolveError}
+          {t("resolveError", { error: resolveError })}
         </div>
       )}
 
@@ -373,6 +376,7 @@ interface KnowledgeCapturesPanelProps {
 }
 
 export function KnowledgeCapturesPanel({ initialTab }: KnowledgeCapturesPanelProps) {
+  const t = useTranslations("knowledgeCaptures")
   const [activeTab, setActiveTab] = useState<"knowledge" | "captures">(initialTab)
   const workspace = useGSDWorkspaceState()
   const { loadKnowledgeData, loadCapturesData, resolveCaptureAction } = useGSDWorkspaceActions()
@@ -435,6 +439,12 @@ export function KnowledgeCapturesPanel({ initialTab }: KnowledgeCapturesPanelPro
       <div className="p-4">
         {activeTab === "knowledge" ? (
           <KnowledgeTabContent
+            data={knowledgeState.data as KnowledgeData | null}
+            phase={knowledgeState.phase}
+            error={knowledgeState.error}
+            onRefresh={() => void loadKnowledgeData()}
+            t={t}
+          />
             data={knowledgeState.data as KnowledgeData | null}
             phase={knowledgeState.phase}
             error={knowledgeState.error}
