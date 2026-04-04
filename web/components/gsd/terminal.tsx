@@ -340,7 +340,7 @@ export function Terminal({ className }: TerminalProps) {
           autoFocus
         />
         {workspace.commandInFlight && (
-          <span className="text-xs text-muted-foreground">{t("streaming", { command: workspace.commandInFlight })}</span>
+          <span className="text-xs text-muted-foreground">{t("streaming", { commandName: workspace.commandInFlight })}</span>
         )}
       </form>
 

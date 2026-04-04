@@ -144,7 +144,7 @@ export function NavRail({ activeView, onViewChange, isConnecting = false }: NavR
               ? "cursor-not-allowed opacity-30"
               : "hover:bg-accent/50 hover:text-foreground",
           )}
-          title="Git"
+          title={t("nav.git")}
           disabled={isConnecting}
           onClick={() => !isConnecting && openCommandSurface("git", { source: "sidebar" })}
           data-testid="sidebar-git-button"
@@ -158,7 +158,7 @@ export function NavRail({ activeView, onViewChange, isConnecting = false }: NavR
               ? "cursor-not-allowed opacity-30"
               : "hover:bg-accent/50 hover:text-foreground",
           )}
-          title="Settings"
+          title={t("nav.settings")}
           disabled={isConnecting}
           onClick={() => !isConnecting && openCommandSurface("settings", { source: "sidebar" })}
           data-testid="sidebar-settings-button"
@@ -186,7 +186,7 @@ export function NavRail({ activeView, onViewChange, isConnecting = false }: NavR
               ? "cursor-not-allowed opacity-30"
               : "hover:bg-destructive/15 hover:text-destructive",
           )}
-          title="Exit"
+          title={t("nav.exit")}
           disabled={isConnecting}
           onClick={() => !isConnecting && setExitDialogOpen(true)}
           data-testid="sidebar-signoff-button"
@@ -569,7 +569,7 @@ export function MilestoneExplorer({ isConnecting = false, width, onCollapse }: {
           <div className="flex items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-2 text-xs">
             <div className="min-w-0">
               <div className="font-medium text-foreground" data-testid="sidebar-validation-count">
-                {validationCount} validation issue{validationCount === 1 ? "" : "s"}
+                {t("milestoneExplorer.validationIssues", { count: validationCount })}
               </div>
               <div className="truncate text-muted-foreground">{recoverySummary.label}</div>
             </div>
@@ -580,7 +580,7 @@ export function MilestoneExplorer({ isConnecting = false, width, onCollapse }: {
               data-testid="sidebar-recovery-summary-entrypoint"
             >
               <LifeBuoy className="h-3.5 w-3.5" />
-              Recovery
+              {t("milestoneExplorer.recovery")}
             </button>
           </div>
         </div>

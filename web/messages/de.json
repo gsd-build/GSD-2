@@ -167,6 +167,10 @@
       "setup": "Set up your workspace",
       "skipForNow": "Skip for now"
     },
+    "milestoneExplorer": {
+      "recovery": "Recovery",
+      "validationIssues": "{count} validation issue{count, plural, =1 {} other {s}}"
+    },
     "help": "Help & Resources"
   },
   "projects": {
