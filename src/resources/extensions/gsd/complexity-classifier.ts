@@ -212,7 +212,7 @@ function analyzePlanComplexity(
 /**
  * Extract task metadata from the task plan file on disk.
  */
-export function extractTaskMetadata(unitId: string, basePath: string): TaskMetadata {
+function extractTaskMetadata(unitId: string, basePath: string): TaskMetadata {
   const meta: TaskMetadata = {};
   const { milestone: mid, slice: sid, task: tid } = parseUnitId(unitId);
   if (!mid || !sid || !tid) return meta;

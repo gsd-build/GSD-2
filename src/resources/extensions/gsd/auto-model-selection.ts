@@ -9,7 +9,7 @@ import type { ExtensionAPI, ExtensionContext } from "@gsd/pi-coding-agent";
 import type { GSDPreferences } from "./preferences.js";
 import { resolveModelWithFallbacksForUnit, resolveDynamicRoutingConfig } from "./preferences.js";
 import type { ComplexityTier } from "./complexity-classifier.js";
-import { classifyUnitComplexity, tierLabel, extractTaskMetadata } from "./complexity-classifier.js";
+import { classifyUnitComplexity, tierLabel } from "./complexity-classifier.js";
 import { resolveModelForComplexity, escalateTier } from "./model-router.js";
 import { getLedger, getProjectTotals } from "./metrics.js";
 import { unitPhaseLabel } from "./auto-dashboard.js";
@@ -107,15 +107,7 @@ export async function selectAndApplyModel(
           }
         }
 
-        // Extract task metadata for capability scoring
-        const taskMeta = unitType === "execute-task"
-          ? extractTaskMetadata(unitId, basePath)
-          : undefined;
-
-        const routingResult = resolveModelForComplexity(
-          classification, modelConfig, routingConfig, availableModelIds,
-          unitType, taskMeta,
-        );
+        const routingResult = resolveModelForComplexity(classification, modelConfig, routingConfig, availableModelIds);
 
         if (routingResult.wasDowngraded) {
           effectiveModelConfig = {
@@ -123,9 +115,8 @@ export async function selectAndApplyModel(
             fallbacks: routingResult.fallbacks,
           };
           if (verbose) {
-            const method = routingResult.selectionMethod === "capability-scored" ? "capability-scored" : "tier-only";
             ctx.ui.notify(
-              `Dynamic routing [${tierLabel(classification.tier)}]: ${routingResult.modelId} (${method} — ${classification.reason})`,
+              `Dynamic routing [${tierLabel(classification.tier)}]: ${routingResult.modelId} (${classification.reason})`,
               "info",
             );
           }

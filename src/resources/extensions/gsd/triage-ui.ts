@@ -49,18 +49,10 @@ const CLASSIFICATION_LABELS: Record<Classification, { label: string; description
     label: "Note",
     description: "Informational only — no action needed.",
   },
-  "stop": {
-    label: "Stop",
-    description: "Halt current execution — a blocking issue requires resolution.",
-  },
-  "backtrack": {
-    label: "Backtrack",
-    description: "Undo recent steps and retry from an earlier checkpoint.",
-  },
 };
 
 const ALL_CLASSIFICATIONS: Classification[] = [
-  "quick-task", "inject", "defer", "replan", "note", "stop", "backtrack",
+  "quick-task", "inject", "defer", "replan", "note",
 ];
 
 // ─── Public API ───────────────────────────────────────────────────────────────

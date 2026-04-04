@@ -1,8 +1,8 @@
 # ADR-004: Capability-Aware Model Routing
 
-**Status:** Implemented (Phase 2)
+**Status:** Proposed (Revised)
 **Date:** 2026-03-26
-**Revised:** 2026-04-03
+**Revised:** 2026-03-26
 **Deciders:** Jeremy McSpadden
 **Related:** ADR-003 (pipeline simplification), [Issue #2655](https://github.com/gsd-build/gsd-2/issues/2655), `docs/dynamic-model-routing.md`
 
