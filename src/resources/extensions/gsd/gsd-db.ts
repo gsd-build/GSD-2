@@ -1313,8 +1313,14 @@ export function insertTask(t: {
   });
 }
 
+const VALID_TASK_STATUSES = new Set(["pending", "in-progress", "blocked", "complete", "done", "failed"]);
+
 export function updateTaskStatus(milestoneId: string, sliceId: string, taskId: string, status: string, completedAt?: string): void {
   if (!currentDb) throw new GSDError(GSD_STALE_STATE, "gsd-db: No database open");
+  if (!VALID_TASK_STATUSES.has(status)) {
+    process.stderr.write(`gsd-db: rejecting invalid task status "${status}" for ${taskId}, using "pending"\n`);
+    status = "pending";
+  }
   currentDb.prepare(
     `UPDATE tasks SET status = :status, completed_at = :completed_at
      WHERE milestone_id = :milestone_id AND slice_id = :slice_id AND id = :id`,

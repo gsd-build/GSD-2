@@ -32,6 +32,7 @@ import {
   resolveTasksDir,
   resolveGsdRootFile,
   gsdRoot,
+  clearPathCache,
 } from './paths.js';
 
 import { findMilestoneIds } from './milestone-ids.js';
@@ -39,7 +40,7 @@ import { loadQueueOrder, sortByQueueOrder } from './queue-order.js';
 import { nativeBatchParseGsdFiles, type BatchParsedFile } from './native-parser-bridge.js';
 
 import { join, resolve } from 'path';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, statSync, readFileSync } from 'node:fs';
 import { debugCount, debugTime } from './debug-logger.js';
 import { extractVerdict } from './verdict-parser.js';
 import { logWarning, logError } from './workflow-logger.js';
@@ -54,6 +55,7 @@ import {
   getSlice,
   insertMilestone,
   insertSlice,
+  insertTask,
   updateTaskStatus,
   getPendingSliceGateCount,
   type MilestoneRow,
@@ -149,6 +151,7 @@ export function resetDeriveTelemetry() { _telemetry = { dbDeriveCount: 0, markdo
  */
 export function invalidateStateCache(): void {
   _stateCache = null;
+  clearPathCache();
 }
 
 /**
@@ -709,6 +712,34 @@ export async function deriveStateFromDb(basePath: string): Promise<GSDState> {
   // ── Get tasks from DB ────────────────────────────────────────────────
   let tasks = getSliceTasks(activeMilestone.id, activeSlice.id);
 
+  // ── Reconcile missing tasks from disk plan to DB (#3276) ────────────
+  // When task rows are missing from DB (partial migration, failed write),
+  // getSliceTasks returns [] even though PLAN file on disk has tasks.
+  // Sync disk tasks to DB following the milestone reconciliation pattern.
+  if (tasks.length === 0 && planFile) {
+    const planContent = existsSync(planFile) ? readFileSync(planFile, 'utf-8') : null;
+    if (planContent) {
+      const diskPlan = parsePlan(planContent);
+      if (diskPlan.tasks.length > 0) {
+        for (const dt of diskPlan.tasks) {
+          try {
+            insertTask({
+              id: dt.id,
+              sliceId: activeSlice.id,
+              milestoneId: activeMilestone.id,
+              title: dt.title,
+              status: dt.done ? "complete" : "pending",
+            });
+          } catch { /* non-fatal — continue with remaining tasks */ }
+        }
+        process.stderr.write(
+          `gsd-reconcile: synced ${diskPlan.tasks.length} task(s) from disk to DB for ${activeMilestone.id}/${activeSlice.id}\n`,
+        );
+        tasks = getSliceTasks(activeMilestone.id, activeSlice.id);
+      }
+    }
+  }
+
   // ── Reconcile stale task status (#2514) ──────────────────────────────
   // When a session disconnects after the agent writes SUMMARY + VERIFY
   // artifacts but before postUnitPostVerification updates the DB, tasks
@@ -719,7 +750,7 @@ export async function deriveStateFromDb(basePath: string): Promise<GSDState> {
   for (const t of tasks) {
     if (isStatusDone(t.status)) continue;
     const summaryPath = resolveTaskFile(basePath, activeMilestone.id, activeSlice.id, t.id, "SUMMARY");
-    if (summaryPath && existsSync(summaryPath)) {
+    if (summaryPath && existsSync(summaryPath) && statSync(summaryPath).size > 0) {
       try {
         updateTaskStatus(activeMilestone.id, activeSlice.id, t.id, "complete");
         logWarning("reconcile", `task ${activeMilestone.id}/${activeSlice.id}/${t.id} status reconciled from "${t.status}" to "complete" (#2514)`, { mid: activeMilestone.id, sid: activeSlice.id, tid: t.id });
@@ -1379,7 +1410,7 @@ export async function _deriveStateImpl(basePath: string): Promise<GSDState> {
   for (const t of slicePlan.tasks) {
     if (t.done) continue;
     const summaryPath = resolveTaskFile(basePath, activeMilestone.id, activeSlice.id, t.id, "SUMMARY");
-    if (summaryPath && existsSync(summaryPath)) {
+    if (summaryPath && existsSync(summaryPath) && statSync(summaryPath).size > 0) {
       t.done = true;
       logWarning("reconcile", `task ${activeMilestone.id}/${activeSlice.id}/${t.id} reconciled via SUMMARY on disk (#2514)`, { mid: activeMilestone.id, sid: activeSlice.id, tid: t.id });
     }

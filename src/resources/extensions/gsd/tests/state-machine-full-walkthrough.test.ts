@@ -1041,7 +1041,7 @@ describe("state-machine-full-walkthrough", () => {
   // ═══════════════════════════════════════════════════════════════════════════
 
   describe("Failure: DB has slice but no task rows (partial migration)", () => {
-    test("DB tasks empty but PLAN on disk has tasks → wrong phase (planning)", async () => {
+    test("DB tasks empty but PLAN on disk has tasks → reconciled to executing (#3276)", async () => {
       const base = createFixtureBase();
       const dbPath = join(base, ".gsd", "gsd.db");
       openDatabase(dbPath);
@@ -1056,11 +1056,10 @@ describe("state-machine-full-walkthrough", () => {
       invalidateStateCache();
       const state = await deriveStateFromDb(base);
 
-      // BUG: Returns "planning" because getSliceTasks() returns []
-      // and line 703 treats empty tasks as "no tasks defined".
-      // PLAN file on disk has T01/T02 but DB doesn't know about them.
-      assert.equal(state.phase, "planning",
-        "KNOWN ISSUE: DB empty tasks → planning even though PLAN has tasks on disk");
+      // Fix: disk→DB task reconciliation syncs tasks from PLAN to DB
+      assert.equal(state.phase, "executing",
+        "reconciliation should sync disk tasks to DB and advance to executing");
+      assert.equal(state.activeTask?.id, "T01");
     });
   });
 
@@ -1090,25 +1089,23 @@ describe("state-machine-full-walkthrough", () => {
   });
 
   describe("Failure: 0-byte files", () => {
-    test("0-byte SUMMARY file triggers reconciliation (existsSync-only check)", async () => {
+    test("0-byte SUMMARY file does NOT trigger reconciliation (size check)", async () => {
       const base = createFixtureBase();
       writeRoadmap(base, "M001", standardRoadmap());
       writePlan(base, "M001", "S01", standardPlan());
-      // Write 0-byte SUMMARY — existsSync returns true for empty files
+      // Write 0-byte SUMMARY — existsSync returns true but statSync().size === 0
       const tasksDir = join(base, ".gsd", "milestones", "M001", "slices", "S01", "tasks");
       mkdirSync(tasksDir, { recursive: true });
       writeFileSync(join(tasksDir, "T01-SUMMARY.md"), "");
 
       invalidateStateCache();
-      clearPathCache();
       const state = await deriveState(base);
 
-      // The reconciler checks existsSync(summaryPath) at line 1328
-      // — it does NOT read content. So 0-byte file counts as "done".
-      // This is a known gap: empty SUMMARY treated as completion.
-      assert.equal(state.phase, "executing",
-        "0-byte SUMMARY marks T01 done via reconciliation, T02 becomes active");
-      assert.equal(state.activeTask?.id, "T02");
+      // Fix: reconciler now checks statSync(path).size > 0
+      // 0-byte SUMMARY is NOT treated as completion
+      assert.equal(state.phase, "executing");
+      assert.equal(state.activeTask?.id, "T01",
+        "0-byte SUMMARY should NOT mark T01 as done");
     });
 
     test("0-byte VALIDATION file → stays in validating-milestone", async () => {
@@ -1258,25 +1255,24 @@ describe("state-machine-full-walkthrough", () => {
   });
 
   describe("Failure: stale path cache", () => {
-    test("file created after cache populated → must clear path cache", async () => {
+    test("invalidateStateCache now clears path cache automatically", async () => {
       const base = createFixtureBase();
       writeRoadmap(base, "M001", standardRoadmap());
 
       invalidateStateCache();
-      clearPathCache();
       const state1 = await deriveState(base);
       assert.equal(state1.phase, "planning");
 
       // Write PLAN AFTER first derivation cached paths
       writePlan(base, "M001", "S01", standardPlan());
 
-      // Without clearPathCache, stale cache may miss the new file
+      // Fix: invalidateStateCache() now calls clearPathCache() internally
+      // so no separate clearPathCache() call needed
       invalidateStateCache();
-      clearPathCache();
       const state2 = await deriveState(base);
 
       assert.equal(state2.phase, "executing",
-        "after cache clear, should see the new PLAN file");
+        "invalidateStateCache should clear path cache and see new PLAN file");
     });
   });
 
@@ -1413,7 +1409,7 @@ describe("state-machine-full-walkthrough", () => {
   });
 
   describe("Failure at executing: DB has task but wrong status string", () => {
-    test("task with unexpected status string → not treated as closed", async () => {
+    test("invalid status string corrected to pending", async () => {
       const base = createFixtureBase();
       const dbPath = join(base, ".gsd", "gsd.db");
       openDatabase(dbPath);
@@ -1422,7 +1418,7 @@ describe("state-machine-full-walkthrough", () => {
       insertSlice({ id: "S01", milestoneId: "M001", title: "S01: Slice", status: "active", depends: [] });
       insertTask({ id: "T01", sliceId: "S01", milestoneId: "M001", title: "T01: Task", status: "pending" });
 
-      // Set a garbage status that isn't "complete" or "done"
+      // Fix: invalid status is rejected and falls back to "pending"
       updateTaskStatus("M001", "S01", "T01", "finished");
 
       writeRoadmap(base, "M001", standardRoadmap());
@@ -1431,10 +1427,10 @@ describe("state-machine-full-walkthrough", () => {
       invalidateStateCache();
       const state = await deriveStateFromDb(base);
 
-      // isClosedStatus("finished") → false → task treated as active
+      // "finished" is corrected to "pending" → task still active
       assert.equal(state.phase, "executing");
       assert.equal(state.activeTask?.id, "T01",
-        "non-standard status 'finished' is NOT treated as closed");
+        "invalid status corrected to pending, task remains active");
     });
   });
 
