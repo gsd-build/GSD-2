@@ -1,5 +1,7 @@
 "use client"
 
+import { useTranslations } from "next-intl"
+
 import { useEffect, useState, useCallback } from "react"
 import {
   Activity,
@@ -111,6 +113,7 @@ interface DashboardProps {
 }
 
 export function Dashboard({ onSwitchView, onExpandTerminal }: DashboardProps = {}) {
+  const t = useTranslations("dashboard")
   const state = useGSDWorkspaceState()
   const { sendCommand } = useGSDWorkspaceActions()
   const boot = state.boot
@@ -224,7 +227,7 @@ export function Dashboard({ onSwitchView, onExpandTerminal }: DashboardProps = {
     <div className="flex h-full flex-col overflow-hidden">
       <div className="flex items-center justify-between border-b border-border px-3 py-2 md:px-6 md:py-3">
         <div className="flex items-center gap-2 min-w-0">
-          <h1 className="text-base md:text-lg font-semibold shrink-0">Dashboard</h1>
+          <h1 className="text-base md:text-lg font-semibold shrink-0">{t('title')}</h1>
           {!isConnecting && scopeLabel && (
             <>
               <span className="hidden sm:inline text-lg font-thin text-muted-foreground select-none">/</span>
@@ -266,7 +269,7 @@ export function Dashboard({ onSwitchView, onExpandTerminal }: DashboardProps = {
           <div className="rounded-md border border-border bg-card p-4" data-testid="dashboard-current-unit">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Current Unit</p>
+                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{t('currentUnit')}</p>
                 {isConnecting ? (
                   <>
                     <Skeleton className="mt-2 h-7 w-20" />
@@ -324,7 +327,7 @@ export function Dashboard({ onSwitchView, onExpandTerminal }: DashboardProps = {
               <div className="border-b border-border px-4 py-3">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Current Slice</h2>
+                    <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t('currentSlice')}</h2>
                     {currentSlice ? (
                       <p className="mt-0.5 truncate text-sm font-medium text-foreground">
                         {currentSlice.id} — {currentSlice.title}

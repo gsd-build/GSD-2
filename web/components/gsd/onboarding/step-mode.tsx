@@ -2,6 +2,7 @@
 
 import { motion } from "motion/react"
 import { ArrowRight, Code2, MessageCircle } from "lucide-react"
+import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -16,30 +17,28 @@ interface StepModeProps {
 
 const MODE_OPTIONS: {
   id: UserMode
-  label: string
+  labelKey: string
+  iconKey: string
   icon: typeof Code2
-  tagline: string
-  description: string
 }[] = [
   {
     id: "expert",
-    label: "Expert",
+    labelKey: "expert.label",
+    iconKey: "expert.tagline",
     icon: Code2,
-    tagline: "Full control",
-    description:
-      "Dashboard metrics, dual-pane power mode, and direct /gsd command access. Built for people who want visibility into every milestone and task.",
   },
   {
     id: "vibe-coder",
-    label: "Vibe Coder",
+    labelKey: "vibe.label",
+    iconKey: "vibe.tagline",
     icon: MessageCircle,
-    tagline: "Just chat",
-    description:
-      "Conversational interface with the AI agent. Describe what you want and let GSD handle the structure. Same engine, friendlier surface.",
   },
 ]
 
 export function StepMode({ selected, onSelect, onNext, onBack }: StepModeProps) {
+  const t = useTranslations("onboarding.mode")
+  const tc = useTranslations("common")
+
   return (
     <div className="flex flex-col items-center text-center">
       <motion.h2
@@ -49,7 +48,7 @@ export function StepMode({ selected, onSelect, onNext, onBack }: StepModeProps) 
         className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl"
         style={{ textWrap: "balance" } as React.CSSProperties}
       >
-        How do you want to work?
+        {t('heading')}
       </motion.h2>
 
       <motion.p
@@ -58,7 +57,7 @@ export function StepMode({ selected, onSelect, onNext, onBack }: StepModeProps) 
         transition={{ delay: 0.06, duration: 0.4 }}
         className="mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground"
       >
-        You can switch anytime from settings.
+        {t('subheading')}
       </motion.p>
 
       <motion.div
@@ -136,7 +135,7 @@ export function StepMode({ selected, onSelect, onNext, onBack }: StepModeProps) 
               {/* Label + tagline */}
               <div className="pr-7">
                 <span className="text-[15px] font-semibold text-foreground">
-                  {opt.label}
+                  {t(opt.labelKey)}
                 </span>
                 <span
                   className={cn(
@@ -144,13 +143,13 @@ export function StepMode({ selected, onSelect, onNext, onBack }: StepModeProps) 
                     isSelected ? "text-muted-foreground" : "text-muted-foreground",
                   )}
                 >
-                  {opt.tagline}
+                  {t(opt.iconKey)}
                 </span>
               </div>
 
               {/* Description */}
               <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
-                {opt.description}
+                {opt.id === "expert" ? t('expert.description') : t('vibe.description')}
               </p>
             </button>
           )
@@ -169,7 +168,7 @@ export function StepMode({ selected, onSelect, onNext, onBack }: StepModeProps) 
           onClick={onBack}
           className="text-muted-foreground transition-transform active:scale-[0.96]"
         >
-          Back
+          {t('common.back')}
         </Button>
         <Button
           onClick={onNext}
@@ -177,7 +176,7 @@ export function StepMode({ selected, onSelect, onNext, onBack }: StepModeProps) 
           className="group gap-2 transition-transform active:scale-[0.96]"
           data-testid="onboarding-mode-continue"
         >
-          Continue
+          {t('common.continue')}
           <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
         </Button>
       </motion.div>

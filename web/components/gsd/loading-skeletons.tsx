@@ -1,5 +1,7 @@
 "use client"
 
+import { useTranslations } from "next-intl"
+
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 
@@ -25,7 +27,7 @@ function CurrentUnitCardSkeleton({ icon }: { icon: React.ReactNode }) {
     <div className="rounded-md border border-border bg-card p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Current Unit</p>
+          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{t('currentUnit')}</p>
           <Skeleton className="mt-2 h-7 w-20" />
           <Skeleton className="mt-1.5 h-3 w-16" />
         </div>
@@ -36,10 +38,11 @@ function CurrentUnitCardSkeleton({ icon }: { icon: React.ReactNode }) {
 }
 
 export function CurrentSliceCardSkeleton() {
+  const t = useTranslations("loadingSkeletons")
   return (
     <div className="rounded-md border border-border bg-card">
       <div className="border-b border-border px-4 py-3">
-        <h2 className="text-sm font-semibold">Current Slice</h2>
+        <h2 className="text-sm font-semibold">{t('currentSlice')}</h2>
       </div>
       <div className="space-y-3 p-4">
         {[1, 2, 3].map((i) => (
@@ -57,7 +60,7 @@ export function SessionCardSkeleton() {
   return (
     <div className="rounded-md border border-border bg-card">
       <div className="border-b border-border px-4 py-3">
-        <h2 className="text-sm font-semibold">Session</h2>
+        <h2 className="text-sm font-semibold">{t('session')}</h2>
       </div>
       <div className="p-4">
         <div className="space-y-3">
@@ -80,7 +83,7 @@ export function RecoveryCardSkeleton() {
   return (
     <div className="rounded-md border border-border bg-card">
       <div className="border-b border-border px-4 py-3">
-        <h2 className="text-sm font-semibold">Recovery Summary</h2>
+        <h2 className="text-sm font-semibold">{t('recoverySummary')}</h2>
       </div>
       <div className="space-y-4 p-4">
         <div className="space-y-1.5">
@@ -103,7 +106,7 @@ export function ActivityCardSkeleton() {
   return (
     <div className="rounded-md border border-border bg-card">
       <div className="border-b border-border px-4 py-3">
-        <h2 className="text-sm font-semibold">Recent Activity</h2>
+        <h2 className="text-sm font-semibold">{t('recentActivity')}</h2>
       </div>
       <div className="divide-y divide-border">
         {[1, 2, 3, 4].map((i) => (
@@ -151,7 +154,7 @@ export function SidebarDataSkeleton() {
       {/* Scope section */}
       <div className="border-b border-border px-3 py-3">
         <div className="space-y-1.5">
-          <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Active scope</p>
+          <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{t('activeScope')}</p>
           <Skeleton className="h-3.5 w-32" />
           <Skeleton className="h-2.5 w-28" />
         </div>

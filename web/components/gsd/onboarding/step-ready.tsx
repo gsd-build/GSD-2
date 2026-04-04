@@ -5,6 +5,7 @@ import { motion } from "motion/react"
 import { CheckCircle2, Zap } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { useTranslations } from "next-intl"
 
 interface StepReadyProps {
   providerLabel: string
@@ -12,6 +13,8 @@ interface StepReadyProps {
 }
 
 export function StepReady({ providerLabel, onFinish }: StepReadyProps) {
+  const t = useTranslations("onboarding.ready")
+
   return (
     <div className="flex flex-col items-center text-center">
       {/* Success icon with staggered entrance */}
@@ -33,7 +36,7 @@ export function StepReady({ providerLabel, onFinish }: StepReadyProps) {
         transition={{ delay: 0.1, duration: 0.4 }}
         className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl"
       >
-        You&apos;re all set
+        {t('heading')}
       </motion.h2>
 
       <motion.p
@@ -42,8 +45,7 @@ export function StepReady({ providerLabel, onFinish }: StepReadyProps) {
         transition={{ delay: 0.18, duration: 0.4 }}
         className="mt-3 max-w-sm text-[15px] leading-relaxed text-muted-foreground"
       >
-        <span className="font-medium text-foreground">{providerLabel}</span> is
-        validated. The workspace is live.
+        <span className="font-medium text-foreground">{providerLabel}</span> {t('subheading')}
       </motion.p>
 
       {/* Compact summary strip */}
@@ -68,7 +70,7 @@ export function StepReady({ providerLabel, onFinish }: StepReadyProps) {
             height={14}
             className="opacity-40 dark:hidden"
           />
-          <span>Shell unlocked</span>
+          <span>{t('shellUnlocked')}</span>
         </div>
         <div className="h-3 w-px bg-border" />
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -89,7 +91,7 @@ export function StepReady({ providerLabel, onFinish }: StepReadyProps) {
           onClick={onFinish}
           data-testid="onboarding-finish"
         >
-          Launch workspace
+          {t('launch')}
           <Zap className="h-4 w-4 transition-transform group-hover:scale-110" />
         </Button>
       </motion.div>

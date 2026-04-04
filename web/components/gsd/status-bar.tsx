@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react"
 import { GitBranch, Cpu, DollarSign, Clock, Zap, AlertTriangle, Wifi, Info, LifeBuoy } from "lucide-react"
+import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
@@ -39,6 +40,7 @@ function toneClass(tone: ReturnType<typeof getStatusPresentation>["tone"]): stri
 
 export function StatusBar() {
   const workspace = useGSDWorkspaceState()
+  const t = useTranslations("statusBar")
   const status = getStatusPresentation(workspace)
   const liveWorkspace = getLiveWorkspaceIndex(workspace)
   const auto = getLiveAutoDashboard(workspace)
@@ -109,7 +111,7 @@ export function StatusBar() {
           <div className="hidden max-w-xs items-center gap-1.5 truncate text-muted-foreground xl:flex" data-testid="status-bar-retry-compaction">
             <LifeBuoy className="h-3 w-3 shrink-0" />
             <span className="truncate">
-              {recoverySummary.retryInProgress ? `Retry ${Math.max(1, recoverySummary.retryAttempt)}` : recoverySummary.isCompacting ? "Compacting" : recoverySummary.freshness}
+              {recoverySummary.retryInProgress ? t('retryBadge', { n: Math.max(1, recoverySummary.retryAttempt) }) : recoverySummary.isCompacting ? t('compacting') : recoverySummary.freshness}
             </span>
           </div>
         )}

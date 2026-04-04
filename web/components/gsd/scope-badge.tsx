@@ -1,5 +1,6 @@
 "use client"
 
+import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
 
 /* ─── Helpers ──────────────────────────────────────────────────────────────── */
@@ -85,10 +86,11 @@ interface ScopeBadgeProps {
  * The scope ID stays as-is (compact), phase gets a small colored pill.
  */
 export function ScopeBadge({ label, size = "md", className }: ScopeBadgeProps) {
+  const t = useTranslations("scopeBadge")
   const { scopeId, phase } = parseScopeLabel(label)
 
   if (scopeId === "Project scope pending") {
-    return <span className={cn("text-muted-foreground", sizeText(size), className)}>Scope pending…</span>
+    return <span className={cn("text-muted-foreground", sizeText(size), className)}>{t('pending')}</span>
   }
 
   const phaseInfo = phase ? phasePresentation(phase) : null
@@ -130,10 +132,11 @@ function sizePy(size: "sm" | "md") {
  * Inline variant for the status bar — renders: ● M002 · Complete
  */
 export function ScopeBadgeInline({ label, className }: { label: string; className?: string }) {
+  const t = useTranslations("scopeBadge")
   const { scopeId, phase } = parseScopeLabel(label)
 
   if (scopeId === "Project scope pending") {
-    return <span className={cn("text-muted-foreground", className)}>Scope pending…</span>
+    return <span className={cn("text-muted-foreground", className)}>{t('pending')}</span>
   }
 
   const phaseInfo = phase ? phasePresentation(phase) : null

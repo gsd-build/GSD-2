@@ -1,5 +1,7 @@
 "use client"
 
+import { useTranslations } from "next-intl"
+
 import { motion } from "motion/react"
 import { ArrowRight, Check, CircleDashed } from "lucide-react"
 

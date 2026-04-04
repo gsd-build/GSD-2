@@ -13,6 +13,8 @@ import {
   SkipForward,
 } from "lucide-react"
 
+import { useTranslations } from "next-intl"
+
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
@@ -36,17 +38,11 @@ interface RemoteQuestionsApiResponse {
   error?: string
 }
 
-const CHANNEL_OPTIONS: { value: RemoteChannel; label: string; description: string }[] = [
-  { value: "slack", label: "Slack", description: "Get notified in a Slack channel" },
-  { value: "discord", label: "Discord", description: "Get notified in a Discord channel" },
-  { value: "telegram", label: "Telegram", description: "Get notified via Telegram bot" },
+const CHANNEL_OPTIONS: { value: RemoteChannel; label: string }[] = [
+  { value: "slack", label: "Slack" },
+  { value: "discord", label: "Discord" },
+  { value: "telegram", label: "Telegram" },
 ]
-
-const CHANNEL_ID_HINTS: Record<RemoteChannel, string> = {
-  slack: "Channel ID (e.g. C01ABCD2EFG)",
-  discord: "Channel ID (17–20 digit number)",
-  telegram: "Chat ID (numeric, may start with -)",
-}
 
 const CHANNEL_ID_PATTERNS: Record<RemoteChannel, RegExp> = {
   slack: /^[A-Z0-9]{9,12}$/,
@@ -68,6 +64,8 @@ interface StepRemoteProps {
 }
 
 export function StepRemote({ onBack, onNext }: StepRemoteProps) {
+  const t = useTranslations("onboarding.remote")
+  const tc = useTranslations("common")
   const [channel, setChannel] = useState<RemoteChannel | null>(null)
   const [channelId, setChannelId] = useState("")
   const [saving, setSaving] = useState(false)
@@ -80,6 +78,18 @@ export function StepRemote({ onBack, onNext }: StepRemoteProps) {
   const [savingToken, setSavingToken] = useState(false)
   const [tokenSet, setTokenSet] = useState(false)
   const [tokenSuccess, setTokenSuccess] = useState<string | null>(null)
+
+  const channelDescriptions: Record<RemoteChannel, string> = {
+    slack: t("channelDescriptions.slack"),
+    discord: t("channelDescriptions.discord"),
+    telegram: t("channelDescriptions.telegram"),
+  }
+
+  const channelIdHints: Record<RemoteChannel, string> = {
+    slack: t("channelIdHints.slack"),
+    discord: t("channelIdHints.discord"),
+    telegram: t("channelIdHints.telegram"),
+  }
 
   // Check if already configured
   useEffect(() => {
@@ -121,13 +131,13 @@ export function StepRemote({ onBack, onNext }: StepRemoteProps) {
       })
       const json = await res.json()
       if (!res.ok) {
-        setError(json.error ?? `Save failed (${res.status})`)
+        setError(json.error ?? `${t("saveFailed")} (${res.status})`)
         return
       }
       setSuccess(true)
       setAlreadyConfigured(true)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save")
+      setError(err instanceof Error ? err.message : t("failedToSave"))
     } finally {
       setSaving(false)
     }
@@ -178,11 +188,10 @@ export function StepRemote({ onBack, onNext }: StepRemoteProps) {
         className="text-center"
       >
         <h2 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-          Remote notifications
+          {t("heading")}
         </h2>
         <p className="mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">
-          Get notified when GSD needs your input. Connect a chat channel and
-          the agent pings you instead of waiting silently.
+          {t("subheading")}
         </p>
       </motion.div>
 
@@ -198,8 +207,8 @@ export function StepRemote({ onBack, onNext }: StepRemoteProps) {
             <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
             <span className="text-muted-foreground">
               {alreadyConfigured && !saving
-                ? `Connected to ${channel ?? "channel"}`
-                : "Configuration saved"}
+                ? t("connectedTo", { channel: channel ?? "channel" })
+                : t("configSaved")}
             </span>
           </div>
         )}
@@ -229,7 +238,7 @@ export function StepRemote({ onBack, onNext }: StepRemoteProps) {
                   )}
                 >
                   <div className="text-sm font-medium text-foreground">{opt.label}</div>
-                  <div className="mt-0.5 text-[11px] text-muted-foreground">{opt.description}</div>
+                  <div className="mt-0.5 text-[11px] text-muted-foreground">{channelDescriptions[opt.value]}</div>
                 </button>
               ))}
             </div>
@@ -246,7 +255,7 @@ export function StepRemote({ onBack, onNext }: StepRemoteProps) {
                 setChannelId(e.target.value)
                 if (error) setError(null)
               }}
-              placeholder={CHANNEL_ID_HINTS[channel]}
+              placeholder={channelIdHints[channel]}
               disabled={saving}
               className="font-mono text-sm"
               onKeyDown={(e) => {
@@ -257,7 +266,7 @@ export function StepRemote({ onBack, onNext }: StepRemoteProps) {
             />
             {channelId.trim().length > 0 && !CHANNEL_ID_PATTERNS[channel].test(channelId.trim()) && (
               <p className="text-xs text-destructive/70">
-                Doesn't match the expected format for {channel}
+                {t("channelFormatMismatch", { channel })}
               </p>
             )}
           </div>
@@ -267,9 +276,9 @@ export function StepRemote({ onBack, onNext }: StepRemoteProps) {
         {channel && !loading && (
           <div className="space-y-2">
             <div className="text-xs font-medium text-muted-foreground">
-              Bot token
+              {t("botToken")}
               {tokenSet && (
-                <span className="ml-2 text-success">✓ configured</span>
+                <span className="ml-2 text-success">{t("configured")}</span>
               )}
             </div>
 
@@ -334,7 +343,7 @@ export function StepRemote({ onBack, onNext }: StepRemoteProps) {
             ) : (
               <CheckCircle2 className="h-4 w-4" />
             )}
-            Save & connect
+            {t("saveConnect")}
           </Button>
         )}
 
@@ -358,7 +367,7 @@ export function StepRemote({ onBack, onNext }: StepRemoteProps) {
           onClick={onBack}
           className="text-muted-foreground transition-transform active:scale-[0.96]"
         >
-          Back
+          {tc("back")}
         </Button>
         <div className="flex items-center gap-2">
           {!success && (
@@ -375,7 +384,7 @@ export function StepRemote({ onBack, onNext }: StepRemoteProps) {
             onClick={onNext}
             className="group gap-2 transition-transform active:scale-[0.96]"
           >
-            {success ? "Continue" : "Continue"}
+            {t("continue")}
             <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
           </Button>
         </div>

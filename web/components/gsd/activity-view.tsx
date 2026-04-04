@@ -1,6 +1,7 @@
 "use client"
 
 import { CheckCircle2, Play, Clock, Terminal, AlertCircle } from "lucide-react"
+import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
 import { useGSDWorkspaceState, type TerminalLineType } from "@/lib/gsd-workspace-store"
 
@@ -23,6 +24,7 @@ function EventIcon({ type }: { type: TerminalLineType }) {
 }
 
 export function ActivityView() {
+  const t = useTranslations("activity")
   const workspace = useGSDWorkspaceState()
   const terminalLines = workspace.terminalLines ?? []
 
@@ -32,16 +34,16 @@ export function ActivityView() {
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <div className="border-b border-border px-6 py-3">
-        <h1 className="text-lg font-semibold">Activity Log</h1>
+        <h1 className="text-lg font-semibold">{t('title')}</h1>
         <p className="text-sm text-muted-foreground">
-          Execution history and git operations
+          {t('subtitle')}
         </p>
       </div>
 
       <div className="flex-1 overflow-y-auto">
         {reversedLines.length === 0 ? (
           <div className="py-8 text-center text-sm text-muted-foreground">
-            No activity yet. Events will appear here once the workspace is active.
+            {t('empty')}
           </div>
         ) : (
           <div className="relative px-6 py-4">

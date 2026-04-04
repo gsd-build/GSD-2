@@ -1,6 +1,7 @@
 "use client"
 
 import dynamic from "next/dynamic"
+import { LocaleProvider } from "@/components/i18n/locale-provider"
 
 const GSDAppShell = dynamic(
   () => import("@/components/gsd/app-shell").then((mod) => mod.GSDAppShell),
@@ -15,5 +16,9 @@ const GSDAppShell = dynamic(
 )
 
 export default function Page() {
-  return <GSDAppShell />
+  return (
+    <LocaleProvider>
+      <GSDAppShell />
+    </LocaleProvider>
+  )
 }

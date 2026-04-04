@@ -1,5 +1,7 @@
 "use client"
 
+import { useTranslations } from "next-intl"
+
 import { useEffect, useState, useCallback } from "react"
 import * as TabsPrimitive from "@radix-ui/react-tabs"
 import {
@@ -1163,6 +1165,7 @@ function VisualizerTabList() {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function VisualizerView() {
+  const t = useTranslations("visualizer")
   const workspace = useGSDWorkspaceState()
   const projectCwd = workspace.boot?.project.cwd
   const [data, setData] = useState<VisualizerData | null>(null)

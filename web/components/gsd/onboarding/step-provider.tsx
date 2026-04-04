@@ -3,6 +3,7 @@
 import { useMemo } from "react"
 import { motion } from "motion/react"
 import { ArrowRight, Check, ShieldCheck } from "lucide-react"
+import { useTranslations } from "next-intl"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -18,20 +19,32 @@ interface StepProviderProps {
   onBack: () => void
 }
 
-function capabilityBadges(provider: WorkspaceOnboardingProviderState): string[] {
+function capabilityBadgeKeys(provider: WorkspaceOnboardingProviderState): string[] {
   const badges: string[] = []
-  if (provider.supports.apiKey) badges.push("API key")
+  if (provider.supports.apiKey) badges.push("apiKey")
   if (provider.supports.oauth)
-    badges.push(provider.supports.oauthAvailable ? "Browser sign-in" : "OAuth unavailable")
+    badges.push(provider.supports.oauthAvailable ? "browserSignIn" : "oauthUnavailable")
   return badges
 }
 
-function configuredViaLabel(source: WorkspaceOnboardingProviderState["configuredVia"]): string {
+const BADGE_LABELS: Record<string, string> = {
+  apiKey: "badges.apiKey",
+  browserSignIn: "badges.browserSignIn",
+  oauthUnavailable: "badges.oauthUnavailable",
+}
+
+const BADGE_TOOLTIPS: Record<string, string> = {
+  apiKey: "tooltips.apiKey",
+  browserSignIn: "tooltips.browserSignIn",
+  oauthUnavailable: "tooltips.oauthUnavailable",
+}
+
+function configuredViaKey(source: WorkspaceOnboardingProviderState["configuredVia"]): string {
   switch (source) {
-    case "auth_file": return "Saved auth"
-    case "environment": return "Environment variable"
-    case "runtime": return "Runtime"
-    default: return "Not configured"
+    case "auth_file": return "configuredVia.savedAuth"
+    case "environment": return "configuredVia.environmentVariable"
+    case "runtime": return "configuredVia.runtime"
+    default: return "notConfigured"
   }
 }
 
@@ -51,9 +64,18 @@ function groupProviders(providers: WorkspaceOnboardingProviderState[]): {
   return groups
 }
 
+const GROUP_LABEL_KEYS: Record<string, string> = {
+  "Configured": "configured",
+  "Recommended": "recommended",
+  "Other Providers": "other",
+}
+
 export function StepProvider({ providers, selectedId, onSelect, onNext, onBack }: StepProviderProps) {
-  const groups = useMemo(() => groupProviders(providers), [providers])
+  const t = useTranslations("onboarding.provider")
+  const tc = useTranslations("common")
+
   const hasConfigured = providers.some((p) => p.configured)
+  const groups = useMemo(() => groupProviders(providers), [providers])
 
   return (
     <div className="flex flex-col items-center">
@@ -64,10 +86,10 @@ export function StepProvider({ providers, selectedId, onSelect, onNext, onBack }
         className="text-center"
       >
         <h2 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-          Choose a provider
+          {t('heading')}
         </h2>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-          Click a provider to configure it. Set up as many as you want, then continue.
+          {t('subheading')}
         </p>
       </motion.div>
 
@@ -80,7 +102,7 @@ export function StepProvider({ providers, selectedId, onSelect, onNext, onBack }
         {groups.map((group) => (
           <div key={group.label}>
             <div className="mb-2 px-0.5 text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
-              {group.label}
+              {t(GROUP_LABEL_KEYS[group.label] || group.label)}
             </div>
             <div className="grid gap-2 sm:grid-cols-2">
               {group.items.map((provider) => {
@@ -100,7 +122,6 @@ export function StepProvider({ providers, selectedId, onSelect, onNext, onBack }
                     )}
                     data-testid={`onboarding-provider-${provider.id}`}
                   >
-                    {/* Radio dot */}
                     <div className="absolute right-3 top-3">
                       <div
                         className={cn(
@@ -117,7 +138,7 @@ export function StepProvider({ providers, selectedId, onSelect, onNext, onBack }
                         <span className="text-sm font-semibold text-foreground">{provider.label}</span>
                         {provider.recommended && (
                           <Badge variant="outline" className="border-foreground/10 bg-foreground/[0.03] text-[9px] text-muted-foreground">
-                            Recommended
+                            {t('recommended')}
                           </Badge>
                         )}
                       </div>
@@ -126,28 +147,24 @@ export function StepProvider({ providers, selectedId, onSelect, onNext, onBack }
                         {provider.configured ? (
                           <>
                             <ShieldCheck className="h-3 w-3 text-success/80" />
-                            <span>{configuredViaLabel(provider.configuredVia)}</span>
+                            <span>{t(configuredViaKey(provider.configuredVia))}</span>
                           </>
                         ) : (
-                          <span className="text-muted-foreground">Not configured</span>
+                          <span className="text-muted-foreground">{t('notConfigured')}</span>
                         )}
                       </div>
                     </div>
 
                     <div className="mt-2.5 flex flex-wrap gap-1">
-                      {capabilityBadges(provider).map((cap) => (
-                        <Tooltip key={cap}>
+                      {capabilityBadgeKeys(provider).map((key) => (
+                        <Tooltip key={key}>
                           <TooltipTrigger asChild>
                             <Badge variant="outline" className="border-border/50 text-[10px] text-muted-foreground">
-                              {cap}
+                              {t(BADGE_LABELS[key])}
                             </Badge>
                           </TooltipTrigger>
                           <TooltipContent side="bottom">
-                            {cap === "API key"
-                              ? "Enter an API key to authenticate"
-                              : cap === "Browser sign-in"
-                                ? "Authenticate through your browser"
-                                : "This auth method is not available"}
+                            {t(BADGE_TOOLTIPS[key])}
                           </TooltipContent>
                         </Tooltip>
                       ))}
@@ -160,7 +177,6 @@ export function StepProvider({ providers, selectedId, onSelect, onNext, onBack }
         ))}
       </motion.div>
 
-      {/* Navigation — pinned inside the step */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -172,7 +188,7 @@ export function StepProvider({ providers, selectedId, onSelect, onNext, onBack }
           onClick={onBack}
           className="text-muted-foreground transition-transform active:scale-[0.96]"
         >
-          Back
+          {tc('back')}
         </Button>
         <Button
           onClick={onNext}
@@ -180,7 +196,7 @@ export function StepProvider({ providers, selectedId, onSelect, onNext, onBack }
           className="group gap-2 transition-transform active:scale-[0.96]"
           data-testid="onboarding-provider-continue"
         >
-          Continue
+          {tc('continue')}
           <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
         </Button>
       </motion.div>

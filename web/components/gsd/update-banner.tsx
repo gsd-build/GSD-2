@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef, useCallback } from "react"
+import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
 import { authFetch } from "@/lib/auth"
 
@@ -16,6 +17,7 @@ interface UpdateInfo {
 const POLL_INTERVAL = 3000
 
 export function UpdateBanner() {
+  const t = useTranslations("updateBanner")
   const [info, setInfo] = useState<UpdateInfo | null>(null)
   const [triggering, setTriggering] = useState(false)
   const [dismissed, setDismissed] = useState(false)
@@ -90,12 +92,12 @@ export function UpdateBanner() {
     >
       {isSuccess ? (
         <span className="flex-1" data-testid="update-banner-message">
-          Update complete — restart GSD to use v{targetLabel}
+          {t('updateComplete', { targetLabel })}
         </span>
       ) : isError ? (
         <>
           <span className="flex-1" data-testid="update-banner-message">
-            Update failed{info.error ? `: ${info.error}` : ""}
+            {t('updateFailed', { error: info.error || '' })}
           </span>
           <button
             onClick={() => void handleUpdate()}
@@ -106,7 +108,7 @@ export function UpdateBanner() {
             )}
             data-testid="update-banner-retry"
           >
-            Retry
+            {t('update')}
           </button>
         </>
       ) : (
@@ -115,11 +117,11 @@ export function UpdateBanner() {
             {isRunning ? (
               <span className="flex items-center gap-2">
                 <Spinner />
-                Updating to v{targetLabel}…
+                {t('updating', { targetLabel })}
               </span>
             ) : (
               <>
-                Update available: v{info.currentVersion} → v{info.latestVersion}
+                {t('available', { currentVersion: info.currentVersion, latestVersion: info.latestVersion })}
               </>
             )}
           </span>
@@ -133,14 +135,14 @@ export function UpdateBanner() {
               )}
               data-testid="update-banner-action"
             >
-              Update
+              {t('update')}
             </button>
           )}
         </>
       )}
       <button
         onClick={() => setDismissed(true)}
-        aria-label="Dismiss update banner"
+        aria-label={t('dismiss')}
         className="flex-shrink-0 rounded p-0.5 opacity-50 transition-opacity hover:opacity-100"
         data-testid="update-banner-dismiss"
       >

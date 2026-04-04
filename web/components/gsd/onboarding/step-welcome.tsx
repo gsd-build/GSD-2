@@ -3,6 +3,7 @@
 import Image from "next/image"
 import { motion } from "motion/react"
 import { ArrowRight } from "lucide-react"
+import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"
 
@@ -10,7 +11,12 @@ interface StepWelcomeProps {
   onNext: () => void
 }
 
+const STEPS = ["mode", "provider", "auth", "workspace"] as const
+
 export function StepWelcome({ onNext }: StepWelcomeProps) {
+  const t = useTranslations("onboarding.welcome")
+  const tl = useTranslations("onboarding.stepLabels")
+
   return (
     <div className="flex flex-col items-center text-center">
       {/* Logo mark with glow */}
@@ -46,7 +52,7 @@ export function StepWelcome({ onNext }: StepWelcomeProps) {
         transition={{ delay: 0.16, duration: 0.4 }}
         className="max-w-sm text-[15px] leading-relaxed text-muted-foreground"
       >
-        Let's get your workspace ready. This takes about a minute.
+        {t('description')}
       </motion.p>
 
       {/* Steps preview */}
@@ -56,12 +62,12 @@ export function StepWelcome({ onNext }: StepWelcomeProps) {
         transition={{ delay: 0.24, duration: 0.4 }}
         className="mt-10 flex items-center gap-3 text-xs text-muted-foreground"
       >
-        {["Mode", "Provider", "Auth", "Workspace"].map((label, i) => (
-          <span key={label} className="flex items-center gap-3">
+        {STEPS.map((step, i) => (
+          <span key={step} className="flex items-center gap-3">
             {i > 0 && (
               <span className="h-px w-5 bg-border" />
             )}
-            <span className="font-medium">{label}</span>
+            <span className="font-medium">{tl(step)}</span>
           </span>
         ))}
       </motion.div>
@@ -78,7 +84,7 @@ export function StepWelcome({ onNext }: StepWelcomeProps) {
           onClick={onNext}
           data-testid="onboarding-start"
         >
-          Get started
+          {t('getStarted')}
           <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
         </Button>
       </motion.div>

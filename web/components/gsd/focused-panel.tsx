@@ -1,5 +1,7 @@
 "use client"
 
+import { useTranslations } from "next-intl"
+
 import { useState } from "react"
 import { CheckSquare, MessageSquare, Send, TextCursorInput, Type } from "lucide-react"
 
@@ -37,17 +39,8 @@ function methodIcon(method: PendingUiRequest["method"]) {
   }
 }
 
-function methodLabel(method: PendingUiRequest["method"]): string {
-  switch (method) {
-    case "select":
-      return "Selection"
-    case "confirm":
-      return "Confirmation"
-    case "input":
-      return "Input"
-    case "editor":
-      return "Editor"
-  }
+function methodLabel(method: PendingUiRequest["method"], t: (key: string) => string): string {
+  return t(`methods.${method}`)
 }
 
 // --- Renderers for each blocking UI request type ---
@@ -56,10 +49,12 @@ function SelectRenderer({
   request,
   onSubmit,
   disabled,
+  t,
 }: {
   request: Extract<PendingUiRequest, { method: "select" }>
   onSubmit: (value: Record<string, unknown>) => void
   disabled: boolean
+  t: (key: string, values?: Record<string, number>) => string
 }) {
   const isMulti = Boolean(request.allowMultiple)
   const [singleValue, setSingleValue] = useState("")
@@ -103,7 +98,7 @@ function SelectRenderer({
         </div>
         <Button onClick={handleSubmit} disabled={disabled || !canSubmit} className="w-full">
           <Send className="h-4 w-4" />
-          Submit selection ({multiValues.size})
+          {t("submitSelection", { count: multiValues.size })}
         </Button>
       </div>
     )
@@ -126,7 +121,7 @@ function SelectRenderer({
       </RadioGroup>
       <Button onClick={handleSubmit} disabled={disabled || !canSubmit} className="w-full">
         <Send className="h-4 w-4" />
-        Submit
+        {t("submit")}
       </Button>
     </div>
   )
@@ -137,11 +132,13 @@ function ConfirmRenderer({
   onSubmit,
   onCancel,
   disabled,
+  t,
 }: {
   request: Extract<PendingUiRequest, { method: "confirm" }>
   onSubmit: (value: Record<string, unknown>) => void
   onCancel: () => void
   disabled: boolean
+  t: (key: string) => string
 }) {
   return (
     <div className="space-y-4">
@@ -150,10 +147,10 @@ function ConfirmRenderer({
       </div>
       <div className="flex gap-3">
         <Button onClick={() => onSubmit({ value: true })} disabled={disabled} className="flex-1">
-          Confirm
+          {t("confirm")}
         </Button>
         <Button onClick={onCancel} disabled={disabled} variant="outline" className="flex-1">
-          Cancel
+          {t("cancel")}
         </Button>
       </div>
     </div>
@@ -164,10 +161,12 @@ function InputRenderer({
   request,
   onSubmit,
   disabled,
+  t,
 }: {
   request: Extract<PendingUiRequest, { method: "input" }>
   onSubmit: (value: Record<string, unknown>) => void
   disabled: boolean
+  t: (key: string) => string
 }) {
   const [value, setValue] = useState("")
 
@@ -188,7 +187,7 @@ function InputRenderer({
       />
       <Button type="submit" disabled={disabled || !value.trim()} className="w-full">
         <Send className="h-4 w-4" />
-        Submit
+        {t("submit")}
       </Button>
     </form>
   )
@@ -198,10 +197,12 @@ function EditorRenderer({
   request,
   onSubmit,
   disabled,
+  t,
 }: {
   request: Extract<PendingUiRequest, { method: "editor" }>
   onSubmit: (value: Record<string, unknown>) => void
   disabled: boolean
+  t: (key: string) => string
 }) {
   const [value, setValue] = useState(request.prefill || "")
 
@@ -222,7 +223,7 @@ function EditorRenderer({
       />
       <Button type="submit" disabled={disabled} className="w-full">
         <Send className="h-4 w-4" />
-        Submit
+        {t("submit")}
       </Button>
     </form>
   )
@@ -233,25 +234,28 @@ function RequestBody({
   onSubmit,
   onCancel,
   disabled,
+  t,
 }: {
   request: PendingUiRequest
   onSubmit: (value: Record<string, unknown>) => void
   onCancel: () => void
   disabled: boolean
+  t: ReturnType<typeof useTranslations<'focusedPanel'>>
 }) {
   switch (request.method) {
     case "select":
-      return <SelectRenderer request={request} onSubmit={onSubmit} disabled={disabled} />
+      return <SelectRenderer request={request} onSubmit={onSubmit} disabled={disabled} t={t} />
     case "confirm":
-      return <ConfirmRenderer request={request} onSubmit={onSubmit} onCancel={onCancel} disabled={disabled} />
+      return <ConfirmRenderer request={request} onSubmit={onSubmit} onCancel={onCancel} disabled={disabled} t={t} />
     case "input":
-      return <InputRenderer request={request} onSubmit={onSubmit} disabled={disabled} />
+      return <InputRenderer request={request} onSubmit={onSubmit} disabled={disabled} t={t} />
     case "editor":
-      return <EditorRenderer request={request} onSubmit={onSubmit} disabled={disabled} />
+      return <EditorRenderer request={request} onSubmit={onSubmit} disabled={disabled} t={t} />
   }
 }
 
 export function FocusedPanel() {
+  const t = useTranslations("focusedPanel")
   const workspace = useGSDWorkspaceState()
   const { respondToUiRequest, dismissUiRequest } = useGSDWorkspaceActions()
 
@@ -285,11 +289,11 @@ export function FocusedPanel() {
             <SheetHeader>
               <div className="flex items-center gap-2">
                 {methodIcon(current.method)}
-                <SheetTitle>{current.title || methodLabel(current.method)}</SheetTitle>
+                <SheetTitle>{current.title || methodLabel(current.method, t)}</SheetTitle>
               </div>
               <SheetDescription>
                 <span className="flex items-center gap-2">
-                  <span>{methodLabel(current.method)} requested by the agent</span>
+                  <span>{t("requestedByAgent", { method: methodLabel(current.method, t) })}</span>
                   {pending.length > 1 && (
                     <span
                       className={cn(
@@ -297,7 +301,7 @@ export function FocusedPanel() {
                       )}
                       data-testid="focused-panel-queue-badge"
                     >
-                      +{pending.length - 1}
+                      {t("morePending", { count: pending.length - 1 })}
                     </span>
                   )}
                 </span>
@@ -310,6 +314,7 @@ export function FocusedPanel() {
                 onSubmit={handleSubmit}
                 onCancel={handleDismiss}
                 disabled={isSubmitting}
+                t={t}
               />
             </div>
 
@@ -321,7 +326,7 @@ export function FocusedPanel() {
                 disabled={isSubmitting}
                 className="text-muted-foreground"
               >
-                Dismiss
+                {t("dismiss")}
               </Button>
             </SheetFooter>
           </>

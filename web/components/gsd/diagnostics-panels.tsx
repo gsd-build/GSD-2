@@ -1,5 +1,6 @@
 "use client"
 
+import { useTranslations } from "next-intl"
 import { AlertTriangle, CheckCircle2, Info, LoaderCircle, RefreshCw, ShieldAlert, Wrench, XCircle } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -134,6 +135,7 @@ function AnomalyRow({ anomaly }: { anomaly: ForensicAnomaly }) {
 }
 
 export function ForensicsPanel() {
+  const t = useTranslations("diagnostics")
   const workspace = useGSDWorkspaceState()
   const { loadForensicsDiagnostics } = useGSDWorkspaceActions()
   const state = workspace.commandSurface.diagnostics.forensics
@@ -143,7 +145,7 @@ export function ForensicsPanel() {
   return (
     <div className="space-y-4" data-testid="diagnostics-forensics">
       <DiagHeader
-        title="Forensic Analysis"
+        title={t("sections.forensic")}
         subtitle={data ? new Date(data.timestamp).toLocaleString() : null}
         status={data ? (
           <span className={cn(
@@ -156,17 +158,17 @@ export function ForensicsPanel() {
       />
 
       {state.error && <DiagError message={state.error} />}
-      {busy && !data && <DiagLoading label="Running forensic analysis…" />}
+      {busy && !data && <DiagLoading label={t("loading.forensic")} />}
 
       {data && (
         <>
           {/* Metrics summary */}
           {data.metrics && (
             <div className="flex flex-wrap gap-2">
-              <StatPill label="Units" value={data.metrics.totalUnits} />
-              <StatPill label="Cost" value={formatCost(data.metrics.totalCost)} />
-              <StatPill label="Duration" value={`${Math.round(data.metrics.totalDuration / 1000)}s`} />
-              <StatPill label="Traces" value={data.unitTraceCount} />
+              <StatPill label={t("labels.units")} value={data.metrics.totalUnits} />
+              <StatPill label={t("labels.cost")} value={formatCost(data.metrics.totalCost)} />
+              <StatPill label={t("labels.duration")} value={`${Math.round(data.metrics.totalDuration / 1000)}s`} />
+              <StatPill label={t("labels.traces")} value={data.unitTraceCount} />
             </div>
           )}
 
@@ -175,47 +177,47 @@ export function ForensicsPanel() {
             <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2.5 space-y-1">
               <div className="flex items-center gap-2">
                 <ShieldAlert className="h-3.5 w-3.5 text-destructive" />
-                <span className="text-xs font-medium text-destructive">Crash Lock Active</span>
+                <span className="text-xs font-medium text-destructive">{t("labels.crashLockActive")}</span>
               </div>
               <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[11px]">
-                <span className="text-muted-foreground">PID</span>
+                <span className="text-muted-foreground">{t("labels.tablePid")}</span>
                 <span className="font-mono text-foreground/80">{data.crashLock.pid}</span>
-                <span className="text-muted-foreground">Started</span>
+                <span className="text-muted-foreground">{t("labels.tableStarted")}</span>
                 <span className="text-foreground/80">{new Date(data.crashLock.startedAt).toLocaleString()}</span>
-                <span className="text-muted-foreground">Unit</span>
+                <span className="text-muted-foreground">{t("labels.tableUnit")}</span>
                 <span className="font-mono text-foreground/80">{data.crashLock.unitType}/{data.crashLock.unitId}</span>
               </div>
             </div>
           ) : (
             <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-card/50 px-3 py-2 text-xs text-muted-foreground">
               <CheckCircle2 className="h-3.5 w-3.5 text-success" />
-              No crash lock
+              {t("empty.noCrashLock")}
             </div>
           )}
 
           {/* Anomalies */}
           {data.anomalies.length > 0 ? (
             <div className="space-y-2">
-              <h4 className="text-xs font-medium text-muted-foreground">Anomalies ({data.anomalies.length})</h4>
+              <h4 className="text-xs font-medium text-muted-foreground">{t("labels.anomalies")} ({data.anomalies.length})</h4>
               {data.anomalies.map((a, i) => <AnomalyRow key={i} anomaly={a} />)}
             </div>
           ) : (
-            <DiagEmpty message="No anomalies detected" />
+            <DiagEmpty message={t("empty.noAnomalies")} />
           )}
 
           {/* Recent units */}
           {data.recentUnits.length > 0 && (
             <div className="space-y-2">
-              <h4 className="text-xs font-medium text-muted-foreground">Recent Units ({data.recentUnits.length})</h4>
+              <h4 className="text-xs font-medium text-muted-foreground">{t("sections.recentUnits")} ({data.recentUnits.length})</h4>
               <div className="overflow-x-auto rounded-lg border border-border/50">
                 <table className="w-full text-[11px]">
                   <thead>
                     <tr className="border-b border-border/50 bg-card/50">
-                      <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">Type</th>
-                      <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">ID</th>
-                      <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">Model</th>
-                      <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">Cost</th>
-                      <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">Duration</th>
+                      <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">{t("labels.type")}</th>
+                      <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">{t("labels.id")}</th>
+                      <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">{t("labels.model")}</th>
+                      <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">{t("labels.cost")}</th>
+                      <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">{t("labels.duration")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -247,7 +249,7 @@ function humanizeCode(code: string): string {
   return code.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
-function IssueRow({ issue }: { issue: DoctorIssue }) {
+function IssueRow({ issue, t }: { issue: DoctorIssue; t: ReturnType<typeof useTranslations<"diagnostics">> }) {
   return (
     <div className="rounded-lg border border-border/50 bg-card/50 px-3 py-2.5 space-y-1">
       <div className="flex items-center gap-2 flex-wrap">
@@ -257,7 +259,7 @@ function IssueRow({ issue }: { issue: DoctorIssue }) {
         {issue.scope && <span className="text-[10px] text-muted-foreground font-mono">{issue.scope}</span>}
         {issue.fixable && (
           <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-success/30 text-success">
-            <Wrench className="h-2.5 w-2.5 mr-0.5" />fixable
+            <Wrench className="h-2.5 w-2.5 mr-0.5" />{t("labels.fixableBadge")}
           </Badge>
         )}
       </div>
@@ -268,6 +270,7 @@ function IssueRow({ issue }: { issue: DoctorIssue }) {
 }
 
 export function DoctorPanel() {
+  const t = useTranslations("diagnostics")
   const workspace = useGSDWorkspaceState()
   const { loadDoctorDiagnostics, applyDoctorFixes } = useGSDWorkspaceActions()
   const state = workspace.commandSurface.diagnostics.doctor
@@ -279,7 +282,7 @@ export function DoctorPanel() {
   return (
     <div className="space-y-4" data-testid="diagnostics-doctor">
       <DiagHeader
-        title="Doctor Health Check"
+        title={t("sections.doctor")}
         status={data ? (
           <span className={cn(
             "inline-block h-1.5 w-1.5 rounded-full",
@@ -291,18 +294,18 @@ export function DoctorPanel() {
       />
 
       {state.error && <DiagError message={state.error} />}
-      {busy && !data && <DiagLoading label="Running health check…" />}
+      {busy && !data && <DiagLoading label={t("loading.doctor")} />}
 
       {data && (
         <>
           {/* Summary bar */}
           <div className="flex flex-wrap gap-2">
-            <StatPill label="Total" value={data.summary.total} />
-            {data.summary.errors > 0 && <StatPill label="Errors" value={data.summary.errors} variant="error" />}
-            {data.summary.warnings > 0 && <StatPill label="Warnings" value={data.summary.warnings} variant="warning" />}
-            {data.summary.infos > 0 && <StatPill label="Info" value={data.summary.infos} variant="info" />}
+            <StatPill label={t("labels.total")} value={data.summary.total} />
+            {data.summary.errors > 0 && <StatPill label={t("labels.errors")} value={data.summary.errors} variant="error" />}
+            {data.summary.warnings > 0 && <StatPill label={t("labels.warnings")} value={data.summary.warnings} variant="warning" />}
+            {data.summary.infos > 0 && <StatPill label={t("labels.info")} value={data.summary.infos} variant="info" />}
             {fixableCount > 0 && (
-              <StatPill label="Fixable" value={fixableCount} variant="info" />
+              <StatPill label={t("labels.fixable")} value={fixableCount} variant="info" />
             )}
           </div>
 
@@ -323,7 +326,7 @@ export function DoctorPanel() {
                 ) : (
                   <Wrench className="h-3 w-3" />
                 )}
-                Apply Fixes ({fixableCount})
+                {t("labels.applyFixes")} ({fixableCount})
               </Button>
               {state.lastFixError && (
                 <span className="text-[11px] text-destructive">{state.lastFixError}</span>
@@ -336,7 +339,7 @@ export function DoctorPanel() {
             <div className="rounded-lg border border-success/20 bg-success/5 px-3 py-2.5 space-y-1">
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="h-3.5 w-3.5 text-success" />
-                <span className="text-xs font-medium text-success">Fixes Applied</span>
+                <span className="text-xs font-medium text-success">{t("labels.fixesApplied")}</span>
               </div>
               <ul className="space-y-0.5 pl-5">
                 {state.lastFixResult.fixesApplied.map((fix, i) => (
@@ -349,11 +352,11 @@ export function DoctorPanel() {
           {/* Issue list */}
           {data.issues.length > 0 ? (
             <div className="space-y-2">
-              <h4 className="text-xs font-medium text-muted-foreground">Issues ({data.issues.length})</h4>
-              {data.issues.map((issue, i) => <IssueRow key={i} issue={issue} />)}
+              <h4 className="text-xs font-medium text-muted-foreground">{t("labels.issues")} ({data.issues.length})</h4>
+              {data.issues.map((issue, i) => <IssueRow key={i} issue={issue} t={t} />)}
             </div>
           ) : (
-            <DiagEmpty message="No issues found — workspace is healthy" />
+            <DiagEmpty message={t("empty.healthy")} />
           )}
         </>
       )}
@@ -365,13 +368,13 @@ export function DoctorPanel() {
 // SKILL HEALTH PANEL
 // ═══════════════════════════════════════════════════════════════════════
 
-function trendArrow(trend: "stable" | "rising" | "declining"): string {
+function trendArrowFn(trend: "stable" | "rising" | "declining"): string {
   if (trend === "rising") return "↑"
   if (trend === "declining") return "↓"
   return "→"
 }
 
-function trendColor(trend: "stable" | "rising" | "declining"): string {
+function trendColorFn(trend: "stable" | "rising" | "declining"): string {
   if (trend === "rising") return "text-warning"
   if (trend === "declining") return "text-destructive"
   return "text-muted-foreground"
@@ -392,6 +395,7 @@ function SuggestionRow({ suggestion }: { suggestion: SkillHealSuggestion }) {
 }
 
 export function SkillHealthPanel() {
+  const t = useTranslations("diagnostics")
   const workspace = useGSDWorkspaceState()
   const { loadSkillHealthDiagnostics } = useGSDWorkspaceActions()
   const state = workspace.commandSurface.diagnostics.skillHealth
@@ -401,7 +405,7 @@ export function SkillHealthPanel() {
   return (
     <div className="space-y-4" data-testid="diagnostics-skill-health">
       <DiagHeader
-        title="Skill Health"
+        title={t("sections.skillHealth")}
         subtitle={data ? new Date(data.generatedAt).toLocaleString() : null}
         status={data ? (
           <span className={cn(
@@ -414,33 +418,33 @@ export function SkillHealthPanel() {
       />
 
       {state.error && <DiagError message={state.error} />}
-      {busy && !data && <DiagLoading label="Analyzing skill health…" />}
+      {busy && !data && <DiagLoading label={t("loading.skills")} />}
 
       {data && (
         <>
           {/* Stats bar */}
           <div className="flex flex-wrap gap-2">
-            <StatPill label="Skills" value={data.skills.length} />
-            {data.staleSkills.length > 0 && <StatPill label="Stale" value={data.staleSkills.length} variant="warning" />}
-            {data.decliningSkills.length > 0 && <StatPill label="Declining" value={data.decliningSkills.length} variant="error" />}
-            <StatPill label="Total units" value={data.totalUnitsWithSkills} />
+            <StatPill label={t("labels.skills")} value={data.skills.length} />
+            {data.staleSkills.length > 0 && <StatPill label={t("labels.stale")} value={data.staleSkills.length} variant="warning" />}
+            {data.decliningSkills.length > 0 && <StatPill label={t("labels.declining")} value={data.decliningSkills.length} variant="error" />}
+            <StatPill label={t("labels.totalUnits")} value={data.totalUnitsWithSkills} />
           </div>
 
           {/* Skill table */}
           {data.skills.length > 0 && (
             <div className="space-y-2">
-              <h4 className="text-xs font-medium text-muted-foreground">Skills ({data.skills.length})</h4>
+              <h4 className="text-xs font-medium text-muted-foreground">{t("labels.skills")} ({data.skills.length})</h4>
               <div className="overflow-x-auto rounded-lg border border-border/50">
                 <table className="w-full text-[11px]">
                   <thead>
                     <tr className="border-b border-border/50 bg-card/50">
-                      <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">Skill</th>
-                      <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">Uses</th>
-                      <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">Success</th>
-                      <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">Tokens</th>
-                      <th className="px-2.5 py-1.5 text-center font-medium text-muted-foreground">Trend</th>
-                      <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">Stale</th>
-                      <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">Cost</th>
+                      <th className="px-2.5 py-1.5 text-left font-medium text-muted-foreground">{t("labels.skillName")}</th>
+                      <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">{t("labels.uses")}</th>
+                      <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">{t("labels.successRate")}</th>
+                      <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">{t("labels.tokens")}</th>
+                      <th className="px-2.5 py-1.5 text-center font-medium text-muted-foreground">{t("labels.trend")}</th>
+                      <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">{t("labels.staleDays")}</th>
+                      <th className="px-2.5 py-1.5 text-right font-medium text-muted-foreground">{t("labels.cost")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -463,8 +467,8 @@ export function SkillHealthPanel() {
                           {(skill.successRate * 100).toFixed(0)}%
                         </td>
                         <td className="px-2.5 py-1.5 text-right tabular-nums text-foreground/80">{Math.round(skill.avgTokens)}</td>
-                        <td className={cn("px-2.5 py-1.5 text-center", trendColor(skill.tokenTrend))}>
-                          {trendArrow(skill.tokenTrend)}
+                        <td className={cn("px-2.5 py-1.5 text-center", trendColorFn(skill.tokenTrend))}>
+                          {trendArrowFn(skill.tokenTrend)}
                         </td>
                         <td className={cn(
                           "px-2.5 py-1.5 text-right tabular-nums",
@@ -484,7 +488,7 @@ export function SkillHealthPanel() {
           {/* Stale skills */}
           {data.staleSkills.length > 0 && (
             <div className="space-y-1.5">
-              <h4 className="text-xs font-medium text-muted-foreground">Stale Skills</h4>
+              <h4 className="text-xs font-medium text-muted-foreground">{t("sections.staleSkills")}</h4>
               <div className="flex flex-wrap gap-1.5">
                 {data.staleSkills.map((name) => (
                   <Badge key={name} variant="secondary" className="text-[10px] font-mono">{name}</Badge>
@@ -496,7 +500,7 @@ export function SkillHealthPanel() {
           {/* Declining skills */}
           {data.decliningSkills.length > 0 && (
             <div className="space-y-1.5">
-              <h4 className="text-xs font-medium text-muted-foreground">Declining Skills</h4>
+              <h4 className="text-xs font-medium text-muted-foreground">{t("sections.decliningSkills")}</h4>
               <div className="flex flex-wrap gap-1.5">
                 {data.decliningSkills.map((name) => (
                   <Badge key={name} variant="destructive" className="text-[10px] font-mono">{name}</Badge>
@@ -508,13 +512,13 @@ export function SkillHealthPanel() {
           {/* Suggestions */}
           {data.suggestions.length > 0 && (
             <div className="space-y-2">
-              <h4 className="text-xs font-medium text-muted-foreground">Suggestions ({data.suggestions.length})</h4>
+              <h4 className="text-xs font-medium text-muted-foreground">{t("labels.suggestions")} ({data.suggestions.length})</h4>
               {data.suggestions.map((s, i) => <SuggestionRow key={i} suggestion={s} />)}
             </div>
           )}
 
           {data.skills.length === 0 && data.suggestions.length === 0 && (
-            <DiagEmpty message="No skill usage data available" />
+            <DiagEmpty message={t("empty.noSkillData")} />
           )}
         </>
       )}
