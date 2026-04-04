@@ -1642,7 +1642,7 @@ export class AgentSession {
 		if (options?.persist !== false) {
 			this.settingsManager.setDefaultModelAndProvider(model.provider, model.id);
 		}
-		this.setThinkingLevel(thinkingLevel);
+		this._applyThinkingLevel(thinkingLevel, options);
 		await this._emitModelSelect(model, previousModel, source);
 		this._emitSessionStateChanged("set_model");
 	}
@@ -1728,6 +1728,18 @@ export class AgentSession {
 	 * Saves to session and settings only if the level actually changes.
 	 */
 	setThinkingLevel(level: ThinkingLevel): void {
+		this._applyThinkingLevel(level);
+	}
+
+	/**
+	 * Internal thinking level setter that respects persist option.
+	 * When called from _applyModelChange with { persist: false }, the thinking
+	 * level is applied in-memory and appended to the session log, but the
+	 * default in settings.json is left untouched. This prevents transient
+	 * model switches (auto-mode dispatches) from silently overwriting the
+	 * user's saved thinking level preference.
+	 */
+	private _applyThinkingLevel(level: ThinkingLevel, options?: { persist?: boolean }): void {
 		const availableLevels = this.getAvailableThinkingLevels();
 		const effectiveLevel = availableLevels.includes(level) ? level : this._clampThinkingLevel(level, availableLevels);
 
@@ -1738,7 +1750,7 @@ export class AgentSession {
 
 		if (isChanging) {
 			this.sessionManager.appendThinkingLevelChange(effectiveLevel);
-			if (this.supportsThinking() || effectiveLevel !== "off") {
+			if (options?.persist !== false && (this.supportsThinking() || effectiveLevel !== "off")) {
 				this.settingsManager.setDefaultThinkingLevel(effectiveLevel);
 			}
 			this._emitSessionStateChanged("set_thinking_level");
