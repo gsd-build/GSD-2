@@ -677,5 +677,123 @@
     "error": {
       "unknown": "Unknown error"
     }
+  },
+  "chatMode": {
+    "header": {
+      "title": "Chat Mode"
+    },
+    "actions": {
+      "discuss": "Discuss",
+      "discussDesc": "Start guided milestone/slice discussion",
+      "next": "Next",
+      "nextDesc": "Execute next task, then pause",
+      "auto": "Auto",
+      "autoDesc": "Run all queued units continuously",
+      "stop": "Stop",
+      "stopDesc": "Stop auto-mode gracefully",
+      "pause": "Pause",
+      "pauseDesc": "Pause auto-mode (preserves state)",
+      "status": "Status",
+      "statusDesc": "Show progress dashboard",
+      "visualize": "Visualize",
+      "visualizeDesc": "Interactive TUI (progress, deps, metrics, timeline)",
+      "queue": "Queue",
+      "queueDesc": "Show queued/dispatched units and execution order",
+      "history": "History",
+      "historyDesc": "View execution history with cost/phase/model details",
+      "steer": "Steer",
+      "steerDesc": "Apply user override to active work",
+      "capture": "Capture",
+      "captureDesc": "Quick-capture a thought to CAPTURES.md",
+      "triage": "Triage",
+      "triageDesc": "Classify and route pending captures",
+      "skip": "Skip",
+      "skipDesc": "Prevent a unit from auto-mode dispatch",
+      "undo": "Undo",
+      "undoDesc": "Revert last completed unit",
+      "knowledge": "Knowledge",
+      "knowledgeDesc": "Add rule, pattern, or lesson to KNOWLEDGE.md",
+      "mode": "Mode",
+      "modeDesc": "Set workflow mode (solo/team)",
+      "prefs": "Prefs",
+      "prefsDesc": "Manage preferences (global/project)",
+      "doctor": "Doctor",
+      "doctorDesc": "Diagnose and repair .gsd/ state",
+      "export": "Export",
+      "exportDesc": "Export milestone/slice results (JSON or Markdown)",
+      "cleanup": "Cleanup",
+      "cleanupDesc": "Remove merged branches or snapshots",
+      "remote": "Remote",
+      "remoteDesc": "Control remote auto-mode (Slack/Discord)"
+    },
+    "categories": {
+      "workflow": "Workflow",
+      "visibility": "Visibility",
+      "correction": "Course Correction",
+      "knowledge": "Knowledge",
+      "config": "Configuration",
+      "maintenance": "Maintenance"
+    },
+    "ui": {
+      "chatMode": "Chat Mode",
+      "idle": "idle",
+      "disconnected": "Disconnected",
+      "connecting": "Connecting to GSD session…",
+      "messagePlaceholder": "Message…",
+      "connectingPlaceholder": "Connecting…",
+      "send": "Send",
+      "moreCommands": "More commands",
+      "disabledDuringAuto": "Disabled while auto-mode is running",
+      "imageNotice": "Maximum {max} images per message",
+      "imageFailed": "Failed to process image",
+      "removeImage": "Remove image",
+      "pendingImage": "Pending image",
+      "thinking": "Thinking…",
+      "thoughtProcess": "Thought process",
+      "lines": "lines",
+      "runningLabel": "Running {label}…",
+      "connectedWaiting": "Connected — waiting for GSD output…",
+      "thinkingIndicator": "Thinking…",
+      "attachedImage": "Attached image {index}",
+      "toolEdit": "Edit",
+      "toolWrite": "Write",
+      "toolBash": "$",
+      "readyForInput": "Ready for your input",
+      "placeholderCTA": {
+        "stopAuto": "Stop Auto",
+        "resumeAuto": "Resume Auto",
+        "newMilestone": "New Milestone",
+        "plan": "Plan",
+        "startAuto": "Start Auto",
+        "initProject": "Initialize Project",
+        "continue": "Continue"
+      }
+    },
+    "prompts": {
+      "select": {
+        "selectedCount": "{count} selected"
+      },
+      "text": {
+        "typeAnswer": "Type your answer…",
+        "submit": "Submit"
+      },
+      "password": {
+        "typeValue": "Enter value…",
+        "submit": "Submit",
+        "entered": "{label} — entered ✓",
+        "defaultLabel": "Value",
+        "securityNote": "Value is transmitted securely and not stored in chat history.",
+        "showInput": "Show",
+        "hideInput": "Hide"
+      },
+      "confirm": {
+        "confirm": "Confirm",
+        "cancel": "Cancel",
+        "confirmed": "Confirmed",
+        "cancelled": "Cancelled"
+      },
+      "submitted": "✓ Submitted",
+      "inputSubmitted": "Submitted"
+    }
   }
 }

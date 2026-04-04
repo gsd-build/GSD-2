@@ -20,6 +20,7 @@ import {
 } from "@/lib/gsd-workspace-store"
 import { deriveWorkflowAction } from "@/lib/workflow-actions"
 import { useTerminalFontSize } from "@/lib/use-terminal-font-size"
+import { useTranslations } from "next-intl"
 
 /* ─── ActionPanel types ─── */
 
@@ -33,10 +34,10 @@ import { useTerminalFontSize } from "@/lib/use-terminal-font-size"
  * All commands dispatch through the main bridge session.
  */
 interface GSDActionDef {
-  label: string
+  labelKey: string
   command: string
   icon: LucideIcon
-  description: string
+  descriptionKey: string
   category: "workflow" | "visibility" | "correction" | "knowledge" | "config" | "maintenance"
   /** When true, this command is disabled while auto-mode is active (injects competing LLM prompt) */
   disabledDuringAuto?: boolean
@@ -44,33 +45,33 @@ interface GSDActionDef {
 
 const GSD_ACTIONS: GSDActionDef[] = [
   // ── Top 3 (standalone buttons) ──
-  { label: "Discuss",   command: "/gsd discuss",   icon: MessageCircle,     description: "Start guided milestone/slice discussion",                    category: "workflow",    disabledDuringAuto: true },
-  { label: "Next",      command: "/gsd next",      icon: Play,              description: "Execute next task, then pause",                              category: "workflow" },
-  { label: "Auto",      command: "/gsd auto",      icon: Zap,               description: "Run all queued units continuously",                         category: "workflow" },
+  { labelKey: "discuss",   command: "/gsd discuss",   icon: MessageCircle,     descriptionKey: "discussDesc",                    category: "workflow",    disabledDuringAuto: true },
+  { labelKey: "next",      command: "/gsd next",      icon: Play,              descriptionKey: "nextDesc",                              category: "workflow" },
+  { labelKey: "auto",      command: "/gsd auto",      icon: Zap,               descriptionKey: "autoDesc",                         category: "workflow" },
   // ── Overflow: Workflow ──
-  { label: "Stop",      command: "/gsd stop",      icon: Square,            description: "Stop auto-mode gracefully",                                  category: "workflow" },
-  { label: "Pause",     command: "/gsd pause",     icon: Pause,             description: "Pause auto-mode (preserves state)",                          category: "workflow" },
+  { labelKey: "stop",      command: "/gsd stop",      icon: Square,            descriptionKey: "stopDesc",                                  category: "workflow" },
+  { labelKey: "pause",     command: "/gsd pause",     icon: Pause,             descriptionKey: "pauseDesc",                          category: "workflow" },
   // ── Overflow: Visibility ──
-  { label: "Status",    command: "/gsd status",    icon: BarChart3,         description: "Show progress dashboard",                                    category: "visibility" },
-  { label: "Visualize", command: "/gsd visualize", icon: LayoutGrid,        description: "Interactive TUI (progress, deps, metrics, timeline)",        category: "visibility" },
-  { label: "Queue",     command: "/gsd queue",     icon: ListOrdered,       description: "Show queued/dispatched units and execution order",            category: "visibility" },
-  { label: "History",   command: "/gsd history",   icon: History,           description: "View execution history with cost/phase/model details",        category: "visibility" },
+  { labelKey: "status",    command: "/gsd status",    icon: BarChart3,         descriptionKey: "statusDesc",                                    category: "visibility" },
+  { labelKey: "visualize", command: "/gsd visualize", icon: LayoutGrid,        descriptionKey: "visualizeDesc",        category: "visibility" },
+  { labelKey: "queue",     command: "/gsd queue",     icon: ListOrdered,       descriptionKey: "queueDesc",            category: "visibility" },
+  { labelKey: "history",   command: "/gsd history",   icon: History,           descriptionKey: "historyDesc",        category: "visibility" },
   // ── Overflow: Course correction ──
-  { label: "Steer",     command: "/gsd steer",     icon: Compass,           description: "Apply user override to active work",                         category: "correction" },
-  { label: "Capture",   command: "/gsd capture",   icon: PenLine,           description: "Quick-capture a thought to CAPTURES.md",                     category: "correction" },
-  { label: "Triage",    command: "/gsd triage",    icon: Inbox,             description: "Classify and route pending captures",                        category: "correction",  disabledDuringAuto: true },
-  { label: "Skip",      command: "/gsd skip",      icon: SkipForward,       description: "Prevent a unit from auto-mode dispatch",                     category: "correction" },
-  { label: "Undo",      command: "/gsd undo",      icon: Undo2,             description: "Revert last completed unit",                                 category: "correction" },
+  { labelKey: "steer",     command: "/gsd steer",     icon: Compass,           descriptionKey: "steerDesc",                         category: "correction" },
+  { labelKey: "capture",   command: "/gsd capture",   icon: PenLine,           descriptionKey: "captureDesc",                     category: "correction" },
+  { labelKey: "triage",    command: "/gsd triage",    icon: Inbox,             descriptionKey: "triageDesc",                        category: "correction",  disabledDuringAuto: true },
+  { labelKey: "skip",      command: "/gsd skip",      icon: SkipForward,       descriptionKey: "skipDesc",                     category: "correction" },
+  { labelKey: "undo",      command: "/gsd undo",      icon: Undo2,             descriptionKey: "undoDesc",                                 category: "correction" },
   // ── Overflow: Knowledge ──
-  { label: "Knowledge", command: "/gsd knowledge", icon: BookOpen,          description: "Add rule, pattern, or lesson to KNOWLEDGE.md",               category: "knowledge" },
+  { labelKey: "knowledge", command: "/gsd knowledge", icon: BookOpen,          descriptionKey: "knowledgeDesc",               category: "knowledge" },
   // ── Overflow: Configuration ──
-  { label: "Mode",      command: "/gsd mode",      icon: SlidersHorizontal, description: "Set workflow mode (solo/team)",                               category: "config" },
-  { label: "Prefs",     command: "/gsd prefs",     icon: Settings,          description: "Manage preferences (global/project)",                        category: "config" },
+  { labelKey: "mode",      command: "/gsd mode",      icon: SlidersHorizontal, descriptionKey: "modeDesc",                               category: "config" },
+  { labelKey: "prefs",     command: "/gsd prefs",     icon: Settings,          descriptionKey: "prefsDesc",                        category: "config" },
   // ── Overflow: Maintenance ──
-  { label: "Doctor",    command: "/gsd doctor",    icon: Stethoscope,       description: "Diagnose and repair .gsd/ state",                            category: "maintenance" },
-  { label: "Export",    command: "/gsd export",    icon: FileOutput,        description: "Export milestone/slice results (JSON or Markdown)",           category: "maintenance" },
-  { label: "Cleanup",   command: "/gsd cleanup",   icon: Trash2,            description: "Remove merged branches or snapshots",                        category: "maintenance" },
-  { label: "Remote",    command: "/gsd remote",    icon: Globe,             description: "Control remote auto-mode (Slack/Discord)",                    category: "maintenance" },
+  { labelKey: "doctor",    command: "/gsd doctor",    icon: Stethoscope,       descriptionKey: "doctorDesc",                            category: "maintenance" },
+  { labelKey: "export",    command: "/gsd export",    icon: FileOutput,        descriptionKey: "exportDesc",           category: "maintenance" },
+  { labelKey: "cleanup",   command: "/gsd cleanup",   icon: Trash2,            descriptionKey: "cleanupDesc",                        category: "maintenance" },
+  { labelKey: "remote",    command: "/gsd remote",    icon: Globe,             descriptionKey: "remoteDesc",                    category: "maintenance" },
 ]
 
 /** Top 3 shown as standalone buttons next to chat input */
@@ -78,16 +79,7 @@ const TOP_ACTIONS = GSD_ACTIONS.slice(0, 3)
 /** Remaining actions in the overflow menu */
 const OVERFLOW_ACTIONS = GSD_ACTIONS.slice(3)
 
-const CATEGORY_LABELS: Record<GSDActionDef["category"], string> = {
-  workflow: "Workflow",
-  visibility: "Visibility",
-  correction: "Course Correction",
-  knowledge: "Knowledge",
-  config: "Configuration",
-  maintenance: "Maintenance",
-}
-
-function groupByCategory(actions: GSDActionDef[]): Array<{ category: GSDActionDef["category"]; label: string; items: GSDActionDef[] }> {
+function groupByCategory(actions: GSDActionDef[], tCategories: (k: GSDActionDef["category"]) => string): Array<{ category: GSDActionDef["category"]; label: string; items: GSDActionDef[] }> {
   const seen = new Map<GSDActionDef["category"], GSDActionDef[]>()
   for (const a of actions) {
     let group = seen.get(a.category)
@@ -97,7 +89,7 @@ function groupByCategory(actions: GSDActionDef[]): Array<{ category: GSDActionDe
     }
     group.push(a)
   }
-  return Array.from(seen.entries()).map(([cat, items]) => ({ category: cat, label: CATEGORY_LABELS[cat], items }))
+  return Array.from(seen.entries()).map(([cat, items]) => ({ category: cat, label: tCategories(cat), items }))
 }
 
 /**
@@ -626,9 +618,11 @@ function TuiSelectPrompt({
 function TuiTextPrompt({
   prompt,
   onSubmit,
+  tPrompts,
 }: {
   prompt: TuiPrompt
   onSubmit: (data: string) => void
+  tPrompts: ReturnType<typeof useTranslations<"chatMode.prompts">>
 }) {
   const [value, setValue] = useState("")
   const [submitted, setSubmitted] = useState(false)
@@ -663,7 +657,7 @@ function TuiTextPrompt({
         className="mt-2 flex items-center gap-1.5 rounded-lg bg-primary/10 px-3 py-2 text-sm text-primary"
       >
         <Check className="h-3.5 w-3.5 flex-shrink-0" />
-        <span className="font-medium">✓ Submitted</span>
+        <span className="font-medium">{tPrompts("submitted")}</span>
       </div>
     )
   }
@@ -684,7 +678,7 @@ function TuiTextPrompt({
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Type your answer…"
+          placeholder={tPrompts.text("typeAnswer")}
           className="flex-1 h-8 text-sm"
           aria-label={prompt.label || "Text input"}
         />
@@ -698,7 +692,7 @@ function TuiTextPrompt({
               : "bg-muted text-muted-foreground cursor-not-allowed",
           )}
         >
-          Submit
+          {tPrompts.text("submit")}
         </button>
       </div>
     </div>
@@ -723,9 +717,11 @@ function TuiTextPrompt({
 function TuiPasswordPrompt({
   prompt,
   onSubmit,
+  tPrompts,
 }: {
   prompt: TuiPrompt
   onSubmit: (data: string) => void
+  tPrompts: ReturnType<typeof useTranslations<"chatMode.prompts">>
 }) {
   const [value, setValue] = useState("")
   const [submitted, setSubmitted] = useState(false)
@@ -756,14 +752,14 @@ function TuiPasswordPrompt({
   )
 
   if (submitted) {
-    const displayLabel = prompt.label || "Value"
+    const displayLabel = prompt.label || tPrompts.password("defaultLabel")
     return (
       <div
         data-testid="tui-prompt-submitted"
         className="mt-2 flex items-center gap-1.5 rounded-lg bg-primary/10 px-3 py-2 text-sm text-primary"
       >
         <Check className="h-3.5 w-3.5 flex-shrink-0" />
-        <span className="font-medium">{displayLabel} — entered ✓</span>
+        <span className="font-medium">{tPrompts.password("entered", { label: displayLabel })}</span>
       </div>
     )
   }
@@ -786,7 +782,7 @@ function TuiPasswordPrompt({
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Enter value…"
+            placeholder={tPrompts.password("typeValue")}
             className="h-8 pr-9 text-sm"
             aria-label={prompt.label || "Password input"}
             autoComplete="off"
@@ -795,7 +791,7 @@ function TuiPasswordPrompt({
             type="button"
             onClick={() => setShowPassword((s) => !s)}
             tabIndex={-1}
-            aria-label={showPassword ? "Hide input" : "Show input"}
+            aria-label={showPassword ? tPrompts.password("hideInput") : tPrompts.password("showInput")}
             className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-muted-foreground transition-colors"
           >
             {showPassword ? (
@@ -815,11 +811,11 @@ function TuiPasswordPrompt({
               : "bg-muted text-muted-foreground cursor-not-allowed",
           )}
         >
-          Submit
+          {tPrompts.password("submit")}
         </button>
       </div>
       <p className="mt-1.5 text-[10px] text-muted-foreground">
-        Value is transmitted securely and not stored in chat history.
+        {tPrompts.password("securityNote")}
       </p>
     </div>
   )
@@ -890,7 +886,7 @@ function PlatformLogoIcon({ className }: { className?: string }) {
  * Shows a collapsible preview of the LLM's reasoning with a visible,
  * well-styled block that shows more context lines.
  */
-function InlineThinking({ content, isStreaming }: { content: string; isStreaming: boolean }) {
+function InlineThinking({ content, isStreaming, tUI }: { content: string; isStreaming: boolean; tUI: ReturnType<typeof useTranslations<"chatMode.ui">> }) {
   const [expanded, setExpanded] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const lines = content.split("\n").filter((l) => l.trim())
@@ -926,11 +922,11 @@ function InlineThinking({ content, isStreaming }: { content: string; isStreaming
             </span>
           )}
           <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-            {isStreaming ? "Thinking…" : "Thought process"}
+            {isStreaming ? tUI("thinking") : tUI("thoughtProcess")}
           </span>
           {hasMore && !expanded && (
             <span className="ml-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-              {lines.length} lines
+              {lines.length} {tUI("lines")}
             </span>
           )}
           <span className="ml-auto flex-shrink-0">
@@ -983,10 +979,14 @@ function ChatBubble({
   message,
   onSubmitPrompt,
   isThinking,
+  tUI,
+  tPrompts,
 }: {
   message: ChatMessage
   onSubmitPrompt?: (data: string) => void
   isThinking?: boolean
+  tUI: ReturnType<typeof useTranslations<"chatMode.ui">>
+  tPrompts: ReturnType<typeof useTranslations<"chatMode.prompts">>
 }) {
   if (message.role === "system") {
     return (
@@ -1008,7 +1008,7 @@ function ChatBubble({
                 <Image
                   key={idx}
                   src={`data:${img.mimeType};base64,${img.data}`}
-                  alt={`Attached image ${idx + 1}`}
+                  alt={tUI("attachedImage", { index: idx + 1 })}
                   width={32}
                   height={32}
                   unoptimized
@@ -1056,7 +1056,7 @@ function ChatBubble({
               <span className="relative inline-flex h-2 w-2 rounded-full bg-muted-foreground/50" />
             </span>
             <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-              Thinking…
+              {tUI("thinking")}
             </span>
           </div>
         )}
@@ -1072,12 +1072,14 @@ function ChatBubble({
           <TuiTextPrompt
             prompt={message.prompt!}
             onSubmit={onSubmitPrompt!}
+            tPrompts={tPrompts}
           />
         )}
         {hasPasswordPrompt && (
           <TuiPasswordPrompt
             prompt={message.prompt!}
             onSubmit={onSubmitPrompt!}
+            tPrompts={tPrompts}
           />
         )}
       </div>
@@ -1098,10 +1100,14 @@ function ChatMessageList({
   messages,
   onSubmitPrompt,
   fontSize,
+  tUI,
+  tPrompts,
 }: {
   messages: ChatMessage[]
   onSubmitPrompt: (data: string) => void
   fontSize?: number
+  tUI: ReturnType<typeof useTranslations<"chatMode.ui">>
+  tPrompts: ReturnType<typeof useTranslations<"chatMode.prompts">>
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const isNearBottomRef = useRef(true)
@@ -1138,7 +1144,7 @@ function ChatMessageList({
       style={fontSize ? { fontSize: `${fontSize}px` } : undefined}
     >
       {messages.map((msg) => (
-        <ChatBubble key={msg.id} message={msg} onSubmitPrompt={onSubmitPrompt} />
+        <ChatBubble key={msg.id} message={msg} onSubmitPrompt={onSubmitPrompt} tUI={tUI} tPrompts={tPrompts} />
       ))}
       {/* Bottom spacer for scroll anchor */}
       <div className="h-2" />
@@ -1163,10 +1169,16 @@ function ChatInputBar({
   onSendInput,
   connected,
   onOpenAction,
+  tActions,
+  tCategories,
+  tUI,
 }: {
   onSendInput: (data: string, images?: PendingImage[]) => void
   connected: boolean
   onOpenAction?: (action: GSDActionDef) => void
+  tActions: ReturnType<typeof useTranslations<"chatMode.actions">>
+  tCategories: ReturnType<typeof useTranslations<"chatMode.categories">>
+  tUI: ReturnType<typeof useTranslations<"chatMode.ui">>
 }) {
   const autoActive = useGSDWorkspaceState().boot?.auto?.active ?? false
   const [value, setValue] = useState("")
@@ -1194,7 +1206,7 @@ function ChatInputBar({
     setPendingImages((prev) => {
       const remaining = MAX_PENDING_IMAGES - prev.length
       if (remaining <= 0) {
-        setImageNotice(`Maximum ${MAX_PENDING_IMAGES} images per message`)
+        setImageNotice(tUI("imageNotice", { max: MAX_PENDING_IMAGES }))
         return prev
       }
       return prev // return current, processing happens below
@@ -1205,7 +1217,7 @@ function ChatInputBar({
     const toProcess = imageFiles.slice(0, MAX_PENDING_IMAGES - currentCount)
 
     if (toProcess.length < imageFiles.length) {
-      setImageNotice(`Maximum ${MAX_PENDING_IMAGES} images per message`)
+      setImageNotice(tUI("imageNotice", { max: MAX_PENDING_IMAGES }))
     }
 
     const newImages: PendingImage[] = []
@@ -1221,7 +1233,7 @@ function ChatInputBar({
         })
       } catch (err) {
         console.warn("[chat-input] image processing failed:", err instanceof Error ? err.message : err)
-        setImageNotice(err instanceof Error ? err.message : "Failed to process image")
+        setImageNotice(err instanceof Error ? err.message : tUI("imageFailed"))
       }
     }
 
@@ -1231,7 +1243,7 @@ function ChatInputBar({
         if (combined.length > MAX_PENDING_IMAGES) {
           // Revoke excess
           combined.slice(MAX_PENDING_IMAGES).forEach((img) => URL.revokeObjectURL(img.previewUrl))
-          setImageNotice(`Maximum ${MAX_PENDING_IMAGES} images per message`)
+          setImageNotice(tUI("imageNotice", { max: MAX_PENDING_IMAGES }))
           return combined.slice(0, MAX_PENDING_IMAGES)
         }
         return combined
@@ -1323,7 +1335,7 @@ function ChatInputBar({
   }, [])
 
   const hasContent = value.trim().length > 0 || pendingImages.length > 0
-  const overflowGroups = useMemo(() => groupByCategory(OVERFLOW_ACTIONS), [])
+  const overflowGroups = useMemo(() => groupByCategory(OVERFLOW_ACTIONS, tCategories), [])
 
   return (
     <div className="flex-shrink-0 border-t border-border bg-card px-4 py-3 backdrop-blur-sm">
@@ -1351,7 +1363,7 @@ function ChatInputBar({
                 <div key={img.id} className="relative group flex-shrink-0">
                   <Image
                     src={img.previewUrl}
-                    alt="Pending image"
+                    alt={tUI("pendingImage")}
                     width={48}
                     height={48}
                     unoptimized
@@ -1359,7 +1371,7 @@ function ChatInputBar({
                   />
                   <button
                     onClick={() => removeImage(img.id)}
-                    aria-label="Remove image"
+                    aria-label={tUI("removeImage")}
                     className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-destructive-foreground text-[10px] opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
                   >
                     <X className="h-2.5 w-2.5" />
@@ -1380,11 +1392,11 @@ function ChatInputBar({
             onPaste={handlePaste}
             disabled={!connected}
             rows={1}
-            aria-label="Send message"
+            aria-label={tUI("send")}
             placeholder={
               connected
-                ? "Message…"
-                : "Connecting…"
+                ? tUI("messagePlaceholder")
+                : tUI("connectingPlaceholder")
             }
             className="min-h-[40px] flex-1 resize-none bg-transparent px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none disabled:cursor-not-allowed disabled:text-muted-foreground"
             style={{ height: "40px", maxHeight: "160px", overflowY: "auto" }}
@@ -1392,13 +1404,13 @@ function ChatInputBar({
           <div className="flex flex-shrink-0 items-end pb-1.5 pr-1.5 gap-1">
             {!connected && (
               <span className="px-2 py-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
-                Disconnected
+                {tUI("disconnected")}
               </span>
             )}
             <button
               onClick={handleSend}
               disabled={!connected || !hasContent}
-              aria-label="Send"
+              aria-label={tUI("send")}
               className={cn(
                 "flex h-7 w-7 items-center justify-center rounded-lg transition-all",
                 hasContent && connected
@@ -1424,20 +1436,20 @@ function ChatInputBar({
                     <button
                       onClick={() => onOpenAction(action)}
                       disabled={isDisabled}
-                      aria-label={action.description}
+                      aria-label={tActions(action.descriptionKey)}
                       className={cn(
                         "flex flex-shrink-0 items-center justify-center gap-1.5 rounded-xl border border-border bg-background px-3 py-2.5 text-xs font-medium text-foreground transition-colors hover:bg-accent",
                         isDisabled && "cursor-not-allowed opacity-40",
                       )}
                     >
                       <Icon className="h-3.5 w-3.5 text-muted-foreground" />
-                      {action.label}
+                      {tActions(action.labelKey)}
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="top" sideOffset={6}>
-                    <p className="font-medium">{action.label}</p>
+                    <p className="font-medium">{tActions(action.labelKey)}</p>
                     <p className="text-[10px] opacity-80">
-                      {isDisabled ? "Disabled while auto-mode is running" : action.description}
+                      {isDisabled ? tUI("disabledDuringAuto") : tActions(action.descriptionKey)}
                     </p>
                   </TooltipContent>
                 </Tooltip>
@@ -1450,7 +1462,7 @@ function ChatInputBar({
                 <TooltipTrigger asChild>
                   <PopoverTrigger asChild>
                     <button
-                      aria-label="More GSD commands"
+                      aria-label={tUI("moreCommands")}
                       className={cn(
                         "flex flex-shrink-0 items-center justify-center rounded-xl border border-border bg-background p-2.5 text-foreground transition-colors hover:bg-accent",
                         overflowOpen && "bg-accent",
@@ -1462,7 +1474,7 @@ function ChatInputBar({
                 </TooltipTrigger>
                 {!overflowOpen && (
                   <TooltipContent side="top" sideOffset={6}>
-                    More commands
+                    {tUI("moreCommands")}
                   </TooltipContent>
                 )}
               </Tooltip>
@@ -1498,13 +1510,13 @@ function ChatInputBar({
                               )}
                             >
                               <Icon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
-                              <span className="flex-1 truncate">{action.label}</span>
+                              <span className="flex-1 truncate">{tActions(action.labelKey)}</span>
                             </button>
                           </TooltipTrigger>
                           <TooltipContent side="left" sideOffset={8}>
-                            <p className="font-medium">{action.label}</p>
+                            <p className="font-medium">{tActions(action.labelKey)}</p>
                             <p className="text-[10px] opacity-80">
-                              {isDisabled ? "Disabled while auto-mode is running" : action.description}
+                              {isDisabled ? tUI("disabledDuringAuto") : tActions(action.descriptionKey)}
                             </p>
                           </TooltipContent>
                         </Tooltip>
@@ -1529,12 +1541,14 @@ function PlaceholderState({
   notice,
   primaryAction,
   onPrimaryAction,
+  tUI,
 }: {
   connected: boolean
   runningLabel?: string
   notice?: string | null
   primaryAction?: { label: string; icon: LucideIcon } | null
   onPrimaryAction?: () => void
+  tUI: ReturnType<typeof useTranslations<"chatMode.ui">>
 }) {
   const showSpinner = connected && Boolean(runningLabel)
 
@@ -1548,16 +1562,16 @@ function PlaceholderState({
         )}
       </div>
       <div className="mt-3 space-y-1">
-        <p className="text-sm font-medium text-foreground">Chat Mode</p>
+        <p className="text-sm font-medium text-foreground">{tUI("chatMode")}</p>
         {showSpinner ? (
           <p className="max-w-xs text-xs text-muted-foreground">
-            Running {runningLabel}…
+            {tUI("runningLabel", { label: runningLabel })}
           </p>
         ) : notice ? (
           <p className="max-w-xs text-xs text-muted-foreground">{notice}</p>
         ) : !connected ? (
           <p className="max-w-xs text-xs text-muted-foreground">
-            Connecting to GSD session…
+            {tUI("connecting")}
           </p>
         ) : primaryAction && onPrimaryAction ? (
           <div className="mt-4">
@@ -1571,7 +1585,7 @@ function PlaceholderState({
           </div>
         ) : (
           <p className="max-w-xs text-xs text-muted-foreground">
-            Connected — waiting for GSD output…
+            {tUI("connectedWaiting")}
           </p>
         )}
       </div>
@@ -1591,7 +1605,7 @@ function PlaceholderState({
  * these same requests in non-chat views. Whichever the user interacts with
  * first resolves the request — the store deduplicates.
  */
-function InlineUiRequest({ request }: { request: PendingUiRequest }) {
+function InlineUiRequest({ request, tPrompts }: { request: PendingUiRequest; tPrompts: ReturnType<typeof useTranslations<"chatMode.prompts">> }) {
   const { respondToUiRequest, dismissUiRequest } = useGSDWorkspaceActions()
   const isSubmitting = useGSDWorkspaceState().commandInFlight === "extension_ui_response"
 
@@ -1613,16 +1627,16 @@ function InlineUiRequest({ request }: { request: PendingUiRequest }) {
           <p className="mb-2.5 text-sm font-medium text-foreground">{request.title}</p>
         )}
         {request.method === "select" && (
-          <InlineSelect request={request} onSubmit={handleSubmit} disabled={isSubmitting} />
+          <InlineSelect request={request} onSubmit={handleSubmit} disabled={isSubmitting} tPrompts={tPrompts} />
         )}
         {request.method === "confirm" && (
-          <InlineConfirm request={request} onSubmit={handleSubmit} onDismiss={handleDismiss} disabled={isSubmitting} />
+          <InlineConfirm request={request} onSubmit={handleSubmit} onDismiss={handleDismiss} disabled={isSubmitting} tPrompts={tPrompts} />
         )}
         {request.method === "input" && (
-          <InlineInput request={request} onSubmit={handleSubmit} disabled={isSubmitting} />
+          <InlineInput request={request} onSubmit={handleSubmit} disabled={isSubmitting} tPrompts={tPrompts} />
         )}
         {request.method === "editor" && (
-          <InlineEditor request={request} onSubmit={handleSubmit} disabled={isSubmitting} />
+          <InlineEditor request={request} onSubmit={handleSubmit} disabled={isSubmitting} tPrompts={tPrompts} />
         )}
       </div>
     </div>
@@ -1633,10 +1647,12 @@ function InlineSelect({
   request,
   onSubmit,
   disabled,
+  tPrompts,
 }: {
   request: Extract<PendingUiRequest, { method: "select" }>
   onSubmit: (value: Record<string, unknown>) => void
   disabled: boolean
+  tPrompts: ReturnType<typeof useTranslations<"chatMode.prompts">>
 }) {
   const isMulti = Boolean(request.allowMultiple)
   const [singleValue, setSingleValue] = useState("")
@@ -1652,7 +1668,7 @@ function InlineSelect({
     return (
       <div className="flex items-center gap-1.5 rounded-lg bg-primary/10 px-3 py-2 text-sm text-primary">
         <Check className="h-3.5 w-3.5 flex-shrink-0" />
-        <span className="font-medium">{isMulti ? `${multiValues.size} selected` : singleValue}</span>
+        <span className="font-medium">{isMulti ? tPrompts.select("selectedCount", { count: multiValues.size }) : singleValue}</span>
       </div>
     )
   }
@@ -1717,7 +1733,7 @@ function InlineSelect({
             : "bg-muted text-muted-foreground cursor-not-allowed",
         )}
       >
-        {isMulti ? `Submit (${multiValues.size})` : "Submit"}
+        {isMulti ? tPrompts.select("selectedCount", { count: multiValues.size }) : tPrompts.text("submit")}
       </button>
     </div>
   )
@@ -1728,11 +1744,13 @@ function InlineConfirm({
   onSubmit,
   onDismiss,
   disabled,
+  tPrompts,
 }: {
   request: Extract<PendingUiRequest, { method: "confirm" }>
   onSubmit: (value: Record<string, unknown>) => void
   onDismiss: () => void
   disabled: boolean
+  tPrompts: ReturnType<typeof useTranslations<"chatMode.prompts">>
 }) {
   const [resolved, setResolved] = useState<boolean | null>(null)
 
@@ -1740,7 +1758,7 @@ function InlineConfirm({
     return (
       <div className="flex items-center gap-1.5 rounded-lg bg-primary/10 px-3 py-2 text-sm text-primary">
         <Check className="h-3.5 w-3.5 flex-shrink-0" />
-        <span className="font-medium">{resolved ? "Confirmed" : "Cancelled"}</span>
+        <span className="font-medium">{resolved ? tPrompts.confirm("confirmed") : tPrompts.confirm("cancelled")}</span>
       </div>
     )
   }
@@ -1754,14 +1772,14 @@ function InlineConfirm({
           disabled={disabled}
           className="flex-1 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 active:scale-[0.98] shadow-sm transition-all"
         >
-          Confirm
+          {tPrompts.confirm("confirm")}
         </button>
         <button
           onClick={() => { setResolved(false); onDismiss() }}
           disabled={disabled}
           className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-xs font-medium text-foreground hover:bg-accent transition-colors"
         >
-          Cancel
+          {tPrompts.confirm("cancel")}
         </button>
       </div>
     </div>
@@ -1772,10 +1790,12 @@ function InlineInput({
   request,
   onSubmit,
   disabled,
+  tPrompts,
 }: {
   request: Extract<PendingUiRequest, { method: "input" }>
   onSubmit: (value: Record<string, unknown>) => void
   disabled: boolean
+  tPrompts: ReturnType<typeof useTranslations<"chatMode.prompts">>
 }) {
   const [value, setValue] = useState("")
   const [submitted, setSubmitted] = useState(false)
@@ -1787,7 +1807,7 @@ function InlineInput({
     return (
       <div className="flex items-center gap-1.5 rounded-lg bg-primary/10 px-3 py-2 text-sm text-primary">
         <Check className="h-3.5 w-3.5 flex-shrink-0" />
-        <span className="font-medium">Submitted</span>
+        <span className="font-medium">{tPrompts("inputSubmitted")}</span>
       </div>
     )
   }
@@ -1805,7 +1825,7 @@ function InlineInput({
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleSubmit() } }}
-        placeholder={request.placeholder || "Type your answer…"}
+        placeholder={request.placeholder || tPrompts.text("typeAnswer")}
         disabled={disabled}
         className="flex-1 h-8 text-sm"
       />
@@ -1819,7 +1839,7 @@ function InlineInput({
             : "bg-muted text-muted-foreground cursor-not-allowed",
         )}
       >
-        Submit
+        {tPrompts.text("submit")}
       </button>
     </div>
   )
@@ -1829,10 +1849,12 @@ function InlineEditor({
   request,
   onSubmit,
   disabled,
+  tPrompts,
 }: {
   request: Extract<PendingUiRequest, { method: "editor" }>
   onSubmit: (value: Record<string, unknown>) => void
   disabled: boolean
+  tPrompts: ReturnType<typeof useTranslations<"chatMode.prompts">>
 }) {
   const [value, setValue] = useState(request.prefill || "")
   const [submitted, setSubmitted] = useState(false)
@@ -1841,7 +1863,7 @@ function InlineEditor({
     return (
       <div className="flex items-center gap-1.5 rounded-lg bg-primary/10 px-3 py-2 text-sm text-primary">
         <Check className="h-3.5 w-3.5 flex-shrink-0" />
-        <span className="font-medium">Submitted</span>
+        <span className="font-medium">{tPrompts("inputSubmitted")}</span>
       </div>
     )
   }
@@ -1890,7 +1912,7 @@ interface ChatPaneProps {
  * Bash tool shows the command and output.
  * Other tools show a compact summary.
  */
-function ToolExecutionBlock({ tool }: { tool: CompletedToolExecution }) {
+function ToolExecutionBlock({ tool, tUI }: { tool: CompletedToolExecution; tUI: ReturnType<typeof useTranslations<"chatMode.ui">> }) {
   const [expanded, setExpanded] = useState(false)
 
   const path = typeof tool.args?.path === "string" ? tool.args.path : typeof tool.args?.file_path === "string" ? tool.args.file_path : null
@@ -1903,8 +1925,8 @@ function ToolExecutionBlock({ tool }: { tool: CompletedToolExecution }) {
     : tool.name === "write" ? <FilePlus className="h-3.5 w-3.5" />
     : <Terminal className="h-3.5 w-3.5" />
 
-  const label = tool.name === "edit" ? "Edit"
-    : tool.name === "write" ? "Write"
+  const label = tool.name === "edit" ? tUI("toolEdit")
+    : tool.name === "write" ? tUI("toolWrite")
     : tool.name === "bash" ? "$"
     : tool.name
 
@@ -2013,6 +2035,12 @@ export function ChatPane({ className, onOpenAction }: ChatPaneProps) {
   const state = useGSDWorkspaceState()
   const { submitInput, sendCommand, pushChatUserMessage } = useGSDWorkspaceActions()
   const [terminalFontSize] = useTerminalFontSize()
+
+  // ── Translation hooks ──
+  const tUI = useTranslations("chatMode.ui")
+  const tPrompts = useTranslations("chatMode.prompts")
+  const tActions = useTranslations("chatMode.actions")
+  const tCategories = useTranslations("chatMode.categories")
 
   const connected = state.connectionState === "connected"
   const isStreaming = state.boot?.bridge.sessionState?.isStreaming ?? false
@@ -2240,6 +2268,7 @@ export function ChatPane({ className, onOpenAction }: ChatPaneProps) {
             runningLabel={isStreaming ? "responding" : undefined}
             primaryAction={placeholderCTA}
             onPrimaryAction={handlePlaceholderCTA}
+            tUI={tUI}
           />
         ) : (
           <div
@@ -2256,6 +2285,8 @@ export function ChatPane({ className, onOpenAction }: ChatPaneProps) {
                       key={item.message.id}
                       message={item.message}
                       onSubmitPrompt={handlePromptSubmit}
+                      tUI={tUI}
+                      tPrompts={tPrompts}
                     />
                   )
                 case "thinking":
@@ -2263,7 +2294,7 @@ export function ChatPane({ className, onOpenAction }: ChatPaneProps) {
                     <div key={item.id} className="flex justify-start gap-3">
                       <div className="w-7 flex-shrink-0" />
                       <div className="max-w-[82%] min-w-0">
-                        <InlineThinking content={item.content} isStreaming={false} />
+                        <InlineThinking content={item.content} isStreaming={false} tUI={tUI} />
                       </div>
                     </div>
                   )
@@ -2272,7 +2303,7 @@ export function ChatPane({ className, onOpenAction }: ChatPaneProps) {
                     <div key="streaming-thinking" className="flex justify-start gap-3">
                       <div className="w-7 flex-shrink-0" />
                       <div className="max-w-[82%] min-w-0">
-                        <InlineThinking content={item.content} isStreaming={true} />
+                        <InlineThinking content={item.content} isStreaming={true} tUI={tUI} />
                       </div>
                     </div>
                   )
@@ -2288,10 +2319,12 @@ export function ChatPane({ className, onOpenAction }: ChatPaneProps) {
                         timestamp: Date.now(),
                       }}
                       isThinking={item.isThinking}
+                      tUI={tUI}
+                      tPrompts={tPrompts}
                     />
                   )
                 case "tool":
-                  return <ToolExecutionBlock key={item.tool.id} tool={item.tool} />
+                  return <ToolExecutionBlock key={item.tool.id} tool={item.tool} tUI={tUI} />
                 case "active-tool":
                   return (
                     <div key={`active-${item.tool.id}`} className="flex justify-start gap-3">
@@ -2312,7 +2345,7 @@ export function ChatPane({ className, onOpenAction }: ChatPaneProps) {
                     </div>
                   )
                 case "ui-request":
-                  return <InlineUiRequest key={item.request.id} request={item.request} />
+                  return <InlineUiRequest key={item.request.id} request={item.request} tPrompts={tPrompts} />
               }
             })}
             {showAwaitingInput && (
@@ -2330,6 +2363,9 @@ export function ChatPane({ className, onOpenAction }: ChatPaneProps) {
         onSendInput={handleUserInput}
         connected={connected}
         onOpenAction={onOpenAction}
+        tActions={tActions}
+        tCategories={tCategories}
+        tUI={tUI}
       />
     </div>
   )

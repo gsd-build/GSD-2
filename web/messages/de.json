@@ -677,5 +677,123 @@
     "error": {
       "unknown": "Unknown error"
     }
+  },
+  "chatMode": {
+    "header": {
+      "title": "Chat-Modus"
+    },
+    "actions": {
+      "discuss": "Diskutieren",
+      "discussDesc": "Geführte Meilenstein-/Slice-Diskussion starten",
+      "next": "Nächstes",
+      "nextDesc": "Nächste Aufgabe ausführen, dann pausieren",
+      "auto": "Auto",
+      "autoDesc": "Alle wartenden Einheiten fortlaufend ausführen",
+      "stop": "Stopp",
+      "stopDesc": "Auto-Modus sauber beenden",
+      "pause": "Pause",
+      "pauseDesc": "Auto-Modus pausieren (Zustand bleibt erhalten)",
+      "status": "Status",
+      "statusDesc": "Fortschritts-Dashboard anzeigen",
+      "visualize": "Visualisieren",
+      "visualizeDesc": "Interaktives TUI (Fortschritt, Abhängigkeiten, Metriken, Zeitstrahl)",
+      "queue": "Warteschlange",
+      "queueDesc": "Warteschlange/dispatchte Einheiten und Ausführungsreihenfolge anzeigen",
+      "history": "Verlauf",
+      "historyDesc": "Ausführungsverlauf mit Kosten-/Phasen-/Modelldetails ansehen",
+      "steer": "Steuern",
+      "steerDesc": "Benutzer-Override auf aktive Arbeit anwenden",
+      "capture": "Erfassen",
+      "captureDesc": "Gedanken schnell in CAPTURES.md festhalten",
+      "triage": "Triage",
+      "triageDesc": "Ausstehende Erfassungen klassifizieren und weiterleiten",
+      "skip": "Überspringen",
+      "skipDesc": "Verhindert, dass eine Einheit vom Auto-Modus dispatched wird",
+      "undo": "Rückgängig",
+      "undoDesc": "Letzte abgeschlossene Einheit zurücksetzen",
+      "knowledge": "Wissen",
+      "knowledgeDesc": "Regel, Muster oder Lektion zu KNOWLEDGE.md hinzufügen",
+      "mode": "Modus",
+      "modeDesc": "Workflow-Modus einstellen (Solo/Team)",
+      "prefs": "Einstellungen",
+      "prefsDesc": "Einstellungen verwalten (global/Projekt)",
+      "doctor": "Diagnose",
+      "doctorDesc": ".gsd/-Zustand diagnostizieren und reparieren",
+      "export": "Export",
+      "exportDesc": "Meilenstein-/Slice-Ergebnisse exportieren (JSON oder Markdown)",
+      "cleanup": "Aufräumen",
+      "cleanupDesc": "Zusammengeführte Branches oder Snapshots entfernen",
+      "remote": "Remote",
+      "remoteDesc": "Remote Auto-Modus steuern (Slack/Discord)"
+    },
+    "categories": {
+      "workflow": "Workflow",
+      "visibility": "Sichtbarkeit",
+      "correction": "Kurskorrektur",
+      "knowledge": "Wissen",
+      "config": "Konfiguration",
+      "maintenance": "Wartung"
+    },
+    "ui": {
+      "chatMode": "Chat-Modus",
+      "idle": "Leerlauf",
+      "disconnected": "Getrennt",
+      "connecting": "Verbindung zur GSD-Sitzung…",
+      "messagePlaceholder": "Nachricht…",
+      "connectingPlaceholder": "Verbinde…",
+      "send": "Senden",
+      "moreCommands": "Weitere Befehle",
+      "disabledDuringAuto": "Deaktiviert während der Auto-Modus läuft",
+      "imageNotice": "Maximal {max} Bilder pro Nachricht",
+      "imageFailed": "Bild konnte nicht verarbeitet werden",
+      "removeImage": "Bild entfernen",
+      "pendingImage": "Ausstehendes Bild",
+      "thinking": "Denke nach…",
+      "thoughtProcess": "Gedankengang",
+      "lines": "Zeilen",
+      "runningLabel": "Läuft {label}…",
+      "connectedWaiting": "Verbunden — warte auf GSD-Ausgabe…",
+      "thinkingIndicator": "Denke nach…",
+      "attachedImage": "Angehängtes Bild {index}",
+      "toolEdit": "Bearbeiten",
+      "toolWrite": "Schreiben",
+      "toolBash": "$",
+      "readyForInput": "Bereit für deine Eingabe",
+      "placeholderCTA": {
+        "stopAuto": "Auto Stopp",
+        "resumeAuto": "Auto Fortsetzen",
+        "newMilestone": "Neuer Meilenstein",
+        "plan": "Planen",
+        "startAuto": "Auto Start",
+        "initProject": "Projekt initialisieren",
+        "continue": "Fortfahren"
+      }
+    },
+    "prompts": {
+      "select": {
+        "selectedCount": "{count} ausgewählt"
+      },
+      "text": {
+        "typeAnswer": "Antwort eingeben…",
+        "submit": "Absenden"
+      },
+      "password": {
+        "typeValue": "Wert eingeben…",
+        "submit": "Absenden",
+        "entered": "{label} — eingegeben ✓",
+        "defaultLabel": "Wert",
+        "securityNote": "Der Wert wird sicher übertragen und nicht im Chatverlauf gespeichert.",
+        "showInput": "Anzeigen",
+        "hideInput": "Verbergen"
+      },
+      "confirm": {
+        "confirm": "Bestätigen",
+        "cancel": "Abbrechen",
+        "confirmed": "Bestätigt",
+        "cancelled": "Abgebrochen"
+      },
+      "submitted": "✓ Abgesendet",
+      "inputSubmitted": "Abgesendet"
+    }
   }
 }
