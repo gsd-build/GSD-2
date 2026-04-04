@@ -6,6 +6,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.60.0] - 2026-04-04
+
+### Added
+- add /btw skill — ephemeral side questions from conversation context
+
+### Fixed
+- **btw**: remove LLM-specific references from skill description
+
 ## [2.59.0] - 2026-04-03
 
 ### Added
@@ -2269,7 +2277,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - License updated to MIT
 
-[Unreleased]: https://github.com/gsd-build/gsd-2/compare/v2.59.0...HEAD
+[Unreleased]: https://github.com/gsd-build/gsd-2/compare/v2.60.0...HEAD
+[2.60.0]: https://github.com/gsd-build/gsd-2/compare/v2.59.0...v2.60.0
 [2.59.0]: https://github.com/gsd-build/gsd-2/compare/v2.58.0...v2.59.0
 [2.58.0]: https://github.com/gsd-build/gsd-2/compare/v2.57.0...v2.58.0
 [2.57.0]: https://github.com/gsd-build/gsd-2/compare/v2.56.0...v2.57.0
