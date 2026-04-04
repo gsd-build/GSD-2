@@ -691,6 +691,9 @@ The best practice for working in teams is to ensure unique milestone names acros
 # Session-specific interrupted-work markers
 .gsd/milestones/**/continue.md
 .gsd/milestones/**/*-CONTINUE.md
+
+# ── bg-shell: Process manifest (per-developer, per-session) ───────────────
+.bg-shell/
 ```
 
 ### Unique Milestone Names

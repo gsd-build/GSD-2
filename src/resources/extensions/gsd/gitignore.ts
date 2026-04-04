@@ -43,6 +43,9 @@ const BASELINE_PATTERNS = [
   ".gsd",
   ".gsd-id",
 
+  // ── bg-shell process manifest (ephemeral runtime state) ──
+  ".bg-shell/",
+
   // ── OS junk ──
   ".DS_Store",
   "Thumbs.db",
