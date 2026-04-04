@@ -42,7 +42,7 @@ import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { useTheme } from "next-themes"
 import { useTranslations } from "next-intl"
-import { useLocaleManager } from "@/components/i18n/locale-provider"
+import { useLocaleManager, type SupportedLocale } from "@/components/i18n/locale-provider"
 import {
   getCurrentScopeLabel,
   getLiveWorkspaceIndex,
@@ -95,8 +95,14 @@ export function NavRail({ activeView, onViewChange, isConnecting = false }: NavR
   const themeIcon = theme === "light" ? Sun : theme === "dark" ? Moon : Monitor
   const ThemeIcon = themeIcon
 
-  const languageLabel = locale === "en" ? "EN" : "DE"
+  const locales: SupportedLocale[] = ["en", "de", "fr"]
+  const nativeLabels: Record<SupportedLocale, string> = { en: "EN", de: "DE", fr: "FR" }
+  const currentIndex = locales.indexOf(locale as SupportedLocale)
+  const nextIndex = (currentIndex + 1) % locales.length
+  const localeAsSupported = locale as SupportedLocale
+  const languageLabel = nativeLabels[localeAsSupported] ?? "EN"
   const languageTooltip = t("tooltip.language", { language: languageLabel })
+  const cycleLanguage = () => setLocale(locales[nextIndex])
   const themeLabel = theme === "light" ? t("theme.light") : theme === "dark" ? t("theme.dark") : t("theme.system")
 
   const navItems = [
@@ -180,8 +186,7 @@ export function NavRail({ activeView, onViewChange, isConnecting = false }: NavR
           )}
           title={languageTooltip}
           disabled={isConnecting}
-          onClick={() => !isConnecting && setLocale(locale === "en" ? "de" : "en")}
-          data-testid="sidebar-language-toggle"
+          onClick={() => !isConnecting && cycleLanguage()}
         >
           <Globe className="h-5 w-5" />
         </button>
@@ -759,7 +764,15 @@ function MobileNavPanel({ activeView, onViewChange, isConnecting = false }: NavR
 
   const themeLabel = theme === "light" ? t("theme.light") : theme === "dark" ? t("theme.dark") : t("theme.system")
   const ThemeIcon = theme === "light" ? Sun : theme === "dark" ? Moon : Monitor
-  const languageLabel = locale === "en" ? "English" : "Deutsch"
+
+  const locales: SupportedLocale[] = ["en", "de", "fr"]
+  const mobileLabels: Record<SupportedLocale, string> = { en: t("language.english"), de: t("language.german"), fr: t("language.french") }
+  const localeAsSupported = locale as SupportedLocale
+  const languageLabel = mobileLabels[localeAsSupported] ?? "English"
+  const cycleLanguage = () => {
+    const idx = locales.indexOf(localeAsSupported)
+    setLocale(locales[(idx + 1) % locales.length])
+  }
 
   const navItems = [
     { id: "dashboard", label: t("nav.dashboard"), icon: LayoutDashboard },
@@ -827,7 +840,7 @@ function MobileNavPanel({ activeView, onViewChange, isConnecting = false }: NavR
           {themeLabel}
         </button>
         <button
-          onClick={() => !isConnecting && setLocale(locale === "en" ? "de" : "en")}
+          onClick={() => !isConnecting && cycleLanguage()}
           disabled={isConnecting}
           className="flex w-full items-center gap-3 rounded-md px-3 py-3 text-sm text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors min-h-[44px]"
           data-testid="mobile-language-toggle"

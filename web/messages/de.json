@@ -124,7 +124,19 @@
       "retry": "Erneut versuchen",
       "cancel": "Abbrechen",
       "defaultValuePlaceholder": "Wert eingeben",
-      "validationFailed": "Validierung fehlgeschlagen"
+      "validationFailed": "Validierung fehlgeschlagen",
+      "openSignInPage": "Anmeldeseite öffnen",
+      "deviceCodeInstruction": "Gib diesen Code auf der Anmeldeseite ein",
+      "copied": "Kopiert!",
+      "clickToCopy": "Zum Kopieren klicken",
+      "signinFailed": "Anmeldung fehlgeschlagen oder abgelaufen",
+      "waitingForInput": "Warte auf Eingabe…",
+      "submit": "Senden",
+      "configureAnotherProvider": "Weiteren Anbieter konfigurieren",
+      "descriptionAuthenticated": "Authentifiziert und bereit.",
+      "descriptionApiKeyAndOAuth": "Füge einen API-Schlüssel ein oder melde dich über deinen Browser an.",
+      "descriptionApiKeyOnly": "Füge deinen API-Schlüssel ein, um dich zu authentifizieren.",
+      "descriptionBrowserOnly": "Melde dich über deinen Browser an."
     },
     "root": {
       "heading": "Dev-Stammverzeichnis",
@@ -154,7 +166,26 @@
       "saveConnect": "Speichern & verbinden",
       "back": "Zurück",
       "skip": "Überspringen",
-      "continue": "Weiter"
+      "continue": "Weiter",
+      "channelDescriptions": {
+        "slack": "Werde in einem Slack-Kanal benachrichtigt",
+        "discord": "Werde in einem Discord-Kanal benachrichtigt",
+        "telegram": "Werde über den Telegram-Bot benachrichtigt"
+      },
+      "channelIdHints": {
+        "slack": "Kanal-ID (z.B. C01ABCD2EFG)",
+        "discord": "Kanal-ID (17–20-stellige Zahl)",
+        "telegram": "Chat-ID (numerisch, kann mit - beginnen)"
+      },
+      "checkingConfig": "Prüfe vorhandene Konfiguration…",
+      "configSaved": "Konfiguration gespeichert",
+      "connectedTo": "Verbunden mit {channel}",
+      "configured": "✓ konfiguriert",
+      "channelFormatMismatch": "Entspricht nicht dem erwarteten Format für {channel}",
+      "saveFailed": "Speichern fehlgeschlagen",
+      "failedToSave": "Speichern fehlgeschlagen",
+      "tokenSaveFailed": "Token-Speichern fehlgeschlagen",
+      "failedToSaveToken": "Token konnte nicht gespeichert werden"
     },
     "ready": {
       "heading": "Alles bereit",
@@ -208,6 +239,21 @@
       "failedCreate": "Projekterstellung fehlgeschlagen",
       "failedBrowse": "Durchsuchen fehlgeschlagen",
       "failedSavePreference": "Einstellung konnte nicht gespeichert werden"
+    },
+    "project": {
+      "createNew": "Neues Projekt erstellen",
+      "createNewDescription": "Ein neues Verzeichnis mit Git initialisieren",
+      "newProject": "Neues Projekt",
+      "nameValidation": "Buchstaben, Zahlen, Bindestriche, Unterstriche, Punkte. Muss mit einem Buchstaben oder einer Zahl beginnen.",
+      "nameConflict": "Ein Projekt mit diesem Namen existiert bereits",
+      "createAndOpen": "Erstellen & öffnen",
+      "openProject": "Projekt öffnen",
+      "selectDescription": "Wähle ein Projekt zum Loslegen oder erstelle ein neues.",
+      "setDevRootFirst": "Richte zuerst ein Dev-Stammverzeichnis ein, um deine Projekte zu entdecken.",
+      "noDevRootConfigured": "Kein Dev-Stammverzeichnis konfiguriert. Gehe zurück und richte eines ein, oder schließe die Einrichtung ab.",
+      "discovering": "Entdecke Projekte…",
+      "noProjectsInRoot": "Keine Projekte in {devRoot} gefunden",
+      "finishSetup": "Einrichtung abschließen"
     }
   },
   "dashboard": {
@@ -301,7 +347,8 @@
       "title": "Sprache",
       "description": "Anzeigesprache für die Oberfläche auswählen",
       "english": "Englisch",
-      "german": "Deutsch"
+      "german": "Deutsch",
+      "french": "Französisch"
     }
   },
   "chat": {
@@ -407,7 +454,7 @@
       "title": "Schneller Task",
       "description": "Erstelle einen einmaligen Task außerhalb des aktuellen Plans. Nützlich für kleine Korrekturen, Experimente oder Ad-hoc-Arbeit, die nicht in die Meilensteinstruktur passt.",
       "usage": "Verwendung",
-      "examples": "Beispiele",
+      "examplesHeading": "Beispiele",
       "note": "Schnelle Tasks werden als eigenständige Einheiten ausgeführt — sie beeinflussen nicht den Meilenstein-Fortschritt, Slices oder den Plan. Verwende sie für Arbeit, die jetzt ohne Zeremonie erledigt werden soll.",
       "examples": {
         "1": "Den Tippfehler in der README.md-Überschrift korrigieren",
@@ -541,10 +588,6 @@
       "noSnapshotsToPrune": "Keine Snapshots zum Bereinigen",
       "noMilestones": "Keine Meilensteine im Plan",
       "noPlan": "Kein Plan geladen — führe /gsd zum Initialisieren aus"
-    },
-    "undo": {
-      "success": "Rückgängig erfolgreich",
-      "failed": "Rückgängig fehlgeschlagen"
     },
     "export": {
       "markdown": "Markdown",

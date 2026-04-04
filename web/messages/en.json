@@ -124,7 +124,19 @@
       "retry": "Retry",
       "cancel": "Cancel",
       "defaultValuePlaceholder": "Enter value",
-      "validationFailed": "Validation failed"
+      "validationFailed": "Validation failed",
+      "openSignInPage": "Open sign-in page",
+      "deviceCodeInstruction": "Enter this code on the sign-in page",
+      "copied": "Copied!",
+      "clickToCopy": "Click to copy",
+      "signinFailed": "Sign-in failed or timed out",
+      "waitingForInput": "Waiting for input…",
+      "submit": "Submit",
+      "configureAnotherProvider": "Configure another provider",
+      "descriptionAuthenticated": "Authenticated and ready to go.",
+      "descriptionApiKeyAndOAuth": "Paste an API key or sign in through your browser.",
+      "descriptionApiKeyOnly": "Paste your API key to authenticate.",
+      "descriptionBrowserOnly": "Sign in through your browser to authenticate."
     },
     "root": {
       "heading": "Dev root",
@@ -154,7 +166,26 @@
       "saveConnect": "Save & connect",
       "back": "Back",
       "skip": "Skip",
-      "continue": "Continue"
+      "continue": "Continue",
+      "channelDescriptions": {
+        "slack": "Get notified in a Slack channel",
+        "discord": "Get notified in a Discord channel",
+        "telegram": "Get notified via Telegram bot"
+      },
+      "channelIdHints": {
+        "slack": "Channel ID (e.g. C01ABCD2EFG)",
+        "discord": "Channel ID (17–20 digit number)",
+        "telegram": "Chat ID (numeric, may start with -)"
+      },
+      "checkingConfig": "Checking existing configuration…",
+      "configSaved": "Configuration saved",
+      "connectedTo": "Connected to {channel}",
+      "configured": "✓ configured",
+      "channelFormatMismatch": "Doesn't match the expected format for {channel}",
+      "saveFailed": "Save failed",
+      "failedToSave": "Failed to save",
+      "tokenSaveFailed": "Token save failed",
+      "failedToSaveToken": "Failed to save token"
     },
     "ready": {
       "heading": "You're all set",
@@ -208,6 +239,21 @@
       "failedCreate": "Failed to create project",
       "failedBrowse": "Failed to browse",
       "failedSavePreference": "Failed to save preference"
+    },
+    "project": {
+      "createNew": "Create new project",
+      "createNewDescription": "Initialize a new directory with Git",
+      "newProject": "New project",
+      "nameValidation": "Letters, numbers, hyphens, underscores, dots. Must start with a letter or number.",
+      "nameConflict": "A project with this name already exists",
+      "createAndOpen": "Create & open",
+      "openProject": "Open a project",
+      "selectDescription": "Pick a project to start working in, or create a new one.",
+      "setDevRootFirst": "Set a dev root first to discover your projects.",
+      "noDevRootConfigured": "No dev root configured. Go back and set one, or finish setup to configure later.",
+      "discovering": "Discovering projects…",
+      "noProjectsInRoot": "No projects found in {devRoot}",
+      "finishSetup": "Finish setup"
     }
   },
   "dashboard": {
@@ -301,7 +347,8 @@
       "title": "Language",
       "description": "Choose the display language for the interface",
       "english": "English",
-      "german": "Deutsch"
+      "german": "Deutsch",
+      "french": "Français"
     }
   },
   "chat": {
@@ -407,7 +454,7 @@
       "title": "Quick Task",
       "description": "Create a quick one-off task outside the current plan. Useful for small fixes, experiments, or ad-hoc work that doesn't fit into the milestone structure.",
       "usage": "Usage",
-      "examples": "Examples",
+      "examplesHeading": "Examples",
       "note": "Quick tasks run as standalone units — they don't affect milestone progress, slices, or the plan. Use them for work that should happen now without ceremony.",
       "examples": {
         "1": "Fix the typo in README.md header",
@@ -438,9 +485,6 @@
       "choice": "Choice",
       "status": "Status",
       "description": "Description"
-    },
-    "status": {
-      "title": "Status"
     },
     "steer": {
       "title": "Steer",
@@ -545,10 +589,6 @@
       "noMilestones": "No milestones in the plan",
       "noPlan": "No plan loaded — run /gsd to initialize"
     },
-    "undo": {
-      "success": "Undo Successful",
-      "failed": "Undo Failed"
-    },
     "export": {
       "markdown": "Markdown",
       "json": "JSON"
@@ -613,16 +653,6 @@
     }
   },
   "diagnostics": {
-    "sections": {
-      "forensic": "Forensic Analysis",
-      "doctor": "Doctor Health Check",
-      "skillHealth": "Skill Health"
-    },
-    "loading": {
-      "forensic": "Running forensic analysis…",
-      "doctor": "Running health check…",
-      "skills": "Analyzing skill health…"
-    },
     "sections": {
       "forensic": "Forensic Analysis",
       "doctor": "Doctor Health Check",

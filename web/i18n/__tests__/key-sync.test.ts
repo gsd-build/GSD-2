@@ -47,8 +47,32 @@ describe("i18n message file sync", () => {
     assert.equal(issues.length, 0, issues.join("\n"))
   })
 
+  test("en.json and fr.json have identical key sets", () => {
+    const enRaw = readFileSync(join(messagesDir, "en.json"), "utf-8")
+    const frRaw = readFileSync(join(messagesDir, "fr.json"), "utf-8")
+
+    const en = JSON.parse(enRaw) as Record<string, unknown>
+    const fr = JSON.parse(frRaw) as Record<string, unknown>
+
+    const enKeys = collectKeys(en).sort()
+    const frKeys = collectKeys(fr).sort()
+
+    const missingInFr = enKeys.filter(k => !frKeys.includes(k))
+    const orphanedInFr = frKeys.filter(k => !enKeys.includes(k))
+
+    const issues: string[] = []
+    if (missingInFr.length) {
+      issues.push(`Missing in fr.json: ${missingInFr.join(", ")}`)
+    }
+    if (orphanedInFr.length) {
+      issues.push(`Orphaned in fr.json (not in en.json): ${orphanedInFr.join(", ")}`)
+    }
+
+    assert.equal(issues.length, 0, issues.join("\n"))
+  })
+
   test("all translation values are non-empty strings", () => {
-    for (const lang of ["en", "de"]) {
+    for (const lang of ["en", "de", "fr"]) {
       const raw = readFileSync(join(messagesDir, `${lang}.json`), "utf-8")
       const data = JSON.parse(raw) as Record<string, unknown>
       const keys = collectKeys(data)
@@ -68,7 +92,7 @@ describe("i18n message file sync", () => {
 
   test("no duplicate keys in message files", () => {
     // JSON.parse already deduplicates by overwriting, so we check that re-stringify is stable
-    for (const lang of ["en", "de"]) {
+    for (const lang of ["en", "de", "fr"]) {
       const raw = readFileSync(join(messagesDir, `${lang}.json`), "utf-8")
       const parsed = JSON.parse(raw)
       const roundTripped = JSON.stringify(parsed, null, 2)
@@ -79,6 +103,6 @@ describe("i18n message file sync", () => {
 
   test("supported locales are discoverable", () => {
     const files = readdirSync(messagesDir).filter(f => f.endsWith(".json")).sort()
-    assert.deepEqual(files, ["de.json", "en.json"], "Expected exactly en.json and de.json in messages/")
+    assert.deepEqual(files, ["de.json", "en.json", "fr.json"], "Expected exactly en.json, de.json, and fr.json in messages/")
   })
 })

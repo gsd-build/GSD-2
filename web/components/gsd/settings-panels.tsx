@@ -1054,7 +1054,7 @@ export function GeneralPanel() {
             <SelectValue>
               <div className="flex items-center gap-2">
                 <Globe className="h-4 w-4" />
-                {locale === "en" ? t("language.english") : t("language.german")}
+                {locale === "en" ? t("language.english") : locale === "de" ? t("language.german") : t("language.french")}
               </div>
             </SelectValue>
           </SelectTrigger>
@@ -1067,6 +1067,11 @@ export function GeneralPanel() {
             <SelectItem value="de">
               <div className="flex items-center gap-2">
                 {t("language.german")}
+              </div>
+            </SelectItem>
+            <SelectItem value="fr">
+              <div className="flex items-center gap-2">
+                {t("language.french")}
               </div>
             </SelectItem>
           </SelectContent>

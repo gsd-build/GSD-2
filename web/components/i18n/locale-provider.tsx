@@ -5,12 +5,14 @@ import { NextIntlClientProvider } from "next-intl"
 
 import enMessages from "@/messages/en.json"
 import deMessages from "@/messages/de.json"
+import frMessages from "@/messages/fr.json"
 
-export type SupportedLocale = "en" | "de"
+export type SupportedLocale = "en" | "de" | "fr"
 
 const messages: Record<SupportedLocale, Record<string, unknown>> = {
   en: enMessages,
   de: deMessages,
+  fr: frMessages,
 }
 
 function detectDefaultLocale(): SupportedLocale {
@@ -21,6 +23,7 @@ function detectDefaultLocale(): SupportedLocale {
 
   const browser = navigator.language
   if (browser.startsWith("de")) return "de"
+  if (browser.startsWith("fr")) return "fr"
 
   return "en"
 }

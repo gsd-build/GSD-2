@@ -16,6 +16,8 @@ import {
   XCircle,
 } from "lucide-react"
 
+import { useTranslations } from "next-intl"
+
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
@@ -105,6 +107,7 @@ export function StepAuthenticate({
   bridgeRefreshPhase,
   bridgeRefreshError,
 }: StepAuthenticateProps) {
+  const t = useTranslations("onboarding.auth")
   const [apiKey, setApiKey] = useState("")
   const [flowInput, setFlowInput] = useState("")
   const [copied, setCopied] = useState(false)
@@ -162,12 +165,12 @@ export function StepAuthenticate({
         </h2>
         <p className="mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">
           {canProceed
-            ? "Authenticated and ready to go."
+            ? t("descriptionAuthenticated")
             : hasApiKey && hasOAuth
-              ? "Paste an API key or sign in through your browser."
+              ? t("descriptionApiKeyAndOAuth")
               : hasApiKey
-                ? "Paste your API key to authenticate."
-                : "Sign in through your browser to authenticate."}
+                ? t("descriptionApiKeyOnly")
+                : t("descriptionBrowserOnly")}
         </p>
       </motion.div>
 
@@ -189,7 +192,7 @@ export function StepAuthenticate({
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-success/15">
                 <ShieldCheck className="h-5 w-5 text-success" />
               </div>
-              <div className="text-sm font-medium text-foreground">{provider.label} authenticated</div>
+              <div className="text-sm font-medium text-foreground">{t("authenticated", { provider: provider.label })}</div>
             </motion.div>
           )}
         </AnimatePresence>
@@ -220,7 +223,7 @@ export function StepAuthenticate({
           <div className="flex items-start gap-3 rounded-xl border border-destructive/20 bg-destructive/[0.06] px-4 py-3 text-sm">
             <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
             <div>
-              <div className="font-medium text-destructive">Connection failed</div>
+              <div className="font-medium text-destructive">{t("connectionFailed")}</div>
               <div className="mt-0.5 text-muted-foreground">{bridgeRefreshError}</div>
             </div>
           </div>
@@ -277,7 +280,7 @@ export function StepAuthenticate({
             {hasApiKey && (
               <div className="flex items-center gap-3 py-1">
                 <div className="h-px flex-1 bg-border/50" />
-                <span className="text-xs text-muted-foreground">or</span>
+                <span className="text-xs text-muted-foreground">{t("ordDivider")}</span>
                 <div className="h-px flex-1 bg-border/50" />
               </div>
             )}
@@ -322,7 +325,7 @@ export function StepAuthenticate({
                 {/* Device code — big and prominent */}
                 {deviceCode && (
                   <div className="flex flex-col items-center gap-3 py-2">
-                    <div className="text-xs text-muted-foreground">Enter this code on the sign-in page</div>
+                    <div className="text-xs text-muted-foreground">{t("deviceCodeInstruction")}</div>
                     <button
                       type="button"
                       onClick={() => copyCode(deviceCode)}
@@ -340,7 +343,7 @@ export function StepAuthenticate({
                       </span>
                     </button>
                     <div className="text-[11px] text-muted-foreground">
-                      {copied ? "Copied!" : "Click to copy"}
+                      {copied ? t("copied") : t("clickToCopy")}
                     </div>
                   </div>
                 )}
@@ -366,13 +369,13 @@ export function StepAuthenticate({
                     {flowRunning && (
                       <>
                         <LoaderCircle className="h-3 w-3 animate-spin" />
-                        <span>Waiting for authentication…</span>
+                        <span>{t("waitingForAuth")}</span>
                       </>
                     )}
                     {flowFailed && (
                       <>
                         <XCircle className="h-3 w-3 text-destructive" />
-                        <span className="text-destructive">Sign-in failed or timed out</span>
+                        <span className="text-destructive">{t("signinFailed")}</span>
                       </>
                     )}
                     {flowWaiting && !deviceCode && (
@@ -425,7 +428,7 @@ export function StepAuthenticate({
                         data-testid="onboarding-flow-input"
                         value={flowInput}
                         onChange={(e) => setFlowInput(e.target.value)}
-                        placeholder={activeFlow.prompt.placeholder || "Enter value"}
+                        placeholder={activeFlow.prompt.placeholder || t("defaultValuePlaceholder")}
                         disabled={isBusy}
                         className="text-sm"
                       />
@@ -437,7 +440,7 @@ export function StepAuthenticate({
                         {requestState === "submitting_provider_flow_input" ? (
                           <LoaderCircle className="h-4 w-4 animate-spin" />
                         ) : (
-                          "Submit"
+                          t("submit")
                         )}
                       </Button>
                     </div>
@@ -462,7 +465,7 @@ export function StepAuthenticate({
         {/* OAuth unavailable */}
         {provider.supports.oauth && !provider.supports.oauthAvailable && !hasApiKey && (
           <div className="rounded-xl border border-border/50 bg-card/50 px-4 py-3.5 text-sm text-muted-foreground">
-            Browser sign-in is not available in this runtime. Go back and choose a provider with API-key support.
+            {t("browserAuthUnavailable")}
           </div>
         )}
       </motion.div>
@@ -479,7 +482,7 @@ export function StepAuthenticate({
           onClick={onBack}
           className="text-muted-foreground transition-transform active:scale-[0.96]"
         >
-          Back
+          {t("back")}
         </Button>
         <Button
           onClick={onNext}
@@ -487,7 +490,7 @@ export function StepAuthenticate({
           className="group gap-2 transition-transform active:scale-[0.96]"
           data-testid="onboarding-auth-continue"
         >
-          Configure another provider
+          {t("configureAnotherProvider")}
           <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
         </Button>
       </motion.div>
