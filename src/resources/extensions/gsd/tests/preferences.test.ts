@@ -234,7 +234,7 @@ test("all wizard fields together produce no errors", () => {
   const { errors, warnings } = validatePreferences({
     version: 1,
     models: { research: "claude-opus-4-6" },
-    auto_supervisor: { soft_timeout_minutes: 15 },
+    auto_supervisor: { soft_timeout_minutes: 15, disable_context_pressure_wrapup: true },
     git: { main_branch: "main", auto_push: true, isolation: "worktree" },
     skill_discovery: "suggest",
     unique_milestone_ids: false,

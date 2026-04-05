@@ -181,6 +181,8 @@ export interface AutoSupervisorConfig {
   soft_timeout_minutes?: number;
   idle_timeout_minutes?: number;
   hard_timeout_minutes?: number;
+  /** Opt-in: disable the context-pressure continue-here wrap-up monitor while keeping timeout supervision active. */
+  disable_context_pressure_wrapup?: boolean;
 }
 
 export interface RemoteQuestionsConfig {
