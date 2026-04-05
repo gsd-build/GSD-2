@@ -222,6 +222,26 @@ describe("removeWorktree", () => {
     const branches = run("git branch", base);
     assert.ok(!branches.includes("worktree/feature-x"), "branch should be deleted");
   });
+
+  test("keeps dirty worktree unless force is explicit", () => {
+    writeFileSync(join(wtPath, "DIRTY.txt"), "uncommitted\n", "utf-8");
+
+    removeWorktree(base, "feature-x", { deleteBranch: true });
+
+    assert.ok(existsSync(wtPath), "dirty worktree should be preserved");
+    const branches = run("git branch", base);
+    assert.ok(branches.includes("worktree/feature-x"), "branch should remain when removal is refused");
+  });
+
+  test("force removes dirty worktree when explicitly requested", () => {
+    writeFileSync(join(wtPath, "DIRTY.txt"), "uncommitted\n", "utf-8");
+
+    removeWorktree(base, "feature-x", { deleteBranch: true, force: true });
+
+    assert.ok(!existsSync(wtPath), "dirty worktree should be removed when force is explicit");
+    const branches = run("git branch", base);
+    assert.ok(!branches.includes("worktree/feature-x"), "branch should be deleted after forced removal");
+  });
 });
 
 describe("removeWorktree — missing worktree", () => {

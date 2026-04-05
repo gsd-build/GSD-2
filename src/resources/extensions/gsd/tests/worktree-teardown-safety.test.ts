@@ -145,4 +145,27 @@ describe("worktree-teardown-safety", () => {
       "completely external path is rejected",
     );
   });
+
+  it("isInsideWorktreesDir accepts realpath aliases for the same worktree root", () => {
+    const tempDir = createTempRepo();
+    dirs.push(tempDir);
+
+    const aliasBase = tempDir.startsWith("/private/") ? tempDir.replace(/^\/private/, "") : tempDir;
+    const aliasTarget = join(aliasBase, ".gsd", "worktrees", "my-wt");
+
+    if (aliasBase === tempDir) {
+      assertTrue(
+        isInsideWorktreesDir(tempDir, aliasTarget),
+        "canonical path is accepted when no alias variant exists",
+      );
+      return;
+    }
+
+    mkdirSync(aliasTarget, { recursive: true });
+
+    assertTrue(
+      isInsideWorktreesDir(aliasBase, aliasTarget),
+      "macOS /var and /private/var aliases should be treated as the same worktree root",
+    );
+  });
 });
