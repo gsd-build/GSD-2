@@ -160,3 +160,26 @@ test("initResources prunes stale top-level extension siblings next to bundled co
   assert.equal(existsSync(staleSiblingPath), false, "stale top-level sibling should be removed during sync");
   assert.equal(existsSync(bundledPath), true, "bundled extension should remain after cleanup");
 });
+
+test("resolveGsdNodeModules returns nested node_modules when yaml is present there", async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "gsd-nm-"));
+  t.after(() => { rmSync(tmp, { recursive: true, force: true }); });
+
+  const fakePkgRoot = join(tmp, "gsd-pi");
+  mkdirSync(join(fakePkgRoot, "node_modules", "yaml"), { recursive: true });
+
+  const { resolveGsdNodeModules } = await import("../resource-loader.ts");
+  assert.equal(resolveGsdNodeModules(fakePkgRoot), join(fakePkgRoot, "node_modules"));
+});
+
+test("resolveGsdNodeModules falls back to parent node_modules when yaml is absent in nested but present in hoisted", async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "gsd-nm-"));
+  t.after(() => { rmSync(tmp, { recursive: true, force: true }); });
+
+  const fakePkgRoot = join(tmp, "gsd-pi");
+  mkdirSync(join(fakePkgRoot, "node_modules"), { recursive: true });
+  mkdirSync(join(tmp, "yaml"), { recursive: true });
+
+  const { resolveGsdNodeModules } = await import("../resource-loader.ts");
+  assert.equal(resolveGsdNodeModules(fakePkgRoot), tmp);
+});
