@@ -569,6 +569,23 @@ export async function postUnitPreVerification(pctx: PostUnitContext, opts?: PreV
     // Rewrite-docs completion
     if (s.currentUnit.type === "rewrite-docs") {
       await runSafely("postUnit", "rewrite-docs-resolve", async () => {
+        // Detect abandon/descope overrides BEFORE resolving them (#3490).
+        // If an override is about abandoning the milestone, park it so the
+        // state engine skips it. Without this, rewrite-docs only edits
+        // markdown but the DB still has the milestone as active.
+        try {
+          const { loadActiveOverrides } = await import("./files.js");
+          const overrides = await loadActiveOverrides(s.basePath);
+          const abandonPattern = /\b(abandon|descope|cancel|shelve|drop|scrap)\b/i;
+          const abandonOverrides = overrides.filter(o => abandonPattern.test(o.change));
+          if (abandonOverrides.length > 0 && s.currentMilestoneId) {
+            const { parkMilestone } = await import("./milestone-actions.js");
+            const reason = abandonOverrides.map(o => o.change).join("; ");
+            parkMilestone(s.basePath, s.currentMilestoneId, reason);
+            ctx.ui.notify(`Milestone ${s.currentMilestoneId} parked: "${reason}"`, "info");
+          }
+        } catch { /* non-fatal — override detection is best-effort */ }
+
         await resolveAllOverrides(s.basePath);
         // Reset both disk and in-memory counters. Disk counter is authoritative
         // (survives restarts); in-memory is kept in sync for the current session.
