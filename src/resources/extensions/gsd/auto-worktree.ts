@@ -114,9 +114,10 @@ function cleanupMergeStateFiles(basePath: string): void {
       const path = join(gitDir, file);
       if (existsSync(path)) unlinkSync(path);
     }
-  } catch {
+  } catch (err) {
     // Best-effort only. Missing or unreadable git state should not mask the
     // primary merge outcome.
+    logWarning("worktree", `merge state cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
@@ -1484,7 +1485,9 @@ export function mergeMilestoneToMain(
   // path already cleans MERGE_HEAD that libgit2 may create during the merge,
   // but a leftover MERGE_HEAD from an earlier run blocks `git merge --squash`
   // before we ever reach that later cleanup (#2912).
-  try { nativeMergeAbort(originalBasePath_); } catch { /* best-effort */ }
+  try { nativeMergeAbort(originalBasePath_); } catch (err) { /* best-effort */
+    logWarning("worktree", `pre-merge abort cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
 
   // 6. Build rich commit message
   const dbMilestone = getMilestone(milestoneId);
