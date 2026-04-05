@@ -636,6 +636,7 @@ export async function showDiscuss(
       const basePrompt = loadPrompt("guided-discuss-milestone", {
         milestoneId: mid, milestoneTitle, inlinedTemplates: discussMilestoneTemplates, structuredQuestionsAvailable,
         commitInstruction: buildDocsCommitInstruction(`docs(${mid}): milestone context from discuss`),
+        fastPathInstruction: "",
       });
       const seed = draftContent
         ? `${basePrompt}\n\n## Prior Discussion (Draft Seed)\n\n${draftContent}`
@@ -649,6 +650,7 @@ export async function showDiscuss(
       await dispatchWorkflow(pi, loadPrompt("guided-discuss-milestone", {
         milestoneId: mid, milestoneTitle, inlinedTemplates: discussMilestoneTemplates, structuredQuestionsAvailable,
         commitInstruction: buildDocsCommitInstruction(`docs(${mid}): milestone context from discuss`),
+        fastPathInstruction: "",
       }), "gsd-discuss", ctx, "discuss-milestone");
     } else if (choice === "skip_milestone") {
       const milestoneIds = findMilestoneIds(basePath);
@@ -851,7 +853,36 @@ async function showDiscussQueuedMilestone(
   const chosen = pendingMilestones.find(m => m.id === choice);
   if (!chosen) return;
 
-  await dispatchDiscussForMilestone(ctx, pi, basePath, chosen.id, chosen.title);
+  const hasDraft = !!resolveMilestoneFile(basePath, chosen.id, "CONTEXT-DRAFT");
+  let fastPath = hasDraft;
+
+  if (!hasDraft) {
+    const mode = await showNextAction(ctx, {
+      title: `Discuss ${chosen.id}`,
+      summary: [
+        "Choose how to start the discussion.",
+        "Fast path skips generic scouting — use it when you already know the scope.",
+      ],
+      actions: [
+        {
+          id: "full",
+          label: "Full discussion",
+          description: "Scout the codebase, ask open-ended questions, explore deeply",
+          recommended: true,
+        },
+        {
+          id: "fast",
+          label: "I have the scope — fast path",
+          description: "Treat your first message as authoritative seed context; skip scouting",
+        },
+      ],
+      notYetMessage: "Run /gsd discuss when ready.",
+    });
+    if (mode === "not_yet") return;
+    fastPath = mode === "fast";
+  }
+
+  await dispatchDiscussForMilestone(ctx, pi, basePath, chosen.id, chosen.title, { fastPath });
 }
 
 /**
@@ -865,9 +896,21 @@ async function dispatchDiscussForMilestone(
   basePath: string,
   mid: string,
   milestoneTitle: string,
+  opts: { fastPath?: boolean } = {},
 ): Promise<void> {
   const draftFile = resolveMilestoneFile(basePath, mid, "CONTEXT-DRAFT");
   const draftContent = draftFile ? await loadFile(draftFile) : null;
+  const hasSeed = !!(draftContent || opts.fastPath);
+  const fastPathInstruction = hasSeed
+    ? [
+        "> **Fast path active — scope provided.**",
+        "> Do NOT perform a generic codebase scouting pass.",
+        "> Do at most 2 targeted reads to check for obvious conflicts with existing work.",
+        "> Treat the seed context or the operator's first message as authoritative.",
+        "> Move directly to the depth summary and write step.",
+        "> Ask only questions where the answer would materially change scope.",
+      ].join("\n")
+    : "";
   const discussMilestoneTemplates = inlineTemplate("context", "Context");
   const structuredQuestionsAvailable = pi.getActiveTools().includes("ask_user_questions") ? "true" : "false";
   const basePrompt = loadPrompt("guided-discuss-milestone", {
@@ -876,6 +919,7 @@ async function dispatchDiscussForMilestone(
     inlinedTemplates: discussMilestoneTemplates,
     structuredQuestionsAvailable,
     commitInstruction: buildDocsCommitInstruction(`docs(${mid}): milestone context from discuss`),
+    fastPathInstruction,
   });
   const prompt = draftContent
     ? `${basePrompt}\n\n## Prior Discussion (Draft Seed)\n\n${draftContent}`
@@ -1282,6 +1326,7 @@ export async function showSmartEntry(
       const basePrompt = loadPrompt("guided-discuss-milestone", {
         milestoneId, milestoneTitle, inlinedTemplates: discussMilestoneTemplates, structuredQuestionsAvailable,
         commitInstruction: buildDocsCommitInstruction(`docs(${milestoneId}): milestone context from discuss`),
+        fastPathInstruction: "",
       });
       const seed = draftContent
         ? `${basePrompt}\n\n## Prior Discussion (Draft Seed)\n\n${draftContent}`
@@ -1295,6 +1340,7 @@ export async function showSmartEntry(
       await dispatchWorkflow(pi, loadPrompt("guided-discuss-milestone", {
         milestoneId, milestoneTitle, inlinedTemplates: discussMilestoneTemplates, structuredQuestionsAvailable,
         commitInstruction: buildDocsCommitInstruction(`docs(${milestoneId}): milestone context from discuss`),
+        fastPathInstruction: "",
       }), "gsd-discuss", ctx, "discuss-milestone");
     } else if (choice === "skip_milestone") {
       const milestoneIds = findMilestoneIds(basePath);
@@ -1379,6 +1425,7 @@ export async function showSmartEntry(
         await dispatchWorkflow(pi, loadPrompt("guided-discuss-milestone", {
           milestoneId, milestoneTitle, inlinedTemplates: discussMilestoneTemplates, structuredQuestionsAvailable,
           commitInstruction: buildDocsCommitInstruction(`docs(${milestoneId}): milestone context from discuss`),
+          fastPathInstruction: "",
         }), "gsd-run", ctx, "discuss-milestone");
       } else if (choice === "skip_milestone") {
         const milestoneIds = findMilestoneIds(basePath);

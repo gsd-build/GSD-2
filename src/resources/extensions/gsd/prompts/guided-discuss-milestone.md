@@ -8,6 +8,8 @@ Discuss milestone {{milestoneId}} ("{{milestoneTitle}}"). Identify gray areas, a
 
 ## Interview Protocol
 
+{{fastPathInstruction}}
+
 ### Before your first question round
 
 Do a lightweight targeted investigation so your questions are grounded in reality:

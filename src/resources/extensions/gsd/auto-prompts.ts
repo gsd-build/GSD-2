@@ -858,6 +858,7 @@ export async function buildDiscussMilestonePrompt(mid: string, midTitle: string,
     inlinedTemplates: discussTemplates,
     structuredQuestionsAvailable: "true",
     commitInstruction: "Do not commit planning artifacts — .gsd/ is managed externally.",
+    fastPathInstruction: "",
   });
 
   // If a CONTEXT-DRAFT.md exists, append it as seed material
