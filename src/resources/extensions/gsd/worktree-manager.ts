@@ -388,6 +388,12 @@ export function removeWorktree(
   let wtPath = worktreePath(basePath, name);
   const branch = opts.branch ?? worktreeBranchName(name);
   const { deleteBranch = true, force = false } = opts;
+  // Safety invariants:
+  // - nested .git directories are found via findNestedGitDirs() and removed
+  //   with logWarning-backed cleanup before worktree teardown (#2616)
+  // - git-reported paths outside the current .gsd/worktrees shadow are only
+  //   treated as registration targets, never as arbitrary force-rmSync paths
+  //   (#1852, #2365)
 
   // Resolve the ACTUAL worktree path from git's worktree list.
   // The computed path may differ when .gsd/ is (or was) a symlink to an
@@ -396,6 +402,7 @@ export function removeWorktree(
   // If syncStateToProjectRoot later creates a real .gsd/ directory that
   // shadows the symlink, the computed path diverges from git's record.
   let gitReportedPath: string | null = null;
+  let removedGitReportedEntry = false;
   try {
     const entries = nativeWorktreeList(basePath);
     const entry = entries.find(e => e.branch === branch);
@@ -418,6 +425,12 @@ export function removeWorktree(
     // Still tell git to unregister the worktree entry via its reported path,
     // but do NOT use force and do NOT fall back to rmSync on this path.
     try { nativeWorktreeRemove(basePath, gitReportedPath, false); } catch (e) { logWarning("worktree", `non-force worktree remove failed for ${gitReportedPath}: ${e instanceof Error ? e.message : String(e)}`); }
+    try {
+      const entriesAfterRemove = nativeWorktreeList(basePath);
+      removedGitReportedEntry = !entriesAfterRemove.some(e => e.branch === branch);
+    } catch (e) {
+      logWarning("worktree", `nativeWorktreeList post-remove parse failed: ${(e as Error).message}`);
+    }
   }
 
   const resolvedWtPath = existsSync(wtPath) ? realpathSync(wtPath) : wtPath;
@@ -431,6 +444,25 @@ export function removeWorktree(
   const resolvedCwd = existsSync(cwd) ? realpathSync(cwd) : cwd;
   if (resolvedCwd === resolvedWtPath || resolvedCwd.startsWith(resolvedWtPath + sep)) {
     process.chdir(basePath);
+  }
+
+  // #1852: git can successfully unregister the real external worktree even
+  // after syncStateToProjectRoot has replaced .gsd with a local shadow dir.
+  // In that case, skip dirty-state checks on the shadow path, remove only the
+  // contained shadow directory, prune, and delete the branch.
+  if (removedGitReportedEntry) {
+    if (existsSync(wtPath) && isInsideWorktreesDir(basePath, wtPath)) {
+      try {
+        rmSync(wtPath, { recursive: true, force: true });
+      } catch (e) {
+        logWarning("worktree", `shadow worktree cleanup failed for ${wtPath}: ${(e as Error).message}`);
+      }
+    }
+    nativeWorktreePrune(basePath);
+    if (deleteBranch) {
+      try { nativeBranchDelete(basePath, branch, true); } catch (e) { logWarning("worktree", `nativeBranchDelete failed: ${(e as Error).message}`); }
+    }
+    return;
   }
 
   if (!existsSync(wtPath)) {
