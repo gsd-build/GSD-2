@@ -54,6 +54,7 @@ import {
   getSlice,
   insertMilestone,
   insertSlice,
+  deleteSlice,
   updateTaskStatus,
   getPendingSliceGateCount,
   type MilestoneRow,
@@ -346,6 +347,8 @@ export async function deriveStateFromDb(basePath: string): Promise<GSDState> {
     catch { continue; }
 
     const parsed = parseRoadmap(roadmapContent);
+    const roadmapSliceIds = new Set(parsed.slices.map(s => s.id));
+
     for (const s of parsed.slices) {
       if (dbSliceIds.has(s.id)) continue;
       const summaryPath = resolveSliceFile(basePath, mid, s.id, "SUMMARY");
@@ -355,6 +358,13 @@ export async function deriveStateFromDb(basePath: string): Promise<GSDState> {
         status: sliceStatus, risk: s.risk,
         depends: s.depends, demo: s.demo,
       });
+    }
+
+    // Prune pending rows absent from the roadmap; never touch completed slices.
+    for (const dbSlice of dbSlices) {
+      if (!isStatusDone(dbSlice.status) && !roadmapSliceIds.has(dbSlice.id)) {
+        deleteSlice(mid, dbSlice.id);
+      }
     }
   }
 

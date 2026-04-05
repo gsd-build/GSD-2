@@ -28,6 +28,7 @@ import {
   closeDatabase,
   insertMilestone,
   insertSlice,
+  getMilestoneSlices,
 } from "../gsd-db.ts";
 
 // ─── Fixture helpers ───────────────────────────────────────────────────────────
@@ -135,4 +136,59 @@ test("genuinely blocked milestone (circular deps, real slices) stays blocked", a
 
   assert.equal(state.phase, "blocked", "circular deps with real roadmap slices must stay blocked");
   assert.ok(state.blockers.length > 0, "blockers must be non-empty for a genuinely blocked milestone");
+});
+
+test("reconciliation removes pending DB slices absent from the roadmap", async (t) => {
+  const base = makeBase();
+  t.after(() => { closeDatabase(); rmSync(base, { recursive: true, force: true }); });
+
+  writeGsd(base, "milestones/M001/M001-CONTEXT.md", "# M001\n");
+  // Roadmap that only defines S01 — S02 is a stale DB row from a previous draft
+  writeGsd(base, "milestones/M001/M001-ROADMAP.md", [
+    "# M001: Milestone",
+    "",
+    "## Slices",
+    "",
+    "- [ ] **S01: Real Slice** `risk:low` `depends:[]`",
+  ].join("\n"));
+
+  openDatabase(":memory:");
+  insertMilestone({ id: "M001", title: "Milestone", status: "active", depends_on: [] });
+  insertSlice({ id: "S01", milestoneId: "M001", title: "Real Slice", status: "pending", depends: [] });
+  // Stale row not in the roadmap
+  insertSlice({ id: "S02", milestoneId: "M001", title: "Stale Slice", status: "pending", depends: ["S99"] });
+
+  invalidateStateCache();
+  await deriveStateFromDb(base);
+
+  const remaining = getMilestoneSlices("M001");
+  assert.ok(remaining.some(s => s.id === "S01"), "S01 must be retained");
+  assert.ok(!remaining.some(s => s.id === "S02"), "stale S02 must be removed by reconciliation");
+});
+
+test("reconciliation does not remove completed slices absent from the roadmap", async (t) => {
+  const base = makeBase();
+  t.after(() => { closeDatabase(); rmSync(base, { recursive: true, force: true }); });
+
+  writeGsd(base, "milestones/M001/M001-CONTEXT.md", "# M001\n");
+  // Roadmap only has S02 — S01 was completed and removed from the roadmap
+  writeGsd(base, "milestones/M001/M001-ROADMAP.md", [
+    "# M001: Milestone",
+    "",
+    "## Slices",
+    "",
+    "- [ ] **S02: Active Slice** `risk:low` `depends:[]`",
+  ].join("\n"));
+
+  openDatabase(":memory:");
+  insertMilestone({ id: "M001", title: "Milestone", status: "active", depends_on: [] });
+  insertSlice({ id: "S01", milestoneId: "M001", title: "Completed Slice", status: "complete", depends: [] });
+  insertSlice({ id: "S02", milestoneId: "M001", title: "Active Slice", status: "pending", depends: [] });
+
+  invalidateStateCache();
+  await deriveStateFromDb(base);
+
+  const remaining = getMilestoneSlices("M001");
+  assert.ok(remaining.some(s => s.id === "S01"), "completed S01 must NOT be removed");
+  assert.ok(remaining.some(s => s.id === "S02"), "S02 must be retained");
 });
