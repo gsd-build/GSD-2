@@ -8,6 +8,7 @@
 
 import { join } from "node:path";
 import { mkdirSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 
 import {
   transaction,
@@ -48,6 +49,30 @@ export interface CompleteMilestoneParams {
 export interface CompleteMilestoneResult {
   milestoneId: string;
   summaryPath: string;
+  uncommittedWarning?: string;
+}
+
+/**
+ * Check whether any of the given keyFiles have uncommitted changes in git.
+ * Returns a warning string if uncommitted files are found, null otherwise.
+ * Returns null (silently) if git is unavailable or the path is not a git repo.
+ */
+function checkUncommittedKeyFiles(keyFiles: string[], basePath: string): string | null {
+  if (!keyFiles || keyFiles.length === 0) return null;
+  try {
+    const result = spawnSync(
+      "git",
+      ["status", "--porcelain", "--", ...keyFiles],
+      { cwd: basePath, encoding: "utf-8", timeout: 5000 },
+    );
+    if (result.status !== 0 || result.error) return null; // git unavailable — skip
+    const dirtyLines = (result.stdout ?? "").trim().split("\n").filter(Boolean);
+    if (dirtyLines.length === 0) return null;
+    const fileList = dirtyLines.map(l => l.slice(3)).join(", ");
+    return `Warning: the following keyFiles have uncommitted changes: ${fileList}. Consider committing before marking complete.`;
+  } catch {
+    return null; // never block completion due to git check failure
+  }
 }
 
 function renderMilestoneSummaryMarkdown(params: CompleteMilestoneParams): string {
@@ -124,6 +149,9 @@ export async function handleCompleteMilestone(
   if (params.verificationPassed !== true) {
     return { error: "verification did not pass — milestone completion blocked. verificationPassed must be explicitly set to true after all verification steps succeed" };
   }
+
+  // ── Git awareness check (warning-only, never blocks completion) ─────────
+  const uncommittedWarning = checkUncommittedKeyFiles(params.keyFiles, basePath);
 
   // ── Guards + DB writes inside a single transaction (prevents TOCTOU) ───
   const completedAt = new Date().toISOString();
@@ -222,5 +250,6 @@ export async function handleCompleteMilestone(
   return {
     milestoneId: params.milestoneId,
     summaryPath,
+    ...(uncommittedWarning ? { uncommittedWarning } : {}),
   };
 }
