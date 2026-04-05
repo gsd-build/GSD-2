@@ -2033,12 +2033,14 @@ export function deleteTask(milestoneId: string, sliceId: string, taskId: string)
 export function deleteSlice(milestoneId: string, sliceId: string): void {
   if (!currentDb) throw new GSDError(GSD_STALE_STATE, "gsd-db: No database open");
   transaction(() => {
-    // Cascade-style manual deletion: evidence → tasks → dependencies → slice
     currentDb!.prepare(
       `DELETE FROM verification_evidence WHERE milestone_id = :mid AND slice_id = :sid`,
     ).run({ ":mid": milestoneId, ":sid": sliceId });
     currentDb!.prepare(
       `DELETE FROM tasks WHERE milestone_id = :mid AND slice_id = :sid`,
+    ).run({ ":mid": milestoneId, ":sid": sliceId });
+    currentDb!.prepare(
+      `DELETE FROM quality_gates WHERE milestone_id = :mid AND slice_id = :sid`,
     ).run({ ":mid": milestoneId, ":sid": sliceId });
     currentDb!.prepare(
       `DELETE FROM slice_dependencies WHERE milestone_id = :mid AND slice_id = :sid`,

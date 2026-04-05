@@ -360,10 +360,11 @@ export async function deriveStateFromDb(basePath: string): Promise<GSDState> {
       });
     }
 
-    // Prune pending rows absent from the roadmap; never touch completed slices.
-    for (const dbSlice of dbSlices) {
-      if (!isStatusDone(dbSlice.status) && !roadmapSliceIds.has(dbSlice.id)) {
-        deleteSlice(mid, dbSlice.id);
+    if (roadmapSliceIds.size > 0) {
+      for (const dbSlice of dbSlices) {
+        if (!isStatusDone(dbSlice.status) && !roadmapSliceIds.has(dbSlice.id)) {
+          deleteSlice(mid, dbSlice.id);
+        }
       }
     }
   }
