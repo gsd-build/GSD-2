@@ -36,6 +36,8 @@ Welcome to the GSD documentation. This covers everything from getting started to
 | [ADR-001: Branchless Worktree Architecture](./ADR-001-branchless-worktree-architecture.md) | Decision record for the v2.14 git architecture |
 | [ADR-003: Pipeline Simplification](./ADR-003-pipeline-simplification.md) | Research merged into planning, mechanical completion (v2.30) |
 | [ADR-004: Capability-Aware Model Routing](./ADR-004-capability-aware-model-routing.md) | Extend routing from tier/cost selection to task-capability matching |
+| [ADR-007: Model Catalog Split](./ADR-007-model-catalog-split.md) | Separate model metadata from routing logic for extensibility |
+| [Context Optimization Opportunities](./pi-context-optimization-opportunities.md) | Analysis of context window usage and optimization strategies |
 
 ## Pi SDK Documentation
 
