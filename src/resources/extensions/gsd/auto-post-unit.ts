@@ -391,7 +391,9 @@ export async function postUnitPreVerification(pctx: PostUnitContext, opts?: PreV
             parkMilestone(s.basePath, s.currentMilestoneId, reason);
             ctx.ui.notify(`Milestone ${s.currentMilestoneId} parked: "${reason}"`, "info");
           }
-        } catch { /* non-fatal — override detection is best-effort */ }
+        } catch (err) {
+          process.stderr.write(`gsd: abandon-detect: ${(err as Error).message}\n`);
+        }
 
         await resolveAllOverrides(s.basePath);
         // Reset both disk and in-memory counters. Disk counter is authoritative
