@@ -11,7 +11,7 @@ import { NEW_SESSION_TIMEOUT_MS } from "./session.js";
 import type { UnitResult } from "./types.js";
 import { _setCurrentResolve, _setSessionSwitchInFlight } from "./resolve.js";
 import { debugLog } from "../debug-logger.js";
-import { logWarning, logError } from "../workflow-logger.js";
+import { logWarning } from "../workflow-logger.js";
 
 /**
  * Execute a single unit: create a new session, send the prompt, and await
@@ -38,7 +38,10 @@ export async function runUnit(
   let sessionTimeoutHandle: ReturnType<typeof setTimeout> | undefined;
   _setSessionSwitchInFlight(true);
   try {
-    const sessionPromise = s.cmdCtx!.newSession().finally(() => {
+    const sessionName = buildSessionName(unitType, unitId, s.currentMilestoneId);
+    const sessionPromise = s.cmdCtx!.newSession({
+      setup: async (sm) => { sm.appendSessionInfo(sessionName); },
+    }).finally(() => {
       _setSessionSwitchInFlight(false);
     });
     const timeoutPromise = new Promise<{ cancelled: true }>((resolve) => {
@@ -133,4 +136,23 @@ export async function runUnit(
   }
 
   return result;
+}
+
+/**
+ * Build a human-readable session name from the executing unit context.
+ * Examples:
+ *   "execute-task T03 · S02 · M001"
+ *   "plan-slice S02 · M001"
+ *   "validate-milestone M001"
+ *   "hook/post-unit"
+ */
+function buildSessionName(
+  unitType: string,
+  unitId: string,
+  milestoneId: string | null,
+): string {
+  const parts: string[] = [unitType];
+  if (unitId) parts.push(unitId);
+  if (milestoneId) parts.push(milestoneId);
+  return parts.join(" · ");
 }
