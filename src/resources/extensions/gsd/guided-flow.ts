@@ -1314,7 +1314,19 @@ export async function showSmartEntry(
     const roadmapFile = resolveMilestoneFile(basePath, milestoneId, "ROADMAP");
     const hasRoadmap = !!(roadmapFile && await loadFile(roadmapFile));
 
-    if (!hasRoadmap) {
+    // A roadmap file with zero parseable slices (placeholder text) should be
+    // treated the same as no roadmap — offer "Create roadmap" instead of "Go auto"
+    // which would immediately get stuck in blocked state (#3441).
+    let roadmapHasSlices = false;
+    if (hasRoadmap) {
+      const roadmapContent = await loadFile(roadmapFile!);
+      if (roadmapContent) {
+        const parsed = parseRoadmapSlices(roadmapContent);
+        roadmapHasSlices = parsed.length > 0;
+      }
+    }
+
+    if (!hasRoadmap || !roadmapHasSlices) {
       // No roadmap → discuss or plan
       const contextFile = resolveMilestoneFile(basePath, milestoneId, "CONTEXT");
       const hasContext = !!(contextFile && await loadFile(contextFile));
