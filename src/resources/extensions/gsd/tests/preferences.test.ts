@@ -410,6 +410,7 @@ test("unrecognized format warning is emitted at most once (#2373)", () => {
     // Reset so other tests aren't affected by the flag state
     _resetParseWarningFlag();
   }
+});
 
 test("parsePreferencesMarkdown parses heading+list format without frontmatter (#2036)", () => {
   // A GSD agent recovery session wrote preferences in markdown heading+list
