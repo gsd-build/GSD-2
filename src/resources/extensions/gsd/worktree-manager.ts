@@ -36,6 +36,7 @@ import {
   nativeWorktreeList,
   nativeWorktreePrune,
   nativeWorktreeRemove,
+  nativeWorkingTreeStatus,
 } from "./native-git-bridge.js";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -122,11 +123,19 @@ export function worktreeBranchName(name: string): string {
  * nativeWorktreeRemove --force) to prevent #2365-style data loss.
  */
 export function isInsideWorktreesDir(basePath: string, targetPath: string): boolean {
-  const wtDir = resolve(worktreesDir(basePath));
-  const resolved = resolve(targetPath);
+  const canonicalize = (path: string): string => {
+    try {
+      return normalizePathForComparison(realpathSync(path));
+    } catch {
+      return normalizePathForComparison(resolve(path));
+    }
+  };
+
+  const wtDir = canonicalize(worktreesDir(basePath));
+  const resolved = canonicalize(targetPath);
   // The resolved path must start with the worktrees dir followed by a separator,
   // not merely be a prefix match (e.g. ".gsd/worktrees-extra" must not match).
-  return resolved === wtDir || resolved.startsWith(wtDir + sep);
+  return resolved === wtDir || resolved.startsWith(wtDir + "/");
 }
 
 // ─── Core Operations ───────────────────────────────────────────────────────
@@ -378,7 +387,7 @@ export function removeWorktree(
 ): void {
   let wtPath = worktreePath(basePath, name);
   const branch = opts.branch ?? worktreeBranchName(name);
-  const { deleteBranch = true, force = true } = opts;
+  const { deleteBranch = true, force = false } = opts;
 
   // Resolve the ACTUAL worktree path from git's worktree list.
   // The computed path may differ when .gsd/ is (or was) a symlink to an
@@ -429,6 +438,17 @@ export function removeWorktree(
     if (deleteBranch) {
       try { nativeBranchDelete(basePath, branch, true); } catch (e) { logWarning("worktree", `nativeBranchDelete failed: ${(e as Error).message}`); }
     }
+    return;
+  }
+
+  const worktreeStatus = nativeWorkingTreeStatus(resolvedWtPath);
+  const hasDirtyState = worktreeStatus.trim() !== "";
+  if (hasDirtyState && !force) {
+    logWarning(
+      "reconcile",
+      `Refusing to remove dirty worktree without explicit force: ${resolvedWtPath}`,
+      { worktree: name, status: worktreeStatus },
+    );
     return;
   }
 
