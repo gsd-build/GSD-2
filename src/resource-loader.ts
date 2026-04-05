@@ -284,9 +284,18 @@ function copyDirRecursive(src: string, dest: string): void {
  * @gsd/* packages fail. The symlink makes Node's standard resolution find
  * them without requiring every call site to use jiti.
  */
+export function resolveGsdNodeModules(pkgRoot: string): string {
+  const nested = join(pkgRoot, 'node_modules')
+  const hoisted = dirname(pkgRoot)
+  if (!existsSync(join(nested, 'yaml')) && existsSync(join(hoisted, 'yaml'))) {
+    return hoisted
+  }
+  return nested
+}
+
 function ensureNodeModulesSymlink(agentDir: string): void {
   const agentNodeModules = join(agentDir, 'node_modules')
-  const gsdNodeModules = join(packageRoot, 'node_modules')
+  const gsdNodeModules = resolveGsdNodeModules(packageRoot)
 
   try {
     const stat = lstatSync(agentNodeModules)
