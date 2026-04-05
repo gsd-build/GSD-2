@@ -22,6 +22,7 @@ description: "Every GSD command, keyboard shortcut, and CLI flag."
 | `/gsd queue` | Queue and reorder future milestones (safe during auto mode) |
 | `/gsd capture` | Fire-and-forget thought capture (works during auto mode) |
 | `/gsd triage` | Manually trigger triage of pending captures |
+| `/gsd test` | Interactive manual testing — walk through checks, record pass/fail/notes |
 | `/gsd dispatch` | Dispatch a specific phase directly |
 | `/gsd history` | View execution history (supports `--cost`, `--phase`, `--model` filters) |
 | `/gsd forensics` | Full-access debugger for auto-mode failures |
@@ -180,3 +181,46 @@ gsd --mode mcp
 ```
 
 Runs GSD as a Model Context Protocol server over stdin/stdout, exposing all tools to external AI clients (Claude Desktop, VS Code Copilot, etc.).
+
+## Manual testing
+
+`/gsd test` launches an interactive manual test runner. It generates test cases from actual source code analysis (or UAT files if present), walks you through them one at a time, and persists each verdict instantly so nothing is lost on crash or interrupt.
+
+| Command | Description |
+|---------|-------------|
+| `/gsd test` | Test most recently completed slice (or all if multiple) |
+| `/gsd test <sliceId>` | Test a specific completed slice |
+| `/gsd test all` | Test all completed slices |
+| `/gsd test results` | Show last manual test results |
+
+### Test case generation
+
+When no UAT file exists, GSD analyzes source files referenced in task summaries to produce specific test cases — API routes become checks with HTTP methods and expected responses, React components become UI interaction checks, validation schemas become edge-case checks. Checks are capped at 15 per slice. If a UAT file exists, it takes priority.
+
+### TUI controls
+
+The TUI overlay shows one check at a time with steps and expected results:
+
+| Key | Action |
+|-----|--------|
+| `P` / `Enter` | **PASS** — advance to next |
+| `F` | **FAIL** — type notes, press Enter |
+| `S` | **Skip** |
+| `←` / `→` | Navigate between checks |
+| `Q` / `Esc` | Quit (all recorded verdicts are preserved) |
+
+### Persistence and resume
+
+Every verdict is saved to the DB the instant you record it. If the process crashes or you quit mid-session, re-running `/gsd test` detects the interrupted session, merges saved verdicts onto freshly-generated checks, and resumes from the first unjudged check.
+
+### Opportunistic fix dispatch
+
+In auto-mode, GSD checks for outstanding unfixed test failures at three stopping points (post-slice-completion, pre-validation, pre-milestone-complete) and dispatches fix units automatically.
+
+### Post-test actions
+
+After testing, if failures exist you can choose:
+
+- **Fix now** — agent analyzes your failure notes and fixes the code automatically
+- **Fix later** — saves results, resume when ready
+- **Accept as-is** — continue the pipeline with known issues

@@ -36,6 +36,7 @@ export function showHelp(ctx: ExtensionCommandContext): void {
     "  /gsd triage         Classify and route pending captures",
     "  /gsd skip <unit>    Prevent a unit from auto-mode dispatch",
     "  /gsd undo           Revert last completed unit  [--force]",
+    "  /gsd test           Interactive manual testing  [all|<sliceId>|results]",
     "  /gsd rethink        Conversational project reorganization — reorder, park, discard, add milestones",
     "  /gsd park [id]      Park a milestone — skip without deleting  [reason]",
     "  /gsd unpark [id]    Reactivate a parked milestone",

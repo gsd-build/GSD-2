@@ -17,6 +17,7 @@
 | `/gsd queue` | Queue and reorder future milestones (safe during auto mode) |
 | `/gsd capture` | Fire-and-forget thought capture (works during auto mode) |
 | `/gsd triage` | Manually trigger triage of pending captures |
+| `/gsd test` | Interactive manual testing — walk through checks, record pass/fail/notes |
 | `/gsd dispatch` | Dispatch a specific phase directly (research, plan, execute, complete, reassess, uat, replan) |
 | `/gsd history` | View execution history (supports `--cost`, `--phase`, `--model` filters) |
 | `/gsd forensics` | Full-access GSD debugger — structured anomaly detection, unit traces, and LLM-guided root-cause analysis for auto-mode failures |
@@ -305,3 +306,89 @@ If already up to date, it reports so and takes no action.
 ```
 
 Reports are saved to `.gsd/reports/` with a browseable `index.html` that links to all generated snapshots.
+
+## Manual Testing
+
+`/gsd test` launches an interactive manual test runner. It generates test cases from actual source code analysis (or UAT files if present), walks you through them one by one, and persists each verdict instantly so nothing is lost on crash or interrupt.
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `/gsd test` | Test most recently completed slice (or all if multiple are done) |
+| `/gsd test <sliceId>` | Test a specific completed slice (e.g. `/gsd test S01`) |
+| `/gsd test all` | Test all completed slices in the active milestone |
+| `/gsd test results` | Show results from the last manual test session |
+
+### How It Works
+
+1. **Pauses auto-mode** if running, snapshots current progress
+2. **Generates test cases** using a three-tier fallback:
+   - **UAT file** — if `S01-UAT.md` exists, it's parsed into checks (highest priority)
+   - **Smart code-aware generation** — analyzes actual source files referenced in task summaries/plans, extracts testable signals (API routes, React components, validation schemas, error handlers, CLI commands, exported functions), and synthesizes concrete test checks with specific HTTP methods/paths, component names, and expected behaviors
+   - **Plan-text extraction** — falls back to slice plan text if no source files are available
+3. **Checks for interrupted sessions** — if a previous session was interrupted, merges saved verdicts onto freshly-generated checks and resumes from the first unjudged check
+4. **Opens a TUI overlay** showing one test at a time with steps and expected results
+5. **You record verdicts** using keyboard shortcuts:
+
+| Key | Action |
+|-----|--------|
+| `P` / `Enter` | Mark as **PASS**, advance to next |
+| `F` | Mark as **FAIL** — type failure notes, press Enter |
+| `S` | **Skip** this check |
+| `←` / `→` | Navigate between checks (review previous) |
+| `Q` / `Esc` | Quit early (all recorded verdicts are preserved) |
+| `?` | Show help |
+
+6. **Persists each verdict instantly** — every pass/fail/skip is saved to the DB the moment you record it, not just on session finish. If the process crashes or you quit mid-session, all recorded verdicts survive.
+7. **If failures exist**, presents three options:
+   - **Fix now** — the agent analyzes each failure's notes and fixes the code automatically
+   - **Fix later** — saves results for later; resume pipeline when ready
+   - **Accept as-is** — mark failures as known issues, continue the pipeline
+
+### Smart Test Generation
+
+When no UAT file exists, GSD analyzes source files to produce specific, actionable test cases. For example:
+
+- **API routes** → "POST `/api/users` with `{name: "test"}` → expect 201 with `id` field"
+- **React components** → "Render `UserProfile` with valid props → expect name displayed"
+- **Validation schemas** → "Submit form with empty `email` field → expect validation error"
+- **Error handlers** → "Trigger error condition → expect graceful error response"
+
+Checks are capped at 15 per slice with proportional allocation (60% test-case, 40% edge-case). Signal extraction uses regex-based heuristics prioritized as: routes > validation > error handlers > components > CLI > exports.
+
+### Incremental Persistence & Resume
+
+Every verdict is persisted to the DB the instant you record it. The session row is pre-inserted before the TUI launches, so even a hard kill preserves all work done up to that point.
+
+When you re-run `/gsd test` after an interruption, GSD detects the in-progress session, merges your saved verdicts onto freshly-generated checks (handling cases where checks were added, removed, or reordered between runs), and starts at the first unjudged check. You never re-test something you already passed.
+
+### Opportunistic Fix Dispatch
+
+In auto-mode, GSD automatically checks for outstanding unfixed test failures at three natural stopping points:
+
+- After slice completion
+- Before milestone validation
+- Before milestone completion
+
+If failures are found, a `fix-manual-tests` unit is dispatched automatically — no explicit "fix now" selection required. Anti-refire logic ensures each set of failures is only dispatched once.
+
+### Fix Flow
+
+When you choose "Fix now" (or auto-mode dispatches it), GSD creates a `fix-manual-tests` dispatch unit containing every failure with your exact notes. The agent:
+
+- Reads the relevant source code for each failing feature
+- Diagnoses root causes based on your notes
+- Fixes the code and verifies each fix
+- Reports what was changed
+
+This runs as the next unit in auto-mode, then the pipeline continues normally.
+
+### Artifacts
+
+Results are written to:
+
+- **Per-slice:** `.gsd/milestones/<MID>/slices/<SID>/<SID>-MANUAL-TEST-RESULT.md`
+- **All-slices:** `.gsd/milestones/<MID>/<MID>-MANUAL-TEST-RESULT.md`
+
+The result file includes a summary table, failed check details with your notes, and a state snapshot showing exactly where testing occurred in the pipeline.

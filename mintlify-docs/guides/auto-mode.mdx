@@ -158,6 +158,16 @@ Hard-steer plan documents without stopping the pipeline. Changes are picked up a
 
 Fire-and-forget thought capture. Triaged automatically between tasks. See [captures and triage](/guides/captures-triage).
 
+### Manual testing
+
+```
+/gsd test
+```
+
+Pause auto-mode and run interactive manual testing at any point. GSD analyzes actual source code to generate specific, actionable test cases, walks you through each one, and persists every verdict instantly so nothing is lost on crash or interrupt.
+
+If you quit mid-session, re-running `/gsd test` resumes from where you left off. In auto-mode, outstanding test failures are detected automatically at natural stopping points and fix units are dispatched without user intervention. See [commands reference — manual testing](/guides/commands#manual-testing).
+
 ## Dashboard
 
 `Ctrl+Alt+G` or `/gsd status` shows real-time progress:

@@ -160,7 +160,7 @@ function openRawDb(path: string): unknown {
   return new Database(path);
 }
 
-const SCHEMA_VERSION = 14;
+const SCHEMA_VERSION = 15;
 
 function initSchema(db: DbAdapter, fileBacked: boolean): void {
   if (fileBacked) db.exec("PRAGMA journal_mode=WAL");
@@ -412,6 +412,27 @@ function initSchema(db: DbAdapter, fileBacked: boolean): void {
 
     // v14 index — slice dependency lookups
     db.exec("CREATE INDEX IF NOT EXISTS idx_slice_deps_target ON slice_dependencies(milestone_id, depends_on_slice_id)");
+
+    // Manual test sessions (v15)
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS manual_test_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        milestone_id TEXT NOT NULL,
+        slice_id TEXT,
+        status TEXT NOT NULL DEFAULT 'in-progress',
+        started_at TEXT NOT NULL,
+        completed_at TEXT,
+        total_checks INTEGER DEFAULT 0,
+        passed INTEGER DEFAULT 0,
+        failed INTEGER DEFAULT 0,
+        skipped INTEGER DEFAULT 0,
+        results_json TEXT,
+        snapshot_json TEXT,
+        fix_prompt TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `);
+    db.exec("CREATE INDEX IF NOT EXISTS idx_manual_test_milestone ON manual_test_sessions(milestone_id, status)");
 
     db.exec(`CREATE VIEW IF NOT EXISTS active_decisions AS SELECT * FROM decisions WHERE superseded_by IS NULL`);
     db.exec(`CREATE VIEW IF NOT EXISTS active_requirements AS SELECT * FROM requirements WHERE superseded_by IS NULL`);
@@ -742,6 +763,32 @@ function migrateSchema(db: DbAdapter): void {
       db.exec("CREATE INDEX IF NOT EXISTS idx_slice_deps_target ON slice_dependencies(milestone_id, depends_on_slice_id)");
       db.prepare("INSERT INTO schema_version (version, applied_at) VALUES (:version, :applied_at)").run({
         ":version": 14,
+        ":applied_at": new Date().toISOString(),
+      });
+    }
+
+    if (currentVersion < 15) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS manual_test_sessions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          milestone_id TEXT NOT NULL,
+          slice_id TEXT,
+          status TEXT NOT NULL DEFAULT 'in-progress',
+          started_at TEXT NOT NULL,
+          completed_at TEXT,
+          total_checks INTEGER DEFAULT 0,
+          passed INTEGER DEFAULT 0,
+          failed INTEGER DEFAULT 0,
+          skipped INTEGER DEFAULT 0,
+          results_json TEXT,
+          snapshot_json TEXT,
+          fix_prompt TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+      `);
+      db.exec("CREATE INDEX IF NOT EXISTS idx_manual_test_milestone ON manual_test_sessions(milestone_id, status)");
+      db.prepare("INSERT INTO schema_version (version, applied_at) VALUES (:version, :applied_at)").run({
+        ":version": 15,
         ":applied_at": new Date().toISOString(),
       });
     }
@@ -2200,4 +2247,169 @@ export function getPendingSliceGateCount(milestoneId: string, sliceId: string): 
      WHERE milestone_id = :mid AND slice_id = :sid AND scope = 'slice' AND status = 'pending'`,
   ).get({ ":mid": milestoneId, ":sid": sliceId });
   return row ? (row["cnt"] as number) : 0;
+}
+
+// ─── Manual Test Sessions ─────────────────────────────────────────────────────
+
+export interface ManualTestSessionRow {
+  id: number;
+  milestone_id: string;
+  slice_id: string | null;
+  status: string;
+  started_at: string;
+  completed_at: string | null;
+  total_checks: number;
+  passed: number;
+  failed: number;
+  skipped: number;
+  results_json: string | null;
+  snapshot_json: string | null;
+  fix_prompt: string | null;
+  created_at: string;
+}
+
+export function insertManualTestSession(s: {
+  milestoneId: string;
+  sliceId: string | null;
+  status: string;
+  startedAt: string;
+  completedAt: string | null;
+  totalChecks: number;
+  passed: number;
+  failed: number;
+  skipped: number;
+  resultsJson: string;
+  snapshotJson: string;
+}): number {
+  if (!currentDb) return -1;
+  const result = currentDb.prepare(
+    `INSERT INTO manual_test_sessions
+       (milestone_id, slice_id, status, started_at, completed_at, total_checks, passed, failed, skipped, results_json, snapshot_json)
+     VALUES (:mid, :sid, :status, :started, :completed, :total, :passed, :failed, :skipped, :results, :snapshot)`,
+  ).run({
+    ":mid": s.milestoneId,
+    ":sid": s.sliceId,
+    ":status": s.status,
+    ":started": s.startedAt,
+    ":completed": s.completedAt,
+    ":total": s.totalChecks,
+    ":passed": s.passed,
+    ":failed": s.failed,
+    ":skipped": s.skipped,
+    ":results": s.resultsJson,
+    ":snapshot": s.snapshotJson,
+  });
+  // run() returns unknown; try to extract lastInsertRowid if present
+  const res = result as Record<string, unknown> | undefined;
+  if (res && typeof res.lastInsertRowid === "bigint") return Number(res.lastInsertRowid);
+  if (res && typeof res.lastInsertRowid === "number") return res.lastInsertRowid;
+  return -1;
+}
+
+export function getLatestManualTestSessionRow(milestoneId: string): ManualTestSessionRow | null {
+  if (!currentDb) return null;
+  const row = currentDb.prepare(
+    `SELECT * FROM manual_test_sessions
+     WHERE milestone_id = :mid
+     ORDER BY id DESC LIMIT 1`,
+  ).get({ ":mid": milestoneId });
+  return row ? row as unknown as ManualTestSessionRow : null;
+}
+
+export function updateManualTestSessionStatusDb(milestoneId: string, startedAt: string, status: string): void {
+  if (!currentDb) return;
+  currentDb.prepare(
+    `UPDATE manual_test_sessions SET status = :status
+     WHERE milestone_id = :mid AND started_at = :started`,
+  ).run({
+    ":status": status,
+    ":mid": milestoneId,
+    ":started": startedAt,
+  });
+}
+
+export function setManualTestFixPrompt(milestoneId: string, fixPrompt: string): void {
+  if (!currentDb) return;
+  // Update the latest needs-fix session for this milestone
+  const row = currentDb.prepare(
+    `SELECT id FROM manual_test_sessions
+     WHERE milestone_id = :mid AND status = 'needs-fix'
+     ORDER BY id DESC LIMIT 1`,
+  ).get({ ":mid": milestoneId });
+  if (!row) return;
+  currentDb.prepare(
+    `UPDATE manual_test_sessions SET fix_prompt = :prompt WHERE id = :id`,
+  ).run({ ":prompt": fixPrompt, ":id": row["id"] });
+}
+
+export function getPendingManualTestFix(milestoneId: string): { fixPrompt: string; sessionId: number } | null {
+  if (!currentDb) return null;
+  const row = currentDb.prepare(
+    `SELECT id, fix_prompt FROM manual_test_sessions
+     WHERE milestone_id = :mid AND status = 'needs-fix' AND fix_prompt IS NOT NULL
+     ORDER BY id DESC LIMIT 1`,
+  ).get({ ":mid": milestoneId });
+  if (!row || !row["fix_prompt"]) return null;
+  return { fixPrompt: row["fix_prompt"] as string, sessionId: row["id"] as number };
+}
+
+export function clearManualTestFixPrompt(milestoneId: string): void {
+  if (!currentDb) return;
+  currentDb.prepare(
+    `UPDATE manual_test_sessions SET status = 'complete', fix_prompt = NULL
+     WHERE milestone_id = :mid AND status = 'needs-fix'`,
+  ).run({ ":mid": milestoneId });
+}
+
+export function updateManualTestSessionResults(
+  id: number,
+  resultsJson: string,
+  totalChecks: number,
+  passed: number,
+  failed: number,
+  skipped: number,
+): void {
+  if (!currentDb) return;
+  currentDb.prepare(
+    `UPDATE manual_test_sessions
+     SET results_json = :results, total_checks = :total, passed = :passed, failed = :failed, skipped = :skipped
+     WHERE id = :id`,
+  ).run({
+    ":results": resultsJson,
+    ":total": totalChecks,
+    ":passed": passed,
+    ":failed": failed,
+    ":skipped": skipped,
+    ":id": id,
+  });
+}
+
+export function getOutstandingTestFailures(milestoneId: string): ManualTestSessionRow | null {
+  if (!currentDb) return null;
+  const row = currentDb.prepare(
+    `SELECT * FROM manual_test_sessions
+     WHERE milestone_id = :mid AND failed > 0 AND fix_prompt IS NULL
+       AND status IN ('needs-fix', 'in-progress')
+     ORDER BY id DESC LIMIT 1`,
+  ).get({ ":mid": milestoneId });
+  return row ? row as unknown as ManualTestSessionRow : null;
+}
+
+export function getInProgressSessionRow(
+  milestoneId: string,
+  sliceId: string | null,
+): ManualTestSessionRow | null {
+  if (!currentDb) return null;
+  const row = sliceId != null
+    ? currentDb.prepare(
+        `SELECT * FROM manual_test_sessions
+         WHERE milestone_id = :mid AND slice_id = :sid AND status = 'in-progress'
+         ORDER BY id DESC LIMIT 1`,
+      ).get({ ":mid": milestoneId, ":sid": sliceId })
+    : currentDb.prepare(
+        `SELECT * FROM manual_test_sessions
+         WHERE milestone_id = :mid AND slice_id IS NULL AND status = 'in-progress'
+         ORDER BY id DESC LIMIT 1`,
+      ).get({ ":mid": milestoneId });
+  return row ? row as unknown as ManualTestSessionRow : null;
 }

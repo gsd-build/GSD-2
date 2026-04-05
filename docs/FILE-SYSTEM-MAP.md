@@ -36,6 +36,7 @@
 | **Loader / Bootstrap** | Startup initialization, extension sync, tool bootstrap |
 | **LSP** | Language Server Protocol client and multiplexer |
 | **Mac Tools** | macOS-native utilities (Swift CLI) |
+| **Manual Testing** | Interactive manual test runner (`/gsd test`) |
 | **MCP Server/Client** | Model Context Protocol server and client |
 | **Memory Extension** | In-session memory pipeline and storage |
 | **Migration** | Data and config migration tools |
@@ -511,6 +512,7 @@
 | gsd/commands-logs.ts | Commands | Log viewing and filtering |
 | gsd/commands-workflow-templates.ts | Commands, GSD Workflow | Workflow template management |
 | gsd/commands-cmux.ts | Commands, CMux | Tmux/cmux integration commands |
+| gsd/commands-manual-test.ts | Commands, Manual Testing | Interactive manual test session orchestration |
 | gsd/exit-command.ts | Commands | Exit and cleanup commands |
 | gsd/undo.ts | Commands | Undo and rollback functionality |
 | gsd/kill.ts | Commands | Process termination and cleanup |
@@ -526,6 +528,9 @@
 | gsd/notifications.ts | GSD Workflow | User notification and messaging |
 | gsd/triage-ui.ts | GSD Workflow | Triage interface for issue categorization |
 | gsd/guided-flow.ts | GSD Workflow | User-guided workflow orchestration |
+| gsd/manual-test.ts | Manual Testing | UAT parsing, test case extraction, session model, result rendering |
+| gsd/manual-test-ui.ts | Manual Testing, TUI | TUI overlay for interactive pass/fail/skip test runner |
+| gsd/manual-test-db.ts | Manual Testing, State Machine | DB persistence and artifact writing for test sessions |
 | gsd/env-utils.ts | GSD Workflow | Environment variable utilities |
 | gsd/git-constants.ts | GSD Workflow | Git-related constants and paths |
 | gsd/milestone-id-utils.ts | GSD Workflow | Milestone ID generation and parsing |

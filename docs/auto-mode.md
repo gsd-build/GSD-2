@@ -252,6 +252,20 @@ Hard-steer plan documents during execution without stopping the pipeline. Change
 
 Fire-and-forget thought capture. Captures are triaged automatically between tasks. See [Captures & Triage](./captures-triage.md).
 
+### Manual Testing
+
+```
+/gsd test
+```
+
+Pause auto-mode and run interactive manual testing at any point. GSD analyzes actual source code to generate specific, actionable test cases (e.g. "POST `/api/users` with `{...}` → expect 201"), walks you through each one, and persists every verdict instantly so nothing is lost on crash or interrupt.
+
+If you quit mid-session, re-running `/gsd test` resumes from where you left off. If tests fail, choose "Fix now" to have the agent address each failure automatically before resuming the pipeline.
+
+In auto-mode, outstanding test failures are detected automatically at natural stopping points (post-slice-completion, pre-validation, pre-milestone-complete) and fix units are dispatched without explicit user intervention.
+
+See [Commands Reference — Manual Testing](./commands.md#manual-testing) for full details.
+
 ### Visualize
 
 ```

@@ -177,6 +177,50 @@ export const DISPATCH_RULES: DispatchRule[] = [
     },
   },
   {
+    name: "fix-manual-tests (pending manual test failures)",
+    match: async ({ mid, basePath }) => {
+      const { getPendingManualTestFix, clearManualTestFixPrompt } = await import("./manual-test-db.js");
+      const pending = getPendingManualTestFix(mid);
+      if (!pending) return null;
+      // Clear the fix prompt so it doesn't dispatch again after the fix runs
+      clearManualTestFixPrompt(mid);
+      return {
+        action: "dispatch",
+        unitType: "fix-manual-tests",
+        unitId: `${mid}/manual-test-fix`,
+        prompt: pending.fixPrompt,
+      };
+    },
+  },
+  {
+    name: "opportunistic-fix-manual-tests (outstanding failures at stopping point)",
+    match: async ({ mid, basePath, state }) => {
+      // Only activate at natural stopping points
+      const stoppingPhases = ["summarizing", "validating-milestone", "completing-milestone"];
+      if (!stoppingPhases.includes(state.phase)) return null;
+
+      const { getOutstandingFailures, setPendingManualTestFix } = await import("./manual-test-db.js");
+      const session = getOutstandingFailures(mid);
+      if (!session) return null;
+      if (!session.checks || session.checks.filter(c => c.verdict === "fail").length === 0) return null;
+
+      const { buildFixManualTestsPrompt } = await import("./manual-test.js");
+      const prompt = buildFixManualTestsPrompt(session, basePath);
+      if (!prompt) return null;
+
+      // Set fix_prompt to prevent re-dispatch (anti-refire) and integrate
+      // with existing clear flow
+      setPendingManualTestFix(mid, prompt);
+
+      return {
+        action: "dispatch",
+        unitType: "fix-manual-tests",
+        unitId: `${mid}/manual-test-fix-opportunistic`,
+        prompt,
+      };
+    },
+  },
+  {
     name: "summarizing → complete-slice",
     match: async ({ state, mid, midTitle, basePath }) => {
       if (state.phase !== "summarizing") return null;

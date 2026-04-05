@@ -35,6 +35,7 @@ const UNIT_TYPE_TIERS: Record<string, ComplexityTier> = {
   // Tier 1 — Light: structured summaries, completion, UAT
   "complete-slice": "light",
   "run-uat": "light",
+  "fix-manual-tests": "standard",
 
   // Tier 2 — Standard: research, routine discussion
   "discuss-milestone": "standard",

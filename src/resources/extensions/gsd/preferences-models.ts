@@ -62,6 +62,7 @@ export function resolveModelWithFallbacksForUnit(unitType: string): ResolvedMode
       break;
     case "execute-task":
     case "reactive-execute":
+    case "fix-manual-tests":
       phaseConfig = m.execution;
       break;
     case "execute-task-simple":
