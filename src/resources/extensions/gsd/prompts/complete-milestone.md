@@ -37,7 +37,10 @@ Then:
 
 **Success path** (all verifications passed — continue with steps 9–13):
 
-9. **Persist completion through `gsd_complete_milestone`.** Call it with the parameters below. The tool updates the milestone status in the DB, renders `{{milestoneSummaryPath}}`, and validates all slices are complete before proceeding.
+9. For each requirement whose status changed in step 8, call `gsd_requirement_update` with the requirement ID and updated `status` and `validation` fields — the tool regenerates `.gsd/REQUIREMENTS.md` automatically. This MUST happen before `gsd_complete_milestone` because that tool ends the unit.
+10. Update `.gsd/PROJECT.md`: use the `write` tool with `path: ".gsd/PROJECT.md"` and `content` containing the full updated document reflecting milestone completion and current project state. Do NOT use the `edit` tool for this — PROJECT.md is a full-document refresh.
+11. Review all slice summaries for cross-cutting lessons, patterns, or gotchas that emerged during this milestone. Append any non-obvious, reusable insights to `.gsd/KNOWLEDGE.md`.
+12. **Persist completion through `gsd_complete_milestone`.** Call it with the parameters below. The tool updates the milestone status in the DB, renders `{{milestoneSummaryPath}}`, and validates all slices are complete before proceeding. **This must be the last tool call — the system ends the unit after it returns.**
 
    **Required parameters:**
    - `milestoneId` (string) — Milestone ID (e.g. M001)
@@ -55,9 +58,6 @@ Then:
    **Optional parameters:**
    - `followUps` (string) — Follow-up items for future milestones
    - `deviations` (string) — Deviations from the original plan
-10. For each requirement whose status changed in step 8, call `gsd_requirement_update` with the requirement ID and updated `status` and `validation` fields — the tool regenerates `.gsd/REQUIREMENTS.md` automatically.
-11. Update `.gsd/PROJECT.md`: use the `write` tool with `path: ".gsd/PROJECT.md"` and `content` containing the full updated document reflecting milestone completion and current project state. Do NOT use the `edit` tool for this — PROJECT.md is a full-document refresh.
-12. Review all slice summaries for cross-cutting lessons, patterns, or gotchas that emerged during this milestone. Append any non-obvious, reusable insights to `.gsd/KNOWLEDGE.md`.
 13. Do not commit manually — the system auto-commits your changes after this unit completes.
 - Say: "Milestone {{milestoneId}} complete."
 
