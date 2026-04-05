@@ -500,6 +500,11 @@ export async function deriveStateFromDb(basePath: string): Promise<GSDState> {
         continue;
       }
 
+      if (m.status === 'queued' && slices.length === 0) {
+        registry.push({ id: m.id, title, status: 'pending' });
+        continue;
+      }
+
       // Handle all-slices-done case (validating/completing)
       if (allSlicesDone) {
         const validationFile = resolveMilestoneFile(basePath, m.id, "VALIDATION");

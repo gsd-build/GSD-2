@@ -15,6 +15,7 @@ import { loadPrompt, inlineTemplate } from "./prompt-loader.js";
 import { buildSkillActivationBlock } from "./auto-prompts.js";
 import { deriveState } from "./state.js";
 import { invalidateAllCaches } from "./cache.js";
+import { rebuildState } from "./doctor.js";
 import { startAuto } from "./auto.js";
 import { readCrashLock, clearLock, formatCrashInfo } from "./crash-recovery.js";
 import { listUnitRuntimeRecords, clearUnitRuntimeRecord } from "./unit-runtime.js";
@@ -580,9 +581,7 @@ export async function showDiscuss(
     return;
   }
 
-  // Invalidate caches to pick up artifacts written by a just-completed discuss/plan
-  invalidateAllCaches();
-
+  await rebuildState(basePath);
   const state = await deriveState(basePath);
 
   // No active milestone (or corrupted milestone with undefined id) —
@@ -1135,6 +1134,7 @@ export async function showSmartEntry(
     }
   }
 
+  await rebuildState(basePath);
   const state = await deriveState(basePath);
 
   if (!state.activeMilestone?.id) {
