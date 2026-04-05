@@ -27,7 +27,7 @@ import { debugLog } from "../debug-logger.js";
 import { PROJECT_FILES } from "../detection.js";
 import { MergeConflictError } from "../git-service.js";
 import { join, basename, dirname, parse as parsePath } from "node:path";
-import { existsSync, cpSync } from "node:fs";
+import { existsSync, cpSync, readdirSync } from "node:fs";
 import { logWarning, logError } from "../workflow-logger.js";
 import { gsdRoot } from "../paths.js";
 import { atomicWriteSync } from "../atomic-write.js";
@@ -1009,11 +1009,18 @@ export async function runUnitPhase(
     }
     const hasProjectFile = PROJECT_FILES.some((f) => deps.existsSync(join(s.basePath, f)));
     const hasSrcDir = deps.existsSync(join(s.basePath, "src"));
+    // Xcode bundles have project-specific names (*.xcodeproj, *.xcworkspace)
+    // that cannot be matched by exact filename — scan the directory by suffix.
+    let hasXcodeBundle = false;
+    try {
+      const entries = deps.existsSync(s.basePath) ? readdirSync(s.basePath) : [];
+      hasXcodeBundle = entries.some((e: string) => e.endsWith(".xcodeproj") || e.endsWith(".xcworkspace"));
+    } catch { /* best-effort */ }
     // Monorepo support (#2347): if no project files in the worktree directory,
     // walk parent directories up to the filesystem root. In monorepos,
     // package.json / Cargo.toml etc. live in a parent directory.
     let hasProjectFileInParent = false;
-    if (!hasProjectFile && !hasSrcDir) {
+    if (!hasProjectFile && !hasSrcDir && !hasXcodeBundle) {
       let checkDir = dirname(s.basePath);
       const { root } = parsePath(checkDir);
       while (checkDir !== root) {
@@ -1027,11 +1034,11 @@ export async function runUnitPhase(
         checkDir = dirname(checkDir);
       }
     }
-    if (!hasProjectFile && !hasSrcDir && !hasProjectFileInParent) {
+    if (!hasProjectFile && !hasSrcDir && !hasXcodeBundle && !hasProjectFileInParent) {
       // Greenfield projects won't have project files yet — the first task creates them.
       // Log a warning but allow execution to proceed. The .git check above is sufficient
       // to ensure we're in a valid working directory.
-      debugLog("runUnitPhase", { phase: "worktree-health-warn-greenfield", basePath: s.basePath, hasProjectFile, hasSrcDir });
+      debugLog("runUnitPhase", { phase: "worktree-health-warn-greenfield", basePath: s.basePath, hasProjectFile, hasSrcDir, hasXcodeBundle });
       ctx.ui.notify(`Warning: ${s.basePath} has no recognized project files — proceeding as greenfield project`, "warning");
     }
   }
