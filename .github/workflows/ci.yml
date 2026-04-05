@@ -154,6 +154,40 @@ jobs:
       - name: Check test coverage thresholds
         run: npm run test:coverage
 
+  alpine-native-smoke:
+    timeout-minutes: 20
+    needs: detect-changes
+    if: needs.detect-changes.outputs.docs-only != 'true'
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build linux-x64-musl native addon
+        run: |
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}:/work" \
+            -w /work/native/crates/engine \
+            messense/rust-musl-cross@sha256:bcf6a66615f9d5bae659e38ab4311260e0488d1c34ad0ab9f9147f4cd5ef64ed \
+            sh -lc 'CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS="-C target-feature=-crt-static" cargo build --release --target x86_64-unknown-linux-musl'
+          cp native/target/x86_64-unknown-linux-musl/release/libgsd_engine.so native/npm/linux-x64-musl/gsd_engine.node
+
+      - name: Build project
+        run: npm run build
+
+      - name: Smoke test native loader on Alpine
+        run: npm run test:alpine-native
+
   windows-portability:
     timeout-minutes: 15
     needs: detect-changes

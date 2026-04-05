@@ -8,6 +8,7 @@
  *   3. native/addon/gsd_engine.dev.node (local debug build)
  */
 
+import { familySync, GLIBC, MUSL } from "detect-libc";
 import * as path from "node:path";
 
 // __dirname and require are available in both execution contexts:
@@ -18,65 +19,117 @@ const _require = require;
 
 const addonDir = path.resolve(_dirname, "..", "..", "..", "native", "addon");
 const platformTag = `${process.platform}-${process.arch}`;
+type LibcFamily = typeof GLIBC | typeof MUSL | null;
 
-/** Map Node.js platform/arch to the npm package suffix */
-const platformPackageMap: Record<string, string> = {
-  "darwin-arm64": "darwin-arm64",
-  "darwin-x64": "darwin-x64",
-  "linux-x64": "linux-x64-gnu",
-  "linux-arm64": "linux-arm64-gnu",
-  "win32-x64": "win32-x64-msvc",
+/** Map Node.js platform/arch to the npm package suffix candidates */
+const platformPackageMap: Record<string, string[]> = {
+  "darwin-arm64": ["darwin-arm64"],
+  "darwin-x64": ["darwin-x64"],
+  "win32-x64": ["win32-x64-msvc"],
 };
+const supportedPlatforms = [
+  "darwin-arm64",
+  "darwin-x64",
+  "linux-x64-gnu",
+  "linux-x64-musl",
+  "linux-arm64-gnu",
+  "linux-arm64-musl",
+  "win32-x64-msvc",
+];
 
-let _loadedSuccessfully = false;
+export let nativeLoadedSuccessfully = false;
+
+function detectLibcFamily(): LibcFamily {
+  if (process.platform !== "linux") return null;
+  try {
+    const family = familySync();
+    if (family === GLIBC || family === MUSL) return family;
+  } catch {
+    // ignore detection errors and fall back to the default candidate order
+  }
+  return null;
+}
+
+export function resolveNativeRuntimeTag(
+  platform: NodeJS.Platform = process.platform,
+  arch: string = process.arch,
+  libcFamily: LibcFamily = platform === "linux" ? detectLibcFamily() : null,
+): string {
+  if (platform !== "linux") return `${platform}-${arch}`;
+  if (libcFamily === MUSL) return `${platform}-${arch}-musl`;
+  if (libcFamily === GLIBC) return `${platform}-${arch}-gnu`;
+  return `${platform}-${arch}`;
+}
+
+export function resolveNativePackageCandidates(
+  platform: NodeJS.Platform = process.platform,
+  arch: string = process.arch,
+  libcFamily: LibcFamily = platform === "linux" ? detectLibcFamily() : null,
+): string[] {
+  if (platform === "linux") {
+    if (arch === "x64") {
+      return libcFamily === MUSL
+        ? ["linux-x64-musl", "linux-x64-gnu"]
+        : ["linux-x64-gnu", "linux-x64-musl"];
+    }
+    if (arch === "arm64") {
+      return libcFamily === MUSL
+        ? ["linux-arm64-musl", "linux-arm64-gnu"]
+        : ["linux-arm64-gnu", "linux-arm64-musl"];
+    }
+    return [];
+  }
+  return platformPackageMap[`${platform}-${arch}`] ?? [];
+}
+
+function tryRequire(ref: string, errors: string[]): Record<string, unknown> | null {
+  try {
+    const loaded = _require(ref) as Record<string, unknown>;
+    nativeLoadedSuccessfully = true;
+    return loaded;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    errors.push(`${ref}: ${message}`);
+    return null;
+  }
+}
 
 function loadNative(): Record<string, unknown> {
   const errors: string[] = [];
+  const runtimeTag = resolveNativeRuntimeTag();
 
-  // 1. Try the platform-specific npm optional dependency
-  const packageSuffix = platformPackageMap[platformTag];
-  if (packageSuffix) {
-    try {
-      _loadedSuccessfully = true; return _require(`@gsd-build/engine-${packageSuffix}`) as Record<string, unknown>;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      errors.push(`@gsd-build/engine-${packageSuffix}: ${message}`);
+  if (process.env.GSD_FORCE_NO_NATIVE === "1") {
+    errors.push("native loading disabled via GSD_FORCE_NO_NATIVE=1");
+  } else {
+    // 1. Try the platform-specific npm optional dependencies
+    for (const packageSuffix of resolveNativePackageCandidates()) {
+      const loaded = tryRequire(`@gsd-build/engine-${packageSuffix}`, errors);
+      if (loaded) return loaded;
     }
-  }
 
-  // 2. Try local release build (native/addon/gsd_engine.{platform}.node)
-  const releasePath = path.join(addonDir, `gsd_engine.${platformTag}.node`);
-  try {
-    _loadedSuccessfully = true; return _require(releasePath) as Record<string, unknown>;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    errors.push(`${releasePath}: ${message}`);
-  }
+    // 2. Try local release build (native/addon/gsd_engine.{platform}.node)
+    const releasePath = path.join(addonDir, `gsd_engine.${platformTag}.node`);
+    const releaseLoaded = tryRequire(releasePath, errors);
+    if (releaseLoaded) return releaseLoaded;
 
-  // 3. Try local dev build (native/addon/gsd_engine.dev.node)
-  const devPath = path.join(addonDir, "gsd_engine.dev.node");
-  try {
-    _loadedSuccessfully = true; return _require(devPath) as Record<string, unknown>;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    errors.push(`${devPath}: ${message}`);
+    // 3. Try local dev build (native/addon/gsd_engine.dev.node)
+    const devPath = path.join(addonDir, "gsd_engine.dev.node");
+    const devLoaded = tryRequire(devPath, errors);
+    if (devLoaded) return devLoaded;
   }
-
-  const details = errors.map((e) => `  - ${e}`).join("\n");
-  const supportedPlatforms = Object.keys(platformPackageMap);
 
   // Graceful fallback: on unsupported platforms (e.g., win32-arm64), return a
   // proxy that throws on individual function calls rather than crashing the
   // entire import chain at startup (#1223). Consumers with JS fallbacks
   // (parseRoadmap, parsePlan, fuzzyFind, etc.) catch these and degrade gracefully.
   process.stderr.write(
-    `[gsd] Native addon not available for ${platformTag}. Falling back to JS implementations (slower).\n` +
+    `[gsd] Native addon not available for ${runtimeTag}. Falling back to JS implementations (slower).\n` +
       `  Supported native platforms: ${supportedPlatforms.join(", ")}\n`,
   );
   return new Proxy({} as Record<string, unknown>, {
     get(_target, prop) {
       return (..._args: unknown[]) => {
-        throw new Error(`Native function '${String(prop)}' is not available on ${platformTag}`);
+        throw new Error(`Native function '${String(prop)}' is not available on ${runtimeTag}`);
       };
     },
   });
