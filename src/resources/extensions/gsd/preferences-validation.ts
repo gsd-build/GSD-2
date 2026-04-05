@@ -530,6 +530,14 @@ export function validatePreferences(preferences: GSDPreferences): {
       }
     }
 
+    if (p.worker_model !== undefined) {
+      if (typeof p.worker_model === "string" && p.worker_model.length > 0) {
+        parallel.worker_model = p.worker_model;
+      } else {
+        errors.push("parallel.worker_model must be a non-empty string");
+      }
+    }
+
     if (Object.keys(parallel).length > 0) {
       validated.parallel = parallel as unknown as import("./types.js").ParallelConfig;
     }

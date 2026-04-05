@@ -548,5 +548,6 @@ export function resolveParallelConfig(prefs: GSDPreferences | undefined): import
     budget_ceiling: prefs?.parallel?.budget_ceiling,
     merge_strategy: prefs?.parallel?.merge_strategy ?? "per-milestone",
     auto_merge: prefs?.parallel?.auto_merge ?? "confirm",
+    worker_model: prefs?.parallel?.worker_model,
   };
 }

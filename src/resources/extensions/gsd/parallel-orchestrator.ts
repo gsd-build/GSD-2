@@ -550,19 +550,27 @@ export function spawnWorker(
 
   let child: ChildProcess;
   try {
+    const workerEnv: Record<string, string | undefined> = {
+      ...process.env,
+      GSD_MILESTONE_LOCK: milestoneId,
+      // Pass the real project root so workers don't need to re-derive it.
+      // Without this, process.cwd() resolves symlinks and the worktree
+      // path heuristic can match the user-level ~/.gsd instead of the
+      // project .gsd, causing writes to ~ and corrupting user config.
+      GSD_PROJECT_ROOT: basePath,
+      // Prevent workers from spawning their own parallel sessions
+      GSD_PARALLEL_WORKER: "1",
+    };
+
+    // Apply worker model override if configured, so workers use a cheaper
+    // model (e.g. Haiku) rather than inheriting the coordinator's model.
+    if (state.config.worker_model) {
+      workerEnv.GSD_WORKER_MODEL = state.config.worker_model;
+    }
+
     child = spawn(process.execPath, [binPath, "headless", "--json", "auto"], {
       cwd: worker.worktreePath,
-      env: {
-        ...process.env,
-        GSD_MILESTONE_LOCK: milestoneId,
-        // Pass the real project root so workers don't need to re-derive it.
-        // Without this, process.cwd() resolves symlinks and the worktree
-        // path heuristic can match the user-level ~/.gsd instead of the
-        // project .gsd, causing writes to ~ and corrupting user config.
-        GSD_PROJECT_ROOT: basePath,
-        // Prevent workers from spawning their own parallel sessions
-        GSD_PARALLEL_WORKER: "1",
-      },
+      env: workerEnv,
       stdio: ["ignore", "pipe", "pipe"],
       detached: false,
     });

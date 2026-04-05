@@ -211,6 +211,7 @@ Setting `prefer_skills: []` does **not** disable skill discovery — it just mea
   - `budget_ceiling`: number — optional per-parallel-run budget ceiling.
   - `merge_strategy`: `"per-slice"` or `"per-milestone"` — when to merge worktree results back. Default: `"per-milestone"`.
   - `auto_merge`: `"auto"`, `"confirm"`, or `"manual"` — merge behavior after completion. `"auto"` merges immediately; `"confirm"` asks first; `"manual"` leaves branches for you. Default: `"confirm"`.
+  - `worker_model`: string — optional model override for parallel milestone workers. When set, workers use this model (e.g. `"claude-haiku-4-5"`) instead of inheriting the coordinator's model. Useful for cost savings on execution-heavy milestones.
 
 - `verification_commands`: string[] — shell commands to run as verification after task execution (e.g., `["npm test", "npm run lint"]`). Commands run in order; if any fails, the task is marked as needing fixes.
 
