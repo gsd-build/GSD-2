@@ -1,13 +1,16 @@
-// agent-loop pauseTurn handling tests
-// Verifies that pause_turn / pauseTurn stop reason causes the inner loop
-// to continue (re-invoke the LLM) instead of exiting.
-// Regression test for https://github.com/gsd-build/gsd-2/issues/2869
+// agent-loop tests
+// Covers: pauseTurn handling (#2869), schema overload retry cap (#2783)
 
-import { describe, it } from "node:test";
+import { describe, it, mock } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { Type } from "@sinclair/typebox";
+import { agentLoop, MAX_CONSECUTIVE_VALIDATION_FAILURES } from "./agent-loop.js";
+import type { AgentContext, AgentLoopConfig, AgentTool, AgentEvent, AgentMessage } from "./types.js";
+import { AssistantMessageEventStream, EventStream } from "@gsd/pi-ai";
+import type { AssistantMessage, AssistantMessageEvent, Model } from "@gsd/pi-ai";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -41,6 +44,8 @@ describe("agent-loop — pauseTurn handling (#2869)", () => {
 			/["']pauseTurn["']/,
 			'StopReason type must include "pauseTurn"',
 		);
+	});
+});
 
 /**
  * Regression tests for #2783: Stuck-loop on execute-task — tool-call schema
@@ -56,14 +61,6 @@ describe("agent-loop — pauseTurn handling (#2869)", () => {
  * loop injects a synthetic stop so the agent terminates cleanly instead of
  * spinning forever.
  */
-
-import { describe, it, mock } from "node:test";
-import assert from "node:assert/strict";
-import { Type } from "@sinclair/typebox";
-import { agentLoop, MAX_CONSECUTIVE_VALIDATION_FAILURES } from "./agent-loop.js";
-import type { AgentContext, AgentLoopConfig, AgentTool, AgentEvent, AgentMessage } from "./types.js";
-import { AssistantMessageEventStream, EventStream } from "@gsd/pi-ai";
-import type { AssistantMessage, AssistantMessageEvent, Model } from "@gsd/pi-ai";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -260,3 +257,5 @@ describe("agent-loop — schema overload retry cap (#2783)", () => {
 		assert.equal(typeof MAX_CONSECUTIVE_VALIDATION_FAILURES, "number");
 		assert.ok(MAX_CONSECUTIVE_VALIDATION_FAILURES >= 2, "Cap must be at least 2 to allow one retry");
 		assert.ok(MAX_CONSECUTIVE_VALIDATION_FAILURES <= 10, "Cap must not be unreasonably high");
+	});
+});
