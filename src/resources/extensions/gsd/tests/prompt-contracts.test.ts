@@ -51,6 +51,28 @@ test("guided discussion prompts avoid wrap-up prompts after every round", () => 
   assert.doesNotMatch(slicePrompt, /I think I have a solid picture of this slice\. Ready to wrap up/i);
 });
 
+test("discussion prompts reference the registered search-the-web tool name", () => {
+  const discussPrompt = readPrompt("discuss");
+  const discussHeadlessPrompt = readPrompt("discuss-headless");
+  const milestonePrompt = readPrompt("guided-discuss-milestone");
+  const slicePrompt = readPrompt("guided-discuss-slice");
+
+  for (const prompt of [discussPrompt, discussHeadlessPrompt, milestonePrompt, slicePrompt]) {
+    assert.match(prompt, /search-the-web/);
+    assert.doesNotMatch(prompt, /`web_search`/);
+  }
+});
+
+test("researcher agent frontmatter uses the registered search-the-web tool name", () => {
+  const researcherAgent = readFileSync(
+    join(process.cwd(), "src/resources/agents/researcher.md"),
+    "utf-8",
+  );
+
+  assert.match(researcherAgent, /^tools:\s*search-the-web,\s*bash$/m);
+  assert.doesNotMatch(researcherAgent, /^tools:\s*web_search,\s*bash$/m);
+});
+
 test("guided-resume-task prompt preserves recovery state until work is superseded", () => {
   const prompt = readPrompt("guided-resume-task");
   assert.match(prompt, /Do \*\*not\*\* delete the continue file immediately/i);
