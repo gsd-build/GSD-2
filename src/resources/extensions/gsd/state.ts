@@ -54,6 +54,7 @@ import {
   getSlice,
   insertMilestone,
   insertSlice,
+  deleteSlice,
   updateTaskStatus,
   getPendingSliceGateCount,
   type MilestoneRow,
@@ -347,6 +348,8 @@ export async function deriveStateFromDb(basePath: string): Promise<GSDState> {
     catch { continue; }
 
     const parsed = parseRoadmap(roadmapContent);
+    const roadmapSliceIds = new Set(parsed.slices.map(s => s.id));
+
     for (const s of parsed.slices) {
       if (dbSliceIds.has(s.id)) continue;
       const summaryPath = resolveSliceFile(basePath, mid, s.id, "SUMMARY");
@@ -356,6 +359,14 @@ export async function deriveStateFromDb(basePath: string): Promise<GSDState> {
         status: sliceStatus, risk: s.risk,
         depends: s.depends, demo: s.demo,
       });
+    }
+
+    if (roadmapSliceIds.size > 0) {
+      for (const dbSlice of dbSlices) {
+        if (!isStatusDone(dbSlice.status) && !roadmapSliceIds.has(dbSlice.id)) {
+          deleteSlice(mid, dbSlice.id);
+        }
+      }
     }
   }
 
@@ -684,6 +695,26 @@ export async function deriveStateFromDb(basePath: string): Promise<GSDState> {
   }
 
   if (!activeSlice) {
+    // DB rows may be stale if the roadmap was replaced with a placeholder — re-check disk.
+    const roadmapPath = resolveMilestoneFile(basePath, activeMilestone.id, "ROADMAP");
+    if (roadmapPath) {
+      try {
+        const diskSlices = parseRoadmap(readFileSync(roadmapPath, "utf-8")).slices;
+        if (diskSlices.length === 0) {
+          return {
+            activeMilestone, activeSlice: null, activeTask: null,
+            phase: 'pre-planning',
+            recentDecisions: [], blockers: [],
+            nextAction: `Milestone ${activeMilestone.id} roadmap has no slices defined. Plan the roadmap.`,
+            registry, requirements,
+            progress: { milestones: milestoneProgress, slices: sliceProgress },
+          };
+        }
+      } catch {
+        // Unreadable roadmap — fall through to blocked so the user sees the error
+      }
+    }
+
     return {
       activeMilestone, activeSlice: null, activeTask: null,
       phase: 'blocked',
