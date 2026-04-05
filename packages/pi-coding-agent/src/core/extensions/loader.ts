@@ -624,6 +624,39 @@ export function containsTypeScriptSyntax(source: string): boolean {
 	return TS_SYNTAX_PATTERNS.some((pattern) => pattern.test(source));
 }
 
+/**
+ * Shared jiti instance for loading extension modules.
+ *
+ * Before this fix (#2108), each extension created a NEW jiti instance with
+ * `moduleCache: false`, causing shared dependencies (e.g. @gsd/pi-agent-core)
+ * to be recompiled for every extension — turning a ~3s parallel load into a
+ * ~15-30s serial compilation bottleneck.
+ *
+ * Using a single shared instance with `moduleCache: true` means shared modules
+ * are compiled once and reused across all extensions.
+ */
+let _extensionLoaderJiti: ReturnType<typeof createJiti> | null = null;
+
+/**
+ * Reset the shared jiti singleton so the next call to getExtensionLoaderJiti()
+ * creates a fresh instance.  This prevents memory leaks in long-running daemon
+ * processes (every loaded module stays cached forever) and ensures stale modules
+ * are not returned when extension source changes on disk.
+ */
+export function resetExtensionLoaderCache(): void {
+	_extensionLoaderJiti = null;
+}
+
+function getExtensionLoaderJiti() {
+	if (!_extensionLoaderJiti) {
+		_extensionLoaderJiti = createJiti(import.meta.url, {
+			moduleCache: true,
+			...getJitiOptions(),
+		});
+	}
+	return _extensionLoaderJiti;
+}
+
 async function loadExtensionModule(extensionPath: string) {
 	// Pre-compiled extension loading: if the source is .ts and a sibling .js
 	// file exists with matching or newer mtime, use native import() to skip
@@ -643,10 +676,7 @@ async function loadExtensionModule(extensionPath: string) {
 		}
 	}
 
-	const jiti = createJiti(import.meta.url, {
-		moduleCache: false,
-		...getJitiOptions(),
-	});
+	const jiti = getExtensionLoaderJiti();
 
 	const module = await jiti.import(extensionPath, { default: true });
 	const factory = module as ExtensionFactory;
