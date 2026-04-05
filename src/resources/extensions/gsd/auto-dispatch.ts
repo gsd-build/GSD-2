@@ -27,6 +27,7 @@ import {
   buildMilestoneFileName,
   buildSliceFileName,
 } from "./paths.js";
+import { parseRoadmap } from "./parsers-legacy.js";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { logWarning, logError } from "./workflow-logger.js";
 import { join } from "node:path";
@@ -47,6 +48,7 @@ import {
   buildRewriteDocsPrompt,
   buildReactiveExecutePrompt,
   buildGateEvaluatePrompt,
+  buildParallelResearchSlicesPrompt,
   checkNeedsReassessment,
   checkNeedsRunUat,
 } from "./auto-prompts.js";
@@ -361,6 +363,53 @@ export const DISPATCH_RULES: DispatchRule[] = [
           midTitle,
           sid,
           sTitle,
+          basePath,
+        ),
+      };
+    },
+  },
+  {
+    name: "planning (multiple slices need research) → parallel-research-slices",
+    match: async ({ state, mid, midTitle, basePath, prefs }) => {
+      if (state.phase !== "planning") return null;
+      if (prefs?.phases?.skip_research || prefs?.phases?.skip_slice_research) return null;
+
+      // Load roadmap to find all slices
+      const roadmapFile = resolveMilestoneFile(basePath, mid, "ROADMAP");
+      const roadmapContent = roadmapFile ? await loadFile(roadmapFile) : null;
+      if (!roadmapContent) return null;
+      const roadmap = parseRoadmap(roadmapContent);
+
+      // Find slices that need research (no RESEARCH file, dependencies done)
+      const milestoneResearchFile = resolveMilestoneFile(basePath, mid, "RESEARCH");
+      const researchReadySlices: Array<{ id: string; title: string }> = [];
+
+      for (const slice of roadmap.slices) {
+        if (slice.done) continue;
+        // Skip S01 when milestone research exists
+        if (milestoneResearchFile && slice.id === "S01") continue;
+        // Skip if already has research
+        if (resolveSliceFile(basePath, mid, slice.id, "RESEARCH")) continue;
+        // Skip if dependencies aren't done (check for SUMMARY files)
+        const depsComplete = (slice.depends ?? []).every((depId) =>
+          !!resolveSliceFile(basePath, mid, depId, "SUMMARY"),
+        );
+        if (!depsComplete) continue;
+
+        researchReadySlices.push({ id: slice.id, title: slice.title });
+      }
+
+      // Only dispatch parallel if 2+ slices are ready
+      if (researchReadySlices.length < 2) return null;
+
+      return {
+        action: "dispatch",
+        unitType: "research-slice",
+        unitId: `${mid}/parallel-research`,
+        prompt: await buildParallelResearchSlicesPrompt(
+          mid,
+          midTitle,
+          researchReadySlices,
           basePath,
         ),
       };

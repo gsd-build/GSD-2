@@ -181,11 +181,14 @@ test("reassess-roadmap prompt references gsd_reassess_roadmap tool", () => {
   assert.match(prompt, /gsd_reassess_roadmap/);
 });
 
-test("validate-milestone prompt persists verification classes through gsd_validate_milestone", () => {
+test("validate-milestone prompt dispatches parallel reviewers", () => {
   const prompt = readPrompt("validate-milestone");
-  assert.match(prompt, /verification classes section/i);
-  assert.match(prompt, /verificationClasses/);
-  assert.match(prompt, /gsd_validate_milestone/);
+  assert.match(prompt, /Reviewer A/);
+  assert.match(prompt, /Reviewer B/);
+  assert.match(prompt, /Reviewer C/);
+  assert.match(prompt, /Requirements Coverage/);
+  assert.match(prompt, /Cross-Slice Integration/);
+  assert.match(prompt, /UAT/);
 });
 
 // ─── Prompt migration: replan-slice → gsd_replan_slice ────────────────
