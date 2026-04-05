@@ -1184,11 +1184,29 @@ export async function runUnitPhase(
       debugLog("autoLoop", { phase: "exit", reason: "provider-pause", isTransient: unitResult.errorContext.isTransient });
       return { action: "break", reason: "provider-pause" };
     }
+    // Session creation timeout (not a structural error): pause auto-mode
+    // and let the provider-error-resume timer handle recovery. This matches
+    // the provider-pause path — break out cleanly, don't hard-stop.
+    // Structural errors (TypeError, is not a function) are NOT transient
+    // and must hard-stop to avoid infinite retry loops.
+    if (
+      unitResult.errorContext?.isTransient &&
+      unitResult.errorContext?.category === "timeout"
+    ) {
+      ctx.ui.notify(
+        `Session creation timed out for ${unitType} ${unitId}. Will retry.`,
+        "warning",
+      );
+      debugLog("autoLoop", { phase: "session-timeout-pause", unitType, unitId });
+      await deps.pauseAuto(ctx, pi);
+      return { action: "break", reason: "session-timeout" };
+    }
+    // All other cancelled states (structural errors, non-transient failures): hard stop
     ctx.ui.notify(
-      `Session creation timed out or was cancelled for ${unitType} ${unitId}. Will retry.`,
+      `Session creation failed for ${unitType} ${unitId}: ${unitResult.errorContext?.message ?? "unknown"}. Stopping auto-mode.`,
       "warning",
     );
-    await deps.stopAuto(ctx, pi, "Session creation failed");
+    await deps.stopAuto(ctx, pi, `Session creation failed: ${unitResult.errorContext?.message ?? "unknown"}`);
     debugLog("autoLoop", { phase: "exit", reason: "session-failed" });
     return { action: "break", reason: "session-failed" };
   }

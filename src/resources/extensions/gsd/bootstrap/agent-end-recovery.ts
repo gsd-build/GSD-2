@@ -19,7 +19,17 @@ import {
 
 const retryState = createRetryState();
 const MAX_NETWORK_RETRIES = 2;
-const MAX_TRANSIENT_AUTO_RESUMES = 3;
+const MAX_TRANSIENT_AUTO_RESUMES = 8;
+
+/**
+ * Reset the module-level retry state so a resumed auto-session starts fresh.
+ * Called by provider-error-resume.ts before startAuto() — without this, the
+ * consecutiveTransientCount accumulates across pause/resume cycles and locks
+ * out auto-resume after MAX_TRANSIENT_AUTO_RESUMES total (not consecutive) errors.
+ */
+export function resetTransientRetryState(): void {
+  resetRetryState(retryState);
+}
 
 async function pauseTransientWithBackoff(
   cls: ErrorClass,
@@ -101,6 +111,29 @@ export async function handleAgentEnd(
 
     // ── 1. Classify ──────────────────────────────────────────────────────
     const cls = classifyError(errorMsg, explicitRetryAfterMs);
+
+    // ── 1b. Defer to Core RetryHandler for transient errors ─────────────
+    // The Core RetryHandler (agent-session.ts) processes retryable errors
+    // AFTER this extension handler, in the same _processAgentEvent() call.
+    // For transient errors (overloaded, rate limit, server), the Core will
+    // retry in-context — same session, same conversation — which is strictly
+    // better than our Layer 2 pause+resume (which creates a new session).
+    //
+    // If we react here AND the Core also retries, we race: pauseAuto tears
+    // down the session while agent.continue() starts a new turn.
+    //
+    // Solution: Do nothing for transient errors. The Core RetryHandler
+    // runs next in _processAgentEvent and will either:
+    //   a) Retry successfully → new agent_end (success) → we see it next time
+    //   b) Exhaust retries → the agent stays idle, autoLoop's unit timeout
+    //      or stuck detection handles it
+    //
+    // We do NOT call resolveAgentEnd here — that would unblock autoLoop
+    // prematurely while the Core is still retrying in the same session.
+    // We do NOT call pauseAuto — that would tear down the session.
+    if (isTransient(cls)) {
+      return;
+    }
 
     // Cap rate-limit backoff for CLI-style providers (openai-codex, google-gemini-cli)
     // which use per-user quotas with shorter windows (#2922).

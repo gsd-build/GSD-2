@@ -1174,7 +1174,18 @@ export async function startAuto(
     s.active = true;
     s.verbose = verboseMode;
     s.stepMode = requestedStepMode;
-    s.cmdCtx = ctx;
+    // Preserve the original cmdCtx (ExtensionCommandContext with newSession)
+    // when resuming from a provider-error pause. The resume callback receives
+    // an ExtensionContext (from the agent_end hook) which lacks newSession —
+    // using it would crash runUnit with "newSession is not a function".
+    // Only override if the new ctx actually has newSession (user-initiated resume).
+    if ("newSession" in ctx && typeof (ctx as any).newSession === "function") {
+      s.cmdCtx = ctx;
+    } else if (!s.cmdCtx) {
+      // No saved cmdCtx — this shouldn't happen, but handle gracefully
+      s.cmdCtx = ctx as ExtensionCommandContext;
+    }
+    // else: keep existing s.cmdCtx which has the real newSession
     s.basePath = base;
     setLogBasePath(base);
     s.unitDispatchCount.clear();
