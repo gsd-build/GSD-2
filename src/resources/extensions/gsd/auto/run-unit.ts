@@ -14,6 +14,14 @@ import { debugLog } from "../debug-logger.js";
 import { logWarning, logError } from "../workflow-logger.js";
 
 /**
+ * Maximum time (ms) to wait for a unit (LLM turn) to complete.
+ * Overridable via GSD_UNIT_TIMEOUT_MS env var for testing or custom deployments.
+ * Default: 30 minutes.
+ */
+export const UNIT_EXECUTION_TIMEOUT_MS =
+  parseInt(process.env.GSD_UNIT_TIMEOUT_MS ?? "", 10) || 30 * 60 * 1000;
+
+/**
  * Execute a single unit: create a new session, send the prompt, and await
  * the agent_end promise. Returns a UnitResult describing what happened.
  *
@@ -108,9 +116,37 @@ export async function runUnit(
     { triggerTurn: true },
   );
 
-  // ── Await agent_end ──
+  // ── Await agent_end with execution timeout ──
   debugLog("runUnit", { phase: "awaiting-agent-end", unitType, unitId });
-  const result = await unitPromise;
+
+  let unitTimeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  const unitTimeoutPromise = new Promise<{ timedOut: true }>((resolve) => {
+    unitTimeoutHandle = setTimeout(
+      () => resolve({ timedOut: true }),
+      UNIT_EXECUTION_TIMEOUT_MS,
+    );
+  });
+
+  const raceResult = await Promise.race([unitPromise, unitTimeoutPromise]);
+  if (unitTimeoutHandle) clearTimeout(unitTimeoutHandle);
+
+  if ("timedOut" in raceResult) {
+    logWarning("engine", "runUnit timed out waiting for agent_end — unit may have stalled", {
+      unitType,
+      unitId,
+      timeoutMs: String(UNIT_EXECUTION_TIMEOUT_MS),
+    });
+    return {
+      status: "cancelled",
+      errorContext: {
+        message: `Unit execution timed out after ${UNIT_EXECUTION_TIMEOUT_MS}ms`,
+        category: "timeout",
+        isTransient: true,
+      },
+    };
+  }
+
+  const result = raceResult;
   debugLog("runUnit", {
     phase: "agent-end-received",
     unitType,
