@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { isProjectTrusted, trustProject, getUntrustedExtensionPaths } from "./project-trust.js";
-import { containsTypeScriptSyntax, loadExtensions } from "./loader.js";
+import { containsTypeScriptSyntax, loadExtensions, VIRTUAL_MODULES } from "./loader.js";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -15,6 +15,31 @@ function makeTempDir(): string {
 function cleanDir(dir: string): void {
 	fs.rmSync(dir, { recursive: true, force: true });
 }
+
+// ─── VIRTUAL_MODULES: bundled module coverage ──────────────────────────────────
+//
+// These tests ensure that modules used by bundled extensions are present in
+// VIRTUAL_MODULES — the map jiti uses when running under Bun (compiled binary
+// or bunx).  A missing entry here causes "Cannot find module" errors when
+// extensions are loaded under bunx gsd (issue #3504).
+
+describe("VIRTUAL_MODULES", () => {
+	it("contains @sinclair/typebox", () => {
+		assert.ok("@sinclair/typebox" in VIRTUAL_MODULES, "expected @sinclair/typebox in VIRTUAL_MODULES");
+	});
+
+	it("contains yaml", () => {
+		assert.ok("yaml" in VIRTUAL_MODULES, "expected yaml in VIRTUAL_MODULES");
+	});
+
+	it("contains picomatch (used by ttsr extension, was missing for bunx)", () => {
+		assert.ok("picomatch" in VIRTUAL_MODULES, "expected picomatch in VIRTUAL_MODULES");
+	});
+
+	it("contains @modelcontextprotocol/sdk/client", () => {
+		assert.ok("@modelcontextprotocol/sdk/client" in VIRTUAL_MODULES, "expected @modelcontextprotocol/sdk/client in VIRTUAL_MODULES");
+	});
+});
 
 // ─── isProjectTrusted ─────────────────────────────────────────────────────────
 

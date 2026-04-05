@@ -20,6 +20,7 @@ import * as _bundledPiTui from "@gsd/pi-tui";
 // The virtualModules option then makes them available to extensions.
 import * as _bundledTypebox from "@sinclair/typebox";
 import * as _bundledYaml from "yaml";
+import * as _bundledPicomatch from "picomatch";
 import * as _bundledMcpClient from "@modelcontextprotocol/sdk/client";
 import * as _bundledMcpStdio from "@modelcontextprotocol/sdk/client/stdio.js";
 import * as _bundledMcpStreamableHttp from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -29,7 +30,7 @@ import * as _bundledMcpServerStdio from "@modelcontextprotocol/sdk/server/stdio.
 import * as _bundledMcpServerSse from "@modelcontextprotocol/sdk/server/sse.js";
 import * as _bundledMcpServerStreamableHttp from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import * as _bundledMcpTypes from "@modelcontextprotocol/sdk/types.js";
-import { getAgentDir, isBunBinary } from "../../config.js";
+import { getAgentDir, isBunBinary, isBunRuntime } from "../../config.js";
 // NOTE: This import works because loader.ts exports are NOT re-exported from index.ts,
 // avoiding a circular dependency. Extensions can import from @gsd/pi-coding-agent.
 import * as _bundledPiCodingAgent from "../../index.js";
@@ -57,6 +58,7 @@ import type {
  */
 const STATIC_BUNDLED_MODULES: Record<string, unknown> = {
 	"@sinclair/typebox": _bundledTypebox,
+	"picomatch": _bundledPicomatch,
 	"@gsd/pi-agent-core": _bundledPiAgentCore,
 	"@gsd/pi-tui": _bundledPiTui,
 	"@gsd/pi-ai": _bundledPiAi,
@@ -87,8 +89,8 @@ const STATIC_BUNDLED_MODULES: Record<string, unknown> = {
 	"@mariozechner/pi-coding-agent": _bundledPiCodingAgent,
 };
 
-/** Modules available to extensions via virtualModules (for compiled Bun binary) */
-const VIRTUAL_MODULES: Record<string, unknown> = { ...STATIC_BUNDLED_MODULES };
+/** Modules available to extensions via virtualModules (for Bun binary and bun runtime) */
+export const VIRTUAL_MODULES: Record<string, unknown> = { ...STATIC_BUNDLED_MODULES };
 
 const require = createRequire(import.meta.url);
 const EXTENSION_TIMING_ENABLED = process.env.GSD_STARTUP_TIMING === "1" || process.env.PI_TIMING === "1";
@@ -342,7 +344,14 @@ function getAliases(): Record<string, string> {
 }
 
 function getJitiOptions() {
-	return isBunBinary ? { virtualModules: VIRTUAL_MODULES, tryNative: false } : { alias: getAliases() };
+	// Use virtualModules for both compiled Bun binaries and bunx/bun-runtime invocations.
+	// In Bun runtime mode (bunx gsd), require.resolve() cannot find bundled packages
+	// like @sinclair/typebox or picomatch because they are not installed on the user's
+	// disk — they only exist in GSD's own node_modules. virtualModules bypasses filesystem
+	// resolution entirely by injecting the pre-imported module objects directly.
+	return isBunBinary || isBunRuntime
+		? { virtualModules: VIRTUAL_MODULES, tryNative: false }
+		: { alias: getAliases() };
 }
 
 const _moduleImporters = new Map<string, ReturnType<typeof createJiti>>();

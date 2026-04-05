@@ -18,7 +18,7 @@ export const isBunBinary =
 	import.meta.url.includes("$bunfs") || import.meta.url.includes("~BUN") || import.meta.url.includes("%7EBUN");
 
 /** Detect if Bun is the runtime (compiled binary or bun run) */
-const isBunRuntime = !!process.versions.bun;
+export const isBunRuntime = !!process.versions.bun;
 
 // =============================================================================
 // Install Method Detection
