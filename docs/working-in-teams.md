@@ -82,6 +82,37 @@ If you have an existing project with `.gsd/` blanket-ignored:
    ```
 5. Commit
 
+## Plan Review Workflow
+
+Teams can use a two-PR cycle to get plan approval before any code is written:
+
+1. **Plan PR** — developer runs `/gsd discuss` on `main`, which writes planning artifacts to `.gsd/milestones/<MID>/` (`CONTEXT.md`, `ROADMAP.md`, updated `REQUIREMENTS.md`, `DECISIONS.md`). The developer commits these and opens a docs-only PR.
+2. **Review** — the team reviews scope, risks, slice breakdown, and definition of done directly in GitHub. No code to review yet, just the plan.
+3. **Code PR** — after the plan PR is merged, the developer pulls `main` and runs `/gsd auto`. GSD creates a worktree and executes against the approved plan. The result is a second PR with the actual implementation.
+
+This works because `/gsd discuss` does not auto-commit — the developer controls when and how planning artifacts are committed.
+
+### What reviewers should look for
+
+- **`CONTEXT.md`** — is the scope well-defined? Are constraints and non-goals clear?
+- **`ROADMAP.md`** — does the slice breakdown make sense? Are slices ordered by dependency?
+- **`DECISIONS.md`** — are the architectural choices justified?
+
+### Steering during execution
+
+If the developer uses `/gsd steer` during execution, those adjustments stay local to the worktree and don't modify the approved plan docs on `main`. The code PR diff will reflect any deviations.
+
+### Automated gates
+
+For teams that want a review checkpoint before each slice (not just the milestone), add `require_slice_discussion: true` to preferences:
+
+```yaml
+phases:
+  require_slice_discussion: true
+```
+
+This pauses auto-mode before each slice begins, giving the developer a chance to review the slice context before proceeding.
+
 ## Parallel Development
 
 Multiple developers can run auto mode simultaneously on different milestones. Each developer:
