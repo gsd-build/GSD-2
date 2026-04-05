@@ -189,6 +189,8 @@ export async function ensureBrowser(): Promise<{ browser: Browser; context: Brow
 	};
 	const customPath = process.env.BROWSER_PATH;
 	if (customPath) launchOptions.executablePath = customPath;
+    const customProxyServer = process.env.BROWSER_PROXY_SERVER;
+    if (customProxyServer) launchOptions.proxy = { server: customProxyServer };
 	const browser = await chromium.launch(launchOptions);
 	const context = await browser.newContext({
 		deviceScaleFactor: 2,
