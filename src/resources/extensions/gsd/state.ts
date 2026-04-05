@@ -683,6 +683,26 @@ export async function deriveStateFromDb(basePath: string): Promise<GSDState> {
   }
 
   if (!activeSlice) {
+    // DB rows may be stale if the roadmap was replaced with a placeholder — re-check disk.
+    const roadmapPath = resolveMilestoneFile(basePath, activeMilestone.id, "ROADMAP");
+    if (roadmapPath) {
+      try {
+        const diskSlices = parseRoadmap(readFileSync(roadmapPath, "utf-8")).slices;
+        if (diskSlices.length === 0) {
+          return {
+            activeMilestone, activeSlice: null, activeTask: null,
+            phase: 'pre-planning',
+            recentDecisions: [], blockers: [],
+            nextAction: `Milestone ${activeMilestone.id} roadmap has no slices defined. Plan the roadmap.`,
+            registry, requirements,
+            progress: { milestones: milestoneProgress, slices: sliceProgress },
+          };
+        }
+      } catch {
+        // Unreadable roadmap — fall through to blocked so the user sees the error
+      }
+    }
+
     return {
       activeMilestone, activeSlice: null, activeTask: null,
       phase: 'blocked',
