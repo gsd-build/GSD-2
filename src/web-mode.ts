@@ -382,7 +382,7 @@ function buildSpawnSpec(
 
   return {
     command: getSpawnCommandForSourceHost(platform),
-    args: ['run', 'dev', '--', '--hostname', host, '--port', String(port)],
+    args: ['run', 'dev', '--', '--webpack', '--hostname', host, '--port', String(port)],
     cwd: resolution.hostRoot,
   }
 }
