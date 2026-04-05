@@ -157,7 +157,7 @@ export type {
 	WriteToolResultEvent,
 } from "./types.js";
 // Type guards
-export { isToolCallEventType, isToolResultEventType } from "./types.js";
+export { isBashToolResult, isEditToolResult, isFindToolResult, isGrepToolResult, isLsToolResult, isReadToolResult, isToolCallEventType, isToolResultEventType, isWriteToolResult } from "./types.js";
 export {
 	wrapRegisteredTool,
 	wrapRegisteredTools,

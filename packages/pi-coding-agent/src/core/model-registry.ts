@@ -567,6 +567,27 @@ export class ModelRegistry {
 	}
 
 	/**
+	 * Get API key and request headers for a model.
+	 * Matches the upstream pi extension API contract.
+	 *
+	 * Authentication errors (missing key, invalid provider) return { ok: false }.
+	 * Unexpected errors (TypeError, etc.) are re-thrown to avoid masking bugs.
+	 */
+	async getApiKeyAndHeaders(model: Model<Api>, sessionId?: string): Promise<
+		{ ok: true; apiKey?: string; headers?: Record<string, string> } |
+		{ ok: false; error: string }
+	> {
+		const apiKey = await this.getApiKey(model, sessionId);
+		const headers = model.headers && Object.keys(model.headers).length > 0
+			? model.headers
+			: undefined;
+		if (!apiKey && this.getProviderAuthMode(model.provider) !== "externalCli" && this.getProviderAuthMode(model.provider) !== "none") {
+			return { ok: false, error: `No API key found for "${model.provider}"` };
+		}
+		return { ok: true, apiKey, headers };
+	}
+
+	/**
 	 * Get API key for a provider.
 	 * Returns undefined for externalCli/none providers (no key needed).
 	 * @param sessionId - Optional session ID for sticky credential selection
