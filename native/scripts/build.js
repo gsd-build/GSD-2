@@ -16,6 +16,7 @@ import { execSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import { familySync, MUSL } from "detect-libc";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const nativeRoot = path.resolve(__dirname, "..");
@@ -27,6 +28,18 @@ const profile = isDev ? "debug" : "release";
 const cargoArgs = ["build"];
 if (!isDev) cargoArgs.push("--release");
 
+function resolveRustflags() {
+  const parts = (process.env.RUSTFLAGS || "-C target-cpu=native").trim().split(/\s+/).filter(Boolean);
+  if (
+    process.platform === "linux" &&
+    familySync() === MUSL &&
+    !parts.includes("target-feature=-crt-static")
+  ) {
+    parts.push("-C", "target-feature=-crt-static");
+  }
+  return parts.join(" ");
+}
+
 console.log(`Building gsd-engine (${profile})...`);
 
 try {
@@ -36,7 +49,7 @@ try {
     env: {
       ...process.env,
       // Optimize for native CPU when building locally
-      RUSTFLAGS: process.env.RUSTFLAGS || "-C target-cpu=native",
+      RUSTFLAGS: resolveRustflags(),
     },
   });
 } catch {
