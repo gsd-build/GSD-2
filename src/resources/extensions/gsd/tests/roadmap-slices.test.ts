@@ -406,3 +406,59 @@ test("parseRoadmapSlices: indented H3 headers under ## Slices (#2567)", () => {
   assert.equal(slices[1]?.id, "S02");
   assert.equal(slices[1]?.title, "Build");
 });
+
+// ── Regression tests for #1884: ✅ (U+2705) completion marker ──────────────
+
+test("parseRoadmapSlices: prose headers with ✅ suffix detected as done (#1884)", () => {
+  const proseContent = `# M013: Prose Roadmap
+
+### S01: Plan Limits & Billing Foundation ✅
+All tasks done.
+
+### S02: Usage Tracking
+Not done yet.
+
+### S03: Notification System ✅
+Also done.
+`;
+  const slices = parseRoadmapSlices(proseContent);
+  assert.equal(slices.length, 3);
+  assert.equal(slices[0]?.id, "S01");
+  assert.equal(slices[0]?.done, true, "S01 with trailing ✅ should be done");
+  assert.equal(slices[0]?.title, "Plan Limits & Billing Foundation");
+  assert.equal(slices[1]?.done, false);
+  assert.equal(slices[2]?.done, true, "S03 with trailing ✅ should be done");
+  assert.equal(slices[2]?.title, "Notification System");
+});
+
+test("parseRoadmapSlices: prose headers with ✅ prefix before title detected as done (#1884)", () => {
+  const proseContent = `# M014: Prose
+
+## ✅ S01: Done Slice
+Complete.
+
+## S02: Pending Slice
+Not done.
+`;
+  const slices = parseRoadmapSlices(proseContent);
+  assert.equal(slices.length, 2);
+  assert.equal(slices[0]?.done, true, "prefix ✅ should mark as done");
+  assert.equal(slices[0]?.title, "Done Slice");
+  assert.equal(slices[1]?.done, false);
+});
+
+test("parseRoadmapSlices: prose headers with ✅ after separator detected as done (#1884)", () => {
+  const proseContent = `# M015: Prose
+
+## S01: ✅ First Feature
+Done.
+
+## S02: Second Feature
+Not done.
+`;
+  const slices = parseRoadmapSlices(proseContent);
+  assert.equal(slices.length, 2);
+  assert.equal(slices[0]?.done, true, "✅ after colon should mark as done");
+  assert.equal(slices[0]?.title, "First Feature");
+  assert.equal(slices[1]?.done, false);
+});
