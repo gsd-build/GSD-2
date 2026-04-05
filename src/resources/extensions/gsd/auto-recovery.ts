@@ -338,7 +338,7 @@ export function verifyExpectedArtifact(
 
         if (taskIds && taskIds.length > 0) {
           const tasksDir = resolveTasksDir(base, mid, sid);
-          if (tasksDir) {
+          if (tasksDir && existsSync(tasksDir)) {
             for (const tid of taskIds) {
               const taskPlanFile = join(tasksDir, `${tid}-PLAN.md`);
               if (!existsSync(taskPlanFile)) return false;
