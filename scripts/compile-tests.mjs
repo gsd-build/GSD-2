@@ -199,21 +199,12 @@ async function main() {
     console.log(`Removed ${staleCleaned} stale compiled test files from dist-test/`);
   }
 
-  // Remove stale .ts/.js sibling pairs in resource directories.
-  // esbuild compiles .ts → .js, then copyAssets overlays the original .ts files.
-  // When these pairs land inside dist-test/dist/resources/extensions/ (the path
-  // resource-loader uses as bundled source), hasStaleCompiledExtensionSiblings()
-  // detects them and forces a full re-sync on every initResources() call,
-  // defeating the version-match skip optimization and breaking tests that rely
-  // on the skip (e.g. the marker-file-survives test).
-  // Clean both dist-test/dist/ and dist-test/src/ resource extension roots.
-  // dist/resources/extensions/ is what resource-loader uses as bundled source —
-  // stale pairs there break hasStaleCompiledExtensionSiblings().
-  // src/resources/extensions/ root-level .ts files are never imported directly
-  // (tests import the compiled .js via dist-test-resolve.mjs), so clean those too.
+  // Stale .ts/.js pairs in dist-test/dist/resources/extensions/ break
+  // hasStaleCompiledExtensionSiblings(), defeating the initResources skip
+  // optimization.  Only clean dist/ — src/ keeps .ts originals for
+  // source-level tests that read file content directly.
   const resourceDirsToClean = [
     join(ROOT, 'dist-test', 'dist', 'resources', 'extensions'),
-    join(ROOT, 'dist-test', 'src', 'resources', 'extensions'),
   ];
   let resourceStaleCleaned = 0;
   for (const dir of resourceDirsToClean) {
