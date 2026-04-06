@@ -13,7 +13,6 @@ import { getDiscussionMilestoneId } from "../guided-flow.js";
 import { loadToolApiKeys } from "../commands-config.js";
 import { loadFile, saveFile, formatContinue } from "../files.js";
 import { deriveState } from "../state.js";
-<<<<<<< HEAD
 import { getAutoDashboardData, isAutoActive, isAutoPaused, markToolActivity, markToolEnd, markToolStart, recordToolInvocationError } from "../auto.js";
 import { isParallelActive, shutdownParallel } from "../parallel-orchestrator.js";
 import { checkToolCallLoop, resetToolCallLoopGuard } from "./tool-call-loop-guard.js";
