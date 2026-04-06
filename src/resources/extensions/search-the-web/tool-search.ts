@@ -174,7 +174,7 @@ async function fetchSummary(
       signal,
     }, 1);
 
-    const data: BraveSummarizerResponse = await response.json();
+    const data = await response.json() as BraveSummarizerResponse;
 
     let summaryText = "";
     if (data.summary && Array.isArray(data.summary)) {
@@ -235,7 +235,7 @@ async function executeTavilySearch(
     signal,
   }, 2);
 
-  const data: TavilySearchResponse = await timed.response.json();
+  const data = await timed.response.json() as TavilySearchResponse;
   const normalized = data.results.map(normalizeTavilyResult);
   const deduplicated = deduplicateResults(normalized);
 
@@ -283,7 +283,7 @@ async function executeOllamaSearch(
     signal,
   }, 2);
 
-  const data: OllamaWebSearchResponse = await timed.response.json();
+  const data = await timed.response.json() as OllamaWebSearchResponse;
   const normalized: SearchResultFormatted[] = (data.results || []).map(r => ({
     title: r.title || "(untitled)",
     url: r.url,
@@ -529,7 +529,7 @@ export function registerSearchTool(pi: ExtensionAPI) {
             signal,
           }, 2);
 
-          const data: BraveSearchResponse = await timed.response.json();
+          const data = await timed.response.json() as BraveSearchResponse;
           const rawResults: BraveWebResult[] = data.web?.results ?? [];
           const summarizerKey: string | undefined = data.summarizer?.key;
 
