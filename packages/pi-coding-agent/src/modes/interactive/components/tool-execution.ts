@@ -137,6 +137,15 @@ export class ToolExecutionComponent extends Container {
 		return isBuiltInName && !hasCustomRenderers;
 	}
 
+	dispose(): void {
+		this.convertedImages.clear();
+		this.imageComponents = [];
+		this.imageSpacers = [];
+		this.editDiffPreview = undefined;
+		this.writeHighlightCache = undefined;
+		this.result = undefined;
+	}
+
 	updateArgs(args: any): void {
 		this.args = args;
 		if (this.toolName === "write" && this.isPartial) {
