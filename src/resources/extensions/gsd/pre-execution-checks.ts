@@ -228,13 +228,44 @@ export async function checkPackageExistence(
 // ─── File Path Consistency Check ─────────────────────────────────────────────
 
 /**
+ * Normalize a file path for consistent comparison.
+ * - Strips leading ./
+ * - Normalizes path separators to forward slashes
+ * - Resolves redundant segments (e.g., foo/../bar → bar)
+ * 
+ * This ensures that "./src/a.ts", "src/a.ts", and "src//a.ts" all compare equal.
+ */
+export function normalizeFilePath(filePath: string): string {
+  if (!filePath) return filePath;
+  
+  // Normalize path separators to forward slashes
+  let normalized = filePath.replace(/\\/g, "/");
+  
+  // Remove leading ./
+  while (normalized.startsWith("./")) {
+    normalized = normalized.slice(2);
+  }
+  
+  // Remove duplicate slashes
+  normalized = normalized.replace(/\/+/g, "/");
+  
+  // Remove trailing slash unless it's the root
+  if (normalized.length > 1 && normalized.endsWith("/")) {
+    normalized = normalized.slice(0, -1);
+  }
+  
+  return normalized;
+}
+
+/**
  * Build a set of files that will be created by tasks up to (but not including) taskIndex.
+ * All paths are normalized for consistent comparison.
  */
 function getExpectedOutputsUpTo(tasks: TaskRow[], taskIndex: number): Set<string> {
   const outputs = new Set<string>();
   for (let i = 0; i < taskIndex; i++) {
     for (const file of tasks[i].expected_output) {
-      outputs.add(file);
+      outputs.add(normalizeFilePath(file));
     }
   }
   return outputs;
@@ -244,6 +275,8 @@ function getExpectedOutputsUpTo(tasks: TaskRow[], taskIndex: number): Set<string
  * Check that all files referenced in task.files and task.inputs either:
  *   1. Exist on disk, OR
  *   2. Are in a prior task's expected_output
+ * 
+ * All paths are normalized before comparison to ensure ./src/a.ts matches src/a.ts.
  */
 export function checkFilePathConsistency(
   tasks: TaskRow[],
@@ -260,12 +293,15 @@ export function checkFilePathConsistency(
       // Skip empty strings
       if (!file.trim()) continue;
 
+      // Normalize path for consistent comparison
+      const normalizedFile = normalizeFilePath(file);
+
       // Check if file exists on disk
-      const absolutePath = resolve(basePath, file);
+      const absolutePath = resolve(basePath, normalizedFile);
       const existsOnDisk = existsSync(absolutePath);
 
-      // Check if file is in prior expected outputs
-      const inPriorOutputs = priorOutputs.has(file);
+      // Check if file is in prior expected outputs (priorOutputs already normalized)
+      const inPriorOutputs = priorOutputs.has(normalizedFile);
 
       if (!existsOnDisk && !inPriorOutputs) {
         results.push({
@@ -287,6 +323,8 @@ export function checkFilePathConsistency(
 /**
  * Detect impossible task ordering: task N reads a file that task N+M creates.
  * This is a fatal error — the plan has an impossible dependency.
+ * 
+ * All paths are normalized before comparison to ensure ./src/a.ts matches src/a.ts.
  */
 export function checkTaskOrdering(
   tasks: TaskRow[],
@@ -294,13 +332,14 @@ export function checkTaskOrdering(
 ): PreExecutionCheckJSON[] {
   const results: PreExecutionCheckJSON[] = [];
 
-  // Build map: file → task index that creates it
-  const fileCreators = new Map<string, { taskId: string; index: number }>();
+  // Build map: normalized file → task index that creates it
+  const fileCreators = new Map<string, { taskId: string; index: number; originalPath: string }>();
   for (let i = 0; i < tasks.length; i++) {
     const task = tasks[i];
     for (const file of task.expected_output) {
-      if (!fileCreators.has(file)) {
-        fileCreators.set(file, { taskId: task.id, index: i });
+      const normalizedFile = normalizeFilePath(file);
+      if (!fileCreators.has(normalizedFile)) {
+        fileCreators.set(normalizedFile, { taskId: task.id, index: i, originalPath: file });
       }
     }
   }
@@ -311,7 +350,8 @@ export function checkTaskOrdering(
     const filesToCheck = [...task.files, ...task.inputs];
 
     for (const file of filesToCheck) {
-      const creator = fileCreators.get(file);
+      const normalizedFile = normalizeFilePath(file);
+      const creator = fileCreators.get(normalizedFile);
       if (creator && creator.index > i) {
         // Task reads file that is created later — impossible ordering
         results.push({

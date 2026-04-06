@@ -20,6 +20,7 @@ import {
   checkTaskOrdering,
   checkInterfaceContracts,
   runPreExecutionChecks,
+  normalizeFilePath,
   type PreExecutionResult,
 } from "../pre-execution-checks.ts";
 import type { TaskRow } from "../gsd-db.ts";
@@ -259,6 +260,201 @@ describe("checkFilePathConsistency", () => {
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
+  });
+});
+
+// ─── Path Normalization Tests ────────────────────────────────────────────────
+
+describe("normalizeFilePath", () => {
+  test("strips leading ./", () => {
+    assert.equal(normalizeFilePath("./src/a.ts"), "src/a.ts");
+    assert.equal(normalizeFilePath("././foo.ts"), "foo.ts");
+  });
+
+  test("normalizes backslashes to forward slashes", () => {
+    assert.equal(normalizeFilePath("src\\a.ts"), "src/a.ts");
+    assert.equal(normalizeFilePath("src\\sub\\file.ts"), "src/sub/file.ts");
+  });
+
+  test("removes duplicate slashes", () => {
+    assert.equal(normalizeFilePath("src//a.ts"), "src/a.ts");
+    assert.equal(normalizeFilePath("src///sub//file.ts"), "src/sub/file.ts");
+  });
+
+  test("handles empty string", () => {
+    assert.equal(normalizeFilePath(""), "");
+  });
+
+  test("removes trailing slash", () => {
+    assert.equal(normalizeFilePath("src/"), "src");
+    assert.equal(normalizeFilePath("src/sub/"), "src/sub");
+  });
+
+  test("handles paths without any normalization needed", () => {
+    assert.equal(normalizeFilePath("src/a.ts"), "src/a.ts");
+    assert.equal(normalizeFilePath("index.ts"), "index.ts");
+  });
+});
+
+describe("checkFilePathConsistency with path normalization", () => {
+  let tempDir: string;
+
+  test("./path matches path in prior expected_output", () => {
+    tempDir = join(tmpdir(), `pre-exec-test-${Date.now()}`);
+    mkdirSync(tempDir, { recursive: true });
+
+    try {
+      const tasks = [
+        createTask({
+          id: "T01",
+          sequence: 0,
+          files: [],
+          inputs: [],
+          expected_output: ["src/generated.ts"], // Output without ./
+        }),
+        createTask({
+          id: "T02",
+          sequence: 1,
+          files: ["./src/generated.ts"], // Input with ./
+          inputs: [],
+          expected_output: [],
+        }),
+      ];
+
+      const results = checkFilePathConsistency(tasks, tempDir);
+      assert.deepEqual(results, [], "Should pass because ./src/generated.ts matches src/generated.ts");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("path matches ./path in prior expected_output", () => {
+    tempDir = join(tmpdir(), `pre-exec-test-${Date.now()}`);
+    mkdirSync(tempDir, { recursive: true });
+
+    try {
+      const tasks = [
+        createTask({
+          id: "T01",
+          sequence: 0,
+          files: [],
+          inputs: [],
+          expected_output: ["./src/generated.ts"], // Output with ./
+        }),
+        createTask({
+          id: "T02",
+          sequence: 1,
+          files: ["src/generated.ts"], // Input without ./
+          inputs: [],
+          expected_output: [],
+        }),
+      ];
+
+      const results = checkFilePathConsistency(tasks, tempDir);
+      assert.deepEqual(results, [], "Should pass because src/generated.ts matches ./src/generated.ts");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("paths with mixed separators match", () => {
+    tempDir = join(tmpdir(), `pre-exec-test-${Date.now()}`);
+    mkdirSync(tempDir, { recursive: true });
+
+    try {
+      const tasks = [
+        createTask({
+          id: "T01",
+          sequence: 0,
+          files: [],
+          inputs: [],
+          expected_output: ["src/sub/file.ts"],
+        }),
+        createTask({
+          id: "T02",
+          sequence: 1,
+          files: ["src\\sub\\file.ts"], // Backslash separators
+          inputs: [],
+          expected_output: [],
+        }),
+      ];
+
+      const results = checkFilePathConsistency(tasks, tempDir);
+      assert.deepEqual(results, [], "Should pass because backslash paths normalize to forward slash");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("checkTaskOrdering with path normalization", () => {
+  test("./path triggers ordering check for path in expected_output", () => {
+    const tasks = [
+      createTask({
+        id: "T01",
+        sequence: 0,
+        files: ["./generated.ts"], // Reads with ./
+        inputs: [],
+        expected_output: [],
+      }),
+      createTask({
+        id: "T02",
+        sequence: 1,
+        files: [],
+        inputs: [],
+        expected_output: ["generated.ts"], // Creates without ./
+      }),
+    ];
+
+    const results = checkTaskOrdering(tasks, "/tmp");
+    assert.equal(results.length, 1, "Should detect ordering violation despite ./");
+    assert.ok(results[0].message.includes("T01"));
+    assert.ok(results[0].message.includes("T02"));
+  });
+
+  test("path triggers ordering check for ./path in expected_output", () => {
+    const tasks = [
+      createTask({
+        id: "T01",
+        sequence: 0,
+        files: ["generated.ts"], // Reads without ./
+        inputs: [],
+        expected_output: [],
+      }),
+      createTask({
+        id: "T02",
+        sequence: 1,
+        files: [],
+        inputs: [],
+        expected_output: ["./generated.ts"], // Creates with ./
+      }),
+    ];
+
+    const results = checkTaskOrdering(tasks, "/tmp");
+    assert.equal(results.length, 1, "Should detect ordering violation despite ./ on creator");
+    assert.ok(results[0].message.includes("sequence violation"));
+  });
+
+  test("no false positive when correctly ordered with mixed paths", () => {
+    const tasks = [
+      createTask({
+        id: "T01",
+        sequence: 0,
+        files: [],
+        inputs: [],
+        expected_output: ["./src/api.ts"],
+      }),
+      createTask({
+        id: "T02",
+        sequence: 1,
+        files: ["src/api.ts"], // Same file, different notation
+        inputs: [],
+        expected_output: [],
+      }),
+    ];
+
+    const results = checkTaskOrdering(tasks, "/tmp");
+    assert.deepEqual(results, [], "Should pass - T02 reads file that T01 already created");
   });
 });
 

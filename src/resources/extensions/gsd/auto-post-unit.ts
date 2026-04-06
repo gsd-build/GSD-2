@@ -784,90 +784,106 @@ export async function postUnitPostVerification(pctx: PostUnitContext): Promise<"
   ) {
     let preExecPauseNeeded = false;
     await runSafely("postUnitPostVerification", "pre-execution-checks", async () => {
-      // Check preferences — respect enhanced_verification and enhanced_verification_pre
-      const prefs = loadEffectiveGSDPreferences()?.preferences;
-      const enhancedEnabled = prefs?.enhanced_verification !== false; // default true
-      const preEnabled = prefs?.enhanced_verification_pre !== false;  // default true
+      try {
+        // Check preferences — respect enhanced_verification and enhanced_verification_pre
+        const prefs = loadEffectiveGSDPreferences()?.preferences;
+        const enhancedEnabled = prefs?.enhanced_verification !== false; // default true
+        const preEnabled = prefs?.enhanced_verification_pre !== false;  // default true
 
-      if (!enhancedEnabled || !preEnabled) {
-        debugLog("postUnitPostVerification", {
-          phase: "pre-execution-checks",
-          skipped: true,
-          reason: "disabled by preferences",
-        });
-        return;
-      }
+        if (!enhancedEnabled || !preEnabled) {
+          debugLog("postUnitPostVerification", {
+            phase: "pre-execution-checks",
+            skipped: true,
+            reason: "disabled by preferences",
+          });
+          return;
+        }
 
-      // Parse the unit ID to get milestone/slice IDs
-      const { milestone: mid, slice: sid } = parseUnitId(s.currentUnit!.id);
-      if (!mid || !sid) {
-        debugLog("postUnitPostVerification", {
-          phase: "pre-execution-checks",
-          skipped: true,
-          reason: "could not parse milestone/slice from unit ID",
-        });
-        return;
-      }
+        // Parse the unit ID to get milestone/slice IDs
+        const { milestone: mid, slice: sid } = parseUnitId(s.currentUnit!.id);
+        if (!mid || !sid) {
+          debugLog("postUnitPostVerification", {
+            phase: "pre-execution-checks",
+            skipped: true,
+            reason: "could not parse milestone/slice from unit ID",
+          });
+          return;
+        }
 
-      // Get tasks for this slice from DB
-      const tasks = getSliceTasks(mid, sid);
-      if (tasks.length === 0) {
-        debugLog("postUnitPostVerification", {
-          phase: "pre-execution-checks",
-          skipped: true,
-          reason: "no tasks found for slice",
-        });
-        return;
-      }
+        // Get tasks for this slice from DB
+        const tasks = getSliceTasks(mid, sid);
+        if (tasks.length === 0) {
+          debugLog("postUnitPostVerification", {
+            phase: "pre-execution-checks",
+            skipped: true,
+            reason: "no tasks found for slice",
+          });
+          return;
+        }
 
-      // Run pre-execution checks
-      const result: PreExecutionResult = await runPreExecutionChecks(tasks, s.basePath);
+        // Run pre-execution checks
+        const result: PreExecutionResult = await runPreExecutionChecks(tasks, s.basePath);
 
-      // Log summary to stderr in existing verification output format
-      const emoji = result.status === "pass" ? "✅" : result.status === "warn" ? "⚠️" : "❌";
-      process.stderr.write(
-        `gsd-pre-exec: ${emoji} Pre-execution checks ${result.status} for ${mid}/${sid} (${result.durationMs}ms)\n`,
-      );
-
-      // Log individual check results
-      for (const check of result.checks) {
-        const checkEmoji = check.passed ? "✓" : check.blocking ? "✗" : "⚠";
+        // Log summary to stderr in existing verification output format
+        const emoji = result.status === "pass" ? "✅" : result.status === "warn" ? "⚠️" : "❌";
         process.stderr.write(
-          `gsd-pre-exec:   ${checkEmoji} [${check.category}] ${check.target}: ${check.message}\n`,
+          `gsd-pre-exec: ${emoji} Pre-execution checks ${result.status} for ${mid}/${sid} (${result.durationMs}ms)\n`,
         );
-      }
 
-      // Write evidence JSON to slice artifacts directory
-      const slicePath = resolveSlicePath(s.basePath, mid, sid);
-      if (slicePath) {
-        writePreExecutionEvidence(result, slicePath, mid, sid);
-      }
+        // Log individual check results
+        for (const check of result.checks) {
+          const checkEmoji = check.passed ? "✓" : check.blocking ? "✗" : "⚠";
+          process.stderr.write(
+            `gsd-pre-exec:   ${checkEmoji} [${check.category}] ${check.target}: ${check.message}\n`,
+          );
+        }
 
-      // Notify UI
-      if (result.status === "fail") {
-        const blockingCount = result.checks.filter(c => !c.passed && c.blocking).length;
+        // Write evidence JSON to slice artifacts directory
+        const slicePath = resolveSlicePath(s.basePath, mid, sid);
+        if (slicePath) {
+          writePreExecutionEvidence(result, slicePath, mid, sid);
+        }
+
+        // Notify UI
+        if (result.status === "fail") {
+          const blockingCount = result.checks.filter(c => !c.passed && c.blocking).length;
+          ctx.ui.notify(
+            `Pre-execution checks failed: ${blockingCount} blocking issue${blockingCount === 1 ? "" : "s"} found`,
+            "error",
+          );
+          preExecPauseNeeded = true;
+        } else if (result.status === "warn") {
+          ctx.ui.notify(
+            `Pre-execution checks passed with warnings`,
+            "warning",
+          );
+          // Strict mode: treat warnings as blocking
+          if (prefs?.enhanced_verification_strict === true) {
+            preExecPauseNeeded = true;
+          }
+        }
+
+        debugLog("postUnitPostVerification", {
+          phase: "pre-execution-checks",
+          status: result.status,
+          checkCount: result.checks.length,
+          durationMs: result.durationMs,
+        });
+      } catch (preExecError) {
+        // Fail-closed: if runPreExecutionChecks throws, pause auto-mode instead of silently continuing
+        const errorMessage = preExecError instanceof Error ? preExecError.message : String(preExecError);
+        debugLog("postUnitPostVerification", {
+          phase: "pre-execution-checks",
+          error: errorMessage,
+          failClosed: true,
+        });
+        logError("engine", `gsd-pre-exec: Pre-execution checks threw an error: ${errorMessage}`);
         ctx.ui.notify(
-          `Pre-execution checks failed: ${blockingCount} blocking issue${blockingCount === 1 ? "" : "s"} found`,
+          `Pre-execution checks error: ${errorMessage} — pausing for human review`,
           "error",
         );
         preExecPauseNeeded = true;
-      } else if (result.status === "warn") {
-        ctx.ui.notify(
-          `Pre-execution checks passed with warnings`,
-          "warning",
-        );
-        // Strict mode: treat warnings as blocking
-        if (prefs?.enhanced_verification_strict === true) {
-          preExecPauseNeeded = true;
-        }
       }
-
-      debugLog("postUnitPostVerification", {
-        phase: "pre-execution-checks",
-        status: result.status,
-        checkCount: result.checks.length,
-        durationMs: result.durationMs,
-      });
     });
 
     // Check for blocking failures after runSafely completes

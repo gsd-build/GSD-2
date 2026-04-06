@@ -309,6 +309,17 @@ export async function runPostUnitVerification(
       s.verificationRetryCount.delete(s.currentUnit.id);
       s.pendingVerificationRetry = null;
       return "continue";
+    } else if (postExecBlockingFailure) {
+      // Post-execution failures are cross-task consistency issues — retrying the same task won't fix them.
+      // Skip retry and pause immediately for human review.
+      s.verificationRetryCount.delete(s.currentUnit.id);
+      s.pendingVerificationRetry = null;
+      ctx.ui.notify(
+        `Post-execution checks failed — cross-task consistency issue detected, pausing for human review`,
+        "error",
+      );
+      await pauseAuto(ctx, pi);
+      return "pause";
     } else if (autoFixEnabled && attempt + 1 <= maxRetries) {
       const nextAttempt = attempt + 1;
       s.verificationRetryCount.set(s.currentUnit.id, nextAttempt);
