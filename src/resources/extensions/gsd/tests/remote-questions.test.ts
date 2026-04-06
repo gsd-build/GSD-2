@@ -744,10 +744,8 @@ test("ask-user-questions source-level: tryRemoteQuestions is called before the h
   // mode because tryRemoteQuestions was gated behind `if (!ctx.hasUI)`.
   // The fix moved the remote call before that guard so configured channels
   // (Telegram/Slack/Discord) fire regardless of UI availability.
-  // Read compiled .js (not .ts) so this works in dist-test/ where .ts
-  // originals may not be present.
   const src = readFileSync(
-    join(__dirname, "..", "..", "ask-user-questions.js"),
+    join(__dirname, "..", "..", "ask-user-questions.ts"),
     "utf-8",
   );
 

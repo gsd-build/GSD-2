@@ -16,7 +16,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -40,13 +40,21 @@ type RunResult = {
   timedOut: boolean;
 };
 
+/** Kill a process and its entire tree.  SIGTERM first, SIGKILL after 1s. */
+function killProcessTree(pid: number): void {
+  if (process.platform === "win32") {
+    try { spawnSync("taskkill", ["/F", "/T", "/PID", String(pid)], { timeout: 5_000, stdio: "ignore" }); } catch { /* dead */ }
+  } else {
+    try { process.kill(-pid, "SIGTERM"); } catch { /* dead */ }
+    setTimeout(() => {
+      try { process.kill(-pid, "SIGKILL"); } catch { /* dead */ }
+    }, 1_000).unref();
+  }
+}
+
 /**
  * Spawn `node dist/loader.js ...args` and collect output.
- *
- * @param args    CLI arguments to pass after the script path
- * @param timeoutMs  Maximum time to wait before SIGTERM (default 8 s)
- * @param env     Additional / override environment variables
- * @param cwd     Working directory for the child process (default: projectRoot)
+ * Uses detached process groups so the entire tree can be killed on cleanup.
  */
 function runGsd(
   args: string[],
@@ -63,18 +71,19 @@ function runGsd(
       cwd,
       env: { ...process.env, ...env },
       stdio: ["pipe", "pipe", "pipe"],
+      detached: process.platform !== "win32",
     });
 
     child.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
     child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
 
-    // Close stdin so the process sees a non-TTY environment.
     child.stdin.end();
 
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill("SIGTERM");
+      if (child.pid) killProcessTree(child.pid);
     }, timeoutMs);
+    timer.unref();
 
     child.on("close", (code) => {
       clearTimeout(timer);
