@@ -212,7 +212,7 @@ async function executeTavilyLLMContext(
     signal,
   }, 2);
 
-  const data: TavilySearchResponse = await timed.response.json();
+  const data = await timed.response.json() as TavilySearchResponse;
   const cached = budgetContent(data.results, params.maxTokens, scoreThreshold);
 
   return { cached, latencyMs: timed.latencyMs, rateLimit: timed.rateLimit };
@@ -254,7 +254,7 @@ async function executeOllamaLLMContext(
     signal,
   }, 2);
 
-  const data: OllamaWebSearchResponse = await timed.response.json();
+  const data = await timed.response.json() as OllamaWebSearchResponse;
 
   // Convert Ollama results to TavilyResult-compatible format for budgetContent
   const tavilyLikeResults: TavilyResult[] = (data.results || []).map(r => ({
@@ -431,7 +431,7 @@ export function registerLLMContextTool(pi: ExtensionAPI) {
             let errorKindOverride: string | undefined;
             if (fetchErr instanceof HttpError && fetchErr.response) {
               try {
-                const body = await fetchErr.response.clone().json().catch(() => null);
+                const body = await fetchErr.response.clone().json().catch(() => null) as { error?: { detail?: string; code?: string } } | null;
                 if (body?.error?.detail) {
                   errorMessage = body.error.detail;
                   if (body.error.code === "OPTION_NOT_IN_PLAN") {
@@ -456,7 +456,7 @@ export function registerLLMContextTool(pi: ExtensionAPI) {
             };
           }
 
-          const data: BraveLLMContextResponse = await timed.response.json();
+          const data = await timed.response.json() as BraveLLMContextResponse;
 
           // ------------------------------------------------------------------
           // Normalize Brave response

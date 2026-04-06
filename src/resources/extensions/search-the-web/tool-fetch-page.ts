@@ -203,7 +203,7 @@ async function fetchViaOllama(
     timeoutMs: 20_000,
   });
 
-  const data: OllamaWebFetchResponse = await response.json();
+  const data = await response.json() as OllamaWebFetchResponse;
 
   const content = (data.content || "").trim();
   const title = data.title?.trim() || undefined;
