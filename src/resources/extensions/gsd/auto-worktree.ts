@@ -134,8 +134,8 @@ function syncProjectPreferencesFile(
     } else if (entries.has(PROJECT_PREFERENCES_FILE)) {
       sourceFile = PROJECT_PREFERENCES_FILE;
     }
-  } catch {
-    /* fall back to existsSync below */
+  } catch (err) {
+    logWarning("worktree", `project preferences scan failed, retrying with existsSync fallback: ${err instanceof Error ? err.message : String(err)}`);
   }
   if (!sourceFile) {
     sourceFile = existsSync(join(srcGsd, LEGACY_PROJECT_PREFERENCES_FILE))
@@ -156,8 +156,8 @@ function syncProjectPreferencesFile(
   try {
     safeCopy(join(srcGsd, sourceFile), dst, { force: options.force });
     options.synced?.push(sourceFile);
-  } catch {
-    /* non-fatal */
+  } catch (err) {
+    logWarning("worktree", `project preferences sync failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   if (!options.force) return;
@@ -167,8 +167,8 @@ function syncProjectPreferencesFile(
     if (destEntries.has(alternateFile)) {
       rmSync(join(dstGsd, alternateFile), { force: true });
     }
-  } catch {
-    /* non-fatal */
+  } catch (err) {
+    logWarning("worktree", `project preferences cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
