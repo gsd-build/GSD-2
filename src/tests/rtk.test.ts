@@ -42,6 +42,26 @@ test("buildRtkEnv prepends the managed bin dir and disables telemetry", () => {
   assert.equal(env.RTK_TELEMETRY_DISABLED, "1");
 });
 
+test("buildRtkEnv prefers the provided PATH key when process.env contains Path", () => {
+  const originalPath = process.env.Path;
+  const originalPATH = process.env.PATH;
+
+  process.env.Path = "/windows/system32";
+  process.env.PATH = "/usr/bin";
+
+  try {
+    const env = buildRtkEnv({ PATH: "/custom/bin" });
+    assert.ok(env.PATH?.startsWith(`${getManagedRtkDir()}${delimiter}`));
+    assert.equal(env.PATH, `${getManagedRtkDir()}${delimiter}/custom/bin`);
+  } finally {
+    if (originalPath === undefined) delete process.env.Path;
+    else process.env.Path = originalPath;
+
+    if (originalPATH === undefined) delete process.env.PATH;
+    else process.env.PATH = originalPATH;
+  }
+});
+
 test("rewriteCommandWithRtk rewrites when RTK returns exit 0 or 3", () => {
   const spawnSyncImpl = ((_binary: string, _args: string[]) => ({ status: 0, stdout: "rtk git status", error: undefined })) as typeof import("node:child_process").spawnSync;
   assert.equal(rewriteCommandWithRtk("git status", { binaryPath: "/tmp/rtk", spawnSyncImpl }), "rtk git status");

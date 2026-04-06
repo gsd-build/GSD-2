@@ -86,7 +86,18 @@ function getPathValue(env: NodeJS.ProcessEnv): string | undefined {
 }
 
 export function buildRtkEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  return applyRtkProcessEnv({ ...process.env, ...env });
+  const mergedEnv: NodeJS.ProcessEnv = { ...process.env };
+  const providedPathKey = Object.keys(env).find((key) => key.toLowerCase() === "path");
+
+  if (providedPathKey) {
+    for (const key of Object.keys(mergedEnv)) {
+      if (key.toLowerCase() === "path" && key !== providedPathKey) {
+        delete mergedEnv[key];
+      }
+    }
+  }
+
+  return applyRtkProcessEnv({ ...mergedEnv, ...env });
 }
 
 export function resolveRtkAssetName(
