@@ -1,15 +1,15 @@
 {
-  "name": "@gsd-build/engine-linux-x64-gnu",
-  "version": "2.65.0",
-  "description": "GSD native engine binary for Linux x64 (glibc)",
+  "name": "@gsd-build/engine-linux-arm64-musl",
+  "version": "2.58.0",
+  "description": "GSD native engine binary for Linux ARM64 (musl)",
   "os": [
     "linux"
   ],
   "cpu": [
-    "x64"
+    "arm64"
   ],
   "libc": [
-    "glibc"
+    "musl"
   ],
   "main": "gsd_engine.node",
   "files": [

@@ -34,6 +34,14 @@ jobs:
             target: aarch64-unknown-linux-gnu
             platform: linux-arm64-gnu
             cross: true
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            platform: linux-x64-musl
+            docker_image: messense/rust-musl-cross@sha256:bcf6a66615f9d5bae659e38ab4311260e0488d1c34ad0ab9f9147f4cd5ef64ed
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-musl
+            platform: linux-arm64-musl
+            docker_image: messense/rust-musl-cross@sha256:eab6a58ff66eaa33fa87fc31ed11403596719ca3f23aa51626fb993d77c1200b
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             platform: win32-x64-msvc
@@ -45,12 +53,15 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install Rust toolchain
+        if: ${{ !matrix.docker_image }}
         uses: dtolnay/rust-toolchain@stable
 
       - name: Add Rust compilation target
+        if: ${{ !matrix.docker_image }}
         run: rustup target add ${{ matrix.target }}
 
       - name: Cache Rust build artifacts
+        if: ${{ !matrix.docker_image }}
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: native-${{ matrix.platform }}
@@ -58,12 +69,13 @@ jobs:
             native -> target
 
       - name: Install cross-compilation tools (Linux ARM64)
-        if: matrix.cross
+        if: ${{ matrix.cross && !matrix.docker_image }}
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
 
       - name: Build native addon
+        if: ${{ !matrix.docker_image }}
         working-directory: native/crates/engine
         env:
           # CARGO_ENCODED_RUSTFLAGS overrides target-specific rustflags in
@@ -72,6 +84,21 @@ jobs:
           CARGO_ENCODED_RUSTFLAGS: ""
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: ${{ matrix.cross && 'aarch64-linux-gnu-gcc' || '' }}
         run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Build native addon (musl container)
+        if: ${{ matrix.docker_image }}
+        run: |
+          MUSL_RUSTFLAGS=""
+          if [ "${{ matrix.target }}" = "x86_64-unknown-linux-musl" ]; then
+            MUSL_RUSTFLAGS='CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS="-C target-feature=-crt-static"'
+          elif [ "${{ matrix.target }}" = "aarch64-unknown-linux-musl" ]; then
+            MUSL_RUSTFLAGS='CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_RUSTFLAGS="-C target-feature=-crt-static"'
+          fi
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}:/work" \
+            -w /work/native/crates/engine \
+            ${{ matrix.docker_image }} \
+            sh -lc "${MUSL_RUSTFLAGS} cargo build --release --target ${{ matrix.target }}"
 
       - name: Prepare artifact (Unix)
         if: runner.os != 'Windows'
@@ -116,7 +143,7 @@ jobs:
 
       - name: Copy binaries to platform packages
         run: |
-          for platform in darwin-arm64 darwin-x64 linux-x64-gnu linux-arm64-gnu win32-x64-msvc; do
+          for platform in darwin-arm64 darwin-x64 linux-x64-gnu linux-x64-musl linux-arm64-gnu linux-arm64-musl win32-x64-msvc; do
             cp "artifacts/native-${platform}/gsd_engine.node" "native/npm/${platform}/gsd_engine.node"
             echo "Copied binary for ${platform}"
             ls -la "native/npm/${platform}/"
@@ -143,7 +170,7 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          for platform in darwin-arm64 darwin-x64 linux-x64-gnu linux-arm64-gnu win32-x64-msvc; do
+          for platform in darwin-arm64 darwin-x64 linux-x64-gnu linux-x64-musl linux-arm64-gnu linux-arm64-musl win32-x64-msvc; do
             echo "Publishing @gsd-build/engine-${platform}..."
             cd "native/npm/${platform}"
             OUTPUT=$(npm publish --access public ${{ steps.version-check.outputs.tag_flag }} 2>&1) && echo "$OUTPUT" || {
@@ -165,7 +192,7 @@ jobs:
           DELAY=5
           for attempt in $(seq 1 5); do
             FAILED=0
-            for platform in darwin-arm64 darwin-x64 linux-x64-gnu linux-arm64-gnu win32-x64-msvc; do
+            for platform in darwin-arm64 darwin-x64 linux-x64-gnu linux-x64-musl linux-arm64-gnu linux-arm64-musl win32-x64-msvc; do
               PKG="@gsd-build/engine-${platform}"
               PUBLISHED=$(npm view "${PKG}@${VERSION}" version 2>/dev/null || echo "")
               if [ "${PUBLISHED}" != "${VERSION}" ]; then
@@ -179,7 +206,7 @@ jobs:
             fi
             if [ "$attempt" = "5" ]; then
               echo "::error::One or more platform packages not found after 5 attempts. Aborting."
-              for platform in darwin-arm64 darwin-x64 linux-x64-gnu linux-arm64-gnu win32-x64-msvc; do
+              for platform in darwin-arm64 darwin-x64 linux-x64-gnu linux-x64-musl linux-arm64-gnu linux-arm64-musl win32-x64-msvc; do
                 PKG="@gsd-build/engine-${platform}"
                 PUBLISHED=$(npm view "${PKG}@${VERSION}" version 2>/dev/null || echo "")
                 if [ "${PUBLISHED}" = "${VERSION}" ]; then
@@ -273,6 +300,26 @@ jobs:
           done
           echo "::error::Smoke test failed — gsd-pi@${VERSION} not installable"
           exit 1
+
+      - name: Post-publish Alpine smoke test
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          docker run --rm node:24-alpine sh -lc "
+            set -e
+            export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+            export GSD_SKIP_RTK_INSTALL=1
+            mkdir -p /tmp/gsd-alpine
+            cd /tmp/gsd-alpine
+            npm init -y >/dev/null 2>&1
+            npm install gsd-pi@${VERSION} >/tmp/npm-install.log 2>&1 || { cat /tmp/npm-install.log; exit 1; }
+            OUTPUT=\$(node --input-type=module -e \"import { visibleWidth } from './node_modules/gsd-pi/packages/native/dist/text/index.js'; console.log(visibleWidth('\\u001b[31mhi\\u001b[0m'));\" 2>&1)
+            echo \"\$OUTPUT\"
+            echo \"\$OUTPUT\" | grep -qx '2'
+            if echo \"\$OUTPUT\" | grep -q 'Falling back to JS implementations'; then
+              echo 'native loader fell back to JS on Alpine' >&2
+              exit 1
+            fi
+          "
 
       - name: Verify dist-tag after publish
         if: steps.version-check.outputs.is_prerelease == 'false'

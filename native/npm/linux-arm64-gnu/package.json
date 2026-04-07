@@ -8,6 +8,9 @@
   "cpu": [
     "arm64"
   ],
+  "libc": [
+    "glibc"
+  ],
   "main": "gsd_engine.node",
   "files": [
     "gsd_engine.node"

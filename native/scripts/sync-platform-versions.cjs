@@ -23,7 +23,9 @@ const platformPackages = [
   "darwin-arm64",
   "darwin-x64",
   "linux-x64-gnu",
+  "linux-x64-musl",
   "linux-arm64-gnu",
+  "linux-arm64-musl",
   "win32-x64-msvc",
 ];
 
