@@ -124,11 +124,20 @@ export function worktreeBranchName(name: string): string {
  * nativeWorktreeRemove --force) to prevent #2365-style data loss.
  */
 export function isInsideWorktreesDir(basePath: string, targetPath: string): boolean {
-  const wtDir = resolve(worktreesDir(basePath));
-  const resolved = resolve(targetPath);
-  // The resolved path must start with the worktrees dir followed by a separator,
-  // not merely be a prefix match (e.g. ".gsd/worktrees-extra" must not match).
-  return resolved === wtDir || resolved.startsWith(wtDir + sep);
+  const variants = (path: string): string[] => {
+    const out = new Set<string>([normalizePathForComparison(resolve(path))]);
+    if (existsSync(path)) {
+      out.add(normalizePathForComparison(realpathSync(path)));
+    }
+    return [...out];
+  };
+
+  const wtDirVariants = variants(worktreesDir(basePath));
+  const targetVariants = variants(targetPath);
+
+  return targetVariants.some(target =>
+    wtDirVariants.some(root => target === root || target.startsWith(root + "/")),
+  );
 }
 
 // ─── Core Operations ───────────────────────────────────────────────────────

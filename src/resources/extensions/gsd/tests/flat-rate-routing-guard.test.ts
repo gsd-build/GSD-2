@@ -4,11 +4,29 @@
  * per request — routing only degrades quality with no cost benefit.
  */
 
-import { describe, test } from "node:test";
+import { afterEach, describe, test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { isFlatRateProvider, resolvePreferredModelConfig } from "../auto-model-selection.ts";
 
 describe("flat-rate provider routing guard (#3453)", () => {
+  const originalGsdHome = process.env.GSD_HOME;
+  const tempHomes: string[] = [];
+
+  afterEach(() => {
+    process.env.GSD_HOME = originalGsdHome;
+    for (const dir of tempHomes.splice(0)) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  function withIsolatedGsdHome(): void {
+    const tempHome = mkdtempSync(join(tmpdir(), "gsd-flat-rate-home-"));
+    tempHomes.push(tempHome);
+    process.env.GSD_HOME = join(tempHome, ".gsd");
+  }
 
   test("isFlatRateProvider returns true for github-copilot", () => {
     assert.equal(isFlatRateProvider("github-copilot"), true);
@@ -33,6 +51,8 @@ describe("flat-rate provider routing guard (#3453)", () => {
   });
 
   test("resolvePreferredModelConfig returns undefined for copilot start model", () => {
+    withIsolatedGsdHome();
+
     // When the user's start model is on a flat-rate provider,
     // resolvePreferredModelConfig should not synthesize a routing
     // config from tier_models — it should return undefined so the
