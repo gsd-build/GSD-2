@@ -56,6 +56,7 @@ import {
   insertMilestone,
   insertSlice,
   insertTask,
+  updateSliceStatus,
   updateTaskStatus,
   getPendingSliceGateCount,
   type MilestoneRow,
@@ -365,6 +366,25 @@ export async function deriveStateFromDb(basePath: string): Promise<GSDState> {
         status: sliceStatus, risk: s.risk,
         depends: s.depends, demo: s.demo,
       });
+    }
+
+    // Reconcile stale *existing* slice rows (#3599): a slice row may exist in
+    // the DB with status "pending" even though disk artifacts (SUMMARY) prove
+    // completion — the same class of desync that task-level reconciliation
+    // (further below) already handles.  Without this, the dependency resolver
+    // builds doneSliceIds from stale DB rows and downstream slices stay blocked
+    // forever with "No slice eligible".
+    for (const dbSlice of dbSlices) {
+      if (isStatusDone(dbSlice.status)) continue;
+      const summaryPath = resolveSliceFile(basePath, mid, dbSlice.id, "SUMMARY");
+      if (summaryPath) {
+        try {
+          updateSliceStatus(mid, dbSlice.id, "complete");
+          logWarning("reconcile", `slice ${mid}/${dbSlice.id} status reconciled from "${dbSlice.status}" to "complete" (#3599)`, { mid, sid: dbSlice.id });
+        } catch (e) {
+          logError("reconcile", `failed to update slice ${dbSlice.id}`, { sid: dbSlice.id, error: (e as Error).message });
+        }
+      }
     }
   }
 
