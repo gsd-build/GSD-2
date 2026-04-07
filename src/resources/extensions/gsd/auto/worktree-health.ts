@@ -9,6 +9,7 @@
 import { join, dirname, parse as parsePath } from "node:path";
 import { existsSync, readdirSync } from "node:fs";
 import { PROJECT_FILES } from "../detection.js";
+import { debugLog } from "../debug-logger.js";
 
 export type WorktreeHealthResult =
   | { status: "ok" }
@@ -44,8 +45,8 @@ export function checkWorktreeHealth(
     if (entries.some((e: string) => e.endsWith(".xcodeproj") || e.endsWith(".xcworkspace"))) {
       return { status: "ok" };
     }
-  } catch {
-    // scan failed, continue
+  } catch (err: unknown) {
+    debugLog("worktreeHealth", { phase: "xcode-bundle-scan-failed", basePath, error: String(err) });
   }
 
   // Monorepo support (#2347): walk parent directories up to .git boundary
