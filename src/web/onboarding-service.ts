@@ -247,7 +247,7 @@ function resolveCredentialSource(
   if (getEnvApiKeyFn(providerId)) {
     return "environment";
   }
-  if (authStorage.hasAuth(providerId)) {
+  if (authStorage.getCredentialsForProvider(providerId).length > 0) {
     return "runtime";
   }
   return null;

@@ -17,6 +17,7 @@ import type {
 } from "@gsd/pi-coding-agent";
 
 import { deriveState } from "./state.js";
+import { parseUnitId } from "./unit-id.js";
 import type { GSDState } from "./types.js";
 import { getManifestStatus } from "./files.js";
 export { inlinePriorMilestoneSummary } from "./files.js";
@@ -38,6 +39,7 @@ import { clearActivityLogState } from "./activity-log.js";
 import {
   synthesizeCrashRecovery,
   getDeepDiagnostic,
+  readActiveMilestoneId,
 } from "./session-forensics.js";
 import {
   writeLock,
@@ -52,12 +54,6 @@ import {
   updateSessionLock,
 } from "./session-lock.js";
 import type { SessionLockStatus } from "./session-lock.js";
-import {
-  clearUnitRuntimeRecord,
-  inspectExecuteTaskDurability,
-  readUnitRuntimeRecord,
-  writeUnitRuntimeRecord,
-} from "./unit-runtime.js";
 import {
   resolveAutoSupervisorConfig,
   loadEffectiveGSDPreferences,
@@ -77,23 +73,14 @@ import {
   getOldestInFlightToolAgeMs as _getOldestInFlightToolAgeMs,
   getInFlightToolCount,
   getOldestInFlightToolStart,
+  hasInteractiveToolInFlight,
   clearInFlightTools,
+  isToolInvocationError,
+  isQueuedUserMessageSkip,
 } from "./auto-tool-tracking.js";
-import {
-  collectObservabilityWarnings as _collectObservabilityWarnings,
-  buildObservabilityRepairBlock,
-} from "./auto-observability.js";
 import { closeoutUnit } from "./auto-unit-closeout.js";
 import { recoverTimedOutUnit } from "./auto-timeout-recovery.js";
-import { selfHealRuntimeRecords } from "./auto-recovery.js";
 import { selectAndApplyModel, resolveModelId } from "./auto-model-selection.js";
-import {
-  syncProjectRootToWorktree,
-  syncStateToProjectRoot,
-  readResourceVersion,
-  checkResourcesStale,
-  escapeStaleWorktree,
-} from "./auto-worktree-sync.js";
 import { resetRoutingHistory, recordOutcome } from "./routing-history.js";
 import {
   checkPostUnitHooks,
@@ -121,6 +108,7 @@ import {
   captureAvailableSkills,
   resetSkillTelemetry,
 } from "./skill-telemetry.js";
+import { getRtkSessionSavings } from "../shared/rtk-session-stats.js";
 import {
   initMetrics,
   resetMetrics,
@@ -129,6 +117,7 @@ import {
   formatCost,
   formatTokenCount,
 } from "./metrics.js";
+import { setLogBasePath, logWarning, logError } from "./workflow-logger.js";
 import { join } from "node:path";
 import { readFileSync, existsSync, mkdirSync, writeFileSync, unlinkSync } from "node:fs";
 import { atomicWriteSync } from "./atomic-write.js";
@@ -154,20 +143,22 @@ import {
   mergeMilestoneToMain,
   autoWorktreeBranch,
   syncWorktreeStateBack,
+  syncProjectRootToWorktree,
+  syncStateToProjectRoot,
+  readResourceVersion,
+  checkResourcesStale,
+  escapeStaleWorktree,
 } from "./auto-worktree.js";
 import { pruneQueueOrder } from "./queue-order.js";
 
 import { debugLog, isDebugEnabled, writeDebugSummary } from "./debug-logger.js";
 import {
-  resolveExpectedArtifactPath,
-  verifyExpectedArtifact,
-  writeBlockerPlaceholder,
-  diagnoseExpectedArtifact,
-  skipExecuteTask,
   buildLoopRemediationSteps,
   reconcileMergeState,
 } from "./auto-recovery.js";
-import { resolveDispatch } from "./auto-dispatch.js";
+import { resolveDispatch, DISPATCH_RULES } from "./auto-dispatch.js";
+import { initRegistry, convertDispatchRules } from "./rule-registry.js";
+import { emitJournalEvent as _emitJournalEvent, type JournalEntry } from "./journal.js";
 import {
   type AutoDashboardData,
   updateProgressWidget as _updateProgressWidget,
@@ -196,15 +187,16 @@ import {
   postUnitPreVerification,
   postUnitPostVerification,
 } from "./auto-post-unit.js";
-import { bootstrapAutoSession, type BootstrapDeps } from "./auto-start.js";
-import { autoLoop, resolveAgentEnd, resolveAgentEndCancelled, _resetPendingResolve, isSessionSwitchInFlight, type LoopDeps } from "./auto-loop.js";
+import { bootstrapAutoSession, openProjectDbIfPresent, type BootstrapDeps } from "./auto-start.js";
+import { autoLoop, resolveAgentEnd, resolveAgentEndCancelled, _resetPendingResolve, isSessionSwitchInFlight, type LoopDeps, type ErrorContext } from "./auto-loop.js";
+// Slice-level parallelism (#2340)
+import { getEligibleSlices } from "./slice-parallel-eligibility.js";
+import { startSliceParallel } from "./slice-parallel-orchestrator.js";
 import {
   WorktreeResolver,
   type WorktreeResolverDeps,
 } from "./worktree-resolver.js";
 import { reorderForCaching } from "./prompt-ordering.js";
-
-// Worktree sync, resource staleness, stale worktree escape → auto-worktree-sync.ts
 
 // ─── Session State ─────────────────────────────────────────────────────────
 
@@ -216,7 +208,6 @@ import {
   NEW_SESSION_TIMEOUT_MS,
 } from "./auto/session.js";
 import type {
-  CompletedUnit,
   CurrentUnit,
   UnitRouting,
   StartModel,
@@ -228,7 +219,6 @@ export {
   NEW_SESSION_TIMEOUT_MS,
 } from "./auto/session.js";
 export type {
-  CompletedUnit,
   CurrentUnit,
   UnitRouting,
   StartModel,
@@ -253,9 +243,9 @@ const STATE_REBUILD_MIN_INTERVAL_MS = 30_000;
 
 export function shouldUseWorktreeIsolation(): boolean {
   const prefs = loadEffectiveGSDPreferences()?.preferences?.git;
-  if (prefs?.isolation === "none") return false;
-  if (prefs?.isolation === "branch") return false;
-  return true; // default: worktree
+  if (prefs?.isolation === "worktree") return true;
+  // Default is false — worktree isolation requires explicit opt-in
+  return false;
 }
 
 /** Crash recovery prompt — set by startAuto, consumed by the main loop */
@@ -320,14 +310,20 @@ export { type AutoDashboardData } from "./auto-dashboard.js";
 export function getAutoDashboardData(): AutoDashboardData {
   const ledger = getLedger();
   const totals = ledger ? getProjectTotals(ledger.units) : null;
+  const sessionId = s.cmdCtx?.sessionManager?.getSessionId?.() ?? null;
+  const rtkSavings = sessionId && s.basePath
+    ? getRtkSessionSavings(s.basePath, sessionId)
+    : null;
+  const rtkEnabled = loadEffectiveGSDPreferences()?.preferences.experimental?.rtk === true;
   // Pending capture count — lazy check, non-fatal
   let pendingCaptureCount = 0;
   try {
     if (s.basePath) {
       pendingCaptureCount = countPendingCaptures(s.basePath);
     }
-  } catch {
+  } catch (err) {
     // Non-fatal — captures module may not be loaded
+    logWarning("engine", `capture count failed: ${err instanceof Error ? err.message : String(err)}`, { file: "auto.ts" });
   }
   return {
     active: s.active,
@@ -338,11 +334,12 @@ export function getAutoDashboardData(): AutoDashboardData {
       ? (s.autoStartTime > 0 ? Date.now() - s.autoStartTime : 0)
       : 0,
     currentUnit: s.currentUnit ? { ...s.currentUnit } : null,
-    completedUnits: [...s.completedUnits],
     basePath: s.basePath,
     totalCost: totals?.cost ?? 0,
     totalTokens: totals?.tokens.total ?? 0,
     pendingCaptureCount,
+    rtkSavings,
+    rtkEnabled,
   };
 }
 
@@ -354,6 +351,22 @@ export function isAutoActive(): boolean {
 
 export function isAutoPaused(): boolean {
   return s.paused;
+}
+
+export function setActiveEngineId(id: string | null): void {
+  s.activeEngineId = id;
+}
+
+export function getActiveEngineId(): string | null {
+  return s.activeEngineId;
+}
+
+export function setActiveRunDir(runDir: string | null): void {
+  s.activeRunDir = runDir;
+}
+
+export function getActiveRunDir(): string | null {
+  return s.activeRunDir;
 }
 
 /**
@@ -369,12 +382,25 @@ export function getAutoModeStartModel(): {
 }
 
 // Tool tracking — delegates to auto-tool-tracking.ts
-export function markToolStart(toolCallId: string): void {
-  _markToolStart(toolCallId, s.active);
+export function markToolStart(toolCallId: string, toolName?: string): void {
+  _markToolStart(toolCallId, s.active, toolName);
 }
 
 export function markToolEnd(toolCallId: string): void {
   _markToolEnd(toolCallId);
+}
+
+/**
+ * Record a tool invocation error on the current session (#2883).
+ * Called from tool_execution_end when a GSD tool fails with isError.
+ * Only stores the error if it matches the tool-invocation-error pattern
+ * (malformed/truncated JSON), not normal business-logic errors.
+ */
+export function recordToolInvocationError(toolName: string, errorMsg: string): void {
+  if (!s.active) return;
+  if (isToolInvocationError(errorMsg) || isQueuedUserMessageSkip(errorMsg)) {
+    s.lastToolInvocationError = `${toolName}: ${errorMsg}`;
+  }
 }
 
 export function getOldestInFlightToolAgeMs(): number {
@@ -407,6 +433,13 @@ export function stopAutoRemote(projectRoot: string): {
   const lock = readCrashLock(projectRoot);
   if (!lock) return { found: false };
 
+  // Never SIGTERM ourselves — a stale lock with our own PID is not a remote
+  // session, it is leftover from a prior loop exit in this process. (#2730)
+  if (lock.pid === process.pid) {
+    clearLock(projectRoot);
+    return { found: false };
+  }
+
   if (!isLockProcessAlive(lock)) {
     // Stale lock — clean it up
     clearLock(projectRoot);
@@ -434,10 +467,13 @@ export function checkRemoteAutoSession(projectRoot: string): {
   unitType?: string;
   unitId?: string;
   startedAt?: string;
-  completedUnits?: number;
 } {
   const lock = readCrashLock(projectRoot);
   if (!lock) return { running: false };
+
+  // Our own PID is not a "remote" session — it is a stale lock left by this
+  // process (e.g. after step-mode exit without full cleanup). (#2730)
+  if (lock.pid === process.pid) return { running: false };
 
   if (!isLockProcessAlive(lock)) {
     // Stale lock from a dead process — not a live remote session
@@ -450,7 +486,6 @@ export function checkRemoteAutoSession(projectRoot: string): {
     unitType: lock.unitType,
     unitId: lock.unitId,
     startedAt: lock.startedAt,
-    completedUnits: lock.completedUnits,
   };
 }
 
@@ -478,23 +513,19 @@ function clearUnitTimeout(): void {
   clearInFlightTools();
 }
 
-/** Build snapshot metric opts, enriching with continueHereFired from the runtime record. */
+/** Build snapshot metric opts. */
 function buildSnapshotOpts(
-  unitType: string,
-  unitId: string,
+  _unitType: string,
+  _unitId: string,
 ): {
   continueHereFired?: boolean;
   promptCharCount?: number;
   baselineCharCount?: number;
 } & Record<string, unknown> {
-  const runtime = s.currentUnit
-    ? readUnitRuntimeRecord(s.basePath, unitType, unitId)
-    : null;
   return {
     promptCharCount: s.lastPromptCharCount,
     baselineCharCount: s.lastBaselineCharCount,
     ...(s.currentUnitRouting ?? {}),
-    ...(runtime?.continueHereFired ? { continueHereFired: true } : {}),
   };
 }
 
@@ -547,6 +578,17 @@ function cleanupAfterLoopExit(ctx: ExtensionContext): void {
   s.active = false;
   clearUnitTimeout();
 
+  // Clear crash lock and release session lock so the next `/gsd next` does
+  // not see a stale lock with the current PID and treat it as a "remote"
+  // session (which would cause it to SIGTERM itself). (#2730)
+  try {
+    if (lockBase()) clearLock(lockBase());
+    if (lockBase()) releaseSessionLock(lockBase());
+  } catch (err) {
+    /* best-effort — mirror stopAuto cleanup */
+    logWarning("session", `lock cleanup failed: ${err instanceof Error ? err.message : String(err)}`, { file: "auto.ts" });
+  }
+
   ctx.ui.setStatus("gsd-auto", undefined);
   ctx.ui.setWidget("gsd-progress", undefined);
   ctx.ui.setFooter(undefined);
@@ -556,8 +598,9 @@ function cleanupAfterLoopExit(ctx: ExtensionContext): void {
     s.basePath = s.originalBasePath;
     try {
       process.chdir(s.basePath);
-    } catch {
+    } catch (err) {
       /* best-effort */
+      logWarning("engine", `chdir failed: ${err instanceof Error ? err.message : String(err)}`, { file: "auto.ts" });
     }
   }
 }
@@ -581,6 +624,18 @@ export async function stopAuto(
       debugLog("stop-cleanup-locks", { error: e instanceof Error ? e.message : String(e) });
     }
 
+    // ── Step 1b: Flush queued follow-up messages (#3512) ──
+    // Late async notifications (async_job_result, gsd-auto-wrapup) can trigger
+    // extra LLM turns after stop. Flush them the same way run-unit.ts does.
+    try {
+      const cmdCtxAny = s.cmdCtx as Record<string, unknown> | null;
+      if (typeof cmdCtxAny?.clearQueue === "function") {
+        (cmdCtxAny.clearQueue as () => unknown)();
+      }
+    } catch (e) {
+      debugLog("stop-cleanup-queue", { error: e instanceof Error ? e.message : String(e) });
+    }
+
     // ── Step 2: Skill state ──
     try {
       clearSkillSnapshot();
@@ -597,14 +652,52 @@ export async function stopAuto(
     }
 
     // ── Step 4: Auto-worktree exit ──
+    // When the milestone is complete (has a SUMMARY), merge the worktree branch
+    // back to main so code isn't stranded on the worktree branch (#2317).
+    // For incomplete milestones, preserve the branch for later resumption.
+    //
+    // Skip if phases.ts already merged this milestone — avoids the double
+    // mergeAndExit that fails because the branch was already deleted (#2645).
     try {
-      if (s.currentMilestoneId) {
+      if (s.currentMilestoneId && !s.milestoneMergedInPhases) {
         const notifyCtx = ctx
           ? { notify: ctx.ui.notify.bind(ctx.ui) }
           : { notify: () => {} };
-        buildResolver().exitMilestone(s.currentMilestoneId, notifyCtx, {
-          preserveBranch: true,
-        });
+        const resolver = buildResolver();
+
+        // Check if the milestone is complete — SUMMARY file is the authoritative signal.
+        let milestoneComplete = false;
+        try {
+          const summaryPath = resolveMilestoneFile(
+            s.originalBasePath || s.basePath,
+            s.currentMilestoneId,
+            "SUMMARY",
+          );
+          if (!summaryPath) {
+            // Also check in the worktree path (SUMMARY may not be synced yet)
+            const wtSummaryPath = resolveMilestoneFile(
+              s.basePath,
+              s.currentMilestoneId,
+              "SUMMARY",
+            );
+            milestoneComplete = wtSummaryPath !== null;
+          } else {
+            milestoneComplete = true;
+          }
+        } catch (err) {
+          // Non-fatal — fall through to preserveBranch path
+          logWarning("engine", `milestone summary check failed: ${err instanceof Error ? err.message : String(err)}`, { file: "auto.ts" });
+        }
+
+        if (milestoneComplete) {
+          // Milestone is complete — merge worktree branch back to main
+          resolver.mergeAndExit(s.currentMilestoneId, notifyCtx);
+        } else {
+          // Milestone still in progress — preserve branch for later resumption
+          resolver.exitMilestone(s.currentMilestoneId, notifyCtx, {
+            preserveBranch: true,
+          });
+        }
       }
     } catch (e) {
       debugLog("stop-cleanup-worktree", { error: e instanceof Error ? e.message : String(e) });
@@ -628,8 +721,9 @@ export async function stopAuto(
         s.basePath = s.originalBasePath;
         try {
           process.chdir(s.basePath);
-        } catch {
+        } catch (err) {
           /* best-effort */
+          logWarning("engine", `chdir failed: ${err instanceof Error ? err.message : String(err)}`, { file: "auto.ts" });
         }
       }
     } catch (e) {
@@ -701,7 +795,9 @@ export async function stopAuto(
     try {
       const pausedPath = join(gsdRoot(s.originalBasePath || s.basePath), "runtime", "paused-session.json");
       if (existsSync(pausedPath)) unlinkSync(pausedPath);
-    } catch { /* non-fatal */ }
+    } catch (err) { /* non-fatal */
+      logWarning("engine", `file unlink failed: ${err instanceof Error ? err.message : String(err)}`, { file: "auto.ts" });
+    }
 
     // ── Step 13: Restore original model (before reset clears IDs) ──
     try {
@@ -735,7 +831,9 @@ export async function stopAuto(
         const { closeBrowser } = await import("../browser-tools/lifecycle.js");
         await closeBrowser();
       }
-    } catch { /* non-fatal: browser-tools may not be loaded */ }
+    } catch (err) { /* non-fatal: browser-tools may not be loaded */
+      logWarning("engine", `browser teardown failed: ${err instanceof Error ? err.message : String(err)}`, { file: "auto.ts" });
+    }
 
     // External cleanup (not covered by session reset)
     clearInFlightTools();
@@ -762,11 +860,27 @@ export async function stopAuto(
 export async function pauseAuto(
   ctx?: ExtensionContext,
   _pi?: ExtensionAPI,
+  _errorContext?: ErrorContext,
 ): Promise<void> {
   if (!s.active) return;
   clearUnitTimeout();
+
+  // Flush queued follow-up messages (#3512).
+  // Late async notifications (async_job_result, gsd-auto-wrapup) can trigger
+  // extra LLM turns after pause. Flush them the same way run-unit.ts does.
+  try {
+    const cmdCtxAny = s.cmdCtx as Record<string, unknown> | null;
+    if (typeof cmdCtxAny?.clearQueue === "function") {
+      (cmdCtxAny.clearQueue as () => unknown)();
+    }
+  } catch (e) {
+    debugLog("pause-cleanup-queue", { error: e instanceof Error ? e.message : String(e) });
+  }
+
   // Unblock any pending unit promise so the auto-loop is not orphaned.
-  resolveAgentEndCancelled();
+  // Pass errorContext so runUnitPhase can distinguish user-initiated pause
+  // from provider-error pause and avoid hard-stopping (#2762).
+  resolveAgentEndCancelled(_errorContext);
 
   s.pausedSessionFile = ctx?.sessionManager?.getSessionFile() ?? null;
 
@@ -780,6 +894,9 @@ export async function pauseAuto(
       stepMode: s.stepMode,
       pausedAt: new Date().toISOString(),
       sessionFile: s.pausedSessionFile,
+      activeEngineId: s.activeEngineId,
+      activeRunDir: s.activeRunDir,
+      autoStartTime: s.autoStartTime,
     };
     const runtimeDir = join(gsdRoot(s.originalBasePath || s.basePath), "runtime");
     mkdirSync(runtimeDir, { recursive: true });
@@ -788,21 +905,18 @@ export async function pauseAuto(
       JSON.stringify(pausedMeta, null, 2),
       "utf-8",
     );
-  } catch {
+  } catch (err) {
     // Non-fatal — resume will still work via full bootstrap, just without worktree context
+    logWarning("engine", `paused-session file write failed: ${err instanceof Error ? err.message : String(err)}`, { file: "auto.ts" });
   }
 
   // Close out the current unit so its runtime record doesn't stay at "dispatched"
   if (s.currentUnit && ctx) {
     try {
       await closeoutUnit(ctx, s.basePath, s.currentUnit.type, s.currentUnit.id, s.currentUnit.startedAt);
-    } catch {
+    } catch (err) {
       // Non-fatal — best-effort closeout on pause
-    }
-    try {
-      clearUnitRuntimeRecord(s.basePath, s.currentUnit.type, s.currentUnit.id);
-    } catch {
-      // Non-fatal
+      logWarning("engine", `unit closeout on pause failed: ${err instanceof Error ? err.message : String(err)}`, { file: "auto.ts" });
     }
     s.currentUnit = null;
   }
@@ -876,6 +990,11 @@ function buildResolver(): WorktreeResolver {
  * This bundles all private functions that autoLoop needs without exporting them.
  */
 function buildLoopDeps(): LoopDeps {
+  // Initialize the unified rule registry with converted dispatch rules.
+  // Must happen before LoopDeps is assembled so facade functions
+  // (resolveDispatch, runPreDispatchHooks, etc.) delegate to the registry.
+  initRegistry(convertDispatchRules(DISPATCH_RULES));
+
   return {
     lockBase,
     buildSnapshotOpts,
@@ -937,14 +1056,8 @@ function buildLoopDeps(): LoopDeps {
     runPreDispatchHooks,
     getPriorSliceCompletionBlocker,
     getMainBranch,
-    collectObservabilityWarnings: _collectObservabilityWarnings,
-    buildObservabilityRepairBlock,
-
     // Unit closeout + runtime records
     closeoutUnit,
-    verifyExpectedArtifact,
-    clearUnitRuntimeRecord,
-    writeUnitRuntimeRecord,
     recordOutcome,
     writeLock,
     captureAvailableSkills,
@@ -957,7 +1070,11 @@ function buildLoopDeps(): LoopDeps {
     startUnitSupervision,
 
     // Prompt helpers
-    getDeepDiagnostic,
+    getDeepDiagnostic: (basePath: string) => {
+      const mid = readActiveMilestoneId(basePath);
+      const wtPath = mid ? getAutoWorktreePath(basePath, mid) : undefined;
+      return getDeepDiagnostic(basePath, wtPath ?? undefined);
+    },
     isDbAvailable,
     reorderForCaching,
 
@@ -986,6 +1103,9 @@ function buildLoopDeps(): LoopDeps {
         return "";
       }
     },
+
+    // Journal
+    emitJournalEvent: (entry: JournalEntry) => _emitJournalEvent(s.basePath, entry),
   } as unknown as LoopDeps;
 }
 
@@ -996,6 +1116,11 @@ export async function startAuto(
   verboseMode: boolean,
   options?: { step?: boolean },
 ): Promise<void> {
+  if (s.active) {
+    debugLog("startAuto", { phase: "already-active", skipping: true });
+    return;
+  }
+
   const requestedStepMode = options?.step ?? false;
 
   // Escape stale worktree cwd from a previous milestone (#608).
@@ -1008,13 +1133,30 @@ export async function startAuto(
       const pausedPath = join(gsdRoot(base), "runtime", "paused-session.json");
       if (existsSync(pausedPath)) {
         const meta = JSON.parse(readFileSync(pausedPath, "utf-8"));
-        if (meta.milestoneId) {
+        if (meta.activeEngineId && meta.activeEngineId !== "dev") {
+          // Custom workflow resume — restore engine state
+          s.activeEngineId = meta.activeEngineId;
+          s.activeRunDir = meta.activeRunDir ?? null;
+          s.originalBasePath = meta.originalBasePath || base;
+          s.stepMode = meta.stepMode ?? requestedStepMode;
+          s.autoStartTime = meta.autoStartTime || Date.now();
+          s.paused = true;
+          try { unlinkSync(pausedPath); } catch (err) { /* non-fatal */
+            logWarning("session", `pause file cleanup failed: ${err instanceof Error ? err.message : String(err)}`, { file: "auto.ts" });
+          }
+          ctx.ui.notify(
+            `Resuming paused custom workflow${meta.activeRunDir ? ` (${meta.activeRunDir})` : ""}.`,
+            "info",
+          );
+        } else if (meta.milestoneId) {
           // Validate the milestone still exists and isn't already complete (#1664).
           const mDir = resolveMilestonePath(base, meta.milestoneId);
           const summaryFile = resolveMilestoneFile(base, meta.milestoneId, "SUMMARY");
           if (!mDir || summaryFile) {
             // Stale milestone — clean up and fall through to fresh bootstrap
-            try { unlinkSync(pausedPath); } catch { /* non-fatal */ }
+            try { unlinkSync(pausedPath); } catch (err) { /* non-fatal */
+            logWarning("session", `pause file cleanup failed: ${err instanceof Error ? err.message : String(err)}`, { file: "auto.ts" });
+          }
             ctx.ui.notify(
               `Paused milestone ${meta.milestoneId} is ${!mDir ? "missing" : "already complete"}. Starting fresh.`,
               "info",
@@ -1023,9 +1165,12 @@ export async function startAuto(
             s.currentMilestoneId = meta.milestoneId;
             s.originalBasePath = meta.originalBasePath || base;
             s.stepMode = meta.stepMode ?? requestedStepMode;
+            s.autoStartTime = meta.autoStartTime || Date.now();
             s.paused = true;
             // Clean up the persisted file — we're consuming it
-            try { unlinkSync(pausedPath); } catch { /* non-fatal */ }
+            try { unlinkSync(pausedPath); } catch (err) { /* non-fatal */
+            logWarning("session", `pause file cleanup failed: ${err instanceof Error ? err.message : String(err)}`, { file: "auto.ts" });
+          }
             ctx.ui.notify(
               `Resuming paused session for ${meta.milestoneId}${meta.worktreePath ? ` (worktree)` : ""}.`,
               "info",
@@ -1033,8 +1178,9 @@ export async function startAuto(
           }
         }
       }
-    } catch {
+    } catch (err) {
       // Malformed or missing — proceed with fresh bootstrap
+      logWarning("session", `paused-session restore failed: ${err instanceof Error ? err.message : String(err)}`, { file: "auto.ts" });
     }
   }
 
@@ -1051,6 +1197,8 @@ export async function startAuto(
     s.stepMode = requestedStepMode;
     s.cmdCtx = ctx;
     s.basePath = base;
+    setLogBasePath(base);
+    if (!s.autoStartTime || s.autoStartTime <= 0) s.autoStartTime = Date.now();
     s.unitDispatchCount.clear();
     s.unitLifetimeDispatches.clear();
     if (!getLedger()) initMetrics(base);
@@ -1079,6 +1227,9 @@ export async function startAuto(
       "info",
     );
     restoreHookState(s.basePath);
+    // Open the project DB before rebuild/derive so resume uses DB-backed
+    // state instead of falling back to stale markdown parsing (#2940).
+    await openProjectDbIfPresent(s.basePath);
     try {
       await rebuildState(s.basePath);
       syncCmuxSidebar(loadEffectiveGSDPreferences()?.preferences, await deriveState(s.basePath));
@@ -1101,15 +1252,6 @@ export async function startAuto(
       });
     }
     invalidateAllCaches();
-
-    // Clean stale runtime records left from the paused session
-    try {
-      await selfHealRuntimeRecords(s.basePath, ctx);
-    } catch (e) {
-      debugLog("resume-self-heal-runtime-failed", {
-        error: e instanceof Error ? e.message : String(e),
-      });
-    }
 
     if (s.pausedSessionFile) {
       const activityDir = join(gsdRoot(s.basePath), "activity");
@@ -1134,18 +1276,13 @@ export async function startAuto(
       lockBase(),
       "resuming",
       s.currentMilestoneId ?? "unknown",
-      s.completedUnits.length,
     );
     writeLock(
       lockBase(),
       "resuming",
       s.currentMilestoneId ?? "unknown",
-      s.completedUnits.length,
     );
     logCmuxEvent(loadEffectiveGSDPreferences()?.preferences, s.stepMode ? "Step-mode resumed." : "Auto-mode resumed.", "progress");
-
-    // Clear orphaned runtime records from prior process deaths before entering the loop
-    await selfHealRuntimeRecords(s.basePath, ctx);
 
     await autoLoop(ctx, pi, s, buildLoopDeps());
     cleanupAfterLoopExit(ctx);
@@ -1173,13 +1310,11 @@ export async function startAuto(
 
   try {
     syncCmuxSidebar(loadEffectiveGSDPreferences()?.preferences, await deriveState(s.basePath));
-  } catch {
+  } catch (err) {
     // Best-effort only — sidebar sync must never block auto-mode startup
+    logWarning("engine", `cmux sync failed: ${err instanceof Error ? err.message : String(err)}`, { file: "auto.ts" });
   }
   logCmuxEvent(loadEffectiveGSDPreferences()?.preferences, requestedStepMode ? "Step-mode started." : "Auto-mode started.", "progress");
-
-  // Clear orphaned runtime records from prior process deaths before entering the loop
-  await selfHealRuntimeRecords(s.basePath, ctx);
 
   // Dispatch the first unit
   await autoLoop(ctx, pi, s, buildLoopDeps());
@@ -1241,6 +1376,7 @@ const widgetStateAccessors: WidgetStateAccessors = {
   getBasePath: () => s.basePath,
   isVerbose: () => s.verbose,
   isSessionSwitching: isSessionSwitchInFlight,
+  getCurrentDispatchedModelId: () => s.currentDispatchedModelId,
 };
 
 // ─── Preconditions ────────────────────────────────────────────────────────────
@@ -1255,8 +1391,7 @@ function ensurePreconditions(
   base: string,
   state: GSDState,
 ): void {
-  const parts = unitId.split("/");
-  const mid = parts[0]!;
+  const { milestone: mid, slice: sid } = parseUnitId(unitId);
 
   const mDir = resolveMilestonePath(base, mid);
   if (!mDir) {
@@ -1264,8 +1399,7 @@ function ensurePreconditions(
     mkdirSync(join(newDir, "slices"), { recursive: true });
   }
 
-  if (parts.length >= 2) {
-    const sid = parts[1]!;
+  if (sid !== undefined) {
 
     const mDirResolved = resolveMilestonePath(base, mid);
     if (mDirResolved) {
@@ -1321,7 +1455,6 @@ export async function dispatchHookUnit(
     s.basePath = targetBasePath;
     s.autoStartTime = Date.now();
     s.currentUnit = null;
-    s.completedUnits = [];
     s.pendingQuickTasks = [];
   }
 
@@ -1346,29 +1479,15 @@ export async function dispatchHookUnit(
     startedAt: hookStartedAt,
   };
 
-  writeUnitRuntimeRecord(
-    s.basePath,
-    hookUnitType,
-    triggerUnitId,
-    hookStartedAt,
-    {
-      phase: "dispatched",
-      wrapupWarningSent: false,
-      timeoutAt: null,
-      lastProgressAt: hookStartedAt,
-      progressCount: 0,
-      lastProgressKind: "dispatch",
-    },
-  );
-
   if (hookModel) {
     const availableModels = ctx.modelRegistry.getAvailable();
     const match = resolveModelId(hookModel, availableModels, ctx.model?.provider);
     if (match) {
       try {
         await pi.setModel(match);
-      } catch {
+      } catch (err) {
         /* non-fatal */
+        logWarning("dispatch", `hook model set failed: ${err instanceof Error ? err.message : String(err)}`, { file: "auto.ts" });
       }
     } else {
       ctx.ui.notify(
@@ -1384,7 +1503,6 @@ export async function dispatchHookUnit(
     lockBase(),
     hookUnitType,
     triggerUnitId,
-    s.completedUnits.length,
     sessionFile,
   );
 
@@ -1394,18 +1512,6 @@ export async function dispatchHookUnit(
   s.unitTimeoutHandle = setTimeout(async () => {
     s.unitTimeoutHandle = null;
     if (!s.active) return;
-    if (s.currentUnit) {
-      writeUnitRuntimeRecord(
-        s.basePath,
-        hookUnitType,
-        triggerUnitId,
-        hookStartedAt,
-        {
-          phase: "timeout",
-          timeoutAt: Date.now(),
-        },
-      );
-    }
     ctx.ui.notify(
       `Hook ${hookName} exceeded ${supervisor.hard_timeout_minutes ?? 30}min timeout. Pausing auto-mode.`,
       "warning",
@@ -1418,7 +1524,9 @@ export async function dispatchHookUnit(
   ctx.ui.notify(`Running post-unit hook: ${hookName}`, "info");
 
   // Ensure cwd matches basePath before hook dispatch (#1389)
-  try { if (process.cwd() !== s.basePath) process.chdir(s.basePath); } catch {}
+  try { if (process.cwd() !== s.basePath) process.chdir(s.basePath); } catch (err) {
+    logWarning("engine", `chdir failed before hook dispatch: ${err instanceof Error ? err.message : String(err)}`, { file: "auto.ts" });
+  }
 
   debugLog("dispatchHookUnit", {
     phase: "send-message",
@@ -1437,9 +1545,7 @@ export { dispatchDirectPhase } from "./auto-direct-dispatch.js";
 
 // Re-export recovery functions for external consumers
 export {
-  resolveExpectedArtifactPath,
-  verifyExpectedArtifact,
-  writeBlockerPlaceholder,
-  skipExecuteTask,
   buildLoopRemediationSteps,
 } from "./auto-recovery.js";
+export { resolveExpectedArtifactPath } from "./auto-artifact-paths.js";
+

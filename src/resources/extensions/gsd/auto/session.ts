@@ -16,19 +16,13 @@
  * `let` or `var` declarations.
  */
 
+import type { Api, Model } from "@gsd/pi-ai";
 import type { ExtensionCommandContext } from "@gsd/pi-coding-agent";
 import type { GitServiceImpl } from "../git-service.js";
 import type { CaptureEntry } from "../captures.js";
 import type { BudgetAlertLevel } from "../auto-budget.js";
 
 // ─── Exported Types ──────────────────────────────────────────────────────────
-
-export interface CompletedUnit {
-  type: string;
-  id: string;
-  startedAt: number;
-  finishedAt: number;
-}
 
 export interface CurrentUnit {
   type: string;
@@ -83,6 +77,8 @@ export class AutoSession {
   paused = false;
   stepMode = false;
   verbose = false;
+  activeEngineId: string | null = null;
+  activeRunDir: string | null = null;
   cmdCtx: ExtensionCommandContext | null = null;
 
   // ── Paths ────────────────────────────────────────────────────────────────
@@ -104,11 +100,13 @@ export class AutoSession {
   // ── Current unit ─────────────────────────────────────────────────────────
   currentUnit: CurrentUnit | null = null;
   currentUnitRouting: UnitRouting | null = null;
-  completedUnits: CompletedUnit[] = [];
   currentMilestoneId: string | null = null;
 
   // ── Model state ──────────────────────────────────────────────────────────
   autoModeStartModel: StartModel | null = null;
+  currentUnitModel: Model<Api> | null = null;
+  /** Fully-qualified model ID (provider/id) set after selectAndApplyModel + hook overrides (#2899). */
+  currentDispatchedModelId: string | null = null;
   originalModelId: string | null = null;
   originalModelProvider: string | null = null;
   lastBudgetAlertLevel: BudgetAlertLevel = 0;
@@ -124,6 +122,20 @@ export class AutoSession {
   // ── Sidecar queue ─────────────────────────────────────────────────────
   sidecarQueue: SidecarItem[] = [];
 
+  // ── Tool invocation errors (#2883) ──────────────────────────────────
+  /** Set when a GSD tool execution ends with isError due to malformed/truncated
+   *  JSON arguments. Checked by postUnitPreVerification to break retry loops. */
+  lastToolInvocationError: string | null = null;
+
+  // ── Isolation degradation ────────────────────────────────────────────
+  /** Set to true when worktree creation fails; prevents merge of nonexistent branch. */
+  isolationDegraded = false;
+
+  // ── Merge guard ──────────────────────────────────────────────────────
+  /** Set to true after phases.ts successfully calls mergeAndExit, so that
+   *  stopAuto does not attempt the same merge a second time (#2645). */
+  milestoneMergedInPhases = false;
+
   // ── Dispatch circuit breakers ──────────────────────────────────────
   rewriteAttemptCount = 0;
 
@@ -132,6 +144,10 @@ export class AutoSession {
   lastPromptCharCount: number | undefined;
   lastBaselineCharCount: number | undefined;
   pendingQuickTasks: CaptureEntry[] = [];
+
+  // ── Safety harness ───────────────────────────────────────────────────────
+  /** SHA of the pre-unit git checkpoint ref. Cleared on success or rollback. */
+  checkpointSha: string | null = null;
 
   // ── Signal handler ───────────────────────────────────────────────────────
   sigtermHandler: (() => void) | null = null;
@@ -158,14 +174,6 @@ export class AutoSession {
     return this.originalBasePath || this.basePath;
   }
 
-  completeCurrentUnit(): CompletedUnit | null {
-    if (!this.currentUnit) return null;
-    const done: CompletedUnit = { ...this.currentUnit, finishedAt: Date.now() };
-    this.completedUnits.push(done);
-    this.currentUnit = null;
-    return done;
-  }
-
   reset(): void {
     this.clearTimers();
 
@@ -174,6 +182,8 @@ export class AutoSession {
     this.paused = false;
     this.stepMode = false;
     this.verbose = false;
+    this.activeEngineId = null;
+    this.activeRunDir = null;
     this.cmdCtx = null;
 
     // Paths
@@ -189,11 +199,12 @@ export class AutoSession {
     // Unit
     this.currentUnit = null;
     this.currentUnitRouting = null;
-    this.completedUnits = [];
     this.currentMilestoneId = null;
 
     // Model
     this.autoModeStartModel = null;
+    this.currentUnitModel = null;
+    this.currentDispatchedModelId = null;
     this.originalModelId = null;
     this.originalModelProvider = null;
     this.lastBudgetAlertLevel = 0;
@@ -213,6 +224,10 @@ export class AutoSession {
     this.pendingQuickTasks = [];
     this.sidecarQueue = [];
     this.rewriteAttemptCount = 0;
+    this.lastToolInvocationError = null;
+    this.isolationDegraded = false;
+    this.milestoneMergedInPhases = false;
+    this.checkpointSha = null;
 
     // Signal handler
     this.sigtermHandler = null;
@@ -226,9 +241,10 @@ export class AutoSession {
       paused: this.paused,
       stepMode: this.stepMode,
       basePath: this.basePath,
+      activeEngineId: this.activeEngineId,
+      activeRunDir: this.activeRunDir,
       currentMilestoneId: this.currentMilestoneId,
       currentUnit: this.currentUnit,
-      completedUnits: this.completedUnits.length,
       unitDispatchCount: Object.fromEntries(this.unitDispatchCount),
     };
   }

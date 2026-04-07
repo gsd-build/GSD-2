@@ -6,7 +6,8 @@ import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 
 import { deriveState, isValidationTerminal } from "../state.ts";
-import { resolveExpectedArtifactPath, verifyExpectedArtifact, diagnoseExpectedArtifact, buildLoopRemediationSteps } from "../auto-recovery.ts";
+import { resolveExpectedArtifactPath, diagnoseExpectedArtifact } from "../auto-artifact-paths.ts";
+import { verifyExpectedArtifact, buildLoopRemediationSteps } from "../auto-recovery.ts";
 import { resolveDispatch, type DispatchContext } from "../auto-dispatch.ts";
 import type { GSDState } from "../types.ts";
 import { clearPathCache } from "../paths.ts";
@@ -109,6 +110,16 @@ test("isValidationTerminal returns true for verdict: passed (#1429)", () => {
   assert.equal(isValidationTerminal(content), true);
 });
 
+test("isValidationTerminal returns true for verdict: fail (#2769)", () => {
+  const content = "---\nverdict: fail\nremediation_round: 1\n---\n\n# Validation";
+  assert.equal(isValidationTerminal(content), true);
+});
+
+test("isValidationTerminal returns true for any arbitrary verdict string (#2769)", () => {
+  const content = "---\nverdict: custom-verdict\nremediation_round: 0\n---\n\n# Validation";
+  assert.equal(isValidationTerminal(content), true);
+});
+
 test("isValidationTerminal returns false for missing frontmatter", () => {
   const content = "# Validation\nNo frontmatter here.";
   assert.equal(isValidationTerminal(content), false);
@@ -152,16 +163,15 @@ test("deriveState returns completing-milestone when VALIDATION exists with termi
   }
 });
 
-test("deriveState treats needs-remediation as terminal — does not re-enter validating-milestone (#832)", async () => {
+test("deriveState treats needs-remediation as non-terminal — re-enters validating-milestone (#832)", async () => {
   const base = makeTmpBase();
   try {
     writeRoadmap(base, "M001", ALL_DONE_ROADMAP);
     writeValidation(base, "M001", "---\nverdict: needs-remediation\nremediation_round: 0\n---\n\n# Validation\nNeeds fixes.");
 
     const state = await deriveState(base);
-    // needs-remediation is now terminal — milestone needs a SUMMARY to be fully complete
-    // Without SUMMARY, it enters completing-milestone (not validating-milestone)
-    assert.notEqual(state.phase, "validating-milestone");
+    // needs-remediation routes back to validating-milestone for re-validation
+    assert.equal(state.phase, "validating-milestone");
     assert.equal(state.activeMilestone?.id, "M001");
   } finally {
     cleanup(base);
@@ -326,14 +336,14 @@ test("verifyExpectedArtifact rejects VALIDATION with missing verdict field", () 
   }
 });
 
-test("verifyExpectedArtifact rejects VALIDATION with unrecognized verdict", () => {
+test("verifyExpectedArtifact accepts VALIDATION with any extracted verdict", () => {
   const base = makeTmpBase();
   try {
     writeValidation(base, "M001", "---\nverdict: unknown-value\nremediation_round: 0\n---\n\n# Validation");
     clearPathCache();
     clearParseCache();
     const result = verifyExpectedArtifact("validate-milestone", "M001", base);
-    assert.equal(result, false, "VALIDATION with unrecognized verdict should fail verification");
+    assert.equal(result, true, "VALIDATION with any extracted verdict should pass verification");
   } finally {
     cleanup(base);
   }
@@ -375,7 +385,7 @@ test("buildLoopRemediationSteps returns steps for validate-milestone", () => {
     assert.ok(result);
     assert.ok(result!.includes("VALIDATION"));
     assert.ok(result!.includes("verdict: pass"));
-    assert.ok(result!.includes("gsd doctor"));
+    assert.ok(result!.includes("gsd recover"));
   } finally {
     cleanup(base);
   }

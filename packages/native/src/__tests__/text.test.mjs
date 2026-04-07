@@ -130,6 +130,39 @@ describe("wrapTextWithAnsi", () => {
     assert.equal(lines[0], "abcde");
     assert.equal(lines[1], "fghij");
   });
+
+  test("carries OSC 8 hyperlink across word-boundary wrap", () => {
+    const url = "https://example.com";
+    const open = `\x1b]8;;${url}\x07`;
+    const close = `\x1b]8;;\x07`;
+    const text = `${open}click here please${close}`;
+    const lines = native.wrapTextWithAnsi(text, 10);
+    assert.ok(lines.length >= 2, `Expected wrapping, got ${lines.length} lines`);
+
+    // First line should open the hyperlink and close it at the end
+    assert.ok(lines[0].startsWith(open), `First line should start with OSC 8 open: ${JSON.stringify(lines[0])}`);
+    assert.ok(lines[0].endsWith(close), `First line should end with OSC 8 close: ${JSON.stringify(lines[0])}`);
+
+    // Second line should re-open the hyperlink
+    assert.ok(lines[1].startsWith(open), `Second line should re-open OSC 8: ${JSON.stringify(lines[1])}`);
+  });
+
+  test("carries OSC 8 hyperlink across long-word break", () => {
+    const url = "https://accounts.google.com/o/oauth2/v2/auth?client_id=abc&redirect_uri=http://localhost:9004&scope=email&state=xyz";
+    const open = `\x1b]8;;${url}\x07`;
+    const close = `\x1b]8;;\x07`;
+    const text = `${open}${url}${close}`;
+    const lines = native.wrapTextWithAnsi(text, 40);
+    assert.ok(lines.length >= 2, `Expected wrapping, got ${lines.length} lines`);
+
+    // Every line except the last should end with close and re-open on next
+    for (let i = 0; i < lines.length - 1; i++) {
+      assert.ok(lines[i].includes(open), `Line ${i} should contain OSC 8 open`);
+      assert.ok(lines[i].endsWith(close), `Line ${i} should end with OSC 8 close`);
+    }
+    // Last line should contain close
+    assert.ok(lines[lines.length - 1].includes(close), `Last line should contain OSC 8 close`);
+  });
 });
 
 // ── truncateToWidth ────────────────────────────────────────────────────

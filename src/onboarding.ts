@@ -74,6 +74,7 @@ const LLM_PROVIDER_IDS = [
   'xai',
   'openrouter',
   'mistral',
+  'ollama',
   'ollama-cloud',
   'custom-openai',
 ]
@@ -85,13 +86,13 @@ const API_KEY_PREFIXES: Record<string, string[]> = {
 }
 
 const OTHER_PROVIDERS = [
-  { value: 'google', label: 'Google (Gemini)' },
-  { value: 'groq', label: 'Groq' },
-  { value: 'xai', label: 'xAI (Grok)' },
-  { value: 'openrouter', label: 'OpenRouter' },
-  { value: 'mistral', label: 'Mistral' },
+  { value: 'google', label: 'Google (Gemini)', hint: 'aistudio.google.com/app/apikey' },
+  { value: 'groq', label: 'Groq', hint: 'console.groq.com/keys' },
+  { value: 'xai', label: 'xAI (Grok)', hint: 'console.x.ai' },
+  { value: 'openrouter', label: 'OpenRouter', hint: '200+ models — openrouter.ai/keys' },
+  { value: 'mistral', label: 'Mistral', hint: 'console.mistral.ai/api-keys' },
   { value: 'ollama-cloud', label: 'Ollama Cloud' },
-  { value: 'custom-openai', label: 'Custom (OpenAI-compatible)' },
+  { value: 'custom-openai', label: 'Custom (OpenAI-compatible)', hint: 'Ollama, LM Studio, vLLM, proxies — see docs/providers.md' },
 ]
 
 // ─── Dynamic imports ──────────────────────────────────────────────────────────
@@ -335,6 +336,9 @@ async function runLlmStep(p: ClackModule, pc: PicoModule, authStorage: AuthStora
     if (provider === 'custom-openai') {
       return await runCustomOpenAIFlow(p, pc, authStorage)
     }
+    if (provider === 'ollama') {
+      return await runOllamaLocalFlow(p, pc, authStorage)
+    }
     const label = provider === 'anthropic' ? 'Anthropic'
       : provider === 'openai' ? 'OpenAI'
       : OTHER_PROVIDERS.find(op => op.value === provider)?.label ?? String(provider)
@@ -441,6 +445,61 @@ async function runApiKeyFlow(
 
   authStorage.set(providerId, { type: 'api_key', key: trimmed })
   p.log.success(`API key saved for ${pc.green(providerLabel)}`)
+
+  // Provider-specific post-setup hints
+  if (providerId === 'openrouter') {
+    p.log.info(`Use ${pc.cyan('/model')} inside GSD to pick an OpenRouter model.`)
+    p.log.info(`To add custom models or control routing, see ${pc.dim('docs/providers.md#openrouter')}`)
+  }
+
+  return true
+}
+
+// ─── Ollama Local Flow ───────────────────────────────────────────────────────
+
+async function runOllamaLocalFlow(
+  p: ClackModule,
+  pc: PicoModule,
+  authStorage: AuthStorage,
+): Promise<boolean> {
+  const host = process.env.OLLAMA_HOST || 'http://localhost:11434'
+
+  const s = p.spinner()
+  s.start(`Checking Ollama at ${host}...`)
+
+  try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 3000)
+    const response = await fetch(host, { signal: controller.signal })
+    clearTimeout(timeout)
+
+    if (response.ok) {
+      s.stop(`Ollama is running at ${pc.green(host)}`)
+      // Store a placeholder so the provider is recognized as authenticated
+      authStorage.set('ollama', { type: 'api_key', key: 'ollama' })
+      p.log.success(`${pc.green('Ollama (Local)')} configured — no API key needed`)
+      p.log.info(pc.dim('Models are discovered automatically from your local Ollama instance.'))
+      return true
+    } else {
+      s.stop('Ollama check failed')
+      p.log.warn(`Ollama responded with status ${response.status} at ${host}`)
+    }
+  } catch {
+    s.stop('Ollama not detected')
+    p.log.warn(`Could not reach Ollama at ${host}`)
+    p.log.info(pc.dim('Install Ollama from https://ollama.com and run "ollama serve"'))
+    p.log.info(pc.dim('Set OLLAMA_HOST if using a non-default address.'))
+  }
+
+  // Even if not reachable now, save the config — the extension will detect it at runtime
+  const proceed = await p.confirm({
+    message: 'Save Ollama as your provider anyway? (it will auto-detect when running)',
+  })
+
+  if (p.isCancel(proceed) || !proceed) return false
+
+  authStorage.set('ollama', { type: 'api_key', key: 'ollama' })
+  p.log.success(`${pc.green('Ollama (Local)')} saved — models will appear when Ollama is running`)
   return true
 }
 
@@ -451,10 +510,12 @@ async function runCustomOpenAIFlow(
   pc: PicoModule,
   authStorage: AuthStorage,
 ): Promise<boolean> {
+  p.log.info(pc.dim('Common endpoints:\n  Ollama:     http://localhost:11434/v1\n  LM Studio:  http://localhost:1234/v1\n  vLLM:       http://localhost:8000/v1'))
+
   // Prompt for base URL
   const baseUrl = await p.text({
     message: 'Base URL of your OpenAI-compatible endpoint:',
-    placeholder: 'https://my-proxy.example.com/v1',
+    placeholder: 'http://localhost:11434/v1',
     validate: (val) => {
       const trimmed = val?.trim()
       if (!trimmed) return 'Base URL is required'
@@ -535,6 +596,8 @@ async function runCustomOpenAIFlow(
   p.log.success(`Custom endpoint saved: ${pc.green(trimmedUrl)}`)
   p.log.info(`Model: ${pc.cyan(trimmedModelId)}`)
   p.log.info(`Config written to ${pc.dim(modelsJsonPath)}`)
+  p.log.info(`If you get role or streaming errors, add compat settings to models.json.`)
+  p.log.info(`See ${pc.dim('docs/providers.md#common-pitfalls')} for details.`)
   return true
 }
 
@@ -669,10 +732,12 @@ async function runRemoteQuestionsStep(
   pc: PicoModule,
   authStorage: AuthStorage,
 ): Promise<string | null> {
-  // Check existing config
-  const hasDiscord = authStorage.has('discord_bot') && !!(authStorage.get('discord_bot') as any)?.key
-  const hasSlack = authStorage.has('slack_bot') && !!(authStorage.get('slack_bot') as any)?.key
-  const hasTelegram = authStorage.has('telegram_bot') && !!(authStorage.get('telegram_bot') as any)?.key
+  // Check existing config — use getCredentialsForProvider to skip empty-key entries
+  const hasValidKey = (provider: string) =>
+    authStorage.getCredentialsForProvider(provider).some((c: any) => c.type === 'api_key' && c.key)
+  const hasDiscord = hasValidKey('discord_bot')
+  const hasSlack = hasValidKey('slack_bot')
+  const hasTelegram = hasValidKey('telegram_bot')
   const existingChannel = hasDiscord ? 'Discord' : hasSlack ? 'Slack' : hasTelegram ? 'Telegram' : null
 
   type RemoteOption = { value: string; label: string; hint?: string }

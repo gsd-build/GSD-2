@@ -16,16 +16,28 @@ import { createHash } from "node:crypto";
 
 const MAX_CONSECUTIVE_IDENTICAL_CALLS = 4;
 
+/** Interactive/user-facing tools where even 1 duplicate is confusing. */
+const STRICT_LOOP_TOOLS = new Set(["ask_user_questions"]);
+const MAX_CONSECUTIVE_STRICT = 1;
+
 let consecutiveCount = 0;
 let lastSignature = "";
+let lastToolName = "";
 let enabled = true;
 
 /** Hash tool name + args into a compact signature for comparison. */
 function hashToolCall(toolName: string, args: Record<string, unknown>): string {
   const h = createHash("sha256");
   h.update(toolName);
-  // Sort keys for deterministic hashing regardless of object key order
-  h.update(JSON.stringify(args, Object.keys(args).sort()));
+  // Sort keys recursively for deterministic hashing regardless of object key order
+  h.update(JSON.stringify(args, (_key, value) =>
+    value && typeof value === "object" && !Array.isArray(value)
+      ? Object.keys(value).sort().reduce<Record<string, unknown>>((o, k) => {
+          o[k] = value[k];
+          return o;
+        }, {})
+      : value
+  ));
   return h.digest("hex").slice(0, 16);
 }
 
@@ -48,9 +60,14 @@ export function checkToolCallLoop(
   } else {
     consecutiveCount = 1;
     lastSignature = sig;
+    lastToolName = toolName;
   }
 
-  if (consecutiveCount > MAX_CONSECUTIVE_IDENTICAL_CALLS) {
+  const threshold = STRICT_LOOP_TOOLS.has(toolName)
+    ? MAX_CONSECUTIVE_STRICT
+    : MAX_CONSECUTIVE_IDENTICAL_CALLS;
+
+  if (consecutiveCount > threshold) {
     return {
       block: true,
       reason:
@@ -68,6 +85,7 @@ export function checkToolCallLoop(
 export function resetToolCallLoopGuard(): void {
   consecutiveCount = 0;
   lastSignature = "";
+  lastToolName = "";
   enabled = true;
 }
 
@@ -76,6 +94,7 @@ export function disableToolCallLoopGuard(): void {
   enabled = false;
   consecutiveCount = 0;
   lastSignature = "";
+  lastToolName = "";
 }
 
 /** Get current consecutive count for diagnostics. */

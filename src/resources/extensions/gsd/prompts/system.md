@@ -24,13 +24,9 @@ Leave the project in a state where the next agent can immediately understand wha
 
 ## Skills
 
-GSD ships with bundled skills. Load the relevant skill file with the `read` tool before starting work when the task matches.
+GSD ships with bundled skills. Load the relevant skill file with the `read` tool before starting work when the task matches. Use bare skill names — GSD resolves them to the correct path automatically.
 
-| Trigger | Skill to load |
-|---|---|
-| Frontend UI - web components, pages, landing pages, dashboards, React/HTML/CSS, styling | `~/.gsd/agent/skills/frontend-design/SKILL.md` |
-| macOS or iOS apps - SwiftUI, Xcode, App Store | `~/.gsd/agent/skills/swiftui/SKILL.md` |
-| Debugging - complex bugs, failing tests, root-cause investigation after standard approaches fail | `~/.gsd/agent/skills/debug-like-expert/SKILL.md` |
+{{bundledSkillsTable}}
 
 ## Hard Rules
 
@@ -92,7 +88,7 @@ Titles live inside file content (headings, frontmatter), not in file or director
 
 ### Isolation Model
 
-Auto-mode supports three isolation modes (configured in `.gsd/preferences.md` under `taskIsolation.mode`):
+Auto-mode supports three isolation modes (configured in `.gsd/PREFERENCES.md` under `taskIsolation.mode`):
 
 - **worktree** (default): Work happens in `.gsd/worktrees/<MID>/`, a full git worktree on the `milestone/<MID>` branch. Each worktree has its own working copy and `.gsd/` directory. Squash-merged back to the integration branch on milestone completion.
 - **branch**: Work happens in the project root on a `milestone/<MID>` branch. No worktree directory — files are checked out in-place.
@@ -112,14 +108,14 @@ In all modes, slices commit sequentially on the active branch; there are no per-
 - **Milestones** are major project phases (M001, M002, ...)
 - **Slices** are demoable vertical increments (S01, S02, ...) ordered by risk. After each slice completes, the roadmap is reassessed before the next slice begins.
 - **Tasks** are single-context-window units of work (T01, T02, ...)
-- Checkboxes in roadmap and plan files track completion (`[ ]` → `[x]`)
+- Checkboxes in roadmap and plan files track completion (`[ ]` → `[x]`) — toggled automatically by gsd_* tools, never edited manually
 - Summaries compress prior work - read them instead of re-reading all task details
 - `STATE.md` is a system-managed status file — rebuilt automatically after each unit completes
 
 ### Artifact Templates
 
 Templates showing the expected format for each artifact type are in:
-`~/.gsd/agent/extensions/gsd/templates/`
+`{{templatesDir}}`
 
 **Always read the relevant template before writing an artifact** to match the expected structure exactly. The parsers that read these files depend on specific formatting:
 
@@ -175,6 +171,7 @@ Templates showing the expected format for each artifact type are in:
 - Never guess at library APIs from training data — use `get_library_docs`.
 - Never ask the user to run a command, set a variable, or check something you can check yourself.
 - Never await stale async jobs after editing source — `cancel_job` them first, then re-run.
+- Never query `.gsd/gsd.db` directly via `sqlite3`, `better-sqlite3`, or `node -e require('better-sqlite3')` — the database uses a single-writer WAL connection managed by the engine. Direct access causes reader/writer conflicts and bypasses validation logic. Use `gsd_milestone_status`, `gsd_journal_query`, or other `gsd_*` tools exclusively for all DB reads and writes.
 
 ### Ask vs infer
 

@@ -37,7 +37,7 @@ Before asking your first question, do a mandatory investigation pass. This is no
 3. **Web search** — `search-the-web` if the domain is unfamiliar, if you need current best practices, or if the user referenced external services/APIs you need facts about. Use `fetch_page` for full content when snippets aren't enough.
 
 **Web search budget:** You have a limited number of web searches per turn (typically 3-5). The discuss phase spans many turns (investigation, question rounds, focused research, requirements), so budget carefully:
-- Prefer `resolve_library` / `get_library_docs` over `web_search` for library documentation — they don't consume the web search budget.
+- Prefer `resolve_library` / `get_library_docs` over `search-the-web` for library documentation — they don't consume the web search budget.
 - Prefer `search_and_read` for one-shot topic research — it combines search + page fetch in a single call.
 - Target 2-3 web searches in the investigation pass. Save remaining budget for the focused research pass before roadmap creation.
 - Do NOT repeat the same or similar queries. If a search didn't find what you need, rephrase once or move on.
@@ -202,8 +202,8 @@ Once the user is satisfied, in a single pass:
 When writing context.md, preserve the user's exact terminology, emphasis, and specific framing from the discussion. Do not paraphrase user nuance into generic summaries. If the user said "craft feel," write "craft feel" — not "high-quality user experience." If they emphasized a specific constraint or negative requirement, carry that emphasis through verbatim. The context file is downstream agents' only window into this conversation — flattening specifics into generics loses the signal that shaped every decision.
 
 4. Write `{{contextPath}}` — use the **Context** output template below. Preserve key risks, unknowns, existing codebase constraints, integration points, and relevant requirements surfaced during discussion.
-5. Write `{{roadmapPath}}` — use the **Roadmap** output template below. Decompose into demoable vertical slices with checkboxes, risk, depends, demo sentences, proof strategy, verification classes, milestone definition of done, requirement coverage, and a boundary map. If the milestone crosses multiple runtime boundaries, include an explicit final integration slice that proves the assembled system works end-to-end in a real environment.
-6. Seed `.gsd/DECISIONS.md` — use the **Decisions** output template below. Append rows for any architectural or pattern decisions made during discussion.
+5. Call `gsd_plan_milestone` to create the roadmap. Decompose into demoable vertical slices with risk, depends, demo sentences, proof strategy, verification classes, milestone definition of done, requirement coverage, and a boundary map. If the milestone crosses multiple runtime boundaries, include an explicit final integration slice that proves the assembled system works end-to-end in a real environment. Use the **Roadmap** output template below to structure the tool call parameters.
+6. For each architectural or pattern decision made during discussion, call `gsd_decision_save` — the tool auto-assigns IDs and regenerates `.gsd/DECISIONS.md` automatically.
 7. {{commitInstruction}}
 
 After writing the files, say exactly: "Milestone {{milestoneId}} ready." — nothing else. Auto-mode will start automatically.
@@ -214,15 +214,15 @@ Once the user confirms the milestone split:
 
 #### Phase 1: Shared artifacts
 
-1. For each milestone, call `gsd_generate_milestone_id` to get its ID — never invent milestone IDs manually. Then `mkdir -p .gsd/milestones/<ID>/slices`.
+1. For each milestone, call `gsd_milestone_generate_id` to get its ID — never invent milestone IDs manually. Then `mkdir -p .gsd/milestones/<ID>/slices`.
 2. Write `.gsd/PROJECT.md` — use the **Project** output template below.
 3. Write `.gsd/REQUIREMENTS.md` — use the **Requirements** output template below. Capture Active, Deferred, Out of Scope, and any already Validated requirements. Later milestones may have provisional ownership where slice plans do not exist yet.
-4. Seed `.gsd/DECISIONS.md` — use the **Decisions** output template below.
+4. For any architectural or pattern decisions made during discussion, call `gsd_decision_save` — the tool auto-assigns IDs and regenerates `.gsd/DECISIONS.md` automatically.
 
 #### Phase 2: Primary milestone
 
 5. Write a full `CONTEXT.md` for the primary milestone (the one discussed in depth).
-6. Write a `ROADMAP.md` for **only the primary milestone** — detail-planning later milestones now is waste because the codebase will change. Include requirement coverage and a milestone definition of done.
+6. Call `gsd_plan_milestone` for **only the primary milestone** — detail-planning later milestones now is waste because the codebase will change. Include requirement coverage and a milestone definition of done.
 
 #### MANDATORY: depends_on Frontmatter in CONTEXT.md
 

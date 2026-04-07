@@ -37,6 +37,8 @@ export class RetryHandler {
 	private _retryAttempt = 0;
 	private _retryPromise: Promise<void> | undefined = undefined;
 	private _retryResolve: (() => void) | undefined = undefined;
+	private _retryGeneration = 0;
+	private _continueTimeout: ReturnType<typeof setTimeout> | undefined = undefined;
 
 	constructor(private readonly _deps: RetryHandlerDeps) {}
 
@@ -107,7 +109,11 @@ export class RetryHandler {
 		if (isContextOverflow(message, contextWindow)) return false;
 
 		const err = message.errorMessage;
-		return /overloaded|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server.?error|internal.?error|connection.?error|connection.?refused|other side closed|fetch failed|upstream.?connect|reset before headers|terminated|retry delay|network.?(?:is\s+)?unavailable|credentials.*expired|temporarily backed off/i.test(
+		// "temporarily backed off" is intentionally excluded: it is an internally-
+		// generated error from getApiKey() when credentials are in a backoff window.
+		// Re-entering the retry handler for that message creates a cascade of empty
+		// error entries in the session file, breaking resume (#3429).
+		return /overloaded|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server.?error|internal.?error|connection.?error|connection.?refused|other side closed|fetch failed|upstream.?connect|reset before headers|terminated|retry delay|network.?(?:is\s+)?unavailable|credentials.*expired|extra usage is required/i.test(
 			err,
 		);
 	}
@@ -134,38 +140,45 @@ export class RetryHandler {
 		}
 
 		// Try credential fallback before counting against retry budget.
+		const retryGeneration = this._retryGeneration;
 		if (this._deps.getModel() && message.errorMessage) {
 			const errorType = this._classifyErrorType(message.errorMessage);
-			const isCredentialError = errorType !== "unknown";
-			const hasAlternate =
-				isCredentialError &&
-				this._deps.modelRegistry.authStorage.markUsageLimitReached(
-					this._deps.getModel()!.provider,
-					this._deps.getSessionId(),
-					{ errorType },
-				);
+			const isRateLimit = errorType === "rate_limit";
+			const isQuotaError = errorType === "quota_exhausted";
 
-			if (hasAlternate) {
-				this._removeLastAssistantError();
+			// Credential rotation — only for transient rate limits (#3430).
+			// Quota errors ("Extra usage is required") are account-level billing
+			// gates; rotating to another credential on the same account won't help
+			// and the 30-minute backoff blocks all provider requests needlessly.
+			if (isRateLimit) {
+				const hasAlternate =
+					this._deps.modelRegistry.authStorage.markUsageLimitReached(
+						this._deps.getModel()!.provider,
+						this._deps.getSessionId(),
+						{ errorType },
+					);
 
-				this._deps.emit({
-					type: "auto_retry_start",
-					attempt: this._retryAttempt + 1,
-					maxAttempts: settings.maxRetries,
-					delayMs: 0,
-					errorMessage: `${message.errorMessage} (switching credential)`,
-				});
+				if (hasAlternate) {
+					this._removeLastAssistantError();
 
-				// Retry immediately with the next credential - don't increment _retryAttempt
-				setTimeout(() => {
-					this._deps.agent.continue().catch(() => {});
-				}, 0);
+					this._deps.emit({
+						type: "auto_retry_start",
+						attempt: this._retryAttempt + 1,
+						maxAttempts: settings.maxRetries,
+						delayMs: 0,
+						errorMessage: `${message.errorMessage} (switching credential)`,
+					});
 
-				return true;
+					// Retry immediately with the next credential - don't increment _retryAttempt
+					this._scheduleContinue(retryGeneration);
+
+					return true;
+				}
 			}
 
-			// All credentials are backed off. Try cross-provider fallback before giving up.
-			if (isCredentialError) {
+			// Cross-provider fallback — for rate limits with all creds backed off,
+			// or quota errors (which skip credential backoff entirely).
+			if (isRateLimit || isQuotaError) {
 				const fallbackResult = await this._deps.fallbackResolver.findFallback(
 					this._deps.getModel()!,
 					errorType,
@@ -193,15 +206,17 @@ export class RetryHandler {
 					});
 
 					// Retry immediately with fallback provider - don't increment _retryAttempt
-					setTimeout(() => {
-						this._deps.agent.continue().catch(() => {});
-					}, 0);
+					this._scheduleContinue(retryGeneration);
 
 					return true;
 				}
 
 				// No fallback available either
-				if (errorType === "quota_exhausted") {
+				if (isQuotaError) {
+					// Try long-context model downgrade ([1m] → base) before giving up
+					const downgraded = this._tryLongContextDowngrade(message, retryGeneration);
+					if (downgraded) return true;
+
 					this._deps.emit({
 						type: "fallback_chain_exhausted",
 						reason: `All providers exhausted for ${this._deps.getModel()!.provider}/${this._deps.getModel()!.id}`,
@@ -270,7 +285,12 @@ export class RetryHandler {
 		try {
 			await sleep(delayMs, this._retryAbortController.signal);
 		} catch {
-			// Aborted during sleep
+			// Aborted during sleep. If the retry generation already advanced, this
+			// cancellation was handled externally (e.g. explicit model switch).
+			if (retryGeneration !== this._retryGeneration) {
+				this._retryAbortController = undefined;
+				return false;
+			}
 			const attempt = this._retryAttempt;
 			this._retryAttempt = 0;
 			this._retryAbortController = undefined;
@@ -286,16 +306,36 @@ export class RetryHandler {
 		this._retryAbortController = undefined;
 
 		// Retry via continue() - use setTimeout to break out of event handler chain
-		setTimeout(() => {
-			this._deps.agent.continue().catch(() => {});
-		}, 0);
+		this._scheduleContinue(retryGeneration);
 
 		return true;
 	}
 
 	/** Cancel in-progress retry */
 	abortRetry(): void {
-		this._retryAbortController?.abort();
+		const hadRetry =
+			this._retryPromise !== undefined
+			|| this._retryAbortController !== undefined
+			|| this._continueTimeout !== undefined;
+		if (!hadRetry) return;
+
+		const attempt = this._retryAttempt > 0 ? this._retryAttempt : 1;
+		this._retryGeneration++;
+		if (this._continueTimeout) {
+			clearTimeout(this._continueTimeout);
+			this._continueTimeout = undefined;
+		}
+		if (this._retryAbortController) {
+			this._retryAbortController.abort();
+			this._retryAbortController = undefined;
+		}
+		this._retryAttempt = 0;
+		this._deps.emit({
+			type: "auto_retry_end",
+			success: false,
+			attempt,
+			finalError: "Retry cancelled",
+		});
 		this._resolveRetry();
 	}
 
@@ -326,6 +366,17 @@ export class RetryHandler {
 		}
 	}
 
+	private _scheduleContinue(retryGeneration: number): void {
+		if (this._continueTimeout) {
+			clearTimeout(this._continueTimeout);
+		}
+		this._continueTimeout = setTimeout(() => {
+			this._continueTimeout = undefined;
+			if (retryGeneration !== this._retryGeneration) return;
+			this._deps.agent.continue().catch(() => {});
+		}, 0);
+	}
+
 	private _findLastAssistantInMessages(
 		messages: Array<{ role: string } & Record<string, any>>,
 	): AssistantMessage | undefined {
@@ -343,10 +394,55 @@ export class RetryHandler {
 	 */
 	private _classifyErrorType(errorMessage: string): UsageLimitErrorType {
 		const err = errorMessage.toLowerCase();
+		// Long-context entitlement errors are billing gates, not transient rate limits.
+		// Must be checked before the generic 429/rate_limit regex.
+		if (/extra usage is required|long context required/i.test(err)) return "quota_exhausted";
 		if (/quota|billing|exceeded.*limit|usage.*limit/i.test(err)) return "quota_exhausted";
 		if (/rate.?limit|too many requests|429/i.test(err)) return "rate_limit";
 		if (/500|502|503|504|server.?error|internal.?error|service.?unavailable/i.test(err)) return "server_error";
 		return "unknown";
+	}
+
+	/**
+	 * Attempt to downgrade a long-context model (e.g. claude-opus-4-6[1m]) to its
+	 * base model (claude-opus-4-6) when the account lacks the long-context billing
+	 * entitlement. Returns true if the downgrade was initiated.
+	 */
+	private _tryLongContextDowngrade(message: AssistantMessage, retryGeneration: number): boolean {
+		const currentModel = this._deps.getModel();
+		if (!currentModel) return false;
+
+		// Only attempt downgrade for [1m] (or similar long-context) model IDs
+		const match = currentModel.id.match(/^(.+)\[\d+m\]$/);
+		if (!match) return false;
+
+		const baseModelId = match[1];
+		const baseModel = this._deps.modelRegistry.find(currentModel.provider, baseModelId);
+		if (!baseModel) return false;
+
+		const previousId = currentModel.id;
+		this._deps.agent.setModel(baseModel);
+		this._deps.onModelChange(baseModel);
+		this._removeLastAssistantError();
+
+		this._deps.emit({
+			type: "fallback_provider_switch",
+			from: `${currentModel.provider}/${previousId}`,
+			to: `${baseModel.provider}/${baseModel.id}`,
+			reason: `long context downgrade: ${previousId} → ${baseModel.id}`,
+		});
+
+		this._deps.emit({
+			type: "auto_retry_start",
+			attempt: this._retryAttempt + 1,
+			maxAttempts: this._deps.settingsManager.getRetrySettings().maxRetries,
+			delayMs: 0,
+			errorMessage: `${message.errorMessage} (long context downgrade)`,
+		});
+
+		this._scheduleContinue(retryGeneration);
+
+		return true;
 	}
 
 	/** Remove the last assistant error message from agent state */

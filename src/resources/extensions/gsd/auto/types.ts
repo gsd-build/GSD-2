@@ -48,11 +48,24 @@ export interface AgentEndEvent {
 }
 
 /**
+ * Structured error context attached to a UnitResult when the unit ends
+ * due to an infrastructure or timeout error (not user-driven cancellation).
+ */
+export interface ErrorContext {
+  message: string;
+  category: "provider" | "timeout" | "idle" | "network" | "aborted" | "session-failed" | "unknown";
+  stopReason?: string;
+  isTransient?: boolean;
+  retryAfterMs?: number;
+}
+
+/**
  * Result of a single unit execution (one iteration of the loop).
  */
 export interface UnitResult {
   status: "completed" | "cancelled" | "error";
   event?: AgentEndEvent;
+  errorContext?: ErrorContext;
 }
 
 // ─── Phase pipeline types ────────────────────────────────────────────────────
@@ -69,6 +82,10 @@ export interface IterationContext {
   deps: LoopDeps;
   prefs: GSDPreferences | undefined;
   iteration: number;
+  /** UUID grouping all journal events for this iteration. */
+  flowId: string;
+  /** Returns the next monotonically increasing sequence number (1-based, reset per iteration). */
+  nextSeq: () => number;
 }
 
 export interface LoopState {
@@ -88,7 +105,6 @@ export interface IterationData {
   prompt: string;
   finalPrompt: string;
   pauseAfterUatDispatch: boolean;
-  observabilityIssues: unknown[];
   state: GSDState;
   mid: string | undefined;
   midTitle: string | undefined;

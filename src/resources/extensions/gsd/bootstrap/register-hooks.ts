@@ -6,53 +6,84 @@ import { isToolCallEventType } from "@gsd/pi-coding-agent";
 import { buildMilestoneFileName, resolveMilestonePath, resolveSliceFile, resolveSlicePath } from "../paths.js";
 import { buildBeforeAgentStartResult } from "./system-context.js";
 import { handleAgentEnd } from "./agent-end-recovery.js";
-import { clearDiscussionFlowState, isDepthVerified, isQueuePhaseActive, markDepthVerified, resetWriteGateState, shouldBlockContextWrite } from "./write-gate.js";
+import { clearDiscussionFlowState, isDepthVerified, isQueuePhaseActive, markDepthVerified, resetWriteGateState, shouldBlockContextWrite, shouldBlockQueueExecution } from "./write-gate.js";
+import { isBlockedStateFile, isBashWriteToStateFile, BLOCKED_WRITE_ERROR } from "../write-intercept.js";
+import { cleanupQuickBranch } from "../quick.js";
 import { getDiscussionMilestoneId } from "../guided-flow.js";
 import { loadToolApiKeys } from "../commands-config.js";
 import { loadFile, saveFile, formatContinue } from "../files.js";
 import { deriveState } from "../state.js";
-import { getAutoDashboardData, isAutoActive, isAutoPaused, markToolEnd, markToolStart } from "../auto.js";
+import { getAutoDashboardData, isAutoActive, isAutoPaused, markToolEnd, markToolStart, recordToolInvocationError } from "../auto.js";
 import { isParallelActive, shutdownParallel } from "../parallel-orchestrator.js";
 import { checkToolCallLoop, resetToolCallLoopGuard } from "./tool-call-loop-guard.js";
 import { saveActivityLog } from "../activity-log.js";
+import { resetAskUserQuestionsCache } from "../../ask-user-questions.js";
+import { recordToolCall as safetyRecordToolCall, recordToolResult as safetyRecordToolResult } from "../safety/evidence-collector.js";
+import { classifyCommand } from "../safety/destructive-guard.js";
+import { logWarning as safetyLogWarning } from "../workflow-logger.js";
+import { installNotifyInterceptor } from "./notify-interceptor.js";
+import { initNotificationStore } from "../notification-store.js";
+import { initNotificationWidget } from "../notification-widget.js";
 
 // Skip the welcome screen on the very first session_start — cli.ts already
 // printed it before the TUI launched. Only re-print on /clear (subsequent sessions).
 let isFirstSession = true;
 
+async function syncServiceTierStatus(ctx: ExtensionContext): Promise<void> {
+  const { getEffectiveServiceTier, formatServiceTierFooterStatus } = await import("../service-tier.js");
+  ctx.ui.setStatus("gsd-fast", formatServiceTierFooterStatus(getEffectiveServiceTier(), ctx.model?.id));
+}
+
 export function registerHooks(pi: ExtensionAPI): void {
   pi.on("session_start", async (_event, ctx) => {
+    initNotificationStore(process.cwd());
+    installNotifyInterceptor(ctx);
+    initNotificationWidget(ctx);
     resetWriteGateState();
     resetToolCallLoopGuard();
+    resetAskUserQuestionsCache();
+    await syncServiceTierStatus(ctx);
+
+    // Apply show_token_cost preference (#1515)
+    try {
+      const { loadEffectiveGSDPreferences } = await import("../preferences.js");
+      const prefs = loadEffectiveGSDPreferences();
+      process.env.GSD_SHOW_TOKEN_COST = prefs?.preferences.show_token_cost ? "1" : "";
+    } catch { /* non-fatal */ }
     if (isFirstSession) {
       isFirstSession = false;
     } else {
       try {
         const gsdBinPath = process.env.GSD_BIN_PATH;
         if (gsdBinPath) {
-          const { dirname } = await import('node:path');
+          const { dirname } = await import("node:path");
           const { printWelcomeScreen } = await import(
-            join(dirname(gsdBinPath), 'welcome-screen.js')
-          ) as { printWelcomeScreen: (opts: { version: string; modelName?: string; provider?: string }) => void };
-          printWelcomeScreen({ version: process.env.GSD_VERSION || '0.0.0' });
+            join(dirname(gsdBinPath), "welcome-screen.js")
+          ) as { printWelcomeScreen: (opts: { version: string; modelName?: string; provider?: string; remoteChannel?: string }) => void };
+
+          let remoteChannel: string | undefined;
+          try {
+            const { resolveRemoteConfig } = await import("../../remote-questions/config.js");
+            const rc = resolveRemoteConfig();
+            if (rc) remoteChannel = rc.channel;
+          } catch { /* non-fatal */ }
+
+          printWelcomeScreen({ version: process.env.GSD_VERSION || "0.0.0", remoteChannel });
         }
       } catch { /* non-fatal */ }
     }
     loadToolApiKeys();
-    try {
-      const [{ getRemoteConfigStatus }, { getLatestPromptSummary }] = await Promise.all([
-        import("../../remote-questions/config.js"),
-        import("../../remote-questions/status.js"),
-      ]);
-      const status = getRemoteConfigStatus();
-      const latest = getLatestPromptSummary();
-      if (!status.includes("not configured")) {
-        const suffix = latest ? `\nLast remote prompt: ${latest.id} (${latest.status})` : "";
-        ctx.ui.notify(`${status}${suffix}`, status.includes("disabled") ? "warning" : "info");
-      }
-    } catch {
-      // ignore
-    }
+  });
+
+  pi.on("session_switch", async (_event, ctx) => {
+    initNotificationStore(process.cwd());
+    installNotifyInterceptor(ctx);
+    resetWriteGateState();
+    resetToolCallLoopGuard();
+    resetAskUserQuestionsCache();
+    clearDiscussionFlowState();
+    await syncServiceTierStatus(ctx);
+    loadToolApiKeys();
   });
 
   pi.on("before_agent_start", async (event, ctx: ExtensionContext) => {
@@ -61,11 +92,26 @@ export function registerHooks(pi: ExtensionAPI): void {
 
   pi.on("agent_end", async (event, ctx: ExtensionContext) => {
     resetToolCallLoopGuard();
+    resetAskUserQuestionsCache();
     await handleAgentEnd(pi, event, ctx);
   });
 
+  // Squash-merge quick-task branch back to the original branch after the
+  // agent turn completes (#2668). cleanupQuickBranch is a no-op when no
+  // quick-return state is pending, so this is safe to call on every turn.
+  pi.on("turn_end", async () => {
+    try {
+      cleanupQuickBranch();
+    } catch {
+      // Best-effort: don't break the turn lifecycle if cleanup fails.
+    }
+  });
+
   pi.on("session_before_compact", async () => {
-    if (isAutoActive() || isAutoPaused()) {
+    // Only cancel compaction while auto-mode is actively running.
+    // Paused auto-mode should allow compaction — the user may be doing
+    // interactive work (#3165).
+    if (isAutoActive()) {
       return { cancel: true };
     }
     const basePath = process.cwd();
@@ -122,7 +168,45 @@ export function registerHooks(pi: ExtensionAPI): void {
       return { block: true, reason: loopCheck.reason };
     }
 
+    // ── Queue-mode execution guard (#2545): block source-code mutations ──
+    // When /gsd queue is active, the agent should only create milestones,
+    // not execute work. Block write/edit to non-.gsd/ paths and bash commands
+    // that would modify files.
+    if (isQueuePhaseActive()) {
+      let queueInput = "";
+      if (isToolCallEventType("write", event)) {
+        queueInput = event.input.path;
+      } else if (isToolCallEventType("edit", event)) {
+        queueInput = event.input.path;
+      } else if (isToolCallEventType("bash", event)) {
+        queueInput = event.input.command;
+      }
+      const queueGuard = shouldBlockQueueExecution(event.toolName, queueInput, true);
+      if (queueGuard.block) return queueGuard;
+    }
+
+    // ── Single-writer engine: block direct writes to STATE.md ──────────
+    // Covers write, edit, and bash tools to prevent bypass vectors.
+    if (isToolCallEventType("write", event)) {
+      if (isBlockedStateFile(event.input.path)) {
+        return { block: true, reason: BLOCKED_WRITE_ERROR };
+      }
+    }
+
+    if (isToolCallEventType("edit", event)) {
+      if (isBlockedStateFile(event.input.path)) {
+        return { block: true, reason: BLOCKED_WRITE_ERROR };
+      }
+    }
+
+    if (isToolCallEventType("bash", event)) {
+      if (isBashWriteToStateFile(event.input.command)) {
+        return { block: true, reason: BLOCKED_WRITE_ERROR };
+      }
+    }
+
     if (!isToolCallEventType("write", event)) return;
+
     const result = shouldBlockContextWrite(
       event.toolName,
       event.input.path,
@@ -131,6 +215,26 @@ export function registerHooks(pi: ExtensionAPI): void {
       isQueuePhaseActive(),
     );
     if (result.block) return result;
+  });
+
+  // ── Safety harness: evidence collection + destructive command warnings ──
+  pi.on("tool_call", async (event, ctx) => {
+    if (!isAutoActive()) return;
+    safetyRecordToolCall(event.toolName, event.input as Record<string, unknown>);
+
+    // Destructive command classification (warn only, never block)
+    if (isToolCallEventType("bash", event)) {
+      const classification = classifyCommand(event.input.command);
+      if (classification.destructive) {
+        safetyLogWarning("safety", `destructive command: ${classification.labels.join(", ")}`, {
+          command: String(event.input.command).slice(0, 200),
+        });
+        ctx.ui.notify(
+          `Destructive command detected: ${classification.labels.join(", ")}`,
+          "warning",
+        );
+      }
+    }
   });
 
   pi.on("tool_result", async (event) => {
@@ -190,19 +294,90 @@ export function registerHooks(pi: ExtensionAPI): void {
 
   pi.on("tool_execution_end", async (event) => {
     markToolEnd(event.toolCallId);
+    // #2883: Capture tool invocation errors (malformed/truncated JSON arguments)
+    // so postUnitPreVerification can break the retry loop instead of re-dispatching.
+    if (event.isError && event.toolName.startsWith("gsd_")) {
+      const errorText = typeof event.result === "string"
+        ? event.result
+        : (typeof event.result?.content?.[0]?.text === "string" ? event.result.content[0].text : String(event.result));
+      recordToolInvocationError(event.toolName, errorText);
+    }
+    // Safety harness: record tool execution results for evidence cross-referencing
+    if (isAutoActive()) {
+      safetyRecordToolResult(event.toolCallId, event.toolName, event.result, event.isError);
+    }
+  });
+
+  pi.on("model_select", async (_event, ctx) => {
+    await syncServiceTierStatus(ctx);
   });
 
   pi.on("before_provider_request", async (event) => {
-    if (!isAutoActive()) return;
-    const modelId = event.model?.id;
-    if (!modelId) return;
-    const { getEffectiveServiceTier, supportsServiceTier } = await import("../service-tier.js");
-    const tier = getEffectiveServiceTier();
-    if (!tier || !supportsServiceTier(modelId)) return;
     const payload = event.payload as Record<string, unknown> | null;
     if (!payload || typeof payload !== "object") return;
+
+    // ── Observation Masking ─────────────────────────────────────────────
+    // Replace old tool results with placeholders to reduce context bloat.
+    // Only active during auto-mode when context_management.observation_masking is enabled.
+    if (isAutoActive()) {
+      try {
+        const { loadEffectiveGSDPreferences } = await import("../preferences.js");
+        const prefs = loadEffectiveGSDPreferences();
+        const cmConfig = prefs?.preferences.context_management;
+
+        // Observation masking: replace old tool results with placeholders
+        if (cmConfig?.observation_masking !== false) {
+          const keepTurns = cmConfig?.observation_mask_turns ?? 8;
+          const { createObservationMask } = await import("../context-masker.js");
+          const mask = createObservationMask(keepTurns);
+          const messages = payload.messages;
+          if (Array.isArray(messages)) {
+            payload.messages = mask(messages);
+          }
+        }
+
+        // Tool result truncation: cap individual tool result content length.
+        // In pi-ai format, toolResult messages have role: "toolResult" and content: TextContent[].
+        // Creates new objects to avoid mutating shared conversation state.
+        const maxChars = cmConfig?.tool_result_max_chars ?? 800;
+        const msgs = payload.messages;
+        if (Array.isArray(msgs)) {
+          payload.messages = msgs.map((msg: Record<string, unknown>) => {
+            // Match toolResult messages (role: "toolResult", content is array of content blocks)
+            if (msg?.role === "toolResult" && Array.isArray(msg.content)) {
+              const blocks = msg.content as Array<Record<string, unknown>>;
+              const totalLen = blocks.reduce((sum: number, b) => sum + (typeof b.text === "string" ? b.text.length : 0), 0);
+              if (totalLen > maxChars) {
+                const truncated = blocks.map(b => {
+                  if (typeof b.text === "string" && b.text.length > maxChars) {
+                    return { ...b, text: b.text.slice(0, maxChars) + "\n…[truncated]" };
+                  }
+                  return b;
+                });
+                return { ...msg, content: truncated };
+              }
+            }
+            return msg;
+          });
+        }
+      } catch { /* non-fatal */ }
+    }
+
+    // ── Service Tier ────────────────────────────────────────────────────
+    const modelId = event.model?.id;
+    if (!modelId) return payload;
+    const { getEffectiveServiceTier, supportsServiceTier } = await import("../service-tier.js");
+    const tier = getEffectiveServiceTier();
+    if (!tier || !supportsServiceTier(modelId)) return payload;
     payload.service_tier = tier;
     return payload;
   });
-}
 
+  // Capability-aware model routing hook (ADR-004)
+  // Extensions can override model selection by returning { modelId: "..." }
+  // Return undefined to let the built-in capability scoring proceed.
+  pi.on("before_model_select", async (_event) => {
+    // Default: no override — let capability scoring handle selection
+    return undefined;
+  });
+}

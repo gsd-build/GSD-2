@@ -105,7 +105,7 @@ export interface WrapUpOptions {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const OTHER_OPTION_LABEL = "None of the above";
-const OTHER_OPTION_DESCRIPTION = "Press TAB to add optional notes.";
+const OTHER_OPTION_DESCRIPTION = "Select to type your own answer.";
 
 // ─── Wrap-up screen ───────────────────────────────────────────────────────────
 
@@ -293,6 +293,19 @@ export async function showInterviewRound(
 		function goNextOrSubmit() {
 			if (!isMultiSelect(currentIdx)) {
 				states[currentIdx].committedIndex = states[currentIdx].cursorIndex;
+			}
+
+			// Auto-open the notes field when "None of the above" is selected
+			// so the user can immediately provide a free-text explanation
+			// instead of being trapped in a re-asking loop (bug #2715).
+			// Only auto-open if the user hasn't already provided notes —
+			// otherwise Enter from notes mode loops back here endlessly.
+			if (!isMultiSelect(currentIdx) && states[currentIdx].cursorIndex === noneOrDoneIdx(currentIdx) && !states[currentIdx].notes && !states[currentIdx].notesVisible) {
+				states[currentIdx].notesVisible = true;
+				focusNotes = true;
+				loadStateToEditor();
+				refresh();
+				return;
 			}
 
 			if (isMultiQuestion && currentIdx < questions.length - 1) {

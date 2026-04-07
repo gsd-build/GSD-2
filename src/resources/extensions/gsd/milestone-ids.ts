@@ -6,6 +6,7 @@
  */
 
 import { randomInt } from "node:crypto";
+import { logWarning } from "./workflow-logger.js";
 import { readdirSync, existsSync } from "node:fs";
 import { milestonesDir } from "./paths.js";
 import { loadQueueOrder, sortByQueueOrder } from "./queue-order.js";
@@ -75,7 +76,7 @@ export function nextMilestoneId(milestoneIds: string[], uniqueEnabled?: boolean)
 /**
  * Module-level set of milestone IDs that have been previewed/promised to the
  * user but not yet materialised on disk. Both guided-flow (preview) and
- * gsd_generate_milestone_id (tool) share this set so the ID shown in the UI
+ * gsd_milestone_generate_id (tool) share this set so the ID shown in the UI
  * matches the one the tool returns.
  */
 const reservedMilestoneIds = new Set<string>();
@@ -128,7 +129,7 @@ export function findMilestoneIds(basePath: string): string[] {
   } catch (err) {
     // Log why milestone scanning failed — silent [] here causes infinite loops (#456)
     if (existsSync(dir)) {
-      console.error(`[gsd] findMilestoneIds: .gsd/milestones/ exists but readdirSync failed — ${getErrorMessage(err)}`);
+      logWarning("engine", `findMilestoneIds: .gsd/milestones/ exists but readdirSync failed — ${getErrorMessage(err)}`);
     }
     return [];
   }

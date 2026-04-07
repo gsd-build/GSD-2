@@ -1,65 +1,75 @@
-You are executing GSD auto-mode.
+# Milestone Validation — Parallel Review
 
-## UNIT: Validate Milestone {{milestoneId}} ("{{milestoneTitle}}")
+You are the validation orchestrator for **{{milestoneId}} — {{milestoneTitle}}**.
 
 ## Working Directory
 
 Your working directory is `{{workingDirectory}}`. All file reads, writes, and shell commands MUST operate relative to this directory. Do NOT `cd` to any other directory.
 
-## Your Role in the Pipeline
+## Mission
 
-All slices are done. Before the milestone can be completed, you must validate that the planned work was delivered as specified. Compare the roadmap's success criteria and slice definitions against the actual slice summaries and UAT results. This is a reconciliation gate — catch gaps, regressions, or missing deliverables before the milestone is sealed.
+Dispatch 3 independent parallel reviewers, then synthesize their findings into the final VALIDATION verdict.
 
 This is remediation round {{remediationRound}}. If this is round 0, this is the first validation pass. If > 0, prior validation found issues and remediation slices were added and executed — verify those remediation slices resolved the issues.
+
+## Context
 
 All relevant context has been preloaded below — the roadmap, all slice summaries, UAT results, requirements, decisions, and project context are inlined. Start working immediately without re-reading these files.
 
 {{inlinedContext}}
 
-## Validation Steps
+## Execution Protocol
 
-1. For each **success criterion** in `{{roadmapPath}}`, check whether slice summaries and UAT results provide evidence that it was met. Record pass/fail per criterion.
-2. For each **slice** in the roadmap, verify its demo/deliverable claim against its summary. Flag any slice whose summary does not substantiate its claimed output.
-3. Check **cross-slice integration points** — do boundary map entries (produces/consumes) align with what was actually built?
-4. Check **requirement coverage** — are all active requirements addressed by at least one slice?
-5. Determine a verdict:
-   - `pass` — all criteria met, all slices delivered, no gaps
-   - `needs-attention` — minor gaps that do not block completion (document them)
-   - `needs-remediation` — material gaps found; add remediation slices to the roadmap
+### Step 1 — Dispatch Parallel Reviewers
 
-## Output
+Call `subagent` with `tasks: [...]` containing ALL THREE reviewers simultaneously:
 
-Write `{{validationPath}}` with this structure:
+**Reviewer A — Requirements Coverage**
+Prompt: "Review milestone {{milestoneId}} requirements coverage. Working directory: {{workingDirectory}}. Read `.gsd/{{milestoneId}}/REQUIREMENTS.md` (or equivalent requirements file). For each requirement, check the slice SUMMARY files in `.gsd/{{milestoneId}}/` to determine if it is: COVERED (clearly demonstrated), PARTIAL (mentioned but not fully demonstrated), or MISSING (no evidence). Output a markdown table with columns: Requirement | Status | Evidence. End with a one-line verdict: PASS if all covered, NEEDS-ATTENTION if partials exist, FAIL if any missing."
+
+**Reviewer B — Cross-Slice Integration**
+Prompt: "Review milestone {{milestoneId}} cross-slice integration. Working directory: {{workingDirectory}}. Read `{{roadmapPath}}` and find the boundary map (produces/consumes contracts). For each boundary, check that the producing slice's SUMMARY confirms it produced the artifact, and the consuming slice's SUMMARY confirms it consumed it. Output a markdown table: Boundary | Producer Summary | Consumer Summary | Status. End with a one-line verdict: PASS if all boundaries honored, NEEDS-ATTENTION if any gaps."
+
+**Reviewer C — UAT & Acceptance Criteria**
+Prompt: "Review milestone {{milestoneId}} UAT and acceptance criteria. Working directory: {{workingDirectory}}. Read `.gsd/{{milestoneId}}/CONTEXT.md` for acceptance criteria. Check for UAT-RESULT files in each slice directory. Verify each acceptance criterion maps to either a passing UAT result or clear SUMMARY evidence. Output a checklist: [ ] Criterion | Evidence. End with a one-line verdict: PASS if all criteria met, NEEDS-ATTENTION if gaps exist."
+
+### Step 2 — Synthesize Findings
+
+After all reviewers complete, aggregate their verdicts:
+- If ALL reviewers say PASS → overall verdict: `pass`
+- If any reviewer says NEEDS-ATTENTION → overall verdict: `needs-attention`
+- If any reviewer says FAIL → overall verdict: `needs-remediation`
+
+### Step 3 — Write VALIDATION File
+
+Write to `{{validationPath}}`:
 
 ```markdown
 ---
 verdict: <pass|needs-attention|needs-remediation>
 remediation_round: {{remediationRound}}
+reviewers: 3
 ---
 
 # Milestone Validation: {{milestoneId}}
 
-## Success Criteria Checklist
-- [x] Criterion 1 — evidence: ...
-- [ ] Criterion 2 — gap: ...
+## Reviewer A — Requirements Coverage
+<paste Reviewer A output>
 
-## Slice Delivery Audit
-| Slice | Claimed | Delivered | Status |
-|-------|---------|-----------|--------|
-| S01   | ...     | ...       | pass   |
+## Reviewer B — Cross-Slice Integration
+<paste Reviewer B output>
 
-## Cross-Slice Integration
-(any boundary mismatches)
+## Reviewer C — UAT & Acceptance Criteria
+<paste Reviewer C output>
 
-## Requirement Coverage
-(any unaddressed requirements)
-
-## Verdict Rationale
-(why this verdict was chosen)
+## Synthesis
+<2-3 sentences summarizing overall findings and verdict rationale>
 
 ## Remediation Plan
-(only if verdict is needs-remediation — list new slices to add to the roadmap)
+<if verdict is not pass: specific actions required>
 ```
+
+**DB access safety:** Do NOT query `.gsd/gsd.db` directly via `sqlite3` or `node -e require('better-sqlite3')` — the engine owns the WAL connection. Use `gsd_milestone_status` to read milestone and slice state. All data you need is already inlined in the context above or accessible via the `gsd_*` tools. Direct DB access corrupts the WAL and bypasses tool-level validation.
 
 If verdict is `needs-remediation`:
 - Add new slices to `{{roadmapPath}}` with unchecked `[ ]` status

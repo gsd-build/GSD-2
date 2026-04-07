@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const hooksPath = join(__dirname, "..", "post-unit-hooks.ts");
+const registryPath = join(__dirname, "..", "rule-registry.ts");
 const autoPromptsPath = join(__dirname, "..", "auto-prompts.ts");
 
 // After decomposition, triage/dispatch logic lives in auto-post-unit.ts
@@ -25,7 +26,11 @@ const autoSrc = [
   postUnitSrc,
   readFileSync(join(__dirname, "..", "auto-start.ts"), "utf-8"),
 ].join("\n");
-const hooksSrc = readFileSync(hooksPath, "utf-8");
+// Hook exclusion logic lives in the rule-registry (facade delegates there)
+const hooksSrc = [
+  readFileSync(hooksPath, "utf-8"),
+  readFileSync(registryPath, "utf-8"),
+].join("\n");
 const autoPromptsSrc = (() => { try { return readFileSync(autoPromptsPath, "utf-8"); } catch { return autoSrc; } })();
 
 // ─── Hook exclusion ──────────────────────────────────────────────────────────
@@ -114,7 +119,7 @@ test("dispatch: triage dispatch keeps the loop in continue mode", () => {
     postUnitSrc.indexOf("// ── Quick-task dispatch"),
   );
   assert.ok(
-    triageBlock.includes('return "continue"'),
+    triageBlock.includes('return "continue"') || triageBlock.includes("return enqueueSidecar("),
     "triage dispatch should return 'continue' after enqueuing sidecar work",
   );
 });
@@ -315,7 +320,7 @@ test("dispatch: quick-task dispatch keeps the loop in continue mode", () => {
     postUnitSrc.indexOf("if (s.stepMode)"),
   );
   assert.ok(
-    quickTaskSection.includes('return "continue"'),
+    quickTaskSection.includes('return "continue"') || quickTaskSection.includes("return enqueueSidecar("),
     "quick-task dispatch should return 'continue' after enqueuing sidecar work",
   );
 });

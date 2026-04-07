@@ -14,6 +14,7 @@ import {
 import type { AuthStorage } from "../../../core/auth-storage.js";
 import { getDiscoverableProviders } from "../../../core/model-discovery.js";
 import type { ModelRegistry } from "../../../core/model-registry.js";
+import { ModelsJsonWriter } from "../../../core/models-json-writer.js";
 import { theme } from "../theme/theme.js";
 import { rawKeyHint } from "./keybinding-hints.js";
 
@@ -39,8 +40,12 @@ export class ProviderManagerComponent extends Container implements Focusable {
 	private tui: TUI;
 	private authStorage: AuthStorage;
 	private modelRegistry: ModelRegistry;
+	private modelsJsonWriter: ModelsJsonWriter;
 	private onDone: () => void;
 	private onDiscover: (provider: string) => void;
+	private onSetupAuth: (provider: string) => void;
+	private confirmingRemove = false;
+	private hintsContainer: Container;
 
 	constructor(
 		tui: TUI,
@@ -48,26 +53,26 @@ export class ProviderManagerComponent extends Container implements Focusable {
 		modelRegistry: ModelRegistry,
 		onDone: () => void,
 		onDiscover: (provider: string) => void,
+		onSetupAuth?: (provider: string) => void,
 	) {
 		super();
 
 		this.tui = tui;
 		this.authStorage = authStorage;
 		this.modelRegistry = modelRegistry;
+		this.modelsJsonWriter = new ModelsJsonWriter(this.modelRegistry.modelsJsonPath);
 		this.onDone = onDone;
 		this.onDiscover = onDiscover;
+		this.onSetupAuth = onSetupAuth ?? (() => {});
 
 		// Header
 		this.addChild(new Text(theme.fg("accent", "Provider Manager"), 0, 0));
 		this.addChild(new Spacer(1));
 
 		// Hints
-		const hints = [
-			rawKeyHint("d", "discover"),
-			rawKeyHint("r", "remove auth"),
-			rawKeyHint("esc", "close"),
-		].join("  ");
-		this.addChild(new Text(hints, 0, 0));
+		this.hintsContainer = new Container();
+		this.addChild(this.hintsContainer);
+		this.updateHints();
 		this.addChild(new Spacer(1));
 
 		// List
@@ -102,6 +107,34 @@ export class ProviderManagerComponent extends Container implements Focusable {
 				supportsDiscovery: discoverableSet.has(name),
 				modelCount: providerModelCounts.get(name) ?? 0,
 			}));
+		this.clampSelectedIndex();
+	}
+
+	private clampSelectedIndex(): void {
+		if (this.providers.length === 0) {
+			this.selectedIndex = 0;
+			return;
+		}
+		this.selectedIndex = Math.min(this.selectedIndex, this.providers.length - 1);
+	}
+
+	private updateHints(): void {
+		this.hintsContainer.clear();
+		if (this.confirmingRemove) {
+			const hints = [
+				rawKeyHint("r", "confirm removal"),
+				rawKeyHint("esc", "cancel"),
+			].join("  ");
+			this.hintsContainer.addChild(new Text(hints, 0, 0));
+		} else {
+			const hints = [
+				rawKeyHint("enter", "setup auth"),
+				rawKeyHint("d", "discover"),
+				rawKeyHint("r", "remove auth"),
+				rawKeyHint("esc", "close"),
+			].join("  ");
+			this.hintsContainer.addChild(new Text(hints, 0, 0));
+		}
 	}
 
 	private updateList(): void {
@@ -144,7 +177,13 @@ export class ProviderManagerComponent extends Container implements Focusable {
 			this.updateList();
 			this.tui.requestRender();
 		} else if (kb.matches(keyData, "selectCancel")) {
-			this.onDone();
+			if (this.confirmingRemove) {
+				this.confirmingRemove = false;
+				this.updateHints();
+				this.tui.requestRender();
+			} else {
+				this.onDone();
+			}
 		} else if (keyData === "d" || keyData === "D") {
 			const provider = this.providers[this.selectedIndex];
 			if (provider?.supportsDiscovery) {
@@ -153,10 +192,26 @@ export class ProviderManagerComponent extends Container implements Focusable {
 		} else if (keyData === "r" || keyData === "R") {
 			const provider = this.providers[this.selectedIndex];
 			if (provider?.hasAuth) {
-				this.authStorage.remove(provider.name);
-				this.loadProviders();
-				this.updateList();
-				this.tui.requestRender();
+				if (this.confirmingRemove) {
+					this.confirmingRemove = false;
+					this.authStorage.remove(provider.name);
+					this.modelsJsonWriter.removeProvider(provider.name);
+					this.modelRegistry.refresh();
+					this.loadProviders();
+					this.updateHints();
+					this.updateList();
+					this.tui.requestRender();
+				} else {
+					this.confirmingRemove = true;
+					this.updateHints();
+					this.tui.requestRender();
+				}
+			}
+		} else if (kb.matches(keyData, "selectConfirm")) {
+			// Enter key → initiate auth setup for the selected provider (#3579)
+			const provider = this.providers[this.selectedIndex];
+			if (provider) {
+				this.onSetupAuth(provider.name);
 			}
 		}
 	}

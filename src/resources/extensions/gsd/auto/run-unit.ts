@@ -11,6 +11,7 @@ import { NEW_SESSION_TIMEOUT_MS } from "./session.js";
 import type { UnitResult } from "./types.js";
 import { _setCurrentResolve, _setSessionSwitchInFlight } from "./resolve.js";
 import { debugLog } from "../debug-logger.js";
+import { logWarning, logError } from "../workflow-logger.js";
 
 /**
  * Execute a single unit: create a new session, send the prompt, and await
@@ -57,17 +58,27 @@ export async function runUnit(
       unitId,
       error: msg,
     });
-    return { status: "cancelled" };
+    return { status: "cancelled", errorContext: { message: `Session creation failed: ${msg}`, category: "session-failed", isTransient: true } };
   }
   if (sessionTimeoutHandle) clearTimeout(sessionTimeoutHandle);
 
   if (sessionResult.cancelled) {
     debugLog("runUnit-session-timeout", { unitType, unitId });
-    return { status: "cancelled" };
+    return { status: "cancelled", errorContext: { message: "Session creation timed out", category: "timeout", isTransient: true } };
   }
 
   if (!s.active) {
     return { status: "cancelled" };
+  }
+
+  if (s.currentUnitModel && typeof pi.setModel === "function") {
+    const restored = await pi.setModel(s.currentUnitModel, { persist: false });
+    if (!restored) {
+      ctx.ui.notify(
+        `Failed to restore ${s.currentUnitModel.provider}/${s.currentUnitModel.id} after session creation. Using session default.`,
+        "warning",
+      );
+    }
   }
 
   // ── Create the agent_end promise (per-unit one-shot) ──
@@ -85,7 +96,9 @@ export async function runUnit(
     if (process.cwd() !== s.basePath) {
       process.chdir(s.basePath);
     }
-  } catch { /* non-fatal — chdir may fail if dir was removed */ }
+  } catch (e) {
+    logWarning("engine", "Failed to chdir to basePath before dispatch", { basePath: s.basePath, error: String(e) });
+  }
 
   // ── Send the prompt ──
   debugLog("runUnit", { phase: "send-message", unitType, unitId });
@@ -95,9 +108,19 @@ export async function runUnit(
     { triggerTurn: true },
   );
 
-  // ── Await agent_end ──
+  // ── Await agent_end with absolute timeout (H4 fix) ──
+  // If supervision fails to resolve unitPromise within 30s, treat as cancelled.
+  // Without this, a crashed agent that never emits agent_end hangs the loop (#3161).
   debugLog("runUnit", { phase: "awaiting-agent-end", unitType, unitId });
-  const result = await unitPromise;
+  const UNIT_HARD_TIMEOUT_MS = 30_000;
+  let unitTimeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  const timeoutResult = new Promise<UnitResult>((resolve) => {
+    unitTimeoutHandle = setTimeout(() => {
+      resolve({ status: "cancelled", errorContext: { message: "Unit hard timeout — supervision may have failed", category: "timeout", isTransient: true } });
+    }, UNIT_HARD_TIMEOUT_MS);
+  });
+  const result = await Promise.race([unitPromise, timeoutResult]);
+  if (unitTimeoutHandle) clearTimeout(unitTimeoutHandle);
   debugLog("runUnit", {
     phase: "agent-end-received",
     unitType,
@@ -115,8 +138,8 @@ export async function runUnit(
     if (typeof cmdCtxAny?.clearQueue === "function") {
       (cmdCtxAny.clearQueue as () => unknown)();
     }
-  } catch {
-    // Non-fatal — clearQueue may not be available in all contexts
+  } catch (e) {
+    logWarning("engine", "clearQueue failed after unit completion", { error: String(e) });
   }
 
   return result;

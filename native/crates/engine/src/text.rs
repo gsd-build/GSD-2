@@ -498,15 +498,91 @@ fn visible_width_u16(data: &[u16], tab_width: usize) -> usize {
 // wrapTextWithAnsi
 // ============================================================================
 
-#[inline]
-fn write_active_codes(state: &AnsiState, out: &mut Vec<u16>) {
-	if !state.is_empty() {
-		state.write_restore_u16(out);
+// OSC 8 hyperlink state — tracks the active hyperlink URL (if any) so we can
+// close it before a line break and re-open it on the next line.
+#[derive(Clone, Default)]
+struct Osc8State {
+	/// The full OSC 8 open sequence (e.g. ESC ]8;params;uri BEL), stored as
+	/// UTF-16 code units. Empty means no active hyperlink.
+	open_seq: Vec<u16>,
+}
+
+impl Osc8State {
+	fn new() -> Self {
+		Self { open_seq: Vec::new() }
+	}
+
+	fn is_active(&self) -> bool {
+		!self.open_seq.is_empty()
+	}
+
+	/// Write the OSC 8 close sequence: ESC ]8;; BEL
+	fn write_close(out: &mut Vec<u16>) {
+		out.extend_from_slice(&[ESC, b']' as u16, b'8' as u16, b';' as u16, b';' as u16, 0x07]);
+	}
+
+	/// Write the stored open sequence to re-open the hyperlink.
+	fn write_open(&self, out: &mut Vec<u16>) {
+		if self.is_active() {
+			out.extend_from_slice(&self.open_seq);
+		}
+	}
+
+	/// Parse an OSC sequence and update state. Returns true if it was an OSC 8.
+	fn update_from_osc(&mut self, seq: &[u16]) -> bool {
+		// OSC 8 format: ESC ]8; params ; uri BEL (or ST)
+		// Minimum: ESC ]8;; BEL = 6 code units
+		if seq.len() < 6 {
+			return false;
+		}
+		if seq[0] != ESC || seq[1] != b']' as u16 || seq[2] != b'8' as u16 || seq[3] != b';' as u16 {
+			return false;
+		}
+		// Find the second semicolon that separates params from URI
+		let mut second_semi = None;
+		for i in 4..seq.len() {
+			if seq[i] == b';' as u16 {
+				second_semi = Some(i);
+				break;
+			}
+		}
+		let second_semi = match second_semi {
+			Some(i) => i,
+			None => return false,
+		};
+		// URI is between second_semi+1 and the terminator (BEL or ST)
+		let uri_start = second_semi + 1;
+		// Terminator is at the end (BEL = 1 unit, ST = 2 units)
+		let terminator_len = if *seq.last().unwrap() == 0x07 { 1 } else { 2 };
+		let uri_end = seq.len() - terminator_len;
+		if uri_start >= uri_end {
+			// Empty URI = close hyperlink
+			self.open_seq.clear();
+		} else {
+			// Non-empty URI = open hyperlink
+			self.open_seq = seq.to_vec();
+		}
+		true
 	}
 }
 
+fn is_osc_u16(seq: &[u16]) -> bool {
+	seq.len() >= 3 && seq[0] == ESC && seq[1] == b']' as u16
+}
+
 #[inline]
-fn write_line_end_reset(state: &AnsiState, out: &mut Vec<u16>) {
+fn write_active_codes(state: &AnsiState, osc8: &Osc8State, out: &mut Vec<u16>) {
+	if !state.is_empty() {
+		state.write_restore_u16(out);
+	}
+	osc8.write_open(out);
+}
+
+#[inline]
+fn write_line_end_reset(state: &AnsiState, osc8: &Osc8State, out: &mut Vec<u16>) {
+	if osc8.is_active() {
+		Osc8State::write_close(out);
+	}
 	let has_underline = state.attrs & ATTR_UNDERLINE != 0;
 	let has_strike = state.attrs & ATTR_STRIKE != 0;
 	if !has_underline && !has_strike {
@@ -526,7 +602,7 @@ fn write_line_end_reset(state: &AnsiState, out: &mut Vec<u16>) {
 	out.push(b'm' as u16);
 }
 
-fn update_state_from_text(data: &[u16], state: &mut AnsiState) {
+fn update_state_from_text(data: &[u16], state: &mut AnsiState, osc8: &mut Osc8State) {
 	let mut i = 0usize;
 	while i < data.len() {
 		if data[i] == ESC {
@@ -534,6 +610,8 @@ fn update_state_from_text(data: &[u16], state: &mut AnsiState) {
 				let seq = &data[i..i + seq_len];
 				if is_sgr_u16(seq) {
 					state.apply_sgr_u16(&seq[2..seq_len - 1]);
+				} else if is_osc_u16(seq) {
+					osc8.update_from_osc(seq);
 				}
 				i += seq_len;
 				continue;
@@ -619,10 +697,11 @@ fn break_long_word(
 	width: usize,
 	tab_width: usize,
 	state: &mut AnsiState,
+	osc8: &mut Osc8State,
 ) -> SmallVec<[Vec<u16>; 4]> {
 	let mut lines = SmallVec::<[Vec<u16>; 4]>::new();
 	let mut current_line = Vec::<u16>::new();
-	write_active_codes(state, &mut current_line);
+	write_active_codes(state, osc8, &mut current_line);
 	let mut current_width = 0usize;
 	let mut i = 0usize;
 
@@ -633,6 +712,8 @@ fn break_long_word(
 				current_line.extend_from_slice(seq);
 				if is_sgr_u16(seq) {
 					state.apply_sgr_u16(&seq[2..seq_len - 1]);
+				} else if is_osc_u16(seq) {
+					osc8.update_from_osc(seq);
 				}
 				i += seq_len;
 				continue;
@@ -653,10 +734,10 @@ fn break_long_word(
 			for &u in seg {
 				let gw = ascii_cell_width_u16(u, tab_width);
 				if current_width + gw > width {
-					write_line_end_reset(state, &mut current_line);
+					write_line_end_reset(state, osc8, &mut current_line);
 					lines.push(current_line);
 					current_line = Vec::new();
-					write_active_codes(state, &mut current_line);
+					write_active_codes(state, osc8, &mut current_line);
 					current_width = 0;
 				}
 				current_line.push(u);
@@ -665,9 +746,9 @@ fn break_long_word(
 		} else {
 			let _ = for_each_grapheme_u16_slow(seg, tab_width, |gu16, gw| {
 				if current_width + gw > width {
-					write_line_end_reset(state, &mut current_line);
+					write_line_end_reset(state, osc8, &mut current_line);
 					lines.push(std::mem::take(&mut current_line));
-					write_active_codes(state, &mut current_line);
+					write_active_codes(state, osc8, &mut current_line);
 					current_width = 0;
 				}
 				current_line.extend_from_slice(gu16);
@@ -698,6 +779,7 @@ fn wrap_single_line(line: &[u16], width: usize, tab_width: usize) -> SmallVec<[V
 	let mut current_line = Vec::<u16>::new();
 	let mut current_width = 0usize;
 	let mut state = AnsiState::new();
+	let mut osc8 = Osc8State::new();
 
 	for token in tokens {
 		let token_width = visible_width_u16(&token, tab_width);
@@ -705,13 +787,13 @@ fn wrap_single_line(line: &[u16], width: usize, tab_width: usize) -> SmallVec<[V
 
 		if token_width > width && !is_whitespace {
 			if !current_line.is_empty() {
-				write_line_end_reset(&state, &mut current_line);
+				write_line_end_reset(&state, &osc8, &mut current_line);
 				wrapped.push(current_line);
 				current_line = Vec::new();
 				current_width = 0;
 			}
 
-			let mut broken = break_long_word(&token, width, tab_width, &mut state);
+			let mut broken = break_long_word(&token, width, tab_width, &mut state, &mut osc8);
 			if let Some(last) = broken.pop() {
 				wrapped.extend(broken);
 				current_line = last;
@@ -724,11 +806,11 @@ fn wrap_single_line(line: &[u16], width: usize, tab_width: usize) -> SmallVec<[V
 		if total_needed > width && current_width > 0 {
 			let mut line_to_wrap = current_line;
 			trim_end_spaces_in_place(&mut line_to_wrap);
-			write_line_end_reset(&state, &mut line_to_wrap);
+			write_line_end_reset(&state, &osc8, &mut line_to_wrap);
 			wrapped.push(line_to_wrap);
 
 			current_line = Vec::new();
-			write_active_codes(&state, &mut current_line);
+			write_active_codes(&state, &osc8, &mut current_line);
 			if is_whitespace {
 				current_width = 0;
 			} else {
@@ -740,7 +822,7 @@ fn wrap_single_line(line: &[u16], width: usize, tab_width: usize) -> SmallVec<[V
 			current_width += token_width;
 		}
 
-		update_state_from_text(&token, &mut state);
+		update_state_from_text(&token, &mut state, &mut osc8);
 	}
 
 	if !current_line.is_empty() {
@@ -769,6 +851,7 @@ fn wrap_text_with_ansi_impl(
 
 	let mut result = SmallVec::<[Vec<u16>; 4]>::new();
 	let mut state = AnsiState::new();
+	let mut osc8 = Osc8State::new();
 	let mut line_start = 0usize;
 
 	for i in 0..=text.len() {
@@ -776,13 +859,13 @@ fn wrap_text_with_ansi_impl(
 			let line = &text[line_start..i];
 			let mut line_with_prefix: Vec<u16> = Vec::new();
 			if !result.is_empty() {
-				write_active_codes(&state, &mut line_with_prefix);
+				write_active_codes(&state, &osc8, &mut line_with_prefix);
 			}
 			line_with_prefix.extend_from_slice(line);
 
 			let wrapped = wrap_single_line(&line_with_prefix, width, tab_width);
 			result.extend(wrapped);
-			update_state_from_text(line, &mut state);
+			update_state_from_text(line, &mut state, &mut osc8);
 			line_start = i + 1;
 		}
 	}
@@ -1524,6 +1607,53 @@ mod tests {
 		let params = to_u16("38;2;255;128;0");
 		state.apply_sgr_u16(&params);
 		assert_eq!(state.fg, 0x1000000 | (255 << 16) | (128 << 8) | 0);
+	}
+
+	#[test]
+	fn test_wrap_text_osc8_hyperlink_carried_across_lines() {
+		// OSC 8 hyperlink wrapping: \x1b]8;;https://example.com\x07click here please\x1b]8;;\x07
+		let url = "https://example.com";
+		let open = format!("\x1b]8;;{}\x07", url);
+		let close = "\x1b]8;;\x07";
+		let text = format!("{}click here please{}", open, close);
+		let data = to_u16(&text);
+		// Width 10 forces "click here please" (18 chars) to wrap
+		let lines = wrap_text_with_ansi_impl(&data, 10, DEFAULT_TAB_WIDTH);
+		assert!(lines.len() >= 2, "Expected wrapping, got {} lines", lines.len());
+
+		let first = String::from_utf16_lossy(&lines[0]);
+		let second = String::from_utf16_lossy(&lines[1]);
+
+		// First line should open the hyperlink and close it at the end
+		assert!(first.starts_with(&open), "First line should start with OSC 8 open: {:?}", first);
+		assert!(first.ends_with(close), "First line should end with OSC 8 close: {:?}", first);
+
+		// Second line should re-open the hyperlink
+		assert!(second.starts_with(&open), "Second line should re-open OSC 8: {:?}", second);
+	}
+
+	#[test]
+	fn test_wrap_text_osc8_long_url_break() {
+		// A long URL wrapped inside an OSC 8 hyperlink
+		let url = "https://accounts.google.com/o/oauth2/v2/auth?client_id=abc&redirect_uri=http://localhost:9004&scope=email&state=xyz";
+		let open = format!("\x1b]8;;{}\x07", url);
+		let close = "\x1b]8;;\x07";
+		let text = format!("{}{}{}", open, url, close);
+		let data = to_u16(&text);
+		let lines = wrap_text_with_ansi_impl(&data, 40, DEFAULT_TAB_WIDTH);
+		assert!(lines.len() >= 2, "Expected wrapping, got {} lines", lines.len());
+
+		for (i, line) in lines.iter().enumerate() {
+			let s = String::from_utf16_lossy(line);
+			// Every line except possibly the last (which has the close) should
+			// have the OSC 8 open sequence
+			assert!(s.contains(&open) || s.contains(close),
+				"Line {} should contain OSC 8 open or close: {:?}", i, s);
+		}
+
+		// Last line should contain the close
+		let last = String::from_utf16_lossy(lines.last().unwrap());
+		assert!(last.contains(close), "Last line should contain OSC 8 close: {:?}", last);
 	}
 
 	#[test]

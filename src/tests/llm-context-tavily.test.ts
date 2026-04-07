@@ -18,6 +18,7 @@ import { publishedDateToAge } from "../resources/extensions/search-the-web/tavil
 import type { TavilyResult } from "../resources/extensions/search-the-web/tavily.ts";
 import { resolveSearchProvider } from "../resources/extensions/search-the-web/provider.ts";
 import { normalizeQuery } from "../resources/extensions/search-the-web/url-utils.ts";
+import { normalizeHeaders, parseJsonBody } from "./fetch-test-helpers.ts";
 
 // =============================================================================
 // Helpers
@@ -78,21 +79,8 @@ function mockFetch(responseBody: unknown, status = 200) {
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
     captured.url = url;
     captured.method = init?.method || "GET";
-
-    if (init?.headers) {
-      if (init.headers instanceof Headers) {
-        captured.headers = {};
-        init.headers.forEach((v, k) => { captured.headers![k] = v; });
-      } else if (Array.isArray(init.headers)) {
-        captured.headers = Object.fromEntries(init.headers);
-      } else {
-        captured.headers = init.headers as Record<string, string>;
-      }
-    }
-
-    if (init?.body && typeof init.body === "string") {
-      try { captured.body = JSON.parse(init.body); } catch { /* ignore */ }
-    }
+    captured.headers = normalizeHeaders(init?.headers);
+    captured.body = parseJsonBody(init?.body);
 
     return new Response(JSON.stringify(responseBody), {
       status,
@@ -318,7 +306,7 @@ test("no-key error message mentions both TAVILY_API_KEY and BRAVE_API_KEY", () =
   assert.ok(errorMessage.includes("secure_env_collect"), "Error must mention secure_env_collect");
 });
 
-test("Tavily LLM context request uses POST with Bearer auth and advanced search depth", async () => {
+test("Tavily LLM context request uses POST with Bearer auth and advanced search depth", async (t) => {
   const apiKey = "tvly-test-key-abc123";
   const query = "typescript handbook";
 
@@ -330,43 +318,40 @@ test("Tavily LLM context request uses POST with Bearer auth and advanced search 
 
   const { captured, restore } = mockFetch(tavilyResponse);
 
-  try {
-    // Simulate what the Tavily LLM context path will build
-    const requestBody = {
-      query,
-      max_results: 20,
-      search_depth: "advanced",
-      include_raw_content: true,
-    };
+  t.after(restore);
+  // Simulate what the Tavily LLM context path will build
+  const requestBody = {
+    query,
+    max_results: 20,
+    search_depth: "advanced",
+    include_raw_content: true,
+  };
 
-    await globalThis.fetch("https://api.tavily.com/search", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(requestBody),
-    });
+  await globalThis.fetch("https://api.tavily.com/search", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(requestBody),
+  });
 
-    // Verify POST method
-    assert.equal(captured.method, "POST", "Tavily uses POST");
+  // Verify POST method
+  assert.equal(captured.method, "POST", "Tavily uses POST");
 
-    // Verify Bearer auth header
-    assert.equal(
-      captured.headers?.["Authorization"],
-      "Bearer tvly-test-key-abc123",
-      "Authorization header uses Bearer scheme",
-    );
+  // Verify Bearer auth header
+  assert.equal(
+    captured.headers?.["Authorization"],
+    "Bearer tvly-test-key-abc123",
+    "Authorization header uses Bearer scheme",
+  );
 
-    // Verify advanced search depth for LLM context (richer content)
-    assert.equal(captured.body?.search_depth, "advanced", "LLM context uses advanced search depth");
+  // Verify advanced search depth for LLM context (richer content)
+  assert.equal(captured.body?.search_depth, "advanced", "LLM context uses advanced search depth");
 
-    // Verify include_raw_content for full page text
-    assert.equal(captured.body?.include_raw_content, true, "LLM context requests raw_content");
+  // Verify include_raw_content for full page text
+  assert.equal(captured.body?.include_raw_content, true, "LLM context requests raw_content");
 
-    // Verify POST target URL
-    assert.equal(captured.url, "https://api.tavily.com/search", "Posts to Tavily search endpoint");
-  } finally {
-    restore();
-  }
+  // Verify POST target URL
+  assert.equal(captured.url, "https://api.tavily.com/search", "Posts to Tavily search endpoint");
 });

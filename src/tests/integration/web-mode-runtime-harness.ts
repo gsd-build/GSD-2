@@ -116,6 +116,11 @@ export function parseStartedUrl(stderr: string): string {
   return match[1]
 }
 
+function parseReadyAuthToken(stderr: string): string | null {
+  const match = stderr.match(/\[gsd\] Ready → http:\/\/[^\s]+\/#token=([a-f0-9]{64})/)
+  return match?.[1] ?? null
+}
+
 export async function launchPackagedWebHost(options: {
   launchCwd: string
   tempHome: string
@@ -193,6 +198,9 @@ export async function launchPackagedWebHost(options: {
           }
         } catch {
           // Non-fatal — tests that don't need the token can proceed without it
+        }
+        if (!authToken) {
+          authToken = parseReadyAuthToken(stderr)
         }
         finish({
           exitCode: code,

@@ -6,6 +6,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { getAgentDir, parseFrontmatter } from "@gsd/pi-coding-agent";
 
+const PROJECT_AGENT_DIR_CANDIDATES = [".gsd", ".pi"] as const;
+
 export type AgentScope = "user" | "project" | "both";
 
 export interface AgentConfig {
@@ -85,8 +87,12 @@ function isDirectory(p: string): boolean {
 function findNearestProjectAgentsDir(cwd: string): string | null {
 	let currentDir = cwd;
 	while (true) {
-		const candidate = path.join(currentDir, ".pi", "agents");
-		if (isDirectory(candidate)) return candidate;
+		// Prefer the documented project-local location while preserving support
+		// for older workarounds that placed agents under .pi/agents.
+		for (const configDir of PROJECT_AGENT_DIR_CANDIDATES) {
+			const candidate = path.join(currentDir, configDir, "agents");
+			if (isDirectory(candidate)) return candidate;
+		}
 
 		const parentDir = path.dirname(currentDir);
 		if (parentDir === currentDir) return null;

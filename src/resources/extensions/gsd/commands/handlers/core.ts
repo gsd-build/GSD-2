@@ -29,6 +29,7 @@ export function showHelp(ctx: ExtensionCommandContext): void {
     "  /gsd queue          Show queued/dispatched units and execution order",
     "  /gsd history        View execution history  [--cost] [--phase] [--model] [N]",
     "  /gsd changelog      Show categorized release notes  [version]",
+    "  /gsd notifications  View persistent notification history  [clear|tail|filter]  (Ctrl+Alt+N)",
     "",
     "COURSE CORRECTION",
     "  /gsd steer <desc>   Apply user override to active work",
@@ -36,6 +37,7 @@ export function showHelp(ctx: ExtensionCommandContext): void {
     "  /gsd triage         Classify and route pending captures",
     "  /gsd skip <unit>    Prevent a unit from auto-mode dispatch",
     "  /gsd undo           Revert last completed unit  [--force]",
+    "  /gsd rethink        Conversational project reorganization — reorder, park, discard, add milestones",
     "  /gsd park [id]      Park a milestone — skip without deleting  [reason]",
     "  /gsd unpark [id]    Reactivate a parked milestone",
     "",
@@ -50,9 +52,11 @@ export function showHelp(ctx: ExtensionCommandContext): void {
     "  /gsd cmux           Manage cmux integration  [status|on|off|notifications|sidebar|splits|browser]",
     "  /gsd config         Set API keys for external tools",
     "  /gsd keys           API key manager  [list|add|remove|test|rotate|doctor]",
+    "  /gsd show-config    Show effective configuration (models, routing, toggles)",
     "  /gsd hooks          Show post-unit hook configuration",
     "  /gsd extensions     Manage extensions  [list|enable|disable|info]",
     "  /gsd fast           Toggle OpenAI service tier  [on|off|flex|status]",
+    "  /gsd mcp            MCP server status and connectivity  [status|check <server>]",
     "",
     "MAINTENANCE",
     "  /gsd doctor         Diagnose and repair .gsd/ state  [audit|fix|heal] [scope]",
@@ -68,6 +72,9 @@ export function showHelp(ctx: ExtensionCommandContext): void {
 
 export async function handleStatus(ctx: ExtensionCommandContext): Promise<void> {
   const basePath = projectRoot();
+  // Open DB in cold sessions so status uses DB-backed state, not filesystem fallback (#3385)
+  const { ensureDbOpen } = await import("../../bootstrap/dynamic-tools.js");
+  await ensureDbOpen();
   const state = await deriveState(basePath);
 
   if (state.registry.length === 0) {
@@ -209,6 +216,25 @@ export async function handleCoreCommand(trimmed: string, ctx: ExtensionCommandCo
   }
   if (trimmed === "cmux" || trimmed.startsWith("cmux ")) {
     await handleCmux(trimmed.replace(/^cmux\s*/, "").trim(), ctx);
+    return true;
+  }
+  if (trimmed === "show-config") {
+    const { GSDConfigOverlay, formatConfigText } = await import("../../config-overlay.js");
+    const result = await ctx.ui.custom<void>(
+      (tui, theme, _kb, done) => new GSDConfigOverlay(tui, theme, () => done()),
+      {
+        overlay: true,
+        overlayOptions: {
+          width: "65%",
+          minWidth: 55,
+          maxHeight: "85%",
+          anchor: "center",
+        },
+      },
+    );
+    if (result === undefined) {
+      ctx.ui.notify(formatConfigText(), "info");
+    }
     return true;
   }
   if (trimmed === "setup" || trimmed.startsWith("setup ")) {
