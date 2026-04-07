@@ -6,7 +6,7 @@
  * page.evaluate() callbacks can reference window.__pi.* utilities.
  */
 
-import type { Browser, BrowserContext, Frame, Page } from "playwright";
+import type { BrowserEngine, BrowserSessionContext, BrowserFrame, BrowserPage } from "./browser-types.js";
 import path from "node:path";
 import {
 	registryAddPage,
@@ -46,7 +46,7 @@ import { EVALUATE_HELPERS_SOURCE } from "./evaluate-helpers.js";
 // ---------------------------------------------------------------------------
 
 /** Attach all event listeners to a page. Called on initial page and new tabs. */
-export function attachPageListeners(p: Page, pageId: number): void {
+export function attachPageListeners(p: BrowserPage, pageId: number): void {
 	const pendingMap = getPendingCriticalRequestsByPage();
 	pendingMap.set(p, 0);
 
@@ -159,11 +159,47 @@ export function attachPageListeners(p: Page, pageId: number): void {
 // Browser lifecycle
 // ---------------------------------------------------------------------------
 
-export async function ensureBrowser(): Promise<{ browser: Browser; context: BrowserContext; page: Page }> {
+export async function ensureBrowser(): Promise<{ browser: BrowserEngine; context: BrowserSessionContext; page: BrowserPage }> {
 	const existingBrowser = getBrowser();
 	const existingContext = getContext();
 	if (existingBrowser && existingContext) {
 		return { browser: existingBrowser, context: existingContext, page: getActivePage() };
+	}
+
+	// Check if cmux browser backend should be used
+	const { shouldUseCmuxBrowser, openCmuxBrowser } = await import("./cmux-backend.js");
+	if (await shouldUseCmuxBrowser()) {
+		try {
+		const { page, surfaceId } = await openCmuxBrowser("about:blank");
+
+		// CmuxPage implements BrowserPage — no casts needed
+		const cmuxContext = page.context();
+		const cmuxBrowser: BrowserEngine = {
+			close: async () => { await cmuxContext.close(); },
+			newContext: async () => cmuxContext,
+		};
+
+		// Inject shared browser-side utilities (window.__pi.cssPath, simpleHash, etc.)
+		// so that evaluate callbacks in refs.ts, capture.ts, settle.ts work correctly
+		// on pages that don't block eval via CSP.
+		await cmuxContext.addInitScript(EVALUATE_HELPERS_SOURCE);
+
+		setBrowser(cmuxBrowser);
+		setContext(cmuxContext);
+
+		const pageEntry = registryAddPage(pageRegistry, {
+			page,
+			title: "",
+			url: "about:blank",
+			opener: null,
+		});
+		registrySetActive(pageRegistry, pageEntry.id);
+		attachPageListeners(page, pageEntry.id);
+
+		return { browser: cmuxBrowser, context: cmuxContext, page };
+		} catch {
+			// cmux browser failed to open — fall back to Playwright silently
+		}
 	}
 
 	const startedAt = ensureSessionStartedAt();
@@ -203,10 +239,16 @@ export async function ensureBrowser(): Promise<{ browser: Browser; context: Brow
 	// Inject shared browser-side utilities into every new page/frame
 	await context.addInitScript(EVALUATE_HELPERS_SOURCE);
 
-	setBrowser(browser);
-	setContext(context);
+	// Playwright objects implement our BrowserPage/BrowserSessionContext/BrowserEngine
+	// interfaces structurally. The cast is safe — Playwright provides a superset of
+	// what our interfaces require. This is the Playwright ↔ browser-types boundary.
+	const typedBrowser = browser as unknown as BrowserEngine;
+	const typedContext = context as unknown as BrowserSessionContext;
 
-	const initialPage = await context.newPage();
+	setBrowser(typedBrowser);
+	setContext(typedContext);
+
+	const initialPage = await context.newPage() as unknown as BrowserPage;
 	const pageEntry = registryAddPage(pageRegistry, {
 		page: initialPage,
 		title: await initialPage.title().catch(() => ""),
@@ -217,43 +259,44 @@ export async function ensureBrowser(): Promise<{ browser: Browser; context: Brow
 	attachPageListeners(initialPage, pageEntry.id);
 
 	// Register new pages (popups, target="_blank", window.open) but do NOT auto-switch
-	context.on("page", (newPage) => {
+	context.on("page", (newPage: any) => {
+		const typedNewPage = newPage as BrowserPage;
 		// Determine opener page ID — find which registry page opened this one
-		const openerPage = newPage.opener();
+		const openerPage = newPage.opener?.();
 		let openerId: number | null = null;
 		if (openerPage) {
 			const openerEntry = pageRegistry.pages.find((e: any) => e.page === openerPage);
 			if (openerEntry) openerId = openerEntry.id;
 		}
 		const entry = registryAddPage(pageRegistry, {
-			page: newPage,
+			page: typedNewPage,
 			title: "",
-			url: newPage.url(),
+			url: typedNewPage.url(),
 			opener: openerId,
 		});
-		attachPageListeners(newPage, entry.id);
+		attachPageListeners(typedNewPage, entry.id);
 		// Update title once loaded
-		newPage.waitForLoadState("domcontentloaded", { timeout: 5000 })
-			.then(() => newPage.title())
+		typedNewPage.waitForLoadState("domcontentloaded", { timeout: 5000 })
+			.then(() => typedNewPage.title())
 			.then((title) => { entry.title = title; })
 			.catch(() => { /* best-effort title fetch — page may have closed or navigated away */ });
 	});
 
-	return { browser, context, page: getActivePage() };
+	return { browser: typedBrowser, context: typedContext, page: getActivePage() };
 }
 
 /** Get the currently active page from the registry. */
-export function getActivePage(): Page {
+export function getActivePage(): BrowserPage {
 	return registryGetActive(pageRegistry).page;
 }
 
 /** Get the active target — returns the selected frame if one is active, otherwise the active page. */
-export function getActiveTarget(): Page | Frame {
+export function getActiveTarget(): BrowserPage | BrowserFrame {
 	return getActiveFrame() ?? getActivePage();
 }
 
 /** Safe accessor for error handling — returns the active page or null if unavailable. */
-export function getActivePageOrNull(): Page | null {
+export function getActivePageOrNull(): BrowserPage | null {
 	try {
 		return getActivePage();
 	} catch {

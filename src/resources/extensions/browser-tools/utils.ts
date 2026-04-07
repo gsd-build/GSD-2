@@ -5,7 +5,7 @@
  * They import state accessors from ./state.ts — never raw module-level variables.
  */
 
-import type { Frame, Page } from "playwright";
+import type { BrowserFrame, BrowserPage } from "./browser-types.js";
 import { mkdir, stat, writeFile, copyFile } from "node:fs/promises";
 import path from "node:path";
 import {
@@ -186,7 +186,7 @@ export function sanitizeArtifactName(value: string, fallback: string): string {
  * wired in via ToolDeps. This is a factory that takes ensureBrowser.
  */
 export function createGetLivePagesSnapshot(
-	ensureBrowser: () => Promise<{ page: Page }>,
+	ensureBrowser: () => Promise<{ page: BrowserPage }>,
 ) {
 	return async function getLivePagesSnapshot() {
 		await ensureBrowser();
@@ -230,10 +230,10 @@ export async function resolveAccessibilityScope(
 
 /**
  * captureAccessibilityMarkdown — needs access to the active target.
- * Accepts the target (Page | Frame) so it doesn't need to pull from state.
+ * Accepts the target (BrowserPage | BrowserFrame) so it doesn't need to pull from state.
  */
 export async function captureAccessibilityMarkdown(
-	target: Page | Frame,
+	target: BrowserPage | BrowserFrame,
 	selector?: string,
 ): Promise<{ snapshot: string; scope: string; source: string }> {
 	const scopeInfo = await resolveAccessibilityScope(selector);
@@ -250,13 +250,13 @@ export function isCriticalResourceType(resourceType: string): boolean {
 	return resourceType === "document" || resourceType === "fetch" || resourceType === "xhr";
 }
 
-export function updatePendingCriticalRequests(p: Page, delta: number): void {
+export function updatePendingCriticalRequests(p: BrowserPage, delta: number): void {
 	const map = getPendingCriticalRequestsByPage();
 	const current = map.get(p) ?? 0;
 	map.set(p, Math.max(0, current + delta));
 }
 
-export function getPendingCriticalRequests(p: Page): number {
+export function getPendingCriticalRequests(p: BrowserPage): number {
 	return getPendingCriticalRequestsByPage().get(p) ?? 0;
 }
 
@@ -291,13 +291,13 @@ export function verificationLine(verification: BrowserVerificationResult): strin
 // ---------------------------------------------------------------------------
 
 export async function collectAssertionState(
-	p: Page,
+	p: BrowserPage,
 	checks: BrowserAssertionCheckInput[],
 	captureCompactPageState: (
-		p: Page,
-		options?: { selectors?: string[]; includeBodyText?: boolean; target?: Page | Frame },
+		p: BrowserPage,
+		options?: { selectors?: string[]; includeBodyText?: boolean; target?: BrowserPage | BrowserFrame },
 	) => Promise<CompactPageState>,
-	target?: Page | Frame,
+	target?: BrowserPage | BrowserFrame,
 ): Promise<{
 	url: string;
 	title: string;
@@ -374,7 +374,7 @@ export function getUrlHash(url: string): string {
 	}
 }
 
-export async function countOpenDialogs(target: Page | Frame): Promise<number> {
+export async function countOpenDialogs(target: BrowserPage | BrowserFrame): Promise<number> {
 	try {
 		return await target.evaluate(() =>
 			document.querySelectorAll('[role="dialog"]:not([hidden]),dialog[open]')
@@ -390,7 +390,7 @@ export async function countOpenDialogs(target: Page | Frame): Promise<number> {
 // ---------------------------------------------------------------------------
 
 export async function captureClickTargetState(
-	target: Page | Frame,
+	target: BrowserPage | BrowserFrame,
 	selector: string,
 ): Promise<ClickTargetStateSnapshot> {
 	try {
@@ -428,7 +428,7 @@ export async function captureClickTargetState(
 }
 
 export async function readInputLikeValue(
-	target: Page | Frame,
+	target: BrowserPage | BrowserFrame,
 	selector?: string,
 ): Promise<string | null> {
 	try {

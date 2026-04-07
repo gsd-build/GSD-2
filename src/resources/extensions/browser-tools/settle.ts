@@ -6,7 +6,7 @@
  * before returning control.
  */
 
-import type { Frame, Page } from "playwright";
+import type { BrowserFrame, BrowserPage } from "./browser-types.js";
 import type { AdaptiveSettleDetails, AdaptiveSettleOptions } from "./state.js";
 import { getPendingCriticalRequests } from "./utils.js";
 
@@ -14,7 +14,7 @@ import { getPendingCriticalRequests } from "./utils.js";
 // Mutation counter (installed in-page via evaluate)
 // ---------------------------------------------------------------------------
 
-export async function ensureMutationCounter(p: Page): Promise<void> {
+export async function ensureMutationCounter(p: BrowserPage): Promise<void> {
 	await p.evaluate(() => {
 		const key = "__piMutationCounter" as const;
 		const installedKey = "__piMutationCounterInstalled" as const;
@@ -35,7 +35,7 @@ export async function ensureMutationCounter(p: Page): Promise<void> {
 	});
 }
 
-export async function readMutationCounter(p: Page): Promise<number> {
+export async function readMutationCounter(p: BrowserPage): Promise<number> {
 	try {
 		return await p.evaluate(() => {
 			const w = window as unknown as Record<string, unknown>;
@@ -51,7 +51,7 @@ export async function readMutationCounter(p: Page): Promise<number> {
 // Focus descriptor (for focus-stability checks)
 // ---------------------------------------------------------------------------
 
-export async function readFocusedDescriptor(target: Page | Frame): Promise<string> {
+export async function readFocusedDescriptor(target: BrowserPage | BrowserFrame): Promise<string> {
 	try {
 		return await target.evaluate(() => {
 			const el = document.activeElement as HTMLElement | null;
@@ -75,7 +75,7 @@ export async function readFocusedDescriptor(target: Page | Frame): Promise<strin
  * in a single `evaluate()` call, saving one round-trip per poll iteration.
  */
 async function readSettleState(
-	target: Page | Frame,
+	target: BrowserPage | BrowserFrame,
 	checkFocus: boolean,
 ): Promise<{ mutationCount: number; focusDescriptor: string }> {
 	try {
@@ -107,7 +107,7 @@ const ZERO_MUTATION_THRESHOLD_MS = 60;
 const ZERO_MUTATION_QUIET_MS = 30;
 
 export async function settleAfterActionAdaptive(
-	p: Page,
+	p: BrowserPage,
 	opts: AdaptiveSettleOptions = {},
 ): Promise<AdaptiveSettleDetails> {
 	const timeoutMs = Math.max(150, opts.timeoutMs ?? 500);
