@@ -163,16 +163,15 @@ test("deriveState returns completing-milestone when VALIDATION exists with termi
   }
 });
 
-test("deriveState treats needs-remediation as terminal — does not re-enter validating-milestone (#832)", async () => {
+test("deriveState treats needs-remediation as non-terminal — re-enters validating-milestone (#832)", async () => {
   const base = makeTmpBase();
   try {
     writeRoadmap(base, "M001", ALL_DONE_ROADMAP);
     writeValidation(base, "M001", "---\nverdict: needs-remediation\nremediation_round: 0\n---\n\n# Validation\nNeeds fixes.");
 
     const state = await deriveState(base);
-    // needs-remediation is now terminal — milestone needs a SUMMARY to be fully complete
-    // Without SUMMARY, it enters completing-milestone (not validating-milestone)
-    assert.notEqual(state.phase, "validating-milestone");
+    // needs-remediation routes back to validating-milestone for re-validation
+    assert.equal(state.phase, "validating-milestone");
     assert.equal(state.activeMilestone?.id, "M001");
   } finally {
     cleanup(base);
