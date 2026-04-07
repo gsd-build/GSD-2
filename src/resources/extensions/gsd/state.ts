@@ -21,6 +21,8 @@ import {
   loadFile,
   parseRequirementCounts,
   parseContextDependsOn,
+  splitFrontmatter,
+  parseFrontmatterMap,
 } from './files.js';
 
 import {
@@ -311,6 +313,25 @@ function isStatusDone(status: string): boolean {
   return status === 'complete' || status === 'done' || status === 'skipped';
 }
 
+function isTerminalSummaryStatus(status: string | null | undefined): boolean {
+  if (!status) return true; // Backward compatibility: older summaries may not include status
+  const normalized = status.toLowerCase().trim();
+  return normalized === 'complete' || normalized === 'done' || normalized === 'validated' || normalized === 'skipped';
+}
+
+async function hasTerminalSummary(summaryFile: string): Promise<boolean> {
+  const summaryContent = await loadFile(summaryFile);
+  if (!summaryContent) return true;
+
+  const [frontmatterLines] = splitFrontmatter(summaryContent);
+  if (!frontmatterLines) return true;
+
+  const frontmatter = parseFrontmatterMap(frontmatterLines);
+  const rawStatus = frontmatter.status;
+  const status = typeof rawStatus === 'string' ? rawStatus : null;
+  return isTerminalSummaryStatus(status);
+}
+
 /**
  * Derive GSD state from the milestones/slices/tasks DB tables.
  * Flag files (PARKED, VALIDATION, CONTINUE, REPLAN, REPLAN-TRIGGER, CONTEXT-DRAFT)
@@ -435,9 +456,9 @@ export async function deriveStateFromDb(basePath: string): Promise<GSDState> {
       continue;
     }
 
-    // Check if milestone has a summary on disk (terminal artifact per #864)
+    // Check if milestone has a terminal summary on disk (terminal artifact per #864)
     const summaryFile = resolveMilestoneFile(basePath, m.id, "SUMMARY");
-    if (summaryFile) {
+    if (summaryFile && await hasTerminalSummary(summaryFile)) {
       completeMilestoneIds.add(m.id);
       continue;
     }
@@ -479,7 +500,7 @@ export async function deriveStateFromDb(basePath: string): Promise<GSDState> {
     const summaryFile = resolveMilestoneFile(basePath, m.id, "SUMMARY");
 
     // Determine if this milestone is complete
-    if (completeMilestoneIds.has(m.id) || (summaryFile !== null)) {
+    if (completeMilestoneIds.has(m.id)) {
       // Get title from DB or summary
       let title = stripMilestonePrefix(m.title) || m.id;
       if (summaryFile && !m.title) {
