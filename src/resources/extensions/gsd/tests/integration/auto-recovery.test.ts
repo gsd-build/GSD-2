@@ -684,7 +684,7 @@ function makeGitBase(): string {
   return base;
 }
 
-test("hasImplementationArtifacts returns false when only .gsd/ files committed (#1703)", (t) => {
+test("hasImplementationArtifacts returns 'absent' when only .gsd/ files committed (#1703)", (t) => {
   const base = makeGitBase();
   t.after(() => cleanup(base));
 
@@ -697,10 +697,10 @@ test("hasImplementationArtifacts returns false when only .gsd/ files committed (
   execFileSync("git", ["commit", "-m", "chore: add plan files"], { cwd: base, stdio: "ignore" });
 
   const result = hasImplementationArtifacts(base);
-  assert.equal(result, false, "should return false when only .gsd/ files were committed");
+  assert.equal(result, "absent", "should return 'absent' when only .gsd/ files were committed");
 });
 
-test("hasImplementationArtifacts returns true when implementation files committed (#1703)", (t) => {
+test("hasImplementationArtifacts returns 'present' when implementation files committed (#1703)", (t) => {
   const base = makeGitBase();
   t.after(() => cleanup(base));
 
@@ -714,16 +714,16 @@ test("hasImplementationArtifacts returns true when implementation files committe
   execFileSync("git", ["commit", "-m", "feat: add feature"], { cwd: base, stdio: "ignore" });
 
   const result = hasImplementationArtifacts(base);
-  assert.equal(result, true, "should return true when implementation files are present");
+  assert.equal(result, "present", "should return 'present' when implementation files are present");
 });
 
-test("hasImplementationArtifacts returns true on non-git directory (fail-open)", (t) => {
+test("hasImplementationArtifacts returns 'unknown' on non-git directory (fail-open)", (t) => {
   const base = join(tmpdir(), `gsd-test-nogit-${randomUUID()}`);
   mkdirSync(base, { recursive: true });
   t.after(() => cleanup(base));
 
   const result = hasImplementationArtifacts(base);
-  assert.equal(result, true, "should return true (fail-open) in non-git directory");
+  assert.equal(result, "unknown", "should return 'unknown' (fail-open) in non-git directory");
 });
 
 // ─── verifyExpectedArtifact: complete-milestone requires impl artifacts (#1703) ──

@@ -61,13 +61,12 @@ export { resolveExpectedArtifactPath, diagnoseExpectedArtifact };
  * in the git history. Uses `git log --name-only` to inspect all commits on the
  * current branch that touch files outside `.gsd/`.
  *
- * Returns true if at least one non-`.gsd/` file was committed, false otherwise.
- * Non-fatal: returns true on git errors to avoid blocking the pipeline when
- * running outside a git repo (e.g., tests).
+ * Returns "present" if implementation files found, "absent" if only .gsd/ files,
+ * "unknown" if git is unavailable or check failed (callers decide how to handle).
  */
-export function hasImplementationArtifacts(basePath: string): boolean {
+export function hasImplementationArtifacts(basePath: string): "present" | "absent" | "unknown" {
   try {
-    // Verify we're in a git repo — fail open if not
+    // Verify we're in a git repo
     try {
       execFileSync("git", ["rev-parse", "--is-inside-work-tree"], {
         cwd: basePath,
@@ -76,7 +75,7 @@ export function hasImplementationArtifacts(basePath: string): boolean {
       });
     } catch (e) {
       logWarning("recovery", `git rev-parse check failed: ${(e as Error).message}`);
-      return true;
+      return "unknown";
     }
 
     // Strategy: check `git diff --name-only` against the merge-base with the
@@ -86,19 +85,19 @@ export function hasImplementationArtifacts(basePath: string): boolean {
     const mainBranch = detectMainBranch(basePath);
     const changedFiles = getChangedFilesSinceBranch(basePath, mainBranch);
 
-    // No files changed at all — fail open (could be detached HEAD, single-
+    // No files changed at all — unknown (could be detached HEAD, single-
     // commit repo, or other edge case where git diff returns nothing).
-    if (changedFiles.length === 0) return true;
+    if (changedFiles.length === 0) return "unknown";
 
     // Filter out .gsd/ files — only implementation files count.
     // If every changed file is under .gsd/, the milestone produced no
     // implementation code (#1703).
     const implFiles = changedFiles.filter(f => !f.startsWith(".gsd/") && !f.startsWith(".gsd\\"));
-    return implFiles.length > 0;
+    return implFiles.length > 0 ? "present" : "absent";
   } catch (e) {
-    // Non-fatal — if git operations fail, don't block the pipeline
+    // Non-fatal — if git operations fail, return unknown so callers can decide
     logWarning("recovery", `implementation artifact check failed: ${(e as Error).message}`);
-    return true;
+    return "unknown";
   }
 }
 
@@ -395,7 +394,7 @@ export function verifyExpectedArtifact(
   // A milestone with only .gsd/ plan files and zero implementation code is
   // not genuinely complete — the LLM wrote plan files but skipped actual work.
   if (unitType === "complete-milestone") {
-    if (!hasImplementationArtifacts(base)) return false;
+    if (hasImplementationArtifacts(base) === "absent") return false;
   }
 
   return true;
@@ -502,7 +501,7 @@ export function reconcileMergeState(
   if (conflictedFiles.length === 0) {
     // All conflicts resolved — finalize the merge/squash commit
     try {
-      const commitSha = nativeCommit(basePath, ""); // --no-edit equivalent: use empty message placeholder
+      const commitSha = nativeCommit(basePath, "chore(gsd): reconcile merge state");
       if (commitSha) {
         const mode = hasMergeHead ? "merge" : "squash commit";
         ctx.ui.notify(`Finalized leftover ${mode} from prior session.`, "info");

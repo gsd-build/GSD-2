@@ -90,18 +90,21 @@ describe("workflow-logger audit persistence", () => {
     assert.ok(ctx, "context should exist");
     assert.equal(ctx.fn, "saveDecisionToDb");
     assert.equal(ctx.tool, "gsd_decision_save");
-    assert.equal(ctx.error, undefined, "error key must be stripped from persisted context");
+    assert.equal(ctx.error, "SQLITE_BUSY: database is locked", "error key should be preserved in persisted context");
     assert.equal(ctx.file, undefined, "file key must be stripped from persisted context");
   });
 
-  test("persisted errors omit context when no safe keys present", () => {
+  test("persisted errors preserve error key but strip other unsafe keys", () => {
     logError("bootstrap", "ensureDbOpen failed", {
       error: "ENOENT",
       cwd: "/home/user/project",
     });
     const lines = readAuditLines(tmp);
     assert.equal(lines.length, 1);
-    assert.equal(lines[0].context, undefined, "context should be omitted when no safe keys match");
+    const ctx = lines[0].context as Record<string, string>;
+    assert.ok(ctx, "context should exist when error key is present");
+    assert.equal(ctx.error, "ENOENT", "error key should be preserved");
+    assert.equal(ctx.cwd, undefined, "cwd key must be stripped");
   });
 
   test("mixed warnings and errors only persist errors", () => {

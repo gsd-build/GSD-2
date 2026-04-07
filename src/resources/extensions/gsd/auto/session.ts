@@ -138,6 +138,9 @@ export class AutoSession {
 
   // ── Dispatch circuit breakers ──────────────────────────────────────
   rewriteAttemptCount = 0;
+  /** Tracks consecutive bootstrap attempts that found phase === "complete".
+   *  Moved from module-level to per-session so s.reset() clears it (#1348). */
+  consecutiveCompleteBootstraps = 0;
 
   // ── Metrics ──────────────────────────────────────────────────────────────
   autoStartTime = 0;
@@ -224,6 +227,7 @@ export class AutoSession {
     this.pendingQuickTasks = [];
     this.sidecarQueue = [];
     this.rewriteAttemptCount = 0;
+    this.consecutiveCompleteBootstraps = 0;
     this.lastToolInvocationError = null;
     this.isolationDegraded = false;
     this.milestoneMergedInPhases = false;

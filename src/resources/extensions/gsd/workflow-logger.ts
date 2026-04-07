@@ -295,7 +295,7 @@ function _sanitizeForAudit(entry: LogEntry): LogEntry {
   };
   if (entry.context) {
     // Allowlist: only persist known-safe structured keys
-    const SAFE_KEYS = new Set(["fn", "tool", "mid", "sid", "tid", "worktree"]);
+    const SAFE_KEYS = new Set(["fn", "tool", "mid", "sid", "tid", "worktree", "id", "error", "count"]);
     const filtered: Record<string, string> = {};
     for (const [k, v] of Object.entries(entry.context)) {
       if (SAFE_KEYS.has(k)) {

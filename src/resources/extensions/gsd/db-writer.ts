@@ -345,8 +345,12 @@ export async function saveRequirementToDb(
       await saveFile(filePath, md);
     } catch (diskErr) {
       logError('manifest', 'disk write failed, rolling back DB row', { fn: 'saveRequirementToDb', error: String((diskErr as Error).message) });
-      const rollbackAdapter = db._getAdapter();
-      rollbackAdapter?.prepare('DELETE FROM requirements WHERE id = :id').run({ ':id': id });
+      try {
+        const rollbackAdapter = db._getAdapter();
+        rollbackAdapter?.prepare('DELETE FROM requirements WHERE id = :id').run({ ':id': id });
+      } catch (rollbackErr) {
+        logError('manifest', 'SPLIT BRAIN: disk write failed AND DB rollback failed — DB has orphaned row', { fn: 'saveRequirementToDb', id, error: String((rollbackErr as Error).message) });
+      }
       throw diskErr;
     }
     invalidateStateCache();
@@ -466,7 +470,11 @@ export async function saveDecisionToDb(
       await saveFile(filePath, md);
     } catch (diskErr) {
       logError('manifest', 'disk write failed, rolling back DB row', { fn: 'saveDecisionToDb', error: String((diskErr as Error).message) });
-      adapter?.prepare('DELETE FROM decisions WHERE id = :id').run({ ':id': id });
+      try {
+        adapter?.prepare('DELETE FROM decisions WHERE id = :id').run({ ':id': id });
+      } catch (rollbackErr) {
+        logError('manifest', 'SPLIT BRAIN: disk write failed AND DB rollback failed — DB has orphaned row', { fn: 'saveDecisionToDb', id, error: String((rollbackErr as Error).message) });
+      }
       throw diskErr;
     }
     // #2661: When a decision defers a slice, update the slice status in the DB
