@@ -530,6 +530,16 @@ export function executeTriageResolutions(
     result.actions.push(`Note acknowledged: ${cap.id} — "${cap.text}"`);
   }
 
+  // Mark note captures as executed — they're informational only, no action needed.
+  // Without this, note captures stay in "resolved but not executed" limbo forever (#3578).
+  const notes = loadAllCaptures(basePath).filter(
+    c => c.status === "resolved" && !c.executed && c.classification === "note",
+  );
+  for (const cap of notes) {
+    markCaptureExecuted(basePath, cap.id);
+    result.actions.push(`Note acknowledged: ${cap.id} — "${cap.text}"`);
+  }
+
   if (actionable.length === 0) return result;
 
   for (const capture of actionable) {
