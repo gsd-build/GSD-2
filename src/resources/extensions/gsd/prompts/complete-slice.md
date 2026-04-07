@@ -24,7 +24,7 @@ Then:
 3. Run all slice-level verification checks defined in the slice plan. All must pass before marking the slice done. If any fail, fix them first.
 4. If the slice plan includes observability/diagnostic surfaces, confirm they work. Skip this for simple slices that don't have observability sections.
 5. If the slice involved runtime behavior, fill the **Operational Readiness** section (Q8) in the slice summary: health signal, failure signal, recovery procedure, and monitoring gaps. Omit entirely for simple slices with no runtime concerns.
-6. If this slice produced evidence that a requirement changed status (Active → Validated, Active → Deferred, etc.), call `gsd_save_decision` with scope="requirement", decision="{requirement-id}", choice="{new-status}", rationale="{evidence}". Do NOT write `.gsd/REQUIREMENTS.md` directly — the engine renders it from the database.
+6. If this slice produced evidence that a requirement changed status (Active → Validated, Active → Deferred, etc.), call `gsd_requirement_update` with the requirement ID, updated `status`, and `validation` fields describing the evidence. Do NOT write `.gsd/REQUIREMENTS.md` directly — the tool regenerates it from the database.
 7. Write `{{sliceSummaryPath}}` (compress all task summaries).
 8. Write `{{sliceUatPath}}` — a concrete UAT script with real test cases derived from the slice plan and task summaries. Include preconditions, numbered steps with expected outcomes, and edge cases. This must NOT be a placeholder or generic template — tailor every test case to what this slice actually built.
 9. Review task summaries for `key_decisions`. Append any significant decisions to `.gsd/DECISIONS.md` if missing.
