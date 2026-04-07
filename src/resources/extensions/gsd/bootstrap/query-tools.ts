@@ -22,17 +22,18 @@ export function registerQueryTools(pi: ExtensionAPI): void {
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       try {
-        // Strictly read-only: only use an already-open DB connection.
-        // Do NOT call ensureDbOpen() — it can create/migrate the DB as a side effect.
+        // Open the DB if not already open — safe for read-only use since
+        // ensureDbOpen() only creates/migrates when .gsd/ has content (#3644).
+        const { ensureDbOpen } = await import("./dynamic-tools.js");
+        const dbAvailable = await ensureDbOpen();
         const {
-          isDbAvailable,
           getMilestone,
           getSliceStatusSummary,
           getSliceTaskCounts,
           _getAdapter,
         } = await import("../gsd-db.js");
 
-        if (!isDbAvailable()) {
+        if (!dbAvailable) {
           return {
             content: [{ type: "text" as const, text: "Error: GSD database is not available." }],
             details: { operation: "milestone_status", error: "db_unavailable" } as any,
