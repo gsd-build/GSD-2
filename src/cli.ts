@@ -164,6 +164,16 @@ if (cliFlags.messages[0] === 'update') {
   process.exit(0)
 }
 
+// `gsd --help` or `gsd <subcommand> --help` — must come before the TTY gate
+// so that `gsd --help` works in non-interactive contexts (pipes, CI, etc.)
+if (cliFlags.help) {
+  const subcommand = cliFlags.messages[0]
+  if (!subcommand || !printSubcommandHelp(subcommand, process.env.GSD_VERSION || '0.0.0')) {
+    printHelp(process.env.GSD_VERSION || '0.0.0')
+  }
+  process.exit(0)
+}
+
 exitIfManagedResourcesAreNewer(agentDir)
 
 // Early TTY check — must come before heavy initialization to avoid dangling
@@ -178,15 +188,6 @@ if (!process.stdin.isTTY && !isPrintMode && !hasSubcommand && !cliFlags.listMode
   process.stderr.write('[gsd]   gsd --mode mcp                 MCP server over stdin/stdout\n')
   process.stderr.write('[gsd]   gsd --mode text "message"      Text output mode\n')
   process.exit(1)
-}
-
-// `gsd --help` or `gsd <subcommand> --help`
-if (cliFlags.help) {
-  const subcommand = cliFlags.messages[0]
-  if (!subcommand || !printSubcommandHelp(subcommand, process.env.GSD_VERSION || '0.0.0')) {
-    printHelp(process.env.GSD_VERSION || '0.0.0')
-  }
-  process.exit(0)
 }
 
 const packageCommand = await runPackageCommand({
