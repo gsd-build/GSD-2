@@ -55,6 +55,7 @@ import {
   getSlice,
   insertMilestone,
   insertSlice,
+  insertTask,
   updateTaskStatus,
   getPendingSliceGateCount,
   type MilestoneRow,
@@ -737,6 +738,37 @@ export async function deriveStateFromDb(basePath: string): Promise<GSDState> {
 
   // ── Get tasks from DB ────────────────────────────────────────────────
   let tasks = getSliceTasks(activeMilestone.id, activeSlice.id);
+
+  // ── Disk→DB task reconciliation (#3592) ─────────────────────────────
+  // When the plan file exists on disk with task entries but the DB has no
+  // task rows, the LLM wrote plan files directly (e.g. gsd_plan_slice MCP
+  // tool unavailable) instead of persisting through the DB-backed tool.
+  // Parse the plan file and insert missing tasks so the state machine can
+  // advance instead of looping back to "planning" indefinitely.
+  // insertTask uses ON CONFLICT DO UPDATE, so existing rows are safe.
+  if (tasks.length === 0 && planFile) {
+    try {
+      const planContent = readFileSync(planFile, "utf-8");
+      const plan = parsePlan(planContent);
+      if (plan.tasks.length > 0) {
+        for (let i = 0; i < plan.tasks.length; i++) {
+          const t = plan.tasks[i];
+          insertTask({
+            id: t.id,
+            milestoneId: activeMilestone.id,
+            sliceId: activeSlice.id,
+            title: t.title || "",
+            status: t.done ? "complete" : "pending",
+            sequence: i,
+          });
+        }
+        tasks = getSliceTasks(activeMilestone.id, activeSlice.id);
+        logWarning("reconcile", `${plan.tasks.length} task(s) reconciled from disk plan file for ${activeMilestone.id}/${activeSlice.id} (#3592)`, { mid: activeMilestone.id, sid: activeSlice.id });
+      }
+    } catch (err) {
+      logWarning("reconcile", `task reconciliation from plan file failed: ${(err as Error).message}`, { mid: activeMilestone.id, sid: activeSlice.id });
+    }
+  }
 
   // ── Reconcile stale task status (#2514) ──────────────────────────────
   // When a session disconnects after the agent writes SUMMARY + VERIFY
