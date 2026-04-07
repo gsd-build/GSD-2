@@ -54,12 +54,12 @@ const VALIDATORS: Record<string, ContentValidatorFn> = {
 function validatePlanSlice(content: string): ContentViolation[] {
   const violations: ContentViolation[] = [];
 
-  // Must have at least 2 task entries (checkbox pattern)
+  // Must have at least 1 task entry — single-task slices are valid (#3649)
   const taskCount = (content.match(/- \[[ x]\] \*\*T\d+/g) || []).length;
-  if (taskCount < 2) {
+  if (taskCount < 1) {
     violations.push({
       severity: "warning",
-      reason: `Slice plan has only ${taskCount} task(s) — expected at least 2`,
+      reason: `Slice plan has ${taskCount} task(s) — expected at least 1`,
     });
   }
 

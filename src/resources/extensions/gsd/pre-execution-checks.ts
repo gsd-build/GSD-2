@@ -237,9 +237,12 @@ export async function checkPackageExistence(
  */
 export function normalizeFilePath(filePath: string): string {
   if (!filePath) return filePath;
-  
+
+  // Strip backtick wrapping from LLM-generated paths (#3649)
+  let normalized = filePath.replace(/`/g, "");
+
   // Normalize path separators to forward slashes
-  let normalized = filePath.replace(/\\/g, "/");
+  normalized = normalized.replace(/\\/g, "/");
   
   // Remove leading ./
   while (normalized.startsWith("./")) {
@@ -272,10 +275,13 @@ function getExpectedOutputsUpTo(tasks: TaskRow[], taskIndex: number): Set<string
 }
 
 /**
- * Check that all files referenced in task.files and task.inputs either:
+ * Check that all files referenced in task.inputs either:
  *   1. Exist on disk, OR
  *   2. Are in a prior task's expected_output
- * 
+ *
+ * task.files ("files likely touched") is excluded — it intentionally includes
+ * files the task will create, so they don't need to pre-exist (#3626).
+ *
  * All paths are normalized before comparison to ensure ./src/a.ts matches src/a.ts.
  */
 export function checkFilePathConsistency(
@@ -287,7 +293,7 @@ export function checkFilePathConsistency(
   for (let i = 0; i < tasks.length; i++) {
     const task = tasks[i];
     const priorOutputs = getExpectedOutputsUpTo(tasks, i);
-    const filesToCheck = [...task.files, ...task.inputs];
+    const filesToCheck = [...task.inputs];
 
     for (const file of filesToCheck) {
       // Skip empty strings
