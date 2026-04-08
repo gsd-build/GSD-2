@@ -199,6 +199,16 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		time("resourceLoader.reload");
 	}
 
+	// Flush provider registrations queued during extension loading so that
+	// extension models (e.g. pi-claude-cli) are visible in the registry before
+	// findInitialModel() runs. bindCore() repeats this flush as a safety net
+	// for any late-arriving registrations.
+	const { runtime: extensionRuntime } = resourceLoader.getExtensions();
+	for (const { name, config } of extensionRuntime.pendingProviderRegistrations) {
+		modelRegistry.registerProvider(name, config);
+	}
+	extensionRuntime.pendingProviderRegistrations = [];
+
 	// Check if session has existing data to restore
 	const existingSession = sessionManager.buildSessionContext();
 	const hasExistingSession = existingSession.messages.length > 0;
