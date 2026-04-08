@@ -57,6 +57,12 @@ function runtimePath(basePath: string, unitType: string, unitId: string): string
   return join(runtimeDir(basePath), `${sanitizedUnitType}-${sanitizedUnitId}.json`);
 }
 
+// ── In-memory cache for runtime records ─────────────────────────────────────
+// Eliminates redundant readFileSync + JSON.parse on every write (read-modify-write
+// pattern was called ~6x per 15s supervision cycle). Writes still go to disk
+// synchronously for durability, but reads hit the cache after the first access.
+const _runtimeCache = new Map<string, AutoUnitRuntimeRecord>();
+
 export function writeUnitRuntimeRecord(
   basePath: string,
   unitType: string,
@@ -67,7 +73,7 @@ export function writeUnitRuntimeRecord(
   const dir = runtimeDir(basePath);
   mkdirSync(dir, { recursive: true });
   const path = runtimePath(basePath, unitType, unitId);
-  const prev = readUnitRuntimeRecord(basePath, unitType, unitId);
+  const prev = _runtimeCache.get(path) ?? readUnitRuntimeRecordFromDisk(path);
   const next: AutoUnitRuntimeRecord = {
     version: 1,
     unitType,
@@ -85,12 +91,12 @@ export function writeUnitRuntimeRecord(
     recoveryAttempts: updates.recoveryAttempts ?? prev?.recoveryAttempts ?? 0,
     lastRecoveryReason: updates.lastRecoveryReason ?? prev?.lastRecoveryReason,
   };
+  _runtimeCache.set(path, next);
   writeFileSync(path, JSON.stringify(next, null, 2) + "\n", "utf-8");
   return next;
 }
 
-export function readUnitRuntimeRecord(basePath: string, unitType: string, unitId: string): AutoUnitRuntimeRecord | null {
-  const path = runtimePath(basePath, unitType, unitId);
+function readUnitRuntimeRecordFromDisk(path: string): AutoUnitRuntimeRecord | null {
   if (!existsSync(path)) return null;
   try {
     return JSON.parse(readFileSync(path, "utf-8")) as AutoUnitRuntimeRecord;
@@ -99,8 +105,18 @@ export function readUnitRuntimeRecord(basePath: string, unitType: string, unitId
   }
 }
 
+export function readUnitRuntimeRecord(basePath: string, unitType: string, unitId: string): AutoUnitRuntimeRecord | null {
+  const path = runtimePath(basePath, unitType, unitId);
+  const cached = _runtimeCache.get(path);
+  if (cached) return cached;
+  const fromDisk = readUnitRuntimeRecordFromDisk(path);
+  if (fromDisk) _runtimeCache.set(path, fromDisk);
+  return fromDisk;
+}
+
 export function clearUnitRuntimeRecord(basePath: string, unitType: string, unitId: string): void {
   const path = runtimePath(basePath, unitType, unitId);
+  _runtimeCache.delete(path);
   if (existsSync(path)) unlinkSync(path);
 }
 

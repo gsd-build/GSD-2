@@ -317,7 +317,7 @@ export class ParallelMonitorOverlay {
     process.stdout.on("resize", this.resizeHandler);
 
     this.refresh();
-    this.refreshTimer = setInterval(() => this.refresh(), 5000);
+    this.refreshTimer = setInterval(() => this.refresh(), 15_000);
   }
 
   private refresh(): void {

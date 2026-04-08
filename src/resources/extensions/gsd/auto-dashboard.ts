@@ -498,7 +498,8 @@ export function updateProgressWidget(
   const effectiveServiceTier = getEffectiveServiceTier();
 
   ctx.ui.setWidget("gsd-progress", (tui, theme) => {
-    let pulseBright = true;
+    // Pulse state derived from time — no separate timer needed.
+    // Changes on each render cycle (driven by dashboard overlay refresh at 10s).
     let cachedLines: string[] | undefined;
     let cachedWidth: number | undefined;
     let cachedRtkLabel: string | null | undefined;
@@ -515,12 +516,6 @@ export function updateProgressWidget(
     };
 
     refreshRtkLabel();
-
-    const pulseTimer = setInterval(() => {
-      pulseBright = !pulseBright;
-      cachedLines = undefined;
-      tui.requestRender();
-    }, 800);
 
     // Refresh progress cache from disk every 15s so the widget reflects
     // task/slice completion mid-unit. Without this, the progress bar only
@@ -557,7 +552,7 @@ export function updateProgressWidget(
         // ── Line 1: Top bar ───────────────────────────────────────────────
         lines.push(...ui.bar());
 
-        const dot = pulseBright
+        const dot = Math.floor(Date.now() / 2000) % 2 === 0
           ? theme.fg("accent", GLYPH.statusActive)
           : theme.fg("dim", GLYPH.statusPending);
         const elapsed = formatAutoElapsed(accessors.getAutoStartTime());
@@ -878,7 +873,6 @@ export function updateProgressWidget(
         cachedWidth = undefined;
       },
       dispose() {
-        clearInterval(pulseTimer);
         if (progressRefreshTimer) clearInterval(progressRefreshTimer);
       },
     };
