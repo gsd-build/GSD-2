@@ -261,11 +261,31 @@ async function pumpSdkMessages(
 
 					const event = partial.event;
 
-					// New assistant turn starts with message_start
+					// New assistant turn starts with message_start.
+					// Capture content from the outgoing turn before resetting,
+					// then emit message_end + message_start so the TUI creates
+					// a fresh AssistantMessageComponent per turn instead of
+					// overwriting the previous turn's thinking/text.
 					if (event.type === "message_start") {
+						if (builder) {
+							// Preserve text/thinking from the completed turn
+							for (const block of builder.message.content) {
+								if (block.type === "text" && block.text) {
+									lastTextContent = block.text;
+								} else if (block.type === "thinking" && block.thinking) {
+									lastThinkingContent = block.thinking;
+								} else if (block.type === "toolCall") {
+									intermediateToolCalls.push(block);
+								}
+							}
+							// Signal end of previous turn
+							stream.push({ type: "message_end", message: builder.message });
+						}
 						builder = new PartialMessageBuilder(
 							(event as any).message?.model ?? modelId,
 						);
+						// Signal start of new turn so chat controller creates a fresh component
+						stream.push({ type: "message_start", message: builder.message });
 						break;
 					}
 
@@ -273,12 +293,19 @@ async function pumpSdkMessages(
 
 					const assistantEvent = builder.handleEvent(event);
 					if (assistantEvent) {
-						// Skip toolcall events — the agent loop's externalToolExecution
-						// path emits tool_execution_start/end events after streamSimple
-						// returns. Streaming toolcall events would render tool calls
-						// out of order in the TUI's accumulated message content.
+						// Skip toolcall_start and toolcall_delta — the agent loop's
+						// externalToolExecution path emits tool_execution_start/end
+						// events after streamSimple returns.
+						//
+						// On toolcall_end, the partial's toolCall block now has the
+						// parsed arguments. Emit a message_update so the TUI can
+						// refresh the ToolExecutionComponent with the real args
+						// (the earlier message_update that created the component
+						// only saw arguments: {}).
 						const t = assistantEvent.type;
-						if (t !== "toolcall_start" && t !== "toolcall_delta" && t !== "toolcall_end") {
+						if (t === "toolcall_end") {
+							stream.push({ type: "message_update", message: builder.message });
+						} else if (t !== "toolcall_start" && t !== "toolcall_delta") {
 							stream.push(assistantEvent);
 						}
 					}

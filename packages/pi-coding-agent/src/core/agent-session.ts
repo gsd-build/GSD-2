@@ -1271,8 +1271,11 @@ export class AgentSession {
 	}
 
 	getRenderableToolDefinition(toolName: string): ToolDefinition | undefined {
+		// Claude Agent SDK sends PascalCase tool names (e.g. "Bash", "Read");
+		// built-in definitions use lowercase. Match case-insensitively.
+		const lower = toolName.toLowerCase();
 		return [...this._getBuiltinToolDefinitions(), ...this._getRegisteredToolDefinitions()].find(
-			(tool) => tool.name === toolName,
+			(tool) => tool.name.toLowerCase() === lower,
 		);
 	}
 

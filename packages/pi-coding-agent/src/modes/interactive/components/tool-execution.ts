@@ -102,7 +102,9 @@ export class ToolExecutionComponent extends Container {
 		cwd: string = process.cwd(),
 	) {
 		super();
-		this.toolName = toolName;
+		// Claude Agent SDK sends PascalCase tool names (e.g. "Bash", "Read")
+		// but rendering and allTools lookup expect lowercase.
+		this.toolName = toolName.toLowerCase();
 		this.args = args;
 		this.showImages = options.showImages ?? true;
 		this.toolDefinition = toolDefinition;
