@@ -1,0 +1,1022 @@
+{
+  "shell": {
+    "connectingToWorkspace": "Connecting to workspace…",
+    "establishingBridge": "Establishing the live bridge session",
+    "authenticationRequired": "Authentication Required",
+    "authDescription": "This workspace requires an auth token. Copy the full URL from your terminal (including the {code}#token=…{/code} part) or restart with {code2}gsd --web{/code2}.",
+    "retry": "Retry",
+    "openNavigation": "Open navigation",
+    "closeNavigation": "Close navigation",
+    "terminal": "Terminal",
+    "milestones": "Milestones",
+    "beta": "beta"
+  },
+  "sidebar": {
+    "nav": {
+      "dashboard": "Dashboard",
+      "power": "Power Mode",
+      "chat": "Chat",
+      "roadmap": "Roadmap",
+      "files": "Files",
+      "activity": "Activity",
+      "visualize": "Visualize",
+      "projects": "Projects",
+      "git": "Git",
+      "settings": "Settings",
+      "exit": "Exit",
+      "language": "Language"
+    },
+    "tooltip": {
+      "connecting": "Connecting…",
+      "collapseSidebar": "Collapse sidebar",
+      "expandMilestoneSidebar": "Expand milestone sidebar",
+      "language": "Switch language (currently: {language})"
+    },
+    "theme": {
+      "light": "Light",
+      "dark": "Dark",
+      "system": "System"
+    },
+    "stopServer": {
+      "title": "Stop the GSD web server?",
+      "description": "This will shut down the server process and close this tab. Run {command}again to restart.",
+      "cancel": "Cancel",
+      "stop": "Stop server"
+    },
+    "closeProject": {
+      "title": "Close project or stop server?",
+      "closeProject": "Close {projectName}",
+      "closeProjectDescription": "Disconnect this project and switch to another",
+      "stopAll": "Shut down all {projectCount} projects and close the tab"
+    },
+    "onboarding": {
+      "welcome": "Welcome to GSD",
+      "setup": "Set up your workspace",
+      "skipForNow": "Skip for now"
+    },
+    "milestoneExplorer": {
+      "recovery": "Recovery",
+      "validationIssues": "{count} validation issue{count, plural, =1 {} other {s}}"
+    },
+    "help": "Help & Resources"
+  },
+  "onboarding": {
+    "wizard": {
+      "ariaLabel": "Onboarding progress"
+    },
+    "welcome": {
+      "heading": "Welcome to GSD",
+      "description": "Let's get your workspace ready. This takes about a minute.",
+      "getStarted": "Get started"
+    },
+    "mode": {
+      "heading": "How do you want to work?",
+      "subheading": "You can switch anytime from settings.",
+      "expert": {
+        "label": "Expert",
+        "tagline": "Full control",
+        "description": "Dashboard metrics, dual-pane power mode, and direct /gsd command access. Built for people who want visibility into every milestone and task."
+      },
+      "vibe": {
+        "label": "Vibe Coder",
+        "tagline": "Just chat",
+        "description": "Conversational interface with the AI agent. Describe what you want and let GSD handle the structure. Same engine, friendlier surface."
+      }
+    },
+    "provider": {
+      "heading": "Choose a provider",
+      "subheading": "Click a provider to configure it. Set up as many as you want, then continue.",
+      "configured": "Configured",
+      "recommended": "Recommended",
+      "other": "Other Providers",
+      "notConfigured": "Not configured",
+      "back": "Back",
+      "continue": "Continue",
+      "badges": {
+        "apiKey": "API key",
+        "browserSignIn": "Browser sign-in",
+        "oauthUnavailable": "OAuth unavailable"
+      },
+      "tooltips": {
+        "apiKey": "Enter an API key to authenticate",
+        "browserSignIn": "Authenticate through your browser",
+        "oauthUnavailable": "This auth method is not available"
+      },
+      "configuredVia": {
+        "savedAuth": "Saved auth",
+        "environmentVariable": "Environment variable",
+        "runtime": "Runtime"
+      }
+    },
+    "auth": {
+      "connect": "Connect {provider}",
+      "authenticated": "{provider} authenticated",
+      "apiKey": "API key",
+      "apiKeyPlaceholder": "Paste your {provider} API key",
+      "validateSave": "Validate & save",
+      "browserSignIn": "Browser sign-in",
+      "browserAuthUnavailable": "Browser sign-in is not available in this runtime. Go back and choose a provider with API-key support.",
+      "ordDivider": "or",
+      "signIn": "Sign in",
+      "connecting": "Connecting to provider…",
+      "connectionFailed": "Connection failed",
+      "waitingForAuth": "Waiting for authentication…",
+      "retry": "Retry",
+      "cancel": "Cancel",
+      "defaultValuePlaceholder": "Enter value",
+      "validationFailed": "Validation failed",
+      "openSignInPage": "Open sign-in page",
+      "deviceCodeInstruction": "Enter this code on the sign-in page",
+      "copied": "Copied!",
+      "clickToCopy": "Click to copy",
+      "signinFailed": "Sign-in failed or timed out",
+      "waitingForInput": "Waiting for input…",
+      "submit": "Submit",
+      "configureAnotherProvider": "Configure another provider",
+      "descriptionAuthenticated": "Authenticated and ready to go.",
+      "descriptionApiKeyAndOAuth": "Paste an API key or sign in through your browser.",
+      "descriptionApiKeyOnly": "Paste your API key to authenticate.",
+      "descriptionBrowserOnly": "Sign in through your browser to authenticate."
+    },
+    "root": {
+      "heading": "Dev root",
+      "subheading": "The folder that contains your projects. GSD discovers and manages workspaces inside it.",
+      "placeholder": "/Users/you/Projects",
+      "browse": "Browse",
+      "selectThisFolder": "Select this folder",
+      "cancel": "Cancel",
+      "noSubdirectories": "No subdirectories",
+      "back": "Back",
+      "continue": "Continue"
+    },
+    "integrations": {
+      "heading": "Integrations",
+      "subheading": "Optional tools. Nothing here blocks the workspace — configure later from settings.",
+      "notConfigured": "Not configured — add later from settings.",
+      "back": "Back",
+      "continue": "Continue"
+    },
+    "remote": {
+      "heading": "Remote notifications",
+      "subheading": "Get notified when GSD needs your input. Connect a chat channel and the agent pings you instead of waiting silently.",
+      "channel": "Channel",
+      "channelId": "Channel ID",
+      "botToken": "Bot token",
+      "save": "Save",
+      "saveConnect": "Save & connect",
+      "back": "Back",
+      "skip": "Skip",
+      "continue": "Continue",
+      "channelDescriptions": {
+        "slack": "Get notified in a Slack channel",
+        "discord": "Get notified in a Discord channel",
+        "telegram": "Get notified via Telegram bot"
+      },
+      "channelIdHints": {
+        "slack": "Channel ID (e.g. C01ABCD2EFG)",
+        "discord": "Channel ID (17–20 digit number)",
+        "telegram": "Chat ID (numeric, may start with -)"
+      },
+      "checkingConfig": "Checking existing configuration…",
+      "configSaved": "Configuration saved",
+      "connectedTo": "Connected to {channel}",
+      "configured": "✓ configured",
+      "channelFormatMismatch": "Doesn't match the expected format for {channel}",
+      "saveFailed": "Save failed",
+      "failedToSave": "Failed to save",
+      "tokenSaveFailed": "Token save failed",
+      "failedToSaveToken": "Failed to save token"
+    },
+    "ready": {
+      "heading": "You're all set",
+      "subheading": "{provider} is validated. The workspace is live.",
+      "shellUnlocked": "Shell unlocked",
+      "launch": "Launch workspace"
+    },
+    "stepLabels": {
+      "welcome": "Welcome",
+      "mode": "Mode",
+      "provider": "Provider",
+      "auth": "Auth",
+      "root": "Root",
+      "integrations": "Extras",
+      "remote": "Remote",
+      "ready": "Ready",
+      "project": "Project",
+      "workspace": "Workspace"
+    }
+  },
+  "projects": {
+    "title": "Projects",
+    "subtitle": "Switch between projects or create a new one",
+    "discovering": "Discovering projects…",
+    "noProjectsFound": "No projects found",
+    "noProjectsRoot": "No project directories discovered in {devRoot}",
+    "createNewProject": "Create new project",
+    "createNewProjectDescription": "Initialize a new directory with Git",
+    "newProject": "New project",
+    "projectNameValidation": "Use letters, numbers, hyphens, underscores, dots. Must start with a letter or number.",
+    "filterPlaceholder": "Filter…",
+    "status": {
+      "active": "Active",
+      "initialized": "Initialized",
+      "existing": "Existing",
+      "legacy": "Legacy",
+      "new": "New",
+      "current": "Current"
+    },
+    "tag": {
+      "monorepo": "Monorepo",
+      "git": "Git",
+      "nodejs": "Node.js",
+      "rust": "Rust",
+      "go": "Go",
+      "python": "Python"
+    },
+    "error": {
+      "unknown": "Unknown error",
+      "failedSwitch": "Failed to switch project root",
+      "failedCreate": "Failed to create project",
+      "failedBrowse": "Failed to browse",
+      "failedSavePreference": "Failed to save preference"
+    },
+    "project": {
+      "createNew": "Create new project",
+      "createNewDescription": "Initialize a new directory with Git",
+      "newProject": "New project",
+      "nameValidation": "Letters, numbers, hyphens, underscores, dots. Must start with a letter or number.",
+      "nameConflict": "A project with this name already exists",
+      "createAndOpen": "Create & open",
+      "openProject": "Open a project",
+      "selectDescription": "Pick a project to start working in, or create a new one.",
+      "setDevRootFirst": "Set a dev root first to discover your projects.",
+      "noDevRootConfigured": "No dev root configured. Go back and set one, or finish setup to configure later.",
+      "discovering": "Discovering projects…",
+      "noProjectsInRoot": "No projects found in {devRoot}",
+      "finishSetup": "Finish setup"
+    }
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "currentUnit": "Current Unit",
+    "autoFreshness": "Auto freshness: {currentUnitFreshness}",
+    "currentSlice": "Current Slice"
+  },
+  "roadmap": {
+    "title": "Roadmap",
+    "subtitle": "Project milestone structure with slices and dependencies",
+    "workspaceFreshness": "Workspace freshness: {workspaceFreshness}",
+    "loading": "Loading workspace…",
+    "noMilestones": "No milestones found. Create a milestone with {command} to get started.",
+    "labels": {
+      "slices": "slices",
+      "tasks": "tasks"
+    }
+  },
+  "settings": {
+    "section": {
+      "preferences": "Effective Preferences",
+      "modelRouting": "Model Routing",
+      "budgetCosts": "Budget & Costs",
+      "integrations": "Integrations",
+      "general": "General",
+      "experimental": "Experimental",
+      "subtitles": {
+        "remote": "Remote notifications",
+        "appearance": "Appearance & behavior",
+        "optIn": "Opt-in features — may change without notice"
+      }
+    },
+    "labels": {
+      "terminalFontSize": "Terminal font size",
+      "codeFontSize": "Code font size",
+      "mode": "Mode",
+      "tokenProfile": "Token Profile",
+      "customInstructions": "Custom Instructions",
+      "alwaysUse": "Always use",
+      "prefer": "Prefer",
+      "avoid": "Avoid",
+      "autoSupervisor": "Auto-Supervisor",
+      "uatDispatch": "UAT Dispatch",
+      "autoVisualize": "Auto-Visualize",
+      "preferenceScope": "Preference Scope",
+      "rtkCompression": "RTK Shell Compression"
+    },
+    "descriptions": {
+      "terminalFont": "Applies to all terminals and the chat mode interface",
+      "codeFont": "Applies to the file viewer and code editor",
+      "rtk": "Wraps shell commands through the RTK binary to reduce token usage during command execution. RTK is downloaded automatically on first use.",
+      "experimental": "Experimental — may change or be removed without notice."
+    },
+    "channels": {
+      "slack": "Slack",
+      "slackDesc": "Get pinged in a Slack channel",
+      "discord": "Discord",
+      "discordDesc": "Get pinged in a Discord channel",
+      "telegram": "Telegram",
+      "telegramDesc": "Get pinged via Telegram bot"
+    },
+    "status": {
+      "configSaved": "Configuration saved",
+      "switchChannel": "Switch channel",
+      "chooseChannel": "Choose a channel",
+      "updateConnection": "Update connection",
+      "saveConnect": "Save & connect",
+      "disconnect": "Disconnect",
+      "channelDisconnected": "Channel disconnected"
+    },
+    "error": {
+      "fetchRemoteStatus": "Failed to fetch remote questions status",
+      "saveConfig": "Failed to save configuration",
+      "disconnectChannel": "Failed to disconnect channel",
+      "saveToken": "Failed to save token",
+      "unknown": "Unknown error"
+    },
+    "loading": {
+      "preferences": "Loading preferences…",
+      "routing": "Loading routing config…",
+      "budgetData": "Loading budget data…",
+      "integrationStatus": "Loading integration status…"
+    },
+    "empty": {
+      "noPreferences": "No preferences file found",
+      "noRouting": "No routing history yet",
+      "noMetrics": "No execution metrics yet"
+    },
+    "language": {
+      "title": "Language",
+      "description": "Choose the display language for the interface",
+      "english": "English",
+      "german": "Deutsch",
+      "french": "Français"
+    }
+  },
+  "chat": {
+    "command": {
+      "discuss": "Discuss",
+      "next": "Next",
+      "auto": "Auto",
+      "stop": "Stop",
+      "pause": "Pause"
+    },
+    "description": {
+      "discuss": "Start guided milestone/slice discussion",
+      "next": "Execute next task, then pause",
+      "auto": "Run all queued units continuously",
+      "stop": "Stop auto-mode gracefully",
+      "pause": "Pause auto-mode (preserves state)"
+    }
+  },
+  "commandSurface": {
+    "sections": {
+      "general": "General",
+      "model": "Model",
+      "thinking": "Thinking",
+      "queue": "Queue",
+      "compaction": "Compaction",
+      "retry": "Retry",
+      "recovery": "Recovery",
+      "auth": "Auth",
+      "admin": "Admin",
+      "git": "Git",
+      "resume": "Resume",
+      "name": "Name",
+      "fork": "Fork",
+      "session": "Session",
+      "compact": "Compact",
+      "integrations": "Integrations",
+      "experimental": "Experimental"
+    },
+    "placeholders": {
+      "filterModels": "Filter models…",
+      "searchSessions": "Search sessions…",
+      "sessionName": "Session name",
+      "outputPath": "Output path (optional)",
+      "apiKey": "Paste API key",
+      "compactionPrompt": "Tell compaction what to preserve or emphasize…",
+      "enterValue": "Enter value"
+    },
+    "queue": {
+      "queueAll": "Queue all",
+      "oneAtATime": "One at a time"
+    },
+    "session": {
+      "threaded": "Threaded",
+      "recent": "Recent",
+      "relevance": "Relevance"
+    },
+    "autoCompact": {
+      "label": "Auto-compact",
+      "description": "Automatically compact when context thresholds are crossed"
+    },
+    "autoRetry": {
+      "label": "Auto-retry",
+      "description": "Automatically retry on transient failures"
+    },
+    "git": {
+      "clean": "Clean",
+      "changesDetected": "Changes detected",
+      "loading": "Loading…",
+      "staged": "Staged",
+      "modified": "Modified",
+      "untracked": "Untracked",
+      "conflicts": "Conflicts",
+      "summaryLoading": "Loading git summary…",
+      "summaryFailed": "Git summary failed",
+      "noRepo": "No git repository",
+      "summaryIdle": "Git summary idle"
+    },
+    "auth": {
+      "manage": "Manage",
+      "notConfigured": "Not configured"
+    },
+    "admin": {
+      "description": "Enable keyboard shortcuts and forced UI states for development"
+    },
+    "labels": {
+      "refresh": "Refresh",
+      "close": "Close",
+      "loading": "Loading…",
+      "failed": "Failed.",
+      "complete": "Complete.",
+      "stale": "Stale"
+    },
+    "recovery": {
+      "loading": "Loading recovery diagnostics…",
+      "failed": "Recovery diagnostics failed",
+      "stale": "Recovery diagnostics stale",
+      "loaded": "Recovery diagnostics loaded",
+      "idle": "Recovery diagnostics idle"
+    }
+  },
+  "remainingPanels": {
+    "quickTask": {
+      "title": "Quick Task",
+      "description": "Create a quick one-off task outside the current plan. Useful for small fixes, experiments, or ad-hoc work that doesn't fit into the milestone structure.",
+      "usage": "Usage",
+      "examplesHeading": "Examples",
+      "note": "Quick tasks run as standalone units — they don't affect milestone progress, slices, or the plan. Use them for work that should happen now without ceremony.",
+      "examples": {
+        "1": "Fix the typo in README.md header",
+        "2": "Add .env.example with required keys",
+        "3": "Update the LICENSE year to 2026",
+        "4": "Run prettier on the whole project"
+      }
+    },
+    "status": {
+      "title": "Status"
+    },
+    "hooks": {
+      "singular": "hook",
+      "plural": "hooks",
+      "nameHeader": "Name",
+      "typeHeader": "Type",
+      "statusHeader": "Status",
+      "targetsHeader": "Targets",
+      "cyclesHeader": "Cycles",
+      "enabled": "enabled",
+      "disabled": "disabled",
+      "allTargets": "all"
+    },
+    "inspect": {
+      "recentDecisions": "Recent Decisions",
+      "recentRequirements": "Recent Requirements",
+      "decision": "Decision",
+      "choice": "Choice",
+      "status": "Status",
+      "description": "Description"
+    },
+    "steer": {
+      "title": "Steer",
+      "placeholder": "Enter steering instructions for the agent…",
+      "successMessage": "Steering message sent successfully.",
+      "currentOverrides": "Current Overrides",
+      "noOverrides": "No active overrides",
+      "sendSteering": "Send Steering Message",
+      "send": "Send"
+    },
+    "undo": {
+      "success": "Undo Successful",
+      "failed": "Undo Failed",
+      "lastUnit": "Last Completed Unit",
+      "associatedCommits": "Associated Commits",
+      "undoButton": "Undo Last Unit",
+      "confirmLabel": "Confirm Undo",
+      "cancel": "Cancel",
+      "warningMessage": "This will revert the last unit and its git commits."
+    },
+    "sections": {
+      "history": "History & Metrics",
+      "undo": "Undo Last Unit",
+      "steer": "Steer",
+      "hooks": "Hooks",
+      "database": "Inspect Database",
+      "export": "Export",
+      "cleanup": "Cleanup"
+    },
+    "tabs": {
+      "recent": "Recent",
+      "byUnits": "By units",
+      "byPhase": "By phase",
+      "bySlice": "By slice",
+      "byModel": "By model"
+    },
+    "history": {
+      "phaseHeader": "Phase",
+      "sliceHeader": "Slice",
+      "modelHeader": "Model",
+      "recentUnitsHeader": "Recent Units"
+    },
+    "labels": {
+      "type": "Type",
+      "id": "ID",
+      "model": "Model",
+      "units": "Units",
+      "cost": "Cost",
+      "duration": "Duration",
+      "toolCalls": "Tool Calls",
+      "decisions": "Decisions",
+      "requirements": "Requirements",
+      "artifacts": "Artifacts",
+      "completedUnits": "Completed Units",
+      "commits": "Commits",
+      "recentDecisions": "Recent Decisions",
+      "recentRequirements": "Recent Requirements",
+      "branches": "Branches",
+      "snapshots": "Snapshots",
+      "deleteMerged": "Delete Merged",
+      "pruneSnapshots": "Prune Snapshots",
+      "status": "Status",
+      "ref": "Ref",
+      "date": "Date",
+      "branch": "Branch",
+      "cleanUpComplete": "Cleanup Complete",
+      "generateExport": "Generate Export",
+      "exportReady": "Export Ready",
+      "downloadAgain": "Download Again",
+      "format": "Format",
+      "activeContext": "Active Context",
+      "milestoneHeader": "Milestone",
+      "sliceHeader": "Slice",
+      "taskHeader": "Task",
+      "phaseHeader": "Phase",
+      "overallProgress": "Overall Progress",
+      "noStatus": "No plan loaded — run /gsd to initialize",
+      "milestones": "Milestones",
+      "milestoneSingular": "milestone",
+      "slices": "Slices",
+      "slicesProgress": "slices",
+      "statusIdle": "idle",
+      "statusNone": "none",
+      "queueBranches": "Branches",
+      "queueMerged": "merged",
+      "queueActive": "active",
+      "queueSnapshotDate": "Date",
+      "queueActiveLabel": "active",
+      "queueCurrentLabel": "current",
+      "queueHeader": "Queue"
+    },
+    "empty": {
+      "noHistory": "No unit history recorded yet",
+      "noPhaseBreakdown": "No phase breakdown available",
+      "noSliceBreakdown": "No slice breakdown available",
+      "noModelBreakdown": "No model breakdown available",
+      "noUndo": "No completed units to undo",
+      "noHooks": "No hooks configured",
+      "noDatabase": "Database is empty — no decisions or requirements recorded",
+      "noBranchesToClean": "No branches to clean up",
+      "noSnapshotsToPrune": "No snapshots to prune",
+      "noMilestones": "No milestones in the plan",
+      "noPlan": "No plan loaded — run /gsd to initialize"
+    },
+    "export": {
+      "markdown": "Markdown",
+      "json": "JSON"
+    },
+    "loading": {
+      "history": "Loading history data…",
+      "undo": "Loading undo info…",
+      "steer": "Loading steer data…",
+      "hooks": "Loading hooks…",
+      "database": "Loading database…",
+      "cleanup": "Scanning for cleanup targets…"
+    }
+  },
+  "visualizer": {
+    "tabs": {
+      "progress": "Progress",
+      "dependencies": "Dependencies",
+      "metrics": "Metrics",
+      "timeline": "Timeline",
+      "agent": "Agent",
+      "changes": "Changes",
+      "export": "Export"
+    },
+    "empty": {
+      "noMilestones": "No milestones defined yet.",
+      "noMetrics": "No metrics data available.",
+      "noHistory": "No execution history yet.",
+      "noAgentActivity": "No agent activity data available.",
+      "noCompletedSlices": "No completed slices yet."
+    },
+    "stats": {
+      "executionUnits": "Execution Units",
+      "totalCost": "Total Cost",
+      "duration": "Duration",
+      "totalTokens": "Total Tokens",
+      "avgPerSlice": "Avg / Slice",
+      "projectedRemaining": "Projected Remaining",
+      "projectedTotal": "Projected Total",
+      "burnRate": "Burn Rate",
+      "completion": "Completion Rate",
+      "sessionCost": "Session Cost",
+      "sessionTokens": "Session Tokens",
+      "completed": "Completed"
+    },
+    "agent": {
+      "active": "Active",
+      "idle": "Idle",
+      "running": "Agent is running",
+      "waiting": "Waiting for next task"
+    },
+    "report": {
+      "title": "GSD Workflow Report",
+      "milestones": "Milestones",
+      "metricsSummary": "Metrics Summary",
+      "criticalPath": "Critical Path",
+      "changelog": "Changelog",
+      "files": "Files"
+    },
+    "error": {
+      "fetchFailed": "Failed to fetch visualizer data",
+      "unknown": "Unknown error"
+    }
+  },
+  "diagnostics": {
+    "sections": {
+      "forensic": "Forensic Analysis",
+      "doctor": "Doctor Health Check",
+      "skillHealth": "Skill Health",
+      "recentUnits": "Recent Units",
+      "staleSkills": "Stale Skills",
+      "decliningSkills": "Declining Skills"
+    },
+    "loading": {
+      "forensic": "Running forensic analysis…",
+      "doctor": "Running health check…",
+      "skills": "Analyzing skill health…"
+    },
+    "labels": {
+      "units": "Units",
+      "cost": "Cost",
+      "duration": "Duration",
+      "traces": "Traces",
+      "total": "Total",
+      "errors": "Errors",
+      "warnings": "Warnings",
+      "info": "Info",
+      "fixable": "Fixable",
+      "skills": "Skills",
+      "stale": "Stale",
+      "declining": "Declining",
+      "totalUnits": "Total units",
+      "crashLockActive": "Crash Lock Active",
+      "anomalies": "Anomalies",
+      "applyFixes": "Apply Fixes",
+      "fixesApplied": "Fixes Applied",
+      "issues": "Issues",
+      "suggestions": "Suggestions",
+      "type": "Type",
+      "id": "ID",
+      "model": "Model",
+      "tablePid": "PID",
+      "tableStarted": "Started",
+      "tableUnit": "Unit",
+      "fixableBadge": "fixable",
+      "successRate": "Success",
+      "tokens": "Tokens",
+      "trend": "Trend",
+      "staleDays": "Stale",
+      "skillName": "Skill",
+      "uses": "Uses"
+    },
+    "empty": {
+      "noAnomalies": "No anomalies detected",
+      "noCrashLock": "No crash lock",
+      "healthy": "No issues found — workspace is healthy",
+      "noSkillData": "No skill usage data available"
+    }
+  },
+  "terminal": {
+    "newTab": "New terminal",
+    "killTab": "Kill terminal",
+    "dropImage": "Drop image here",
+    "startingGsd": "Starting GSD…",
+    "connecting": "Connecting…",
+    "abort": "Abort",
+    "agentThinking": "Agent is thinking…",
+    "steer": "Steer",
+    "streaming": "{commandName}…",
+    "loading": "Loading terminal…",
+    "waitingForSession": "Waiting for live session…",
+    "connectingMain": "Connecting to main session…",
+    "reconnectingMain": "Reconnecting main session terminal…",
+    "aboveEditor": "Above editor",
+    "belowEditor": "Below editor",
+    "moreLines": "+{count} more line(s)",
+    "placeholders": {
+      "loading": "Loading workspace…",
+      "bootError": "Workspace boot failed — check the visible error state",
+      "sending": "Sending {command}…",
+      "prompt": "Type a prompt, /state, /new, or /clear",
+      "followUp": "Agent is active — type a follow-up or /state",
+      "steer": "Type a steering message to redirect the agent…"
+    }
+  },
+  "knowledgeCaptures": {
+    "tabs": {
+      "knowledge": "Knowledge",
+      "captures": "Captures"
+    },
+    "labels": {
+      "pending": "Pending",
+      "pendingCount": "pending",
+      "rule": "Rule",
+      "pattern": "Pattern",
+      "lesson": "Lesson",
+      "freeform": "Freeform",
+      "triaged": "Triaged",
+      "resolved": "Resolved",
+      "lastModified": "Last modified"
+    },
+    "empty": {
+      "noKnowledge": "No knowledge entries found",
+      "noCaptures": "No captures found"
+    },
+    "loading": {
+      "knowledge": "Loading knowledge base…",
+      "captures": "Loading captures…"
+    },
+    "resolveError": "Resolve error: {error}"
+  },
+  "loadingSkeletons": {
+    "currentUnit": "Current Unit",
+    "currentSlice": "Current Slice",
+    "session": "Session",
+    "recoverySummary": "Recovery Summary",
+    "recentActivity": "Recent Activity",
+    "activeScope": "Active scope",
+    "milestones": "Milestones"
+  },
+  "files": {
+    "title": "Files",
+    "newFile": "New File",
+    "newFolder": "New Folder",
+    "rename": "Rename",
+    "duplicate": "Duplicate",
+    "copyPath": "Copy Path",
+    "delete": "Delete",
+    "highlighting": "Highlighting…"
+  },
+  "fileViewer": {
+    "rendering": "Rendering…",
+    "changed": "Changed",
+    "dismiss": "Dismiss",
+    "save": "Save",
+    "view": "View",
+    "edit": "Edit"
+  },
+  "projectWelcome": {
+    "existing": {
+      "heading": "Existing project detected",
+      "description": "GSD will map your codebase and ask a few questions about what you want to build. From there it generates structured milestones and deliverable slices.",
+      "primary": "Map & Initialize",
+      "secondary": "Browse files first"
+    },
+    "legacy": {
+      "description": "This project has a .planning/ folder from an earlier GSD version. Migration converts your existing planning data into the new .gsd/ format.",
+      "detail": "Your original files will be preserved — migration creates the new structure alongside them.",
+      "primary": "Migrate to v2",
+      "secondary": "Start fresh instead"
+    },
+    "empty": {
+      "heading": "Start a new project",
+      "description": "This folder is empty. GSD will ask what you want to build, then generate a structured plan — milestones broken into deliverable slices with risk-ordered execution.",
+      "primary": "Start Project Setup"
+    },
+    "fallback": {
+      "heading": "Set up your project",
+      "description": "Run the GSD wizard to get started.",
+      "primary": "Get Started"
+    },
+    "chip": {
+      "gitRepo": "Git repository",
+      "nodejs": "Node.js project"
+    },
+    "process": {
+      "codebase": "Codebase analysis and context gathering",
+      "milestones": "Structured milestone and slice generation",
+      "discussion": "You discuss scope, constraints, and priorities"
+    },
+    "whatsNext": {
+      "heading": "What happens next",
+      "browse": "Browse files",
+      "description": "Browse the codebase to understand its structure, then decide what you want to build.",
+      "empty": "You'll start from a clean slate and let GSD guide you through setting up a new project.",
+      "blank": {
+        "1": "A few questions about what you're building",
+        "2": "Codebase analysis and context gathering",
+        "3": "Structured milestone and slice generation"
+      },
+      "brownfield": {
+        "1": "GSD scans your codebase and asks about your goals",
+        "2": "You discuss scope, constraints, and priorities",
+        "3": "A milestone with risk-ordered slices is generated"
+      }
+    },
+    "labels": {
+      "fileCount": "{count, plural, =1 {# file} other {# files}}"
+    }
+  },
+  "activity": {
+    "title": "Activity Log",
+    "subtitle": "Execution history and git operations",
+    "empty": "No activity yet. Events will appear here once the workspace is active."
+  },
+  "updateBanner": {
+    "updateComplete": "Update complete — restart GSD to use v{targetLabel}",
+    "updateFailed": "Update failed: {error}",
+    "updating": "Updating to v{targetLabel}…",
+    "available": "Update available: v{currentVersion} → v{latestVersion}",
+    "update": "Update",
+    "dismiss": "Dismiss update banner"
+  },
+  "focusedPanel": {
+    "submit": "Submit",
+    "submitSelection": "Submit selection ({count})",
+    "confirm": "Confirm",
+    "cancel": "Cancel",
+    "dismiss": "Dismiss",
+    "morePending": "+{count}",
+    "requestedByAgent": "{method} requested by the agent",
+    "methods": {
+      "select": "Selection",
+      "confirm": "Confirmation",
+      "input": "Input",
+      "editor": "Editor"
+    }
+  },
+  "guidedDialog": {
+    "subtitle": "Interactive guided setup — responses stream below as they are generated.",
+    "titles": {
+      "migrating": "Migrating to GSD v2",
+      "mapping": "Mapping Your Project",
+      "settingUp": "Setting Up Your Project",
+      "gettingStarted": "Getting Started"
+    }
+  },
+  "scopeBadge": {
+    "pending": "Scope pending…"
+  },
+  "dualTerminal": {
+    "title": "Power User Mode",
+    "sending": "Sending {pendingCommandLabel}",
+    "leftLabel": "Left: Main Session TUI",
+    "rightLabel": "Right: Interactive GSD"
+  },
+  "statusBar": {
+    "compacting": "Compacting",
+    "retryBadge": "Retry {n}"
+  },
+  "common": {
+    "back": "Back",
+    "continue": "Continue",
+    "skip": "Skip",
+    "cancel": "Cancel",
+    "save": "Save",
+    "retry": "Retry",
+    "refresh": "Refresh",
+    "loading": "Loading…",
+    "error": {
+      "unknown": "Unknown error"
+    }
+  },
+  "chatMode": {
+    "header": {
+      "title": "Chat Mode"
+    },
+    "actions": {
+      "discuss": "Discuss",
+      "discussDesc": "Start guided milestone/slice discussion",
+      "next": "Next",
+      "nextDesc": "Execute next task, then pause",
+      "auto": "Auto",
+      "autoDesc": "Run all queued units continuously",
+      "stop": "Stop",
+      "stopDesc": "Stop auto-mode gracefully",
+      "pause": "Pause",
+      "pauseDesc": "Pause auto-mode (preserves state)",
+      "status": "Status",
+      "statusDesc": "Show progress dashboard",
+      "visualize": "Visualize",
+      "visualizeDesc": "Interactive TUI (progress, deps, metrics, timeline)",
+      "queue": "Queue",
+      "queueDesc": "Show queued/dispatched units and execution order",
+      "history": "History",
+      "historyDesc": "View execution history with cost/phase/model details",
+      "steer": "Steer",
+      "steerDesc": "Apply user override to active work",
+      "capture": "Capture",
+      "captureDesc": "Quick-capture a thought to CAPTURES.md",
+      "triage": "Triage",
+      "triageDesc": "Classify and route pending captures",
+      "skip": "Skip",
+      "skipDesc": "Prevent a unit from auto-mode dispatch",
+      "undo": "Undo",
+      "undoDesc": "Revert last completed unit",
+      "knowledge": "Knowledge",
+      "knowledgeDesc": "Add rule, pattern, or lesson to KNOWLEDGE.md",
+      "mode": "Mode",
+      "modeDesc": "Set workflow mode (solo/team)",
+      "prefs": "Prefs",
+      "prefsDesc": "Manage preferences (global/project)",
+      "doctor": "Doctor",
+      "doctorDesc": "Diagnose and repair .gsd/ state",
+      "export": "Export",
+      "exportDesc": "Export milestone/slice results (JSON or Markdown)",
+      "cleanup": "Cleanup",
+      "cleanupDesc": "Remove merged branches or snapshots",
+      "remote": "Remote",
+      "remoteDesc": "Control remote auto-mode (Slack/Discord)"
+    },
+    "categories": {
+      "workflow": "Workflow",
+      "visibility": "Visibility",
+      "correction": "Course Correction",
+      "knowledge": "Knowledge",
+      "config": "Configuration",
+      "maintenance": "Maintenance"
+    },
+    "ui": {
+      "chatMode": "Chat Mode",
+      "idle": "idle",
+      "disconnected": "Disconnected",
+      "connecting": "Connecting to GSD session…",
+      "messagePlaceholder": "Message…",
+      "connectingPlaceholder": "Connecting…",
+      "send": "Send",
+      "moreCommands": "More commands",
+      "disabledDuringAuto": "Disabled while auto-mode is running",
+      "imageNotice": "Maximum {max} images per message",
+      "imageFailed": "Failed to process image",
+      "removeImage": "Remove image",
+      "pendingImage": "Pending image",
+      "thinking": "Thinking…",
+      "thoughtProcess": "Thought process",
+      "lines": "lines",
+      "runningLabel": "Running {label}…",
+      "connectedWaiting": "Connected — waiting for GSD output…",
+      "thinkingIndicator": "Thinking…",
+      "attachedImage": "Attached image {index}",
+      "toolEdit": "Edit",
+      "toolWrite": "Write",
+      "toolBash": "$",
+      "readyForInput": "Ready for your input",
+      "placeholderCTA": {
+        "stopAuto": "Stop Auto",
+        "resumeAuto": "Resume Auto",
+        "newMilestone": "New Milestone",
+        "plan": "Plan",
+        "startAuto": "Start Auto",
+        "initProject": "Initialize Project",
+        "continue": "Continue"
+      }
+    },
+    "prompts": {
+      "select": {
+        "selectedCount": "{count} selected"
+      },
+      "text": {
+        "typeAnswer": "Type your answer…",
+        "submit": "Submit"
+      },
+      "password": {
+        "typeValue": "Enter value…",
+        "submit": "Submit",
+        "entered": "{label} — entered ✓",
+        "defaultLabel": "Value",
+        "securityNote": "Value is transmitted securely and not stored in chat history.",
+        "showInput": "Show",
+        "hideInput": "Hide"
+      },
+      "confirm": {
+        "confirm": "Confirm",
+        "cancel": "Cancel",
+        "confirmed": "Confirmed",
+        "cancelled": "Cancelled"
+      },
+      "submitted": "✓ Submitted",
+      "inputSubmitted": "Submitted"
+    }
+  }
+}

@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
+import { useTranslations } from "next-intl"
 import {
   Archive,
   ArrowRightLeft,
@@ -106,27 +107,27 @@ function availableSectionsForSurface(surface: string | null, includeAdmin: boole
   }
 }
 
-function sectionLabel(section: CommandSurfaceSection): string {
+function sectionLabel(section: CommandSurfaceSection, t: (k: string) => string): string {
   const labels: Partial<Record<CommandSurfaceSection, string>> = {
-    general: "General",
-    model: "Model",
-    thinking: "Thinking",
-    queue: "Queue",
-    compaction: "Compaction",
-    retry: "Retry",
-    "session-behavior": "Session",
-    recovery: "Recovery",
-    auth: "Auth",
-    admin: "Admin",
-    git: "Git",
-    resume: "Resume",
-    name: "Name",
-    fork: "Fork",
-    session: "Session",
-    compact: "Compact",
-    workspace: "Workspace",
-    integrations: "Integrations",
-    experimental: "Experimental",
+    general: t("sections.general"),
+    model: t("sections.model"),
+    thinking: t("sections.thinking"),
+    queue: t("sections.queue"),
+    compaction: t("sections.compaction"),
+    retry: t("sections.retry"),
+    "session-behavior": t("sections.session"),
+    recovery: t("sections.recovery"),
+    auth: t("sections.auth"),
+    admin: t("sections.admin"),
+    git: t("sections.git"),
+    resume: t("sections.resume"),
+    name: t("sections.name"),
+    fork: t("sections.fork"),
+    session: t("sections.session"),
+    compact: t("sections.compact"),
+    workspace: t("sections.general"),
+    integrations: t("sections.integrations"),
+    experimental: t("sections.experimental"),
   }
   return labels[section] ?? section
 }
@@ -156,20 +157,20 @@ function sectionIcon(section: CommandSurfaceSection) {
   return icons[section] ?? null
 }
 
-function surfaceTitle(surface: string | null): string {
+function surfaceTitle(surface: string | null, t: (k: string) => string): string {
   const titles: Record<string, string> = {
-    model: "Model",
-    thinking: "Thinking",
-    git: "Git",
+    model: t("sections.model"),
+    thinking: t("sections.thinking"),
+    git: t("sections.git"),
     login: "Login",
     logout: "Logout",
     settings: "Settings",
-    resume: "Resume",
-    name: "Name",
-    fork: "Fork",
-    session: "Session",
+    resume: t("sections.resume"),
+    name: t("sections.name"),
+    fork: t("sections.fork"),
+    session: t("sections.session"),
     export: "Export",
-    compact: "Compact",
+    compact: t("sections.compact"),
   }
   return titles[surface ?? ""] ?? "Settings"
 }
@@ -318,6 +319,11 @@ function SegmentedControl<T extends string>({
 // ═════════════════════════════════════════════════════════════════════
 
 export function CommandSurface() {
+  const t = useTranslations("commandSurface")
+  const tRP = useTranslations("remainingPanels")
+  const tV = useTranslations("visualizer")
+  const tCommon = useTranslations("common")
+  const tStatus = useTranslations("statusBar")
   const workspace = useGSDWorkspaceState()
   const {
     closeCommandSurface,
@@ -633,7 +639,7 @@ export function CommandSurface() {
   const renderModelSection = () => (
     <div className="space-y-4" data-testid="command-surface-models">
       <SectionHeader
-        title="Model"
+        title={t("sections.model")}
         status={
           <span className="font-mono text-xs text-muted-foreground">{currentModelLabel}</span>
         }
@@ -658,7 +664,7 @@ export function CommandSurface() {
               query: e.target.value,
             })
           }
-          placeholder="Filter models…"
+          placeholder={t("placeholders.filterModels")}
           className="h-8 pl-9 text-xs"
         />
       </div>
@@ -828,7 +834,7 @@ export function CommandSurface() {
 
   const renderQueueSection = () => (
     <div className="space-y-5" data-testid="command-surface-queue-settings">
-      <SectionHeader title="Queue modes" />
+      <SectionHeader title={t("sections.queue")} />
 
       {/* Steering mode */}
       <div className="space-y-3">
@@ -883,7 +889,7 @@ export function CommandSurface() {
   const renderCompactionSection = () => (
     <div className="space-y-4" data-testid="command-surface-auto-compaction-settings">
       <SectionHeader
-        title="Auto-compaction"
+        title={t("autoCompact.label")}
         status={
           liveSessionState?.isCompacting ? (
             <span className="flex items-center gap-1.5 text-xs text-warning">
@@ -894,8 +900,8 @@ export function CommandSurface() {
       />
 
       <ToggleRow
-        label="Auto-compact"
-        description="Automatically compact when context thresholds are crossed"
+        label={t("autoCompact.label")}
+        description={t("autoCompact.description")}
         checked={liveSessionState?.autoCompactionEnabled ?? false}
         onCheckedChange={(checked) => void setAutoCompactionFromSurface(checked)}
         disabled={!liveSessionState || autoCompactionBusy}
@@ -915,7 +921,7 @@ export function CommandSurface() {
   const renderRetrySection = () => (
     <div className="space-y-4" data-testid="command-surface-retry-settings">
       <SectionHeader
-        title="Retry"
+        title={t("sections.retry")}
         status={
           liveSessionState?.retryInProgress ? (
             <span className="flex items-center gap-1.5 text-xs text-warning">
@@ -926,8 +932,8 @@ export function CommandSurface() {
       />
 
       <ToggleRow
-        label="Auto-retry"
-        description="Automatically retry on transient failures"
+        label={t("autoRetry.label")}
+        description={t("autoRetry.description")}
         checked={liveSessionState?.autoRetryEnabled ?? false}
         onCheckedChange={(checked) => void setAutoRetryFromSurface(checked)}
         disabled={!liveSessionState || autoRetryBusy}
@@ -943,8 +949,8 @@ export function CommandSurface() {
             : settingsRequests.autoRetry.result
               ? settingsRequests.autoRetry.result
               : liveSessionState?.autoRetryEnabled
-                ? "Auto-retry enabled"
-                : "Auto-retry disabled"}
+                ? t("autoRetry.label") + " enabled"
+                : t("autoRetry.label") + " disabled"}
       </p>
 
       {liveSessionState?.retryInProgress && (
@@ -990,17 +996,17 @@ export function CommandSurface() {
       <div className="space-y-4" data-testid="command-surface-recovery">
         <div className="text-xs text-muted-foreground" data-testid="command-surface-recovery-state">
           {recoveryBusy
-            ? "Loading recovery diagnostics…"
+            ? t("recovery.loading")
             : recovery.error
-              ? "Recovery diagnostics failed"
+              ? t("recovery.failed")
               : recovery.stale
-                ? "Recovery diagnostics stale"
+                ? t("recovery.stale")
                 : recovery.loaded
-                  ? "Recovery diagnostics loaded"
-                  : "Recovery diagnostics idle"}
+                  ? t("recovery.loaded")
+                  : t("recovery.idle")}
         </div>
         <SectionHeader
-          title="Recovery"
+          title={t("sections.recovery")}
           status={
             diag ? (
               <StatusDot status={diag.summary.tone === "healthy" ? "ok" : diag.summary.tone === "warning" ? "warning" : "error"} />
@@ -1214,14 +1220,14 @@ export function CommandSurface() {
       <div className="space-y-5" data-testid="command-surface-git-summary">
         <div className="text-xs text-muted-foreground" data-testid="command-surface-git-state">
           {gitSummaryBusy
-            ? "Loading git summary…"
+            ? t("git.summaryLoading")
             : gitSummary.error
-              ? "Git summary failed"
+              ? t("git.summaryFailed")
               : result?.kind === "not_repo"
-                ? "No git repository"
+                ? t("git.noRepo")
                 : result?.kind === "repo"
                   ? `Repo ready${result.hasChanges ? " — changes detected" : " — clean"}`
-                  : "Git summary idle"}
+                  : t("git.summaryIdle")}
         </div>
 
         {gitSummaryBusy && !result && (
@@ -1366,7 +1372,7 @@ export function CommandSurface() {
               value={sessionBrowser.query}
               onChange={(e) => updateSessionBrowserState({ query: e.target.value })}
               onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void loadSessionBrowser() } }}
-              placeholder="Search sessions…"
+              placeholder={t("placeholders.searchSessions")}
               className="h-8 pl-9 text-xs"
               disabled={sessionBrowserBusy}
               data-testid="command-surface-session-browser-query"
@@ -1381,9 +1387,9 @@ export function CommandSurface() {
         <div className="flex items-center gap-2">
           <SegmentedControl
             options={[
-              { value: "threaded" as const, label: "Threaded" },
-              { value: "recent" as const, label: "Recent" },
-              { value: "relevance" as const, label: "Relevance" },
+              { value: "threaded" as const, label: t("session.threaded") },
+              { value: "recent" as const, label: t("session.recent") },
+              { value: "relevance" as const, label: t("session.relevance") },
             ]}
             value={sessionBrowser.sortMode}
             onChange={(v) => { updateSessionBrowserState({ sortMode: v }); void loadSessionBrowser({ sortMode: v }) }}
@@ -1480,7 +1486,7 @@ export function CommandSurface() {
                 onChange={(e) =>
                   selectCommandSurfaceTarget({ kind: "name", sessionPath: selectedNameTarget?.sessionPath, name: e.target.value })
                 }
-                placeholder="Session name"
+                placeholder={t("placeholders.sessionName")}
                 className="h-8 flex-1 text-xs"
                 disabled={!selectedNameTarget?.sessionPath || renameBusy}
                 data-testid="command-surface-rename-input"
@@ -1597,7 +1603,7 @@ export function CommandSurface() {
   const renderSessionSection = () => (
     <div className="space-y-4" data-testid="command-surface-session">
       <SectionHeader
-        title="Session"
+        title={t("sections.session")}
         status={
           <span className="text-xs text-muted-foreground">{currentSessionLabel ?? "pending"}</span>
         }
@@ -1653,7 +1659,7 @@ export function CommandSurface() {
           <Input
             value={selectedSessionTarget?.outputPath ?? ""}
             onChange={(e) => selectCommandSurfaceTarget({ kind: "session", outputPath: e.target.value })}
-            placeholder="Output path (optional)"
+            placeholder={t("placeholders.outputPath")}
             className="h-8 flex-1 text-xs"
             disabled={commandSurface.pendingAction === "export_html"}
             data-testid="command-surface-export-path"
@@ -1681,7 +1687,7 @@ export function CommandSurface() {
   const renderCompactSection = () => (
     <div className="space-y-4" data-testid="command-surface-compact">
       <SectionHeader
-        title="Manual compact"
+        title={t("sections.compact")}
         status={
           compactBusy ? (
             <span className="flex items-center gap-1.5 text-xs text-warning">
@@ -1700,7 +1706,7 @@ export function CommandSurface() {
           data-testid="command-surface-compact-instructions"
           value={selectedCompactTarget?.customInstructions ?? ""}
           onChange={(e) => selectCommandSurfaceTarget({ kind: "compact", customInstructions: e.target.value })}
-          placeholder="Tell compaction what to preserve or emphasize…"
+          placeholder={t("placeholders.compactionPrompt")}
           rows={4}
           disabled={compactBusy}
           className="text-xs"
@@ -1742,7 +1748,7 @@ export function CommandSurface() {
           title="Auth"
           status={
             <span className="text-xs text-muted-foreground">
-              {selectedAuthIntent === "login" ? "Login" : selectedAuthIntent === "logout" ? "Logout" : "Manage"}
+              {selectedAuthIntent === "login" ? "Login" : selectedAuthIntent === "logout" ? "Logout" : t("auth.manage")}
             </span>
           }
         />
@@ -1775,7 +1781,7 @@ export function CommandSurface() {
                     {provider.configured && <StatusDot status="ok" />}
                   </div>
                   <span className="text-xs text-muted-foreground">
-                    {provider.configured ? `via ${provider.configuredVia}` : "Not configured"}
+                    {provider.configured ? `via ${provider.configuredVia}` : t("auth.notConfigured")}
                   </span>
                 </div>
                 {provider.recommended && (
@@ -1792,7 +1798,7 @@ export function CommandSurface() {
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-sm font-medium text-foreground">{selectedAuthProvider.label}</div>
-                <span className="text-xs text-muted-foreground">{selectedAuthProvider.configuredVia ?? "Not configured"}</span>
+                <span className="text-xs text-muted-foreground">{selectedAuthProvider.configuredVia ?? t("auth.notConfigured")}</span>
               </div>
             </div>
 
@@ -1814,7 +1820,7 @@ export function CommandSurface() {
                     onChange={(e) =>
                       setApiKeys((prev) => ({ ...prev, [selectedAuthProvider.id]: e.target.value }))
                     }
-                    placeholder="Paste API key"
+                    placeholder={t("placeholders.apiKey")}
                     className="h-8 flex-1 text-xs"
                     disabled={authBusy}
                     data-testid="command-surface-api-key-input"
@@ -1950,8 +1956,8 @@ export function CommandSurface() {
                   {onboarding.bridgeAuthRefresh.phase === "pending"
                     ? "Refreshing…"
                     : onboarding.bridgeAuthRefresh.phase === "failed"
-                      ? onboarding.bridgeAuthRefresh.error || "Failed."
-                      : "Complete."}
+                      ? onboarding.bridgeAuthRefresh.error || t("labels.failed")
+                      : t("labels.complete")}
                 </span>
               </div>
             )}
@@ -1968,7 +1974,7 @@ export function CommandSurface() {
   const renderAdminSection = () => (
     <div className="space-y-5" data-testid="command-surface-admin">
       <SectionHeader
-        title="Admin"
+        title={t("sections.admin")}
         status={
           <Badge variant="outline" className="border-warning/20 bg-warning/[0.06] text-[10px] text-warning">
             Dev only
@@ -1979,7 +1985,7 @@ export function CommandSurface() {
       {/* Master toggle */}
       <ToggleRow
         label="UI overrides"
-        description="Enable keyboard shortcuts and forced UI states for development"
+        description={t("admin.description")}
         checked={devOverrides.enabled}
         onCheckedChange={devOverrides.setEnabled}
         testId="admin-ui-overrides-master"
@@ -2252,7 +2258,7 @@ export function CommandSurface() {
       <div>
         <div className="text-xs uppercase tracking-wider text-muted-foreground">Command surface</div>
         <div className="text-lg font-semibold text-foreground" data-testid="command-surface-title">
-          {surfaceTitle(commandSurface.activeSurface)}
+          {surfaceTitle(commandSurface.activeSurface, t)}
         </div>
       </div>
       <div className="flex items-center gap-2">
@@ -2306,7 +2312,7 @@ export function CommandSurface() {
                       </button>
                     </TooltipTrigger>
                     <TooltipContent side="right" sideOffset={6}>
-                      {sectionLabel(section)}
+                      {sectionLabel(section, t)}
                     </TooltipContent>
                   </Tooltip>
                 )

@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react"
+import { useTranslations } from "next-intl"
 import {
   FileText,
   ChevronRight,
@@ -109,9 +110,10 @@ interface ContextMenuProps {
   onDelete: (path: string, type: "file" | "directory") => void
   onCopyPath: (path: string) => void
   onDuplicate: (path: string) => void
+  t: (key: string) => string
 }
 
-function TreeContextMenu({ menu, onClose, onNewFile, onNewFolder, onRename, onDelete, onCopyPath, onDuplicate }: ContextMenuProps) {
+function TreeContextMenu({ menu, onClose, onNewFile, onNewFolder, onRename, onDelete, onCopyPath, onDuplicate, t }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null)
 
   // Close on click outside or escape
@@ -149,34 +151,34 @@ function TreeContextMenu({ menu, onClose, onNewFile, onNewFolder, onRename, onDe
 
   const items: { label: string; icon: React.ReactNode; action: () => void; destructive?: boolean; separator?: boolean }[] = [
     {
-      label: "New File",
+      label: t("newFile"),
       icon: <FilePlus className="h-3.5 w-3.5" />,
       action: () => { onNewFile(parentDir); onClose() },
     },
     {
-      label: "New Folder",
+      label: t("newFolder"),
       icon: <FolderPlus className="h-3.5 w-3.5" />,
       action: () => { onNewFolder(parentDir); onClose() },
     },
     {
-      label: "Rename",
+      label: t("rename"),
       icon: <Pencil className="h-3.5 w-3.5" />,
       action: () => { onRename(menu.path); onClose() },
       separator: true,
     },
     {
-      label: "Duplicate",
+      label: t("duplicate"),
       icon: <Copy className="h-3.5 w-3.5" />,
       action: () => { onDuplicate(menu.path); onClose() },
     },
     {
-      label: "Copy Path",
+      label: t("copyPath"),
       icon: <ClipboardCopy className="h-3.5 w-3.5" />,
       action: () => { onCopyPath(menu.path); onClose() },
       separator: true,
     },
     {
-      label: "Delete",
+      label: t("delete"),
       icon: <Trash2 className="h-3.5 w-3.5" />,
       action: () => { onDelete(menu.path, menu.type); onClose() },
       destructive: true,
@@ -472,6 +474,8 @@ function tabLabel(tab: OpenTab): string {
 type LeftPanel = "tree" | "agent"
 
 export function FilesView() {
+  const t = useTranslations("files")
+  const tCommon = useTranslations("common")
   const workspace = useGSDWorkspaceState()
   const projectCwd = workspace.boot?.project.cwd
 
@@ -1360,6 +1364,7 @@ export function FilesView() {
           onDelete={handleDelete}
           onCopyPath={handleCopyPath}
           onDuplicate={handleDuplicate}
+          t={t}
         />
       )}
 
@@ -1368,7 +1373,7 @@ export function FilesView() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-in fade-in-0">
           <div className="w-full max-w-sm rounded-lg border border-border bg-popover p-4 shadow-lg animate-in zoom-in-95">
             <h3 className="text-sm font-medium text-popover-foreground">
-              Delete {deleteConfirm.type === "directory" ? "folder" : "file"}?
+              {t("delete")} {deleteConfirm.type === "directory" ? "folder" : "file"}?
             </h3>
             <p className="mt-2 text-xs text-muted-foreground">
               Are you sure you want to delete{" "}
@@ -1383,7 +1388,7 @@ export function FilesView() {
                 onClick={handleDeleteCancel}
                 className="rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent transition-colors"
               >
-                Cancel
+                {tCommon("cancel")}
               </button>
               <button
                 onClick={handleDeleteConfirm}

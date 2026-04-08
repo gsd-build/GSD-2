@@ -13,6 +13,8 @@ import {
   Zap,
 } from "lucide-react"
 
+import { useTranslations } from "next-intl"
+
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useProjectStoreManager } from "@/lib/project-store-manager"
@@ -55,22 +57,22 @@ interface ProjectMetadata {
 
 // ─── Helpers ────────────────────────────────────────────────────────
 
-const KIND_STYLE: Record<ProjectDetectionKind, { label: string; color: string; icon: typeof Layers }> = {
-  "active-gsd": { label: "Active", color: "text-success", icon: Layers },
-  "empty-gsd": { label: "Initialized", color: "text-info", icon: FolderOpen },
-  brownfield: { label: "Existing", color: "text-warning", icon: GitBranch },
-  "v1-legacy": { label: "Legacy", color: "text-warning", icon: GitBranch },
-  blank: { label: "New", color: "text-muted-foreground", icon: Sparkles },
+const KIND_STYLE: Record<ProjectDetectionKind, { color: string; icon: typeof Layers }> = {
+  "active-gsd": { color: "text-success", icon: Layers },
+  "empty-gsd": { color: "text-info", icon: FolderOpen },
+  brownfield: { color: "text-warning", icon: GitBranch },
+  "v1-legacy": { color: "text-warning", icon: GitBranch },
+  blank: { color: "text-muted-foreground", icon: Sparkles },
 }
 
 function techStack(signals: ProjectDetectionSignals): string[] {
   const tags: string[] = []
-  if (signals.isMonorepo) tags.push("Monorepo")
-  if (signals.hasGitRepo) tags.push("Git")
-  if (signals.hasPackageJson) tags.push("Node.js")
-  if (signals.hasCargo) tags.push("Rust")
-  if (signals.hasGoMod) tags.push("Go")
-  if (signals.hasPyproject) tags.push("Python")
+  if (signals.isMonorepo) tags.push("monorepo")
+  if (signals.hasGitRepo) tags.push("git")
+  if (signals.hasPackageJson) tags.push("nodejs")
+  if (signals.hasCargo) tags.push("rust")
+  if (signals.hasGoMod) tags.push("go")
+  if (signals.hasPyproject) tags.push("python")
   return tags
 }
 
@@ -101,7 +103,17 @@ interface StepProjectProps {
 }
 
 export function StepProject({ onFinish, onBack, onBeforeSwitch }: StepProjectProps) {
+  const t = useTranslations("projects")
+  const tc = useTranslations("common")
   const manager = useProjectStoreManager()
+
+  const kindLabel: Record<ProjectDetectionKind, string> = {
+    "active-gsd": t("status.active"),
+    "empty-gsd": t("status.initialized"),
+    brownfield: t("status.existing"),
+    "v1-legacy": t("status.legacy"),
+    blank: t("status.new"),
+  }
 
   const [devRoot, setDevRoot] = useState<string | null>(null)
   const [projects, setProjects] = useState<ProjectMetadata[]>([])
@@ -133,7 +145,7 @@ export function StepProject({ onFinish, onBack, onBeforeSwitch }: StepProjectPro
         const discovered = (await projRes.json()) as ProjectMetadata[]
         if (!cancelled) setProjects(discovered)
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Unknown error")
+        if (!cancelled) setError(err instanceof Error ? err.message : t("error.unknown"))
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -196,7 +208,7 @@ export function StepProject({ onFinish, onBack, onBeforeSwitch }: StepProjectPro
       setShowCreate(false)
       handleSelectProject(project)
     } catch (err) {
-      setCreateError(err instanceof Error ? err.message : "Failed to create project")
+      setCreateError(err instanceof Error ? err.message : t("error.failedCreate"))
       setCreating(false)
     }
   }, [canCreate, devRoot, newName, handleSelectProject])
@@ -221,12 +233,12 @@ export function StepProject({ onFinish, onBack, onBeforeSwitch }: StepProjectPro
         className="text-center"
       >
         <h2 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-          Open a project
+          {t("project.openProject")}
         </h2>
         <p className="mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">
           {noDevRoot
-            ? "Set a dev root first to discover your projects."
-            : "Pick a project to start working in, or create a new one."}
+            ? t("project.setDevRootFirst")
+            : t("project.selectDescription")}
         </p>
       </motion.div>
 
@@ -239,7 +251,7 @@ export function StepProject({ onFinish, onBack, onBeforeSwitch }: StepProjectPro
         {loading && (
           <div className="flex items-center justify-center gap-2 py-10 text-xs text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
-            Discovering projects…
+            {t("project.discovering")}
           </div>
         )}
 
@@ -302,7 +314,7 @@ export function StepProject({ onFinish, onBack, onBeforeSwitch }: StepProjectPro
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-semibold text-foreground truncate">{project.name}</span>
                       <span className={cn("text-[10px] font-medium shrink-0", style.color)}>
-                        {style.label}
+                        {kindLabel[project.kind]}
                       </span>
                     </div>
 
@@ -314,7 +326,7 @@ export function StepProject({ onFinish, onBack, onBeforeSwitch }: StepProjectPro
                             key={tag}
                             className="rounded bg-foreground/[0.04] px-1.5 py-0.5 text-[10px] text-muted-foreground"
                           >
-                            {tag}
+                            {t("tag." + tag)}
                           </span>
                         ))}
                       </div>
@@ -389,7 +401,7 @@ export function StepProject({ onFinish, onBack, onBeforeSwitch }: StepProjectPro
                 transition={{ duration: 0.2 }}
                 className="rounded-xl border border-border/50 bg-card/50 p-4 space-y-3"
               >
-                <div className="text-sm font-medium text-foreground">New project</div>
+                <div className="text-sm font-medium text-foreground">{t("project.newProject")}</div>
                 <form
                   onSubmit={(e) => { e.preventDefault(); void handleCreate() }}
                   className="space-y-2"
@@ -423,7 +435,7 @@ export function StepProject({ onFinish, onBack, onBeforeSwitch }: StepProjectPro
                       className="gap-1.5 transition-transform active:scale-[0.96]"
                     >
                       {creating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
-                      Create & open
+                      {t("project.createAndOpen")}
                     </Button>
                     <Button
                       type="button"
@@ -433,7 +445,7 @@ export function StepProject({ onFinish, onBack, onBeforeSwitch }: StepProjectPro
                       disabled={creating}
                       className="text-muted-foreground"
                     >
-                      Cancel
+                      {useTranslations("common")("cancel")}
                     </Button>
                   </div>
                 </form>
@@ -455,13 +467,13 @@ export function StepProject({ onFinish, onBack, onBeforeSwitch }: StepProjectPro
           onClick={onBack}
           className="text-muted-foreground transition-transform active:scale-[0.96]"
         >
-          Back
+          {tc("back")}
         </Button>
         <Button
           onClick={() => { onBeforeSwitch?.(); onFinish("") }}
           className="group gap-2 transition-transform active:scale-[0.96]"
         >
-          Finish setup
+          {t("project.finishSetup")}
           <Zap className="h-4 w-4 transition-transform group-hover:scale-110" />
         </Button>
       </motion.div>

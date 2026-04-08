@@ -1,5 +1,6 @@
 "use client"
 
+import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
 import { Check } from "lucide-react"
 
@@ -17,8 +18,10 @@ interface WizardStepperProps {
 }
 
 export function WizardStepper({ steps, currentIndex, onStepClick, className }: WizardStepperProps) {
+  const t = useTranslations("onboarding")
+
   return (
-    <nav aria-label="Onboarding progress" className={cn("flex items-center gap-0", className)}>
+    <nav aria-label={t("wizard.ariaLabel")} className={cn("flex items-center gap-0", className)}>
       {steps.map((step, index) => {
         const isComplete = index < currentIndex
         const isCurrent = index === currentIndex

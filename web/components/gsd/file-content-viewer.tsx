@@ -2,11 +2,16 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react"
 import { Loader2, Save, X } from "lucide-react"
+import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { CodeEditor } from "@/components/gsd/code-editor"
 import { useEditorFontSize } from "@/lib/use-editor-font-size"
 import { useTheme } from "next-themes"
+
+// Translation namespaces
+const fvTranslations = "fileViewer"
+const commonTranslations = "common"
 
 /* ── Language detection ── */
 
@@ -135,6 +140,7 @@ function CodeViewer({ content, filepath, shikiTheme = "github-dark-default" }: {
   const [html, setHtml] = useState<string | null>(null)
   const [ready, setReady] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  const fv = useTranslations(fvTranslations)
 
   const lang = detectLanguage(filepath)
 
@@ -172,7 +178,7 @@ function CodeViewer({ content, filepath, shikiTheme = "github-dark-default" }: {
     return (
       <div className="flex items-center justify-center py-12 text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin mr-2" />
-        Highlighting…
+        {fv("rendering")}
       </div>
     )
   }
@@ -223,6 +229,7 @@ function PlainViewer({ content }: { content: string }) {
 function MarkdownViewer({ content, filepath, shikiTheme = "github-dark-default" }: { content: string; filepath: string; shikiTheme?: string }) {
   const [rendered, setRendered] = useState<React.ReactNode | null>(null)
   const [ready, setReady] = useState(false)
+  const fv = useTranslations(fvTranslations)
 
   useEffect(() => {
     let cancelled = false
@@ -555,6 +562,8 @@ export function FileContentViewer({
   agentOpened,
 }: FileContentViewerProps) {
   const canEdit = root !== undefined && path !== undefined && onSave !== undefined
+  const fv = useTranslations(fvTranslations)
+  const common = useTranslations(commonTranslations)
 
   // ── Dirty state tracking ──
   const [editContent, setEditContent] = useState(content)
@@ -580,7 +589,7 @@ export function FileContentViewer({
     try {
       await onSave(editContent)
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "Failed to save")
+      setSaveError(err instanceof Error ? err.message : common("error.unknown"))
     } finally {
       setIsSaving(false)
     }
@@ -614,7 +623,7 @@ export function FileContentViewer({
         <div className="flex items-center gap-2 border-b border-border px-4 h-9">
           <span className="text-sm font-medium font-mono truncate">{filepath}</span>
           <span className="ml-2 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-400 uppercase tracking-wide">
-            Changed
+            {fv("changed")}
           </span>
           <div className="ml-auto flex items-center gap-2">
             <button
@@ -622,7 +631,7 @@ export function FileContentViewer({
               className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
             >
               <X className="h-3 w-3" />
-              Dismiss
+              {common("cancel")}
             </button>
           </div>
         </div>
@@ -642,13 +651,13 @@ export function FileContentViewer({
               value="view"
               className="h-6 rounded-md px-2 text-xs data-[state=active]:bg-muted"
             >
-              View
+              {fv("view")}
             </TabsTrigger>
             <TabsTrigger
               value="edit"
               className="h-6 rounded-md px-2 text-xs data-[state=active]:bg-muted"
             >
-              Edit
+              {fv("edit")}
             </TabsTrigger>
           </TabsList>
 
@@ -674,7 +683,7 @@ export function FileContentViewer({
               ) : (
                 <Save className="h-3 w-3" />
               )}
-              Save
+              {fv("save")}
             </button>
           </div>
         </div>
@@ -723,7 +732,7 @@ export function FileContentViewer({
             ) : (
               <Save className="h-3 w-3" />
             )}
-            Save
+            {fv("save")}
           </button>
         </div>
       </div>

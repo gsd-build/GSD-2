@@ -42,6 +42,7 @@ import {
 } from "@/components/ui/sheet"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { authFetch } from "@/lib/auth"
+import { useTranslations } from "next-intl"
 import {
   Dialog,
   DialogContent,
@@ -166,6 +167,7 @@ function ProjectCard({
   onClick: () => void
   disabled?: boolean
 }) {
+  const t = useTranslations("projects")
   const style = KIND_STYLE[project.kind]
   const KindIcon = style.icon
   const stack = techStack(project.signals)
@@ -209,7 +211,7 @@ function ProjectCard({
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold text-foreground truncate">{project.name}</span>
           <span className={cn("text-[10px] font-medium shrink-0", isActive ? "text-primary" : style.color)}>
-            {isActive ? "Current" : style.label}
+            {isActive ? t("status.current") : style.label}
           </span>
         </div>
 
@@ -265,6 +267,8 @@ export function ProjectsPanel({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
+  const t = useTranslations("projects")
+  const common = useTranslations("common")
   const manager = useProjectStoreManager()
   const activeProjectCwd = useSyncExternalStore(manager.subscribe, manager.getSnapshot, manager.getSnapshot)
 
@@ -396,7 +400,7 @@ export function ProjectsPanel({
     content = (
       <div className="flex items-center justify-center gap-2 py-16 text-xs text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin" />
-        Discovering projects…
+        {t("discovering")}
       </div>
     )
   } else if (error) {
@@ -415,7 +419,9 @@ export function ProjectsPanel({
           <FolderOpen className="h-7 w-7 text-muted-foreground" />
         </div>
         <div className="space-y-2">
-          <h3 className="text-base font-semibold text-foreground">No projects found</h3>
+          <h3 className="text-base font-semibold text-foreground">
+            {t("noProjectsFound")}
+          </h3>
           <p className="text-sm text-muted-foreground leading-relaxed">
             No project directories discovered in{" "}
             <code className="rounded bg-muted px-1.5 py-0.5 text-xs font-mono text-foreground">
@@ -473,8 +479,8 @@ export function ProjectsPanel({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="left" className="flex h-full w-full flex-col p-0 sm:max-w-[420px]" data-testid="projects-panel">
         <SheetHeader className="sr-only">
-          <SheetTitle>Projects</SheetTitle>
-          <SheetDescription>Switch between projects or create a new one</SheetDescription>
+          <SheetTitle>{t("title")}</SheetTitle>
+          <SheetDescription>{t("subtitle")}</SheetDescription>
         </SheetHeader>
 
         {/* Visible header */}

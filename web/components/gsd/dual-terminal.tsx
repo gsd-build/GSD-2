@@ -1,5 +1,7 @@
 "use client"
 
+import { useTranslations } from "next-intl"
+
 import { useState, useRef, useEffect } from "react"
 import { GripVertical, Loader2 } from "lucide-react"
 import { MainSessionTerminal } from "@/components/gsd/main-session-terminal"
@@ -9,6 +11,7 @@ import { useGSDWorkspaceState } from "@/lib/gsd-workspace-store"
 import { derivePendingWorkflowCommandLabel } from "@/lib/workflow-action-execution"
 
 export function DualTerminal() {
+  const t = useTranslations("dualTerminal")
   const [splitPosition, setSplitPosition] = useState(50)
   const containerRef = useRef<HTMLDivElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
@@ -69,7 +72,7 @@ export function DualTerminal() {
     <div ref={rootRef} className="flex h-full flex-col">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border bg-card px-4 py-2">
-        <span className="font-medium">Power User Mode</span>
+        <span className="font-medium">{t('title')}</span>
         <div className="flex items-center gap-4 text-xs text-muted-foreground">
           {pendingCommandLabel && (
             <span
@@ -81,9 +84,9 @@ export function DualTerminal() {
               Sending {pendingCommandLabel}
             </span>
           )}
-          <span>Left: Main Session TUI</span>
+          <span>{t('leftLabel')}</span>
           <span className="text-border">|</span>
-          <span>Right: Interactive GSD</span>
+          <span>{t('rightLabel')}</span>
         </div>
       </div>
 
