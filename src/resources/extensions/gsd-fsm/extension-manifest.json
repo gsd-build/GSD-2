@@ -1,0 +1,11 @@
+{
+  "id": "gsd-fsm",
+  "name": "GSD FSM Analyzer",
+  "version": "1.0.0",
+  "description": "State machine visualization, verification, and history analysis for GSD projects",
+  "tier": "bundled",
+  "requires": { "platform": ">=2.29.0" },
+  "provides": {
+    "tools": ["fsm_gsd_status", "fsm_gsd_verify", "fsm_gsd_history"]
+  }
+}
