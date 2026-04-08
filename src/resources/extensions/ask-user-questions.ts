@@ -107,6 +107,65 @@ export function resetAskUserQuestionsCache(): void {
 	turnCache.clear();
 }
 
+// ─── Race helper ─────────────────────────────────────────────────────────────
+
+interface RaceableResult {
+	content: { type: "text"; text: string }[];
+	details?: unknown;
+}
+
+/**
+ * Race a remote channel dispatch against the local TUI. The first to produce
+ * a valid (non-error, non-timeout) result wins. The loser is cancelled via
+ * the shared AbortController.
+ *
+ * If the local TUI responds first, the remote poll is aborted (the message
+ * stays in Discord/Slack but polling stops). If remote responds first, the
+ * local TUI prompt is cancelled.
+ *
+ * Returns null only when both sides fail or are cancelled.
+ */
+async function raceRemoteAndLocal(
+	startRemote: () => Promise<RaceableResult | null>,
+	startLocal: () => Promise<RoundResult | null | undefined>,
+	controller: AbortController,
+	questions: Question[],
+): Promise<RaceableResult | null> {
+	// Wrap local TUI result into the same shape as remote results
+	const localPromise = startLocal().then((result): RaceableResult | null => {
+		if (!result || Object.keys(result.answers).length === 0) return null;
+		return {
+			content: [{ type: "text" as const, text: formatForLLM(result) }],
+			details: { questions, response: result, cancelled: false } satisfies LocalResultDetails,
+		};
+	}).catch(() => null);
+
+	const remotePromise = startRemote().then((result): RaceableResult | null => {
+		if (!result) return null;
+		const details = result.details as Record<string, unknown> | undefined;
+		// Treat timeouts and errors as non-wins — let the local TUI win instead
+		if (details?.timed_out || details?.error) return null;
+		return result;
+	}).catch(() => null);
+
+	// Race: first non-null result wins
+	const winner = await Promise.race([
+		localPromise.then((r) => r ? { source: "local" as const, result: r } : null),
+		remotePromise.then((r) => r ? { source: "remote" as const, result: r } : null),
+	]);
+
+	if (winner) {
+		// Cancel the loser
+		controller.abort();
+		return winner.result;
+	}
+
+	// First to resolve was null — wait for the other
+	const [localResult, remoteResult] = await Promise.all([localPromise, remotePromise]);
+	controller.abort();
+	return localResult ?? remoteResult;
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const OTHER_OPTION_LABEL = "None of the above";
@@ -180,20 +239,53 @@ export default function AskUserQuestions(pi: ExtensionAPI) {
 				}
 			}
 
-			// Try remote first if configured (works in both interactive and headless modes).
-			// tryRemoteQuestions returns null when no remote channel is configured, so
-			// this is a no-op when the user has not set up Slack/Discord/Telegram.
-			const { tryRemoteQuestions } = await import("./remote-questions/manager.js");
-			const remoteResult = await tryRemoteQuestions(params.questions, signal);
-			if (remoteResult) {
-				// Cache successful remote results to prevent duplicate Discord dispatches
-				const remoteDetails = remoteResult.details as Record<string, unknown> | undefined;
-				if (remoteDetails && !remoteDetails.timed_out && !remoteDetails.error) {
-					turnCache.set(sig, remoteResult as unknown as CachedResult);
+			// ── Routing: race remote + local, remote-only, or local-only ────────
+			const { tryRemoteQuestions, isRemoteConfigured } = await import("./remote-questions/manager.js");
+			const hasRemote = isRemoteConfigured();
+
+			// Case 1: Both remote and local UI available — race them.
+			// The first response wins; the loser is cancelled via AbortController.
+			if (hasRemote && ctx.hasUI) {
+				const raceController = new AbortController();
+				// Merge the parent signal so external cancellation propagates.
+				const onParentAbort = () => raceController.abort();
+				signal?.addEventListener("abort", onParentAbort, { once: true });
+				const raceSignal = raceController.signal;
+
+				const raceResult = await raceRemoteAndLocal(
+					() => tryRemoteQuestions(params.questions, raceSignal),
+					() => showInterviewRound(params.questions, {}, ctx as any),
+					raceController,
+					params.questions,
+				);
+
+				signal?.removeEventListener("abort", onParentAbort);
+
+				if (raceResult) {
+					const details = raceResult.details as Record<string, unknown> | undefined;
+					if (details && !details.timed_out && !details.error && !details.cancelled) {
+						turnCache.set(sig, raceResult as unknown as CachedResult);
+					}
+					return { ...raceResult, details: raceResult.details as unknown };
 				}
-				return { ...remoteResult, details: remoteResult.details as unknown };
+				// Both sides failed/cancelled — fall through to error
+				return errorResult("ask_user_questions: no response received from local UI or remote channel", params.questions);
 			}
 
+			// Case 2: Remote configured but no local UI (headless) — remote only.
+			if (hasRemote && !ctx.hasUI) {
+				const remoteResult = await tryRemoteQuestions(params.questions, signal);
+				if (remoteResult) {
+					const remoteDetails = remoteResult.details as Record<string, unknown> | undefined;
+					if (remoteDetails && !remoteDetails.timed_out && !remoteDetails.error) {
+						turnCache.set(sig, remoteResult as unknown as CachedResult);
+					}
+					return { ...remoteResult, details: remoteResult.details as unknown };
+				}
+				return errorResult("Error: remote channel configured but returned no result", params.questions);
+			}
+
+			// Case 3: No remote — local UI only.
 			if (!ctx.hasUI) {
 				return errorResult("Error: UI not available (non-interactive mode)", params.questions);
 			}
