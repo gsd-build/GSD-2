@@ -132,6 +132,16 @@ function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function extractPendingActions(knownIssues: string): string[] {
+  if (!knownIssues) return [];
+  const match = knownIssues.match(/(?:^|\n)Pending actions:\s*\n((?:\s*[-*]\s+.+(?:\n|$))+)/i);
+  if (!match) return [];
+  return match[1]
+    .split('\n')
+    .map(line => line.replace(/^\s*[-*]\s+/, '').trim())
+    .filter(Boolean);
+}
+
 /** Parse bullet list items from a text block. */
 export function parseBullets(text: string): string[] {
   return text.split('\n')
@@ -261,6 +271,10 @@ export function parseSummary(content: string): Summary {
 }
 
 function _parseSummaryImpl(content: string): Summary {
+  const [fmLines, body] = splitFrontmatter(content);
+  const knownIssues = extractSection(body, 'Known Issues') || '';
+  const pendingActions = extractPendingActions(knownIssues);
+
   // Try native parser first for better performance
   const nativeResult = nativeParseSummaryFile(content);
   if (nativeResult) {
@@ -290,10 +304,10 @@ function _parseSummaryImpl(content: string): Summary {
       filesModified: nativeResult.filesModified,
       followUps: extractSection(content, 'Follow-ups') ?? '',
       knownLimitations: extractSection(content, 'Known Limitations') ?? '',
+      knownIssues,
+      pendingActions,
     };
   }
-
-  const [fmLines, body] = splitFrontmatter(content);
 
   const fm = fmLines ? parseFrontmatterMap(fmLines) : {};
   const asStringArray = (v: unknown): string[] =>
@@ -354,7 +368,7 @@ function _parseSummaryImpl(content: string): Summary {
   const followUps = extractSection(body, 'Follow-ups') ?? '';
   const knownLimitations = extractSection(body, 'Known Limitations') ?? '';
 
-  return { frontmatter, title, oneLiner, whatHappened, deviations, filesModified, followUps, knownLimitations };
+  return { frontmatter, title, oneLiner, whatHappened, deviations, filesModified, followUps, knownLimitations, knownIssues, pendingActions };
 }
 
 // ─── Continue Parser ───────────────────────────────────────────────────────

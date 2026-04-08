@@ -8,7 +8,8 @@ import assert from 'node:assert/strict';
  * Semantics:
  *   - blocker_discovered on a completed task → replanning-slice (unless loop-protected)
  *   - replan_triggered_at column on slice → replanning-slice (unless loop-protected)
- *   - Loop protection: replan_history entries for the slice → skip replanning
+ *   - pending actions in completed task summaries → replanning-slice (unless task-specific loop-protected)
+ *   - Loop protection: replan_history entries for the triggering task → skip replanning
  */
 
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -26,6 +27,7 @@ import {
   insertReplanHistory,
   _getAdapter,
 } from '../gsd-db.ts';
+
 // ─── Fixture Helpers ───────────────────────────────────────────────────────
 
 function createFixtureBase(): string {
@@ -42,6 +44,30 @@ function writeFile(base: string, relativePath: string, content: string): void {
 
 function cleanup(base: string): void {
   rmSync(base, { recursive: true, force: true });
+}
+
+function makeTaskSummaryWithPendingActions(tid: string, actions: string[]): string {
+  return `---
+id: ${tid}
+parent: S01
+milestone: M001
+completed_at: 2025-03-10T12:00:00Z
+blocker_discovered: false
+---
+
+# ${tid}: Summary
+
+**Did something.**
+
+## What Happened
+
+Work was done.
+
+## Known Issues
+
+Pending actions:
+${actions.map((action) => `- ${action}`).join('\n')}
+`;
 }
 
 const ROADMAP_CONTENT = `# M001: Flag-File DB Test
@@ -76,13 +102,11 @@ const TASK_SUMMARY_STUB = `---\nblocker_discovered: false\n---\n# T01 Summary\nD
 // Tests
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('flag-file-db', async () => {
-
+describe('flag-file-db', () => {
   // ─── Test 1: blocker_discovered + no replan_history → replanning-slice ──
   test('flag-file-db: blocker + no history → replanning', async () => {
     const base = createFixtureBase();
     try {
-      // Write disk files needed by deriveStateFromDb (roadmap check, task dir check)
       writeFile(base, 'milestones/M001/M001-ROADMAP.md', ROADMAP_CONTENT);
       writeFile(base, 'milestones/M001/slices/S01/S01-PLAN.md', PLAN_CONTENT);
       writeFile(base, 'milestones/M001/slices/S01/tasks/T02-PLAN.md', TASK_PLAN_STUB);
@@ -95,15 +119,12 @@ describe('flag-file-db', async () => {
       insertTask({ id: 'T01', sliceId: 'S01', milestoneId: 'M001', title: 'Done Task', status: 'complete', blockerDiscovered: true });
       insertTask({ id: 'T02', sliceId: 'S01', milestoneId: 'M001', title: 'Active Task', status: 'pending' });
 
-      // No replan_history entries, no disk REPLAN.md — should trigger replanning
       invalidateStateCache();
       const state = await deriveStateFromDb(base);
 
       assert.deepStrictEqual(state.phase, 'replanning-slice', 'test1: phase is replanning-slice');
       assert.ok(state.blockers.length > 0, 'test1: has blockers');
       assert.ok(state.blockers[0]?.includes('blocker'), 'test1: blocker message mentions blocker');
-
-      closeDatabase();
     } finally {
       closeDatabase();
       cleanup(base);
@@ -125,7 +146,6 @@ describe('flag-file-db', async () => {
       insertTask({ id: 'T01', sliceId: 'S01', milestoneId: 'M001', title: 'Done Task', status: 'complete', blockerDiscovered: true });
       insertTask({ id: 'T02', sliceId: 'S01', milestoneId: 'M001', title: 'Active Task', status: 'pending' });
 
-      // Insert replan_history entry — loop protection should kick in
       insertReplanHistory({
         milestoneId: 'M001',
         sliceId: 'S01',
@@ -136,8 +156,6 @@ describe('flag-file-db', async () => {
       const state = await deriveStateFromDb(base);
 
       assert.deepStrictEqual(state.phase, 'executing', 'test2: phase is executing (loop protection)');
-
-      closeDatabase();
     } finally {
       closeDatabase();
       cleanup(base);
@@ -159,11 +177,10 @@ describe('flag-file-db', async () => {
       insertTask({ id: 'T01', sliceId: 'S01', milestoneId: 'M001', title: 'Done Task', status: 'complete' });
       insertTask({ id: 'T02', sliceId: 'S01', milestoneId: 'M001', title: 'Active Task', status: 'pending' });
 
-      // Set replan_triggered_at directly via SQL (simulating triage-resolution.ts writing it)
       const adapter = _getAdapter();
       adapter!.prepare(
         "UPDATE slices SET replan_triggered_at = :ts WHERE milestone_id = :mid AND id = :sid",
-      ).run({ ":ts": new Date().toISOString(), ":mid": "M001", ":sid": "S01" });
+      ).run({ ":ts": new Date().toISOString(), ":mid": 'M001', ":sid": 'S01' });
 
       invalidateStateCache();
       const state = await deriveStateFromDb(base);
@@ -171,8 +188,6 @@ describe('flag-file-db', async () => {
       assert.deepStrictEqual(state.phase, 'replanning-slice', 'test3: phase is replanning-slice');
       assert.ok(state.blockers.length > 0, 'test3: has blockers');
       assert.ok(state.blockers[0]?.includes('Triage replan trigger'), 'test3: blocker message mentions triage trigger');
-
-      closeDatabase();
     } finally {
       closeDatabase();
       cleanup(base);
@@ -194,13 +209,11 @@ describe('flag-file-db', async () => {
       insertTask({ id: 'T01', sliceId: 'S01', milestoneId: 'M001', title: 'Done Task', status: 'complete' });
       insertTask({ id: 'T02', sliceId: 'S01', milestoneId: 'M001', title: 'Active Task', status: 'pending' });
 
-      // Set trigger column
       const adapter = _getAdapter();
       adapter!.prepare(
         "UPDATE slices SET replan_triggered_at = :ts WHERE milestone_id = :mid AND id = :sid",
-      ).run({ ":ts": new Date().toISOString(), ":mid": "M001", ":sid": "S01" });
+      ).run({ ":ts": new Date().toISOString(), ":mid": 'M001', ":sid": 'S01' });
 
-      // Also add replan_history — loop protection should prevent replanning
       insertReplanHistory({
         milestoneId: 'M001',
         sliceId: 'S01',
@@ -211,8 +224,6 @@ describe('flag-file-db', async () => {
       const state = await deriveStateFromDb(base);
 
       assert.deepStrictEqual(state.phase, 'executing', 'test4: phase is executing (loop protection)');
-
-      closeDatabase();
     } finally {
       closeDatabase();
       cleanup(base);
@@ -234,15 +245,12 @@ describe('flag-file-db', async () => {
       insertTask({ id: 'T01', sliceId: 'S01', milestoneId: 'M001', title: 'Done Task', status: 'complete' });
       insertTask({ id: 'T02', sliceId: 'S01', milestoneId: 'M001', title: 'Active Task', status: 'pending' });
 
-      // No blocker, no trigger, no replan_history — normal executing
       invalidateStateCache();
       const state = await deriveStateFromDb(base);
 
       assert.deepStrictEqual(state.phase, 'executing', 'test5: phase is executing');
       assert.deepStrictEqual(state.activeTask?.id, 'T02', 'test5: activeTask is T02');
       assert.deepStrictEqual(state.blockers.length, 0, 'test5: no blockers');
-
-      closeDatabase();
     } finally {
       closeDatabase();
       cleanup(base);
@@ -256,23 +264,121 @@ describe('flag-file-db', async () => {
     insertMilestone({ id: 'M001', title: 'Diagnostic', status: 'active' });
     insertSlice({ id: 'S01', milestoneId: 'M001', title: 'Test', status: 'active', risk: 'low', depends: [] });
 
-    // Initially null
     const adapter = _getAdapter();
     const before = adapter!.prepare(
       "SELECT id, replan_triggered_at FROM slices WHERE milestone_id = :mid",
-    ).get({ ":mid": "M001" }) as Record<string, unknown>;
-    assert.deepStrictEqual(before["replan_triggered_at"], null, 'diagnostic: replan_triggered_at initially null');
+    ).get({ ":mid": 'M001' }) as Record<string, unknown>;
+    assert.deepStrictEqual(before['replan_triggered_at'], null, 'diagnostic: replan_triggered_at initially null');
 
-    // After setting
     adapter!.prepare(
       "UPDATE slices SET replan_triggered_at = :ts WHERE milestone_id = :mid AND id = :sid",
-    ).run({ ":ts": "2025-01-01T00:00:00Z", ":mid": "M001", ":sid": "S01" });
+    ).run({ ":ts": '2025-01-01T00:00:00Z', ":mid": 'M001', ":sid": 'S01' });
 
     const after = adapter!.prepare(
       "SELECT id, replan_triggered_at FROM slices WHERE milestone_id = :mid",
-    ).get({ ":mid": "M001" }) as Record<string, unknown>;
-    assert.deepStrictEqual(after["replan_triggered_at"], "2025-01-01T00:00:00Z", 'diagnostic: replan_triggered_at is set');
+    ).get({ ":mid": 'M001' }) as Record<string, unknown>;
+    assert.deepStrictEqual(after['replan_triggered_at'], '2025-01-01T00:00:00Z', 'diagnostic: replan_triggered_at is set');
 
     closeDatabase();
+  });
+
+  // ─── Test 6: pending actions + no matching replan_history → replanning-slice ──
+  test('flag-file-db: pending actions + no matching history → replanning', async () => {
+    const base = createFixtureBase();
+    try {
+      writeFile(base, 'milestones/M001/M001-ROADMAP.md', ROADMAP_CONTENT);
+      writeFile(base, 'milestones/M001/slices/S01/S01-PLAN.md', PLAN_CONTENT);
+      writeFile(base, 'milestones/M001/slices/S01/tasks/T01-SUMMARY.md', makeTaskSummaryWithPendingActions('T01', ['finish migration']));
+      writeFile(base, 'milestones/M001/slices/S01/tasks/T02-PLAN.md', TASK_PLAN_STUB);
+
+      openDatabase(':memory:');
+
+      insertMilestone({ id: 'M001', title: 'Flag-File DB Test', status: 'active' });
+      insertSlice({ id: 'S01', milestoneId: 'M001', title: 'Test Slice', status: 'active', risk: 'low', depends: [] });
+      insertTask({ id: 'T01', sliceId: 'S01', milestoneId: 'M001', title: 'Done Task', status: 'complete' });
+      insertTask({ id: 'T02', sliceId: 'S01', milestoneId: 'M001', title: 'Active Task', status: 'pending' });
+
+      invalidateStateCache();
+      const state = await deriveStateFromDb(base);
+
+      assert.deepStrictEqual(state.phase, 'replanning-slice', 'test6: phase is replanning-slice');
+      assert.ok(state.blockers[0]?.includes('pending carry-forward actions'), 'test6: blocker mentions pending carry-forward actions');
+      assert.ok(state.nextAction.includes('pending actions'), 'test6: nextAction mentions pending actions');
+    } finally {
+      closeDatabase();
+      cleanup(base);
+    }
+  });
+
+  // ─── Test 7: pending actions + same task history → loop protection ──
+  test('flag-file-db: pending actions + same task history → loop protection', async () => {
+    const base = createFixtureBase();
+    try {
+      writeFile(base, 'milestones/M001/M001-ROADMAP.md', ROADMAP_CONTENT);
+      writeFile(base, 'milestones/M001/slices/S01/S01-PLAN.md', PLAN_CONTENT);
+      writeFile(base, 'milestones/M001/slices/S01/tasks/T01-SUMMARY.md', makeTaskSummaryWithPendingActions('T01', ['finish migration']));
+      writeFile(base, 'milestones/M001/slices/S01/tasks/T02-PLAN.md', TASK_PLAN_STUB);
+
+      openDatabase(':memory:');
+
+      insertMilestone({ id: 'M001', title: 'Flag-File DB Test', status: 'active' });
+      insertSlice({ id: 'S01', milestoneId: 'M001', title: 'Test Slice', status: 'active', risk: 'low', depends: [] });
+      insertTask({ id: 'T01', sliceId: 'S01', milestoneId: 'M001', title: 'Done Task', status: 'complete' });
+      insertTask({ id: 'T02', sliceId: 'S01', milestoneId: 'M001', title: 'Active Task', status: 'pending' });
+
+      insertReplanHistory({
+        milestoneId: 'M001',
+        sliceId: 'S01',
+        taskId: 'T01',
+        summary: 'Already replanned for T01 pending actions',
+      });
+
+      invalidateStateCache();
+      const state = await deriveStateFromDb(base);
+
+      assert.deepStrictEqual(state.phase, 'executing', 'test7: phase is executing when same task already triggered replan');
+      assert.deepStrictEqual(state.activeTask?.id, 'T02', 'test7: activeTask is T02');
+    } finally {
+      closeDatabase();
+      cleanup(base);
+    }
+  });
+
+  // ─── Test 8: pending actions on later task still replan after earlier task history ──
+  test('flag-file-db: later task pending actions bypass earlier-task replan history', async () => {
+    const base = createFixtureBase();
+    try {
+      const plan = `# S01: Test Slice\n\n**Goal:** Test replanning detection.\n**Demo:** Tests pass.\n\n## Tasks\n\n- [x] **T01: Done Task** \`est:10m\`\n  Already done.\n\n- [x] **T02: Later Done Task** \`est:10m\`\n  Also done.\n\n- [ ] **T03: Active Task** \`est:10m\`\n  Current task.\n`;
+      writeFile(base, 'milestones/M001/M001-ROADMAP.md', ROADMAP_CONTENT);
+      writeFile(base, 'milestones/M001/slices/S01/S01-PLAN.md', plan);
+      writeFile(base, 'milestones/M001/slices/S01/tasks/T01-SUMMARY.md', TASK_SUMMARY_STUB);
+      writeFile(base, 'milestones/M001/slices/S01/tasks/T02-SUMMARY.md', makeTaskSummaryWithPendingActions('T02', ['add regression test']));
+      writeFile(base, 'milestones/M001/slices/S01/tasks/T03-PLAN.md', '# T03: Active Task\n\nDo stuff.\n');
+
+      openDatabase(':memory:');
+
+      insertMilestone({ id: 'M001', title: 'Flag-File DB Test', status: 'active' });
+      insertSlice({ id: 'S01', milestoneId: 'M001', title: 'Test Slice', status: 'active', risk: 'low', depends: [] });
+      insertTask({ id: 'T01', sliceId: 'S01', milestoneId: 'M001', title: 'Done Task', status: 'complete' });
+      insertTask({ id: 'T02', sliceId: 'S01', milestoneId: 'M001', title: 'Later Done Task', status: 'complete' });
+      insertTask({ id: 'T03', sliceId: 'S01', milestoneId: 'M001', title: 'Active Task', status: 'pending' });
+
+      insertReplanHistory({
+        milestoneId: 'M001',
+        sliceId: 'S01',
+        taskId: 'T01',
+        summary: 'Earlier replan handled T01',
+      });
+
+      invalidateStateCache();
+      const state = await deriveStateFromDb(base);
+
+      assert.deepStrictEqual(state.phase, 'replanning-slice', 'test8: phase is replanning-slice for later task pending actions');
+      assert.ok(state.nextAction.includes('T02'), 'test8: nextAction mentions later triggering task T02');
+      assert.ok(state.blockers[0]?.includes('add regression test'), 'test8: blocker mentions later pending action');
+    } finally {
+      closeDatabase();
+      cleanup(base);
+    }
   });
 });
