@@ -379,6 +379,22 @@ export const DISPATCH_RULES: DispatchRule[] = [
     },
   },
   {
+    name: "planning (require_slice_discussion gate) → pause",
+    match: async ({ state, mid, basePath, prefs }) => {
+      if (state.phase !== "planning") return null;
+      if (!prefs?.phases?.require_slice_discussion) return null;
+      if (!state.activeSlice) return null; // fall through to missing-slice stop
+      const sid = state.activeSlice.id;
+      const sliceContextFile = resolveSliceFile(basePath, mid, sid, "CONTEXT");
+      if (sliceContextFile) return null; // has context, discussion already happened
+      return {
+        action: "stop",
+        reason: `Slice ${sid} requires discussion before planning. Run /gsd discuss to discuss this slice, then /gsd auto to resume.`,
+        level: "info",
+      };
+    },
+  },
+  {
     name: "planning (no research, not S01) → research-slice",
     match: async ({ state, mid, midTitle, basePath, prefs }) => {
       if (state.phase !== "planning") return null;
