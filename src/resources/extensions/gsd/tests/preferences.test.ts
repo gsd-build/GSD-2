@@ -17,6 +17,12 @@ import {
   parsePreferencesMarkdown,
   _resetParseWarningFlag,
 } from "../preferences.ts";
+import {
+  MODEL_PHASES,
+  buildCategorySummaries,
+  formatModelConfigForDisplay,
+  getModelConfigInputValue,
+} from "../commands-prefs-wizard.ts";
 import type { GSDPreferences, GSDModelConfigV2, GSDPhaseModelConfig } from "../preferences.ts";
 
 // ── Git preferences ──────────────────────────────────────────────────────────
@@ -168,6 +174,40 @@ test("notification fields validate correctly", () => {
   assert.equal(errors.length, 0);
   assert.equal(preferences.notifications?.enabled, true);
   assert.equal(preferences.notifications?.on_complete, false);
+});
+
+test("wizard exposes all model phases that runtime supports", () => {
+  assert.deepEqual(
+    [...MODEL_PHASES],
+    ["research", "planning", "discuss", "execution", "execution_simple", "completion", "validation", "subagent"],
+  );
+});
+
+test("wizard model display formats provider and fallbacks cleanly", () => {
+  const display = formatModelConfigForDisplay({
+    model: "claude-opus-4-6",
+    provider: "bedrock",
+    fallbacks: ["glm-5", "minimax-m2.5"],
+  });
+  assert.equal(display, "bedrock/claude-opus-4-6 (+2 fallbacks)");
+  assert.equal(getModelConfigInputValue({ model: "claude-opus-4-6", provider: "bedrock" }), "bedrock/claude-opus-4-6");
+});
+
+test("wizard model summaries include object-based phase configs", () => {
+  const summaries = buildCategorySummaries({
+    models: {
+      planning: {
+        model: "claude-opus-4-6",
+        provider: "bedrock",
+        fallbacks: ["glm-5"],
+      },
+      validation: "openai-codex/gpt-5.4",
+    },
+  });
+  assert.equal(
+    summaries.models,
+    "planning: bedrock/claude-opus-4-6 (+1 fallback), validation: openai-codex/gpt-5.4",
+  );
 });
 
 test("cmux fields validate correctly", () => {

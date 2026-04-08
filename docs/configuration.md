@@ -175,15 +175,19 @@ models:
     model: claude-opus-4-6
     fallbacks:
       - openrouter/z-ai/glm-5
+  discuss: claude-opus-4-6
   execution: claude-sonnet-4-6
   execution_simple: claude-haiku-4-5-20250414
   completion: claude-sonnet-4-6
+  validation: claude-opus-4-6
   subagent: claude-sonnet-4-6
 ```
 
-**Phases:** `research`, `planning`, `execution`, `execution_simple`, `completion`, `subagent`
+**Phases:** `research`, `planning`, `discuss`, `execution`, `execution_simple`, `completion`, `validation`, `subagent`
 
+- `discuss` — used for milestone/slice discussion and falls back to `planning` when unset
 - `execution_simple` — used for tasks classified as "simple" by the [complexity router](./token-optimization.md#complexity-based-task-routing)
+- `validation` — used for gate evaluation, milestone validation, and doc rewrites; falls back to `planning` when unset
 - `subagent` — model for delegated subagent tasks (scout, researcher, worker)
 - Provider targeting: use `provider/model` format (e.g., `bedrock/claude-sonnet-4-6`) or the `provider` field in object format
 - Omit a key to use whatever model is currently active
@@ -776,9 +780,12 @@ models:
     model: claude-opus-4-6
     fallbacks:
       - openrouter/z-ai/glm-5
+  discuss: claude-opus-4-6
   execution: claude-sonnet-4-6
   execution_simple: claude-haiku-4-5-20250414
   completion: claude-sonnet-4-6
+  validation: claude-opus-4-6
+  subagent: claude-sonnet-4-6
 
 # Token optimization
 token_profile: balanced

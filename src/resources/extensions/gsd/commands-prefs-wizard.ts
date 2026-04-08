@@ -158,6 +158,43 @@ export async function handlePrefsMode(ctx: ExtensionCommandContext, scope: "glob
   ctx.ui.notify(`Saved ${scope} preferences to ${path}`, "info");
 }
 
+export const MODEL_PHASES = [
+  "research",
+  "planning",
+  "discuss",
+  "execution",
+  "execution_simple",
+  "completion",
+  "validation",
+  "subagent",
+] as const;
+
+export function getModelConfigInputValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (!value || typeof value !== "object") return "";
+
+  const config = value as Record<string, unknown>;
+  const model = typeof config.model === "string" ? config.model.trim() : "";
+  const provider = typeof config.provider === "string" ? config.provider.trim() : "";
+
+  if (!model) return "";
+  if (provider && !model.includes("/")) return `${provider}/${model}`;
+  return model;
+}
+
+export function formatModelConfigForDisplay(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (!value || typeof value !== "object") return "";
+
+  const config = value as Record<string, unknown>;
+  const primary = getModelConfigInputValue(config);
+  if (!primary) return "(invalid model config)";
+
+  const fallbackCount = Array.isArray(config.fallbacks) ? config.fallbacks.length : 0;
+  const fallbackSuffix = fallbackCount > 0 ? ` (+${fallbackCount} fallback${fallbackCount === 1 ? "" : "s"})` : "";
+  return `${primary}${fallbackSuffix}`;
+}
+
 /** Build short summary strings for each preference category. */
 export function buildCategorySummaries(prefs: Record<string, unknown>): Record<string, string> {
   // Mode
@@ -165,10 +202,10 @@ export function buildCategorySummaries(prefs: Record<string, unknown>): Record<s
   const modeSummary = mode ?? "(not set)";
 
   // Models
-  const models = prefs.models as Record<string, string> | undefined;
+  const models = prefs.models as Record<string, unknown> | undefined;
   let modelsSummary = "(not configured)";
   if (models && Object.keys(models).length > 0) {
-    const parts = Object.entries(models).map(([phase, model]) => `${phase}: ${model}`);
+    const parts = Object.entries(models).map(([phase, model]) => `${phase}: ${formatModelConfigForDisplay(model)}`);
     modelsSummary = parts.join(", ");
   }
 
@@ -284,9 +321,11 @@ async function configureModels(ctx: ExtensionCommandContext, prefs: Record<strin
     });
     providerOptions.push("(keep current)", "(clear)", "(type manually)");
 
-    for (const phase of modelPhases) {
-      const current = models[phase] ?? "";
-      const phaseLabel = `Model for ${phase} phase${current ? ` (current: ${current})` : ""}`;
+    for (const phase of MODEL_PHASES) {
+      const currentValue = models[phase];
+      const currentDisplay = formatModelConfigForDisplay(currentValue);
+      const currentInputValue = getModelConfigInputValue(currentValue);
+      const phaseLabel = `Model for ${phase} phase${currentDisplay ? ` (current: ${currentDisplay})` : ""}`;
 
       // Step 1: pick provider
       const providerChoice = await ctx.ui.select(`${phaseLabel} — choose provider:`, providerOptions);
@@ -300,11 +339,15 @@ async function configureModels(ctx: ExtensionCommandContext, prefs: Record<strin
       if (providerChoice === "(type manually)") {
         const input = await ctx.ui.input(
           `${phaseLabel} — enter model ID:`,
-          current || "e.g. claude-sonnet-4-20250514",
+          currentInputValue || "e.g. claude-sonnet-4-20250514",
         );
         if (input !== null && input !== undefined) {
           const val = input.trim();
-          if (val) models[phase] = val;
+          if (val) {
+            models[phase] = val;
+          } else if (currentValue !== undefined) {
+            delete models[phase];
+          }
         }
         continue;
       }
@@ -327,17 +370,19 @@ async function configureModels(ctx: ExtensionCommandContext, prefs: Record<strin
       }
     }
   } else {
-    for (const phase of modelPhases) {
-      const current = models[phase] ?? "";
+    for (const phase of MODEL_PHASES) {
+      const currentValue = models[phase];
+      const currentDisplay = formatModelConfigForDisplay(currentValue);
+      const currentInputValue = getModelConfigInputValue(currentValue);
       const input = await ctx.ui.input(
-        `Model for ${phase} phase${current ? ` (current: ${current})` : ""}:`,
-        current || "e.g. claude-sonnet-4-20250514",
+        `Model for ${phase} phase${currentDisplay ? ` (current: ${currentDisplay})` : ""}:`,
+        currentInputValue || "e.g. claude-sonnet-4-20250514",
       );
       if (input !== null && input !== undefined) {
         const val = input.trim();
         if (val) {
           models[phase] = val;
-        } else if (current) {
+        } else if (currentValue !== undefined) {
           delete models[phase];
         }
       }
@@ -345,6 +390,8 @@ async function configureModels(ctx: ExtensionCommandContext, prefs: Record<strin
   }
   if (Object.keys(models).length > 0) {
     prefs.models = models;
+  } else {
+    delete prefs.models;
   }
 }
 

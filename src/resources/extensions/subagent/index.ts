@@ -34,8 +34,9 @@ import {
 	readIsolationMode,
 } from "./isolation.js";
 import { registerWorker, updateWorker } from "./worker-registry.js";
-import { loadEffectiveGSDPreferences } from "../gsd/preferences.js";
+import { loadEffectiveGSDPreferences, resolveModelWithFallbacksForUnit } from "../gsd/preferences.js";
 import { CmuxClient, shellEscape } from "../cmux/index.js";
+import { formatSubagentModelLabel, resolveSubagentLaunchModel } from "./model-selection.js";
 
 const MAX_PARALLEL_TASKS = 8;
 const MAX_CONCURRENCY = 4;
@@ -263,9 +264,11 @@ function buildSubagentProcessArgs(
 	agent: AgentConfig,
 	task: string,
 	tmpPromptPath: string | null,
+	preferredModel: string | undefined,
 ): string[] {
 	const args: string[] = ["--mode", "json", "-p", "--no-session"];
-	if (agent.model) args.push("--model", agent.model);
+	const launchModel = resolveSubagentLaunchModel(agent.model, preferredModel);
+	if (launchModel) args.push("--model", launchModel);
 	if (agent.tools && agent.tools.length > 0) args.push("--tools", agent.tools.join(","));
 	if (tmpPromptPath) args.push("--append-system-prompt", tmpPromptPath);
 	args.push(`Task: ${task}`);
@@ -300,7 +303,7 @@ function processSubagentEventLine(
 				currentResult.usage.cost += usage.cost?.total || 0;
 				currentResult.usage.contextTokens = usage.totalTokens || 0;
 			}
-			if (!currentResult.model && msg.model) currentResult.model = msg.model;
+			if (msg.model) currentResult.model = msg.model;
 			if (msg.stopReason) currentResult.stopReason = msg.stopReason;
 			if (msg.errorMessage) currentResult.errorMessage = msg.errorMessage;
 		}
@@ -335,6 +338,7 @@ async function runSingleAgent(
 	signal: AbortSignal | undefined,
 	onUpdate: OnUpdateCallback | undefined,
 	makeDetails: (results: SingleResult[]) => SubagentDetails,
+	preferredModel: string | undefined,
 ): Promise<SingleResult> {
 	const agent = agents.find((a) => a.name === agentName);
 
@@ -363,7 +367,7 @@ async function runSingleAgent(
 		messages: [],
 		stderr: "",
 		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
-		model: agent.model,
+		model: resolveSubagentLaunchModel(agent.model, preferredModel),
 		step,
 	};
 
@@ -382,7 +386,7 @@ async function runSingleAgent(
 			tmpPromptDir = tmp.dir;
 			tmpPromptPath = tmp.filePath;
 		}
-		const args = buildSubagentProcessArgs(agent, task, tmpPromptPath);
+		const args = buildSubagentProcessArgs(agent, task, tmpPromptPath, preferredModel);
 		let wasAborted = false;
 
 		const exitCode = await new Promise<number>((resolve) => {
@@ -462,10 +466,11 @@ async function runSingleAgentInCmuxSplit(
 	signal: AbortSignal | undefined,
 	onUpdate: OnUpdateCallback | undefined,
 	makeDetails: (results: SingleResult[]) => SubagentDetails,
+	preferredModel: string | undefined,
 ): Promise<SingleResult> {
 	const agent = agents.find((a) => a.name === agentName);
 	if (!agent) {
-		return runSingleAgent(defaultCwd, agents, agentName, task, cwd, step, signal, onUpdate, makeDetails);
+		return runSingleAgent(defaultCwd, agents, agentName, task, cwd, step, signal, onUpdate, makeDetails, preferredModel);
 	}
 
 	let tmpPromptDir: string | null = null;
@@ -480,7 +485,7 @@ async function runSingleAgentInCmuxSplit(
 		messages: [],
 		stderr: "",
 		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
-		model: agent.model,
+		model: resolveSubagentLaunchModel(agent.model, preferredModel),
 		step,
 	};
 
@@ -510,12 +515,16 @@ async function runSingleAgentInCmuxSplit(
 			? await cmuxClient.createSplit(directionOrSurfaceId as "right" | "down" | "left" | "up")
 			: directionOrSurfaceId;
 		if (!cmuxSurfaceId) {
-			return runSingleAgent(defaultCwd, agents, agentName, task, cwd, step, signal, onUpdate, makeDetails);
+			return runSingleAgent(defaultCwd, agents, agentName, task, cwd, step, signal, onUpdate, makeDetails, preferredModel);
 		}
 
 		const bundledPaths = (process.env.GSD_BUNDLED_EXTENSION_PATHS ?? "").split(path.delimiter).map((s) => s.trim()).filter(Boolean);
 		const extensionArgs = bundledPaths.flatMap((p) => ["--extension", p]);
-		const processArgs = [process.env.GSD_BIN_PATH!, ...extensionArgs, ...buildSubagentProcessArgs(agent, task, tmpPromptPath)];
+		const processArgs = [
+			process.env.GSD_BIN_PATH!,
+			...extensionArgs,
+			...buildSubagentProcessArgs(agent, task, tmpPromptPath, preferredModel),
+		];
 		// Normalize all paths to forward slashes before embedding in bash strings.
 		// On Windows, backslashes are interpreted as escape characters by bash,
 		// mangling paths like C:\Users\user into C:Useruser (#1436).
@@ -530,7 +539,7 @@ async function runSingleAgentInCmuxSplit(
 
 		const sent = await cmuxClient.sendSurface(cmuxSurfaceId, `bash -lc ${shellEscape(innerScript)}`);
 		if (!sent) {
-			return runSingleAgent(defaultCwd, agents, agentName, task, cwd, step, signal, onUpdate, makeDetails);
+			return runSingleAgent(defaultCwd, agents, agentName, task, cwd, step, signal, onUpdate, makeDetails, preferredModel);
 		}
 
 		const finished = await waitForFile(exitPath, signal);
@@ -625,9 +634,11 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify("No agents found. Add .md files to ~/.gsd/agent/agents/ or .gsd/agents/", "warning");
 				return;
 			}
-			const lines = discovery.agents.map(
-				(a) => `  ${a.name} [${a.source}]${a.model ? ` (${a.model})` : ""}: ${a.description}`,
-			);
+			const preferredSubagentModel = resolveModelWithFallbacksForUnit("subagent")?.primary;
+			const lines = discovery.agents.map((a) => {
+				const modelLabel = formatSubagentModelLabel(a.model, preferredSubagentModel);
+				return `  ${a.name} [${a.source}]${modelLabel ? ` (${modelLabel})` : ""}: ${a.description}`;
+			});
 			ctx.ui.notify(`Available agents (${discovery.agents.length}):\n${lines.join("\n")}`, "info");
 		},
 	});
@@ -657,6 +668,7 @@ export default function (pi: ExtensionAPI) {
 			const discovery = discoverAgents(ctx.cwd, agentScope);
 			const agents = discovery.agents;
 			const confirmProjectAgents = params.confirmProjectAgents ?? false;
+			const preferredSubagentModel = resolveModelWithFallbacksForUnit("subagent")?.primary;
 			const cmuxClient = CmuxClient.fromPreferences(loadEffectiveGSDPreferences()?.preferences);
 			const cmuxSplitsEnabled = cmuxClient.getConfig().splits;
 
@@ -749,6 +761,7 @@ export default function (pi: ExtensionAPI) {
 						signal,
 						chainUpdate,
 						makeDetails("chain"),
+						preferredSubagentModel,
 					);
 					results.push(result);
 
@@ -839,6 +852,7 @@ export default function (pi: ExtensionAPI) {
 								}
 							},
 							makeDetails("parallel"),
+							preferredSubagentModel,
 						)
 						: runSingleAgent(
 							ctx.cwd,
@@ -855,6 +869,7 @@ export default function (pi: ExtensionAPI) {
 								}
 							},
 							makeDetails("parallel"),
+							preferredSubagentModel,
 						);
 					let result = await runTask();
 
@@ -913,6 +928,7 @@ export default function (pi: ExtensionAPI) {
 							signal,
 							onUpdate,
 							makeDetails("single"),
+							preferredSubagentModel,
 						)
 						: await runSingleAgent(
 							ctx.cwd,
@@ -924,6 +940,7 @@ export default function (pi: ExtensionAPI) {
 							signal,
 							onUpdate,
 							makeDetails("single"),
+							preferredSubagentModel,
 						);
 
 					// Capture and merge delta if isolated
