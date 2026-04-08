@@ -131,6 +131,13 @@ test("complete-slice prompt still contains template variables for context", () =
   assert.match(prompt, /\{\{sliceUatPath\}\}/);
 });
 
+// Regression: #2935 — complete-slice was missing filesystem safety guard (gap from #1343)
+test("complete-slice prompt includes filesystem safety guard against EISDIR", () => {
+  const prompt = readPrompt("complete-slice");
+  assert.match(prompt, /File system safety/);
+  assert.match(prompt, /never pass.*directory path.*directly to the `read` tool/i);
+});
+
 test("plan-milestone prompt references DB-backed planning tool and explicitly forbids manual roadmap writes", () => {
   const prompt = readPrompt("plan-milestone");
   assert.match(prompt, /gsd_plan_milestone/);
