@@ -1301,8 +1301,20 @@ export async function runUnitPhase(
       debugLog("autoLoop", { phase: "exit", reason: "provider-pause", isTransient: unitResult.errorContext.isTransient });
       return { action: "break", reason: "provider-pause" };
     }
+    // Session-creation timeout (NEW_SESSION_TIMEOUT_MS): treat as recoverable
+    // pause, not a hard stop. Unlike "provider", pauseAuto was not called
+    // upstream — call it here so session state is properly cleaned up (#3767).
+    if (unitResult.errorContext?.category === "timeout") {
+      ctx.ui.notify(
+        `Session creation timed out for ${unitType} ${unitId}. Pausing auto-mode (recoverable).`,
+        "warning",
+      );
+      await deps.pauseAuto(ctx, pi);
+      debugLog("autoLoop", { phase: "exit", reason: "provider-pause", isTransient: unitResult.errorContext.isTransient });
+      return { action: "break", reason: "provider-pause" };
+    }
     ctx.ui.notify(
-      `Session creation timed out or was cancelled for ${unitType} ${unitId}. Will retry.`,
+      `Session creation was cancelled for ${unitType} ${unitId}.`,
       "warning",
     );
     await deps.stopAuto(ctx, pi, "Session creation failed");

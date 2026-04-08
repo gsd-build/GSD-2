@@ -360,8 +360,8 @@ describe("session management", () => {
     assert.equal(s.unitRecoveryCount.size, 0, "recovery counts cleared");
   });
 
-  test("NEW_SESSION_TIMEOUT_MS is 30 seconds", () => {
-    assert.equal(NEW_SESSION_TIMEOUT_MS, 30_000, "session timeout should be 30s");
+  test("NEW_SESSION_TIMEOUT_MS is 120 seconds", () => {
+    assert.equal(NEW_SESSION_TIMEOUT_MS, 120_000, "session timeout should be 120s");
   });
 
   test("MAX_UNIT_DISPATCHES limits retries for a single unit", () => {
