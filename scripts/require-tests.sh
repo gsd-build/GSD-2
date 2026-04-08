@@ -19,7 +19,9 @@ fi
 FILES=$(git diff --name-only "$BASE" HEAD 2>/dev/null || git diff --name-only HEAD~1)
 
 # --- exempt branch types that don't need tests ---
-BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+# In CI pull_request events, HEAD is detached so git rev-parse returns "HEAD".
+# GITHUB_HEAD_REF contains the actual PR branch name.
+BRANCH="${GITHUB_HEAD_REF:-$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")}"
 if [[ "$BRANCH" =~ ^(docs|chore|ci)/ ]]; then
   echo "✓ Branch type '${BRANCH%%/*}/' is exempt from test requirements"
   exit 0

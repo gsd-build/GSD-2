@@ -5,7 +5,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { printWelcomeScreen } from '../../dist/welcome-screen.js'
+import { printWelcomeScreen } from '../welcome-screen.ts'
 
 function capture(opts: Parameters<typeof printWelcomeScreen>[0]): string {
   const chunks: string[] = []

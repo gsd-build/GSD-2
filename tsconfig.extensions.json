@@ -5,7 +5,20 @@
     "allowImportingTsExtensions": true,
     "allowJs": true,
     "checkJs": false,
-    "rootDir": "."
+    "rootDir": ".",
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "paths": {
+      "@gsd/pi-ai": ["./packages/pi-ai/src/index.ts"],
+      "@gsd/pi-ai/*": ["./packages/pi-ai/src/*"],
+      "@gsd/pi-coding-agent": ["./packages/pi-coding-agent/src/index.ts"],
+      "@gsd/pi-coding-agent/*": ["./packages/pi-coding-agent/src/*"],
+      "@gsd/pi-agent-core": ["./packages/pi-agent-core/src/index.ts"],
+      "@gsd/pi-agent-core/*": ["./packages/pi-agent-core/src/*"],
+      "@gsd/pi-tui": ["./packages/pi-tui/src/index.ts"],
+      "@gsd/pi-tui/*": ["./packages/pi-tui/src/*"],
+      "@gsd/native": ["./packages/native/src/index.ts"],
+      "@gsd/native/*": ["./packages/native/src/*"]
+    }
   },
   "include": ["src/resources/extensions"],
   "exclude": []

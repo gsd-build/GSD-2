@@ -22,15 +22,14 @@ test("async_bash with timeout resolves even if process ignores SIGTERM", async (
 	const manager = new AsyncJobManager();
 	const tool = createAsyncBashTool(() => manager, () => process.cwd());
 
-	// Start a job that traps SIGTERM (ignores it), with a 2s timeout.
-	// The process installs a SIGTERM trap and sleeps for 60s.
-	// Before the fix, this would hang forever because SIGTERM is ignored
-	// and the close event never fires.
+	// Process traps SIGTERM and ignores it.  Before the fix (#2186),
+	// this would hang forever because SIGTERM is ignored and the
+	// close event never fires.
 	const result = await tool.execute(
 		"tc-timeout",
 		{
 			command: "trap '' TERM; sleep 60",
-			timeout: 2,
+			timeout: 1,
 			label: "sigterm-resistant",
 		},
 		noopSignal,
@@ -44,8 +43,7 @@ test("async_bash with timeout resolves even if process ignores SIGTERM", async (
 	const jobId = text.match(/\*\*(bg_[a-f0-9]+)\*\*/)?.[1];
 	assert.ok(jobId, "Should have returned a job ID");
 
-	// Now await the job — it should resolve within a reasonable time
-	// (timeout 2s + SIGKILL grace 5s + buffer = well under 15s)
+	// timeout 1s + SIGKILL grace 5s + hard deadline 3s = 9s max
 	const start = Date.now();
 	const job = manager.getJob(jobId)!;
 	assert.ok(job, "Job should exist");
@@ -56,14 +54,13 @@ test("async_bash with timeout resolves even if process ignores SIGTERM", async (
 			const t = setTimeout(() => reject(new Error(
 				`Job promise hung for ${Date.now() - start}ms — ` +
 				`this is the bug from issue #2186: timeout hangs indefinitely`,
-			)), 15_000);
+			)), 12_000);
 			if (typeof t === "object" && "unref" in t) t.unref();
 		}),
 	]);
 
 	const elapsed = Date.now() - start;
-	// Should have resolved well within 15s (timeout 2s + kill grace ~5s)
-	assert.ok(elapsed < 15_000, `Job took ${elapsed}ms — expected <15s`);
+	assert.ok(elapsed < 12_000, `Job took ${elapsed}ms — expected <12s`);
 
 	// Job should have completed (resolved, not rejected) with timeout message
 	assert.ok(

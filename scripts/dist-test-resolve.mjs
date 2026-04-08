@@ -9,8 +9,17 @@
  */
 
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync } from 'node:fs';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+
+// ── Test isolation: prevent tests from reading the user's real ~/.gsd/ ──────
+// Set GSD_HOME to a throwaway temp dir so loadEffectiveGSDPreferences() and
+// friends never load the developer's personal preferences.md.  Tests that
+// need specific preferences should create their own fixture inside this dir.
+if (!process.env.GSD_HOME) {
+  process.env.GSD_HOME = mkdtempSync(join(tmpdir(), 'gsd-test-home-'));
+}
 
 // dist-test root — everything compiled lands here
 const DIST_TEST = new URL('../dist-test/', import.meta.url).href;

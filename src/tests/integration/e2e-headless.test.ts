@@ -18,7 +18,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -41,8 +41,21 @@ type RunResult = {
   timedOut: boolean;
 };
 
+/** Kill a process and its entire tree.  SIGTERM first, SIGKILL after 1s. */
+function killProcessTree(pid: number): void {
+  if (process.platform === "win32") {
+    try { spawnSync("taskkill", ["/F", "/T", "/PID", String(pid)], { timeout: 5_000, stdio: "ignore" }); } catch { /* dead */ }
+  } else {
+    try { process.kill(-pid, "SIGTERM"); } catch { /* dead */ }
+    setTimeout(() => {
+      try { process.kill(-pid, "SIGKILL"); } catch { /* dead */ }
+    }, 1_000).unref();
+  }
+}
+
 /**
  * Spawn `node dist/loader.js ...args` and collect output.
+ * Uses detached process groups so the entire tree can be killed on cleanup.
  */
 function runGsd(
   args: string[],
@@ -59,6 +72,7 @@ function runGsd(
       cwd,
       env: { ...process.env, ...env },
       stdio: ["pipe", "pipe", "pipe"],
+      detached: process.platform !== "win32",
     });
 
     child.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
@@ -68,8 +82,9 @@ function runGsd(
 
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill("SIGTERM");
+      if (child.pid) killProcessTree(child.pid);
     }, timeoutMs);
+    timer.unref();
 
     child.on("close", (code) => {
       clearTimeout(timer);
@@ -81,13 +96,14 @@ function runGsd(
 /**
  * Spawn a child process with the ability to send signals mid-flight.
  * Returns both the child and a promise that resolves with the result.
+ * Caller should register t.after(() => cleanup()) for safe teardown.
  */
 function spawnGsd(
   args: string[],
   timeoutMs = 30_000,
   env: NodeJS.ProcessEnv = {},
   cwd: string = projectRoot,
-): { child: ReturnType<typeof spawn>; result: Promise<RunResult> } {
+): { child: ReturnType<typeof spawn>; result: Promise<RunResult>; cleanup: () => void } {
   let stdout = "";
   let stderr = "";
   let timedOut = false;
@@ -96,6 +112,7 @@ function spawnGsd(
     cwd,
     env: { ...process.env, ...env },
     stdio: ["pipe", "pipe", "pipe"],
+    detached: process.platform !== "win32",
   });
 
   child.stdout!.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
@@ -105,8 +122,9 @@ function spawnGsd(
 
   const timer = setTimeout(() => {
     timedOut = true;
-    child.kill("SIGTERM");
+    if (child.pid) killProcessTree(child.pid);
   }, timeoutMs);
+  timer.unref();
 
   const result = new Promise<RunResult>((resolve) => {
     child.on("close", (code) => {
@@ -115,7 +133,12 @@ function spawnGsd(
     });
   });
 
-  return { child, result };
+  const cleanup = () => {
+    clearTimeout(timer);
+    if (child.pid && !child.killed) killProcessTree(child.pid);
+  };
+
+  return { child, result, cleanup };
 }
 
 /** Strip ANSI escape codes from a string. */
@@ -215,12 +238,13 @@ test("headless exits with code 11 after SIGINT", async (t) => {
 
   // Spawn with long timeout and max-restarts 0 so the process stays alive
   // waiting for completion while we send SIGINT.
-  const { child, result: resultPromise } = spawnGsd(
+  const { child, result: resultPromise, cleanup } = spawnGsd(
     ["headless", "--timeout", "60000", "--max-restarts", "0", "--context-text", "Test context for SIGINT", "new-milestone"],
     30_000,
     {},
     tmpDir,
   );
+  t.after(cleanup);
 
   // Wait for stderr output to confirm the process has started and registered
   // its SIGINT handler (handler is registered before client.start in runHeadlessOnce).
@@ -235,8 +259,8 @@ test("headless exits with code 11 after SIGINT", async (t) => {
       stderrSoFar += chunk.toString();
       check();
     });
-    // Fallback: resolve after 4s even if no stderr
-    setTimeout(resolve, 4000);
+    const fallback = setTimeout(resolve, 4000);
+    fallback.unref();
   });
 
   // Send SIGINT

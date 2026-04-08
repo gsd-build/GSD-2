@@ -43,10 +43,11 @@ test("await_job returns on timeout when jobs are still running", async () => {
 	const tool = createAwaitTool(() => manager);
 
 	// Register a job that takes a long time
-	const jobId = manager.register("bash", "slow-job", async (_signal) => {
+	const jobId = manager.register("bash", "slow-job", async (signal) => {
 		return new Promise<string>((resolve) => {
 			const timer = setTimeout(() => resolve("finally done"), 60_000);
 			if (typeof timer === "object" && "unref" in timer) timer.unref();
+			signal.addEventListener("abort", () => { clearTimeout(timer); resolve("aborted"); }, { once: true });
 		});
 	});
 

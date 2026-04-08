@@ -41,21 +41,22 @@ function getTempFilePath(): string {
  * Kill a process and its children (cross-platform).
  * Uses process group kill on Unix; taskkill /F /T on Windows.
  */
-function killTree(pid: number): void {
+function killTree(pid: number, signal: NodeJS.Signals = "SIGTERM"): void {
 	if (process.platform === "win32") {
 		try {
+			// taskkill /F is always a force kill on Windows
 			spawnSync("taskkill", ["/F", "/T", "/PID", String(pid)], {
 				timeout: 5_000,
 				stdio: "ignore",
 			});
 		} catch {
-			try { process.kill(pid, "SIGTERM"); } catch { /* already exited */ }
+			try { process.kill(pid, signal); } catch { /* already exited */ }
 		}
 	} else {
 		try {
-			process.kill(-pid, "SIGTERM");
+			process.kill(-pid, signal);
 		} catch {
-			try { process.kill(pid, "SIGTERM"); } catch { /* already exited */ }
+			try { process.kill(pid, signal); } catch { /* already exited */ }
 		}
 	}
 }
@@ -141,8 +142,10 @@ function executeBashInBackground(
 		let sigkillHandle: ReturnType<typeof setTimeout> | undefined;
 		let hardDeadlineHandle: ReturnType<typeof setTimeout> | undefined;
 
-		/** Grace period (ms) between SIGTERM and SIGKILL. */
+		/** Grace period (ms) between SIGTERM and SIGKILL during timeout. */
 		const SIGKILL_GRACE_MS = 5_000;
+		/** Shorter grace for abort — hard shutdown, no need to be polite. */
+		const ABORT_SIGKILL_GRACE_MS = 1_000;
 		/** Hard deadline (ms) after SIGKILL to force-resolve the promise. */
 		const HARD_DEADLINE_MS = 3_000;
 
@@ -154,8 +157,7 @@ function executeBashInBackground(
 				// If the process ignores SIGTERM, escalate to SIGKILL
 				sigkillHandle = setTimeout(() => {
 					if (child.pid) {
-						// killTree already uses taskkill /F /T on Windows
-						killTree(child.pid);
+						killTree(child.pid, "SIGKILL");
 					}
 
 					// Hard deadline: if even SIGKILL doesn't trigger 'close',
@@ -201,8 +203,16 @@ function executeBashInBackground(
 		if (child.stdout) child.stdout.on("data", onData);
 		if (child.stderr) child.stderr.on("data", onData);
 
+		let abortKillHandle: ReturnType<typeof setTimeout> | undefined;
 		const onAbort = () => {
-			if (child.pid) killTree(child.pid);
+			if (child.pid) {
+				killTree(child.pid);
+				// Escalate to SIGKILL for SIGTERM-resistant processes.
+				abortKillHandle = setTimeout(() => {
+					if (child.pid) killTree(child.pid, "SIGKILL");
+				}, ABORT_SIGKILL_GRACE_MS);
+				if (typeof abortKillHandle === "object" && "unref" in abortKillHandle) abortKillHandle.unref();
+			}
 		};
 
 		if (signal.aborted) {
@@ -215,6 +225,7 @@ function executeBashInBackground(
 			if (timeoutHandle) clearTimeout(timeoutHandle);
 			if (sigkillHandle) clearTimeout(sigkillHandle);
 			if (hardDeadlineHandle) clearTimeout(hardDeadlineHandle);
+			if (abortKillHandle) clearTimeout(abortKillHandle);
 			signal.removeEventListener("abort", onAbort);
 			safeReject(err);
 		});
@@ -223,6 +234,7 @@ function executeBashInBackground(
 			if (timeoutHandle) clearTimeout(timeoutHandle);
 			if (sigkillHandle) clearTimeout(sigkillHandle);
 			if (hardDeadlineHandle) clearTimeout(hardDeadlineHandle);
+			if (abortKillHandle) clearTimeout(abortKillHandle);
 			signal.removeEventListener("abort", onAbort);
 			if (spillStream) spillStream.end();
 

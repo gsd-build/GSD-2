@@ -136,8 +136,8 @@ jobs:
       - name: Build web host
         run: npm run build:web-host
 
-      - name: Typecheck extensions
-        run: npm run typecheck:extensions
+      - name: Typecheck
+        run: npm run typecheck
 
       - name: Validate package is installable
         run: npm run validate-pack
@@ -177,8 +177,8 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Typecheck extensions
-        run: npm run typecheck:extensions
+      - name: Typecheck
+        run: npm run typecheck
 
       - name: Run unit tests
         run: npm run test:unit

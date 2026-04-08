@@ -199,6 +199,33 @@ async function main() {
     console.log(`Removed ${staleCleaned} stale compiled test files from dist-test/`);
   }
 
+  // Stale .ts/.js pairs in dist-test/dist/resources/extensions/ break
+  // hasStaleCompiledExtensionSiblings(), defeating the initResources skip
+  // optimization.  Only clean dist/ — src/ keeps .ts originals for
+  // source-level tests that read file content directly.
+  const resourceDirsToClean = [
+    join(ROOT, 'dist-test', 'dist', 'resources', 'extensions'),
+  ];
+  let resourceStaleCleaned = 0;
+  for (const dir of resourceDirsToClean) {
+    let entries;
+    try { entries = await readdir(dir, { withFileTypes: true }); } catch { continue; }
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      // A .ts file is stale if a .js sibling exists (it was compiled by esbuild)
+      if (entry.name.endsWith('.ts')) {
+        const jsName = entry.name.replace(/\.ts$/, '.js');
+        if (existsSync(join(dir, jsName))) {
+          await rm(join(dir, entry.name));
+          resourceStaleCleaned++;
+        }
+      }
+    }
+  }
+  if (resourceStaleCleaned > 0) {
+    console.log(`Removed ${resourceStaleCleaned} stale .ts/.js resource pairs from dist-test/`);
+  }
+
   // Ensure dist-test/node_modules exists so resource-loader.ts (which computes
   // packageRoot from import.meta.url) resolves gsdNodeModules to a real path.
   // Without this, initResources creates dangling symlinks in test environments.
