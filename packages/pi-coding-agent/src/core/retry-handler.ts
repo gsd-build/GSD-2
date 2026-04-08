@@ -477,6 +477,10 @@ export class RetryHandler {
 		const currentModel = this._deps.getModel();
 		if (!currentModel) return false;
 
+		// Only attempt claude-code fallback when the current provider is anthropic.
+		// Other providers may produce similar error text but should not be rerouted.
+		if (currentModel.provider !== "anthropic") return false;
+
 		// Find the same model ID under the claude-code provider
 		const ccModel = this._deps.modelRegistry.find("claude-code", currentModel.id);
 		if (!ccModel) return false;
