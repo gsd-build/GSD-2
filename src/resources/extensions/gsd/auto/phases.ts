@@ -1248,6 +1248,10 @@ export async function runUnitPhase(
     unitType,
     unitId,
   });
+  const unitLabel = state.activeTask?.title
+    ?? state.activeSlice?.title
+    ?? state.activeMilestone?.title
+    ?? undefined;
   const unitResult = await runUnit(
     ctx,
     pi,
@@ -1255,6 +1259,7 @@ export async function runUnitPhase(
     unitType,
     unitId,
     finalPrompt,
+    unitLabel,
   );
   debugLog("autoLoop", {
     phase: "runUnit-end",
