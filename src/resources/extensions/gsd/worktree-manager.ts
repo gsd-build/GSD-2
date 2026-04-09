@@ -144,8 +144,8 @@ function normalizeContainmentPath(targetPath: string): string {
     if (existsSync(parent)) {
       try {
         return join(realpathSync(parent), basename(resolved));
-      } catch {
-        // Fall through to the plain resolved path.
+      } catch (err) {
+        logWarning("worktree", `realpathSync failed for parent ${parent}: ${getErrorMessage(err)}`);
       }
     }
     return resolved;
