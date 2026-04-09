@@ -25,6 +25,7 @@ import {
   buildTaskFileName,
 } from "./paths.js";
 import { invalidateAllCaches } from "./cache.js";
+import { rebuildState } from "./doctor.js";
 import { parseUnitId } from "./unit-id.js";
 import { closeoutUnit, type CloseoutOptions } from "./auto-unit-closeout.js";
 import {
@@ -365,6 +366,12 @@ export async function postUnitPreVerification(pctx: PostUnitContext, opts?: PreV
         await closeBrowser();
         debugLog("postUnit", { phase: "browser-teardown", status: "closed" });
       }
+    });
+
+    // Keep the on-disk STATE.md aligned with the live derived state after
+    // ordinary unit completion, before any worktree state is synced back.
+    await runSafely("postUnit", "state-rebuild", async () => {
+      await rebuildState(s.basePath);
     });
 
     // Sync worktree state back to project root (skipped for lightweight sidecars)
