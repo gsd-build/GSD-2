@@ -4,7 +4,17 @@ import { spawn, spawnSync } from "child_process";
 import { getBinDir, getSettingsPath } from "../config.js";
 import { SettingsManager } from "../core/settings-manager.js";
 
-let cachedShellConfig: { shell: string; args: string[] } | null = null;
+let cachedShellConfig: { shell: string; args: string[]; needsShell: boolean } | null = null;
+
+/**
+ * On Windows, .bat/.cmd files cannot be executed directly by Node's
+ * child_process.spawn(). They require `shell: true` so that cmd.exe
+ * interprets them. This helper detects whether the resolved shell
+ * path needs the `shell` option.
+ */
+function isBatchFile(shellPath: string): boolean {
+	return process.platform === "win32" && /\.(bat|cmd)$/i.test(shellPath);
+}
 
 /**
  * Find bash executable on PATH (cross-platform)
@@ -48,7 +58,7 @@ function findBashOnPath(): string | null {
  * 2. On Windows: Git Bash in known locations, then bash on PATH
  * 3. On Unix: /bin/bash, then bash on PATH, then fallback to sh
  */
-export function getShellConfig(): { shell: string; args: string[] } {
+export function getShellConfig(): { shell: string; args: string[]; needsShell: boolean } {
 	if (cachedShellConfig) {
 		return cachedShellConfig;
 	}
@@ -59,7 +69,7 @@ export function getShellConfig(): { shell: string; args: string[] } {
 	// 1. Check user-specified shell path
 	if (customShellPath) {
 		if (existsSync(customShellPath)) {
-			cachedShellConfig = { shell: customShellPath, args: ["-c"] };
+			cachedShellConfig = { shell: customShellPath, args: ["-c"], needsShell: isBatchFile(customShellPath) };
 			return cachedShellConfig;
 		}
 		throw new Error(
@@ -81,7 +91,7 @@ export function getShellConfig(): { shell: string; args: string[] } {
 
 		for (const path of paths) {
 			if (existsSync(path)) {
-				cachedShellConfig = { shell: path, args: ["-c"] };
+				cachedShellConfig = { shell: path, args: ["-c"], needsShell: false };
 				return cachedShellConfig;
 			}
 		}
@@ -89,7 +99,7 @@ export function getShellConfig(): { shell: string; args: string[] } {
 		// 3. Fallback: search bash.exe on PATH (Cygwin, MSYS2, WSL, etc.)
 		const bashOnPath = findBashOnPath();
 		if (bashOnPath) {
-			cachedShellConfig = { shell: bashOnPath, args: ["-c"] };
+			cachedShellConfig = { shell: bashOnPath, args: ["-c"], needsShell: false };
 			return cachedShellConfig;
 		}
 
@@ -104,17 +114,17 @@ export function getShellConfig(): { shell: string; args: string[] } {
 
 	// Unix: try /bin/bash, then bash on PATH, then fallback to sh
 	if (existsSync("/bin/bash")) {
-		cachedShellConfig = { shell: "/bin/bash", args: ["-c"] };
+		cachedShellConfig = { shell: "/bin/bash", args: ["-c"], needsShell: false };
 		return cachedShellConfig;
 	}
 
 	const bashOnPath = findBashOnPath();
 	if (bashOnPath) {
-		cachedShellConfig = { shell: bashOnPath, args: ["-c"] };
+		cachedShellConfig = { shell: bashOnPath, args: ["-c"], needsShell: false };
 		return cachedShellConfig;
 	}
 
-	cachedShellConfig = { shell: "sh", args: ["-c"] };
+	cachedShellConfig = { shell: "sh", args: ["-c"], needsShell: false };
 	return cachedShellConfig;
 }
 

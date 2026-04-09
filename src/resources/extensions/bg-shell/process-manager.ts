@@ -132,16 +132,19 @@ export function startProcess(opts: StartOptions): BgProcess {
 
 	const env = { ...process.env, ...(opts.env || {}) };
 
-	const { shell, args: shellArgs } = getShellConfig();
+	const { shell, args: shellArgs, needsShell } = getShellConfig();
 	// Shell sessions default to the user's shell if no command specified
 	const command = processType === "shell" && !opts.command
 		? shell
 		: rewriteCommandWithRtk(opts.command);
+	// .bat/.cmd shell wrappers require shell: true so cmd.exe interprets them.
+	// Without it, Node's spawn() returns EINVAL on Windows.
 	const proc = spawn(shell, [...shellArgs, sanitizeCommand(command)], {
 		cwd: opts.cwd,
 		stdio: ["pipe", "pipe", "pipe"],
 		env,
 		detached: process.platform !== "win32",
+		...(needsShell ? { shell: true } : {}),
 	});
 
 	const bg: BgProcess = {

@@ -80,21 +80,26 @@ export function executeBash(command: string, options?: BashExecutorOptions & { l
 	return new Promise((resolve, reject) => {
 		let shell: string;
 		let args: string[];
+		let needsShell: boolean;
 		if (options?.loginShell) {
 			// Use the user's login shell with -l for PATH/env from shell profiles
 			shell = process.env.SHELL || "/bin/bash";
 			args = ["-l", "-c"];
+			needsShell = false;
 		} else {
-			({ shell, args } = getShellConfig());
+			({ shell, args, needsShell } = getShellConfig());
 		}
 		// On Windows, detached: true sets CREATE_NEW_PROCESS_GROUP which can
 		// cause EINVAL in VSCode/ConPTY terminal contexts.  The bg-shell
 		// extension already guards this (process-manager.ts); align here.
 		// Process-tree cleanup uses taskkill /F /T on Windows regardless.
+		// Additionally, .bat/.cmd shell wrappers require shell: true so that
+		// cmd.exe interprets them — without it, spawn() returns EINVAL.
 		const child: ChildProcess = spawn(shell, [...args, sanitizeCommand(command)], {
 			detached: process.platform !== "win32",
 			env: getShellEnv(),
 			stdio: ["ignore", "pipe", "pipe"],
+			...(needsShell ? { shell: true } : {}),
 		});
 
 		// Track sanitized output for truncation

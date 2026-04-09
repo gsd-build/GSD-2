@@ -121,7 +121,7 @@ function executeBashInBackground(
 		const safeResolve = (value: string) => { if (!settled) { settled = true; resolve(value); } };
 		const safeReject = (err: unknown) => { if (!settled) { settled = true; reject(err); } };
 
-		const { shell, args } = getShellConfig();
+		const { shell, args, needsShell } = getShellConfig();
 		const rewrittenCommand = rewriteCommandWithRtk(command);
 		const resolvedCommand = sanitizeCommand(rewrittenCommand);
 
@@ -129,11 +129,14 @@ function executeBashInBackground(
 		// cause EINVAL in VSCode/ConPTY terminal contexts.  The bg-shell
 		// extension already guards this (process-manager.ts); align here.
 		// Process-tree cleanup uses taskkill /F /T on Windows regardless.
+		// .bat/.cmd shell wrappers also require shell: true for cmd.exe
+		// to interpret them — without it, spawn() returns EINVAL.
 		const child = spawn(shell, [...args, resolvedCommand], {
 			cwd,
 			detached: process.platform !== "win32",
 			env: { ...process.env },
 			stdio: ["ignore", "pipe", "pipe"],
+			...(needsShell ? { shell: true } : {}),
 		});
 
 		let timedOut = false;
