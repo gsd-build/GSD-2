@@ -35,6 +35,12 @@ export interface PausedSessionMetadata {
   activeRunDir?: string | null;
   autoStartTime?: number;
   milestoneLock?: string | null;
+  autoModeStartModel?: {
+    provider: string;
+    id: string;
+  } | null;
+  originalModelId?: string | null;
+  originalModelProvider?: string | null;
 }
 
 export interface InterruptedSessionAssessment {
