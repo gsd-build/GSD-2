@@ -68,6 +68,15 @@ export function migrateToExternalState(basePath: string): MigrationResult {
     return { migrated: false };
   }
 
+  // Skip if basePath is a git worktree (not the main repo). Worktrees get
+  // their .gsd/ populated via syncGsdStateToWorktree(), not migration.
+  // externalGsdRoot() returns the same hash for worktrees and the main repo
+  // (both resolve to the same git root), so migrating here would create a
+  // junction to the shared project-root state dir — wrong isolation. (#2970)
+  if (isInsideWorktree(basePath)) {
+    return { migrated: false };
+  }
+
   // Skip if .gsd/worktrees/ has active worktree directories (#1337).
   // On Windows, active git worktrees hold OS-level directory handles that
   // prevent rename/delete. Attempting migration causes EBUSY and data loss.
