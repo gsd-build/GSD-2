@@ -30,7 +30,6 @@ import {
   getProjectGSDPreferencesPath,
   parsePreferencesMarkdown,
 } from "./preferences.js";
-import { safeReadFile } from "./safe-fs.js";
 import { resolveServiceTierIcon, getEffectiveServiceTier } from "./service-tier.js";
 import { parseUnitId } from "./unit-id.js";
 import {
@@ -378,8 +377,17 @@ let widgetMode: WidgetMode = "full";
 let widgetModeInitialized = false;
 let widgetModePreferencePath: string | null = null;
 
+function safeReadTextFile(path: string): string | null {
+  try {
+    if (!existsSync(path)) return null;
+    return readFileSync(path, "utf-8");
+  } catch {
+    return null;
+  }
+}
+
 function readWidgetModeFromFile(path: string): WidgetMode | undefined {
-  const raw = safeReadFile(path);
+  const raw = safeReadTextFile(path);
   if (!raw) return undefined;
   const prefs = parsePreferencesMarkdown(raw);
   const saved = prefs?.widget_mode;
@@ -401,8 +409,8 @@ function resolveWidgetModePreferencePath(
     return globalPath;
   }
 
-  if (safeReadFile(projectPath) !== null) return projectPath;
-  if (safeReadFile(globalPath) !== null) return globalPath;
+  if (safeReadTextFile(projectPath) !== null) return projectPath;
+  if (safeReadTextFile(globalPath) !== null) return globalPath;
   return getGlobalGSDPreferencesPath();
 }
 
