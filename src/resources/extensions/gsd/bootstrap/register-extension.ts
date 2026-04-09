@@ -11,6 +11,9 @@ import { registerJournalTools } from "./journal-tools.js";
 import { registerQueryTools } from "./query-tools.js";
 import { registerHooks } from "./register-hooks.js";
 import { registerShortcuts } from "./register-shortcuts.js";
+import { loadCommunityHooks } from "../lib/hooks/community-loader.js";
+import { getOrCreateRegistry } from "../rule-registry.js";
+import { logWarning } from "../workflow-logger.js";
 
 export function handleRecoverableExtensionProcessError(err: Error): boolean {
   if ((err as NodeJS.ErrnoException).code === "EPIPE") {
@@ -51,6 +54,22 @@ export function registerGsdExtension(pi: ExtensionAPI): void {
   registerExitCommand(pi);
 
   installEpipeGuard();
+
+  // Load community hook packages synchronously at startup so all hooks
+  // are registered before any dispatch path can execute. Failures are
+  // logged via workflow-logger but never crash extension bootstrap.
+  try {
+    const store = getOrCreateRegistry().getProgrammaticStore();
+    const result = loadCommunityHooks(store, process.cwd());
+    if (result.loaded > 0) {
+      logWarning("bootstrap", `Loaded ${result.hooksRegistered} community hook(s) from ${result.loaded} package(s)`);
+    }
+    if (result.errors.length > 0) {
+      logWarning("bootstrap", `${result.errors.length} community hook loading error(s) — check .gsd/workflow.log`);
+    }
+  } catch (e) {
+    logWarning("bootstrap", `Community hook loading failed: ${(e as Error).message}`);
+  }
 
   pi.registerCommand("kill", {
     description: "Exit GSD immediately (no cleanup)",

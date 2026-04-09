@@ -22,6 +22,23 @@ import { resolvePostUnitHooks, resolvePreDispatchHooks } from "./preferences.js"
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { parseUnitId } from "./unit-id.js";
+import { ProgrammaticHookStore } from "./lib/hooks/programmatic-store.js";
+import { sortByPriority } from "./lib/hooks/priority-sort.js";
+import { composePreDispatchMiddleware } from "./lib/hooks/middleware.js";
+
+// ─── Hook Deduplication ───────────────────────────────────────────────────
+
+/**
+ * Merge YAML and programmatic hooks, deduplicating by name.
+ * When both sources define a hook with the same name, the programmatic
+ * hook wins (explicit override semantics). This prevents name-collision
+ * ambiguity in cycle-state tracking and idempotency keys.
+ */
+function dedupeByName<T extends { name: string }>(yamlHooks: T[], programmaticHooks: T[]): T[] {
+  const programmaticNames = new Set(programmaticHooks.map(h => h.name));
+  const dedupedYaml = yamlHooks.filter(h => !programmaticNames.has(h.name));
+  return [...dedupedYaml, ...programmaticHooks];
+}
 
 // ─── Artifact Path Resolution ──────────────────────────────────────────────
 
@@ -61,6 +78,9 @@ export class RuleRegistry {
   /** Static dispatch rules provided at construction time. */
   private readonly dispatchRules: UnifiedRule[];
 
+  /** Programmatic hook store for hooks registered via the library API. */
+  private readonly programmaticStore: ProgrammaticHookStore;
+
   // ── Mutable hook state (encapsulated, not module-level) ──────────────
 
   activeHook: HookExecutionState | null = null;
@@ -73,22 +93,36 @@ export class RuleRegistry {
   retryPending: boolean = false;
   retryTrigger: { unitType: string; unitId: string; retryArtifact: string } | null = null;
 
-  constructor(dispatchRules: UnifiedRule[]) {
+  constructor(dispatchRules: UnifiedRule[], programmaticStore?: ProgrammaticHookStore) {
     this.dispatchRules = dispatchRules;
+    this.programmaticStore = programmaticStore ?? new ProgrammaticHookStore();
+  }
+
+  /** Get the programmatic hook store for external registration. */
+  getProgrammaticStore(): ProgrammaticHookStore {
+    return this.programmaticStore;
   }
 
   // ── Core query ───────────────────────────────────────────────────────
 
   /**
-   * Returns all rules: static dispatch rules + dynamically loaded hook rules.
-   * Hook rules are loaded fresh from preferences on each call (not cached).
+   * Returns all rules: static dispatch rules + dynamically loaded hook rules
+   * + programmatically registered hooks. YAML hooks are loaded fresh from
+   * preferences on each call (not cached). Programmatic hooks are merged
+   * after YAML hooks and sorted by priority within each phase group.
    */
   listRules(): UnifiedRule[] {
     const rules: UnifiedRule[] = [...this.dispatchRules];
 
-    // Convert post-unit hooks to unified rules
+    // Collect programmatic hook names for dedup — programmatic overrides YAML
+    const programmaticNames = new Set(
+      this.programmaticStore.listDescriptors().map(d => d.name),
+    );
+
+    // Convert YAML post-unit hooks to unified rules (skip if overridden by programmatic)
     const postHooks = resolvePostUnitHooks();
     for (const hook of postHooks) {
+      if (programmaticNames.has(hook.name)) continue;
       rules.push({
         name: hook.name,
         when: "post-unit",
@@ -104,9 +138,10 @@ export class RuleRegistry {
       });
     }
 
-    // Convert pre-dispatch hooks to unified rules
+    // Convert YAML pre-dispatch hooks to unified rules (skip if overridden by programmatic)
     const preHooks = resolvePreDispatchHooks();
     for (const hook of preHooks) {
+      if (programmaticNames.has(hook.name)) continue;
       rules.push({
         name: hook.name,
         when: "pre-dispatch",
@@ -116,6 +151,9 @@ export class RuleRegistry {
         description: `Pre-dispatch hook: fires before ${hook.before.join(", ")}`,
       });
     }
+
+    // Merge programmatically registered hooks (sorted by priority)
+    rules.push(...sortByPriority(this.programmaticStore.listRules()));
 
     return rules;
   }
@@ -168,8 +206,8 @@ export class RuleRegistry {
       return null;
     }
 
-    // Check if any hooks are configured for this unit type
-    const hooks = resolvePostUnitHooks().filter(h =>
+    // Check if any hooks are configured for this unit type (YAML + programmatic)
+    const hooks = dedupeByName(resolvePostUnitHooks(), this.programmaticStore.getPostUnitHooks()).filter(h =>
       h.after.includes(completedUnitType),
     );
     if (hooks.length === 0) return null;
@@ -237,8 +275,8 @@ export class RuleRegistry {
 
   private _handleHookCompletion(basePath: string): HookDispatchResult | null {
     const hook = this.activeHook!;
-    const hooks = resolvePostUnitHooks();
-    const config = hooks.find(h => h.name === hook.hookName);
+    const allPostHooks = dedupeByName(resolvePostUnitHooks(), this.programmaticStore.getPostUnitHooks());
+    const config = allPostHooks.find(h => h.name === hook.hookName);
 
     // Check if retry was requested via retry_on artifact
     if (config?.retry_on) {
@@ -284,7 +322,8 @@ export class RuleRegistry {
       return { action: "proceed", prompt, firedHooks: [] };
     }
 
-    const hooks = resolvePreDispatchHooks().filter(h =>
+    // Merge YAML + programmatic pre-dispatch hooks
+    const hooks = dedupeByName(resolvePreDispatchHooks(), this.programmaticStore.getPreDispatchHooks()).filter(h =>
       h.before.includes(unitType),
     );
     if (hooks.length === 0) {
@@ -292,53 +331,13 @@ export class RuleRegistry {
     }
 
     const { milestone: mid, slice: sid, task: tid } = parseUnitId(unitId);
-    const substitute = (text: string): string =>
-      text
-        .replace(/\{milestoneId\}/g, mid ?? "")
-        .replace(/\{sliceId\}/g, sid ?? "")
-        .replace(/\{taskId\}/g, tid ?? "");
 
-    const firedHooks: string[] = [];
-    let currentPrompt = prompt;
-
-    for (const hook of hooks) {
-      if (hook.action === "skip") {
-        if (hook.skip_if) {
-          const conditionPath = resolveHookArtifactPath(basePath, unitId, hook.skip_if);
-          if (!existsSync(conditionPath)) continue;
-        }
-        firedHooks.push(hook.name);
-        return { action: "skip", firedHooks };
-      }
-
-      if (hook.action === "replace") {
-        firedHooks.push(hook.name);
-        return {
-          action: "replace",
-          prompt: substitute(hook.prompt ?? ""),
-          unitType: hook.unit_type,
-          model: hook.model,
-          firedHooks,
-        };
-      }
-
-      if (hook.action === "modify") {
-        firedHooks.push(hook.name);
-        if (hook.prepend) {
-          currentPrompt = `${substitute(hook.prepend)}\n\n${currentPrompt}`;
-        }
-        if (hook.append) {
-          currentPrompt = `${currentPrompt}\n\n${substitute(hook.append)}`;
-        }
-      }
-    }
-
-    return {
-      action: "proceed",
-      prompt: currentPrompt,
-      model: hooks.find(h => h.action === "modify" && h.model)?.model,
-      firedHooks,
-    };
+    return composePreDispatchMiddleware(
+      hooks,
+      prompt,
+      { milestoneId: mid ?? "", sliceId: sid ?? "", taskId: tid ?? "" },
+      (artifactName: string) => resolveHookArtifactPath(basePath, unitId, artifactName),
+    );
   }
 
   // ── State accessors ─────────────────────────────────────────────────
@@ -431,12 +430,12 @@ export class RuleRegistry {
 
   // ── Hook status reporting ───────────────────────────────────────────
 
-  /** Get status of all configured hooks for display. */
+  /** Get status of all configured hooks (YAML + programmatic) for display. */
   getHookStatus(): HookStatusEntry[] {
     const entries: HookStatusEntry[] = [];
 
-    const postHooks = resolvePostUnitHooks();
-    for (const hook of postHooks) {
+    const allPostHooks = dedupeByName(resolvePostUnitHooks(), this.programmaticStore.getPostUnitHooks());
+    for (const hook of allPostHooks) {
       const activeCycles: Record<string, number> = {};
       for (const [key, count] of this.cycleCounts) {
         if (key.startsWith(`${hook.name}/`)) {
@@ -452,8 +451,8 @@ export class RuleRegistry {
       });
     }
 
-    const preHooks = resolvePreDispatchHooks();
-    for (const hook of preHooks) {
+    const allPreHooks = dedupeByName(resolvePreDispatchHooks(), this.programmaticStore.getPreDispatchHooks());
+    for (const hook of allPreHooks) {
       entries.push({
         name: hook.name,
         type: "pre",
@@ -476,7 +475,8 @@ export class RuleRegistry {
     unitId: string,
     basePath: string,
   ): HookDispatchResult | null {
-    const hook = resolvePostUnitHooks().find(h => h.name === hookName);
+    const allPostHooks = dedupeByName(resolvePostUnitHooks(), this.programmaticStore.getPostUnitHooks());
+    const hook = allPostHooks.find(h => h.name === hookName);
     if (!hook) {
       console.error(`[triggerHookManually] Hook "${hookName}" not found in post_unit_hooks`);
       return null;
