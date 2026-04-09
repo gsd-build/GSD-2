@@ -65,6 +65,35 @@ export function resolveAgentEnd(event: AgentEndEvent): void {
   }
 }
 
+/**
+ * Cancel the in-flight unit wait without treating it like a completed turn.
+ * Used by explicit pause paths (aborted/provider errors) so autoLoop can
+ * unwind cleanly instead of classifying the cancellation as a session failure.
+ */
+export function cancelPendingUnit(reason: "aborted" | "provider-error"): void {
+  if (_sessionSwitchInFlight) {
+    debugLog("cancelPendingUnit", { status: "ignored-during-switch", reason });
+    return;
+  }
+  if (_currentResolve) {
+    debugLog("cancelPendingUnit", { status: "resolving-cancelled", reason });
+    const r = _currentResolve;
+    _currentResolve = null;
+    r({
+      status: "cancelled",
+      errorContext: {
+        message: reason === "aborted" ? "Agent aborted during unit execution" : "Provider error paused auto-mode",
+        category: reason === "aborted" ? "aborted" : "provider",
+      },
+    });
+  } else {
+    debugLog("cancelPendingUnit", {
+      status: "no-pending-resolve",
+      reason,
+    });
+  }
+}
+
 export function isSessionSwitchInFlight(): boolean {
   return _sessionSwitchInFlight;
 }
