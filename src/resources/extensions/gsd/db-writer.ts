@@ -227,6 +227,18 @@ export async function nextDecisionId(): Promise<string> {
   }
 }
 
+/** Synchronous variant for use inside db.transaction(). */
+function nextDecisionIdSync(adapter: ReturnType<typeof import('./gsd-db.js')._getAdapter>): string {
+  if (!adapter) return 'D001';
+  const row = adapter
+    .prepare('SELECT MAX(CAST(SUBSTR(id, 2) AS INTEGER)) as max_num FROM decisions')
+    .get();
+  const maxNum = row ? (row['max_num'] as number | null) : null;
+  if (maxNum == null || isNaN(maxNum)) return 'D001';
+  const next = maxNum + 1;
+  return `D${String(next).padStart(3, '0')}`;
+}
+
 // ─── Next Requirement ID ─────────────────────────────────────────────────
 
 /**
@@ -364,6 +376,18 @@ export async function saveRequirementToDb(
   }
 }
 
+// ─── Async Mutex for Decision Saves ───────────────────────────────────────
+//
+// Serializes the entire saveDecisionToDb operation (ID generation + DB upsert
+// + file read + markdown regeneration + file write) so that parallel callers
+// cannot interleave and produce a last-writer-wins race on DECISIONS.md.
+let _decisionSaveLock: Promise<unknown> = Promise.resolve();
+
+/** Reset the mutex — only for tests. */
+export function _resetDecisionSaveLock(): void {
+  _decisionSaveLock = Promise.resolve();
+}
+
 // ─── Save Decision to DB + Regenerate Markdown ────────────────────────────
 
 export interface SaveDecisionFields {
@@ -380,9 +404,10 @@ export interface SaveDecisionFields {
  * Save a new decision to DB and regenerate DECISIONS.md.
  * Auto-assigns the next ID via nextDecisionId().
  *
- * The ID computation (SELECT MAX) and insert are wrapped in a single
- * transaction to prevent parallel tool calls from computing the same ID
- * and silently overwriting each other (#3326, #3339, #3459).
+ * Concurrency: uses an async mutex (promise chain) to serialize the entire
+ * operation — ID generation, DB upsert, file read, markdown regeneration,
+ * and file write — preventing parallel callers from overwriting each other's
+ * output (last-writer-wins race condition).
  *
  * Returns the assigned ID.
  */
@@ -390,23 +415,25 @@ export async function saveDecisionToDb(
   fields: SaveDecisionFields,
   basePath: string,
 ): Promise<{ id: string }> {
+  // Serialize via async mutex: each call waits for the previous one to
+  // complete before starting, preventing interleaved DB + file writes.
+  let release: () => void;
+  const prev = _decisionSaveLock;
+  _decisionSaveLock = new Promise<void>(r => { release = r; });
+
+  try {
+    await prev;
+  } catch {
+    // Previous call failed — proceed regardless; the lock chain must continue.
+  }
+
   try {
     const db = await import('./gsd-db.js');
 
-    // Atomic ID assignment + insert inside a transaction to prevent
-    // parallel calls from racing on the same MAX(id) value.
+    const adapter = db._getAdapter();
+
     const id = db.transaction(() => {
-      const adapter = db._getAdapter();
-      if (!adapter) throw new GSDError(GSD_STALE_STATE, "gsd-db: No database open");
-
-      const row = adapter
-        .prepare('SELECT MAX(CAST(SUBSTR(id, 2) AS INTEGER)) as max_num FROM decisions')
-        .get();
-      const maxNum = row ? (row['max_num'] as number | null) : null;
-      const nextId = (maxNum == null || isNaN(maxNum))
-        ? 'D001'
-        : `D${String(maxNum + 1).padStart(3, '0')}`;
-
+      const nextId = nextDecisionIdSync(adapter);
       db.upsertDecision({
         id: nextId,
         when_context: fields.when_context ?? '',
@@ -419,11 +446,11 @@ export async function saveDecisionToDb(
         superseded_by: null,
       });
 
+
       return nextId;
     });
 
     // Fetch all decisions (including superseded for the full register)
-    const adapter = db._getAdapter();
     let allDecisions: Decision[] = [];
     if (adapter) {
       const rows = adapter.prepare('SELECT * FROM decisions ORDER BY seq').all();
@@ -504,6 +531,8 @@ export async function saveDecisionToDb(
   } catch (err) {
     logError('manifest', 'saveDecisionToDb failed', { fn: 'saveDecisionToDb', error: String((err as Error).message) });
     throw err;
+  } finally {
+    release!();
   }
 }
 
