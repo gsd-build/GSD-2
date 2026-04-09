@@ -248,6 +248,24 @@ export const CUSTOM_MODELS = {
 			maxTokens: 65536,
 			compat: { supportsDeveloperRole: false },
 		} satisfies Model<"openai-completions">,
+		"qwen3.6-plus": {
+			id: "qwen3.6-plus",
+			name: "Qwen3.6 Plus",
+			api: "openai-completions",
+			provider: "alibaba-dashscope",
+			baseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+			reasoning: true,
+			input: ["text"],
+			cost: {
+				input: 0.5,
+				output: 3.0,
+				cacheRead: 0,
+				cacheWrite: 0,
+			},
+			contextWindow: 1000000,
+			maxTokens: 65536,
+			compat: { thinkingFormat: "qwen", supportsDeveloperRole: false },
+		} satisfies Model<"openai-completions">,
 	},
 
 	// ─── Z.AI (GLM-5.1) ────────────────────────────────────────────────
