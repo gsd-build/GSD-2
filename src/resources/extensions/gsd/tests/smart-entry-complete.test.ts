@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 
 const { deriveState } = await import("../state.js");
 
-test("deriveState reports complete when all milestone slices are done", async () => {
+test("deriveState reports the last completed milestone when all milestone slices are done", async () => {
   const base = mkdtempSync(join(tmpdir(), "gsd-smart-entry-complete-"));
 
   try {
@@ -31,7 +31,7 @@ test("deriveState reports complete when all milestone slices are done", async ()
 
     const state = await deriveState(base);
     assert.equal(state.phase, "complete");
-    assert.equal(state.activeMilestone?.id, "M001");
+    assert.equal(state.lastCompletedMilestone?.id, "M001");
   } finally {
     rmSync(base, { recursive: true, force: true });
   }
