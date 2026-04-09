@@ -123,10 +123,6 @@ export function startUnitSupervision(sctx: SupervisionContext): void {
       phase: "wrapup-warning-sent",
       wrapupWarningSent: true,
     });
-    // Only trigger a new turn if no tools are currently in flight.
-    // Triggering during active tool calls causes tool results to be skipped
-    // with "Skipped due to queued user message", leading to provider errors (#3512).
-    const softTrigger = getInFlightToolCount() === 0;
     pi.sendMessage(
       {
         customType: "gsd-auto-wrapup",
@@ -141,7 +137,7 @@ export function startUnitSupervision(sctx: SupervisionContext): void {
           "4. leave precise resume notes if anything remains unfinished",
         ].join("\n"),
       },
-      { triggerTurn: softTrigger },
+      { triggerTurn: true, deliverAs: "followUp" },
     );
   }, softTimeoutMs);
 
@@ -298,8 +294,6 @@ export function startUnitSupervision(sctx: SupervisionContext): void {
       );
     }
 
-    // Only trigger a new turn if no tools are currently in flight (#3512).
-    const contextTrigger = getInFlightToolCount() === 0;
     pi.sendMessage(
       {
         customType: "gsd-auto-wrapup",
@@ -315,7 +309,7 @@ export function startUnitSupervision(sctx: SupervisionContext): void {
           "Do NOT start new sub-tasks or investigations.",
         ].join("\n"),
       },
-      { triggerTurn: contextTrigger },
+      { triggerTurn: true, deliverAs: "steer" },
     );
 
     if (s.continueHereHandle) {

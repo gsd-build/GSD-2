@@ -1495,6 +1495,20 @@ export async function runUnitPhase(
   }
 
   if (unitResult.status === "cancelled") {
+    // Any explicit pause path resolves the in-flight unit and flips auto-mode
+    // into paused state before runFinalize sees the cancellation. Break out
+    // cleanly instead of misclassifying the unit as a session-creation failure.
+    if (!s.active && s.paused) {
+      const pauseCategory = unitResult.errorContext?.category ?? "paused";
+      debugLog("autoLoop", {
+        phase: "exit",
+        reason: "paused-unwind",
+        pauseCategory,
+        isTransient: unitResult.errorContext?.isTransient,
+      });
+      return { action: "break", reason: `${pauseCategory}-pause` };
+    }
+
     // Provider-error pause: pauseAuto already handled cleanup and scheduled
     // recovery. Don't hard-stop — just break out of the loop (#2762).
     if (unitResult.errorContext?.category === "provider") {
