@@ -24,6 +24,15 @@
 
 let _kittyProtocolActive = false;
 
+function isTmuxSession(): boolean {
+	return !!process.env.TMUX;
+}
+
+function isLegacyShiftEnterCsiU(data: string): boolean {
+	if (_kittyProtocolActive) return false;
+	return data === "\x1b[13;3u" || data === "\x1b[57414;3u";
+}
+
 /**
  * Set the global Kitty keyboard protocol state.
  * Called by ProcessTerminal after detecting protocol support.
@@ -702,6 +711,7 @@ export function matchesKey(data: string, keyId: KeyId): boolean {
 			if (shift && !ctrl && !alt) {
 				// CSI u sequences (standard Kitty protocol)
 				if (
+					isLegacyShiftEnterCsiU(data) ||
 					matchesKittySequence(data, CODEPOINTS.enter, MODIFIERS.shift) ||
 					matchesKittySequence(data, CODEPOINTS.kpEnter, MODIFIERS.shift)
 				) {
@@ -714,7 +724,7 @@ export function matchesKey(data: string, keyId: KeyId): boolean {
 				// When Kitty protocol is active, legacy sequences are custom terminal mappings
 				// \x1b\r = Kitty's "map shift+enter send_text all \e\r"
 				// \n = Ghostty's "keybind = shift+enter=text:\n"
-				if (_kittyProtocolActive) {
+				if (_kittyProtocolActive || isTmuxSession()) {
 					return data === "\x1b\r" || data === "\n";
 				}
 				return false;
@@ -722,7 +732,7 @@ export function matchesKey(data: string, keyId: KeyId): boolean {
 			if (alt && !ctrl && !shift) {
 				// CSI u sequences (standard Kitty protocol)
 				if (
-					matchesKittySequence(data, CODEPOINTS.enter, MODIFIERS.alt) ||
+					(!isLegacyShiftEnterCsiU(data) && matchesKittySequence(data, CODEPOINTS.enter, MODIFIERS.alt)) ||
 					matchesKittySequence(data, CODEPOINTS.kpEnter, MODIFIERS.alt)
 				) {
 					return true;
@@ -733,7 +743,7 @@ export function matchesKey(data: string, keyId: KeyId): boolean {
 				}
 				// \x1b\r is alt+enter only in legacy mode (no Kitty protocol)
 				// When Kitty protocol is active, alt+enter comes as CSI u sequence
-				if (!_kittyProtocolActive) {
+				if (!_kittyProtocolActive && !isTmuxSession()) {
 					return data === "\x1b\r";
 				}
 				return false;
@@ -1045,6 +1055,8 @@ function formatParsedKey(codepoint: number, modifier: number, baseLayoutKey?: nu
 }
 
 export function parseKey(data: string): string | undefined {
+	if (isLegacyShiftEnterCsiU(data)) return "shift+enter";
+
 	const kitty = parseKittySequence(data);
 	if (kitty) {
 		return formatParsedKey(kitty.codepoint, kitty.modifier, kitty.baseLayoutKey);
@@ -1059,7 +1071,7 @@ export function parseKey(data: string): string | undefined {
 	// When Kitty protocol is active, ambiguous sequences are interpreted as custom terminal mappings:
 	// - \x1b\r = shift+enter (Kitty mapping), not alt+enter
 	// - \n = shift+enter (Ghostty mapping)
-	if (_kittyProtocolActive) {
+	if (_kittyProtocolActive || isTmuxSession()) {
 		if (data === "\x1b\r" || data === "\n") return "shift+enter";
 	}
 
@@ -1081,7 +1093,7 @@ export function parseKey(data: string): string | undefined {
 	if (data === " ") return "space";
 	if (data === "\x7f" || data === "\x08") return "backspace";
 	if (data === "\x1b[Z") return "shift+tab";
-	if (!_kittyProtocolActive && data === "\x1b\r") return "alt+enter";
+	if (!_kittyProtocolActive && !isTmuxSession() && data === "\x1b\r") return "alt+enter";
 	if (!_kittyProtocolActive && data === "\x1b ") return "alt+space";
 	if (data === "\x1b\x7f" || data === "\x1b\b") return "alt+backspace";
 	if (!_kittyProtocolActive && data === "\x1bB") return "alt+left";

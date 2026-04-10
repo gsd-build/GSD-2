@@ -37,6 +37,24 @@ const theme: EditorTheme = {
 };
 
 describe("Editor", () => {
+	it("treats raw ESC+CR as newline instead of submit", () => {
+		const editor = new Editor(new TUI(makeTerminal()), theme);
+		const submissions: string[] = [];
+
+		editor.onSubmit = (text) => submissions.push(text);
+		editor.handleInput("h");
+		editor.handleInput("i");
+		editor.handleInput("\x1b\r");
+		editor.handleInput("t");
+		editor.handleInput("h");
+		editor.handleInput("e");
+		editor.handleInput("r");
+		editor.handleInput("e");
+
+		assert.equal(editor.getText(), "hi\nthere");
+		assert.deepEqual(submissions, []);
+	});
+
 	it("clears bracketed paste state when focus is lost", () => {
 		const editor = new Editor(new TUI(makeTerminal()), theme);
 		editor.focused = true;

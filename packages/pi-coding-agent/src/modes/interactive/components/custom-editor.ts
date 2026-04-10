@@ -1,4 +1,4 @@
-import { Editor, type EditorOptions, type EditorTheme, type TUI, isKittyProtocolActive } from "@gsd/pi-tui";
+import { Editor, getEditorKeybindings, type EditorOptions, type EditorTheme, type TUI, isKittyProtocolActive } from "@gsd/pi-tui";
 import type { AppAction, KeybindingsManager } from "../../../core/keybindings.js";
 
 /**
@@ -28,6 +28,14 @@ export class CustomEditor extends Editor {
 	}
 
 	handleInput(data: string): void {
+		// Prioritize editor newline handling before app-level actions like followUp.
+		// Raw ESC+CR remains ambiguous in non-Kitty mode, so preserve the existing
+		// editor fallback that treats it as a newline.
+		if (getEditorKeybindings().matches(data, "newLine") || data === "\x1b\r") {
+			super.handleInput(data);
+			return;
+		}
+
 		// Check extension-registered shortcuts first
 		if (this.onExtensionShortcut?.(data)) {
 			return;
