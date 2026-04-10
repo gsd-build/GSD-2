@@ -108,6 +108,17 @@ test("detectWorkflowMcpLaunchConfig resolves the bundled server relative to the 
   assert.match(launch?.args?.[0] ?? "", /packages[\/\\]mcp-server[\/\\]dist[\/\\]cli\.js$/);
 });
 
+test("detectWorkflowMcpLaunchConfig resolves the bundled server relative to the package without env hints", () => {
+  const launch = detectWorkflowMcpLaunchConfig("/tmp/project", {});
+
+  assert.equal(launch?.command, process.execPath);
+  assert.equal(launch?.cwd, "/tmp/project");
+  assert.equal(launch?.env?.GSD_CLI_PATH, undefined);
+  assert.equal(launch?.env?.GSD_WORKFLOW_PROJECT_ROOT, "/tmp/project");
+  assert.equal(typeof launch?.args?.[0], "string");
+  assert.match(launch?.args?.[0] ?? "", /packages[\/\\]mcp-server[\/\\]dist[\/\\]cli\.js$/);
+});
+
 test("usesWorkflowMcpTransport matches local externalCli providers", () => {
   assert.equal(usesWorkflowMcpTransport("externalCli", "local://claude-code"), true);
   assert.equal(usesWorkflowMcpTransport("externalCli", "https://api.example.com"), false);
@@ -131,7 +142,7 @@ test("transport compatibility passes when required tools fit current MCP surface
   assert.equal(error, null);
 });
 
-test("transport compatibility fails cleanly when MCP server is unavailable", () => {
+test("transport compatibility discovers the bundled MCP server without env overrides", () => {
   const error = getWorkflowTransportSupportError(
     "claude-code",
     ["gsd_task_complete"],
@@ -145,7 +156,7 @@ test("transport compatibility fails cleanly when MCP server is unavailable", () 
     },
   );
 
-  assert.match(error ?? "", /workflow MCP server is not configured or discoverable/);
+  assert.equal(error, null);
 });
 
 test("transport compatibility now allows auto execute-task over workflow MCP surface", () => {

@@ -68,8 +68,6 @@ function lookupCommand(command: string, platform: NodeJS.Platform = process.plat
 }
 
 function getBundledWorkflowMcpCliPath(env: NodeJS.ProcessEnv): string | null {
-  if (!env.GSD_BIN_PATH?.trim() && !env.GSD_CLI_PATH?.trim()) return null;
-
   const candidates = [
     resolve(fileURLToPath(new URL("../../../../packages/mcp-server/dist/cli.js", import.meta.url))),
     resolve(fileURLToPath(new URL("../../../../../packages/mcp-server/dist/cli.js", import.meta.url))),
