@@ -33,7 +33,7 @@ import type { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
 import { hasXmlParameterTags, repairToolJson } from "../utils/repair-tool-json.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
-import { transformMessages } from "./transform-messages.js";
+import { transformMessagesWithReport } from "./transform-messages.js";
 
 export type AnthropicEffort = "low" | "medium" | "high" | "max";
 
@@ -235,7 +235,7 @@ export function convertMessages(
 ): MessageParam[] {
 	const params: MessageParam[] = [];
 
-	const transformedMessages = transformMessages(messages, model, normalizeToolCallId);
+	const transformedMessages = transformMessagesWithReport(messages, model, normalizeToolCallId, "anthropic-messages");
 
 	for (let i = 0; i < transformedMessages.length; i++) {
 		const msg = transformedMessages[i];

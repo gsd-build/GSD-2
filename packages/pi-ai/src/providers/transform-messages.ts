@@ -50,6 +50,39 @@ export function hasTransformations(report: ProviderSwitchReport): boolean {
 }
 
 /**
+ * Create a report, run transformMessages, and log if non-empty.
+ * Convenience wrapper for provider adapters (ADR-005).
+ */
+export function transformMessagesWithReport<TApi extends Api>(
+	messages: Message[],
+	model: Model<TApi>,
+	normalizeToolCallId?: (id: string, model: Model<TApi>, source: AssistantMessage) => string,
+	sourceApi?: string,
+): Message[] {
+	const report = createEmptyReport(sourceApi ?? "unknown", model.api);
+	const result = transformMessages(messages, model, normalizeToolCallId, report);
+	if (hasTransformations(report)) {
+		logProviderSwitchReport(report);
+	}
+	return result;
+}
+
+/** Log a non-empty ProviderSwitchReport as a debug-level warning. */
+function logProviderSwitchReport(report: ProviderSwitchReport): void {
+	const parts: string[] = [`Provider switch ${report.fromApi} → ${report.toApi}:`];
+	if (report.thinkingBlocksDropped > 0) parts.push(`${report.thinkingBlocksDropped} thinking blocks dropped`);
+	if (report.thinkingBlocksDowngraded > 0) parts.push(`${report.thinkingBlocksDowngraded} thinking blocks downgraded`);
+	if (report.toolCallIdsRemapped > 0) parts.push(`${report.toolCallIdsRemapped} tool call IDs remapped`);
+	if (report.syntheticToolResultsInserted > 0) parts.push(`${report.syntheticToolResultsInserted} synthetic tool results inserted`);
+	if (report.thoughtSignaturesDropped > 0) parts.push(`${report.thoughtSignaturesDropped} thought signatures dropped`);
+	// Use process.stderr for debug output — this is observable in verbose/debug modes
+	// without polluting stdout which may be used for structured output (RPC/MCP).
+	if (process.env.GSD_VERBOSE === "1" || process.env.PI_VERBOSE === "1") {
+		process.stderr.write(`[provider-switch] ${parts.join(", ")}\n`);
+	}
+}
+
+/**
  * Normalize tool call ID for cross-provider compatibility.
  * OpenAI Responses API generates IDs that are 450+ chars with special characters like `|`.
  * Anthropic APIs require IDs matching ^[a-zA-Z0-9_-]+$ (max 64 chars).

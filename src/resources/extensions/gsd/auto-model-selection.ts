@@ -5,12 +5,13 @@
  */
 
 import type { Api, Model } from "@gsd/pi-ai";
+import { getProviderCapabilities } from "@gsd/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@gsd/pi-coding-agent";
 import type { GSDPreferences } from "./preferences.js";
 import { resolveModelWithFallbacksForUnit, resolveDynamicRoutingConfig } from "./preferences.js";
 import type { ComplexityTier } from "./complexity-classifier.js";
 import { classifyUnitComplexity, tierLabel } from "./complexity-classifier.js";
-import { resolveModelForComplexity, escalateTier, getEligibleModels, loadCapabilityOverrides } from "./model-router.js";
+import { resolveModelForComplexity, escalateTier, getEligibleModels, loadCapabilityOverrides, adjustToolSet, filterToolsForProvider } from "./model-router.js";
 import { getLedger, getProjectTotals } from "./metrics.js";
 import { unitPhaseLabel } from "./auto-dashboard.js";
 
@@ -212,13 +213,6 @@ export async function selectAndApplyModel(
                 "info",
               );
             }
-            // ADR-005: Report tools filtered due to provider incompatibility
-            if (routingResult.filteredTools && routingResult.filteredTools.length > 0) {
-              ctx.ui.notify(
-                `Tool compatibility: ${routingResult.filteredTools.length} tools filtered for provider — ${routingResult.filteredTools.join(", ")}`,
-                "info",
-              );
-            }
           }
         }
         routingTierLabel = ` [${tierLabel(classification.tier)}]`;
@@ -251,12 +245,45 @@ export async function selectAndApplyModel(
       const ok = await pi.setModel(model, { persist: false });
       if (ok) {
         appliedModel = model;
+
+        // ADR-005: Adjust active tool set for the selected model's provider capabilities.
+        // Hard-filter incompatible tools, then let extensions override via adjust_tool_set hook.
+        const activeToolNames = pi.getActiveTools();
+        const { toolNames: compatibleTools, removedTools } = adjustToolSet(activeToolNames, model.api);
+        let finalToolNames = compatibleTools;
+
+        // Fire adjust_tool_set hook — extensions can override the filtered tool set
+        if (routingConfig.hooks !== false) {
+          const hookResult = await pi.emitAdjustToolSet({
+            selectedModelApi: model.api,
+            selectedModelProvider: model.provider,
+            selectedModelId: model.id,
+            activeToolNames,
+            filteredTools: removedTools,
+          });
+          if (hookResult?.toolNames) {
+            finalToolNames = hookResult.toolNames;
+          }
+        }
+
+        // Apply the filtered tool set if any tools were removed
+        if (removedTools.length > 0 || finalToolNames.length !== activeToolNames.length) {
+          pi.setActiveTools(finalToolNames);
+        }
+
         if (verbose) {
           const fallbackNote = modelId === effectiveModelConfig.primary
             ? ""
             : ` (fallback from ${effectiveModelConfig.primary})`;
           const phase = unitPhaseLabel(unitType);
           ctx.ui.notify(`Model [${phase}]${routingTierLabel}: ${model.provider}/${model.id}${fallbackNote}`, "info");
+          // ADR-005: Report tools filtered due to provider incompatibility
+          if (removedTools.length > 0) {
+            ctx.ui.notify(
+              `Tool compatibility: ${removedTools.length} tools filtered for ${model.api} — ${removedTools.join(", ")}`,
+              "info",
+            );
+          }
         }
         break;
       } else {
