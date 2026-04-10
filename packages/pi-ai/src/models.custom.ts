@@ -170,6 +170,104 @@ export const CUSTOM_MODELS = {
 		} satisfies Model<"openai-completions">,
 	},
 
+	// ─── Alibaba DashScope ───────────────────────────────────────────────
+	// Regular DashScope API for users without the Coding Plan.
+	// Uses the international OpenAI-compatible endpoint.
+	// Requires DASHSCOPE_API_KEY from: dashscope.console.aliyun.com
+	// Pricing: https://www.alibabacloud.com/help/en/model-studio/model-pricing
+	"alibaba-dashscope": {
+		"qwen3-max": {
+			id: "qwen3-max",
+			name: "Qwen3 Max",
+			api: "openai-completions",
+			provider: "alibaba-dashscope",
+			baseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+			reasoning: true,
+			input: ["text"],
+			cost: {
+				input: 1.2,
+				output: 6,
+				cacheRead: 0,
+				cacheWrite: 0,
+			},
+			contextWindow: 1000000,
+			maxTokens: 32768,
+			compat: { thinkingFormat: "qwen", supportsDeveloperRole: false },
+		} satisfies Model<"openai-completions">,
+		"qwen3.5-plus": {
+			id: "qwen3.5-plus",
+			name: "Qwen3.5 Plus",
+			api: "openai-completions",
+			provider: "alibaba-dashscope",
+			baseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+			reasoning: true,
+			input: ["text"],
+			cost: {
+				input: 0.4,
+				output: 1.2,
+				cacheRead: 0,
+				cacheWrite: 0,
+			},
+			contextWindow: 1000000,
+			maxTokens: 65536,
+			compat: { thinkingFormat: "qwen", supportsDeveloperRole: false },
+		} satisfies Model<"openai-completions">,
+		"qwen3.5-flash": {
+			id: "qwen3.5-flash",
+			name: "Qwen3.5 Flash",
+			api: "openai-completions",
+			provider: "alibaba-dashscope",
+			baseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+			reasoning: false,
+			input: ["text"],
+			cost: {
+				input: 0.1,
+				output: 0.4,
+				cacheRead: 0,
+				cacheWrite: 0,
+			},
+			contextWindow: 1000000,
+			maxTokens: 32768,
+			compat: { supportsDeveloperRole: false },
+		} satisfies Model<"openai-completions">,
+		"qwen3-coder-plus": {
+			id: "qwen3-coder-plus",
+			name: "Qwen3 Coder Plus",
+			api: "openai-completions",
+			provider: "alibaba-dashscope",
+			baseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+			reasoning: false,
+			input: ["text"],
+			cost: {
+				input: 1.0,
+				output: 5.0,
+				cacheRead: 0,
+				cacheWrite: 0,
+			},
+			contextWindow: 1000000,
+			maxTokens: 65536,
+			compat: { supportsDeveloperRole: false },
+		} satisfies Model<"openai-completions">,
+		"qwen3.6-plus": {
+			id: "qwen3.6-plus",
+			name: "Qwen3.6 Plus",
+			api: "openai-completions",
+			provider: "alibaba-dashscope",
+			baseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+			reasoning: true,
+			input: ["text"],
+			cost: {
+				input: 0.5,
+				output: 3.0,
+				cacheRead: 0,
+				cacheWrite: 0,
+			},
+			contextWindow: 1000000,
+			maxTokens: 65536,
+			compat: { thinkingFormat: "qwen", supportsDeveloperRole: false },
+		} satisfies Model<"openai-completions">,
+	},
+
 	// ─── Z.AI (GLM-5.1) ────────────────────────────────────────────────
 	// GLM-5.1 is the latest GLM model from Zhipu AI, not yet in models.dev.
 	// Uses the Z.AI Coding Plan endpoint (OpenAI-compatible).
