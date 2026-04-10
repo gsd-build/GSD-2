@@ -382,3 +382,19 @@ export interface SkillResolutionReport {
   /** References that could not be resolved. */
   warnings: string[];
 }
+
+/**
+ * Format a skill reference for the system prompt.
+ * If resolved, shows the path so the agent knows exactly where to read.
+ * If unresolved, marks it clearly.
+ */
+export function formatSkillRef(ref: string, resolutions: Map<string, SkillResolution>): string {
+  const resolution = resolutions.get(ref);
+  if (!resolution || resolution.method === "unresolved") {
+    return `${ref} (⚠ not found — check skill name or path)`;
+  }
+  if (resolution.method === "absolute-path" || resolution.method === "absolute-dir") {
+    return ref;
+  }
+  return `${ref} → \`${resolution.resolvedPath}\``;
+}
