@@ -51,6 +51,11 @@ function isOAuthToken(apiKey: string): boolean {
 	return apiKey.includes("sk-ant-oat");
 }
 
+function hasBearerAuthorizationHeader(model: Model<"anthropic-messages">): boolean {
+	const authHeader = model.headers?.Authorization ?? model.headers?.authorization;
+	return typeof authHeader === "string" && authHeader.trim().toLowerCase().startsWith("bearer ");
+}
+
 async function createClient(
 	model: Model<"anthropic-messages">,
 	apiKey: string,
@@ -121,11 +126,12 @@ async function createClient(
 	}
 
 	// API key auth
-	// Alibaba Coding Plan uses Bearer token auth instead of x-api-key
-	const isAlibabaProvider = model.provider === "alibaba-coding-plan";
+	// Alibaba Coding Plan and custom providers with Authorization: Bearer
+	// headers must authenticate via authToken instead of x-api-key.
+	const useBearerAuth = model.provider === "alibaba-coding-plan" || hasBearerAuthorizationHeader(model);
 	const client = new AnthropicClass({
-		apiKey: isAlibabaProvider ? null : apiKey,
-		authToken: isAlibabaProvider ? apiKey : undefined,
+		apiKey: useBearerAuth ? null : apiKey,
+		authToken: useBearerAuth ? apiKey : undefined,
 		baseURL: model.baseUrl,
 		dangerouslyAllowBrowser: true,
 		defaultHeaders: mergeHeaders(
