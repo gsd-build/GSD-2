@@ -36,6 +36,9 @@
     "name": "gsd",
     "configDir": ".gsd"
   },
+  "omp": {
+    "extensions": ["./src/resources/extensions/omp/index.ts"]
+  },
   "engines": {
     "node": ">=22.0.0"
   },
