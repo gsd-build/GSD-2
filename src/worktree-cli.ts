@@ -42,6 +42,7 @@ interface ExtensionModules {
   worktreeBranchName: (name: string) => string
   worktreePath: (basePath: string, name: string) => string
   runWorktreePostCreateHook: (basePath: string, wtPath: string) => string | null
+  syncGsdStateToWorktree: (mainBasePath: string, worktreePath: string) => { synced: string[] }
   nativeHasChanges: (path: string) => boolean
   nativeDetectMainBranch: (basePath: string) => string
   nativeCommitCountBetween: (basePath: string, from: string, to: string) => number
@@ -68,6 +69,7 @@ async function loadExtensionModules(): Promise<ExtensionModules> {
     worktreeBranchName: wtMgr.worktreeBranchName,
     worktreePath: wtMgr.worktreePath,
     runWorktreePostCreateHook: autoWt.runWorktreePostCreateHook,
+    syncGsdStateToWorktree: autoWt.syncGsdStateToWorktree,
     nativeHasChanges: gitBridge.nativeHasChanges,
     nativeDetectMainBranch: gitBridge.nativeDetectMainBranch,
     nativeCommitCountBetween: gitBridge.nativeCommitCountBetween,
@@ -380,6 +382,8 @@ async function createAndEnter(ext: ExtensionModules, basePath: string, name: str
     if (hookError) {
       process.stderr.write(chalk.yellow(`[gsd] ${hookError}\n`))
     }
+
+    ext.syncGsdStateToWorktree(basePath, info.path)
 
     process.chdir(info.path)
     process.env.GSD_CLI_WORKTREE = name
