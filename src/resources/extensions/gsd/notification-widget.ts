@@ -21,9 +21,11 @@ export function buildNotificationWidgetLines(): string[] {
   const icon = latest.severity === "error" ? "✗" : latest.severity === "warning" ? "⚠" : "●";
   const badge = `${unread} unread`;
   const msgMax = 80;
-  const truncated = latest.message.length > msgMax
-    ? latest.message.slice(0, msgMax - 1) + "…"
-    : latest.message;
+  // Flatten multiline messages to prevent layout shift in the belowEditor widget
+  const flat = latest.message.replace(/\n+/g, " ").replace(/\s{2,}/g, " ").trim();
+  const truncated = flat.length > msgMax
+    ? flat.slice(0, msgMax - 1) + "…"
+    : flat;
 
   return [`  ${icon} [${badge}]  ${truncated}  (${formatShortcut("Ctrl+Alt+N")} to view)`];
 }
