@@ -1350,7 +1350,12 @@ export async function runUnitPhase(
       await deps.pauseAuto(ctx, pi);
       return { action: "break", reason: "session-timeout" };
     }
-    // All other cancelled states (structural errors, non-transient failures): hard stop
+    // User-pause guard (#3181): if the user pressed Escape while auto-mode
+    // was paused, preserve the worktree — do not hard-stop.
+    if (s.paused) {
+      debugLog("autoLoop", { phase: "exit", reason: "user-pause" });
+      return { action: "break", reason: "user-pause" };
+    }
     ctx.ui.notify(
       `Session creation failed for ${unitType} ${unitId}: ${unitResult.errorContext?.message ?? "unknown"}. Stopping auto-mode.`,
       "warning",
