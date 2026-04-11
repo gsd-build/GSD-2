@@ -452,6 +452,9 @@ test("fresh gsd --web browser onboarding stays locked on failed validation and u
       ANTHROPIC_API_KEY: "",
       OPENAI_API_KEY: "",
       GOOGLE_API_KEY: "",
+      // Regression: #3195 — redirect compile cache outside tempRoot to prevent
+      // ENOTEMPTY race between Node's async cache writes and rmSync cleanup.
+      NODE_COMPILE_CACHE: join(tmpdir(), "gsd-test-compile-cache"),
     },
   })
   port = launch.port
