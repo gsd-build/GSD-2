@@ -736,7 +736,22 @@ export async function stopAuto(
       debugLog("stop-cleanup-worktree", { error: e instanceof Error ? e.message : String(e) });
     }
 
-    // ── Step 5: DB cleanup ──
+    // ── Step 5: Rebuild state while DB is still open (#3599) ──
+    // rebuildState() calls deriveState() which needs the DB for authoritative
+    // state. Previously this ran after closeDatabase(), forcing a filesystem
+    // fallback that could disagree with the DB-backed dispatch decisions —
+    // a split-brain where dispatch says "blocked" but STATE.md shows work.
+    if (s.basePath) {
+      try {
+        await rebuildState(s.basePath);
+      } catch (e) {
+        debugLog("stop-rebuild-state-failed", {
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+    }
+
+    // ── Step 6: DB cleanup ──
     if (isDbAvailable()) {
       try {
         const { closeDatabase } = await import("./gsd-db.js");
@@ -748,7 +763,7 @@ export async function stopAuto(
       }
     }
 
-    // ── Step 6: Restore basePath and chdir ──
+    // ── Step 7: Restore basePath and chdir ──
     try {
       if (s.originalBasePath) {
         s.basePath = s.originalBasePath;
@@ -763,7 +778,7 @@ export async function stopAuto(
       debugLog("stop-cleanup-basepath", { error: e instanceof Error ? e.message : String(e) });
     }
 
-    // ── Step 7: Ledger notification ──
+    // ── Step 8: Ledger notification ──
     try {
       const ledger = getLedger();
       if (ledger && ledger.units.length > 0) {
@@ -777,17 +792,6 @@ export async function stopAuto(
       }
     } catch (e) {
       debugLog("stop-cleanup-ledger", { error: e instanceof Error ? e.message : String(e) });
-    }
-
-    // ── Step 8: Rebuild state ──
-    if (s.basePath) {
-      try {
-        await rebuildState(s.basePath);
-      } catch (e) {
-        debugLog("stop-rebuild-state-failed", {
-          error: e instanceof Error ? e.message : String(e),
-        });
-      }
     }
 
     // ── Step 9: Cmux sidebar / event log ──
