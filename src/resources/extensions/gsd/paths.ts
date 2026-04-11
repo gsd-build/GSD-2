@@ -465,14 +465,15 @@ export function resolveSliceFile(
 
 /**
  * Resolve the tasks directory within a slice.
+ * Returns the expected path unconditionally when the slice dir is resolvable.
+ * Callers that need to check existence should guard with existsSync(). (#3183)
  */
 export function resolveTasksDir(
   basePath: string, milestoneId: string, sliceId: string
 ): string | null {
   const sDir = resolveSlicePath(basePath, milestoneId, sliceId);
   if (!sDir) return null;
-  const tDir = join(sDir, "tasks");
-  return existsSync(tDir) ? tDir : null;
+  return join(sDir, "tasks");
 }
 
 /**
