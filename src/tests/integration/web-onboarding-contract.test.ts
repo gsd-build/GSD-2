@@ -408,7 +408,7 @@ test("failed API-key validation stays locked, redacts the error, and is reflecte
     getEnvApiKey: noEnvApiKey,
     validateApiKey: async () => ({
       ok: false,
-      message: "OpenAI rejected sk-test-secret-123456 because Bearer sk-test-secret-123456 is invalid",
+      message: "OpenAI rejected the provided key because Bearer invalid-demo-key is invalid",
     }),
   });
 
@@ -425,7 +425,7 @@ test("failed API-key validation stays locked, redacts the error, and is reflecte
       body: JSON.stringify({
         action: "save_api_key",
         providerId: "openai",
-        apiKey: "sk-test-secret-123456",
+        apiKey: "invalid-demo-key",
       }),
     }),
   );
@@ -440,7 +440,7 @@ test("failed API-key validation stays locked, redacts the error, and is reflecte
   assert.equal(validationPayload.onboarding.lockReason, "required_setup");
   assert.equal(validationPayload.onboarding.bridgeAuthRefresh.phase, "idle");
   assert.match(validationPayload.onboarding.lastValidation.message, /OpenAI rejected/i);
-  assert.doesNotMatch(validationPayload.onboarding.lastValidation.message, /sk-test-secret-123456/);
+  assert.doesNotMatch(validationPayload.onboarding.lastValidation.message, /invalid-demo-key/);
   assert.equal(authStorage.hasAuth("openai"), false);
 
   const bootResponse = await bootRoute.GET(projectRequest(fixture.projectCwd, "/api/boot"));
@@ -448,7 +448,7 @@ test("failed API-key validation stays locked, redacts the error, and is reflecte
   const bootPayload = (await bootResponse.json()) as any;
   assert.equal(bootPayload.onboarding.locked, true);
   assert.equal(bootPayload.onboarding.lastValidation.status, "failed");
-  assert.doesNotMatch(bootPayload.onboarding.lastValidation.message, /sk-test-secret-123456/);
+  assert.doesNotMatch(bootPayload.onboarding.lastValidation.message, /invalid-demo-key/);
 });
 
 test("direct prompt commands cannot bypass onboarding while required setup is still locked", async (t) => {

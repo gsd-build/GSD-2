@@ -7,9 +7,12 @@ import {
 	makeStreamExhaustedErrorMessage,
 	buildPromptFromContext,
 	buildSdkOptions,
+	createClaudeCodeElicitationHandler,
 	extractToolResultsFromSdkUserMessage,
 	getClaudeLookupCommand,
+	parseAskUserQuestionsElicitation,
 	parseClaudeLookupOutput,
+	roundResultToElicitationContent,
 } from "../stream-adapter.ts";
 import type { Context, Message } from "@gsd/pi-ai";
 import type { SDKUserMessage } from "../sdk-types.ts";
@@ -308,6 +311,175 @@ describe("stream-adapter — session persistence (#2859)", () => {
 			process.env.GSD_WORKFLOW_MCP_CWD = prev.GSD_WORKFLOW_MCP_CWD;
 			process.env.GSD_CLI_PATH = prev.GSD_CLI_PATH;
 		}
+	});
+
+	test("buildSdkOptions preserves runtime callbacks such as onElicitation", () => {
+		const prev = {
+			GSD_WORKFLOW_MCP_COMMAND: process.env.GSD_WORKFLOW_MCP_COMMAND,
+			GSD_WORKFLOW_MCP_NAME: process.env.GSD_WORKFLOW_MCP_NAME,
+			GSD_WORKFLOW_MCP_ARGS: process.env.GSD_WORKFLOW_MCP_ARGS,
+			GSD_WORKFLOW_MCP_ENV: process.env.GSD_WORKFLOW_MCP_ENV,
+			GSD_WORKFLOW_MCP_CWD: process.env.GSD_WORKFLOW_MCP_CWD,
+		};
+		const onElicitation = async () => ({ action: "decline" as const });
+		try {
+			delete process.env.GSD_WORKFLOW_MCP_COMMAND;
+			delete process.env.GSD_WORKFLOW_MCP_NAME;
+			delete process.env.GSD_WORKFLOW_MCP_ARGS;
+			delete process.env.GSD_WORKFLOW_MCP_ENV;
+			delete process.env.GSD_WORKFLOW_MCP_CWD;
+			const options = buildSdkOptions("claude-sonnet-4-20250514", "test", { onElicitation });
+			assert.equal(options.onElicitation, onElicitation);
+		} finally {
+			process.env.GSD_WORKFLOW_MCP_COMMAND = prev.GSD_WORKFLOW_MCP_COMMAND;
+			process.env.GSD_WORKFLOW_MCP_NAME = prev.GSD_WORKFLOW_MCP_NAME;
+			process.env.GSD_WORKFLOW_MCP_ARGS = prev.GSD_WORKFLOW_MCP_ARGS;
+			process.env.GSD_WORKFLOW_MCP_ENV = prev.GSD_WORKFLOW_MCP_ENV;
+			process.env.GSD_WORKFLOW_MCP_CWD = prev.GSD_WORKFLOW_MCP_CWD;
+		}
+	});
+});
+
+describe("stream-adapter — MCP elicitation bridge", () => {
+	const askUserQuestionsRequest = {
+		serverName: "gsd-workflow",
+		message: "Please answer the following question(s).",
+		mode: "form" as const,
+		requestedSchema: {
+			type: "object" as const,
+			properties: {
+				storage_scope: {
+					type: "string",
+					title: "Storage",
+					description: "Does this app need to sync across devices?",
+					oneOf: [
+						{ const: "Local-only (Recommended)", title: "Local-only (Recommended)" },
+						{ const: "Cloud-synced", title: "Cloud-synced" },
+						{ const: "None of the above", title: "None of the above" },
+					],
+				},
+				storage_scope__note: {
+					type: "string",
+					title: "Storage Note",
+					description: "Optional note for None of the above.",
+				},
+				platform: {
+					type: "array",
+					title: "Platform",
+					description: "Where should it run?",
+					items: {
+						anyOf: [
+							{ const: "Web", title: "Web" },
+							{ const: "Desktop", title: "Desktop" },
+							{ const: "Mobile", title: "Mobile" },
+						],
+					},
+				},
+			},
+		},
+	};
+
+	test("parseAskUserQuestionsElicitation rebuilds interview questions from the MCP schema", () => {
+		const questions = parseAskUserQuestionsElicitation(askUserQuestionsRequest);
+		assert.deepEqual(questions, [
+			{
+				id: "storage_scope",
+				header: "Storage",
+				question: "Does this app need to sync across devices?",
+				options: [
+					{ label: "Local-only (Recommended)", description: "" },
+					{ label: "Cloud-synced", description: "" },
+				],
+				noteFieldId: "storage_scope__note",
+			},
+			{
+				id: "platform",
+				header: "Platform",
+				question: "Where should it run?",
+				options: [
+					{ label: "Web", description: "" },
+					{ label: "Desktop", description: "" },
+					{ label: "Mobile", description: "" },
+				],
+				allowMultiple: true,
+			},
+		]);
+	});
+
+	test("roundResultToElicitationContent preserves notes for None of the above", () => {
+		const questions = parseAskUserQuestionsElicitation(askUserQuestionsRequest);
+		assert.ok(questions);
+
+		const content = roundResultToElicitationContent(questions, {
+			endInterview: false,
+			answers: {
+				storage_scope: {
+					selected: "None of the above",
+					notes: "Needs selective sync later",
+				},
+				platform: {
+					selected: ["Web", "Desktop"],
+					notes: "",
+				},
+			},
+		});
+
+		assert.deepEqual(content, {
+			storage_scope: "None of the above",
+			storage_scope__note: "Needs selective sync later",
+			platform: ["Web", "Desktop"],
+		});
+	});
+
+	test("createClaudeCodeElicitationHandler accepts interview-style answers from custom UI", async () => {
+		const handler = createClaudeCodeElicitationHandler({
+			custom: async (_factory: any) => ({
+				endInterview: false,
+				answers: {
+					storage_scope: {
+						selected: "Cloud-synced",
+						notes: "",
+					},
+					platform: {
+						selected: ["Web", "Mobile"],
+						notes: "",
+					},
+				},
+			}),
+		} as any);
+
+		assert.ok(handler);
+		const result = await handler!(askUserQuestionsRequest, { signal: new AbortController().signal });
+		assert.deepEqual(result, {
+			action: "accept",
+			content: {
+				storage_scope: "Cloud-synced",
+				platform: ["Web", "Mobile"],
+			},
+		});
+	});
+
+	test("createClaudeCodeElicitationHandler falls back to dialog prompts when custom UI is unavailable", async () => {
+		const ui = {
+			custom: async () => undefined,
+			select: async (_title: string, options: string[], opts?: { allowMultiple?: boolean }) => {
+				if (opts?.allowMultiple) return ["Desktop", "Mobile"];
+				return options.includes("None of the above") ? "None of the above" : options[0];
+			},
+			input: async () => "CLI-only deployment target",
+		};
+		const handler = createClaudeCodeElicitationHandler(ui as any);
+		assert.ok(handler);
+
+		const result = await handler!(askUserQuestionsRequest, { signal: new AbortController().signal });
+		assert.deepEqual(result, {
+			action: "accept",
+			content: {
+				storage_scope: "None of the above",
+				storage_scope__note: "CLI-only deployment target",
+				platform: ["Desktop", "Mobile"],
+			},
+		});
 	});
 });
 

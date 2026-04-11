@@ -997,7 +997,7 @@ export async function buildDiscussMilestonePrompt(mid: string, midTitle: string,
     milestoneId: mid,
     milestoneTitle: midTitle,
     inlinedTemplates: discussTemplates,
-    structuredQuestionsAvailable: "true",
+    structuredQuestionsAvailable: "false",
     commitInstruction: "Do not commit planning artifacts — .gsd/ is managed externally.",
     fastPathInstruction: "",
   });

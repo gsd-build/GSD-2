@@ -341,6 +341,14 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		thinkingBudgets: settingsManager.getThinkingBudgets(),
 		maxRetryDelayMs: settingsManager.getRetrySettings().maxDelayMs,
 		externalToolExecution: (m) => modelRegistry.getProviderAuthMode(m.provider) === "externalCli",
+		getProviderOptions: async (currentModel) => {
+			if (currentModel.provider !== "claude-code") return undefined;
+			const runner = extensionRunnerRef.current;
+			if (!runner?.hasUI()) return undefined;
+			return {
+				extensionUIContext: runner.getUIContext(),
+			};
+		},
 		getApiKey: async (provider) => {
 			// Use the provider argument from the in-flight request;
 			// agent.state.model may already be switched mid-turn.

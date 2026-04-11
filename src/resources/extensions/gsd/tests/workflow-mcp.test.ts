@@ -13,6 +13,7 @@ import {
   getWorkflowTransportSupportError,
   getRequiredWorkflowToolsForAutoUnit,
   getRequiredWorkflowToolsForGuidedUnit,
+  supportsStructuredQuestions,
   usesWorkflowMcpTransport,
 } from "../workflow-mcp.ts";
 
@@ -289,6 +290,30 @@ test("usesWorkflowMcpTransport matches local externalCli providers", () => {
   assert.equal(usesWorkflowMcpTransport("externalCli", "local://claude-code"), true);
   assert.equal(usesWorkflowMcpTransport("externalCli", "https://api.example.com"), false);
   assert.equal(usesWorkflowMcpTransport("oauth", "local://custom"), false);
+});
+
+test("supportsStructuredQuestions disables structured ask flow on workflow MCP transports", () => {
+  assert.equal(
+    supportsStructuredQuestions(["ask_user_questions"], {
+      authMode: "externalCli",
+      baseUrl: "local://claude-code",
+    }),
+    false,
+  );
+  assert.equal(
+    supportsStructuredQuestions(["ask_user_questions"], {
+      authMode: "oauth",
+      baseUrl: "https://api.anthropic.com",
+    }),
+    true,
+  );
+  assert.equal(
+    supportsStructuredQuestions([], {
+      authMode: "oauth",
+      baseUrl: "https://api.anthropic.com",
+    }),
+    false,
+  );
 });
 
 test("transport compatibility passes when required tools fit current MCP surface", () => {

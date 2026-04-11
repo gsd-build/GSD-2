@@ -16,10 +16,12 @@ import type {
 	SimpleStreamOptions,
 	ToolCall,
 } from "@gsd/pi-ai";
+import type { ExtensionUIContext } from "@gsd/pi-coding-agent";
 import { EventStream } from "@gsd/pi-ai";
 import { execSync } from "node:child_process";
 import { PartialMessageBuilder, ZERO_USAGE, mapUsage } from "./partial-builder.js";
 import { buildWorkflowMcpServers } from "../gsd/workflow-mcp.js";
+import { showInterviewRound, type Question, type RoundResult } from "../shared/tui.js";
 import type {
 	SDKAssistantMessage,
 	SDKMessage,
@@ -44,6 +46,46 @@ export interface ExternalToolResultPayload {
 type ToolCallWithExternalResult = ToolCall & {
 	externalResult?: ExternalToolResultPayload;
 };
+
+interface ClaudeCodeStreamOptions extends SimpleStreamOptions {
+	extensionUIContext?: ExtensionUIContext;
+}
+
+interface SdkElicitationRequestOption {
+	const?: string;
+	title?: string;
+}
+
+interface SdkElicitationFieldSchema {
+	type?: string;
+	title?: string;
+	description?: string;
+	oneOf?: SdkElicitationRequestOption[];
+	items?: {
+		anyOf?: SdkElicitationRequestOption[];
+	};
+}
+
+interface SdkElicitationRequest {
+	serverName: string;
+	message: string;
+	mode?: "form" | "url";
+	requestedSchema?: {
+		type?: string;
+		properties?: Record<string, SdkElicitationFieldSchema>;
+	};
+}
+
+interface SdkElicitationResult {
+	action: "accept" | "decline" | "cancel";
+	content?: Record<string, string | string[]>;
+}
+
+interface ParsedElicitationQuestion extends Question {
+	noteFieldId?: string;
+}
+
+const OTHER_OPTION_LABEL = "None of the above";
 
 // ---------------------------------------------------------------------------
 // Stream factory
@@ -172,6 +214,174 @@ export function makeStreamExhaustedErrorMessage(model: string, lastTextContent: 
 	return message;
 }
 
+function readElicitationChoices(options: SdkElicitationRequestOption[] | undefined): string[] {
+	if (!Array.isArray(options)) return [];
+	return options
+		.map((option) => (typeof option?.const === "string" ? option.const : typeof option?.title === "string" ? option.title : ""))
+		.filter((option): option is string => option.length > 0);
+}
+
+export function parseAskUserQuestionsElicitation(
+	request: Pick<SdkElicitationRequest, "mode" | "requestedSchema">,
+): ParsedElicitationQuestion[] | null {
+	if (request.mode && request.mode !== "form") return null;
+	const properties = request.requestedSchema?.properties;
+	if (!properties || typeof properties !== "object") return null;
+
+	const questions: ParsedElicitationQuestion[] = [];
+
+	for (const [fieldId, rawField] of Object.entries(properties)) {
+		if (fieldId.endsWith("__note")) continue;
+		if (!rawField || typeof rawField !== "object") return null;
+
+		const header = typeof rawField.title === "string" && rawField.title.length > 0 ? rawField.title : fieldId;
+		const question = typeof rawField.description === "string" ? rawField.description : "";
+
+		if (rawField.type === "array") {
+			const options = readElicitationChoices(rawField.items?.anyOf).map((label) => ({ label, description: "" }));
+			if (options.length === 0) return null;
+			questions.push({
+				id: fieldId,
+				header,
+				question,
+				options,
+				allowMultiple: true,
+			});
+			continue;
+		}
+
+		if (rawField.type === "string") {
+			const noteFieldId = Object.prototype.hasOwnProperty.call(properties, `${fieldId}__note`)
+				? `${fieldId}__note`
+				: undefined;
+			const options = readElicitationChoices(rawField.oneOf)
+				.filter((label) => label !== OTHER_OPTION_LABEL)
+				.map((label) => ({ label, description: "" }));
+			if (options.length === 0) return null;
+			questions.push({
+				id: fieldId,
+				header,
+				question,
+				options,
+				noteFieldId,
+			});
+			continue;
+		}
+
+		return null;
+	}
+
+	return questions.length > 0 ? questions : null;
+}
+
+export function roundResultToElicitationContent(
+	questions: ParsedElicitationQuestion[],
+	result: RoundResult,
+): Record<string, string | string[]> {
+	const content: Record<string, string | string[]> = {};
+
+	for (const question of questions) {
+		const answer = result.answers[question.id];
+		if (!answer) continue;
+
+		if (question.allowMultiple) {
+			const selected = Array.isArray(answer.selected) ? answer.selected : [answer.selected];
+			content[question.id] = selected;
+			continue;
+		}
+
+		const selected = Array.isArray(answer.selected) ? answer.selected[0] ?? "" : answer.selected;
+		content[question.id] = selected;
+		if (question.noteFieldId && selected === OTHER_OPTION_LABEL && answer.notes.trim().length > 0) {
+			content[question.noteFieldId] = answer.notes.trim();
+		}
+	}
+
+	return content;
+}
+
+function buildElicitationPromptTitle(request: SdkElicitationRequest, question: ParsedElicitationQuestion): string {
+	const parts = [
+		request.serverName ? `[${request.serverName}]` : "",
+		question.header,
+		question.question,
+	].filter((part) => part && part.trim().length > 0);
+	return parts.join("\n\n");
+}
+
+async function promptElicitationWithDialogs(
+	request: SdkElicitationRequest,
+	questions: ParsedElicitationQuestion[],
+	ui: ExtensionUIContext,
+	signal: AbortSignal,
+): Promise<SdkElicitationResult> {
+	const content: Record<string, string | string[]> = {};
+
+	for (const question of questions) {
+		const title = buildElicitationPromptTitle(request, question);
+
+		if (question.allowMultiple) {
+			const selected = await ui.select(title, question.options.map((option) => option.label), {
+				allowMultiple: true,
+				signal,
+			});
+			if (Array.isArray(selected)) {
+				if (selected.length === 0) return { action: "cancel" };
+				content[question.id] = selected;
+				continue;
+			}
+			if (typeof selected === "string" && selected.length > 0) {
+				content[question.id] = [selected];
+				continue;
+			}
+			return { action: "cancel" };
+		}
+
+		const selected = await ui.select(title, [...question.options.map((option) => option.label), OTHER_OPTION_LABEL], { signal });
+		if (typeof selected !== "string" || selected.length === 0) {
+			return { action: "cancel" };
+		}
+
+		content[question.id] = selected;
+		if (question.noteFieldId && selected === OTHER_OPTION_LABEL) {
+			const note = await ui.input(`${question.header} note`, "Explain your answer", { signal });
+			if (note === undefined) return { action: "cancel" };
+			if (note.trim().length > 0) {
+				content[question.noteFieldId] = note.trim();
+			}
+		}
+	}
+
+	return { action: "accept", content };
+}
+
+export function createClaudeCodeElicitationHandler(
+	ui: ExtensionUIContext | undefined,
+): ((request: SdkElicitationRequest, options: { signal: AbortSignal }) => Promise<SdkElicitationResult>) | undefined {
+	if (!ui) return undefined;
+
+	return async (request, { signal }) => {
+		if (request.mode === "url") {
+			return { action: "decline" };
+		}
+
+		const questions = parseAskUserQuestionsElicitation(request);
+		if (!questions) {
+			return { action: "decline" };
+		}
+
+		const interviewResult = await showInterviewRound(questions, { signal }, { ui } as any).catch(() => undefined);
+		if (interviewResult && Object.keys(interviewResult.answers).length > 0) {
+			return {
+				action: "accept",
+				content: roundResultToElicitationContent(questions, interviewResult),
+			};
+		}
+
+		return promptElicitationWithDialogs(request, questions, ui, signal);
+	};
+}
+
 // ---------------------------------------------------------------------------
 // SDK options builder
 // ---------------------------------------------------------------------------
@@ -182,7 +392,11 @@ export function makeStreamExhaustedErrorMessage(model: string, lastTextContent: 
  * Extracted for testability — callers can verify session persistence,
  * beta flags, and other configuration without mocking the full SDK.
  */
-export function buildSdkOptions(modelId: string, prompt: string): Record<string, unknown> {
+export function buildSdkOptions(
+	modelId: string,
+	prompt: string,
+	extraOptions: Record<string, unknown> = {},
+): Record<string, unknown> {
 	const mcpServers = buildWorkflowMcpServers();
 	return {
 		pathToClaudeCodeExecutable: getClaudePath(),
@@ -196,6 +410,7 @@ export function buildSdkOptions(modelId: string, prompt: string): Record<string,
 		systemPrompt: { type: "preset", preset: "claude_code" },
 		...(mcpServers ? { mcpServers } : {}),
 		betas: modelId.includes("sonnet") ? ["context-1m-2025-08-07"] : [],
+		...extraOptions,
 	};
 }
 
@@ -359,7 +574,17 @@ async function pumpSdkMessages(
 		}
 
 		const prompt = buildPromptFromContext(context);
-		const sdkOpts = buildSdkOptions(modelId, prompt);
+		const sdkOpts = buildSdkOptions(
+			modelId,
+			prompt,
+			typeof (options as ClaudeCodeStreamOptions | undefined)?.extensionUIContext === "object"
+				? {
+						onElicitation: createClaudeCodeElicitationHandler(
+							(options as ClaudeCodeStreamOptions | undefined)?.extensionUIContext,
+						),
+					}
+				: {},
+		);
 
 		const queryResult = sdk.query({
 			prompt,
