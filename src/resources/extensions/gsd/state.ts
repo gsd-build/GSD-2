@@ -135,6 +135,23 @@ export function isValidationTerminal(validationContent: string): boolean {
   return extractVerdict(validationContent) != null;
 }
 
+/**
+ * Check whether a SUMMARY.md's frontmatter `status` is a terminal value.
+ * Terminal values: 'complete', 'done', 'validated'.
+ * Non-terminal values: 'stub', 'in-progress', 'draft', or any other string.
+ * Files with no frontmatter are treated as terminal for backward compatibility
+ * — existing summaries without frontmatter always counted as completion (#3184).
+ */
+export function isSummaryTerminal(content: string): boolean {
+  // No frontmatter → treat as terminal (backward compatibility)
+  const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!fmMatch) return true;
+  const statusMatch = fmMatch[1].match(/^status:\s*(\S+)/m);
+  if (!statusMatch) return true;
+  const status = statusMatch[1].toLowerCase();
+  return status === 'complete' || status === 'done' || status === 'validated';
+}
+
 // ─── State Derivation ──────────────────────────────────────────────────────
 
 // ── deriveState memoization ─────────────────────────────────────────────────
@@ -207,7 +224,10 @@ export async function getActiveMilestoneId(basePath: string): Promise<string | n
     const content = roadmapFile ? await loadFile(roadmapFile) : null;
     if (!content) {
       const summaryFile = resolveMilestoneFile(basePath, mid, "SUMMARY");
-      if (summaryFile) continue;
+      if (summaryFile) {
+        const summaryContent = await loadFile(summaryFile);
+        if (summaryContent === null || isSummaryTerminal(summaryContent)) continue;
+      }
       if (isGhostMilestone(basePath, mid)) continue;
       return mid;
     }
@@ -215,6 +235,8 @@ export async function getActiveMilestoneId(basePath: string): Promise<string | n
     if (!isMilestoneComplete(roadmap)) {
       const summaryFile = resolveMilestoneFile(basePath, mid, "SUMMARY");
       if (!summaryFile) return mid;
+      const summaryContent = await loadFile(summaryFile);
+      if (summaryContent !== null && !isSummaryTerminal(summaryContent)) return mid;
     }
   }
   return null;
@@ -438,11 +460,15 @@ export async function deriveStateFromDb(basePath: string): Promise<GSDState> {
       continue;
     }
 
-    // Check if milestone has a summary on disk (terminal artifact per #864)
+    // Check if milestone has a summary on disk (terminal artifact per #864).
+    // Read frontmatter status — only terminal values count as completion (#3184).
     const summaryFile = resolveMilestoneFile(basePath, m.id, "SUMMARY");
     if (summaryFile) {
-      completeMilestoneIds.add(m.id);
-      continue;
+      const summaryContent = await loadFile(summaryFile);
+      if (summaryContent === null || isSummaryTerminal(summaryContent)) {
+        completeMilestoneIds.add(m.id);
+        continue;
+      }
     }
 
     // Milestones with all slices done but no SUMMARY file are in
@@ -477,16 +503,16 @@ export async function deriveStateFromDb(basePath: string): Promise<GSDState> {
     }
 
     const summaryFile = resolveMilestoneFile(basePath, m.id, "SUMMARY");
+    const summaryContent = summaryFile ? await loadFile(summaryFile) : null;
+    const summaryTerminal = summaryContent !== null ? isSummaryTerminal(summaryContent) : false;
 
-    // Determine if this milestone is complete
-    if (completeMilestoneIds.has(m.id) || (summaryFile !== null)) {
+    // Determine if this milestone is complete.
+    // Check frontmatter status — stub/in-progress summaries do not count (#3184).
+    if (completeMilestoneIds.has(m.id) || summaryTerminal) {
       // Get title from DB or summary
       let title = stripMilestonePrefix(m.title) || m.id;
-      if (summaryFile && !m.title) {
-        const summaryContent = await loadFile(summaryFile);
-        if (summaryContent) {
-          title = parseSummary(summaryContent).title || m.id;
-        }
+      if (summaryContent && !m.title) {
+        title = parseSummary(summaryContent).title || m.id;
       }
       registry.push({ id: m.id, title, status: 'complete' });
       completeMilestoneIds.add(m.id); // ensure it's in the set
@@ -1090,20 +1116,29 @@ export async function _deriveStateImpl(basePath: string): Promise<GSDState> {
     const rc = rf ? await cachedLoadFile(rf) : null;
     if (!rc) {
       const sf = resolveMilestoneFile(basePath, mid, "SUMMARY");
-      if (sf) completeMilestoneIds.add(mid);
+      if (sf) {
+        const sc = await cachedLoadFile(sf);
+        if (sc === null || isSummaryTerminal(sc)) completeMilestoneIds.add(mid);
+      }
       continue;
     }
     const rmap = parseRoadmap(rc);
     roadmapCache.set(mid, rmap);
     if (!isMilestoneComplete(rmap)) {
-      // Summary is the terminal artifact — if it exists, the milestone is
-      // complete even when roadmap checkboxes weren't ticked (#864).
+      // Summary is the terminal artifact — if it exists and is terminal, the milestone is
+      // complete even when roadmap checkboxes weren't ticked (#864, #3184).
       const sf = resolveMilestoneFile(basePath, mid, "SUMMARY");
-      if (sf) completeMilestoneIds.add(mid);
+      if (sf) {
+        const sc = await cachedLoadFile(sf);
+        if (sc === null || isSummaryTerminal(sc)) completeMilestoneIds.add(mid);
+      }
       continue;
     }
     const sf = resolveMilestoneFile(basePath, mid, "SUMMARY");
-    if (sf) completeMilestoneIds.add(mid);
+    if (sf) {
+      const sc = await cachedLoadFile(sf);
+      if (sc === null || isSummaryTerminal(sc)) completeMilestoneIds.add(mid);
+    }
   }
 
   // Phase 2: Build registry using cached roadmaps (no re-parsing or re-reading)
@@ -1127,16 +1162,19 @@ export async function _deriveStateImpl(basePath: string): Promise<GSDState> {
     const roadmap = roadmapCache.get(mid) ?? null;
 
     if (!roadmap) {
-      // No roadmap — check if a summary exists (completed milestone without roadmap)
+      // No roadmap — check if a summary exists and is terminal (completed milestone without roadmap).
+      // Stub/in-progress summaries do not close the milestone (#3184).
       const summaryFile = resolveMilestoneFile(basePath, mid, "SUMMARY");
       if (summaryFile) {
         const summaryContent = await cachedLoadFile(summaryFile);
-        const summaryTitle = summaryContent
-          ? (parseSummary(summaryContent).title || mid)
-          : mid;
-        registry.push({ id: mid, title: summaryTitle, status: 'complete' });
-        completeMilestoneIds.add(mid);
-        continue;
+        if (summaryContent === null || isSummaryTerminal(summaryContent)) {
+          const summaryTitle = summaryContent
+            ? (parseSummary(summaryContent).title || mid)
+            : mid;
+          registry.push({ id: mid, title: summaryTitle, status: 'complete' });
+          completeMilestoneIds.add(mid);
+          continue;
+        }
       }
       // Ghost milestone (only META.json, no CONTEXT/ROADMAP/SUMMARY) — skip entirely
       if (isGhostMilestone(basePath, mid)) continue;
@@ -1185,6 +1223,8 @@ export async function _deriveStateImpl(basePath: string): Promise<GSDState> {
     if (complete) {
       // All slices done — check validation and summary state
       const summaryFile = resolveMilestoneFile(basePath, mid, "SUMMARY");
+      const summaryContent = summaryFile ? await cachedLoadFile(summaryFile) : null;
+      const summaryIsTerminal = summaryContent !== null ? isSummaryTerminal(summaryContent) : false;
       const validationFile = resolveMilestoneFile(basePath, mid, "VALIDATION");
       const validationContent = validationFile ? await cachedLoadFile(validationFile) : null;
       const validationTerminal = validationContent ? isValidationTerminal(validationContent) : false;
@@ -1192,9 +1232,9 @@ export async function _deriveStateImpl(basePath: string): Promise<GSDState> {
       // needs-remediation is terminal but requires re-validation (#3596)
       const needsRevalidation = !validationTerminal || verdict === 'needs-remediation';
 
-      if (summaryFile) {
-        // Summary exists → milestone is complete regardless of validation state.
-        // The summary is the terminal artifact (#864).
+      if (summaryFile && summaryIsTerminal) {
+        // Terminal summary exists → milestone is complete regardless of validation state.
+        // The summary is the terminal artifact (#864). Stubs do not count (#3184).
         registry.push({ id: mid, title, status: 'complete' });
       } else if (needsRevalidation && !activeMilestoneFound) {
         // No summary and needs (re-)validation → validating-milestone
@@ -1215,10 +1255,11 @@ export async function _deriveStateImpl(basePath: string): Promise<GSDState> {
         registry.push({ id: mid, title, status: 'complete' });
       }
     } else {
-      // Roadmap slices not all checked — but if a summary exists, the milestone
-      // is still complete. The summary is the terminal artifact (#864).
+      // Roadmap slices not all checked — but if a terminal summary exists, the milestone
+      // is still complete. The summary is the terminal artifact (#864, #3184).
       const summaryFile = resolveMilestoneFile(basePath, mid, "SUMMARY");
-      if (summaryFile) {
+      const summaryContent2 = summaryFile ? await cachedLoadFile(summaryFile) : null;
+      if (summaryFile && (summaryContent2 === null || isSummaryTerminal(summaryContent2))) {
         registry.push({ id: mid, title, status: 'complete' });
       } else if (!activeMilestoneFound) {
         // Check milestone-level dependencies before promoting to active.
