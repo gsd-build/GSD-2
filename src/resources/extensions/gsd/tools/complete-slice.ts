@@ -9,6 +9,7 @@
 
 import { join } from "node:path";
 import { mkdirSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 
 import type { CompleteSliceParams } from "../types.js";
 import { isClosedStatus } from "../status-guards.js";
@@ -37,6 +38,30 @@ export interface CompleteSliceResult {
   milestoneId: string;
   summaryPath: string;
   uatPath: string;
+  uncommittedWarning?: string;
+}
+
+/**
+ * Check whether any of the given keyFiles have uncommitted changes in git.
+ * Returns a warning string if uncommitted files are found, null otherwise.
+ * Returns null (silently) if git is unavailable or the path is not a git repo.
+ */
+function checkUncommittedKeyFiles(keyFiles: string[], basePath: string): string | null {
+  if (!keyFiles || keyFiles.length === 0) return null;
+  try {
+    const result = spawnSync(
+      "git",
+      ["status", "--porcelain", "--", ...keyFiles],
+      { cwd: basePath, encoding: "utf-8", timeout: 5000 },
+    );
+    if (result.status !== 0 || result.error) return null; // git unavailable — skip
+    const dirtyLines = (result.stdout ?? "").trim().split("\n").filter(Boolean);
+    if (dirtyLines.length === 0) return null;
+    const fileList = dirtyLines.map(l => l.slice(3)).join(", ");
+    return `Warning: the following keyFiles have uncommitted changes: ${fileList}. Consider committing before marking complete.`;
+  } catch {
+    return null; // never block completion due to git check failure
+  }
 }
 
 /**
@@ -242,6 +267,9 @@ export async function handleCompleteSlice(
     return { error: `slice verification indicates blocked/failed state — do not complete a slice that has not passed verification. Address the blockers and re-verify first.` };
   }
 
+  // ── Git awareness check (warning-only, never blocks completion) ─────────
+  const uncommittedWarning = checkUncommittedKeyFiles(params.keyFiles, basePath);
+
   // ── Guards + DB writes inside a single transaction (prevents TOCTOU) ───
   const completedAt = new Date().toISOString();
   const originalSliceStatus = getSlice(params.milestoneId, params.sliceId)?.status ?? "pending";
@@ -366,5 +394,6 @@ export async function handleCompleteSlice(
     milestoneId: params.milestoneId,
     summaryPath,
     uatPath,
+    ...(uncommittedWarning ? { uncommittedWarning } : {}),
   };
 }
