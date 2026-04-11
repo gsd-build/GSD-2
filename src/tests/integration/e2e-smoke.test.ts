@@ -160,13 +160,12 @@ test("gsd config --help outputs help and exits 0", async () => {
   assert.strictEqual(result.code, 0, `expected exit 0, got ${result.code}`);
   assert.ok(!result.timedOut, "process should not time out");
 
-  // The loader fast-path intercepts --help only when it is the first argument.
-  // "config --help" passes through to cli.js where parseCliArgs() encounters
-  // --help and calls printHelp(), producing the full usage text.
+  // After #3423 fix, subcommand-specific help is shown when available.
+  // "config --help" now prints config-specific help text via printSubcommandHelp().
   const output = stripAnsi(result.stdout);
   assert.ok(
-    output.includes("Usage:"),
-    `expected 'Usage:' in output, got:\n${output.slice(0, 500)}`,
+    output.includes("Usage:") || output.includes("config"),
+    `expected help output, got:\n${output.slice(0, 500)}`,
   );
 });
 
@@ -289,13 +288,9 @@ test("gsd headless --help outputs help and exits 0", async () => {
   assert.strictEqual(result.code, 0, `expected exit 0, got ${result.code}`);
   assert.ok(!result.timedOut, "process should not time out");
 
-  // parseCliArgs intercepts --help before subcommand routing,
-  // so this produces the general help text (same as config/update --help).
+  // After #3423 fix, subcommand-specific help is shown for known subcommands.
+  // "headless --help" now prints headless-specific help via printSubcommandHelp().
   const output = stripAnsi(result.stdout);
-  assert.ok(
-    output.includes("Usage:"),
-    `expected 'Usage:' in output, got:\n${output.slice(0, 500)}`,
-  );
   assert.ok(
     output.includes("headless"),
     "help output should mention headless subcommand",
