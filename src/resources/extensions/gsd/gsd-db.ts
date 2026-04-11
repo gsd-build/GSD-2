@@ -11,6 +11,7 @@ import { dirname } from "node:path";
 import type { Decision, Requirement, GateRow, GateId, GateScope, GateStatus, GateVerdict } from "./types.js";
 import { GSDError, GSD_STALE_STATE } from "./errors.js";
 import { logError, logWarning } from "./workflow-logger.js";
+import { debugLog } from "./debug-logger.js";
 
 const _require = createRequire(import.meta.url);
 
