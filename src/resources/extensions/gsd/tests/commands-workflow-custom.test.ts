@@ -13,11 +13,14 @@ import {
   mkdirSync,
   writeFileSync,
   existsSync,
+  readFileSync,
 } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { getGsdArgumentCompletions, TOP_LEVEL_SUBCOMMANDS } from "../commands/catalog.ts";
+import { createRun } from "../run-manager.ts";
+import { parseWorkflowRunArgs } from "../commands/handlers/workflow.ts";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 
@@ -87,6 +90,19 @@ steps:
   - id: step-1
     name: First Step
     prompt: Do step 1
+    requires: []
+    produces: []
+`;
+
+const PARAM_DEF = `
+version: 1
+name: upgrade-probe
+params:
+  target: default-target
+steps:
+  - id: build
+    name: Build
+    prompt: Build {{target}}
     requires: []
     produces: []
 `;
@@ -205,6 +221,28 @@ describe("workflow command handler", () => {
     assert.ok(
       notifications.some((n) => n.message.includes("create-workflow")),
       "should mention create-workflow skill",
+    );
+  });
+
+  it("preserves quoted override values through run creation", async () => {
+    const base = makeTmpBase();
+    writeDefinition(base, "upgrade-probe", PARAM_DEF);
+
+    const { defName, overrides } = parseWorkflowRunArgs(
+      'upgrade-probe target="multi word target"',
+    );
+
+    assert.equal(defName, "upgrade-probe");
+
+    const runDir = createRun(base, defName, overrides);
+    const params = JSON.parse(readFileSync(join(runDir, "PARAMS.json"), "utf-8"));
+    const frozenDef = readFileSync(join(runDir, "DEFINITION.yaml"), "utf-8");
+
+    assert.deepStrictEqual(overrides, { target: "multi word target" });
+    assert.deepStrictEqual(params, { target: "multi word target" });
+    assert.ok(
+      frozenDef.includes("Build multi word target"),
+      "frozen definition should preserve the full quoted override value",
     );
   });
 

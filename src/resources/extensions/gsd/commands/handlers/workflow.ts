@@ -38,6 +38,72 @@ const WORKFLOW_USAGE = [
   "  resume            — Resume paused custom workflow auto-mode",
 ].join("\n");
 
+export function parseWorkflowRunArgs(args: string): {
+  defName: string;
+  overrides: Record<string, string>;
+} {
+  const parts: string[] = [];
+  let current = "";
+  let quote: '"' | "'" | null = null;
+  let escape = false;
+
+  for (const ch of args) {
+    if (escape) {
+      current += ch;
+      escape = false;
+      continue;
+    }
+
+    if (ch === "\\") {
+      escape = true;
+      continue;
+    }
+
+    if (quote) {
+      if (ch === quote) {
+        quote = null;
+      } else {
+        current += ch;
+      }
+      continue;
+    }
+
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      continue;
+    }
+
+    if (/\s/.test(ch)) {
+      if (current) {
+        parts.push(current);
+        current = "";
+      }
+      continue;
+    }
+
+    current += ch;
+  }
+
+  if (escape) {
+    current += "\\";
+  }
+  if (current) {
+    parts.push(current);
+  }
+
+  const defName = parts[0] ?? "";
+  const overrides: Record<string, string> = {};
+
+  for (let i = 1; i < parts.length; i++) {
+    const eqIdx = parts[i].indexOf("=");
+    if (eqIdx > 0) {
+      overrides[parts[i].slice(0, eqIdx)] = parts[i].slice(eqIdx + 1);
+    }
+  }
+
+  return { defName, overrides };
+}
+
 async function handleCustomWorkflow(
   sub: string,
   ctx: ExtensionCommandContext,
@@ -62,15 +128,7 @@ async function handleCustomWorkflow(
       ctx.ui.notify("Usage: /gsd workflow run <name> [param=value ...]", "warning");
       return true;
     }
-    const parts = args.split(/\s+/);
-    const defName = parts[0];
-    const overrides: Record<string, string> = {};
-    for (let i = 1; i < parts.length; i++) {
-      const eqIdx = parts[i].indexOf("=");
-      if (eqIdx > 0) {
-        overrides[parts[i].slice(0, eqIdx)] = parts[i].slice(eqIdx + 1);
-      }
-    }
+    const { defName, overrides } = parseWorkflowRunArgs(args);
     try {
       const base = projectRoot();
       const runDir = createRun(base, defName, Object.keys(overrides).length > 0 ? overrides : undefined);
