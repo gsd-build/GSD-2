@@ -600,3 +600,38 @@ test("unit-end event contains errorContext when unit is cancelled with structure
   assert.ok(entry.error!.startsWith("timeout:"), "error must start with category from errorContext");
   assert.ok(entry.error!.includes("Hard timeout error"), "error must include the errorContext message");
 });
+
+test("transient session-failed cancellations pause instead of hard-stopping", async () => {
+  const capture = createEventCapture();
+  const { resolveAgentEndCancelled, _resetPendingResolve } = await import("../auto-loop.js");
+  _resetPendingResolve();
+
+  const deps = makeMockDeps(capture);
+  const ic = makeIC(deps);
+  const iterData: IterationData = {
+    unitType: "execute-task",
+    unitId: "M001/S01/T02",
+    prompt: "do more stuff",
+    finalPrompt: "do more stuff",
+    pauseAfterUatDispatch: false,
+    state: { phase: "executing", activeMilestone: { id: "M001" }, activeSlice: { id: "S01" }, registry: [], blockers: [] } as any,
+    mid: "M001",
+    midTitle: "Test",
+    isRetry: false,
+    previousTier: undefined,
+  };
+  const loopState: LoopState = { recentUnits: [{ key: "execute-task/M001/S01/T02" }], stuckRecoveryAttempts: 0, consecutiveFinalizeTimeouts: 0 };
+
+  const unitPromise = runUnitPhase(ic, iterData, loopState);
+  await new Promise(r => setTimeout(r, 50));
+
+  resolveAgentEndCancelled({ message: "Session creation failed: temporary bootstrap overload", category: "session-failed", isTransient: true });
+
+  const result = await unitPromise;
+  assert.equal(result.action, "break");
+  assert.equal((result as any).reason, "session-timeout");
+
+  const entry = loopState.recentUnits[loopState.recentUnits.length - 1];
+  assert.ok(entry.error, "window entry must have error set");
+  assert.ok(entry.error!.startsWith("session-failed:"), "error must preserve the session-failed category");
+});
