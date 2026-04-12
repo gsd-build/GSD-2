@@ -28,8 +28,8 @@ import {
   isMilestoneReadyNotification,
   isQuickCommand,
   FIRE_AND_FORGET_METHODS,
-  IDLE_TIMEOUT_MS,
-  NEW_MILESTONE_IDLE_TIMEOUT_MS,
+  getHeadlessIdleTimeout,
+  shouldArmIdleTimeout,
   EXIT_SUCCESS,
   EXIT_ERROR,
   EXIT_BLOCKED,
@@ -456,11 +456,11 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
 
   // Idle timeout — fallback completion detection
   let idleTimer: ReturnType<typeof setTimeout> | null = null
-  const effectiveIdleTimeout = isNewMilestone ? NEW_MILESTONE_IDLE_TIMEOUT_MS : IDLE_TIMEOUT_MS
+  const effectiveIdleTimeout = getHeadlessIdleTimeout(options.command)
 
   function resetIdleTimer(): void {
     if (idleTimer) clearTimeout(idleTimer)
-    if (toolCallCount > 0) {
+    if (shouldArmIdleTimeout(toolCallCount, effectiveIdleTimeout)) {
       idleTimer = setTimeout(() => {
         completed = true
         resolveCompletion()
