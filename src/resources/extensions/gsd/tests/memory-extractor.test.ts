@@ -176,7 +176,7 @@ test('memory-extractor: reset extraction state', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 test('memory-extractor: buildMemoryLLMCall resolves API key from modelRegistry for OAuth users', async () => {
-  const OAUTH_TOKEN = 'sk-ant-oat-test-oauth-token-12345';
+  const OAUTH_PLACEHOLDER = 'oauth-test';
   let getApiKeyCalled = false;
 
   const fakeModel = {
@@ -191,7 +191,7 @@ test('memory-extractor: buildMemoryLLMCall resolves API key from modelRegistry f
       getAvailable: () => [fakeModel],
       getApiKey: async (_model: any) => {
         getApiKeyCalled = true;
-        return OAUTH_TOKEN;
+        return OAUTH_PLACEHOLDER;
       },
     },
   } as any;
@@ -206,15 +206,31 @@ test('memory-extractor: buildMemoryLLMCall resolves API key from modelRegistry f
 });
 
 test('memory-extractor: buildMemoryLLMCall returns null when no models available', () => {
+  const notifications: Array<{ message: string; level: string }> = [];
   const ctx = {
     modelRegistry: {
       getAvailable: () => [],
       getApiKey: async () => undefined,
     },
+    ui: {
+      notify: (message: string, level: string) => {
+        notifications.push({ message, level });
+      },
+    },
   } as any;
 
   const llmCallFn = buildMemoryLLMCall(ctx);
   assert.strictEqual(llmCallFn, null, 'should return null when no models available');
+  assert.deepStrictEqual(notifications, [
+    {
+      message: 'memory extraction disabled — no model available in registry',
+      level: 'warning',
+    },
+  ], 'should surface a one-time warning when memory extraction has no model');
+
+  const second = buildMemoryLLMCall(ctx);
+  assert.strictEqual(second, null, 'subsequent calls should still return null');
+  assert.strictEqual(notifications.length, 1, 'warning should only fire once per session');
 });
 
 test('memory-extractor: buildMemoryLLMCall prefers haiku model', async () => {
@@ -238,7 +254,7 @@ test('memory-extractor: buildMemoryLLMCall prefers haiku model', async () => {
       getAvailable: () => [sonnetModel, haikuModel],
       getApiKey: async (model: any) => {
         resolvedModelId = model.id;
-        return 'sk-ant-oat-test-token';
+        return 'oauth-test';
       },
     },
   } as any;
@@ -252,3 +268,44 @@ test('memory-extractor: buildMemoryLLMCall prefers haiku model', async () => {
     'should resolve API key for haiku model, not sonnet');
 });
 
+test('memory-extractor: buildMemoryLLMCall ignores missing input cost when choosing fallback model', async () => {
+  let resolvedModelId: string | undefined;
+
+  const unknownCostModel = {
+    id: 'unknown-cost',
+    provider: 'anthropic',
+    api: 'anthropic-messages',
+    cost: {},
+  };
+  const cheapModel = {
+    id: 'cheap-sonnet',
+    provider: 'anthropic',
+    api: 'anthropic-messages',
+    cost: { input: 0.4, output: 1.5 },
+  };
+  const noCostFieldModel = {
+    id: 'no-cost-field',
+    provider: 'anthropic',
+    api: 'anthropic-messages',
+  };
+
+  const ctx = {
+    modelRegistry: {
+      getAvailable: () => [unknownCostModel, cheapModel, noCostFieldModel],
+      getApiKey: async (model: any) => {
+        resolvedModelId = model.id;
+        return 'oauth-test';
+      },
+    },
+  } as any;
+
+  const llmCallFn = buildMemoryLLMCall(ctx);
+  assert.ok(llmCallFn !== null, 'should still return a function when some models lack input cost');
+
+  await new Promise(resolve => setTimeout(resolve, 50));
+  assert.strictEqual(
+    resolvedModelId,
+    'cheap-sonnet',
+    'should choose the cheapest model with a real input cost instead of failing on missing metadata',
+  );
+});
