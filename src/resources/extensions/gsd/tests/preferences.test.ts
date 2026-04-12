@@ -10,10 +10,14 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   validatePreferences,
   applyModeDefaults,
   getIsolationMode,
+  loadEffectiveGSDPreferences,
   parsePreferencesMarkdown,
   _resetParseWarningFlag,
 } from "../preferences.ts";
@@ -499,6 +503,55 @@ test("experimental.rtk parses correctly from preferences markdown", () => {
   const prefs = parsePreferencesMarkdown(content);
   assert.notEqual(prefs, null);
   assert.equal(prefs!.experimental?.rtk, true);
+});
+
+test("loadEffectiveGSDPreferences preserves experimental prefs across global+project merge", () => {
+  const originalCwd = process.cwd();
+  const originalGsdHome = process.env.GSD_HOME;
+  const tempProject = mkdtempSync(join(tmpdir(), "gsd-prefs-project-"));
+  const tempGsdHome = mkdtempSync(join(tmpdir(), "gsd-prefs-home-"));
+
+  try {
+    mkdirSync(join(tempProject, ".gsd"), { recursive: true });
+
+    writeFileSync(
+      join(tempGsdHome, "preferences.md"),
+      [
+        "---",
+        "version: 1",
+        "experimental:",
+        "  rtk: true",
+        "---",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    writeFileSync(
+      join(tempProject, ".gsd", "PREFERENCES.md"),
+      [
+        "---",
+        "version: 1",
+        "git:",
+        "  isolation: none",
+        "---",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    process.env.GSD_HOME = tempGsdHome;
+    process.chdir(tempProject);
+
+    const loaded = loadEffectiveGSDPreferences();
+    assert.notEqual(loaded, null);
+    assert.equal(loaded!.preferences.experimental?.rtk, true);
+    assert.equal(loaded!.preferences.git?.isolation, "none");
+  } finally {
+    process.chdir(originalCwd);
+    if (originalGsdHome === undefined) delete process.env.GSD_HOME;
+    else process.env.GSD_HOME = originalGsdHome;
+    rmSync(tempProject, { recursive: true, force: true });
+    rmSync(tempGsdHome, { recursive: true, force: true });
+  }
 });
 
 test("experimental.rtk defaults to off in new project preferences", () => {

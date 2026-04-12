@@ -389,6 +389,9 @@ function mergePreferences(base: GSDPreferences, override: GSDPreferences): GSDPr
     github: (base.github || override.github)
       ? { ...(base.github ?? {}), ...(override.github ?? {}) } as import("../github-sync/types.js").GitHubSyncConfig
       : undefined,
+    experimental: (base.experimental || override.experimental)
+      ? { ...(base.experimental ?? {}), ...(override.experimental ?? {}) }
+      : undefined,
     service_tier: override.service_tier ?? base.service_tier,
     forensics_dedup: override.forensics_dedup ?? base.forensics_dedup,
     show_token_cost: override.show_token_cost ?? base.show_token_cost,
