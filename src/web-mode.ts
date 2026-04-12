@@ -582,7 +582,7 @@ export async function launchWebMode(
   cleanupStaleInstance(options.cwd, stderr, deps.registryPath)
 
   const port = options.port ?? await (deps.resolvePort ?? reserveWebPort)(host)
-  const authToken = randomBytes(32).toString('hex')
+  const authToken = (deps.env ?? process.env).GSD_WEB_AUTH_TOKEN || randomBytes(32).toString('hex')
   const url = `http://${host}:${port}`
   const env = {
     ...(deps.env ?? process.env),
