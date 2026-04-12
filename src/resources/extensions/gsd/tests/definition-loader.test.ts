@@ -693,6 +693,61 @@ test("substitutePromptString: no placeholders → unchanged", () => {
   assert.equal(result, "No placeholders here");
 });
 
+test("substitutePromptString: replaces {{ key }} with surrounding spaces (#3189)", () => {
+  const result = substitutePromptString(
+    "Write about {{ topic }} targeting {{ audience }}",
+    { topic: "AI", audience: "engineers" },
+  );
+  assert.equal(result, "Write about AI targeting engineers");
+});
+
+test("substitutePromptString: unchanged behaviour for {{key}} without spaces (#3189)", () => {
+  const result = substitutePromptString(
+    "Write about {{topic}} targeting {{audience}}",
+    { topic: "AI", audience: "engineers" },
+  );
+  assert.equal(result, "Write about AI targeting engineers");
+});
+
+test("substitutePromptString: replaces asymmetric {{ key}} and {{key }} spacing (#3189)", () => {
+  const result = substitutePromptString(
+    "Write about {{ topic}} targeting {{audience }}",
+    { topic: "AI", audience: "engineers" },
+  );
+  assert.equal(result, "Write about AI targeting engineers");
+});
+
+test("substituteParams: replaces spaced {{ key }} placeholders with defaults (#3189)", () => {
+  const def: WorkflowDefinition = {
+    version: 1,
+    name: "test",
+    params: { base_branch: "main", topic: "AI" },
+    steps: [
+      { id: "a", name: "A", prompt: "Branch {{ base_branch }}, topic {{ topic }}", requires: [], produces: [] },
+    ],
+  };
+  const result = substituteParams(def);
+  assert.equal(result.steps[0].prompt, "Branch main, topic AI");
+});
+
+test("substituteParams: errors on unresolved spaced {{ key }} placeholders (#3189)", () => {
+  const def: WorkflowDefinition = {
+    version: 1,
+    name: "test",
+    steps: [
+      { id: "a", name: "A", prompt: "Write about {{ topic }}", requires: [], produces: [] },
+    ],
+  };
+  assert.throws(
+    () => substituteParams(def),
+    (err: Error) => {
+      assert.ok(err.message.includes("Unresolved"));
+      assert.ok(err.message.includes("topic"));
+      return true;
+    },
+  );
+});
+
 // ─── Edge cases ──────────────────────────────────────────────────────────
 
 test("validateDefinition: steps is not an array → error", () => {
