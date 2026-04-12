@@ -15,6 +15,7 @@ import {
   decayStaleMemories,
 } from './memory-store.js';
 import type { MemoryAction } from './memory-store.js';
+import { logWarning } from './workflow-logger.js';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -24,6 +25,7 @@ export type LLMCallFn = (system: string, user: string) => Promise<string>;
 
 let _extracting = false;
 let _lastExtractionTime = 0;
+let _warnedNoModel = false;
 
 const MIN_EXTRACTION_INTERVAL_MS = 30_000;
 
@@ -69,9 +71,21 @@ function redactSecrets(text: string): string {
  * Returns null if no models available.
  */
 export function buildMemoryLLMCall(ctx: ExtensionContext): LLMCallFn | null {
+  const warnNoModel = (reason: string): null => {
+    if (!_warnedNoModel) {
+      _warnedNoModel = true;
+      const message = `memory extraction disabled — ${reason}`;
+      ctx.ui?.notify?.(message, 'warning');
+      logWarning('engine', message);
+    }
+    return null;
+  };
+
   try {
     const available = ctx.modelRegistry.getAvailable();
-    if (!available || available.length === 0) return null;
+    if (!available || available.length === 0) {
+      return warnNoModel('no model available in registry');
+    }
 
     // Prefer Haiku by ID substring match
     let model = available.find(m =>
@@ -80,10 +94,14 @@ export function buildMemoryLLMCall(ctx: ExtensionContext): LLMCallFn | null {
 
     // Fallback: cheapest by input cost
     if (!model) {
-      model = [...available].sort((a, b) => a.cost.input - b.cost.input)[0];
+      model = [...available].sort(
+        (a, b) => (a.cost?.input ?? Number.POSITIVE_INFINITY) - (b.cost?.input ?? Number.POSITIVE_INFINITY),
+      )[0];
     }
 
-    if (!model) return null;
+    if (!model) {
+      return warnNoModel('no usable model available in registry');
+    }
 
     const selectedModel = model as Model<Api>;
 
@@ -111,8 +129,8 @@ export function buildMemoryLLMCall(ctx: ExtensionContext): LLMCallFn | null {
         .map(c => c.text);
       return textParts.join('');
     };
-  } catch {
-    return null;
+  } catch (error) {
+    return warnNoModel(error instanceof Error ? error.message : String(error));
   }
 }
 
@@ -357,4 +375,5 @@ export async function extractMemoriesFromUnit(
 export function _resetExtractionState(): void {
   _extracting = false;
   _lastExtractionTime = 0;
+  _warnedNoModel = false;
 }
