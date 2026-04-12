@@ -23,6 +23,7 @@ import {
   renderAllFromDb,
   renderPlanFromDb,
   renderTaskPlanFromDb,
+  renderRoadmapFromDb,
   detectStaleRenders,
   repairStaleRenders,
 } from '../markdown-renderer.ts';
@@ -1158,4 +1159,110 @@ test('── markdown-renderer: detectStaleRenders finds missing slice summary a
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+// renderRoadmapMarkdown — regression: all DB-backed sections appear (#3216)
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('── markdown-renderer: renderRoadmapFromDb includes all planning sections ──', async () => {
+  const tmpDir = makeTmpDir();
+  const dbPath = path.join(tmpDir, '.gsd', 'gsd.db');
+  openDatabase(dbPath);
+  clearAllCaches();
+
+  try {
+    scaffoldDirs(tmpDir, 'M019', ['S01']);
+
+    insertMilestone({
+      id: 'M019',
+      title: 'Full Planning Milestone',
+      status: 'active',
+      planning: {
+        vision: 'A fully rendered roadmap',
+        successCriteria: ['All sections present', 'No data lost'],
+        keyRisks: [
+          { risk: 'Parser fragility', whyItMatters: 'Breaks downstream consumers' },
+        ],
+        proofStrategy: [
+          { riskOrUnknown: 'Parser fragility', retireIn: 'S01', whatWillBeProven: 'All sections round-trip' },
+        ],
+        verificationContract: 'Unit tests pass',
+        verificationIntegration: 'Integration tests pass',
+        verificationOperational: 'Daemon restart recovers',
+        verificationUat: 'Human reads full roadmap',
+        definitionOfDone: ['All slices complete', 'All verification classes met'],
+        requirementCoverage: 'Covers: R001, R002\nPartially covers: R003',
+        boundaryMapMarkdown: '',
+      },
+    });
+
+    insertSlice({ id: 'S01', milestoneId: 'M019', title: 'Core', status: 'pending' });
+
+    const { content } = await renderRoadmapFromDb(tmpDir, 'M019');
+
+    assert.ok(content.includes('## Success Criteria'), 'success_criteria section present');
+    assert.ok(content.includes('- All sections present'), 'success_criteria content present');
+    assert.ok(content.includes('## Key Risks / Unknowns'), 'key_risks section present');
+    assert.ok(content.includes('- Parser fragility — Breaks downstream consumers'), 'key_risks content present');
+    assert.ok(content.includes('## Proof Strategy'), 'proof_strategy section present');
+    assert.ok(content.includes('- Parser fragility → retire in S01 by proving All sections round-trip'), 'proof_strategy content present');
+    assert.ok(content.includes('## Verification Classes'), 'verification classes section present');
+    assert.ok(content.includes('- **Contract:** Unit tests pass'), 'verification_contract present');
+    assert.ok(content.includes('- **Integration:** Integration tests pass'), 'verification_integration present');
+    assert.ok(content.includes('- **Operational:** Daemon restart recovers'), 'verification_operational present');
+    assert.ok(content.includes('- **UAT:** Human reads full roadmap'), 'verification_uat present');
+    assert.ok(content.includes('## Milestone Definition of Done'), 'definition_of_done section present');
+    assert.ok(content.includes('- All slices complete'), 'definition_of_done content present');
+    assert.ok(content.includes('## Requirement Coverage'), 'requirement_coverage section present');
+    assert.ok(content.includes('Covers: R001, R002'), 'requirement_coverage content present');
+    assert.ok(content.includes('## Slices'), 'slices section present');
+  } finally {
+    closeDatabase();
+    cleanupDir(tmpDir);
+  }
+});
+
+test('── markdown-renderer: renderRoadmapFromDb omits empty planning sections ──', async () => {
+  const tmpDir = makeTmpDir();
+  const dbPath = path.join(tmpDir, '.gsd', 'gsd.db');
+  openDatabase(dbPath);
+  clearAllCaches();
+
+  try {
+    scaffoldDirs(tmpDir, 'M100', ['S01']);
+
+    insertMilestone({
+      id: 'M100',
+      title: 'Minimal Milestone',
+      status: 'active',
+      planning: {
+        vision: 'Only vision and slices',
+        successCriteria: [],
+        keyRisks: [],
+        proofStrategy: [],
+        verificationContract: '',
+        verificationIntegration: '',
+        verificationOperational: '',
+        verificationUat: '',
+        definitionOfDone: [],
+        requirementCoverage: '',
+        boundaryMapMarkdown: '',
+      },
+    });
+
+    insertSlice({ id: 'S01', milestoneId: 'M100', title: 'Core', status: 'pending' });
+
+    const { content } = await renderRoadmapFromDb(tmpDir, 'M100');
+
+    assert.ok(!content.includes('## Success Criteria'), 'empty success_criteria omitted');
+    assert.ok(!content.includes('## Key Risks'), 'empty key_risks omitted');
+    assert.ok(!content.includes('## Proof Strategy'), 'empty proof_strategy omitted');
+    assert.ok(!content.includes('## Verification Classes'), 'empty verification classes omitted');
+    assert.ok(!content.includes('## Milestone Definition of Done'), 'empty definition_of_done omitted');
+    assert.ok(!content.includes('## Requirement Coverage'), 'empty requirement_coverage omitted');
+    assert.ok(content.includes('## Slices'), 'slices section always present');
+    assert.ok(content.includes('**Vision:** Only vision and slices'), 'vision present');
+  } finally {
+    closeDatabase();
+    cleanupDir(tmpDir);
+  }
+});
 
