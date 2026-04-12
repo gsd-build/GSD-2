@@ -441,8 +441,11 @@ export const githubCopilotOAuthProvider: OAuthProviderInterface = {
 		const domain = creds.enterpriseUrl ? (normalizeDomain(creds.enterpriseUrl) ?? undefined) : undefined;
 		const baseUrl = getGitHubCopilotBaseUrl(creds.access, domain);
 		const limits = creds.modelLimits;
-		return models.map((m) => {
+		const availableModelIds = limits ? new Set(Object.keys(limits)) : null;
+		const shouldFilterByAvailability = !!availableModelIds && availableModelIds.size > 0;
+		return models.flatMap((m) => {
 			if (m.provider !== "github-copilot") return m;
+			if (shouldFilterByAvailability && !availableModelIds.has(m.id)) return [];
 			const modelLimits = limits?.[m.id];
 			return {
 				...m,
