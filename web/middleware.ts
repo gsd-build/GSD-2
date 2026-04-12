@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 
 /**
- * Next.js proxy — validates bearer token and origin on all API routes.
+ * Next.js middleware — validates bearer token and origin on all API routes.
  *
  * The GSD_WEB_AUTH_TOKEN env var is set at server launch. Every /api/* request
  * must carry a matching `Authorization: Bearer <token>` header. EventSource
@@ -11,7 +11,7 @@ import { NextResponse, type NextRequest } from "next/server"
  * Additionally, if an `Origin` header is present, it must match the expected
  * localhost origin to prevent cross-site request forgery.
  */
-export function proxy(request: NextRequest): NextResponse | undefined {
+export function middleware(request: NextRequest): NextResponse | undefined {
   const { pathname } = request.nextUrl
 
   // Only gate API routes
