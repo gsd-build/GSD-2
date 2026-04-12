@@ -43,6 +43,16 @@ function cleanup(dbPath: string): void {
   }
 }
 
+function withPlatform<T>(platform: NodeJS.Platform, fn: () => T): T {
+  const original = process.platform;
+  Object.defineProperty(process, 'platform', { value: platform });
+  try {
+    return fn();
+  } finally {
+    Object.defineProperty(process, 'platform', { value: original });
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // gsd-db tests
 // ═══════════════════════════════════════════════════════════════════════════
@@ -277,6 +287,26 @@ describe('gsd-db', () => {
     assert.deepStrictEqual(mode?.['journal_mode'], 'wal', 'journal_mode should be wal for file-backed DB');
 
     cleanup(dbPath);
+  });
+
+  test('gsd-db: mmap stays disabled on darwin file-backed DBs', () => {
+    const darwinDbPath = tempDbPath();
+    withPlatform('darwin', () => {
+      openDatabase(darwinDbPath);
+      const adapter = _getAdapter()!;
+      const mmap = adapter.prepare('PRAGMA mmap_size').get();
+      assert.deepStrictEqual(mmap?.['mmap_size'], 0, 'darwin should leave mmap_size disabled');
+      cleanup(darwinDbPath);
+    });
+
+    const linuxDbPath = tempDbPath();
+    withPlatform('linux', () => {
+      openDatabase(linuxDbPath);
+      const adapter = _getAdapter()!;
+      const mmap = adapter.prepare('PRAGMA mmap_size').get();
+      assert.deepStrictEqual(mmap?.['mmap_size'], 67108864, 'non-darwin should still enable mmap_size');
+      cleanup(linuxDbPath);
+    });
   });
 
   test('gsd-db: transaction rollback on error', () => {

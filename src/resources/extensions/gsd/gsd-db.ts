@@ -168,7 +168,7 @@ function initSchema(db: DbAdapter, fileBacked: boolean): void {
   if (fileBacked) db.exec("PRAGMA synchronous = NORMAL");
   if (fileBacked) db.exec("PRAGMA auto_vacuum = INCREMENTAL");
   if (fileBacked) db.exec("PRAGMA cache_size = -8000");   // 8 MB page cache
-  if (fileBacked) db.exec("PRAGMA mmap_size = 67108864");  // 64 MB mmap
+  if (fileBacked && process.platform !== "darwin") db.exec("PRAGMA mmap_size = 67108864");  // 64 MB mmap
   db.exec("PRAGMA temp_store = MEMORY");
   db.exec("PRAGMA foreign_keys = ON");
 
