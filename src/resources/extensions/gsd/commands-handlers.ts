@@ -78,6 +78,10 @@ export function parseDoctorArgs(args: string) {
   return { jsonMode, dryRun, fixFlag, includeBuild, includeTests, mode, requestedScope };
 }
 
+export function isDoctorHealActionable(issue: { fixable: boolean; severity: string }): boolean {
+  return issue.fixable && issue.severity !== "info";
+}
+
 export async function handleDoctor(args: string, ctx: ExtensionCommandContext, pi: ExtensionAPI): Promise<void> {
   const { jsonMode, dryRun, fixFlag, includeBuild, includeTests, mode, requestedScope } = parseDoctorArgs(args);
   const scope = await selectDoctorScope(projectRoot(), requestedScope);
@@ -109,7 +113,7 @@ export async function handleDoctor(args: string, ctx: ExtensionCommandContext, p
       scope: effectiveScope,
       includeWarnings: true,
     });
-    const actionable = unresolved.filter(issue => issue.severity === "error");
+    const actionable = unresolved.filter(isDoctorHealActionable);
     if (actionable.length === 0) {
       ctx.ui.notify("Doctor heal found nothing actionable to hand off to the LLM.", "info");
       return;
