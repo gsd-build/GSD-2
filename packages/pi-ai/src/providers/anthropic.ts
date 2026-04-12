@@ -93,10 +93,12 @@ async function createClient(
 	// API key auth (Anthropic OAuth removed per TOS compliance — use API keys or Claude CLI)
 	// Alibaba Coding Plan uses Bearer token auth instead of x-api-key
 	const isAlibabaProvider = model.provider === "alibaba-coding-plan";
+	// Support custom Anthropic API proxy via ANTHROPIC_BASE_URL
+	const baseUrl = process.env.ANTHROPIC_BASE_URL || model.baseUrl;
 	const client = new AnthropicClass({
 		apiKey: isAlibabaProvider ? null : apiKey,
 		authToken: isAlibabaProvider ? apiKey : undefined,
-		baseURL: model.baseUrl,
+		baseURL: baseUrl,
 		dangerouslyAllowBrowser: true,
 		defaultHeaders: mergeHeaders(
 			{
