@@ -87,6 +87,10 @@ export class AutoSession {
   previousProjectRootEnv: string | null = null;
   hadProjectRootEnv = false;
   projectRootEnvCaptured = false;
+  previousMilestoneLockEnv: string | null = null;
+  hadMilestoneLockEnv = false;
+  milestoneLockEnvCaptured = false;
+  sessionMilestoneLock: string | null = null;
   gitService: GitServiceImpl | null = null;
 
   // ── Dispatch counters ────────────────────────────────────────────────────
@@ -200,6 +204,10 @@ export class AutoSession {
     this.previousProjectRootEnv = null;
     this.hadProjectRootEnv = false;
     this.projectRootEnvCaptured = false;
+    this.previousMilestoneLockEnv = null;
+    this.hadMilestoneLockEnv = false;
+    this.milestoneLockEnvCaptured = false;
+    this.sessionMilestoneLock = null;
     this.gitService = null;
 
     // Dispatch
