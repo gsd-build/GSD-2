@@ -17,6 +17,7 @@ import {
   EXIT_BLOCKED,
   EXIT_CANCELLED,
   mapStatusToExitCode,
+  isQuickCommand,
 } from '../headless-events.js'
 
 import type { OutputFormat, HeadlessJsonResult } from '../headless-types.js'
@@ -422,4 +423,23 @@ test('--bare does not affect other flags', () => {
   assert.equal(opts.timeout, 60000)
   assert.equal(opts.resumeSession, 'sess-abc')
   assert.equal(opts.command, 'auto')
+})
+
+// ─── Quick command classification for workflow subcommands ─────────────────
+
+test('workflow validate is treated as a quick command', () => {
+  assert.equal(isQuickCommand('workflow', ['validate', 'upgrade-probe']), true)
+})
+
+test('workflow list is treated as a quick command', () => {
+  assert.equal(isQuickCommand('workflow', ['list']), true)
+  assert.equal(isQuickCommand('workflow', ['list', 'upgrade-probe']), true)
+})
+
+test('workflow run is not treated as a quick command', () => {
+  assert.equal(isQuickCommand('workflow', ['run', 'upgrade-probe']), false)
+})
+
+test('workflow without a subcommand is not treated as a quick command', () => {
+  assert.equal(isQuickCommand('workflow', []), false)
 })
