@@ -248,6 +248,65 @@ export interface PostUnitContext {
   updateProgressWidget: (ctx: ExtensionContext, unitType: string, unitId: string, state: import("./types.js").GSDState) => void;
 }
 
+export async function autoCommitUnit(
+  basePath: string,
+  unitType: string,
+  unitId: string,
+  ctx?: ExtensionContext,
+): Promise<string | null> {
+  try {
+    let taskContext: TaskCommitContext | undefined;
+
+    if (unitType === "execute-task") {
+      const { milestone: mid, slice: sid, task: tid } = parseUnitId(unitId);
+      if (mid && sid && tid) {
+        const summaryPath = resolveTaskFile(basePath, mid, sid, tid, "SUMMARY");
+        if (summaryPath) {
+          try {
+            const summaryContent = await loadFile(summaryPath);
+            if (summaryContent) {
+              const summary = parseSummary(summaryContent);
+              let ghIssueNumber: number | undefined;
+              try {
+                const { getTaskIssueNumberForCommit } = await import("../github-sync/sync.js");
+                ghIssueNumber = getTaskIssueNumberForCommit(basePath, mid, sid, tid) ?? undefined;
+              } catch (err) {
+                logWarning("engine", `GitHub issue lookup failed: ${err instanceof Error ? err.message : String(err)}`);
+              }
+
+              taskContext = {
+                taskId: `${sid}/${tid}`,
+                taskTitle: summary.title?.replace(/^T\d+:\s*/, "") || tid,
+                oneLiner: summary.oneLiner || undefined,
+                keyFiles: summary.frontmatter.key_files?.filter(f => !f.includes("{{")) || undefined,
+                issueNumber: ghIssueNumber,
+              };
+            }
+          } catch (e) {
+            debugLog("postUnit", { phase: "task-summary-parse", error: String(e) });
+          }
+        }
+      }
+    }
+
+    _resetHasChangesCache();
+
+    if (LIFECYCLE_ONLY_UNITS.has(unitType)) {
+      return null;
+    }
+
+    const commitMsg = autoCommitCurrentBranch(basePath, unitType, unitId, taskContext);
+    if (commitMsg) {
+      ctx?.ui.notify(`Committed: ${commitMsg.split("\n")[0]}`, "info");
+    }
+    return commitMsg;
+  } catch (e) {
+    debugLog("postUnit", { phase: "auto-commit", error: String(e) });
+    ctx?.ui.notify(`Auto-commit failed: ${String(e).split("\n")[0]}`, "warning");
+    return null;
+  }
+}
+
 /**
  * Pre-verification processing: parallel worker signal check, cache invalidation,
  * auto-commit, doctor run, state rebuild, worktree sync, artifact verification.
@@ -287,63 +346,7 @@ export async function postUnitPreVerification(pctx: PostUnitContext, opts?: PreV
   // Auto-commit
   if (s.currentUnit) {
     const unit = s.currentUnit;
-    try {
-      let taskContext: TaskCommitContext | undefined;
-
-      if (s.currentUnit.type === "execute-task") {
-        const { milestone: mid, slice: sid, task: tid } = parseUnitId(s.currentUnit.id);
-        if (mid && sid && tid) {
-          const summaryPath = resolveTaskFile(s.basePath, mid, sid, tid, "SUMMARY");
-          if (summaryPath) {
-            try {
-              const summaryContent = await loadFile(summaryPath);
-              if (summaryContent) {
-                const summary = parseSummary(summaryContent);
-                // Look up GitHub issue number for commit linking
-                let ghIssueNumber: number | undefined;
-                try {
-                  const { getTaskIssueNumberForCommit } = await import("../github-sync/sync.js");
-                  ghIssueNumber = getTaskIssueNumberForCommit(s.basePath, mid, sid, tid) ?? undefined;
-                } catch (err) {
-                  // GitHub sync not available — skip
-                  logWarning("engine", `GitHub issue lookup failed: ${err instanceof Error ? err.message : String(err)}`);
-                }
-
-                taskContext = {
-                  taskId: `${sid}/${tid}`,
-                  taskTitle: summary.title?.replace(/^T\d+:\s*/, "") || tid,
-                  oneLiner: summary.oneLiner || undefined,
-                  keyFiles: summary.frontmatter.key_files?.filter(f => !f.includes("{{")) || undefined,
-                  issueNumber: ghIssueNumber,
-                };
-              }
-            } catch (e) {
-              debugLog("postUnit", { phase: "task-summary-parse", error: String(e) });
-            }
-          }
-        }
-      }
-
-      // Invalidate the nativeHasChanges cache before auto-commit (#1853).
-      // The cache has a 10-second TTL and is keyed by basePath.  A stale
-      // `false` result causes autoCommit to skip staging entirely, leaving
-      // code files only in the working tree where they are destroyed by
-      // `git worktree remove --force` during teardown.
-      _resetHasChangesCache();
-
-      // Skip auto-commit for lifecycle-only units (#2553) — they only touch
-      // `.gsd/` internal state files. Those files are picked up by the next
-      // actual task commit via smartStage().
-      if (!LIFECYCLE_ONLY_UNITS.has(s.currentUnit.type)) {
-        const commitMsg = autoCommitCurrentBranch(s.basePath, s.currentUnit.type, s.currentUnit.id, taskContext);
-        if (commitMsg) {
-          ctx.ui.notify(`Committed: ${commitMsg.split("\n")[0]}`, "info");
-        }
-      }
-    } catch (e) {
-      debugLog("postUnit", { phase: "auto-commit", error: String(e) });
-      ctx.ui.notify(`Auto-commit failed: ${String(e).split("\n")[0]}`, "warning");
-    }
+    await autoCommitUnit(s.basePath, unit.type, unit.id, ctx);
 
     // GitHub sync (non-blocking, opt-in)
     await runSafely("postUnit", "github-sync", async () => {

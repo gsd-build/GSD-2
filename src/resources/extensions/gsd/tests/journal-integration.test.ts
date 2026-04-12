@@ -92,6 +92,7 @@ function makeMockDeps(
     getPriorSliceCompletionBlocker: () => null,
     getMainBranch: () => "main",
     closeoutUnit: async () => {},
+    autoCommitUnit: async () => null,
     recordOutcome: () => {},
     writeLock: () => {},
     captureAvailableSkills: () => {},
@@ -567,7 +568,15 @@ test("unit-end event contains errorContext when unit is cancelled with structure
   const { resolveAgentEndCancelled, _resetPendingResolve } = await import("../auto-loop.js");
   _resetPendingResolve();
 
-  const deps = makeMockDeps(capture);
+  let pauseCalls = 0;
+  let commitCalls = 0;
+  const deps = makeMockDeps(capture, {
+    pauseAuto: async () => { pauseCalls++; },
+    autoCommitUnit: async () => {
+      commitCalls++;
+      return "commit";
+    },
+  });
   const ic = makeIC(deps);
   const iterData: IterationData = {
     unitType: "execute-task",
@@ -593,10 +602,68 @@ test("unit-end event contains errorContext when unit is cancelled with structure
   // Transient timeout cancellations pause (recoverable) instead of hard-stopping
   assert.equal(result.action, "break");
   assert.equal((result as any).reason, "session-timeout");
+  assert.equal(pauseCalls, 1, "timeout cancellations should pause auto-mode exactly once");
+  assert.equal(commitCalls, 1, "timeout cancellations should flush a unit auto-commit once");
 
   // Verify error classification used structured errorContext on the window entry
   const entry = loopState.recentUnits[loopState.recentUnits.length - 1];
   assert.ok(entry.error, "window entry must have error set");
   assert.ok(entry.error!.startsWith("timeout:"), "error must start with category from errorContext");
   assert.ok(entry.error!.includes("Hard timeout error"), "error must include the errorContext message");
+
+  const endEvents = capture.events.filter(e => e.eventType === "unit-end");
+  assert.equal(endEvents.length, 1, "timeout cancellations should still emit unit-end");
+  assert.equal((endEvents[0].data as any).status, "cancelled");
+  assert.equal((endEvents[0].data as any).artifactVerified, false);
+  assert.equal((endEvents[0].data as any).errorContext.category, "timeout");
+});
+
+test("session-failed cancellations close out and emit unit-end before hard stop", async () => {
+  const capture = createEventCapture();
+  const { resolveAgentEndCancelled, _resetPendingResolve } = await import("../auto-loop.js");
+  _resetPendingResolve();
+
+  let closeoutCalls = 0;
+  let commitCalls = 0;
+  let stopCalls = 0;
+  const deps = makeMockDeps(capture, {
+    closeoutUnit: async () => { closeoutCalls++; },
+    autoCommitUnit: async () => {
+      commitCalls++;
+      return "commit";
+    },
+    stopAuto: async () => { stopCalls++; },
+  });
+  const ic = makeIC(deps);
+  const iterData: IterationData = {
+    unitType: "execute-task",
+    unitId: "M001/S01/T01",
+    prompt: "do stuff",
+    finalPrompt: "do stuff",
+    pauseAfterUatDispatch: false,
+    state: { phase: "executing", activeMilestone: { id: "M001" }, activeSlice: { id: "S01" }, registry: [], blockers: [] } as any,
+    mid: "M001",
+    midTitle: "Test",
+    isRetry: false,
+    previousTier: undefined,
+  };
+  const loopState: LoopState = { recentUnits: [{ key: "execute-task/M001/S01/T01" }], stuckRecoveryAttempts: 0, consecutiveFinalizeTimeouts: 0 };
+
+  const unitPromise = runUnitPhase(ic, iterData, loopState);
+  await new Promise(r => setTimeout(r, 50));
+
+  resolveAgentEndCancelled({ message: "session bootstrap exploded", category: "session-failed", isTransient: false });
+
+  const result = await unitPromise;
+  assert.equal(result.action, "break");
+  assert.equal((result as any).reason, "session-failed");
+  assert.equal(closeoutCalls, 1, "session-failed cancellations should close out the unit before stopping");
+  assert.equal(commitCalls, 1, "session-failed cancellations should try one auto-commit flush");
+  assert.equal(stopCalls, 1, "session-failed cancellations should hard-stop auto-mode");
+
+  const endEvents = capture.events.filter(e => e.eventType === "unit-end");
+  assert.equal(endEvents.length, 1, "session-failed cancellations should emit unit-end");
+  assert.equal((endEvents[0].data as any).status, "cancelled");
+  assert.equal((endEvents[0].data as any).artifactVerified, false);
+  assert.equal((endEvents[0].data as any).errorContext.category, "session-failed");
 });

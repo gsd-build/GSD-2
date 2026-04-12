@@ -158,6 +158,29 @@ async function closeoutAndStop(
   await deps.stopAuto(ctx, pi, reason);
 }
 
+async function emitCancelledUnitEnd(
+  ic: IterationContext,
+  unitType: string,
+  unitId: string,
+  unitStartSeq: number,
+  errorContext?: { message: string; category: string; stopReason?: string; isTransient?: boolean; retryAfterMs?: number },
+): Promise<void> {
+  ic.deps.emitJournalEvent({
+    ts: new Date().toISOString(),
+    flowId: ic.flowId,
+    seq: ic.nextSeq(),
+    eventType: "unit-end",
+    data: {
+      unitType,
+      unitId,
+      status: "cancelled",
+      artifactVerified: false,
+      ...(errorContext ? { errorContext } : {}),
+    },
+    causedBy: { flowId: ic.flowId, seq: unitStartSeq },
+  });
+}
+
 // ─── runPreDispatch ───────────────────────────────────────────────────────────
 
 /**
@@ -1330,6 +1353,7 @@ export async function runUnitPhase(
     // Provider-error pause: pauseAuto already handled cleanup and scheduled
     // recovery. Don't hard-stop — just break out of the loop (#2762).
     if (unitResult.errorContext?.category === "provider") {
+      await emitCancelledUnitEnd(ic, unitType, unitId, unitStartSeq, unitResult.errorContext);
       debugLog("autoLoop", { phase: "exit", reason: "provider-pause", isTransient: unitResult.errorContext.isTransient });
       return { action: "break", reason: "provider-pause" };
     }
@@ -1348,9 +1372,23 @@ export async function runUnitPhase(
       );
       debugLog("autoLoop", { phase: "session-timeout-pause", unitType, unitId });
       await deps.pauseAuto(ctx, pi);
+      await deps.autoCommitUnit?.(s.basePath, unitType, unitId, ctx);
+      await emitCancelledUnitEnd(ic, unitType, unitId, unitStartSeq, unitResult.errorContext);
       return { action: "break", reason: "session-timeout" };
     }
     // All other cancelled states (structural errors, non-transient failures): hard stop
+    if (s.currentUnit) {
+      await deps.closeoutUnit(
+        ctx,
+        s.basePath,
+        unitType,
+        unitId,
+        s.currentUnit.startedAt,
+        deps.buildSnapshotOpts(unitType, unitId),
+      );
+    }
+    await deps.autoCommitUnit?.(s.basePath, unitType, unitId, ctx);
+    await emitCancelledUnitEnd(ic, unitType, unitId, unitStartSeq, unitResult.errorContext);
     ctx.ui.notify(
       `Session creation failed for ${unitType} ${unitId}: ${unitResult.errorContext?.message ?? "unknown"}. Stopping auto-mode.`,
       "warning",

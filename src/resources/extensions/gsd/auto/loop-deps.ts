@@ -180,6 +180,12 @@ export interface LoopDeps {
     startedAt: number,
     opts?: CloseoutOptions & Record<string, unknown>,
   ) => Promise<void>;
+  autoCommitUnit?: (
+    basePath: string,
+    unitType: string,
+    unitId: string,
+    ctx?: ExtensionContext,
+  ) => Promise<string | null>;
   recordOutcome: (unitType: string, tier: string, success: boolean) => void;
   writeLock: (
     lockBase: string,
