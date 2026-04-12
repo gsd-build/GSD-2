@@ -15,6 +15,7 @@ import {
   getRequirementById,
   getActiveDecisions,
   getActiveRequirements,
+  getTask,
   transaction,
   _getAdapter,
   _resetProvider,
@@ -325,6 +326,79 @@ describe('gsd-db', () => {
     // D010 should still be there
     const d10 = getDecisionById('D010');
     assert.ok(d10 !== null, 'D010 should survive the failed transaction');
+
+    closeDatabase();
+  });
+
+  test('gsd-db: recreates missing verification evidence dedup index after removing duplicate rows', () => {
+    const dbPath = tempDbPath();
+    openDatabase(dbPath);
+
+    let adapter = _getAdapter()!;
+    adapter.prepare("INSERT INTO milestones (id, created_at) VALUES (?, '')").run('M001');
+    adapter.prepare("INSERT INTO slices (milestone_id, id, created_at) VALUES (?, ?, '')").run('M001', 'S01');
+    adapter.prepare("INSERT INTO tasks (milestone_id, slice_id, id) VALUES (?, ?, ?)").run('M001', 'S01', 'T01');
+    adapter.exec('DROP INDEX IF EXISTS idx_verification_evidence_dedup');
+
+    const insertEvidence = adapter.prepare(
+      `INSERT INTO verification_evidence (
+        task_id, slice_id, milestone_id, command, exit_code, verdict, duration_ms, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    insertEvidence.run('T01', 'S01', 'M001', 'npm test', 1, 'fail', 125, '2026-04-12T00:00:00.000Z');
+    insertEvidence.run('T01', 'S01', 'M001', 'npm test', 1, 'fail', 125, '2026-04-12T00:00:01.000Z');
+    insertEvidence.run('T01', 'S01', 'M001', 'npm run lint', 0, 'pass', 90, '2026-04-12T00:00:02.000Z');
+
+    closeDatabase();
+
+    assert.equal(openDatabase(dbPath), true, 'openDatabase should repair legacy duplicate evidence rows');
+
+    adapter = _getAdapter()!;
+    const countRow = adapter.prepare(
+      `SELECT count(*) as cnt
+       FROM verification_evidence
+       WHERE task_id = ? AND slice_id = ? AND milestone_id = ? AND command = ? AND verdict = ?`,
+    ).get('T01', 'S01', 'M001', 'npm test', 'fail');
+    assert.equal(countRow?.['cnt'], 1, 'duplicate verification evidence rows should be deduplicated before index creation');
+
+    const indexRow = adapter.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_verification_evidence_dedup'",
+    ).get();
+    assert.equal(indexRow?.['name'], 'idx_verification_evidence_dedup', 'dedup index should be recreated on reopen');
+
+    cleanup(dbPath);
+  });
+
+  test('gsd-db: rowToTask tolerates legacy comma-separated task arrays', () => {
+    openDatabase(':memory:');
+
+    const adapter = _getAdapter()!;
+    adapter.prepare("INSERT INTO milestones (id, created_at) VALUES (?, '')").run('M001');
+    adapter.prepare("INSERT INTO slices (milestone_id, id, created_at) VALUES (?, ?, '')").run('M001', 'S01');
+    adapter.prepare(
+      `INSERT INTO tasks (
+        milestone_id, slice_id, id, key_files, key_decisions, files, inputs, expected_output
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'M001',
+      'S01',
+      'T01',
+      '[]',
+      '[]',
+      'tests/test_verify.py, config.yaml, configs/roster_2026-05-11.yaml',
+      'tests/test_verify.py',
+      'reports/summary.md, artifacts/output.json',
+    );
+
+    const task = getTask('M001', 'S01', 'T01');
+    assert.ok(task, 'task should load successfully from DB');
+    assert.deepEqual(task?.files, [
+      'tests/test_verify.py',
+      'config.yaml',
+      'configs/roster_2026-05-11.yaml',
+    ]);
+    assert.deepEqual(task?.inputs, ['tests/test_verify.py']);
+    assert.deepEqual(task?.expected_output, ['reports/summary.md', 'artifacts/output.json']);
 
     closeDatabase();
   });

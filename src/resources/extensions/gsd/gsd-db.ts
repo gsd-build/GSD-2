@@ -162,6 +162,29 @@ function openRawDb(path: string): unknown {
 
 const SCHEMA_VERSION = 14;
 
+function indexExists(db: DbAdapter, name: string): boolean {
+  return !!db.prepare(
+    "SELECT 1 as present FROM sqlite_master WHERE type = 'index' AND name = ?",
+  ).get(name);
+}
+
+function dedupeVerificationEvidenceRows(db: DbAdapter): void {
+  db.exec(`
+    DELETE FROM verification_evidence
+    WHERE rowid NOT IN (
+      SELECT MIN(rowid)
+      FROM verification_evidence
+      GROUP BY task_id, slice_id, milestone_id, command, verdict
+    )
+  `);
+}
+
+function ensureVerificationEvidenceDedupIndex(db: DbAdapter): void {
+  if (indexExists(db, "idx_verification_evidence_dedup")) return;
+  dedupeVerificationEvidenceRows(db);
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_verification_evidence_dedup ON verification_evidence(task_id, slice_id, milestone_id, command, verdict)");
+}
+
 function initSchema(db: DbAdapter, fileBacked: boolean): void {
   if (fileBacked) db.exec("PRAGMA journal_mode=WAL");
   if (fileBacked) db.exec("PRAGMA busy_timeout = 5000");
@@ -409,7 +432,7 @@ function initSchema(db: DbAdapter, fileBacked: boolean): void {
     db.exec("CREATE INDEX IF NOT EXISTS idx_milestones_status ON milestones(status)");
     db.exec("CREATE INDEX IF NOT EXISTS idx_quality_gates_pending ON quality_gates(milestone_id, slice_id, status)");
     db.exec("CREATE INDEX IF NOT EXISTS idx_verification_evidence_task ON verification_evidence(milestone_id, slice_id, task_id)");
-    db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_verification_evidence_dedup ON verification_evidence(task_id, slice_id, milestone_id, command, verdict)");
+    ensureVerificationEvidenceDedupIndex(db);
 
     // v14 index — slice dependency lookups
     db.exec("CREATE INDEX IF NOT EXISTS idx_slice_deps_target ON slice_dependencies(milestone_id, depends_on_slice_id)");
@@ -742,7 +765,7 @@ function migrateSchema(db: DbAdapter): void {
       db.exec("CREATE INDEX IF NOT EXISTS idx_milestones_status ON milestones(status)");
       db.exec("CREATE INDEX IF NOT EXISTS idx_quality_gates_pending ON quality_gates(milestone_id, slice_id, status)");
       db.exec("CREATE INDEX IF NOT EXISTS idx_verification_evidence_task ON verification_evidence(milestone_id, slice_id, task_id)");
-      db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_verification_evidence_dedup ON verification_evidence(task_id, slice_id, milestone_id, command, verdict)");
+      ensureVerificationEvidenceDedupIndex(db);
       db.prepare("INSERT INTO schema_version (version, applied_at) VALUES (:version, :applied_at)").run({
         ":version": 13,
         ":applied_at": new Date().toISOString(),
@@ -1540,6 +1563,30 @@ export interface TaskRow {
 }
 
 function rowToTask(row: Record<string, unknown>): TaskRow {
+  const parseTaskArray = (value: unknown): string[] => {
+    if (Array.isArray(value)) {
+      return value.filter((entry): entry is string => typeof entry === "string");
+    }
+    if (typeof value !== "string") return [];
+
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((entry): entry is string => typeof entry === "string");
+      }
+      if (typeof parsed === "string" && parsed.trim()) {
+        return [parsed.trim()];
+      }
+    } catch {
+      // Older/corrupt DB rows may contain raw comma-separated paths instead of JSON arrays.
+    }
+
+    return trimmed.split(",").map((entry) => entry.trim()).filter(Boolean);
+  };
+
   return {
     milestone_id: row["milestone_id"] as string,
     slice_id: row["slice_id"] as string,
@@ -1559,10 +1606,10 @@ function rowToTask(row: Record<string, unknown>): TaskRow {
     full_summary_md: row["full_summary_md"] as string,
     description: (row["description"] as string) ?? "",
     estimate: (row["estimate"] as string) ?? "",
-    files: JSON.parse((row["files"] as string) || "[]"),
+    files: parseTaskArray(row["files"]),
     verify: (row["verify"] as string) ?? "",
-    inputs: JSON.parse((row["inputs"] as string) || "[]"),
-    expected_output: JSON.parse((row["expected_output"] as string) || "[]"),
+    inputs: parseTaskArray(row["inputs"]),
+    expected_output: parseTaskArray(row["expected_output"]),
     observability_impact: (row["observability_impact"] as string) ?? "",
     full_plan_md: (row["full_plan_md"] as string) ?? "",
     sequence: (row["sequence"] as number) ?? 0,
