@@ -3,12 +3,15 @@ const SUBCOMMAND_HELP: Record<string, string> = {
     'Usage: gsd config',
     '',
     'Re-run the interactive setup wizard to configure:',
-    '  - LLM provider (Anthropic, OpenAI, Google, etc.)',
+    '  - LLM provider (Anthropic, OpenAI, Google, OpenRouter, Ollama, LM Studio, etc.)',
     '  - Web search provider (Brave, Tavily, built-in)',
     '  - Remote questions (Discord, Slack, Telegram)',
     '  - Tool API keys (Context7, Jina, Groq)',
     '',
     'All steps are skippable and can be changed later with /login or /search-provider.',
+    '',
+    'For detailed provider setup instructions (OpenRouter, Ollama, LM Studio, vLLM,',
+    'and other OpenAI-compatible endpoints), see docs/providers.md.',
   ].join('\n'),
 
   update: [
@@ -154,7 +157,7 @@ export function printHelp(version: string): void {
   process.stdout.write('  --print, -p              Single-shot print mode\n')
   process.stdout.write('  --continue, -c           Resume the most recent session\n')
   process.stdout.write('  --worktree, -w [name]    Start in an isolated worktree (auto-named if omitted)\n')
-  process.stdout.write('  --model <id>             Override model (e.g. claude-opus-4-6)\n')
+  process.stdout.write('  --model <id>             Override model (e.g. provider/model-id)\n')
   process.stdout.write('  --no-session             Disable session persistence\n')
   process.stdout.write('  --extension <path>       Load additional extension\n')
   process.stdout.write('  --tools <a,b,c>          Restrict available tools\n')

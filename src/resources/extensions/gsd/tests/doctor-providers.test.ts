@@ -574,6 +574,42 @@ test("runProviderChecks reports ok for OpenAI via openai-codex auth.json (#2922)
   rmSync(tmpHome, { recursive: true, force: true });
 });
 
+test("runProviderChecks reports ok for claude-code without any API key", () => {
+  const repo = realpathSync(mkdtempSync(join(tmpdir(), "gsd-providers-cc-repo-")));
+  mkdirSync(join(repo, ".gsd"), { recursive: true });
+  writeFileSync(
+    join(repo, ".gsd", "PREFERENCES.md"),
+    [
+      "---",
+      "models:",
+      "  execution:",
+      "    model: claude-sonnet-4-6",
+      "    provider: claude-code",
+      "---",
+      "",
+    ].join("\n"),
+  );
+
+  const tmpHome = realpathSync(mkdtempSync(join(tmpdir(), "gsd-providers-cc-home-")));
+
+  withEnv({
+    HOME: tmpHome,
+    ANTHROPIC_API_KEY: undefined,
+    ANTHROPIC_OAUTH_TOKEN: undefined,
+  }, () => {
+    withCwd(repo, () => {
+      const results = runProviderChecks();
+      const cc = results.find(r => r.name === "claude-code");
+      assert.ok(cc, "claude-code result should exist");
+      assert.equal(cc!.status, "ok", "claude-code uses CLI auth — must be ok without API keys");
+      assert.ok(cc!.message.includes("CLI auth"), "should indicate CLI auth");
+    });
+  });
+
+  rmSync(repo, { recursive: true, force: true });
+  rmSync(tmpHome, { recursive: true, force: true });
+});
+
 test("PROVIDER_ROUTES includes google-gemini-cli as route for google (#2922)", async () => {
   const { readFileSync: readFS } = await import("node:fs");
   const { dirname: dirn, join: joinPath } = await import("node:path");

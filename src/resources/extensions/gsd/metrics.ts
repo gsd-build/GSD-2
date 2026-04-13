@@ -41,6 +41,7 @@ export interface UnitMetrics {
   model: string;           // model ID used
   startedAt: number;       // ms timestamp
   finishedAt: number;      // ms timestamp
+  autoSessionKey?: string; // identifies one auto-mode run across pause/resume
   tokens: TokenCounts;
   cost: number;            // total USD cost
   toolCalls: number;
@@ -133,7 +134,16 @@ export function snapshotUnitMetrics(
   unitId: string,
   startedAt: number,
   model: string,
-  opts?: { tier?: string; modelDowngraded?: boolean; contextWindowTokens?: number; truncationSections?: number; continueHereFired?: boolean; promptCharCount?: number; baselineCharCount?: number },
+  opts?: {
+    tier?: string;
+    modelDowngraded?: boolean;
+    contextWindowTokens?: number;
+    truncationSections?: number;
+    continueHereFired?: boolean;
+    promptCharCount?: number;
+    baselineCharCount?: number;
+    autoSessionKey?: string;
+  },
 ): UnitMetrics | null {
   if (!ledger) return null;
 
@@ -181,6 +191,7 @@ export function snapshotUnitMetrics(
     model,
     startedAt,
     finishedAt: Date.now(),
+    ...(opts?.autoSessionKey ? { autoSessionKey: opts.autoSessionKey } : {}),
     tokens,
     cost,
     toolCalls,
@@ -567,7 +578,34 @@ export function loadLedgerFromDisk(base: string): MetricsLedger | null {
 }
 
 function loadLedger(base: string): MetricsLedger {
-  return loadJsonFile(metricsPath(base), isMetricsLedger, defaultLedger);
+  const raw = loadJsonFile(metricsPath(base), isMetricsLedger, defaultLedger);
+  const before = raw.units.length;
+  raw.units = deduplicateUnits(raw.units);
+  if (raw.units.length < before) {
+    // Persist the cleaned ledger so duplicates don't re-accumulate
+    saveLedger(base, raw);
+  }
+  return raw;
+}
+
+/**
+ * Collapse duplicate entries with the same (type, id, startedAt) triple.
+ * Keeps the entry with the highest finishedAt (the most complete snapshot).
+ *
+ * This is a defensive measure against idle-watchdog race conditions that can
+ * produce duplicate entries on disk despite the in-memory idempotency guard
+ * in snapshotUnitMetrics(). See #1943.
+ */
+function deduplicateUnits(units: UnitMetrics[]): UnitMetrics[] {
+  const map = new Map<string, UnitMetrics>();
+  for (const u of units) {
+    const key = `${u.type}\0${u.id}\0${u.startedAt}`;
+    const existing = map.get(key);
+    if (!existing || u.finishedAt > existing.finishedAt) {
+      map.set(key, u);
+    }
+  }
+  return Array.from(map.values());
 }
 
 function saveLedger(base: string, data: MetricsLedger): void {

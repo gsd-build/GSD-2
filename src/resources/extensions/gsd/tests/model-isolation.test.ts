@@ -1,5 +1,6 @@
 /**
- * Tests for model config isolation between concurrent instances (#650, #1065).
+ * Tests for model config isolation between concurrent instances (#650, #1065)
+ * and session-scoped model precedence behavior.
  */
 
 import { describe, it, beforeEach, afterEach } from "node:test";
@@ -153,5 +154,63 @@ describe("session model recovery on error (#1065)", () => {
     const shouldAttemptRecovery = sessionModel !== null;
     assert.ok(!shouldAttemptRecovery,
       "Recovery should be skipped when no session model was captured");
+  });
+});
+
+// ─── Manual session model override precedence ───────────────────────────────
+
+describe("manual session model override precedence", () => {
+  it("manual session override takes priority over preferences and ctx.model", () => {
+    const manualSessionOverride = { provider: "openai-codex", id: "gpt-5.4" };
+    const preferredModel = { provider: "anthropic", id: "claude-sonnet-4-6" };
+    const ctxModel = { provider: "claude-code", id: "claude-opus-4-6" };
+
+    const startModelSnapshot = manualSessionOverride
+      ?? preferredModel
+      ?? { provider: ctxModel.provider, id: ctxModel.id };
+
+    assert.equal(startModelSnapshot.provider, "openai-codex");
+    assert.equal(startModelSnapshot.id, "gpt-5.4");
+  });
+
+  it("falls back to preferences when no manual override is active", () => {
+    const manualSessionOverride: { provider: string; id: string } | undefined = undefined;
+    const preferredModel = { provider: "anthropic", id: "claude-sonnet-4-6" };
+    const ctxModel = { provider: "claude-code", id: "claude-opus-4-6" };
+
+    const startModelSnapshot = manualSessionOverride
+      ?? preferredModel
+      ?? { provider: ctxModel.provider, id: ctxModel.id };
+
+    assert.equal(startModelSnapshot.provider, "anthropic");
+    assert.equal(startModelSnapshot.id, "claude-sonnet-4-6");
+  });
+
+  it("falls back to ctx.model when no manual override or preferences are configured", () => {
+    const manualSessionOverride: { provider: string; id: string } | undefined = undefined;
+    const preferredModel: { provider: string; id: string } | undefined = undefined;
+    const ctxModel = { provider: "claude-code", id: "claude-opus-4-6" };
+
+    const startModelSnapshot = manualSessionOverride
+      ?? preferredModel
+      ?? { provider: ctxModel.provider, id: ctxModel.id };
+
+    assert.equal(startModelSnapshot.provider, "claude-code");
+    assert.equal(startModelSnapshot.id, "claude-opus-4-6");
+  });
+
+  it("handles null ctx.model with no override or preferences gracefully", () => {
+    const manualSessionOverride: { provider: string; id: string } | undefined = undefined;
+    const preferredModel: { provider: string; id: string } | undefined = undefined;
+    // Use a function to prevent TS from narrowing to `never` in the ternary
+    function getCtxModel(): { provider: string; id: string } | null { return null; }
+    const ctxModel = getCtxModel();
+
+    const startModelSnapshot = manualSessionOverride
+      ?? preferredModel
+      ?? (ctxModel ? { provider: ctxModel.provider, id: ctxModel.id } : null);
+
+    assert.equal(startModelSnapshot, null,
+      "should be null when no model source is available");
   });
 });

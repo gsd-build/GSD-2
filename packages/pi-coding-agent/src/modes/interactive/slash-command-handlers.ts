@@ -136,7 +136,7 @@ export async function dispatchSlashCommand(
 		await ctx.handleModelCommand(searchTerm);
 		return true;
 	}
-	if (text.startsWith("/export")) {
+	if (text === "/export" || text.startsWith("/export ")) {
 		await handleExportCommand(text, ctx);
 		return true;
 	}
@@ -247,8 +247,7 @@ export async function dispatchSlashCommand(
 		if (extensionRunner?.getCommand(commandName)) {
 			return false; // handled by extension system
 		}
-		const command = text.split(/\s/)[0];
-		ctx.showError(`Unknown command: ${command}. Type /help for available commands.`);
+				ctx.showError(`Unknown command: /${commandName}. Type /help for available commands.`);
 		return true;
 	}
 
@@ -321,11 +320,13 @@ async function handleShareCommand(ctx: SlashCommandContext): Promise<void> {
 		ctx.showStatus("Share cancelled");
 	};
 
-	try {
-		const result = await new Promise<{ stdout: string; stderr: string; code: number | null }>((resolve) => {
-			proc = spawn("gh", ["gist", "create", "--public=false", tmpFile]);
-			let stdout = "";
-			let stderr = "";
+		try {
+			const result = await new Promise<{ stdout: string; stderr: string; code: number | null }>((resolve) => {
+				proc = spawn("gh", ["gist", "create", "--public=false", tmpFile], {
+					shell: process.platform === "win32",
+				});
+				let stdout = "";
+				let stderr = "";
 			proc.stdout?.on("data", (data) => {
 				stdout += data.toString();
 			});
@@ -513,12 +514,14 @@ function handleHotkeysCommand(ctx: SlashCommandContext): void {
 	const suspend = getAppKeyDisplay(ctx.keybindings, "suspend");
 	const cycleThinkingLevel = getAppKeyDisplay(ctx.keybindings, "cycleThinkingLevel");
 	const cycleModelForward = getAppKeyDisplay(ctx.keybindings, "cycleModelForward");
+	const cycleModelBackward = getAppKeyDisplay(ctx.keybindings, "cycleModelBackward");
 	const selectModel = getAppKeyDisplay(ctx.keybindings, "selectModel");
 	const expandTools = getAppKeyDisplay(ctx.keybindings, "expandTools");
 	const toggleThinking = getAppKeyDisplay(ctx.keybindings, "toggleThinking");
 	const externalEditor = getAppKeyDisplay(ctx.keybindings, "externalEditor");
 	const followUp = getAppKeyDisplay(ctx.keybindings, "followUp");
 	const dequeue = getAppKeyDisplay(ctx.keybindings, "dequeue");
+	const pasteImage = getAppKeyDisplay(ctx.keybindings, "pasteImage");
 
 	let hotkeys = `
 **Navigation**
@@ -554,14 +557,14 @@ function handleHotkeysCommand(ctx: SlashCommandContext): void {
 | \`${exit}\` | Exit (when editor is empty) |
 | \`${suspend}\` | Suspend to background |
 | \`${cycleThinkingLevel}\` | Cycle thinking level |
-| \`${cycleModelForward}\` | Cycle models |
+| \`${cycleModelForward}\` / \`${cycleModelBackward}\` | Cycle models |
 | \`${selectModel}\` | Open model selector |
 | \`${expandTools}\` | Toggle tool output expansion |
 | \`${toggleThinking}\` | Toggle thinking block visibility |
 | \`${externalEditor}\` | Edit message in external editor |
 | \`${followUp}\` | Queue follow-up message |
 | \`${dequeue}\` | Restore queued messages |
-| \`Ctrl+V\` | Paste image from clipboard |
+| \`${pasteImage}\` | Paste image from clipboard |
 | \`/\` | Slash commands |
 | \`!\` | Run bash command |
 | \`!!\` | Run bash command (excluded from context) |

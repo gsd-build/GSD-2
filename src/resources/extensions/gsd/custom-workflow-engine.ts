@@ -22,7 +22,6 @@ import type {
 } from "./engine-types.js";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { parse } from "yaml";
 import {
   readGraph,
   writeGraph,
@@ -32,15 +31,13 @@ import {
   type WorkflowGraph,
 } from "./graph.js";
 import { injectContext } from "./context-injector.js";
-import type { WorkflowDefinition, StepDefinition } from "./definition-loader.js";
+import type { StepDefinition } from "./definition-loader.js";
+import { readFrozenDefinition } from "./definition-io.js";
 import { parseUnitId } from "./unit-id.js";
+import { withFileLock } from "./file-lock.js";
 
-/** Read and parse the frozen DEFINITION.yaml from a run directory. */
-export function readFrozenDefinition(runDir: string): WorkflowDefinition {
-  const defPath = join(runDir, "DEFINITION.yaml");
-  const raw = readFileSync(defPath, "utf-8");
-  return parse(raw, { schema: "core" }) as WorkflowDefinition;
-}
+// Re-export for downstream consumers
+export { readFrozenDefinition } from "./definition-io.js";
 
 export class CustomWorkflowEngine implements WorkflowEngine {
   readonly engineId = "custom";
@@ -179,22 +176,28 @@ export class CustomWorkflowEngine implements WorkflowEngine {
     state: EngineState,
     completedStep: CompletedStep,
   ): Promise<ReconcileResult> {
-    const graph = state.raw as WorkflowGraph;
+    const graphPath = join(this.runDir, "GRAPH.yaml");
 
-    // Extract stepId from "<workflowName>/<stepId>"
-    const { milestone, slice, task } = parseUnitId(completedStep.unitId);
-    const stepId = task ?? slice ?? milestone;
+    return await withFileLock(graphPath, () => {
+      // Re-read the graph from disk so we do not overwrite concurrent
+      // workflow edits with a stale in-memory snapshot from deriveState().
+      const graph = readGraph(this.runDir);
 
-    const updatedGraph = markStepComplete(graph, stepId);
-    writeGraph(this.runDir, updatedGraph);
+      // Extract stepId from "<workflowName>/<stepId>"
+      const { milestone, slice, task } = parseUnitId(completedStep.unitId);
+      const stepId = task ?? slice ?? milestone;
 
-    const allDone = updatedGraph.steps.every(
-      (s) => s.status === "complete" || s.status === "expanded",
-    );
+      const updatedGraph = markStepComplete(graph, stepId);
+      writeGraph(this.runDir, updatedGraph);
 
-    return {
-      outcome: allDone ? "milestone-complete" : "continue",
-    };
+      const allDone = updatedGraph.steps.every(
+        (s) => s.status === "complete" || s.status === "expanded",
+      );
+
+      return {
+        outcome: allDone ? "milestone-complete" : "continue",
+      };
+    });
   }
 
   /**

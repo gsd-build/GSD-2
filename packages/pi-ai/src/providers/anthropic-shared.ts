@@ -31,9 +31,9 @@ import type {
 export type AnthropicApi = "anthropic-messages" | "anthropic-vertex";
 import type { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
-import { repairToolJson } from "../utils/repair-tool-json.js";
+import { hasXmlParameterTags, repairToolJson } from "../utils/repair-tool-json.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
-import { transformMessages } from "./transform-messages.js";
+import { transformMessagesWithReport } from "./transform-messages.js";
 
 export type AnthropicEffort = "low" | "medium" | "high" | "max";
 
@@ -235,7 +235,7 @@ export function convertMessages(
 ): MessageParam[] {
 	const params: MessageParam[] = [];
 
-	const transformedMessages = transformMessages(messages, model, normalizeToolCallId);
+	const transformedMessages = transformMessagesWithReport(messages, model, normalizeToolCallId, "anthropic-messages");
 
 	for (let i = 0; i < transformedMessages.length; i++) {
 		const msg = transformedMessages[i];
@@ -394,10 +394,14 @@ export function convertMessages(
 	return params;
 }
 
-export function convertTools(tools: Tool[], isOAuthToken: boolean): Anthropic.Messages.Tool[] {
+export function convertTools(
+	tools: Tool[],
+	isOAuthToken: boolean,
+	cacheControl?: { type: "ephemeral"; ttl?: "1h" },
+): Anthropic.Messages.Tool[] {
 	if (!tools) return [];
 
-	return tools.map((tool) => {
+	const result = tools.map((tool) => {
 		const jsonSchema = tool.parameters as any;
 
 		return {
@@ -410,6 +414,13 @@ export function convertTools(tools: Tool[], isOAuthToken: boolean): Anthropic.Me
 			},
 		};
 	});
+
+	// Add cache breakpoint to last tool — covers entire tool block
+	if (cacheControl && result.length > 0) {
+		(result[result.length - 1] as any).cache_control = cacheControl;
+	}
+
+	return result;
 }
 
 export function buildParams(
@@ -457,7 +468,7 @@ export function buildParams(
 	}
 
 	if (context.tools) {
-		params.tools = convertTools(context.tools, isOAuthToken);
+		params.tools = convertTools(context.tools, isOAuthToken, cacheControl);
 	}
 
 	if (options?.thinkingEnabled && model.reasoning) {
@@ -701,12 +712,13 @@ export function processAnthropicStream(
 							// repair (#2660) before falling back to the lenient streaming
 							// parser which silently swallows errors.
 							const raw = block.partialJson ?? "";
+							const rawForParse = hasXmlParameterTags(raw) ? repairToolJson(raw) : raw;
 							let parsed: Record<string, any> | undefined;
 							try {
-								parsed = JSON.parse(raw);
+								parsed = JSON.parse(rawForParse);
 							} catch {
 								try {
-									parsed = JSON.parse(repairToolJson(raw));
+									parsed = JSON.parse(repairToolJson(rawForParse));
 								} catch {
 									// Fall through to streaming parser
 								}

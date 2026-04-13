@@ -185,11 +185,35 @@ const PROVIDER_ROUTES: Record<string, string[]> = {
   google: ["google-gemini-cli"],
 };
 
+/**
+ * Providers that use external CLI authentication (not API keys).
+ * These are always considered "ok" — the host CLI handles auth.
+ */
+const CLI_AUTH_PROVIDERS = new Set([
+  "claude-code",
+  "openai-codex",
+  "google-gemini-cli",
+  "google-antigravity",
+]);
+
 function checkLlmProviders(): ProviderCheckResult[] {
   const required = collectConfiguredModelProviders();
   const results: ProviderCheckResult[] = [];
 
   for (const providerId of required) {
+    // CLI-authenticated providers don't need API keys — skip key check
+    if (CLI_AUTH_PROVIDERS.has(providerId)) {
+      const info = PROVIDER_REGISTRY.find(p => p.id === providerId);
+      results.push({
+        name: providerId,
+        label: info?.label ?? providerId,
+        category: "llm",
+        status: "ok",
+        message: `${info?.label ?? providerId} — CLI auth (no key needed)`,
+        required: true,
+      });
+      continue;
+    }
     const info = PROVIDER_REGISTRY.find(p => p.id === providerId);
     const label = providerId === "anthropic-vertex"
       ? "Anthropic Vertex"

@@ -30,6 +30,8 @@ import {
   FIRE_AND_FORGET_METHODS,
   IDLE_TIMEOUT_MS,
   NEW_MILESTONE_IDLE_TIMEOUT_MS,
+  isInteractiveHeadlessTool,
+  shouldArmHeadlessIdleTimeout,
   EXIT_SUCCESS,
   EXIT_ERROR,
   EXIT_BLOCKED,
@@ -259,7 +261,9 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
   // per-unit timeout via auto-supervisor. Disable the overall timeout unless the
   // user explicitly set --timeout.
   const isAutoMode = options.command === 'auto'
-  const isMultiTurnCommand = options.command === 'auto' || options.command === 'next'
+  // discuss and plan are multi-turn: they involve multiple question rounds,
+  // codebase scanning, and artifact writing before the workflow completes (#3547).
+  const isMultiTurnCommand = options.command === 'auto' || options.command === 'next' || options.command === 'discuss' || options.command === 'plan'
   if (isAutoMode && options.timeout === 300_000) {
     options.timeout = 0
   }
@@ -365,6 +369,7 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
   let exitCode = 0
   let milestoneReady = false  // tracks "Milestone X ready." for auto-chaining
   const recentEvents: TrackedEvent[] = []
+  const interactiveToolCallIds = new Set<string>()
 
   // JSON batch mode: cost aggregation (cumulative-max pattern per K004)
   let cumulativeCostUsd = 0
@@ -458,7 +463,7 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
 
   function resetIdleTimer(): void {
     if (idleTimer) clearTimeout(idleTimer)
-    if (toolCallCount > 0) {
+    if (shouldArmHeadlessIdleTimeout(toolCallCount, interactiveToolCallIds.size)) {
       idleTimer = setTimeout(() => {
         completed = true
         resolveCompletion()
@@ -482,6 +487,20 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
   client.onEvent((event) => {
     const eventObj = event as unknown as Record<string, unknown>
     trackEvent(eventObj)
+
+    const eventType = String(eventObj.type ?? '')
+    if (eventType === 'tool_execution_start') {
+      const toolCallId = String(eventObj.toolCallId ?? eventObj.id ?? '')
+      if (toolCallId && isInteractiveHeadlessTool(String(eventObj.toolName ?? ''))) {
+        interactiveToolCallIds.add(toolCallId)
+      }
+    } else if (eventType === 'tool_execution_end') {
+      const toolCallId = String(eventObj.toolCallId ?? eventObj.id ?? '')
+      if (toolCallId) {
+        interactiveToolCallIds.delete(toolCallId)
+      }
+    }
+
     resetIdleTimer()
 
     // Answer injector: observe events for question metadata
@@ -490,7 +509,6 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
     // --json / --output-format stream-json: forward events as JSONL to stdout (filtered if --events)
     // --output-format json (batch mode): suppress streaming, track cost for final result
     if (options.json && options.outputFormat === 'stream-json') {
-      const eventType = String(eventObj.type ?? '')
       if (!options.eventFilter || options.eventFilter.has(eventType)) {
         process.stdout.write(JSON.stringify(eventObj) + '\n')
       }

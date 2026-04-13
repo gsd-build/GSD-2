@@ -39,7 +39,7 @@ import {
 	finalizeStream,
 	handleStreamError,
 } from "./openai-shared.js";
-import { transformMessages } from "./transform-messages.js";
+import { transformMessagesWithReport } from "./transform-messages.js";
 
 /**
  * Check if conversation messages contain tool calls or tool results.
@@ -343,6 +343,7 @@ function buildParams(model: Model<"openai-completions">, context: Context, optio
 
 	if (context.tools) {
 		params.tools = convertTools(context.tools, compat);
+		maybeAddOpenRouterAnthropicToolCacheControl(model, params.tools);
 	} else if (hasToolHistory(context.messages)) {
 		// Anthropic (via LiteLLM/proxy) requires tools param when conversation has tool_calls/tool_results
 		params.tools = [];
@@ -377,6 +378,19 @@ function buildParams(model: Model<"openai-completions">, context: Context, optio
 	}
 
 	return params;
+}
+
+function maybeAddOpenRouterAnthropicToolCacheControl(
+	model: Model<"openai-completions">,
+	tools: OpenAI.Chat.Completions.ChatCompletionTool[] | undefined,
+): void {
+	if (model.provider !== "openrouter" || !model.id.startsWith("anthropic/")) return;
+	if (!tools?.length) return;
+
+	const lastTool = tools[tools.length - 1];
+	if ("function" in lastTool) {
+		Object.assign(lastTool.function, { cache_control: { type: "ephemeral" } });
+	}
 }
 
 function mapReasoningEffort(
@@ -441,7 +455,7 @@ export function convertMessages(
 		return id;
 	};
 
-	const transformedMessages = transformMessages(context.messages, model, (id) => normalizeToolCallId(id));
+	const transformedMessages = transformMessagesWithReport(context.messages, model, (id) => normalizeToolCallId(id), "openai-completions");
 
 	if (context.systemPrompt) {
 		const useDeveloperRole = model.reasoning && compat.supportsDeveloperRole;

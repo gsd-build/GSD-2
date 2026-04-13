@@ -44,10 +44,13 @@ export function resetRetryState(state: RetryState): void {
 
 const PERMANENT_RE = /auth|unauthorized|forbidden|invalid.*key|invalid.*api|billing|quota exceeded|account/i;
 const RATE_LIMIT_RE = /rate.?limit|too many requests|429/i;
+// OpenRouter affordability-style quota errors should be treated as transient
+// so core retry logic can lower maxTokens and continue in-session.
+const AFFORDABILITY_RE = /requires more credits|can only afford|insufficient credits|not enough credits|fewer max_tokens/i;
 const NETWORK_RE = /network|ECONNRESET|ETIMEDOUT|ECONNREFUSED|socket hang up|fetch failed|connection.*reset|dns/i;
 const SERVER_RE = /internal server error|500|502|503|overloaded|server_error|api_error|service.?unavailable/i;
 // ECONNRESET/ECONNREFUSED are in NETWORK_RE (same-model retry first).
-const CONNECTION_RE = /terminated|connection.?refused|other side closed|EPIPE|network.?(?:is\s+)?unavailable|stream_exhausted(?:_without_result)?/i;
+const CONNECTION_RE = /terminated|connection.?(?:refused|error)|other side closed|EPIPE|network.?(?:is\s+)?unavailable|stream_exhausted(?:_without_result)?/i;
 // Catch-all for V8 JSON.parse errors: all modern variants end with "in JSON at position \d+".
 // This eliminates the need to enumerate every error message variant individually.
 const STREAM_RE = /in JSON at position \d+|Unexpected end of JSON|SyntaxError.*JSON/i;
@@ -67,7 +70,7 @@ const RESET_DELAY_RE = /reset in (\d+)s/i;
  */
 export function classifyError(errorMsg: string, retryAfterMs?: number): ErrorClass {
   const isPermanent = PERMANENT_RE.test(errorMsg);
-  const isRateLimit = RATE_LIMIT_RE.test(errorMsg);
+  const isRateLimit = RATE_LIMIT_RE.test(errorMsg) || AFFORDABILITY_RE.test(errorMsg);
 
   // 1. Permanent — but rate limit takes precedence
   if (isPermanent && !isRateLimit) {

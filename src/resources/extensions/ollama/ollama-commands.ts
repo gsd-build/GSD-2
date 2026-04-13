@@ -103,7 +103,7 @@ async function handleStatus(ctx: any): Promise<void> {
 			function handleInput(_data: string) {
 				done(undefined);
 			}
-			function render(width: number): string[] {
+			function render(_width: number): string[] {
 				return [
 					...lines.map((l) => theme.fg("text", l)),
 					"",
@@ -138,7 +138,7 @@ async function handleList(ctx: any): Promise<void> {
 			function handleInput(_data: string) {
 				done(undefined);
 			}
-			function render(width: number): string[] {
+			function render(_width: number): string[] {
 				return lines.map((l) => theme.fg("text", l));
 			}
 			return { render, handleInput, invalidate: () => {} };
@@ -248,7 +248,7 @@ async function handlePs(ctx: any): Promise<void> {
 				function handleInput(_data: string) {
 					done(undefined);
 				}
-				function render(width: number): string[] {
+				function render(_width: number): string[] {
 					return lines.map((l) => theme.fg("text", l));
 				}
 				return { render, handleInput, invalidate: () => {} };

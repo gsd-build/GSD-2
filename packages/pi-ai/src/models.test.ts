@@ -109,6 +109,141 @@ describe("model registry — custom zai provider (GLM-5.1)", () => {
 	});
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+// New provider: alibaba-dashscope (feat: #3891)
+//
+// Regular DashScope API for users without the Coding Plan.
+// Separate from alibaba-coding-plan — different endpoint, auth, and pricing.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("model registry — alibaba-dashscope provider", () => {
+	it("alibaba-dashscope is a registered provider", () => {
+		const providers = getProviders();
+		assert.ok(
+			providers.includes("alibaba-dashscope"),
+			`Expected "alibaba-dashscope" in providers, got: ${providers.join(", ")}`,
+		);
+	});
+
+	it("alibaba-dashscope has all expected models", () => {
+		const models = getModels("alibaba-dashscope");
+		const ids = models.map((m) => m.id).sort();
+		const expected = [
+			"qwen3-coder-plus",
+			"qwen3-max",
+			"qwen3.5-flash",
+			"qwen3.5-plus",
+			"qwen3.6-plus",
+		];
+		assert.deepEqual(ids, expected);
+	});
+
+	it("alibaba-dashscope models use the international DashScope base URL", () => {
+		const models = getModels("alibaba-dashscope");
+		for (const model of models) {
+			assert.equal(
+				model.baseUrl,
+				"https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+				`Model ${model.id} has wrong baseUrl: ${model.baseUrl}`,
+			);
+		}
+	});
+
+	it("alibaba-dashscope models use openai-completions API", () => {
+		const models = getModels("alibaba-dashscope");
+		for (const model of models) {
+			assert.equal(model.api, "openai-completions", `Model ${model.id} has wrong api: ${model.api}`);
+		}
+	});
+
+	it("alibaba-dashscope models have provider set correctly", () => {
+		const models = getModels("alibaba-dashscope");
+		for (const model of models) {
+			assert.equal(
+				model.provider,
+				"alibaba-dashscope",
+				`Model ${model.id} has wrong provider: ${model.provider}`,
+			);
+		}
+	});
+
+	it("alibaba-dashscope models all have 1M context window", () => {
+		const models = getModels("alibaba-dashscope");
+		for (const model of models) {
+			assert.equal(model.contextWindow, 1_000_000, `Model ${model.id} has wrong contextWindow: ${model.contextWindow}`);
+		}
+	});
+
+	it("alibaba-dashscope models have positive paid costs (not free-tier)", () => {
+		const models = getModels("alibaba-dashscope");
+		for (const model of models) {
+			assert.ok(model.cost.input > 0, `${model.id}: input cost should be > 0 (paid tier)`);
+			assert.ok(model.cost.output > 0, `${model.id}: output cost should be > 0 (paid tier)`);
+		}
+	});
+
+	it("qwen3-max is a reasoning model with correct pricing", () => {
+		const model = getModel("alibaba-dashscope" as any, "qwen3-max" as any);
+		assert.ok(model, "Expected getModel to return qwen3-max for alibaba-dashscope");
+		assert.equal(model.reasoning, true);
+		assert.equal(model.cost.input, 1.2);
+		assert.equal(model.cost.output, 6);
+		assert.equal(model.maxTokens, 32768);
+	});
+
+	it("qwen3.5-plus is a reasoning model with correct pricing", () => {
+		const model = getModel("alibaba-dashscope" as any, "qwen3.5-plus" as any);
+		assert.ok(model, "Expected getModel to return qwen3.5-plus for alibaba-dashscope");
+		assert.equal(model.reasoning, true);
+		assert.equal(model.cost.input, 0.4);
+		assert.equal(model.cost.output, 1.2);
+		assert.equal(model.maxTokens, 65536);
+	});
+
+	it("qwen3.5-flash is not a reasoning model", () => {
+		const model = getModel("alibaba-dashscope" as any, "qwen3.5-flash" as any);
+		assert.ok(model, "Expected getModel to return qwen3.5-flash for alibaba-dashscope");
+		assert.equal(model.reasoning, false);
+		assert.equal(model.cost.input, 0.1);
+		assert.equal(model.cost.output, 0.4);
+	});
+
+	it("qwen3-coder-plus is not a reasoning model", () => {
+		const model = getModel("alibaba-dashscope" as any, "qwen3-coder-plus" as any);
+		assert.ok(model, "Expected getModel to return qwen3-coder-plus for alibaba-dashscope");
+		assert.equal(model.reasoning, false);
+		assert.equal(model.cost.input, 1.0);
+		assert.equal(model.cost.output, 5.0);
+	});
+
+	it("qwen3.6-plus is a reasoning model", () => {
+		const model = getModel("alibaba-dashscope" as any, "qwen3.6-plus" as any);
+		assert.ok(model, "Expected getModel to return qwen3.6-plus for alibaba-dashscope");
+		assert.equal(model.reasoning, true);
+		assert.equal(model.cost.input, 0.5);
+		assert.equal(model.cost.output, 3.0);
+	});
+
+	it("alibaba-dashscope is independent of alibaba-coding-plan (different endpoint)", () => {
+		const dashscope = getModels("alibaba-dashscope");
+		const codingPlan = getModels("alibaba-coding-plan");
+		for (const m of dashscope) {
+			assert.notEqual(
+				m.baseUrl,
+				"https://coding-intl.dashscope.aliyuncs.com/v1",
+				`${m.id} must not use the Coding Plan endpoint`,
+			);
+		}
+		// Both providers must coexist — coding-plan must not have been overwritten
+		assert.ok(codingPlan.length > 0, "alibaba-coding-plan must still have models");
+	});
+
+	it("getModel returns undefined for unknown model in alibaba-dashscope (failure path)", () => {
+		const model = getModel("alibaba-dashscope" as any, "does-not-exist" as any);
+		assert.equal(model, undefined);
+	});
+});
+
 describe("model registry — custom models do not collide with generated models", () => {
 	it("generated providers still exist alongside custom providers", () => {
 		const providers = getProviders();

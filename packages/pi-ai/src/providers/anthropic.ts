@@ -34,9 +34,6 @@ async function getAnthropicClass(): Promise<typeof Anthropic> {
 	return _AnthropicClass;
 }
 
-// Stealth mode: Mimic Claude Code's tool naming exactly
-const claudeCodeVersion = "2.1.62";
-
 function mergeHeaders(...headerSources: (Record<string, string> | undefined)[]): Record<string, string> {
 	const merged: Record<string, string> = {};
 	for (const headers of headerSources) {
@@ -47,8 +44,8 @@ function mergeHeaders(...headerSources: (Record<string, string> | undefined)[]):
 	return merged;
 }
 
-function isOAuthToken(apiKey: string): boolean {
-	return apiKey.includes("sk-ant-oat");
+export function usesAnthropicBearerAuth(provider: Model<"anthropic-messages">["provider"]): boolean {
+	return provider === "alibaba-coding-plan" || provider === "minimax" || provider === "minimax-cn";
 }
 
 async function createClient(
@@ -97,35 +94,12 @@ async function createClient(
 		betaFeatures.push("interleaved-thinking-2025-05-14");
 	}
 
-	// OAuth: Bearer auth, Claude Code identity headers
-	if (isOAuthToken(apiKey)) {
-		const client = new AnthropicClass({
-			apiKey: null,
-			authToken: apiKey,
-			baseURL: model.baseUrl,
-			dangerouslyAllowBrowser: true,
-			defaultHeaders: mergeHeaders(
-				{
-					accept: "application/json",
-					"anthropic-dangerous-direct-browser-access": "true",
-					...(betaFeatures.length > 0 ? { "anthropic-beta": `claude-code-20250219,oauth-2025-04-20,${betaFeatures.join(",")}` } : {}),
-					"user-agent": `claude-cli/${claudeCodeVersion}`,
-					"x-app": "cli",
-				},
-				model.headers,
-				optionsHeaders,
-			),
-		});
-
-		return { client, isOAuthToken: true };
-	}
-
-	// API key auth
-	// Alibaba Coding Plan uses Bearer token auth instead of x-api-key
-	const isAlibabaProvider = model.provider === "alibaba-coding-plan";
+	// API key auth (Anthropic OAuth removed per TOS compliance — use API keys or Claude CLI)
+	// Some Anthropic-compatible providers require Bearer auth instead of x-api-key.
+	const usesBearerAuth = usesAnthropicBearerAuth(model.provider);
 	const client = new AnthropicClass({
-		apiKey: isAlibabaProvider ? null : apiKey,
-		authToken: isAlibabaProvider ? apiKey : undefined,
+		apiKey: usesBearerAuth ? null : apiKey,
+		authToken: usesBearerAuth ? apiKey : undefined,
 		baseURL: model.baseUrl,
 		dangerouslyAllowBrowser: true,
 		defaultHeaders: mergeHeaders(

@@ -24,6 +24,10 @@ jobs:
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
+      env:
+        BLACKSMITH_CACHE_TOKEN: ${{ env.BLACKSMITH_CACHE_TOKEN }}
+        BLACKSMITH_CACHE_URL: ${{ env.BLACKSMITH_CACHE_URL }}
+        GITHUB_REPO_NAME: ${{ github.repository }}
     outputs:
       dev-version: ${{ steps.stamp.outputs.version }}
     steps:
@@ -40,6 +44,15 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Cache Next.js build
+        uses: useblacksmith/cache@v5
+        with:
+          path: web/.next/cache
+          key: nextjs-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}-${{ hashFiles('web/app/**', 'web/components/**', 'web/lib/**', 'web/hooks/**') }}
+          restore-keys: |
+            nextjs-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}-
+            nextjs-${{ runner.os }}-
 
       - name: Build
         run: npm run build
@@ -153,9 +166,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Cache Next.js build
+        uses: useblacksmith/cache@v5
+        with:
+          path: web/.next/cache
+          key: nextjs-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}-${{ hashFiles('web/app/**', 'web/components/**', 'web/lib/**', 'web/hooks/**') }}
+          restore-keys: |
+            nextjs-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}-
+            nextjs-${{ runner.os }}-
+
       - name: Run live LLM tests (optional)
         continue-on-error: true
-        run: npm run test:live
+        run: npm run test:live || echo "::warning::Live LLM tests failed — non-blocking, but worth investigating"
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -175,21 +197,26 @@ jobs:
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
         run: node scripts/bump-version.mjs "$RELEASE_VERSION"
 
+      - name: Validate package files after version bump
+        run: |
+          node -e "require('./package.json')" && \
+          node -e "require('./packages/pi-coding-agent/package.json')" && \
+          node -e "require('./pkg/package.json')" && \
+          echo "All package.json files are valid"
+
       - name: Update CHANGELOG.md
         run: node scripts/update-changelog.mjs /tmp/changelog-entry.md
 
-      - name: Commit, tag, and push
+      - name: Commit and tag release
         env:
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add package.json package-lock.json CHANGELOG.md native/npm/*/package.json pkg/package.json packages/pi-coding-agent/package.json
+          git add package.json package-lock.json web/package-lock.json CHANGELOG.md native/npm/*/package.json pkg/package.json packages/pi-coding-agent/package.json
           git commit -m "release: v${RELEASE_VERSION}"
           git tag "v${RELEASE_VERSION}"
           git pull --rebase origin main
-          git push origin main
-          git push origin "v${RELEASE_VERSION}"
 
       - name: Build release
         run: npm run build
@@ -208,6 +235,13 @@ jobs:
               exit 1
             fi
           }
+
+      - name: Push release commit and tag
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          git push origin main
+          git push origin "v${RELEASE_VERSION}"
 
       - name: Create GitHub Release
         env:

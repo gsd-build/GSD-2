@@ -16,9 +16,18 @@ export interface McpToolDef {
   }>
 }
 
-// MCP SDK subpath imports use wildcard exports (./*) that NodeNext resolves
-// at runtime but TypeScript cannot statically type-check. We construct the
-// specifiers dynamically so tsc treats them as `any`.
+// MCP SDK subpath imports use wildcard exports (./*) in @modelcontextprotocol/sdk's
+// package.json export map. The wildcard maps "./foo" → "./dist/cjs/foo" (no .js
+// suffix), so bare subpath specifiers like `${MCP_PKG}/server/stdio` resolve to
+// a non-existent file. Historically the workaround (#3603) used createRequire so
+// the CJS resolver could auto-append `.js`; that no longer works with current
+// Node + SDK releases (#3914) — `_require.resolve` also fails with
+// "Cannot find module .../dist/cjs/server/stdio".
+//
+// The reliable convention (matching packages/mcp-server/{server,cli}.ts) is to
+// write the `.js` suffix explicitly on every wildcard subpath. Specifiers are
+// built via a template string so TypeScript's NodeNext resolver treats them as
+// `any` and skips static checking.
 const MCP_PKG = '@modelcontextprotocol/sdk'
 
 /**
@@ -41,9 +50,9 @@ export async function startMcpServer(options: {
 }): Promise<void> {
   const { tools, version = '0.0.0' } = options
 
-  const serverMod = await import(`${MCP_PKG}/server`)
-  const stdioMod = await import(`${MCP_PKG}/server/stdio`)
-  const typesMod = await import(`${MCP_PKG}/types`)
+  const serverMod = await import(`${MCP_PKG}/server/index.js`)
+  const stdioMod = await import(`${MCP_PKG}/server/stdio.js`)
+  const typesMod = await import(`${MCP_PKG}/types.js`)
 
   const Server = serverMod.Server
   const StdioServerTransport = stdioMod.StdioServerTransport
@@ -69,8 +78,14 @@ export async function startMcpServer(options: {
     })),
   }))
 
-  // tools/call — execute the requested tool and return content blocks
-  server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
+  // tools/call — execute the requested tool and return content blocks.
+  //
+  // The MCP SDK passes an `extra` argument to request handlers that includes
+  // an AbortSignal scoped to the RPC request (cancelled when the client
+  // cancels the tool call or the transport closes). Threading it into
+  // AgentTool.execute ensures long-running tools (Bash, WebFetch, grep on
+  // huge trees) actually stop when the client gives up on the result.
+  server.setRequestHandler(CallToolRequestSchema, async (request: any, extra: any) => {
     const { name, arguments: args } = request.params
     const tool = toolMap.get(name)
     if (!tool) {
@@ -80,22 +95,37 @@ export async function startMcpServer(options: {
       }
     }
 
+    const signal: AbortSignal | undefined = extra?.signal
+
     try {
       const result = await tool.execute(
         `mcp-${Date.now()}`,
         args ?? {},
-        undefined, // no AbortSignal
-        undefined, // no onUpdate callback
+        signal,
+        undefined, // onUpdate not yet wired — progress notifications require a progressToken round-trip
       )
 
-      // Convert AgentToolResult content blocks to MCP content format
+      // Convert AgentToolResult content blocks to MCP content format.
+      // text and image pass through; any other shape is serialized as text
+      // so the client sees the payload rather than an empty response.
       const content = result.content.map((block: any) => {
         if (block.type === 'text') return { type: 'text' as const, text: block.text ?? '' }
-        if (block.type === 'image') return { type: 'image' as const, data: block.data ?? '', mimeType: block.mimeType ?? 'image/png' }
+        if (block.type === 'image') {
+          return {
+            type: 'image' as const,
+            data: block.data ?? '',
+            mimeType: block.mimeType ?? 'image/png',
+          }
+        }
+        // Preserve unknown block types (resource, resource_link, audio, ...)
+        // by stringifying into a text block so clients see the payload.
         return { type: 'text' as const, text: JSON.stringify(block) }
       })
       return { content }
     } catch (err: unknown) {
+      // AbortError from a cancelled tool surfaces as a normal error — MCP
+      // clients interpret `isError: true` as a failed call, which is the
+      // correct behaviour for a cancelled request.
       const message = err instanceof Error ? err.message : String(err)
       return { isError: true, content: [{ type: 'text' as const, text: message }] }
     }

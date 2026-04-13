@@ -17,7 +17,6 @@ interface MinimalModel {
 }
 
 interface MinimalModelRegistry {
-  getAll(): MinimalModel[]
   getAvailable(): MinimalModel[]
 }
 
@@ -48,24 +47,31 @@ export function validateConfiguredModel(
 ): void {
   const configuredProvider = settingsManager.getDefaultProvider()
   const configuredModel = settingsManager.getDefaultModel()
-  const allModels = modelRegistry.getAll()
   const availableModels = modelRegistry.getAvailable()
+  // Check against availableModels (configured + auth'd) rather than getAll()
+  // so a stale default pointing at an unconfigured provider triggers the
+  // fallback. Previously a model present in the registry but missing API
+  // key / OAuth would satisfy configuredExists and survive startup, ending
+  // up as ctx.model even though it couldn't actually be used.
   const configuredExists = configuredProvider && configuredModel &&
-    allModels.some((m) => m.provider === configuredProvider && m.id === configuredModel)
+    availableModels.some((m) => m.provider === configuredProvider && m.id === configuredModel)
 
   if (!configuredModel || !configuredExists) {
     // Model not configured at all, or removed from registry — pick a fallback.
     // Only fires when the model is genuinely unknown (not just temporarily unavailable).
+    //
+    // Model-agnostic selection order:
+    //   1. Pi migration default (preserves migration from ~/.pi install)
+    //   2. Any model from the user's previously-chosen provider (provider stickiness)
+    //   3. First available model in registry order (user-controlled via models.json)
     const piDefault = getPiDefaultModelAndProvider()
     const preferred =
       (piDefault
         ? availableModels.find((m) => m.provider === piDefault.provider && m.id === piDefault.model)
         : undefined) ||
-      availableModels.find((m) => m.provider === 'openai' && m.id === 'gpt-5.4') ||
-      availableModels.find((m) => m.provider === 'openai') ||
-      availableModels.find((m) => m.provider === 'anthropic' && m.id === 'claude-opus-4-6') ||
-      availableModels.find((m) => m.provider === 'anthropic' && m.id.includes('opus')) ||
-      availableModels.find((m) => m.provider === 'anthropic') ||
+      (configuredProvider
+        ? availableModels.find((m) => m.provider === configuredProvider)
+        : undefined) ||
       availableModels[0]
     if (preferred) {
       settingsManager.setDefaultModelAndProvider(preferred.provider, preferred.id)

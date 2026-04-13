@@ -12,7 +12,7 @@
 
 import { describe, test, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, realpathSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, realpathSync, readFileSync, symlinkSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execSync } from "node:child_process";
@@ -42,6 +42,27 @@ function createTempRepo(): string {
   run("git commit -m init", dir);
   run("git branch -M main", dir);
   return dir;
+}
+
+function createTempRepoWithExternalGsd(): { repo: string; externalState: string } {
+  const realTmp = realpathSync(tmpdir());
+  const repo = realpathSync(mkdtempSync(join(realTmp, "wt-ms-merge-ext-test-")));
+  const externalState = realpathSync(mkdtempSync(join(realTmp, "wt-ms-merge-ext-state-")));
+
+  run("git init", repo);
+  run("git config user.email test@test.com", repo);
+  run("git config user.name Test", repo);
+
+  mkdirSync(join(externalState, "worktrees"), { recursive: true });
+  symlinkSync(externalState, join(repo, ".gsd"));
+
+  writeFileSync(join(repo, "README.md"), "# test\n");
+  writeFileSync(join(externalState, "STATE.md"), "# State\n");
+  run("git add .", repo);
+  run("git commit -m init", repo);
+  run("git branch -M main", repo);
+
+  return { repo, externalState };
 }
 
 /** Minimal roadmap content for mergeMilestoneToMain. */
@@ -85,6 +106,12 @@ describe("auto-worktree-milestone-merge", { timeout: 300_000 }, () => {
     const d = createTempRepo();
     tempDirs.push(d);
     return d;
+  }
+
+  function freshRepoWithExternalGsd(): { repo: string; externalState: string } {
+    const { repo, externalState } = createTempRepoWithExternalGsd();
+    tempDirs.push(repo, externalState);
+    return { repo, externalState };
   }
 
   afterEach(() => {
@@ -636,6 +663,44 @@ describe("auto-worktree-milestone-merge", { timeout: 300_000 }, () => {
     const result = mergeMilestoneToMain(repo, "M180", roadmap);
     assert.strictEqual(result.codeFilesChanged, false,
       "#1906: codeFilesChanged must be false when only .gsd/ files were merged");
+  });
+
+  test("#2156: mergeMilestoneToMain removes external-state worktrees using the milestone branch name", () => {
+    const { repo, externalState } = freshRepoWithExternalGsd();
+    const wtPath = createAutoWorktree(repo, "M215");
+
+    addSliceToMilestone(repo, wtPath, "M215", "S01", "External cleanup", [
+      { file: "external-cleanup.ts", content: "export const externalCleanup = true;\n", message: "add external cleanup" },
+    ]);
+
+    const realWtPath = realpathSync(wtPath);
+    assert.ok(
+      realWtPath.startsWith(externalState),
+      `worktree should be registered under external .gsd state, got ${realWtPath}`,
+    );
+
+    // Recreate the exact divergence from #1852: local .gsd/ is replaced with a
+    // stale real directory, so worktreePath() no longer matches git's record.
+    unlinkSync(join(repo, ".gsd"));
+    mkdirSync(join(repo, ".gsd", "worktrees", "M215"), { recursive: true });
+    writeFileSync(join(repo, ".gsd", "STATE.md"), "# Local stale state\n");
+    writeFileSync(join(repo, ".gsd", "worktrees", "M215", "stale.txt"), "stale local artifact\n");
+
+    const roadmap = makeRoadmap("M215", "External cleanup", [
+      { id: "S01", title: "External cleanup" },
+    ]);
+
+    mergeMilestoneToMain(repo, "M215", roadmap);
+
+    assert.ok(
+      !run("git worktree list", repo).includes("M215"),
+      "merged milestone worktree should be removed from git worktree list",
+    );
+    assert.ok(!existsSync(realWtPath), "real external worktree directory should be removed");
+    assert.ok(
+      !run("git branch", repo).includes("milestone/M215"),
+      "milestone branch should be deleted after merge cleanup",
+    );
   });
 
   test("#2912: MERGE_HEAD cleaned up after squash-merge conflict", () => {

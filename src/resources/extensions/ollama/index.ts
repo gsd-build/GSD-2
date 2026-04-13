@@ -17,20 +17,10 @@
  */
 
 import { importExtensionModule, type ExtensionAPI } from "@gsd/pi-coding-agent";
-import type { OpenAICompletionsCompat, Model } from "@gsd/pi-ai";
-import { streamOpenAICompletions } from "@gsd/pi-ai";
 import * as client from "./ollama-client.js";
-import { discoverModels, getOllamaOpenAIBaseUrl } from "./ollama-discovery.js";
+import { discoverModels } from "./ollama-discovery.js";
 import { registerOllamaCommands } from "./ollama-commands.js";
-
-/** Default compat settings for Ollama models via OpenAI-compat endpoint */
-const OLLAMA_COMPAT: OpenAICompletionsCompat = {
-	supportsDeveloperRole: false,
-	supportsReasoningEffort: false,
-	supportsUsageInStreaming: false,
-	maxTokensField: "max_tokens",
-	supportsStore: false,
-};
+import { streamOllamaChat } from "./ollama-chat-provider.js";
 
 let toolsPromise: Promise<void> | null = null;
 
@@ -67,16 +57,27 @@ async function probeAndRegister(pi: ExtensionAPI): Promise<boolean> {
 	}
 
 	const models = await discoverModels();
-	if (models.length === 0) return true; // Running but no models pulled
+	if (models.length === 0) {
+		// No local models means there's nothing usable to register in GSD.
+		// Keep the footer/status clean instead of advertising Ollama availability.
+		if (providerRegistered) {
+			pi.unregisterProvider("ollama");
+			providerRegistered = false;
+		}
+		return false;
+	}
 
-	const baseUrl = getOllamaOpenAIBaseUrl();
+	const baseUrl = client.getOllamaHost();
 
+	// Use authMode "apiKey" (#3440). Local Ollama ignores the Authorization header,
+	// so the "ollama" fallback is harmless. For cloud endpoints (OLLAMA_HOST pointing
+	// to ollama.com or a remote instance), OLLAMA_API_KEY is picked up here.
 	pi.registerProvider("ollama", {
-		authMode: "none",
+		authMode: "apiKey",
+		apiKey: process.env.OLLAMA_API_KEY ?? "ollama",
 		baseUrl,
-		api: "openai-completions",
-		streamSimple: (model, context, options) =>
-			streamOpenAICompletions(model as Model<"openai-completions">, context, { ...options, apiKey: "ollama" }),
+                api: "ollama-chat",
+            			streamSimple: streamOllamaChat,
 		isReady: () => true,
 		models: models.map((m) => ({
 			id: m.id,
@@ -86,7 +87,7 @@ async function probeAndRegister(pi: ExtensionAPI): Promise<boolean> {
 			cost: m.cost,
 			contextWindow: m.contextWindow,
 			maxTokens: m.maxTokens,
-			compat: OLLAMA_COMPAT,
+			providerOptions: (m.ollamaOptions ?? {}) as Record<string, unknown>,
 		})),
 	});
 
@@ -111,16 +112,22 @@ export default function ollama(pi: ExtensionAPI) {
 			await registerOllamaTools(pi);
 		}
 
-		// Async probe — don't block startup
-		probeAndRegister(pi)
-			.then((found) => {
-				if (found && ctx.hasUI) {
-					ctx.ui.setStatus("ollama", "Ollama");
-				}
-			})
-			.catch(() => {
-				// Silently ignore probe failures
-			});
+		// In headless/auto mode, await the probe so the fallback resolver can
+		// see Ollama before the first LLM call (#3531 race condition).
+		// In interactive mode, keep it async for fast startup.
+		if (!ctx.hasUI) {
+			try {
+				await probeAndRegister(pi);
+			} catch { /* non-fatal */ }
+		} else {
+			probeAndRegister(pi)
+				.then((found) => {
+					ctx.ui.setStatus("ollama", found ? "Ollama" : undefined);
+				})
+				.catch(() => {
+					ctx.ui.setStatus("ollama", undefined);
+				});
+		}
 	});
 
 	pi.on("session_shutdown", async () => {
