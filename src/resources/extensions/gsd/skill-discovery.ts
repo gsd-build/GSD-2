@@ -111,6 +111,20 @@ function listSkillDirsFrom(dir: string): string[] {
 }
 
 function listSkillDirs(): string[] {
+  // Try ComponentRegistry first for unified discovery
+  try {
+    const { getComponentRegistry } = require('./component-registry.js');
+    const registry = getComponentRegistry();
+    if (registry.size > 0) {
+      const skills = registry.skills();
+      if (skills.length > 0) {
+        return skills.map((s: { metadata: { name: string } }) => s.metadata.name);
+      }
+    }
+  } catch {
+    // Registry not available — fall through to legacy
+  }
+
   const names = new Set<string>();
   for (const name of listSkillDirsFrom(SKILLS_DIR)) names.add(name);
   for (const name of listSkillDirsFrom(CLAUDE_SKILLS_DIR)) names.add(name);
