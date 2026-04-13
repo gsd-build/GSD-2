@@ -12,6 +12,7 @@ import type { Decision, Requirement, GateRow, GateId, GateScope, GateStatus, Gat
 import { GSDError, GSD_STALE_STATE } from "./errors.js";
 import { getGateIdsForTurn, type OwnerTurn } from "./gate-registry.js";
 import { logError, logWarning } from "./workflow-logger.js";
+import { debugLog } from "./debug-logger.js";
 
 const _require = createRequire(import.meta.url);
 
