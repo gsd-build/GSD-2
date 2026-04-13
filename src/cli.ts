@@ -282,6 +282,14 @@ if (cliFlags.messages[0] === 'sessions') {
   })
   rl.close()
 
+  // Clean up stdin state left by readline.createInterface().
+  // Without this, downstream TUI initialization gets corrupted listeners and exhibits
+  // duplicate terminal I/O. Match the pattern used after onboarding cleanup.
+  process.stdin.removeAllListeners('data')
+  process.stdin.removeAllListeners('keypress')
+  if (process.stdin.setRawMode) process.stdin.setRawMode(false)
+  process.stdin.pause()
+
   const choice = parseInt(answer, 10)
   if (isNaN(choice) || choice < 1 || choice > toShow.length) {
     process.stderr.write(chalk.dim('Cancelled.\n'))
