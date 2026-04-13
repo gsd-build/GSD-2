@@ -52,6 +52,7 @@ import {
   readCrashLock,
   isLockProcessAlive,
   formatCrashInfo,
+  emitCrashRecoveredUnitEnd,
 } from "./crash-recovery.js";
 import {
   acquireSessionLock,
@@ -1332,6 +1333,10 @@ export async function startAuto(
   }
 
   if (freshStartAssessment.lock) {
+    // Emit a synthetic unit-end for any unit-start that has no closing event.
+    // This closes the journal gap reported in #3348 where the worker wrote side
+    // effects (SUMMARY.md, DB updates) but died before emitting unit-end.
+    emitCrashRecoveredUnitEnd(base, freshStartAssessment.lock);
     clearLock(base);
   }
 

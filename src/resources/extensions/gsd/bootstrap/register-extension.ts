@@ -11,6 +11,9 @@ import { registerJournalTools } from "./journal-tools.js";
 import { registerQueryTools } from "./query-tools.js";
 import { registerHooks } from "./register-hooks.js";
 import { registerShortcuts } from "./register-shortcuts.js";
+import { writeCrashLog } from "./crash-log.js";
+
+export { writeCrashLog } from "./crash-log.js";
 
 export function handleRecoverableExtensionProcessError(err: Error): boolean {
   if ((err as NodeJS.ErrnoException).code === "EPIPE") {
@@ -33,15 +36,24 @@ export function handleRecoverableExtensionProcessError(err: Error): boolean {
 function installEpipeGuard(): void {
   if (!process.listeners("uncaughtException").some((listener) => listener.name === "_gsdEpipeGuard")) {
     const _gsdEpipeGuard = (err: Error): void => {
-      if (handleRecoverableExtensionProcessError(err)) {
-        return;
-      }
-      // Log unhandled errors instead of re-throwing — throwing inside an
-      // uncaughtException handler is a fatal double-fault in Node.js (#3163).
-      process.stderr.write(`[gsd] uncaught extension error (non-fatal): ${err.message}\n`);
-      if (err.stack) process.stderr.write(`${err.stack}\n`);
+      if (handleRecoverableExtensionProcessError(err)) return;
+      // Write crash log and exit cleanly for unrecoverable errors.
+      // Logging and continuing was the original double-fault fix (#3163), but
+      // continuing in an indeterminate state is worse than a clean exit (#3348).
+      writeCrashLog(err, "uncaughtException");
+      process.exit(1);
     };
     process.on("uncaughtException", _gsdEpipeGuard);
+  }
+
+  if (!process.listeners("unhandledRejection").some((listener) => listener.name === "_gsdRejectionGuard")) {
+    const _gsdRejectionGuard = (reason: unknown, _promise: Promise<unknown>): void => {
+      const err = reason instanceof Error ? reason : new Error(String(reason));
+      if (handleRecoverableExtensionProcessError(err)) return;
+      writeCrashLog(err, "unhandledRejection");
+      process.exit(1);
+    };
+    process.on("unhandledRejection", _gsdRejectionGuard);
   }
 }
 
