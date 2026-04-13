@@ -7,6 +7,7 @@ import {
   openDatabase,
   closeDatabase,
   isDbAvailable,
+  wasDbOpenAttempted,
   getDbProvider,
   insertDecision,
   getDecisionById,
@@ -17,6 +18,11 @@ import {
   transaction,
   _getAdapter,
   _resetProvider,
+  insertMilestone,
+  insertSlice,
+  insertTask,
+  getTask,
+  getSliceTasks,
 } from '../gsd-db.ts';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -39,6 +45,16 @@ function cleanup(dbPath: string): void {
     fs.rmdirSync(dir);
   } catch {
     // best effort
+  }
+}
+
+function withPlatform<T>(platform: NodeJS.Platform, fn: () => T): T {
+  const original = process.platform;
+  Object.defineProperty(process, 'platform', { value: platform });
+  try {
+    return fn();
+  } finally {
+    Object.defineProperty(process, 'platform', { value: original });
   }
 }
 
@@ -278,6 +294,26 @@ describe('gsd-db', () => {
     cleanup(dbPath);
   });
 
+  test('gsd-db: mmap stays disabled on darwin file-backed DBs', () => {
+    const darwinDbPath = tempDbPath();
+    withPlatform('darwin', () => {
+      openDatabase(darwinDbPath);
+      const adapter = _getAdapter()!;
+      const mmap = adapter.prepare('PRAGMA mmap_size').get();
+      assert.deepStrictEqual(mmap?.['mmap_size'], 0, 'darwin should leave mmap_size disabled');
+      cleanup(darwinDbPath);
+    });
+
+    const linuxDbPath = tempDbPath();
+    withPlatform('linux', () => {
+      openDatabase(linuxDbPath);
+      const adapter = _getAdapter()!;
+      const mmap = adapter.prepare('PRAGMA mmap_size').get();
+      assert.deepStrictEqual(mmap?.['mmap_size'], 67108864, 'non-darwin should still enable mmap_size');
+      cleanup(linuxDbPath);
+    });
+  });
+
   test('gsd-db: transaction rollback on error', () => {
     openDatabase(':memory:');
 
@@ -328,6 +364,79 @@ describe('gsd-db', () => {
     closeDatabase();
   });
 
+  test('gsd-db: recreates missing verification evidence dedup index after removing duplicate rows', () => {
+    const dbPath = tempDbPath();
+    openDatabase(dbPath);
+
+    let adapter = _getAdapter()!;
+    adapter.prepare("INSERT INTO milestones (id, created_at) VALUES (?, '')").run('M001');
+    adapter.prepare("INSERT INTO slices (milestone_id, id, created_at) VALUES (?, ?, '')").run('M001', 'S01');
+    adapter.prepare("INSERT INTO tasks (milestone_id, slice_id, id) VALUES (?, ?, ?)").run('M001', 'S01', 'T01');
+    adapter.exec('DROP INDEX IF EXISTS idx_verification_evidence_dedup');
+
+    const insertEvidence = adapter.prepare(
+      `INSERT INTO verification_evidence (
+        task_id, slice_id, milestone_id, command, exit_code, verdict, duration_ms, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    insertEvidence.run('T01', 'S01', 'M001', 'npm test', 1, 'fail', 125, '2026-04-12T00:00:00.000Z');
+    insertEvidence.run('T01', 'S01', 'M001', 'npm test', 1, 'fail', 125, '2026-04-12T00:00:01.000Z');
+    insertEvidence.run('T01', 'S01', 'M001', 'npm run lint', 0, 'pass', 90, '2026-04-12T00:00:02.000Z');
+
+    closeDatabase();
+
+    assert.equal(openDatabase(dbPath), true, 'openDatabase should repair legacy duplicate evidence rows');
+
+    adapter = _getAdapter()!;
+    const countRow = adapter.prepare(
+      `SELECT count(*) as cnt
+       FROM verification_evidence
+       WHERE task_id = ? AND slice_id = ? AND milestone_id = ? AND command = ? AND verdict = ?`,
+    ).get('T01', 'S01', 'M001', 'npm test', 'fail');
+    assert.equal(countRow?.['cnt'], 1, 'duplicate verification evidence rows should be deduplicated before index creation');
+
+    const indexRow = adapter.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_verification_evidence_dedup'",
+    ).get();
+    assert.equal(indexRow?.['name'], 'idx_verification_evidence_dedup', 'dedup index should be recreated on reopen');
+
+    cleanup(dbPath);
+  });
+
+  test('gsd-db: rowToTask tolerates legacy comma-separated task arrays', () => {
+    openDatabase(':memory:');
+
+    const adapter = _getAdapter()!;
+    adapter.prepare("INSERT INTO milestones (id, created_at) VALUES (?, '')").run('M001');
+    adapter.prepare("INSERT INTO slices (milestone_id, id, created_at) VALUES (?, ?, '')").run('M001', 'S01');
+    adapter.prepare(
+      `INSERT INTO tasks (
+        milestone_id, slice_id, id, key_files, key_decisions, files, inputs, expected_output
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'M001',
+      'S01',
+      'T01',
+      '[]',
+      '[]',
+      'tests/test_verify.py, config.yaml, configs/roster_2026-05-11.yaml',
+      'tests/test_verify.py',
+      'reports/summary.md, artifacts/output.json',
+    );
+
+    const task = getTask('M001', 'S01', 'T01');
+    assert.ok(task, 'task should load successfully from DB');
+    assert.deepEqual(task?.files, [
+      'tests/test_verify.py',
+      'config.yaml',
+      'configs/roster_2026-05-11.yaml',
+    ]);
+    assert.deepEqual(task?.inputs, ['tests/test_verify.py']);
+    assert.deepEqual(task?.expected_output, ['reports/summary.md', 'artifacts/output.json']);
+
+    closeDatabase();
+  });
+
   test('gsd-db: query wrappers return null/empty when DB unavailable', () => {
     // Ensure DB is closed
     closeDatabase();
@@ -344,6 +453,69 @@ describe('gsd-db', () => {
 
     const ar = getActiveRequirements();
     assert.deepStrictEqual(ar, [], 'getActiveRequirements returns [] when DB closed');
+  });
+
+  test('gsd-db: closeDatabase resets wasDbOpenAttempted after an intentional close', () => {
+    openDatabase(':memory:');
+    assert.ok(wasDbOpenAttempted(), 'wasDbOpenAttempted should be true after openDatabase was called');
+
+    closeDatabase();
+    assert.ok(!isDbAvailable(), 'DB should not be available after close');
+    assert.ok(!wasDbOpenAttempted(), 'wasDbOpenAttempted should reset after closeDatabase');
+  });
+
+  test('gsd-db: rowToTask tolerates corrupt comma-separated task arrays', () => {
+    openDatabase(':memory:');
+    insertMilestone({ id: 'M001', status: 'active' });
+    insertSlice({ milestoneId: 'M001', id: 'S01', status: 'active' });
+    insertTask({
+      milestoneId: 'M001',
+      sliceId: 'S01',
+      id: 'T01',
+      title: 'Recover corrupt arrays',
+      planning: {
+        description: 'desc',
+        estimate: 'small',
+        files: ['src/original.ts'],
+        verify: 'npm test',
+        inputs: ['docs/original.md'],
+        expectedOutput: ['dist/original.md'],
+        observabilityImpact: '',
+      },
+    });
+
+    const adapter = _getAdapter()!;
+    adapter.prepare(
+      `UPDATE tasks
+         SET files = ?, inputs = ?, expected_output = ?, key_files = ?, key_decisions = ?
+       WHERE milestone_id = ? AND slice_id = ? AND id = ?`,
+    ).run(
+      'src-erf/Models/foo.cs, src-erf/Models/bar.cs',
+      'docs/input-a.md, docs/input-b.md',
+      'dist/out-a.md, dist/out-b.md',
+      'src/resources/extensions/gsd/gsd-db.ts, src/resources/extensions/gsd/state.ts',
+      '"decision-1"',
+      'M001',
+      'S01',
+      'T01',
+    );
+
+    const task = getTask('M001', 'S01', 'T01');
+    assert.ok(task, 'getTask should still return the corrupt row');
+    assert.deepStrictEqual(task!.files, ['src-erf/Models/foo.cs', 'src-erf/Models/bar.cs']);
+    assert.deepStrictEqual(task!.inputs, ['docs/input-a.md', 'docs/input-b.md']);
+    assert.deepStrictEqual(task!.expected_output, ['dist/out-a.md', 'dist/out-b.md']);
+    assert.deepStrictEqual(
+      task!.key_files,
+      ['src/resources/extensions/gsd/gsd-db.ts', 'src/resources/extensions/gsd/state.ts'],
+    );
+    assert.deepStrictEqual(task!.key_decisions, ['decision-1']);
+
+    const sliceTasks = getSliceTasks('M001', 'S01');
+    assert.equal(sliceTasks.length, 1, 'getSliceTasks should also survive corrupt rows');
+    assert.deepStrictEqual(sliceTasks[0]!.files, task!.files);
+
+    closeDatabase();
   });
 
   // ─── Final Report ──────────────────────────────────────────────────────────

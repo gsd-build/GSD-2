@@ -6,19 +6,13 @@
  * records in the DB. This module inserts milestone-level validation gates
  * that correspond to the validation checks performed.
  *
- * Gate IDs for milestone validation:
- *   MV01 — Success criteria checklist
- *   MV02 — Slice delivery audit
- *   MV03 — Cross-slice integration
- *   MV04 — Requirement coverage
- *
- * These use the existing quality_gates table with scope "milestone".
+ * Gate IDs for milestone validation (MV01–MV04) are sourced from the
+ * gate registry so the definitions stay in lockstep with prompt builders,
+ * dispatch rules, and state derivation. See gate-registry.ts.
  */
 
 import { _getAdapter } from "./gsd-db.js";
-
-/** Milestone validation gate IDs. */
-const MILESTONE_GATE_IDS = ["MV01", "MV02", "MV03", "MV04"] as const;
+import { getGatesForTurn } from "./gate-registry.js";
 
 /**
  * Insert milestone-level quality_gates records for a validation run.
@@ -27,6 +21,9 @@ const MILESTONE_GATE_IDS = ["MV01", "MV02", "MV03", "MV04"] as const;
  * from the overall milestone validation verdict. Individual gate-level
  * verdicts are not available (the handler receives a single verdict),
  * so all gates share the overall verdict.
+ *
+ * Gate IDs come from the registry — adding/removing an MV-scoped gate
+ * in gate-registry.ts automatically flows through here.
  */
 export function insertMilestoneValidationGates(
   milestoneId: string,
@@ -38,8 +35,9 @@ export function insertMilestoneValidationGates(
   if (!db) return;
 
   const gateVerdict = verdict === "pass" ? "pass" : "flag";
+  const milestoneGates = getGatesForTurn("validate-milestone");
 
-  for (const gateId of MILESTONE_GATE_IDS) {
+  for (const def of milestoneGates) {
     db.prepare(
       `INSERT OR REPLACE INTO quality_gates
        (milestone_id, slice_id, gate_id, scope, task_id, status, verdict, rationale, findings, evaluated_at)
@@ -47,9 +45,9 @@ export function insertMilestoneValidationGates(
     ).run({
       ":mid": milestoneId,
       ":sid": sliceId,
-      ":gid": gateId,
+      ":gid": def.id,
       ":verdict": gateVerdict,
-      ":rationale": `Milestone validation verdict: ${verdict}`,
+      ":rationale": `${def.promptSection} — milestone validation verdict: ${verdict}`,
       ":evaluated_at": evaluatedAt,
     });
   }

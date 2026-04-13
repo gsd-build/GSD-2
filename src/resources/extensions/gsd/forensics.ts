@@ -38,7 +38,7 @@ import { ensurePreferencesFile, serializePreferencesToFrontmatter } from "./comm
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface ForensicAnomaly {
+export interface ForensicAnomaly {
   type: "stuck-loop" | "cost-spike" | "timeout" | "missing-artifact" | "crash" | "doctor-issue" | "error-trace" | "journal-stuck" | "journal-guard-block" | "journal-rapid-iterations" | "journal-worktree-failure";
   severity: "info" | "warning" | "error";
   unitType?: string;
@@ -640,13 +640,43 @@ function getDbCompletionCounts(): DbCompletionCounts | null {
 
 // ─── Anomaly Detectors ───────────────────────────────────────────────────────
 
-function detectStuckLoops(units: UnitMetrics[], anomalies: ForensicAnomaly[]): void {
-  const counts = new Map<string, number>();
+/**
+ * Detect units that were dispatched multiple times (stuck in a loop).
+ *
+ * Counts distinct dispatches by grouping on (type, id, startedAt) first to
+ * collapse idle-watchdog duplicate snapshots (#1943), then counts unique
+ * startedAt values per type/id to determine actual dispatch count.
+ *
+ * Exported for testability.
+ */
+export function detectStuckLoops(units: UnitMetrics[], anomalies: ForensicAnomaly[]): void {
+  // First, collect unique startedAt values per type/id key, bucketed by
+  // autoSessionKey when available so cross-session recovery does not look
+  // like a within-session stuck loop.
+  const dispatchMap = new Map<string, Map<string, Set<number>>>();
   for (const u of units) {
     const key = `${u.type}/${u.id}`;
-    counts.set(key, (counts.get(key) ?? 0) + 1);
+    let sessionBuckets = dispatchMap.get(key);
+    if (!sessionBuckets) {
+      sessionBuckets = new Map();
+      dispatchMap.set(key, sessionBuckets);
+    }
+
+    const sessionKey = u.autoSessionKey ?? "__legacy__";
+    let starts = sessionBuckets.get(sessionKey);
+    if (!starts) {
+      starts = new Set();
+      sessionBuckets.set(sessionKey, starts);
+    }
+    starts.add(u.startedAt);
   }
-  for (const [key, count] of counts) {
+
+  for (const [key, sessionBuckets] of dispatchMap) {
+    const hasSessionAwareData = Array.from(sessionBuckets.keys()).some((sessionKey) => sessionKey !== "__legacy__");
+    const count = hasSessionAwareData
+      ? Math.max(...Array.from(sessionBuckets.values(), (starts) => starts.size))
+      : (sessionBuckets.get("__legacy__")?.size ?? 0);
+
     if (count > 1) {
       const [unitType, ...idParts] = key.split("/");
       anomalies.push({
@@ -655,7 +685,9 @@ function detectStuckLoops(units: UnitMetrics[], anomalies: ForensicAnomaly[]): v
         unitType,
         unitId: idParts.join("/"),
         summary: `Unit ${key} was dispatched ${count} times`,
-        details: `Repeated dispatch suggests the unit completed but its artifacts weren't verified, or the state machine kept returning it.`,
+        details: hasSessionAwareData
+          ? `Repeated dispatch within the same auto session suggests the unit completed but its artifacts were not verified, or the state machine kept returning it. Cross-session recovery runs are ignored.`
+          : `Repeated dispatch suggests the unit completed but its artifacts weren't verified, or the state machine kept returning it.`,
       });
     }
   }

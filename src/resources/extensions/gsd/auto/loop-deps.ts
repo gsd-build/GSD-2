@@ -20,6 +20,7 @@ import type { DispatchAction } from "../auto-dispatch.js";
 import type { WorktreeResolver } from "../worktree-resolver.js";
 import type { CmuxLogLevel } from "../../cmux/index.js";
 import type { JournalEntry } from "../journal.js";
+import type { MergeReconcileResult } from "../auto-recovery.js";
 
 /**
  * Dependencies injected by the caller (auto.ts startAuto) so autoLoop
@@ -118,7 +119,7 @@ export interface LoopDeps {
     milestoneId: string,
     fileType: string,
   ) => string | null;
-  reconcileMergeState: (basePath: string, ctx: ExtensionContext) => boolean;
+  reconcileMergeState: (basePath: string, ctx: ExtensionContext) => MergeReconcileResult;
 
   // Budget/context/secrets
   getLedger: () => unknown;
@@ -210,6 +211,8 @@ export interface LoopDeps {
     verbose: boolean,
     startModel: { provider: string; id: string } | null,
     retryContext?: { isRetry: boolean; previousTier?: string },
+    isAutoMode?: boolean,
+    sessionModelOverride?: { provider: string; id: string } | null,
   ) => Promise<{
     routing: { tier: string; modelDowngraded: boolean } | null;
     appliedModel: { provider: string; id: string } | null;

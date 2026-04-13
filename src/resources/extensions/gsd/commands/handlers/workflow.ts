@@ -18,7 +18,7 @@ import { createRun, listRuns } from "../../run-manager.js";
 import {
   setActiveEngineId,
   setActiveRunDir,
-  startAuto,
+  startAutoDetached,
   pauseAuto,
   isAutoActive,
   getActiveEngineId,
@@ -77,7 +77,7 @@ async function handleCustomWorkflow(
       setActiveEngineId("custom");
       setActiveRunDir(runDir);
       ctx.ui.notify(`Created workflow run: ${defName}\nRun dir: ${runDir}`, "info");
-      await startAuto(ctx, pi, base, false);
+      startAutoDetached(ctx, pi, base, false);
     } catch (err) {
       // Clean up engine state so a failed workflow run doesn't pollute the next /gsd auto
       setActiveEngineId(null);
@@ -157,13 +157,8 @@ async function handleCustomWorkflow(
       ctx.ui.notify("No custom workflow to resume. Use /gsd auto for dev workflow.", "warning");
       return true;
     }
-    try {
-      await startAuto(ctx, pi, projectRoot(), false);
-      ctx.ui.notify("Custom workflow resumed.", "info");
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      ctx.ui.notify(`Failed to resume workflow: ${msg}`, "error");
-    }
+    startAutoDetached(ctx, pi, projectRoot(), false);
+    ctx.ui.notify("Custom workflow resumed.", "info");
     return true;
   }
 
@@ -278,4 +273,3 @@ export function getNextMilestoneId(basePath: string): string {
   const uniqueIds = !!loadEffectiveGSDPreferences()?.preferences?.unique_milestone_ids;
   return nextMilestoneId(milestoneIds, uniqueIds);
 }
-

@@ -24,7 +24,10 @@ import {
   updateTaskStatus,
   setTaskSummaryMd,
   deleteVerificationEvidence,
+  saveGateResult,
+  getPendingGatesForTurn,
 } from "../gsd-db.js";
+import { getGatesForTurn } from "../gate-registry.js";
 import { resolveSliceFile, resolveTasksDir, clearPathCache } from "../paths.js";
 import { checkOwnership, taskUnitKey } from "../unit-ownership.js";
 import { saveFile, clearParseCache } from "../files.js";
@@ -33,6 +36,7 @@ import { renderPlanCheckboxes } from "../markdown-renderer.js";
 import { renderAllProjections, renderSummaryContent } from "../workflow-projections.js";
 import { writeManifest } from "../workflow-manifest.js";
 import { appendEvent } from "../workflow-events.js";
+import { logWarning, logError } from "../workflow-logger.js";
 
 export interface CompleteTaskResult {
   taskId: string;
@@ -42,6 +46,39 @@ export interface CompleteTaskResult {
 }
 
 import type { TaskRow } from "../gsd-db.js";
+
+/**
+ * Map an execute-task-owned gate id to the CompleteTaskParams field whose
+ * presence drives `pass` vs. `omitted`. Keep in lockstep with the gates
+ * declared in gate-registry.ts under ownerTurn "execute-task".
+ */
+function taskGateFieldForId(
+  id: string,
+  params: CompleteTaskParams,
+): string | undefined {
+  switch (id) {
+    case "Q5":
+      return params.failureModes;
+    case "Q6":
+      return params.loadProfile;
+    case "Q7":
+      return params.negativeTests;
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Normalize a list parameter that may arrive as a string (newline-delimited
+ * bullet list from the LLM) into a string array (#3361).
+ */
+function normalizeListParam(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(String);
+  if (typeof value === "string" && value.trim()) {
+    return value.split(/\n/).map(s => s.replace(/^[\s\-*•]+/, "").trim()).filter(Boolean);
+  }
+  return [];
+}
 
 /**
  * Build a TaskRow-shaped object from CompleteTaskParams so the unified
@@ -59,11 +96,11 @@ function paramsToTaskRow(params: CompleteTaskParams, completedAt: string): TaskR
     verification_result: params.verification,
     duration: "",
     completed_at: completedAt,
-    blocker_discovered: params.blockerDiscovered,
-    deviations: params.deviations,
-    known_issues: params.knownIssues,
-    key_files: params.keyFiles,
-    key_decisions: params.keyDecisions,
+    blocker_discovered: params.blockerDiscovered ?? false,
+    deviations: params.deviations ?? "",
+    known_issues: params.knownIssues ?? "",
+    key_files: normalizeListParam(params.keyFiles),
+    key_decisions: normalizeListParam(params.keyDecisions),
     full_summary_md: "",
     description: "",
     estimate: "",
@@ -139,8 +176,8 @@ export async function handleCompleteTask(
     }
 
     // All guards passed — perform writes
-    insertMilestone({ id: params.milestoneId });
-    insertSlice({ id: params.sliceId, milestoneId: params.milestoneId });
+    insertMilestone({ id: params.milestoneId, title: params.milestoneId });
+    insertSlice({ id: params.sliceId, milestoneId: params.milestoneId, title: params.sliceId });
     insertTask({
       id: params.taskId,
       sliceId: params.sliceId,
@@ -151,14 +188,14 @@ export async function handleCompleteTask(
       narrative: params.narrative,
       verificationResult: params.verification,
       duration: "",
-      blockerDiscovered: params.blockerDiscovered,
-      deviations: params.deviations,
-      knownIssues: params.knownIssues,
-      keyFiles: params.keyFiles,
-      keyDecisions: params.keyDecisions,
+      blockerDiscovered: params.blockerDiscovered ?? false,
+      deviations: params.deviations ?? "None.",
+      knownIssues: params.knownIssues ?? "None.",
+      keyFiles: params.keyFiles ?? [],
+      keyDecisions: params.keyDecisions ?? [],
     });
 
-    for (const evidence of params.verificationEvidence) {
+    for (const evidence of (params.verificationEvidence ?? [])) {
       insertVerificationEvidence({
         taskId: params.taskId,
         sliceId: params.sliceId,
@@ -181,7 +218,7 @@ export async function handleCompleteTask(
 
   // Render summary markdown via the single source of truth (#2720)
   const taskRow = paramsToTaskRow(params, completedAt);
-  const summaryMd = renderSummaryContent(taskRow, params.sliceId, params.milestoneId, params.verificationEvidence);
+  const summaryMd = renderSummaryContent(taskRow, params.sliceId, params.milestoneId, params.verificationEvidence ?? []);
 
   // Resolve and write summary to disk
   let summaryPath: string;
@@ -210,9 +247,7 @@ export async function handleCompleteTask(
     }
   } catch (renderErr) {
     // Disk render failed — roll back DB status so state stays consistent
-    process.stderr.write(
-      `gsd-db: complete_task — disk render failed, rolling back DB status: ${(renderErr as Error).message}\n`,
-    );
+    logWarning("tool", `complete_task — disk render failed, rolling back DB status: ${(renderErr as Error).message}`);
     // Delete orphaned verification_evidence rows first (FK constraint
     // references tasks, so evidence must go before status change).
     // Without this, retries accumulate duplicate evidence rows (#2724).
@@ -225,15 +260,64 @@ export async function handleCompleteTask(
   // Store rendered markdown in DB for D004 recovery
   setTaskSummaryMd(params.milestoneId, params.sliceId, params.taskId, summaryMd);
 
+  // ── Close gates owned by execute-task (Q5/Q6/Q7) for this task ────────
+  // Each gate id maps to a specific params field via taskGateFieldForId.
+  // When the model populates the field, record `pass`; when it's empty,
+  // record `omitted`. Task-scoped rows are filtered by taskId so a single
+  // task's completion doesn't touch sibling tasks' gate rows.
+  try {
+    const pendingGates = getPendingGatesForTurn(
+      params.milestoneId,
+      params.sliceId,
+      "execute-task",
+      params.taskId,
+    );
+    if (pendingGates.length > 0) {
+      const ownedDefs = new Map(getGatesForTurn("execute-task").map((g) => [g.id, g] as const));
+      for (const row of pendingGates) {
+        const def = ownedDefs.get(row.gate_id);
+        if (!def) continue;
+        const field = taskGateFieldForId(def.id, params);
+        const hasContent = typeof field === "string" && field.trim().length > 0;
+        saveGateResult({
+          milestoneId: params.milestoneId,
+          sliceId: params.sliceId,
+          taskId: params.taskId,
+          gateId: def.id,
+          verdict: hasContent ? "pass" : "omitted",
+          rationale: hasContent
+            ? `${def.promptSection} section populated in task summary`
+            : `${def.promptSection} section left empty — recorded as omitted`,
+          findings: hasContent ? (field as string).trim() : "",
+        });
+      }
+    }
+  } catch (gateErr) {
+    logWarning(
+      "tool",
+      `complete-task gate close warning for ${params.milestoneId}/${params.sliceId}/${params.taskId}: ${(gateErr as Error).message}`,
+    );
+  }
+
   // Invalidate all caches
   invalidateStateCache();
   clearPathCache();
   clearParseCache();
 
   // ── Post-mutation hook: projections, manifest, event log ───────────────
+  // Separate try/catch per step so a projection failure doesn't prevent
+  // the event log entry (critical for worktree reconciliation).
   try {
     await renderAllProjections(basePath, params.milestoneId);
+  } catch (projErr) {
+    logWarning("tool", `complete-task projection warning: ${(projErr as Error).message}`);
+  }
+  try {
     writeManifest(basePath);
+  } catch (mfErr) {
+    logWarning("tool", `complete-task manifest warning: ${(mfErr as Error).message}`);
+  }
+  try {
     appendEvent(basePath, {
       cmd: "complete-task",
       params: { milestoneId: params.milestoneId, sliceId: params.sliceId, taskId: params.taskId },
@@ -242,10 +326,8 @@ export async function handleCompleteTask(
       actor_name: params.actorName,
       trigger_reason: params.triggerReason,
     });
-  } catch (hookErr) {
-    process.stderr.write(
-      `gsd: complete-task post-mutation hook warning: ${(hookErr as Error).message}\n`,
-    );
+  } catch (eventErr) {
+    logError("tool", `complete-task event log FAILED — completion invisible to reconciliation`, { error: (eventErr as Error).message });
   }
 
   return {

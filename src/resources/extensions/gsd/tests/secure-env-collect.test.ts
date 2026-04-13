@@ -317,3 +317,48 @@ test("secure_env_collect #2997: null from ctx.ui.custom() is still treated as sk
 		"Key returning null must NOT be in applied list",
 	);
 });
+
+test("secure_env_collect: falls back to secure input prompt when custom UI is unavailable", async (t) => {
+	const { collectSecretsFromManifest } = await loadOrchestrator();
+
+	const tmp = makeTempDir("sec-input-fallback-test");
+	t.after(() => {
+		rmSync(tmp, { recursive: true, force: true });
+	});
+
+	const manifest = makeManifest([
+		{ key: "SECRET_FROM_INPUT_FALLBACK", status: "pending", formatHint: "starts with sk-" },
+	]);
+	await writeManifestFile(tmp, manifest);
+
+	let callIndex = 0;
+	const inputCalls: Array<{ title: string; placeholder?: string; opts?: { secure?: boolean } }> = [];
+	const mockCtx = {
+		cwd: tmp,
+		hasUI: true,
+		ui: {
+			custom: async (_factory: any) => {
+				callIndex++;
+				if (callIndex <= 1) return null; // summary screen dismiss
+				return undefined; // collect screen unavailable on this surface
+			},
+			input: async (title: string, placeholder?: string, opts?: { secure?: boolean }) => {
+				inputCalls.push({ title, placeholder, opts });
+				return "  sk-test-fallback-value  ";
+			},
+		},
+	};
+
+	const result = await collectSecretsFromManifest(tmp, "M001", mockCtx as any);
+
+	assert.ok(
+		result.applied.includes("SECRET_FROM_INPUT_FALLBACK"),
+		"Fallback input should collect and apply the key",
+	);
+	assert.ok(
+		!result.skipped.includes("SECRET_FROM_INPUT_FALLBACK"),
+		"Fallback input should not mark the key as skipped",
+	);
+	assert.equal(inputCalls.length, 1, "Fallback input should be requested once");
+	assert.equal(inputCalls[0]?.opts?.secure, true, "Fallback input should request secure entry when supported");
+});

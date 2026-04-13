@@ -70,6 +70,7 @@ export const IDLE_TIMEOUT_MS = 15_000
 // between tool calls (e.g. after mkdir, before writing files). Use a
 // longer idle timeout to avoid killing the session prematurely (#808).
 export const NEW_MILESTONE_IDLE_TIMEOUT_MS = 120_000
+const INTERACTIVE_HEADLESS_TOOLS = new Set(['ask_user_questions', 'secure_env_collect'])
 
 export function isTerminalNotification(event: Record<string, unknown>): boolean {
   if (event.type !== 'extension_ui_request' || event.method !== 'notify') return false
@@ -87,6 +88,14 @@ export function isBlockedNotification(event: Record<string, unknown>): boolean {
 export function isMilestoneReadyNotification(event: Record<string, unknown>): boolean {
   if (event.type !== 'extension_ui_request' || event.method !== 'notify') return false
   return /milestone\s+m\d+.*ready/i.test(String(event.message ?? ''))
+}
+
+export function isInteractiveHeadlessTool(toolName: string | undefined): boolean {
+  return INTERACTIVE_HEADLESS_TOOLS.has(String(toolName ?? ''))
+}
+
+export function shouldArmHeadlessIdleTimeout(toolCallCount: number, interactiveToolCount: number): boolean {
+  return toolCallCount > 0 && interactiveToolCount === 0
 }
 
 // ---------------------------------------------------------------------------

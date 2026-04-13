@@ -49,6 +49,8 @@ export {
 export { createEventBus, type EventBus, type EventBusController } from "./core/event-bus.js";
 // Extension system
 export type {
+	AdjustToolSetEvent,
+	AdjustToolSetResult,
 	AgentEndEvent,
 	AgentStartEvent,
 	AgentToolResult,
@@ -118,6 +120,7 @@ export type {
 	SlashCommandSource,
 	TerminalInputHandler,
 	ToolCallEvent,
+	ToolCompatibility,
 	ToolDefinition,
 	ToolInfo,
 	SortResult,
@@ -173,6 +176,7 @@ export { DefaultResourceLoader } from "./core/resource-loader.js";
 export {
 	type CreateAgentSessionOptions,
 	type CreateAgentSessionResult,
+	CredentialCooldownError,
 	// Factory
 	createAgentSession,
 	createBashTool,
@@ -225,6 +229,11 @@ export {
 	SettingsManager,
 	type TaskIsolationSettings,
 } from "./core/settings-manager.js";
+export {
+	SAFE_COMMAND_PREFIXES,
+	setAllowedCommandPrefixes,
+	getAllowedCommandPrefixes,
+} from "./core/resolve-config-value.js";
 // Skills
 export {
 	ECOSYSTEM_SKILLS_DIR,
@@ -305,6 +314,12 @@ export {
 	type HashlineReadToolDetails,
 	type HashlineReadToolInput,
 	type HashlineReadToolOptions,
+	// Tool compatibility registry (ADR-005)
+	registerToolCompatibility,
+	getToolCompatibility,
+	getAllToolCompatibility,
+	registerMcpToolCompatibility,
+	resetToolCompatibilityRegistry,
 } from "./core/tools/index.js";
 // Main entry point
 export { main } from "./main.js";

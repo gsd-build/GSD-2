@@ -6,11 +6,18 @@
  * or AutoContext dependency. State accessors are passed as callbacks.
  */
 
-import type { ExtensionContext, ExtensionCommandContext, SessionMessageEntry } from "@gsd/pi-coding-agent";
+import type {
+  ExtensionContext,
+  ExtensionCommandContext,
+  SessionMessageEntry,
+  ReadonlyFooterDataProvider,
+  Theme,
+} from "@gsd/pi-coding-agent";
 import type { GSDState } from "./types.js";
 import { getCurrentBranch } from "./worktree.js";
 import { getActiveHook } from "./post-unit-hooks.js";
 import { getLedger, getProjectTotals } from "./metrics.js";
+import { getErrorMessage } from "./error-utils.js";
 import {
   resolveMilestoneFile,
   resolveSliceFile,
@@ -23,7 +30,11 @@ import { makeUI } from "../shared/tui.js";
 import { GLYPH, INDENT } from "../shared/mod.js";
 import { computeProgressScore } from "./progress-score.js";
 import { getActiveWorktreeName } from "./worktree-command.js";
-import { loadEffectiveGSDPreferences, getGlobalGSDPreferencesPath } from "./preferences.js";
+import {
+  getGlobalGSDPreferencesPath,
+  getProjectGSDPreferencesPath,
+  parsePreferencesMarkdown,
+} from "./preferences.js";
 import { resolveServiceTierIcon, getEffectiveServiceTier } from "./service-tier.js";
 import { parseUnitId } from "./unit-id.js";
 import {
@@ -31,6 +42,8 @@ import {
   getRtkSessionSavings,
   type RtkSessionSavings,
 } from "../shared/rtk-session-stats.js";
+import { logWarning } from "./workflow-logger.js";
+import { formattedShortcutPair } from "./shortcut-defs.js";
 
 // ─── UAT Slice Extraction ─────────────────────────────────────────────────────
 
@@ -285,8 +298,9 @@ export function updateSliceProgressCache(base: string, mid: string, activeSid?: 
             taskDetails = dbTasks.map(t => ({ id: t.id, title: t.title, done: t.status === "complete" || t.status === "done" }));
           }
         }
-      } catch {
+      } catch (err) {
         // Non-fatal — just omit task count
+        logWarning("dashboard", `operation failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
 
@@ -297,8 +311,9 @@ export function updateSliceProgressCache(base: string, mid: string, activeSid?: 
       activeSliceTasks,
       taskDetails,
     };
-  } catch {
+  } catch (err) {
     // Non-fatal — widget just won't show progress bar
+    logWarning("dashboard", `operation failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
@@ -332,8 +347,9 @@ function refreshLastCommit(basePath: string): void {
       };
     }
     lastCommitFetchedAt = Date.now();
-  } catch {
+  } catch (err) {
     // Non-fatal — just skip last commit display
+    logWarning("dashboard", `operation failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
@@ -348,12 +364,23 @@ function getLastCommit(basePath: string): { timeAgo: string; message: string } |
 // ─── Footer Factory ───────────────────────────────────────────────────────────
 
 /**
- * Footer factory that renders zero lines — hides the built-in footer entirely.
- * All footer info (pwd, branch, tokens, cost, model) is shown inside the
- * progress widget instead, so there's no gap or redundancy.
+ * Footer factory used by auto-mode.
+ * Keep footer minimal but preserve extension status context from setStatus().
  */
-export const hideFooter = () => ({
-  render(_width: number): string[] { return []; },
+function sanitizeFooterStatus(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+export const hideFooter = (_tui: unknown, theme: Theme, footerData: ReadonlyFooterDataProvider) => ({
+  render(width: number): string[] {
+    const extensionStatuses = footerData.getExtensionStatuses();
+    if (extensionStatuses.size === 0) return [];
+    const statusLine = Array.from(extensionStatuses.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([, text]) => sanitizeFooterStatus(text))
+      .join(" ");
+    return [truncateToWidth(theme.fg("dim", statusLine), width, theme.fg("dim", "..."))];
+  },
   invalidate() {},
   dispose() {},
 });
@@ -365,24 +392,74 @@ export type WidgetMode = "full" | "small" | "min" | "off";
 const WIDGET_MODES: WidgetMode[] = ["full", "small", "min", "off"];
 let widgetMode: WidgetMode = "full";
 let widgetModeInitialized = false;
+let widgetModePreferencePath: string | null = null;
+
+function safeReadTextFile(path: string): string | null {
+  try {
+    if (!existsSync(path)) return null;
+    return readFileSync(path, "utf-8");
+  } catch {
+    return null;
+  }
+}
+
+function readWidgetModeFromFile(path: string): WidgetMode | undefined {
+  const raw = safeReadTextFile(path);
+  if (!raw) return undefined;
+  const prefs = parsePreferencesMarkdown(raw);
+  const saved = prefs?.widget_mode;
+  if (saved && WIDGET_MODES.includes(saved as WidgetMode)) {
+    return saved as WidgetMode;
+  }
+  return undefined;
+}
+
+function resolveWidgetModePreferencePath(
+  projectPath = getProjectGSDPreferencesPath(),
+  globalPath = getGlobalGSDPreferencesPath(),
+): string {
+  if (readWidgetModeFromFile(projectPath)) {
+    return projectPath;
+  }
+
+  if (readWidgetModeFromFile(globalPath)) {
+    return globalPath;
+  }
+
+  if (safeReadTextFile(projectPath) !== null) return projectPath;
+  if (safeReadTextFile(globalPath) !== null) return globalPath;
+  return getGlobalGSDPreferencesPath();
+}
 
 /** Load widget mode from preferences (once). */
-function ensureWidgetModeLoaded(): void {
+function ensureWidgetModeLoaded(projectPath?: string, globalPath?: string): void {
   if (widgetModeInitialized) return;
   widgetModeInitialized = true;
   try {
-    const loaded = loadEffectiveGSDPreferences();
-    const saved = loaded?.preferences?.widget_mode;
+    const resolvedProjectPath = projectPath ?? getProjectGSDPreferencesPath();
+    const resolvedGlobalPath = globalPath ?? getGlobalGSDPreferencesPath();
+    const saved = readWidgetModeFromFile(resolvedProjectPath) ?? readWidgetModeFromFile(resolvedGlobalPath);
     if (saved && WIDGET_MODES.includes(saved as WidgetMode)) {
       widgetMode = saved as WidgetMode;
     }
-  } catch { /* non-fatal — use default */ }
+    widgetModePreferencePath = resolveWidgetModePreferencePath(resolvedProjectPath, resolvedGlobalPath);
+  } catch (err) { /* non-fatal — use default */
+    logWarning("dashboard", `operation failed: ${getErrorMessage(err)}`);
+    widgetModePreferencePath = getGlobalGSDPreferencesPath();
+  }
 }
 
-/** Persist widget mode to global preferences YAML. */
-function persistWidgetMode(mode: WidgetMode): void {
+/**
+ * Persist widget mode to the preference file that owns the effective value.
+ * Project-scoped widget_mode wins over global; if neither scope defines it,
+ * we prefer an existing project preferences file and otherwise fall back to
+ * the global preferences file.
+ */
+function persistWidgetMode(
+  mode: WidgetMode,
+  prefsPath = widgetModePreferencePath ?? resolveWidgetModePreferencePath(),
+): void {
   try {
-    const prefsPath = getGlobalGSDPreferencesPath();
     let content = "";
     if (existsSync(prefsPath)) {
       content = readFileSync(prefsPath, "utf-8");
@@ -395,28 +472,38 @@ function persistWidgetMode(mode: WidgetMode): void {
       content = content.trimEnd() + "\n" + line + "\n";
     }
     writeFileSync(prefsPath, content, "utf-8");
-  } catch { /* non-fatal — mode still set in memory */ }
+  } catch (err) { /* non-fatal — mode still set in memory */
+    logWarning("dashboard", `file write failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 /** Cycle to the next widget mode. Returns the new mode. */
-export function cycleWidgetMode(): WidgetMode {
-  ensureWidgetModeLoaded();
+export function cycleWidgetMode(projectPath?: string, globalPath?: string): WidgetMode {
+  ensureWidgetModeLoaded(projectPath, globalPath);
   const idx = WIDGET_MODES.indexOf(widgetMode);
   widgetMode = WIDGET_MODES[(idx + 1) % WIDGET_MODES.length];
-  persistWidgetMode(widgetMode);
+  persistWidgetMode(widgetMode, widgetModePreferencePath ?? resolveWidgetModePreferencePath(projectPath, globalPath));
   return widgetMode;
 }
 
 /** Set widget mode directly. */
-export function setWidgetMode(mode: WidgetMode): void {
+export function setWidgetMode(mode: WidgetMode, projectPath?: string, globalPath?: string): void {
+  ensureWidgetModeLoaded(projectPath, globalPath);
   widgetMode = mode;
-  persistWidgetMode(widgetMode);
+  persistWidgetMode(widgetMode, widgetModePreferencePath ?? resolveWidgetModePreferencePath(projectPath, globalPath));
 }
 
 /** Get current widget mode. */
-export function getWidgetMode(): WidgetMode {
-  ensureWidgetModeLoaded();
+export function getWidgetMode(projectPath?: string, globalPath?: string): WidgetMode {
+  ensureWidgetModeLoaded(projectPath, globalPath);
   return widgetMode;
+}
+
+/** Test-only reset for widget mode caching. */
+export function _resetWidgetModeForTests(): void {
+  widgetMode = "full";
+  widgetModeInitialized = false;
+  widgetModePreferencePath = null;
 }
 
 // ─── Progress Widget ──────────────────────────────────────────────────────────
@@ -430,6 +517,8 @@ export interface WidgetStateAccessors {
   isVerbose(): boolean;
   /** True while newSession() is in-flight — render must not access session state. */
   isSessionSwitching(): boolean;
+  /** Fully-qualified dispatched model ID (provider/id) set after model selection + hook overrides (#2899). */
+  getCurrentDispatchedModelId(): string | null;
 }
 
 export function updateProgressWidget(
@@ -458,7 +547,9 @@ export function updateProgressWidget(
 
   // Cache git branch at widget creation time (not per render)
   let cachedBranch: string | null = null;
-  try { cachedBranch = getCurrentBranch(accessors.getBasePath()); } catch { /* not in git repo */ }
+  try { cachedBranch = getCurrentBranch(accessors.getBasePath()); } catch (err) { /* not in git repo */
+    logWarning("dashboard", `git branch detection failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
 
   // Cache short pwd (last 2 path segments only) + worktree/branch info
   let widgetPwd: string;
@@ -495,7 +586,8 @@ export function updateProgressWidget(
         const sessionId = ctx.sessionManager.getSessionId();
         const savings = sessionId ? getRtkSessionSavings(accessors.getBasePath(), sessionId) : null;
         cachedRtkLabel = formatRtkSavingsLabel(savings);
-      } catch {
+      } catch (err) {
+        logWarning("dashboard", `RTK savings lookup failed: ${err instanceof Error ? (err as Error).message : String(err)}`);
         cachedRtkLabel = null;
       }
     };
@@ -519,7 +611,9 @@ export function updateProgressWidget(
         }
         refreshRtkLabel();
         cachedLines = undefined;
-      } catch { /* non-fatal */ }
+      } catch (err) { /* non-fatal */
+        logWarning("dashboard", `DB status update failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }, 15_000);
 
     return {
@@ -569,13 +663,6 @@ export function updateProgressWidget(
           : "";
         lines.push(rightAlign(headerLeft, headerRight, width));
 
-        // Worktree/branch right-aligned below header
-        if (worktreeName && cachedBranch) {
-          lines.push(rightAlign("", theme.fg("dim", `${worktreeName} (${cachedBranch})`), width));
-        } else if (cachedBranch) {
-          lines.push(rightAlign("", theme.fg("dim", cachedBranch), width));
-        }
-
         // Show health signal details when degraded (yellow/red)
         if (score.level !== "green" && score.signals.length > 0 && widgetMode !== "min") {
           // Show up to 3 most relevant signals in compact form
@@ -616,9 +703,15 @@ export function updateProgressWidget(
         const cxPctVal = cxUsage?.percent ?? 0;
         const cxPct = cxUsage?.percent !== null ? cxPctVal.toFixed(1) : "?";
 
-        // Model display — shown in context section, not stats
-        const modelId = cmdCtx?.model?.id ?? "";
-        const modelProvider = cmdCtx?.model?.provider ?? "";
+        // Model display — prefer dispatched model ID (set after selectAndApplyModel
+        // + hook overrides) over cmdCtx?.model which can be stale (#2899).
+        const dispatchedModelId = accessors.getCurrentDispatchedModelId();
+        const modelId = dispatchedModelId
+          ? dispatchedModelId.split("/").slice(1).join("/") || dispatchedModelId
+          : (cmdCtx?.model?.id ?? "");
+        const modelProvider = dispatchedModelId
+          ? dispatchedModelId.split("/")[0] || ""
+          : (cmdCtx?.model?.provider ?? "");
         const tierIcon = resolveServiceTierIcon(effectiveServiceTier, modelId);
         const modelDisplay = (modelProvider && modelId
           ? `${modelProvider}/${modelId}`
@@ -833,15 +926,17 @@ export function updateProgressWidget(
         // Hints line
         const hintParts: string[] = [];
         hintParts.push("esc pause");
-        hintParts.push(process.platform === "darwin" ? "⌃⌥G dashboard" : "Ctrl+Alt+G dashboard");
+        hintParts.push(`${formattedShortcutPair("dashboard")} dashboard`);
+        hintParts.push(`${formattedShortcutPair("parallel")} parallel`);
         const hintStr = theme.fg("dim", hintParts.join(" | "));
         const commitStr = lastCommit
           ? theme.fg("dim", `${lastCommit.timeAgo} ago: ${commitMsg}`)
           : "";
+        const locationStr = theme.fg("dim", widgetPwd);
         if (commitStr) {
-          lines.push(rightAlign(`${pad}${commitStr}`, hintStr, width));
+          lines.push(rightAlign(`${pad}${locationStr} · ${commitStr}`, hintStr, width));
         } else {
-          lines.push(rightAlign("", hintStr, width));
+          lines.push(rightAlign(`${pad}${locationStr}`, hintStr, width));
         }
 
         lines.push(...ui.bar());

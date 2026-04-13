@@ -8,12 +8,15 @@
  */
 
 import type {
+	OllamaChatRequest,
+	OllamaChatResponse,
 	OllamaPsResponse,
 	OllamaPullProgress,
 	OllamaShowResponse,
 	OllamaTagsResponse,
 	OllamaVersionResponse,
 } from "./types.js";
+import { parseNDJsonStream } from "./ndjson-stream.js";
 
 const DEFAULT_HOST = "http://localhost:11434";
 const PROBE_TIMEOUT_MS = 1500;
@@ -31,11 +34,34 @@ export function getOllamaHost(): string {
 	return `http://${host}`;
 }
 
+/**
+ * Get auth headers for Ollama API requests.
+ * For cloud endpoints (OLLAMA_HOST pointing to ollama.com or remote instances),
+ * OLLAMA_API_KEY is used as a Bearer token. Local Ollama ignores the header.
+ */
+function getAuthHeaders(): Record<string, string> {
+	const apiKey = process.env.OLLAMA_API_KEY;
+	if (!apiKey) return {};
+	return { Authorization: `Bearer ${apiKey}` };
+}
+
+/**
+ * Merge auth headers into request options.
+ */
+function withAuth(options: RequestInit = {}): RequestInit {
+	const authHeaders = getAuthHeaders();
+	if (Object.keys(authHeaders).length === 0) return options;
+	return {
+		...options,
+		headers: { ...authHeaders, ...(options.headers as Record<string, string> || {}) },
+	};
+}
+
 async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = REQUEST_TIMEOUT_MS): Promise<Response> {
 	const controller = new AbortController();
 	const timeout = setTimeout(() => controller.abort(), timeoutMs);
 	try {
-		return await fetch(url, { ...options, signal: controller.signal });
+		return await fetch(url, withAuth({ ...options, signal: controller.signal }));
 	} finally {
 		clearTimeout(timeout);
 	}
@@ -43,10 +69,16 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutM
 
 /**
  * Check if Ollama is running and reachable.
+ * For cloud endpoints (OLLAMA_HOST pointing to ollama.com), uses /api/tags
+ * as the probe since the root endpoint may not be available.
  */
 export async function isRunning(): Promise<boolean> {
 	try {
-		const response = await fetchWithTimeout(`${getOllamaHost()}/`, {}, PROBE_TIMEOUT_MS);
+		const host = getOllamaHost();
+		const isCloud = host.includes("ollama.com") || host.includes("cloud");
+		const probeUrl = isCloud ? `${host}/api/tags` : `${host}/`;
+		const timeout = isCloud ? REQUEST_TIMEOUT_MS : PROBE_TIMEOUT_MS;
+		const response = await fetchWithTimeout(probeUrl, isCloud ? { method: "GET" } : {}, timeout);
 		return response.ok;
 	} catch {
 		return false;
@@ -114,12 +146,12 @@ export async function pullModel(
 	onProgress?: (progress: OllamaPullProgress) => void,
 	signal?: AbortSignal,
 ): Promise<void> {
-	const response = await fetch(`${getOllamaHost()}/api/pull`, {
+	const response = await fetch(`${getOllamaHost()}/api/pull`, withAuth({
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ name, stream: true }),
 		signal,
-	});
+	}));
 
 	if (!response.ok) {
 		const text = await response.text();
@@ -130,39 +162,36 @@ export async function pullModel(
 		throw new Error("Ollama /api/pull returned no body");
 	}
 
-	const reader = response.body.getReader();
-	const decoder = new TextDecoder();
-	let buffer = "";
+	for await (const progress of parseNDJsonStream<OllamaPullProgress>(response.body, signal)) {
+		onProgress?.(progress);
+	}
+}
 
-	while (true) {
-		const { done, value } = await reader.read();
-		if (done) break;
+/**
+ * Stream a chat completion via /api/chat.
+ * Returns an async generator yielding each NDJSON response chunk.
+ */
+export async function* chat(
+	request: OllamaChatRequest,
+	signal?: AbortSignal,
+): AsyncGenerator<OllamaChatResponse> {
+	const response = await fetch(`${getOllamaHost()}/api/chat`, withAuth({
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(request),
+		signal,
+	}));
 
-		buffer += decoder.decode(value, { stream: true });
-		const lines = buffer.split("\n");
-		buffer = lines.pop() ?? "";
-
-		for (const line of lines) {
-			const trimmed = line.trim();
-			if (!trimmed) continue;
-			try {
-				const progress = JSON.parse(trimmed) as OllamaPullProgress;
-				onProgress?.(progress);
-			} catch {
-				// Skip malformed lines
-			}
-		}
+	if (!response.ok) {
+		const text = await response.text();
+		throw new Error(`Ollama /api/chat returned ${response.status}: ${text}`);
 	}
 
-	// Process remaining buffer
-	if (buffer.trim()) {
-		try {
-			const progress = JSON.parse(buffer.trim()) as OllamaPullProgress;
-			onProgress?.(progress);
-		} catch {
-			// Ignore
-		}
+	if (!response.body) {
+		throw new Error("Ollama /api/chat returned no body");
 	}
+
+	yield* parseNDJsonStream<OllamaChatResponse>(response.body, signal, true);
 }
 
 /**
