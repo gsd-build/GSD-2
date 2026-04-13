@@ -434,13 +434,15 @@ test("fresh gsd --web browser onboarding stays locked on failed validation and u
   const tempRoot = mkdtempSync(join(tmpdir(), "gsd-web-onboarding-runtime-"))
   const tempHome = join(tempRoot, "home")
   const browserLogPath = join(tempRoot, "browser-open.log")
+  const compileCacheRoot = mkdtempSync(join(tmpdir(), "gsd-node-compile-cache-"))
   let port: number | null = null
 
   t.after(async () => {
     if (port !== null) {
-    await killProcessOnPort(port)
+      await killProcessOnPort(port)
     }
-    rmSync(tempRoot, { recursive: true, force: true })
+    rmSync(compileCacheRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
+    rmSync(tempRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
   });
 
   const launch = await launchPackagedWebHost({
@@ -452,6 +454,7 @@ test("fresh gsd --web browser onboarding stays locked on failed validation and u
       ANTHROPIC_API_KEY: "",
       OPENAI_API_KEY: "",
       GOOGLE_API_KEY: "",
+      NODE_COMPILE_CACHE: compileCacheRoot,
     },
   })
   port = launch.port
