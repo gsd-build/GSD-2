@@ -62,7 +62,7 @@ describe("interactive routing bypass (#3962)", () => {
     );
     // The function should check isAutoMode before routing synthesis
     const fnIdx = modelSelectionSrc.indexOf("function resolvePreferredModelConfig");
-    const fnBody = modelSelectionSrc.slice(fnIdx, fnIdx + 600);
+    const fnBody = modelSelectionSrc.slice(fnIdx, fnIdx + 900);
     assert.ok(
       fnBody.includes("isAutoMode"),
       "resolvePreferredModelConfig should accept isAutoMode parameter",

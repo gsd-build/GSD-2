@@ -23,15 +23,26 @@ export interface ModelSelectionResult {
   appliedModel: Model<Api> | null;
 }
 
+export interface PreferredModelConfig {
+  primary: string;
+  fallbacks: string[];
+  source: "explicit" | "synthesized";
+}
+
 export function resolvePreferredModelConfig(
   unitType: string,
   autoModeStartModel: { provider: string; id: string } | null,
   /** When false, only return explicit per-phase model configs — do not
    *  synthesize a routing ceiling from dynamic_routing.tier_models (#3962). */
   isAutoMode = true,
-) {
+): PreferredModelConfig | undefined {
   const explicitConfig = resolveModelWithFallbacksForUnit(unitType);
-  if (explicitConfig) return explicitConfig;
+  if (explicitConfig) {
+    return {
+      ...explicitConfig,
+      source: "explicit",
+    };
+  }
 
   // In interactive mode, don't synthesize a routing-based model config.
   // The user's session model (/model) should be used as-is (#3962).
@@ -50,6 +61,7 @@ export function resolvePreferredModelConfig(
   return {
     primary: ceilingModel,
     fallbacks: [],
+    source: "synthesized",
   };
 }
 
@@ -94,6 +106,11 @@ export async function selectAndApplyModel(
     // respecting their /model selection without silent downgrades (#3962).
     const routingConfig = resolveDynamicRoutingConfig();
     if (!isAutoMode) {
+      routingConfig.enabled = false;
+    }
+    if (modelConfig.source === "explicit") {
+      // Explicit per-phase model preferences express hard user intent.
+      // Dynamic routing may only treat synthesized tier ceilings as downgradeable.
       routingConfig.enabled = false;
     }
     let effectiveModelConfig = modelConfig;
@@ -217,6 +234,7 @@ export async function selectAndApplyModel(
           effectiveModelConfig = {
             primary: routingResult.modelId,
             fallbacks: routingResult.fallbacks,
+            source: modelConfig.source,
           };
           // Always notify on model downgrade — users should see when their
           // model selection is overridden, not just in verbose mode (#3962).

@@ -6,6 +6,9 @@
 
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { isFlatRateProvider, resolvePreferredModelConfig } from "../auto-model-selection.ts";
 
 describe("flat-rate provider routing guard (#3453)", () => {
@@ -33,18 +36,49 @@ describe("flat-rate provider routing guard (#3453)", () => {
   });
 
   test("resolvePreferredModelConfig returns undefined for copilot start model", () => {
+    const originalCwd = process.cwd();
+    const originalGsdHome = process.env.GSD_HOME;
+    const tempProject = mkdtempSync(join(tmpdir(), "gsd-flat-rate-project-"));
+    const tempGsdHome = mkdtempSync(join(tmpdir(), "gsd-flat-rate-home-"));
+
     // When the user's start model is on a flat-rate provider,
     // resolvePreferredModelConfig should not synthesize a routing
     // config from tier_models — it should return undefined so the
     // user's selected model is preserved.
-    const result = resolvePreferredModelConfig("execute-task", {
-      provider: "github-copilot",
-      id: "claude-sonnet-4",
-    });
+    try {
+      mkdirSync(join(tempProject, ".gsd"), { recursive: true });
+      writeFileSync(
+        join(tempProject, ".gsd", "PREFERENCES.md"),
+        [
+          "---",
+          "dynamic_routing:",
+          "  enabled: true",
+          "  tier_models:",
+          "    light: gpt-4o-mini",
+          "    standard: claude-sonnet-4-6",
+          "    heavy: claude-opus-4-6",
+          "---",
+        ].join("\n"),
+        "utf-8",
+      );
+      process.env.GSD_HOME = tempGsdHome;
+      process.chdir(tempProject);
 
-    // Should be undefined (no routing config created for flat-rate)
-    // Note: this only tests the guard — if explicit per-unit config exists
-    // in preferences, that takes precedence regardless.
-    assert.equal(result, undefined, "Should not create routing config for copilot");
+      const result = resolvePreferredModelConfig("execute-task", {
+        provider: "github-copilot",
+        id: "claude-sonnet-4",
+      });
+
+      // Should be undefined (no routing config created for flat-rate)
+      // Note: this only tests the synthesis guard — explicit per-unit config
+      // still takes precedence when the user configured one.
+      assert.equal(result, undefined, "Should not create routing config for copilot");
+    } finally {
+      process.chdir(originalCwd);
+      if (originalGsdHome === undefined) delete process.env.GSD_HOME;
+      else process.env.GSD_HOME = originalGsdHome;
+      rmSync(tempProject, { recursive: true, force: true });
+      rmSync(tempGsdHome, { recursive: true, force: true });
+    }
   });
 });
