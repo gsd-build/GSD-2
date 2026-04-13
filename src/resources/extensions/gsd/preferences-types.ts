@@ -197,6 +197,7 @@ export interface RemoteQuestionsConfig {
   channel_id: string | number;
   timeout_minutes?: number;        // clamped to 1-30
   poll_interval_seconds?: number;  // clamped to 2-30
+  proxy_url?: string;              // HTTP/HTTPS proxy URL for Telegram (e.g., "http://proxy.example.com:8080")
 }
 
 export interface CmuxPreferences {

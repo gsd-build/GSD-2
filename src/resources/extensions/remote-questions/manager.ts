@@ -129,7 +129,7 @@ function createPrompt(questions: QuestionInput[], config: ResolvedConfig): Remot
 
 function createAdapter(config: ResolvedConfig): ChannelAdapter {
   if (config.channel === "slack") return new SlackAdapter(config.token, config.channelId);
-  if (config.channel === "telegram") return new TelegramAdapter(config.token, config.channelId);
+  if (config.channel === "telegram") return new TelegramAdapter(config.token, config.channelId, config.proxyUrl);
   return new DiscordAdapter(config.token, config.channelId);
 }
 

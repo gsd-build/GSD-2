@@ -15,10 +15,12 @@ export class TelegramAdapter implements ChannelAdapter {
   private lastSentText = "";
   private readonly token: string;
   private readonly chatId: string;
+  private readonly proxyUrl?: string;
 
-  constructor(token: string, chatId: string) {
+  constructor(token: string, chatId: string, proxyUrl?: string) {
     this.token = token;
     this.chatId = chatId;
+    this.proxyUrl = proxyUrl;
   }
 
   async validate(): Promise<void> {
@@ -143,7 +145,7 @@ export class TelegramAdapter implements ChannelAdapter {
       `${TELEGRAM_API}/bot${this.token}/${method}`,
       "POST",
       params,
-      { errorLabel: "Telegram API" },
+      { errorLabel: "Telegram API", proxyUrl: this.proxyUrl },
     );
   }
 }
