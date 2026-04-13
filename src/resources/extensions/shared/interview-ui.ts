@@ -91,6 +91,13 @@ export interface InterviewRoundOptions {
 	 * Defaults to "end interview".
 	 */
 	exitLabel?: string;
+	/**
+	 * Render the interview as a TUI overlay (modal) instead of replacing the
+	 * editor area. Use this when the interview is triggered from a tool
+	 * execution context where the editor container is too small or would
+	 * overlap with other rendering (tool-execution frames, widgets, etc.).
+	 */
+	overlay?: boolean;
 }
 
 export interface WrapUpOptions {
@@ -187,6 +194,17 @@ export async function showInterviewRound(
 	opts: InterviewRoundOptions,
 	ctx: ExtensionCommandContext,
 ): Promise<RoundResult> {
+	const overlayOpts = opts.overlay
+		? {
+				overlay: true as const,
+				overlayOptions: {
+					width: "80%" as const,
+					minWidth: 60,
+					maxHeight: "88%" as const,
+					anchor: "center" as const,
+				},
+			}
+		: undefined;
 	return ctx.ui.custom<RoundResult>((tui: TUI, theme: Theme, _kb, done) => {
 
 		interface QuestionState {
@@ -212,12 +230,37 @@ export async function showInterviewRound(
 		let showingExitConfirm = false;
 		let exitCursor = 0; // 0 = keep going (default), 1 = end interview
 		let cachedLines: string[] | undefined;
+		let disposed = false;
+
+		// ── Lifecycle: wrap done() to guarantee cleanup before resolve ──
+		let abortHandler: (() => void) | null = null;
+
+		function cleanup() {
+			if (disposed) return;
+			disposed = true;
+			cachedLines = undefined;
+			// Remove abort listener to prevent double-done after normal submit
+			if (abortHandler && opts.signal) {
+				opts.signal.removeEventListener("abort", abortHandler);
+				abortHandler = null;
+			}
+			// Destroy editor to release TUI resources
+			if (editorRef.current) {
+				editorRef.current = null;
+			}
+		}
+
+		function safeDone(result: RoundResult) {
+			if (disposed) return;
+			cleanup();
+			done(result);
+		}
 
 		// External cancellation (e.g. remote channel won the race)
 		if (opts.signal) {
-			const onAbort = () => done({ endInterview: false, answers: {} });
-			if (opts.signal.aborted) { onAbort(); }
-			else { opts.signal.addEventListener("abort", onAbort, { once: true }); }
+			abortHandler = () => safeDone({ endInterview: false, answers: {} });
+			if (opts.signal.aborted) { abortHandler(); }
+			else { opts.signal.addEventListener("abort", abortHandler, { once: true }); }
 		}
 
 		// Editor is created once; editorTheme comes from the design system
@@ -300,7 +343,7 @@ export async function showInterviewRound(
 
 		function submit() {
 			saveEditorToState();
-			done(buildResult());
+			safeDone(buildResult());
 		}
 
 		function goNextOrSubmit() {
@@ -343,10 +386,10 @@ export async function showInterviewRound(
 				if (matchesKey(data, Key.up) || matchesKey(data, Key.left)) { exitCursor = 0; refresh(); return; }
 				if (matchesKey(data, Key.down) || matchesKey(data, Key.right)) { exitCursor = 1; refresh(); return; }
 				if (data === "1") { showingExitConfirm = false; refresh(); return; }
-				if (data === "2") { done({ endInterview: false, answers: {} }); return; }
+				if (data === "2") { safeDone({ endInterview: false, answers: {} }); return; }
 				if (matchesKey(data, Key.enter) || matchesKey(data, Key.space)) {
 					if (exitCursor === 0) { showingExitConfirm = false; refresh(); }
-					else { done({ endInterview: false, answers: {} }); }
+					else { safeDone({ endInterview: false, answers: {} }); }
 					return;
 				}
 				if (matchesKey(data, Key.escape)) { showingExitConfirm = false; refresh(); return; }
@@ -523,6 +566,7 @@ export async function showInterviewRound(
 		// ── Main render ──────────────────────────────────────────────────
 
 		function render(width: number): string[] {
+			if (disposed) return [];
 			if (cachedLines) return cachedLines;
 
 			if (showingExitConfirm) { cachedLines = renderExitConfirm(width); return cachedLines; }
@@ -632,8 +676,9 @@ export async function showInterviewRound(
 
 		return {
 			render,
-			invalidate: () => { cachedLines = undefined; },
-			handleInput,
+			invalidate: () => { if (!disposed) cachedLines = undefined; },
+			handleInput: (data: string) => { if (!disposed) handleInput(data); },
+			dispose: cleanup,
 		};
-	});
+	}, overlayOpts);
 }
