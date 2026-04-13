@@ -1,6 +1,6 @@
 /**
  * cli-provider-rate-limit.test.ts — Verify rate-limit backoff capping
- * for CLI-style providers (openai-codex, google-gemini-cli). (#2922)
+ * for CLI-style providers (openai-codex, codex-cli, google-gemini-cli). (#2922)
  *
  * These providers use per-user quotas with shorter windows, so the
  * default 60s backoff should be capped at 30s to avoid leaving users
@@ -33,6 +33,14 @@ test("agent-end-recovery references google-gemini-cli for rate-limit handling (#
   assert.ok(
     src.includes("google-gemini-cli"),
     'agent-end-recovery.ts must reference "google-gemini-cli" for CLI provider rate-limit handling (#2922)',
+  );
+});
+
+test("agent-end-recovery references codex-cli for rate-limit handling", () => {
+  const src = getRecoverySource();
+  assert.ok(
+    src.includes("codex-cli"),
+    'agent-end-recovery.ts must reference "codex-cli" for CLI provider rate-limit handling',
   );
 });
 

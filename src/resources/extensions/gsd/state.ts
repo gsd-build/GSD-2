@@ -738,10 +738,10 @@ export async function deriveStateFromDb(basePath: string): Promise<GSDState> {
   }
 
   const { completeMilestoneIds, parkedMilestoneIds } = buildCompletenessSet(basePath, milestones);
-  
+
   const registryContext = await buildRegistryAndFindActive(basePath, milestones, completeMilestoneIds, parkedMilestoneIds);
   const { registry, activeMilestone, activeMilestoneSlices, activeMilestoneHasDraft } = registryContext;
-  
+
   const milestoneProgress = {
     done: registry.filter(e => e.status === 'complete').length,
     total: registry.length,
@@ -820,7 +820,7 @@ export async function deriveStateFromDb(basePath: string): Promise<GSDState> {
   }
 
   const tasks = await reconcileSliceTasks(basePath, activeMilestone.id, activeSlice.id, planFile);
-  
+
   const taskProgress = {
     done: tasks.filter(t => isStatusDone(t.status)).length,
     total: tasks.length,

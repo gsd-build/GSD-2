@@ -23,6 +23,8 @@ Guides for installing, configuring, and using GSD day-to-day. Located in [`user-
 | [Git Strategy](./user-docs/git-strategy.md) | Worktree isolation, branching model, and merge behavior |
 | [Parallel Orchestration](./user-docs/parallel-orchestration.md) | Run multiple milestones simultaneously with worker isolation and coordination |
 | [Working in Teams](./user-docs/working-in-teams.md) | Unique milestone IDs, `.gitignore` setup, and shared planning artifacts |
+| [GSD + Codex PR Workflow](./user-docs/gsd-codex-pr-workflow.md) | Combine GSD planning/verification with Codex review/debugging to produce a strong pull request |
+| [GSD + Codex PR Workflow（中文）](./user-docs/gsd-codex-pr-workflow.zh-CN.md) | 使用 GSD 负责规划和验证，用 Codex 负责审查、调试和 PR 文案，协作产出高质量 PR |
 | [Skills](./user-docs/skills.md) | Bundled skills, skill discovery, and custom skill authoring |
 | [Migration from v1](./user-docs/migration.md) | Migrating `.planning` directories from the original GSD |
 | [Troubleshooting](./user-docs/troubleshooting.md) | Common issues, `/gsd doctor` (real-time visibility v2.40), `/gsd forensics` (full debugger v2.40), and recovery procedures |

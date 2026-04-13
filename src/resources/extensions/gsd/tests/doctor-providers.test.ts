@@ -610,6 +610,46 @@ test("runProviderChecks reports ok for claude-code without any API key", () => {
   rmSync(tmpHome, { recursive: true, force: true });
 });
 
+test("runProviderChecks recognizes codex-cli sentinel auth for explicit codex-cli preferences", () => {
+  const repo = realpathSync(mkdtempSync(join(tmpdir(), "gsd-providers-codex-cli-repo-")));
+  mkdirSync(join(repo, ".gsd"), { recursive: true });
+  writeFileSync(
+    join(repo, ".gsd", "PREFERENCES.md"),
+    [
+      "---",
+      "models:",
+      "  execution:",
+      "    model: gpt-5.4",
+      "    provider: codex-cli",
+      "---",
+      "",
+    ].join("\n"),
+  );
+
+  const tmpHome = realpathSync(mkdtempSync(join(tmpdir(), "gsd-providers-codex-cli-home-")));
+  const agentDir = join(tmpHome, ".gsd", "agent");
+  mkdirSync(agentDir, { recursive: true });
+  writeFileSync(join(agentDir, "auth.json"), JSON.stringify({
+    "codex-cli": { type: "api_key", key: "cli" },
+  }));
+
+  withEnv({
+    HOME: tmpHome,
+    OPENAI_API_KEY: undefined,
+  }, () => {
+    withCwd(repo, () => {
+      const results = runProviderChecks();
+      const codex = results.find(r => r.name === "codex-cli");
+      assert.ok(codex, "codex-cli result should exist");
+      assert.equal(codex!.status, "ok", "codex-cli sentinel auth should be treated as configured");
+      assert.ok(codex!.message.includes("CLI ready"), "message should mention CLI readiness");
+    });
+  });
+
+  rmSync(repo, { recursive: true, force: true });
+  rmSync(tmpHome, { recursive: true, force: true });
+});
+
 test("PROVIDER_ROUTES includes google-gemini-cli as route for google (#2922)", async () => {
   const { readFileSync: readFS } = await import("node:fs");
   const { dirname: dirn, join: joinPath } = await import("node:path");
@@ -635,5 +675,18 @@ test("PROVIDER_ROUTES includes openai-codex as route for openai (#2922)", async 
   assert.ok(
     src.includes('"openai-codex"'),
     'PROVIDER_ROUTES must include "openai-codex" as a route (#2922)',
+  );
+});
+
+test("PROVIDER_ROUTES includes codex-cli as route for openai", async () => {
+  const { readFileSync: readFS } = await import("node:fs");
+  const { dirname: dirn, join: joinPath } = await import("node:path");
+  const { fileURLToPath: fileUrl } = await import("node:url");
+  const __dir = dirn(fileUrl(import.meta.url));
+  const src = readFS(joinPath(__dir, "..", "doctor-providers.ts"), "utf-8");
+
+  assert.ok(
+    src.includes('"codex-cli"'),
+    'PROVIDER_ROUTES must include "codex-cli" as a route for openai',
   );
 });

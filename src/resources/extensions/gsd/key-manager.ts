@@ -38,6 +38,7 @@ export const PROVIDER_REGISTRY: ProviderInfo[] = [
   { id: "openai",           label: "OpenAI",                  category: "llm", envVar: "OPENAI_API_KEY",         prefixes: ["sk-"],     dashboardUrl: "platform.openai.com/api-keys" },
   { id: "github-copilot",   label: "GitHub Copilot",          category: "llm", envVar: "GITHUB_TOKEN",           hasOAuth: true },
   { id: "openai-codex",     label: "ChatGPT Plus/Pro (Codex)",category: "llm",                                   hasOAuth: true },
+  { id: "codex-cli",        label: "Codex CLI",               category: "llm" },
   { id: "google-gemini-cli",label: "Google Gemini CLI",       category: "llm",                                   hasOAuth: true },
   { id: "google-antigravity",label: "Antigravity",            category: "llm",                                   hasOAuth: true },
   { id: "google",           label: "Google (Gemini)",         category: "llm", envVar: "GEMINI_API_KEY",         dashboardUrl: "aistudio.google.com/apikey" },

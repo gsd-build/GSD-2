@@ -8,6 +8,7 @@ Step-by-step setup instructions for every LLM provider GSD supports. If you ran 
 - [Built-in Providers](#built-in-providers)
   - [Anthropic (Claude)](#anthropic-claude)
   - [OpenAI](#openai)
+  - [Codex CLI](#codex-cli)
   - [Google Gemini](#google-gemini)
   - [OpenRouter](#openrouter)
   - [Groq](#groq)
@@ -32,6 +33,7 @@ Step-by-step setup instructions for every LLM provider GSD supports. If you ran 
 |----------|-------------|-------------|-------------|
 | Anthropic | API key | `ANTHROPIC_API_KEY` | — |
 | OpenAI | API key | `OPENAI_API_KEY` | — |
+| Codex CLI | Local CLI login | — | — |
 | Google Gemini | API key | `GEMINI_API_KEY` | — |
 | OpenRouter | API key | `OPENROUTER_API_KEY` | Optional `models.json` |
 | Groq | API key | `GROQ_API_KEY` | — |
@@ -149,6 +151,22 @@ export OPENAI_API_KEY="sk-..."
 Or run `gsd config` and choose "Paste an API key" then "OpenAI".
 
 **Get a key:** [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
+
+### Codex CLI
+
+`codex-cli` is a separate local-CLI provider. It does **not** replace the existing `openai-codex` browser OAuth path.
+
+Recommended when you already have the `codex` binary installed and authenticated locally and want GSD to use the local Codex agent loop:
+
+```bash
+codex login
+gsd config
+# Choose "Use Codex CLI"
+```
+
+Inside GSD, models appear with the `codex-cli/` provider prefix (for example `codex-cli/gpt-5.4`).
+
+Use `openai-codex` when you want the existing ChatGPT Plus/Pro OAuth-backed provider. Use `codex-cli` when you want GSD to delegate execution through the local Codex agent loop.
 
 ### Google Gemini
 

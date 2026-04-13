@@ -59,6 +59,7 @@ function modelToProviderId(model: string): string | null {
       "google-vertex": "google-vertex",
       anthropic: "anthropic",
       openai: "openai",
+      "codex-cli": "codex-cli",
       "github-copilot": "github-copilot",
     };
     if (prefixMap[prefix]) return prefixMap[prefix];
@@ -181,7 +182,7 @@ function resolveKey(providerId: string): KeyLookup {
  */
 const PROVIDER_ROUTES: Record<string, string[]> = {
   anthropic: ["github-copilot"],
-  openai: ["github-copilot", "openai-codex"],
+  openai: ["github-copilot", "openai-codex", "codex-cli"],
   google: ["google-gemini-cli"],
 };
 
@@ -249,6 +250,8 @@ function checkLlmProviders(): ProviderCheckResult[] {
         message: `${label} — not configured`,
         detail: providerId === "anthropic-vertex"
           ? "Set ANTHROPIC_VERTEX_PROJECT_ID and authenticate with Google ADC"
+          : providerId === "codex-cli"
+          ? "Run `codex login`, then re-run `gsd config` and choose `Use Codex CLI`"
           : info?.hasOAuth
           ? `Run /gsd keys to authenticate`
           : `Set ${envVar} or run /gsd keys`,
@@ -270,7 +273,9 @@ function checkLlmProviders(): ProviderCheckResult[] {
         label,
         category: "llm",
         status: "ok",
-        message: `${label} — key present (${lookup.source})`,
+        message: providerId === "codex-cli"
+          ? `${label} — CLI ready (${lookup.source})`
+          : `${label} — key present (${lookup.source})`,
         required: true,
       });
     }

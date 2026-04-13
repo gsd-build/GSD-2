@@ -17,6 +17,7 @@ import type { AuthStorage } from '@gsd/pi-coding-agent'
 import { renderLogo } from './logo.js'
 import { agentDir } from './app-paths.js'
 import { isClaudeCliReady } from './claude-cli-check.js'
+import { isCodexCliReady } from './codex-cli-check.js'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -66,6 +67,7 @@ const LLM_PROVIDER_IDS = [
   'anthropic',
   'anthropic-vertex',
   'claude-code',
+  'codex-cli',
   'openai',
   'github-copilot',
   'openai-codex',
@@ -175,7 +177,11 @@ export function shouldRunOnboarding(authStorage: AuthStorage, settingsDefaultPro
  * All steps are skippable. All errors are recoverable.
  * Writes status to stderr during execution.
  */
-export async function runOnboarding(authStorage: AuthStorage): Promise<void> {
+export async function runOnboarding(
+  authStorage: AuthStorage,
+  options: { launchAfter?: boolean } = {},
+): Promise<void> {
+  const launchAfter = options.launchAfter ?? true
   let p: ClackModule
   let pc: PicoModule
   try {
@@ -274,7 +280,7 @@ export async function runOnboarding(authStorage: AuthStorage): Promise<void> {
   }
 
   p.note(summaryLines.join('\n'), 'Setup complete')
-  p.outro(pc.dim('Launching GSD...'))
+  p.outro(pc.dim(launchAfter ? 'Launching GSD...' : 'Setup saved.'))
 }
 
 // ─── LLM Authentication Step ──────────────────────────────────────────────────
@@ -303,6 +309,12 @@ async function runLlmStep(p: ClackModule, pc: PicoModule, authStorage: AuthStora
     )
   }
 
+  if (isCodexCliReady()) {
+    authOptions.push(
+      { value: 'codex-cli', label: 'Use Codex CLI', hint: 'recommended — uses your existing local Codex login' },
+    )
+  }
+
   authOptions.push(
     { value: 'browser', label: 'Sign in with your browser', hint: 'GitHub Copilot, ChatGPT, Google, etc.' },
     { value: 'api-key', label: 'Paste an API key', hint: 'from your provider dashboard' },
@@ -323,6 +335,13 @@ async function runLlmStep(p: ClackModule, pc: PicoModule, authStorage: AuthStora
     p.log.info('Your Claude subscription will be used for inference. No API key needed.')
     // Store sentinel so hasAuth('claude-code') returns true on future boots
     authStorage.set('claude-code', { type: 'api_key', key: 'cli' })
+    return true
+  }
+
+  if (method === 'codex-cli') {
+    p.log.success('Codex CLI detected — routing through local CLI')
+    p.log.info('Your local Codex login will be used for inference. No API key needed.')
+    authStorage.set('codex-cli', { type: 'api_key', key: 'cli' })
     return true
   }
 
@@ -1020,4 +1039,3 @@ async function runDiscordChannelStep(p: ClackModule, pc: PicoModule, token: stri
   p.log.success(`Discord channel: ${pc.green(channelName ? `#${channelName}` : channelId)}`)
   return channelName ?? null
 }
-

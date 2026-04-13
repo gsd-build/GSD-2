@@ -594,6 +594,7 @@ GSD ships with 24 extensions, all loaded automatically:
 | **AWS Auth**           | Automatic Bedrock credential refresh for AWS-hosted models                                                              |
 | **Ollama**             | First-class local LLM support via Ollama                                                                                |
 | **Claude Code CLI**    | External provider extension for Claude Code CLI                                                                         |
+| **Codex CLI**          | External provider extension for the local Codex CLI                                                                     |
 | **cmux**               | Claude multiplexer integration — desktop notifications, sidebar metadata, visual subagent splits                        |
 | **GitHub Sync**        | Auto-sync milestones to GitHub Issues, PRs, and Milestones                                                              |
 | **LSP**                | Language Server Protocol — diagnostics, definitions, references, hover, rename                                          |
@@ -725,6 +726,8 @@ Anthropic, Anthropic (Vertex AI), OpenAI, Google (Gemini), OpenRouter, GitHub Co
 ### OAuth / Max Plans
 
 If you have a **Claude Max**, **Codex**, or **GitHub Copilot** subscription, you can use those directly — Pi handles the OAuth flow. No API key needed.
+
+If you prefer the local agent loop, GSD also bundles CLI-based providers such as **Claude Code CLI** and **Codex CLI** as separate routes from the OAuth-backed providers.
 
 > **⚠️ Important:** Using OAuth tokens from subscription plans outside their native applications may violate the provider's Terms of Service. In particular:
 >

@@ -383,18 +383,17 @@ export function resolveModelId<T extends { id: string; provider: string }>(
   if (candidates.length === 0) return undefined;
   if (candidates.length === 1) return candidates[0];
 
-  // When the user's current provider is claude-code (set by startup migration
-  // or explicit selection), honour it for bare IDs.  Routing back to anthropic
-  // would undo the migration and hit the third-party subscription block (#3772).
-  if (currentProvider === "claude-code") {
-    const ccMatch = candidates.find(m => m.provider === "claude-code");
-    if (ccMatch) return ccMatch;
+  // When the user's current provider is a CLI wrapper they explicitly selected,
+  // honour it for bare IDs instead of silently routing back to the API provider.
+  if (currentProvider === "claude-code" || currentProvider === "codex-cli") {
+    const extensionMatch = candidates.find(m => m.provider === currentProvider);
+    if (extensionMatch) return extensionMatch;
   }
 
   // Extension / CLI-wrapper providers that should not win bare-ID resolution
   // when a first-class API provider also offers the same model AND the user
   // has not explicitly chosen the extension provider.
-  const EXTENSION_PROVIDERS = new Set(["claude-code"]);
+  const EXTENSION_PROVIDERS = new Set(["claude-code", "codex-cli"]);
 
   // Prefer currentProvider only when it is a first-class API provider
   if (currentProvider && !EXTENSION_PROVIDERS.has(currentProvider)) {
@@ -416,7 +415,7 @@ export function resolveModelId<T extends { id: string; provider: string }>(
  * Uses case-insensitive matching with alias support to prevent fail-open on
  * provider naming variations (e.g. "copilot" vs "github-copilot").
  */
-const FLAT_RATE_PROVIDERS = new Set(["github-copilot", "copilot", "claude-code"]);
+const FLAT_RATE_PROVIDERS = new Set(["github-copilot", "copilot", "claude-code", "codex-cli"]);
 
 export function isFlatRateProvider(provider: string): boolean {
   return FLAT_RATE_PROVIDERS.has(provider.toLowerCase());

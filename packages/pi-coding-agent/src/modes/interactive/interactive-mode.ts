@@ -80,7 +80,7 @@ import { FooterComponent } from "./components/footer.js";
 import { appKey, appKeyHint, editorKey, formatKeyForDisplay, keyHint, rawKeyHint } from "./components/keybinding-hints.js";
 import { LoginDialogComponent } from "./components/login-dialog.js";
 import { ModelSelectorComponent, providerDisplayName } from "./components/model-selector.js";
-import { OAuthSelectorComponent } from "./components/oauth-selector.js";
+import { type AuthSelectorProvider, OAuthSelectorComponent } from "./components/oauth-selector.js";
 import { ProviderManagerComponent } from "./components/provider-manager.js";
 import { ScopedModelsSelectorComponent } from "./components/scoped-models-selector.js";
 import { SessionSelectorComponent } from "./components/session-selector.js";
@@ -130,6 +130,16 @@ function isExpandable(obj: unknown): obj is Expandable {
 type CompactionQueuedMessage = {
 	text: string;
 	mode: "steer" | "followUp";
+};
+
+const LOCAL_CLI_PROVIDER_SELECTOR_NAMES: Record<string, string> = {
+	"claude-code": "Use Claude Code CLI (recommended)",
+	"codex-cli": "Use Codex CLI (recommended)",
+};
+
+const LOCAL_CLI_PROVIDER_STATUS_NAMES: Record<string, string> = {
+	"claude-code": "Claude Code CLI",
+	"codex-cli": "Codex CLI",
 };
 
 /**
@@ -3501,15 +3511,10 @@ export class InteractiveMode {
 	}
 
 	private async showOAuthSelector(mode: "login" | "logout"): Promise<void> {
-		if (mode === "logout") {
-			const providers = this.session.modelRegistry.authStorage.list();
-			const loggedInProviders = providers.filter(
-				(p) => this.session.modelRegistry.authStorage.get(p)?.type === "oauth",
-			);
-			if (loggedInProviders.length === 0) {
-				this.showStatus("No OAuth providers logged in. Use /login first.");
-				return;
-			}
+		const providers = this.getAuthSelectorProviders(mode);
+		if (providers.length === 0) {
+			this.showStatus(mode === "login" ? "No login providers available." : "No providers logged in. Use /login first.");
+			return;
 		}
 
 		this.showSelector((done) => {
@@ -3524,38 +3529,39 @@ export class InteractiveMode {
 					// when the user cancels the login dialog (#821).
 					const handleAsync = async () => {
 						if (mode === "login") {
-							await this.showLoginDialog(providerId);
-						} else {
-						// Logout flow
-						const providerInfo = this.session.modelRegistry.authStorage
-							.getOAuthProviders()
-							.find((p) => p.id === providerId);
-						const providerName = providerInfo?.name || providerId;
-
-						try {
-							this.session.modelRegistry.authStorage.logout(providerId);
-							this.session.modelRegistry.refresh();
-							await this.updateAvailableProviderCount();
-
-							// Auto-switch model if current model belongs to the logged-out provider
-							const currentModel = this.session.model;
-							if (currentModel?.provider === providerId) {
-								try {
-									const available = this.session.modelRegistry.getAvailable();
-									const fallback = available.find((m) => m.provider !== providerId);
-									if (fallback) {
-										await this.session.setModel(fallback);
-									}
-								} catch {
-									// Model switch failed — user can manually switch via /model
-								}
+							if (this.session.modelRegistry.getProviderAuthMode(providerId) === "externalCli") {
+								await this.loginExternalCliProvider(providerId);
+							} else {
+								await this.showLoginDialog(providerId);
 							}
+						} else {
+							// Logout flow
+							const providerName = this.getAuthProviderStatusName(providerId);
 
-							this.showStatus(`Logged out of ${providerName}`);
-						} catch (error: unknown) {
-							this.showError(`Logout failed: ${error instanceof Error ? error.message : String(error)}`);
+							try {
+								this.session.modelRegistry.authStorage.logout(providerId);
+								this.session.modelRegistry.refresh();
+								await this.updateAvailableProviderCount();
+
+								// Auto-switch model if current model belongs to the logged-out provider
+								const currentModel = this.session.model;
+								if (currentModel?.provider === providerId) {
+									try {
+										const available = this.session.modelRegistry.getAvailable();
+										const fallback = available.find((m) => m.provider !== providerId);
+										if (fallback) {
+											await this.session.setModel(fallback);
+										}
+									} catch {
+										// Model switch failed — user can manually switch via /model
+									}
+								}
+
+								this.showStatus(`Logged out of ${providerName}`);
+							} catch (error: unknown) {
+								this.showError(`Logout failed: ${error instanceof Error ? error.message : String(error)}`);
+							}
 						}
-					}
 					};
 					handleAsync().catch(() => {
 						// Swallow — showLoginDialog already handles its own errors.
@@ -3566,9 +3572,83 @@ export class InteractiveMode {
 					done();
 					this.ui.requestRender();
 				},
+				providers,
 			);
 			return { component: selector, focus: selector };
 		});
+	}
+
+	private getExternalCliAuthProviders(mode: "login" | "logout"): AuthSelectorProvider[] {
+		if (mode === "logout") return [];
+
+		const authStorage = this.session.modelRegistry.authStorage;
+		const providerIds = [...new Set(this.session.modelRegistry.getAll().map((model) => model.provider))]
+			.filter((providerId) => this.session.modelRegistry.getProviderAuthMode(providerId) === "externalCli");
+
+		return providerIds
+			.filter((providerId) =>
+				mode === "login"
+					? this.session.modelRegistry.isProviderRequestReady(providerId)
+					: authStorage.hasAuth(providerId),
+			)
+			.map((providerId) => ({
+				id: providerId,
+				name: LOCAL_CLI_PROVIDER_SELECTOR_NAMES[providerId] ?? providerDisplayName(providerId),
+				authMode: "externalCli" as const,
+			}));
+	}
+
+	private getAuthSelectorProviders(mode: "login" | "logout"): AuthSelectorProvider[] {
+		const authStorage = this.session.modelRegistry.authStorage;
+		const oauthProviders = authStorage
+			.getOAuthProviders()
+			.filter((provider) => mode === "login" || authStorage.get(provider.id)?.type === "oauth")
+			.map((provider) => ({
+				id: provider.id,
+				name: provider.name,
+				authMode: "oauth" as const,
+			}));
+
+		return [...this.getExternalCliAuthProviders(mode), ...oauthProviders];
+	}
+
+	private getAuthProviderStatusName(providerId: string): string {
+		const oauthProvider = this.session.modelRegistry.authStorage.getOAuthProviders().find((provider) => provider.id === providerId);
+		if (oauthProvider) return oauthProvider.name;
+		return LOCAL_CLI_PROVIDER_STATUS_NAMES[providerId] ?? providerDisplayName(providerId);
+	}
+
+	private async loginExternalCliProvider(providerId: string): Promise<void> {
+		const providerName = this.getAuthProviderStatusName(providerId);
+
+		if (!this.session.modelRegistry.isProviderRequestReady(providerId)) {
+			this.showError(`${providerName} is not ready. Make sure the local CLI is installed and authenticated.`);
+			return;
+		}
+
+		this.session.modelRegistry.authStorage.set(providerId, { type: "api_key", key: "cli" });
+		this.session.modelRegistry.refresh();
+		await this.updateAvailableProviderCount();
+
+		try {
+			const currentModel = this.session.model;
+			if (currentModel) {
+				const currentKey = await this.session.modelRegistry.getApiKey(currentModel);
+				if (!currentKey) {
+					const available = this.session.modelRegistry.getAvailable();
+					const newProviderModel = available.find((model) => model.provider === providerId);
+					if (newProviderModel) {
+						await this.session.setModel(newProviderModel);
+					} else if (available.length > 0) {
+						await this.session.setModel(available[0]);
+					}
+				}
+			}
+		} catch {
+			// Model switch failed — user can manually switch via /model
+		}
+
+		this.showStatus(`Configured ${providerName}. Credentials saved to ${getAuthPath()}`);
 	}
 
 	private async showLoginDialog(providerId: string): Promise<void> {

@@ -18,6 +18,10 @@ describe("flat-rate provider routing guard (#3453)", () => {
     assert.equal(isFlatRateProvider("copilot"), true);
   });
 
+  test("isFlatRateProvider returns true for codex-cli", () => {
+    assert.equal(isFlatRateProvider("codex-cli"), true);
+  });
+
   test("isFlatRateProvider is case-insensitive", () => {
     assert.equal(isFlatRateProvider("GitHub-Copilot"), true);
     assert.equal(isFlatRateProvider("GITHUB-COPILOT"), true);

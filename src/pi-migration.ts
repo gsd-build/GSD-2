@@ -15,6 +15,7 @@ const PI_SETTINGS_PATH = join(homedir(), '.pi', 'agent', 'settings.json')
 const LLM_PROVIDER_IDS = [
   'anthropic',
   'openai',
+  'codex-cli',
   'github-copilot',
   'openai-codex',
   'google-gemini-cli',

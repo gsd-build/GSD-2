@@ -156,6 +156,17 @@ test("resolveModelId: bare ID resolves to claude-code when session is claude-cod
   assert.equal(result.provider, "claude-code", "bare ID must resolve to claude-code when session provider is claude-code");
 });
 
+test("resolveModelId: bare ID resolves to codex-cli when session is codex-cli", () => {
+  const availableModels = [
+    { id: "gpt-5.4", provider: "openai-codex" },
+    { id: "gpt-5.4", provider: "codex-cli" },
+  ];
+
+  const result = resolveModelId("gpt-5.4", availableModels, "codex-cli");
+  assert.ok(result, "should resolve a model");
+  assert.equal(result.provider, "codex-cli", "bare ID must resolve to codex-cli when session provider is codex-cli");
+});
+
 test("resolveModelId: bare ID still prefers current provider when it is a first-class API provider", () => {
   const availableModels = [
     { id: "claude-sonnet-4-6", provider: "anthropic" },
@@ -176,6 +187,17 @@ test("resolveModelId: explicit provider/model format still resolves to claude-co
   const result = resolveModelId("claude-code/claude-sonnet-4-6", availableModels, "anthropic");
   assert.ok(result, "should resolve a model");
   assert.equal(result.provider, "claude-code", "explicit provider prefix must be respected");
+});
+
+test("resolveModelId: openai-codex wins over codex-cli when session provider is not codex-cli", () => {
+  const availableModels = [
+    { id: "gpt-5.4", provider: "codex-cli" },
+    { id: "gpt-5.4", provider: "openai-codex" },
+  ];
+
+  const result = resolveModelId("gpt-5.4", availableModels, undefined);
+  assert.ok(result, "should resolve a model");
+  assert.equal(result.provider, "openai-codex", "canonical API provider must win when session is not codex-cli");
 });
 
 test("resolveModelId: bare ID with only one provider works normally", () => {

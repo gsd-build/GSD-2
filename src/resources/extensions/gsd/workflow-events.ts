@@ -130,11 +130,11 @@ export function compactMilestoneEvents(
 
   return withFileLockSync(logPath, () => {
     const allEvents = readEvents(logPath);
-    
+
     // Single-pass partition to halve the work (per reviewer agent)
     const toArchive: WorkflowEvent[] = [];
     const remaining: WorkflowEvent[] = [];
-    
+
     for (const e of allEvents) {
       if ((e.params as { milestoneId?: string }).milestoneId === milestoneId) {
         toArchive.push(e);

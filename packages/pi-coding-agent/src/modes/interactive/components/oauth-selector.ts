@@ -6,11 +6,17 @@ import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 
 /**
- * Component that renders an OAuth provider selector
+ * Component that renders a login/logout provider selector.
  */
+export interface AuthSelectorProvider {
+	id: string;
+	name: string;
+	authMode: "oauth" | "externalCli";
+}
+
 export class OAuthSelectorComponent extends Container {
 	private listContainer: Container;
-	private allProviders: OAuthProviderInterface[] = [];
+	private allProviders: AuthSelectorProvider[] = [];
 	private selectedIndex: number = 0;
 	private mode: "login" | "logout";
 	private authStorage: AuthStorage;
@@ -22,6 +28,7 @@ export class OAuthSelectorComponent extends Container {
 		authStorage: AuthStorage,
 		onSelect: (providerId: string) => void,
 		onCancel: () => void,
+		providers?: AuthSelectorProvider[],
 	) {
 		super();
 
@@ -31,7 +38,7 @@ export class OAuthSelectorComponent extends Container {
 		this.onCancelCallback = onCancel;
 
 		// Load all OAuth providers
-		this.loadProviders();
+		this.loadProviders(providers);
 
 		// Add top border
 		this.addChild(new DynamicBorder());
@@ -55,8 +62,17 @@ export class OAuthSelectorComponent extends Container {
 		this.updateList();
 	}
 
-	private loadProviders(): void {
-		this.allProviders = getOAuthProviders();
+	private loadProviders(providers?: AuthSelectorProvider[]): void {
+		if (providers) {
+			this.allProviders = providers;
+			return;
+		}
+
+		this.allProviders = getOAuthProviders().map((provider: OAuthProviderInterface) => ({
+			id: provider.id,
+			name: provider.name,
+			authMode: "oauth",
+		}));
 	}
 
 	private updateList(): void {
@@ -68,10 +84,12 @@ export class OAuthSelectorComponent extends Container {
 
 			const isSelected = i === this.selectedIndex;
 
-			// Check if user is logged in for this provider
+			// Check if user is configured for this provider
 			const credentials = this.authStorage.get(provider.id);
-			const isLoggedIn = credentials?.type === "oauth";
-			const statusIndicator = isLoggedIn ? theme.fg("success", " ✓ logged in") : "";
+			const isConfigured = provider.authMode === "oauth" ? credentials?.type === "oauth" : Boolean(credentials);
+			const statusIndicator = isConfigured
+				? theme.fg("success", provider.authMode === "oauth" ? " ✓ logged in" : " ✓ configured")
+				: "";
 
 			let line = "";
 			if (isSelected) {
@@ -89,12 +107,19 @@ export class OAuthSelectorComponent extends Container {
 		// Show "no providers" if empty
 		if (this.allProviders.length === 0) {
 			const message =
-				this.mode === "login" ? "No OAuth providers available" : "No OAuth providers logged in. Use /login first.";
+				this.mode === "login" ? "No login providers available" : "No providers logged in. Use /login first.";
 			this.listContainer.addChild(new TruncatedText(theme.fg("muted", `  ${message}`), 0, 0));
 		}
 	}
 
 	handleInput(keyData: string): void {
+		if (this.allProviders.length === 0) {
+			if (getEditorKeybindings().matches(keyData, "selectCancel")) {
+				this.onCancelCallback();
+			}
+			return;
+		}
+
 		const kb = getEditorKeybindings();
 		// Up arrow (wrap)
 		if (kb.matches(keyData, "selectUp")) {

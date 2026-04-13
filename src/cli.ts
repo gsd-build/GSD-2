@@ -206,7 +206,7 @@ if (packageCommand.handled) {
 if (cliFlags.messages[0] === 'config') {
   const authStorage = AuthStorage.create(authFilePath)
   loadStoredEnvKeys(authStorage)
-  await runOnboarding(authStorage)
+  await runOnboarding(authStorage, { launchAfter: false })
   process.exit(0)
 }
 

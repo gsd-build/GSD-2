@@ -147,11 +147,11 @@ export async function handleAgentEnd(
       return;
     }
 
-    // Cap rate-limit backoff for CLI-style providers (openai-codex, google-gemini-cli)
+    // Cap rate-limit backoff for CLI-style providers (openai-codex, codex-cli, google-gemini-cli)
     // which use per-user quotas with shorter windows (#2922).
     if (cls.kind === "rate-limit") {
       const currentProvider = ctx.model?.provider;
-      if (currentProvider === "openai-codex" || currentProvider === "google-gemini-cli") {
+      if (currentProvider === "openai-codex" || currentProvider === "codex-cli" || currentProvider === "google-gemini-cli") {
         cls.retryAfterMs = Math.min(cls.retryAfterMs, 30_000);
       }
     }
