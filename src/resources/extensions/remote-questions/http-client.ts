@@ -5,6 +5,7 @@
  * used by all channel adapters (Discord, Slack, Telegram).
  */
 
+import { ProxyAgent } from "undici";
 import { PER_REQUEST_TIMEOUT_MS } from "./types.js";
 
 export interface ApiRequestOptions {
@@ -18,6 +19,8 @@ export interface ApiRequestOptions {
   errorLabel?: string;
   /** Content-Type override. Default "application/json" when body is present. */
   contentType?: string;
+  /** HTTP/HTTPS proxy URL (e.g., "http://proxy.example.com:8080"). */
+  proxyUrl?: string;
 }
 
 /**
@@ -28,6 +31,7 @@ export interface ApiRequestOptions {
  * - Serializes `body` as JSON and sets Content-Type when provided.
  * - Returns `{}` for 204 No Content responses.
  * - Truncates error response bodies to `safeErrorLength` chars (default 200).
+ * - Supports HTTP/HTTPS proxy via `proxyUrl` option using undici's ProxyAgent.
  */
 export async function apiRequest(
   url: string,
@@ -41,6 +45,7 @@ export async function apiRequest(
     safeErrorLength = 200,
     errorLabel = "HTTP",
     contentType,
+    proxyUrl,
   } = options;
 
   const headers: Record<string, string> = {};
@@ -48,11 +53,21 @@ export async function apiRequest(
     headers["Authorization"] = `${authScheme} ${authToken}`;
   }
 
-  const init: RequestInit = {
+  const init: RequestInit & { dispatcher?: ProxyAgent } = {
     method,
     headers,
     signal: AbortSignal.timeout(PER_REQUEST_TIMEOUT_MS),
   };
+
+  // Configure proxy if proxyUrl is provided
+  if (proxyUrl) {
+    try {
+      init.dispatcher = new ProxyAgent(proxyUrl);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      throw new Error(`${errorLabel}: Failed to configure proxy (${proxyUrl}): ${errorMessage}`);
+    }
+  }
 
   if (body !== undefined) {
     headers["Content-Type"] = contentType ?? "application/json";

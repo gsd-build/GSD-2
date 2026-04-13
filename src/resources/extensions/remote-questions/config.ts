@@ -12,6 +12,7 @@ export interface ResolvedConfig {
   timeoutMs: number;
   pollIntervalMs: number;
   token: string;
+  proxyUrl?: string;
 }
 
 const ENV_KEYS: Record<RemoteChannel, string> = {
@@ -90,12 +91,16 @@ export function resolveRemoteConfig(): ResolvedConfig | null {
   const timeoutMinutes = clampNumber(rq.timeout_minutes, DEFAULT_TIMEOUT_MINUTES, MIN_TIMEOUT_MINUTES, MAX_TIMEOUT_MINUTES);
   const pollIntervalSeconds = clampNumber(rq.poll_interval_seconds, DEFAULT_POLL_INTERVAL_SECONDS, MIN_POLL_INTERVAL_SECONDS, MAX_POLL_INTERVAL_SECONDS);
 
+  // Resolve proxy URL: env var takes precedence over config file
+  const proxyUrl = resolveProxyUrl(rq.proxy_url);
+
   return {
     channel: rq.channel,
     channelId,
     timeoutMs: timeoutMinutes * 60 * 1000,
     pollIntervalMs: pollIntervalSeconds * 1000,
     token,
+    proxyUrl,
   };
 }
 
@@ -123,4 +128,29 @@ function clampNumber(value: unknown, fallback: number, min: number, max: number)
   const n = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(n)) return fallback;
   return Math.max(min, Math.min(max, n));
+}
+
+/**
+ * Resolve proxy URL for Telegram connections.
+ * Environment variable TELEGRAM_PROXY_URL takes precedence over config file.
+ * Falls back to standard proxy environment variables if no explicit proxy is set.
+ */
+function resolveProxyUrl(configProxyUrl?: string): string | undefined {
+  // TELEGRAM_PROXY_URL env var takes highest precedence
+  const envProxy = process.env.TELEGRAM_PROXY_URL;
+  if (envProxy) {
+    return envProxy;
+  }
+
+  // Config file proxy_url is next
+  if (configProxyUrl) {
+    return configProxyUrl;
+  }
+
+  // Fall back to standard proxy env vars (https_proxy, http_proxy, ALL_PROXY)
+  // These are commonly used by many tools and libraries
+  return process.env.https_proxy || process.env.HTTPS_PROXY ||
+         process.env.http_proxy || process.env.HTTP_PROXY ||
+         process.env.all_proxy || process.env.ALL_PROXY ||
+         undefined;
 }
