@@ -104,7 +104,7 @@ export async function dispatchDirectPhase(
         }
         unitType = "plan-slice";
         unitId = `${mid}/${sid}`;
-        prompt = await buildPlanSlicePrompt(mid, midTitle, sid, sTitle, base);
+        prompt = await buildPlanSlicePrompt(mid, midTitle, sid, sTitle, base, undefined, ctx.model?.contextWindow);
       } else {
         unitType = "plan-milestone";
         unitId = mid;
@@ -129,7 +129,7 @@ export async function dispatchDirectPhase(
       }
       unitType = "execute-task";
       unitId = `${mid}/${sid}/${tid}`;
-      prompt = await buildExecuteTaskPrompt(mid, sid, sTitle, tid, tTitle, base);
+      prompt = await buildExecuteTaskPrompt(mid, sid, sTitle, tid, tTitle, base, { sessionContextWindow: ctx.model?.contextWindow });
       break;
     }
 

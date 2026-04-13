@@ -76,6 +76,9 @@ export interface DispatchContext {
   state: GSDState;
   prefs: GSDPreferences | undefined;
   session?: import("./auto/session.js").AutoSession;
+  /** Session model context window in tokens — passed to prompt builders so the budget engine
+   *  uses the real executor window instead of the 200K fallback (issue #4142). */
+  sessionContextWindow?: number;
 }
 
 export interface DispatchRule {
@@ -465,7 +468,7 @@ export const DISPATCH_RULES: DispatchRule[] = [
   },
   {
     name: "planning → plan-slice",
-    match: async ({ state, mid, midTitle, basePath }) => {
+    match: async ({ state, mid, midTitle, basePath, sessionContextWindow }) => {
       if (state.phase !== "planning") return null;
       if (!state.activeSlice) return missingSliceStop(mid, state.phase);
       const sid = state.activeSlice!.id;
@@ -480,6 +483,8 @@ export const DISPATCH_RULES: DispatchRule[] = [
           sid,
           sTitle,
           basePath,
+          undefined,
+          sessionContextWindow,
         ),
       };
     },
@@ -634,7 +639,7 @@ export const DISPATCH_RULES: DispatchRule[] = [
   },
   {
     name: "executing → execute-task (recover missing task plan → plan-slice)",
-    match: async ({ state, mid, midTitle, basePath }) => {
+    match: async ({ state, mid, midTitle, basePath, sessionContextWindow }) => {
       if (state.phase !== "executing" || !state.activeTask) return null;
       if (!state.activeSlice) return missingSliceStop(mid, state.phase);
       const sid = state.activeSlice!.id;
@@ -658,6 +663,8 @@ export const DISPATCH_RULES: DispatchRule[] = [
             sid,
             sTitle,
             basePath,
+            undefined,
+            sessionContextWindow,
           ),
         };
       }
@@ -667,7 +674,7 @@ export const DISPATCH_RULES: DispatchRule[] = [
   },
   {
     name: "executing → execute-task",
-    match: async ({ state, mid, basePath }) => {
+    match: async ({ state, mid, basePath, sessionContextWindow }) => {
       if (state.phase !== "executing" || !state.activeTask) return null;
       if (!state.activeSlice) return missingSliceStop(mid, state.phase);
       const sid = state.activeSlice!.id;
@@ -686,6 +693,7 @@ export const DISPATCH_RULES: DispatchRule[] = [
           tid,
           tTitle,
           basePath,
+          { sessionContextWindow },
         ),
       };
     },

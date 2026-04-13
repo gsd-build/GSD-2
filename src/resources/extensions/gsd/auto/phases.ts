@@ -621,6 +621,7 @@ export async function runDispatch(
     state,
     prefs,
     session: s,
+    sessionContextWindow: ctx.model?.contextWindow,
   });
 
   if (dispatchResult.action === "stop") {

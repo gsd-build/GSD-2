@@ -8,6 +8,8 @@
  *   2. plan-slice.md template includes {{executorContextConstraints}} placeholder
  *   3. Executor constraints formatting varies with context window size
  *   4. Different context windows produce different budget-constrained outputs
+ *   5. Regression: prompt builders expose sessionContextWindow so callers can pass the real
+ *      model context window instead of always falling back to the 200K default (issue #4142)
  */
 
 import { describe, it, beforeEach, afterEach } from "node:test";
@@ -460,5 +462,72 @@ describe("prompt-budget: execute-task builder truncation pattern", () => {
       assert.ok(result.content.includes("[...truncated"), "should truncate when content exceeds 128K budget");
       assert.ok(result.droppedSections > 0, "should report dropped sections");
     }
+  });
+});
+
+// ─── Regression: issue #4142 — prompt builders must expose sessionContextWindow ─
+
+describe("prompt-budget: sessionContextWindow propagation (regression #4142)", () => {
+  it("formatExecutorConstraints accepts sessionContextWindow parameter", () => {
+    const src = readFileSync(join(__dirname, "..", "auto-prompts.ts"), "utf-8");
+    // The function signature must include sessionContextWindow so callers can pass the
+    // real model context window instead of always falling back to the 200K default.
+    assert.match(
+      src,
+      /function formatExecutorConstraints\([^)]*sessionContextWindow[^)]*\)/,
+      "formatExecutorConstraints must accept a sessionContextWindow parameter (issue #4142)",
+    );
+  });
+
+  it("formatExecutorConstraints passes sessionContextWindow to resolveExecutorContextWindow", () => {
+    const src = readFileSync(join(__dirname, "..", "auto-prompts.ts"), "utf-8");
+    // resolveExecutorContextWindow must receive sessionContextWindow so Step 2 can kick in
+    // when no execution model is configured in preferences.
+    assert.match(
+      src,
+      /resolveExecutorContextWindow\(undefined,[^)]*sessionContextWindow/,
+      "formatExecutorConstraints must pass sessionContextWindow to resolveExecutorContextWindow (issue #4142)",
+    );
+  });
+
+  it("buildPlanSlicePrompt accepts sessionContextWindow and threads it through", () => {
+    const src = readFileSync(join(__dirname, "..", "auto-prompts.ts"), "utf-8");
+    assert.match(
+      src,
+      /function buildPlanSlicePrompt\([^)]*sessionContextWindow[^)]*\)/,
+      "buildPlanSlicePrompt must accept sessionContextWindow (issue #4142)",
+    );
+    assert.match(
+      src,
+      /formatExecutorConstraints\(sessionContextWindow\)/,
+      "buildPlanSlicePrompt must pass sessionContextWindow to formatExecutorConstraints (issue #4142)",
+    );
+  });
+
+  it("ExecuteTaskPromptOptions declares sessionContextWindow field", () => {
+    const src = readFileSync(join(__dirname, "..", "auto-prompts.ts"), "utf-8");
+    assert.match(
+      src,
+      /interface ExecuteTaskPromptOptions \{[^}]*sessionContextWindow\?/s,
+      "ExecuteTaskPromptOptions must include sessionContextWindow (issue #4142)",
+    );
+  });
+
+  it("buildExecuteTaskPrompt uses opts.sessionContextWindow for resolveExecutorContextWindow", () => {
+    const src = readFileSync(join(__dirname, "..", "auto-prompts.ts"), "utf-8");
+    assert.match(
+      src,
+      /resolveExecutorContextWindow\(undefined,[^)]*opts\.sessionContextWindow/,
+      "buildExecuteTaskPrompt must pass opts.sessionContextWindow to resolveExecutorContextWindow (issue #4142)",
+    );
+  });
+
+  it("DispatchContext declares sessionContextWindow field", () => {
+    const src = readFileSync(join(__dirname, "..", "auto-dispatch.ts"), "utf-8");
+    assert.match(
+      src,
+      /interface DispatchContext \{[^}]*sessionContextWindow\?/s,
+      "DispatchContext must include sessionContextWindow so dispatch rules can thread it through (issue #4142)",
+    );
   });
 });
