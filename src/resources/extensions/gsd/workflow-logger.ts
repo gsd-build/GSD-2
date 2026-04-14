@@ -51,7 +51,8 @@ export type LogComponent =
   | "guided"        // Guided flow (discuss, plan wizards)
   | "registry"      // Rule registry hook state
   | "renderer"      // Markdown renderer and projections
-  | "safety";       // LLM safety harness
+  | "safety"        // LLM safety harness
+  | "postUnit";     // Post-unit processing (abandon detection, overrides)
 
 export interface LogEntry {
   ts: string;
