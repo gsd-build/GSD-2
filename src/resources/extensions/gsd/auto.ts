@@ -52,6 +52,7 @@ import {
   readCrashLock,
   isLockProcessAlive,
   formatCrashInfo,
+  emitCrashRecoveredUnitEnd,
 } from "./crash-recovery.js";
 import {
   acquireSessionLock,
@@ -115,6 +116,7 @@ import {
   resetSkillTelemetry,
 } from "./skill-telemetry.js";
 import { getRtkSessionSavings } from "../shared/rtk-session-stats.js";
+import { deactivateGSD } from "../shared/gsd-phase-state.js";
 import {
   initMetrics,
   resetMetrics,
@@ -165,6 +167,7 @@ import {
   reconcileMergeState,
 } from "./auto-recovery.js";
 import { resolveDispatch, DISPATCH_RULES } from "./auto-dispatch.js";
+import { getErrorMessage } from "./error-utils.js";
 import { initRegistry, convertDispatchRules } from "./rule-registry.js";
 import { emitJournalEvent as _emitJournalEvent, type JournalEntry } from "./journal.js";
 import {
@@ -196,6 +199,7 @@ import {
   postUnitPostVerification,
 } from "./auto-post-unit.js";
 import { bootstrapAutoSession, openProjectDbIfPresent, type BootstrapDeps } from "./auto-start.js";
+import { initHealthWidget } from "./health-widget.js";
 import { autoLoop, resolveAgentEnd, resolveAgentEndCancelled, _resetPendingResolve, isSessionSwitchInFlight, type LoopDeps, type ErrorContext } from "./auto-loop.js";
 // Slice-level parallelism (#2340)
 import { getEligibleSlices } from "./slice-parallel-eligibility.js";
@@ -270,6 +274,53 @@ function restoreProjectRootEnv(): void {
   s.previousProjectRootEnv = null;
   s.hadProjectRootEnv = false;
   s.projectRootEnvCaptured = false;
+}
+
+function captureMilestoneLockEnv(milestoneId: string | null): void {
+  if (!s.milestoneLockEnvCaptured) {
+    s.hadMilestoneLockEnv = Object.prototype.hasOwnProperty.call(process.env, "GSD_MILESTONE_LOCK");
+    s.previousMilestoneLockEnv = process.env.GSD_MILESTONE_LOCK ?? null;
+    s.milestoneLockEnvCaptured = true;
+  }
+
+  if (milestoneId) {
+    process.env.GSD_MILESTONE_LOCK = milestoneId;
+  } else {
+    delete process.env.GSD_MILESTONE_LOCK;
+  }
+}
+
+function restoreMilestoneLockEnv(): void {
+  if (!s.milestoneLockEnvCaptured) return;
+
+  if (s.hadMilestoneLockEnv && s.previousMilestoneLockEnv !== null) {
+    process.env.GSD_MILESTONE_LOCK = s.previousMilestoneLockEnv;
+  } else {
+    delete process.env.GSD_MILESTONE_LOCK;
+  }
+
+  s.previousMilestoneLockEnv = null;
+  s.hadMilestoneLockEnv = false;
+  s.milestoneLockEnvCaptured = false;
+}
+
+export function startAutoDetached(
+  ctx: ExtensionCommandContext,
+  pi: ExtensionAPI,
+  base: string,
+  verboseMode: boolean,
+  options?: {
+    step?: boolean;
+    interrupted?: InterruptedSessionAssessment;
+    milestoneLock?: string | null;
+  },
+): void {
+  void startAuto(ctx, pi, base, verboseMode, options).catch((err) => {
+    const message = getErrorMessage(err);
+    ctx.ui.notify(`Auto-start failed: ${message}`, "error");
+    logWarning("engine", `auto start error: ${message}`, { file: "auto.ts" });
+    debugLog("auto-start-failed", { error: message });
+  });
 }
 
 export function shouldUseWorktreeIsolation(): boolean {
@@ -549,11 +600,13 @@ function buildSnapshotOpts(
   _unitType: string,
   _unitId: string,
 ): {
+  autoSessionKey?: string;
   continueHereFired?: boolean;
   promptCharCount?: number;
   baselineCharCount?: number;
 } & Record<string, unknown> {
   return {
+    ...(s.autoStartTime > 0 ? { autoSessionKey: String(s.autoStartTime) } : {}),
     promptCharCount: s.lastPromptCharCount,
     baselineCharCount: s.lastBaselineCharCount,
     ...(s.currentUnitRouting ?? {}),
@@ -572,8 +625,10 @@ function handleLostSessionLock(
   });
   s.active = false;
   s.paused = false;
+  deactivateGSD();
   clearUnitTimeout();
   restoreProjectRootEnv();
+  restoreMilestoneLockEnv();
   deregisterSigtermHandler();
   clearCmuxSidebar(loadEffectiveGSDPreferences()?.preferences);
   const base = lockBase();
@@ -596,6 +651,7 @@ function handleLostSessionLock(
   ctx?.ui.setStatus("gsd-auto", undefined);
   ctx?.ui.setWidget("gsd-progress", undefined);
   ctx?.ui.setFooter(undefined);
+  if (ctx) initHealthWidget(ctx);
 }
 
 /**
@@ -608,8 +664,10 @@ function handleLostSessionLock(
 function cleanupAfterLoopExit(ctx: ExtensionContext): void {
   s.currentUnit = null;
   s.active = false;
+  deactivateGSD();
   clearUnitTimeout();
   restoreProjectRootEnv();
+  restoreMilestoneLockEnv();
 
   // Clear crash lock and release session lock so the next `/gsd next` does
   // not see a stale lock with the current PID and treat it as a "remote"
@@ -622,9 +680,14 @@ function cleanupAfterLoopExit(ctx: ExtensionContext): void {
     logWarning("session", `lock cleanup failed: ${err instanceof Error ? err.message : String(err)}`, { file: "auto.ts" });
   }
 
-  ctx.ui.setStatus("gsd-auto", undefined);
-  ctx.ui.setWidget("gsd-progress", undefined);
-  ctx.ui.setFooter(undefined);
+  // A transient provider-error pause intentionally leaves the paused badge
+  // visible so the user still has a resumable auto-mode signal on screen.
+  if (!s.paused) {
+    ctx.ui.setStatus("gsd-auto", undefined);
+    ctx.ui.setWidget("gsd-progress", undefined);
+    ctx.ui.setFooter(undefined);
+    initHealthWidget(ctx);
+  }
 
   // Restore CWD out of worktree back to original project root
   if (s.originalBasePath) {
@@ -736,7 +799,22 @@ export async function stopAuto(
       debugLog("stop-cleanup-worktree", { error: e instanceof Error ? e.message : String(e) });
     }
 
-    // ── Step 5: DB cleanup ──
+    // ── Step 5: Rebuild state while DB is still open (#3599) ──
+    // rebuildState() calls deriveState() which needs the DB for authoritative
+    // state. Previously this ran after closeDatabase(), forcing a filesystem
+    // fallback that could disagree with the DB-backed dispatch decisions —
+    // a split-brain where dispatch says "blocked" but STATE.md shows work.
+    if (s.basePath) {
+      try {
+        await rebuildState(s.basePath);
+      } catch (e) {
+        debugLog("stop-rebuild-state-failed", {
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+    }
+
+    // ── Step 6: DB cleanup ──
     if (isDbAvailable()) {
       try {
         const { closeDatabase } = await import("./gsd-db.js");
@@ -748,7 +826,7 @@ export async function stopAuto(
       }
     }
 
-    // ── Step 6: Restore basePath and chdir ──
+    // ── Step 7: Restore basePath and chdir ──
     try {
       if (s.originalBasePath) {
         s.basePath = s.originalBasePath;
@@ -763,7 +841,7 @@ export async function stopAuto(
       debugLog("stop-cleanup-basepath", { error: e instanceof Error ? e.message : String(e) });
     }
 
-    // ── Step 7: Ledger notification ──
+    // ── Step 8: Ledger notification ──
     try {
       const ledger = getLedger();
       if (ledger && ledger.units.length > 0) {
@@ -777,17 +855,6 @@ export async function stopAuto(
       }
     } catch (e) {
       debugLog("stop-cleanup-ledger", { error: e instanceof Error ? e.message : String(e) });
-    }
-
-    // ── Step 8: Rebuild state ──
-    if (s.basePath) {
-      try {
-        await rebuildState(s.basePath);
-      } catch (e) {
-        debugLog("stop-rebuild-state-failed", {
-          error: e instanceof Error ? e.message : String(e),
-        });
-      }
     }
 
     // ── Step 9: Cmux sidebar / event log ──
@@ -879,7 +946,9 @@ export async function stopAuto(
     ctx?.ui.setStatus("gsd-auto", undefined);
     ctx?.ui.setWidget("gsd-progress", undefined);
     ctx?.ui.setFooter(undefined);
+    if (ctx) initHealthWidget(ctx);
     restoreProjectRootEnv();
+    restoreMilestoneLockEnv();
 
     // Reset all session state in one call
     s.reset();
@@ -933,6 +1002,7 @@ export async function pauseAuto(
       activeEngineId: s.activeEngineId,
       activeRunDir: s.activeRunDir,
       autoStartTime: s.autoStartTime,
+      milestoneLock: s.sessionMilestoneLock ?? undefined,
     };
     const runtimeDir = join(gsdRoot(s.originalBasePath || s.basePath), "runtime");
     mkdirSync(runtimeDir, { recursive: true });
@@ -970,12 +1040,15 @@ export async function pauseAuto(
 
   s.active = false;
   s.paused = true;
+  deactivateGSD();
   restoreProjectRootEnv();
+  restoreMilestoneLockEnv();
   s.pendingVerificationRetry = null;
   s.verificationRetryCount.clear();
   ctx?.ui.setStatus("gsd-auto", "paused");
   ctx?.ui.setWidget("gsd-progress", undefined);
   ctx?.ui.setFooter(undefined);
+  if (ctx) initHealthWidget(ctx);
   const resumeCmd = s.stepMode ? "/gsd next" : "/gsd auto";
   ctx?.ui.notify(
     `${s.stepMode ? "Step" : "Auto"}-mode paused (Escape). Type to interact, or ${resumeCmd} to resume.`,
@@ -1154,6 +1227,7 @@ export async function startAuto(
   options?: {
     step?: boolean;
     interrupted?: InterruptedSessionAssessment;
+    milestoneLock?: string | null;
   },
 ): Promise<void> {
   if (s.active) {
@@ -1163,6 +1237,12 @@ export async function startAuto(
 
   const requestedStepMode = options?.step ?? false;
   const interruptedAssessment = options?.interrupted ?? null;
+  if (options?.milestoneLock !== undefined) {
+    s.sessionMilestoneLock = options.milestoneLock ?? null;
+  }
+  if (s.sessionMilestoneLock) {
+    captureMilestoneLockEnv(s.sessionMilestoneLock);
+  }
 
   // Escape stale worktree cwd from a previous milestone (#608).
   base = escapeStaleWorktree(base);
@@ -1194,6 +1274,7 @@ export async function startAuto(
         s.originalBasePath = meta.originalBasePath || base;
         s.stepMode = meta.stepMode ?? requestedStepMode;
         s.autoStartTime = meta.autoStartTime || Date.now();
+        s.sessionMilestoneLock = meta.milestoneLock ?? null;
         s.paused = true;
         try { unlinkSync(pausedPath); } catch (e) { logWarning("session", `pause file cleanup failed: ${e instanceof Error ? e.message : String(e)}`, { file: "auto.ts" }); }
         ctx.ui.notify(
@@ -1228,6 +1309,7 @@ export async function startAuto(
             s.pausedUnitType = meta.unitType ?? null;
             s.pausedUnitId = meta.unitId ?? null;
             s.autoStartTime = meta.autoStartTime || Date.now();
+            s.sessionMilestoneLock = meta.milestoneLock ?? null;
             s.paused = true;
             try { unlinkSync(pausedPath); } catch (e) { logWarning("session", `pause file cleanup failed: ${e instanceof Error ? e.message : String(e)}`, { file: "auto.ts" }); }
             ctx.ui.notify(
@@ -1247,11 +1329,19 @@ export async function startAuto(
     if (!s.autoStartTime || s.autoStartTime <= 0) s.autoStartTime = Date.now();
   }
 
+  if (s.sessionMilestoneLock) {
+    captureMilestoneLockEnv(s.sessionMilestoneLock);
+  }
+
   if (!s.paused) {
     s.stepMode = requestedStepMode;
   }
 
   if (freshStartAssessment.lock) {
+    // Emit a synthetic unit-end for any unit-start that has no closing event.
+    // This closes the journal gap reported in #3348 where the worker wrote side
+    // effects (SUMMARY.md, DB updates) but died before emitting unit-end.
+    emitCrashRecoveredUnitEnd(base, freshStartAssessment.lock);
     clearLock(base);
   }
 
@@ -1640,9 +1730,6 @@ export async function dispatchHookUnit(
 
   return true;
 }
-
-// Direct phase dispatch → auto-direct-dispatch.ts
-export { dispatchDirectPhase } from "./auto-direct-dispatch.js";
 
 // Re-export recovery functions for external consumers
 export {

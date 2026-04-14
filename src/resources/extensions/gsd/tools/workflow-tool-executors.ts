@@ -8,6 +8,7 @@ import {
   _getAdapter,
   saveGateResult,
 } from "../gsd-db.js";
+import { GATE_REGISTRY } from "../gate-registry.js";
 import { saveArtifactToDb } from "../db-writer.js";
 import type { CompleteMilestoneParams } from "./complete-milestone.js";
 import { handleCompleteMilestone } from "./complete-milestone.js";
@@ -427,7 +428,9 @@ export async function executeSaveGateResult(
       };
   }
 
-  const validGates = ["Q3", "Q4", "Q5", "Q6", "Q7", "Q8"];
+  // Source of truth: gate-registry.ts. Every declared GateId is accepted,
+  // so adding a new gate in one place automatically flows through here.
+  const validGates = Object.keys(GATE_REGISTRY);
   if (!validGates.includes(params.gateId)) {
     return {
       content: [{ type: "text", text: `Error: Invalid gateId "${params.gateId}". Must be one of: ${validGates.join(", ")}` }],

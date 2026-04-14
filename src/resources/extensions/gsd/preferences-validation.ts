@@ -180,6 +180,29 @@ export function validatePreferences(preferences: GSDPreferences): {
     }
   }
 
+  // ─── Flat-rate Providers ────────────────────────────────────────────
+  // User-declared flat-rate providers for dynamic routing suppression.
+  // Built-in providers (github-copilot, copilot, claude-code) and any
+  // externalCli provider are already auto-detected; this list layers on
+  // top for private subscription proxies and custom CLI wrappers.
+  if (preferences.flat_rate_providers !== undefined) {
+    if (Array.isArray(preferences.flat_rate_providers)) {
+      const allStrings = preferences.flat_rate_providers.every(
+        (item: unknown) => typeof item === "string",
+      );
+      if (allStrings) {
+        // Strip empty/whitespace-only entries to avoid false matches.
+        validated.flat_rate_providers = preferences.flat_rate_providers
+          .map((s: string) => s.trim())
+          .filter((s: string) => s.length > 0);
+      } else {
+        errors.push("flat_rate_providers must be an array of strings");
+      }
+    } else {
+      errors.push("flat_rate_providers must be an array of strings");
+    }
+  }
+
   // ─── Phase Skip Preferences ─────────────────────────────────────────
   if (preferences.phases !== undefined) {
     if (typeof preferences.phases === "object" && preferences.phases !== null) {

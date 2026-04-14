@@ -157,7 +157,7 @@ export function printHelp(version: string): void {
   process.stdout.write('  --print, -p              Single-shot print mode\n')
   process.stdout.write('  --continue, -c           Resume the most recent session\n')
   process.stdout.write('  --worktree, -w [name]    Start in an isolated worktree (auto-named if omitted)\n')
-  process.stdout.write('  --model <id>             Override model (e.g. claude-opus-4-6)\n')
+  process.stdout.write('  --model <id>             Override model (e.g. provider/model-id)\n')
   process.stdout.write('  --no-session             Disable session persistence\n')
   process.stdout.write('  --extension <path>       Load additional extension\n')
   process.stdout.write('  --tools <a,b,c>          Restrict available tools\n')

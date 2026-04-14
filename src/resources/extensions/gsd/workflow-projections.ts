@@ -180,6 +180,14 @@ export function renderSummaryContent(
   milestoneId: string,
   evidence?: Array<{ command: string; exitCode?: number; exit_code?: number; verdict: string; durationMs?: number; duration_ms?: number }>,
 ): string {
+  // If the task already has a fully rendered summary (written by handleCompleteTask's
+  // renderSummaryMarkdown), use it as-is. That content already includes frontmatter,
+  // heading, and all sections. Re-wrapping it inside a second frontmatter/heading
+  // envelope produces double frontmatter and duplicate sections.
+  if (taskRow.full_summary_md && taskRow.full_summary_md.trimStart().startsWith("---")) {
+    return taskRow.full_summary_md;
+  }
+
   // ── Frontmatter (YAML list format, matches parseSummary() expectations) ──
   const keyFilesYaml = taskRow.key_files && taskRow.key_files.length > 0
     ? taskRow.key_files.map(f => `  - ${f}`).join("\n")

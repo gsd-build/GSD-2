@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { initNotificationStore, appendNotification, _resetNotificationStore } from "../notification-store.js";
 import { buildNotificationWidgetLines } from "../notification-widget.js";
 
-test("buildNotificationWidgetLines includes slash-command fallback for unread notifications", () => {
+test("buildNotificationWidgetLines shows unread count with shortcut pair", () => {
   const tmp = mkdtempSync(join(tmpdir(), "gsd-notification-widget-"));
   try {
     mkdirSync(join(tmp, ".gsd"), { recursive: true });
@@ -17,7 +17,8 @@ test("buildNotificationWidgetLines includes slash-command fallback for unread no
 
     const lines = buildNotificationWidgetLines();
     assert.equal(lines.length, 1);
-    assert.match(lines[0]!, /\/gsd notifications/);
+    assert.match(lines[0]!, /Notifications:\s+1 unread/);
+    assert.match(lines[0]!, /\(.+\/.+\)/);
   } finally {
     _resetNotificationStore();
     rmSync(tmp, { recursive: true, force: true });

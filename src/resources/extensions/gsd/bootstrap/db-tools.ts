@@ -1026,12 +1026,12 @@ export function registerDbTools(pi: ExtensionAPI): void {
     name: "gsd_save_gate_result",
     label: "Save Gate Result",
     description:
-      "Save the result of a quality gate evaluation (Q3-Q8) to the GSD database. " +
+      "Save the result of a quality gate evaluation (Q3-Q8 or MV01-MV04) to the GSD database. " +
       "Called by gate evaluation sub-agents after analyzing a specific quality question.",
     promptSnippet: "Save quality gate evaluation result (verdict, rationale, findings)",
     promptGuidelines: [
       "Use gsd_save_gate_result after evaluating a quality gate question.",
-      "gateId must be one of: Q3, Q4, Q5, Q6, Q7, Q8.",
+      "gateId must be one of: Q3, Q4, Q5, Q6, Q7, Q8, MV01, MV02, MV03, MV04.",
       "verdict must be: pass (no concerns), flag (concerns found), or omitted (not applicable).",
       "rationale should be a one-sentence justification for the verdict.",
       "findings should contain detailed markdown analysis (or empty string if omitted).",
@@ -1039,7 +1039,7 @@ export function registerDbTools(pi: ExtensionAPI): void {
     parameters: Type.Object({
       milestoneId: Type.String({ description: "Milestone ID (e.g. M001)" }),
       sliceId: Type.String({ description: "Slice ID (e.g. S01)" }),
-      gateId: Type.String({ description: "Gate ID: Q3, Q4, Q5, Q6, Q7, or Q8" }),
+      gateId: Type.String({ description: "Gate ID: Q3, Q4, Q5, Q6, Q7, Q8, MV01, MV02, MV03, or MV04" }),
       taskId: Type.Optional(Type.String({ description: "Task ID for task-scoped gates (Q5/Q6/Q7)" })),
       verdict: Type.String({ description: "pass, flag, or omitted" }),
       rationale: Type.String({ description: "One-sentence justification" }),

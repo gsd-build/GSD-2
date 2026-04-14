@@ -787,7 +787,7 @@ const saveGateResultParams = {
   projectDir: projectDirParam,
   milestoneId: z.string().describe("Milestone ID (e.g. M001)"),
   sliceId: z.string().describe("Slice ID (e.g. S01)"),
-  gateId: z.enum(["Q3", "Q4", "Q5", "Q6", "Q7", "Q8"]).describe("Gate ID"),
+  gateId: z.enum(["Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "MV01", "MV02", "MV03", "MV04"]).describe("Gate ID"),
   taskId: z.string().optional().describe("Task ID for task-scoped gates"),
   verdict: z.enum(["pass", "flag", "omitted"]).describe("Gate verdict"),
   rationale: z.string().describe("One-sentence justification"),

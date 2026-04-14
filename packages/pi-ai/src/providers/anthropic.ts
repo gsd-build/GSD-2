@@ -53,6 +53,10 @@ function mergeHeaders(...headerSources: (Record<string, string> | undefined)[]):
 	return merged;
 }
 
+export function usesAnthropicBearerAuth(provider: Model<"anthropic-messages">["provider"]): boolean {
+	return provider === "alibaba-coding-plan" || provider === "minimax" || provider === "minimax-cn";
+}
+
 async function createClient(
 	model: Model<"anthropic-messages">,
 	apiKey: string,
@@ -99,13 +103,12 @@ async function createClient(
 		betaFeatures.push("interleaved-thinking-2025-05-14");
 	}
 
-	// API key auth (Anthropic OAuth removed per TOS compliance — use API keys or Claude CLI)
-	// Alibaba Coding Plan uses Bearer token auth instead of x-api-key
-	const isAlibabaProvider = model.provider === "alibaba-coding-plan";
+	// Some Anthropic-compatible providers require Bearer auth instead of x-api-key.
 	// Support custom Anthropic API proxy via ANTHROPIC_BASE_URL
+	const usesBearerAuth = usesAnthropicBearerAuth(model.provider);
 	const client = new AnthropicClass({
-		apiKey: isAlibabaProvider ? null : apiKey,
-		authToken: isAlibabaProvider ? apiKey : undefined,
+		apiKey: usesBearerAuth ? null : apiKey,
+		authToken: usesBearerAuth ? apiKey : undefined,
 		baseURL: resolveAnthropicBaseUrl(model.baseUrl),
 		dangerouslyAllowBrowser: true,
 		defaultHeaders: mergeHeaders(

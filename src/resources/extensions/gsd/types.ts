@@ -536,6 +536,24 @@ export interface CompleteTaskParams {
     verdict: string;
     durationMs: number;
   }>;
+  /**
+   * Q5 failure-modes section content (what breaks when dependencies fail).
+   * Populated → `pass`; omitted/empty → `omitted`.
+   * @optional
+   */
+  failureModes?: string;
+  /**
+   * Q6 load-profile section content (10x breakpoint + protection).
+   * Populated → `pass`; omitted/empty → `omitted`.
+   * @optional
+   */
+  loadProfile?: string;
+  /**
+   * Q7 negative-tests section content (malformed inputs, error paths,
+   * boundaries). Populated → `pass`; omitted/empty → `omitted`.
+   * @optional
+   */
+  negativeTests?: string;
   /** Optional caller-provided identity for audit trail */
   actorName?: string;
   /** Optional caller-provided reason this action was triggered */
@@ -584,6 +602,14 @@ export interface CompleteSliceParams {
   affects?: string[];
   /** @optional — defaults to [] when omitted */
   drillDownPaths?: string[];
+  /**
+   * Q8 operational readiness section content (health signal, failure signal,
+   * recovery, monitoring gaps). When populated, the complete-slice handler
+   * records Q8 as `pass`; when omitted or empty, Q8 is recorded as `omitted`.
+   * See gate-registry.ts.
+   * @optional
+   */
+  operationalReadiness?: string;
   /** Optional caller-provided identity for audit trail */
   actorName?: string;
   /** Optional caller-provided reason this action was triggered */

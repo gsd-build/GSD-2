@@ -6,7 +6,13 @@
  * or AutoContext dependency. State accessors are passed as callbacks.
  */
 
-import type { ExtensionContext, ExtensionCommandContext, SessionMessageEntry } from "@gsd/pi-coding-agent";
+import type {
+  ExtensionContext,
+  ExtensionCommandContext,
+  SessionMessageEntry,
+  ReadonlyFooterDataProvider,
+  Theme,
+} from "@gsd/pi-coding-agent";
 import type { GSDState } from "./types.js";
 import { getCurrentBranch } from "./worktree.js";
 import { getActiveHook } from "./post-unit-hooks.js";
@@ -17,7 +23,6 @@ import {
   resolveSliceFile,
 } from "./paths.js";
 import { isDbAvailable, getMilestoneSlices, getSliceTasks } from "./gsd-db.js";
-import { formatShortcut } from "./files.js";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { truncateToWidth, visibleWidth } from "@gsd/pi-tui";
@@ -38,6 +43,7 @@ import {
   type RtkSessionSavings,
 } from "../shared/rtk-session-stats.js";
 import { logWarning } from "./workflow-logger.js";
+import { formattedShortcutPair } from "./shortcut-defs.js";
 
 // ─── UAT Slice Extraction ─────────────────────────────────────────────────────
 
@@ -358,12 +364,23 @@ function getLastCommit(basePath: string): { timeAgo: string; message: string } |
 // ─── Footer Factory ───────────────────────────────────────────────────────────
 
 /**
- * Footer factory that renders zero lines — hides the built-in footer entirely.
- * All footer info (pwd, branch, tokens, cost, model) is shown inside the
- * progress widget instead, so there's no gap or redundancy.
+ * Footer factory used by auto-mode.
+ * Keep footer minimal but preserve extension status context from setStatus().
  */
-export const hideFooter = () => ({
-  render(_width: number): string[] { return []; },
+function sanitizeFooterStatus(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+export const hideFooter = (_tui: unknown, theme: Theme, footerData: ReadonlyFooterDataProvider) => ({
+  render(width: number): string[] {
+    const extensionStatuses = footerData.getExtensionStatuses();
+    if (extensionStatuses.size === 0) return [];
+    const statusLine = Array.from(extensionStatuses.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([, text]) => sanitizeFooterStatus(text))
+      .join(" ");
+    return [truncateToWidth(theme.fg("dim", statusLine), width, theme.fg("dim", "..."))];
+  },
   invalidate() {},
   dispose() {},
 });
@@ -646,14 +663,6 @@ export function updateProgressWidget(
           : "";
         lines.push(rightAlign(headerLeft, headerRight, width));
 
-        // Worktree/branch right-aligned below header
-        const branchLabel = worktreeName && cachedBranch
-          ? `${worktreeName} (${cachedBranch})`
-          : cachedBranch ?? "";
-        if (branchLabel) {
-          lines.push(rightAlign("", theme.fg("dim", branchLabel), width));
-        }
-
         // Show health signal details when degraded (yellow/red)
         if (score.level !== "green" && score.signals.length > 0 && widgetMode !== "min") {
           // Show up to 3 most relevant signals in compact form
@@ -917,15 +926,17 @@ export function updateProgressWidget(
         // Hints line
         const hintParts: string[] = [];
         hintParts.push("esc pause");
-        hintParts.push(`${formatShortcut("Ctrl+Alt+G")} dashboard`);
+        hintParts.push(`${formattedShortcutPair("dashboard")} dashboard`);
+        hintParts.push(`${formattedShortcutPair("parallel")} parallel`);
         const hintStr = theme.fg("dim", hintParts.join(" | "));
         const commitStr = lastCommit
           ? theme.fg("dim", `${lastCommit.timeAgo} ago: ${commitMsg}`)
           : "";
+        const locationStr = theme.fg("dim", widgetPwd);
         if (commitStr) {
-          lines.push(rightAlign(`${pad}${commitStr}`, hintStr, width));
+          lines.push(rightAlign(`${pad}${locationStr} · ${commitStr}`, hintStr, width));
         } else {
-          lines.push(rightAlign("", hintStr, width));
+          lines.push(rightAlign(`${pad}${locationStr}`, hintStr, width));
         }
 
         lines.push(...ui.bar());

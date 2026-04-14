@@ -29,9 +29,10 @@ import {
   type GSDPreferences,
   type LoadedGSDPreferences,
   type SkillResolution,
+  type SkillDiscoveryMode,
+  formatSkillRef,
 } from "./preferences-types.js";
 import { validatePreferences } from "./preferences-validation.js";
-import { formatSkillRef } from "./preferences-skills.js";
 
 // ─── Re-exports: types ──────────────────────────────────────────────────────
 // Every type/interface that was previously exported from this file is
@@ -60,11 +61,20 @@ export type {
 export { validatePreferences } from "./preferences-validation.js";
 
 // ─── Re-exports: skills ─────────────────────────────────────────────────────
-export {
-  resolveAllSkillReferences,
-  resolveSkillDiscoveryMode,
-  resolveSkillStalenessDays,
-} from "./preferences-skills.js";
+export { resolveAllSkillReferences } from "./preferences-skills.js";
+
+// These lived in preferences-skills.ts but imported loadEffectiveGSDPreferences
+// back from this file, creating a circular dependency. Moved here since they
+// are trivial wrappers over loadEffectiveGSDPreferences.
+export function resolveSkillDiscoveryMode(): SkillDiscoveryMode {
+  const prefs = loadEffectiveGSDPreferences();
+  return prefs?.preferences.skill_discovery ?? "suggest";
+}
+
+export function resolveSkillStalenessDays(): number {
+  const prefs = loadEffectiveGSDPreferences();
+  return prefs?.preferences.skill_staleness_days ?? 60;
+}
 
 // ─── Re-exports: models ─────────────────────────────────────────────────────
 export {
@@ -388,6 +398,9 @@ function mergePreferences(base: GSDPreferences, override: GSDPreferences): GSDPr
     auto_report: override.auto_report ?? base.auto_report,
     github: (base.github || override.github)
       ? { ...(base.github ?? {}), ...(override.github ?? {}) } as import("../github-sync/types.js").GitHubSyncConfig
+      : undefined,
+    experimental: (base.experimental || override.experimental)
+      ? { ...(base.experimental ?? {}), ...(override.experimental ?? {}) }
       : undefined,
     service_tier: override.service_tier ?? base.service_tier,
     forensics_dedup: override.forensics_dedup ?? base.forensics_dedup,

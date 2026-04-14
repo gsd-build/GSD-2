@@ -1,4 +1,24 @@
 import { join } from "node:path";
+
+/**
+ * Structured error thrown when all credentials for a provider are in a
+ * backoff window.  Carries typed metadata so callers (e.g. the auto-loop)
+ * can make informed retry decisions instead of string-matching the message.
+ */
+export class CredentialCooldownError extends Error {
+	readonly code = "AUTH_COOLDOWN" as const;
+	/** Milliseconds until the earliest credential becomes available, or undefined if unknown. */
+	readonly retryAfterMs: number | undefined;
+
+	constructor(provider: string, retryAfterMs?: number) {
+		super(
+			`All credentials for "${provider}" are in a cooldown window. ` +
+				`Please wait a moment and try again, or switch to a different provider.`,
+		);
+		this.name = "CredentialCooldownError";
+		this.retryAfterMs = retryAfterMs;
+	}
+}
 import { Agent, type AgentMessage, type ThinkingLevel } from "@gsd/pi-agent-core";
 import type { Message, Model } from "@gsd/pi-ai";
 import { getAgentDir, getDocsPath } from "../config.js";
@@ -199,6 +219,16 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		time("resourceLoader.reload");
 	}
 
+	// Flush provider registrations queued during extension loading so that
+	// extension models (e.g. pi-claude-cli) are visible in the registry before
+	// findInitialModel() runs. bindCore() repeats this flush as a safety net
+	// for any late-arriving registrations.
+	const { runtime: extensionRuntime } = resourceLoader.getExtensions();
+	for (const { name, config } of extensionRuntime.pendingProviderRegistrations) {
+		modelRegistry.registerProvider(name, config);
+	}
+	extensionRuntime.pendingProviderRegistrations = [];
+
 	// Check if session has existing data to restore
 	const existingSession = sessionManager.buildSessionContext();
 	const hasExistingSession = existingSession.messages.length > 0;
@@ -363,8 +393,12 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 
 			// Retry key resolution with backoff to handle transient network failures
 			// (e.g., OAuth token refresh failing due to brief connectivity loss).
+			// When credentials are in a cooldown window (e.g., after a 429), wait
+			// for the backoff to expire instead of using fixed delays that are
+			// shorter than the cooldown duration.
 			const maxAttempts = 3;
 			const baseDelayMs = 2000;
+			const maxCooldownWaitMs = 60_000; // Don't wait longer than 60s (skip quota-exhausted 30min backoffs)
 			for (let attempt = 1; attempt <= maxAttempts; attempt++) {
 				const key = await modelRegistry.getApiKeyForProvider(resolvedProvider);
 				if (key) return key;
@@ -379,7 +413,21 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 				const isOAuth = model && modelRegistry.isUsingOAuth(model);
 				if (!hasAuth && !isOAuth) break;
 
-				// Wait with exponential backoff before retrying
+				// If credentials are in a cooldown window, wait for the earliest
+				// one to expire rather than using a fixed delay that's too short.
+				const backoffExpiry = modelRegistry.authStorage.getEarliestBackoffExpiry(resolvedProvider);
+				if (backoffExpiry !== undefined) {
+					const waitMs = backoffExpiry - Date.now() + 500; // 500ms buffer
+					if (waitMs > 0 && waitMs <= maxCooldownWaitMs) {
+						await new Promise(resolve => setTimeout(resolve, waitMs));
+						continue; // Retry immediately after cooldown clears
+					}
+					if (waitMs > maxCooldownWaitMs) {
+						break; // Quota-exhausted or very long backoff — don't block
+					}
+				}
+
+				// Standard exponential backoff for non-cooldown transient failures
 				await new Promise(resolve => setTimeout(resolve, baseDelayMs * attempt));
 			}
 
@@ -390,10 +438,9 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			// the retry handler and creating cascading error entries (#3429).
 			const hasAuth = modelRegistry.authStorage.hasAuth(resolvedProvider);
 			if (hasAuth) {
-				throw new Error(
-					`All credentials for "${resolvedProvider}" are in a cooldown window. ` +
-						`Please wait a moment and try again, or switch to a different provider.`,
-				);
+				const expiry = modelRegistry.authStorage.getEarliestBackoffExpiry(resolvedProvider);
+				const retryAfterMs = expiry !== undefined ? Math.max(0, expiry - Date.now()) : undefined;
+				throw new CredentialCooldownError(resolvedProvider, retryAfterMs);
 			}
 			const model = agent.state.model;
 			const isOAuth = model && modelRegistry.isUsingOAuth(model);
@@ -401,10 +448,9 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 				// If credentials exist but are all in a backoff window (quota / rate-limit),
 				// surface a specific message instead of the misleading "Authentication failed".
 				if (modelRegistry.authStorage.areAllCredentialsBackedOff(resolvedProvider)) {
-					throw new Error(
-						`All credentials for "${resolvedProvider}" are in a cooldown window. ` +
-							`Please wait a moment and try again, or switch to a different provider.`,
-					);
+					const expiry = modelRegistry.authStorage.getEarliestBackoffExpiry(resolvedProvider);
+					const retryAfterMs = expiry !== undefined ? Math.max(0, expiry - Date.now()) : undefined;
+					throw new CredentialCooldownError(resolvedProvider, retryAfterMs);
 				}
 				throw new Error(
 					`Authentication failed for "${resolvedProvider}". ` +

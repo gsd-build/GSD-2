@@ -3,7 +3,7 @@
  * Bump version in package.json, then sync platform packages and pkg/package.json.
  * Usage: node scripts/bump-version.mjs <new-version>
  */
-import { readFileSync, writeFileSync } from "fs";
+import { readFileSync, writeFileSync, existsSync } from "fs";
 import { resolve, dirname } from "path";
 import { execSync } from "child_process";
 import { fileURLToPath } from "url";
@@ -37,3 +37,15 @@ execSync("node native/scripts/sync-platform-versions.cjs", { cwd: root, stdio: "
 
 // 4. Sync pkg/package.json (reads from pi-coding-agent)
 execSync("node scripts/sync-pkg-version.cjs", { cwd: root, stdio: "inherit" });
+
+// 5. Regenerate root package-lock.json to match the new version.
+//    --package-lock-only updates the lockfile in-place without touching node_modules.
+execSync("npm install --package-lock-only --ignore-scripts", { cwd: root, stdio: "inherit" });
+console.log(`[bump-version] package-lock.json regenerated at ${newVersion}`);
+
+// 6. Regenerate web/package-lock.json if the web app is present.
+const webDir = resolve(root, "web");
+if (existsSync(webDir)) {
+  execSync("npm install --package-lock-only --ignore-scripts", { cwd: webDir, stdio: "inherit" });
+  console.log(`[bump-version] web/package-lock.json regenerated`);
+}

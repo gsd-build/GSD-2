@@ -57,17 +57,24 @@ async function probeAndRegister(pi: ExtensionAPI): Promise<boolean> {
 	}
 
 	const models = await discoverModels();
-	if (models.length === 0) return true; // Running but no models pulled
+	if (models.length === 0) {
+		// No local models means there's nothing usable to register in GSD.
+		// Keep the footer/status clean instead of advertising Ollama availability.
+		if (providerRegistered) {
+			pi.unregisterProvider("ollama");
+			providerRegistered = false;
+		}
+		return false;
+	}
 
 	const baseUrl = client.getOllamaHost();
 
-	// Use authMode "apiKey" with a dummy key (#3440).
-	// authMode "none" requires a custom streamSimple handler, but Ollama uses
-	// the standard OpenAI-compatible streaming endpoint. Ollama ignores the
-	// Authorization header so the dummy key is harmless.
+	// Use authMode "apiKey" (#3440). Local Ollama ignores the Authorization header,
+	// so the "ollama" fallback is harmless. For cloud endpoints (OLLAMA_HOST pointing
+	// to ollama.com or a remote instance), OLLAMA_API_KEY is picked up here.
 	pi.registerProvider("ollama", {
 		authMode: "apiKey",
-		apiKey: "ollama",
+		apiKey: process.env.OLLAMA_API_KEY ?? "ollama",
 		baseUrl,
 		api: "ollama-chat",
 		streamSimple: streamOllamaChat,
@@ -115,9 +122,11 @@ export default function ollama(pi: ExtensionAPI) {
 		} else {
 			probeAndRegister(pi)
 				.then((found) => {
-					if (found) ctx.ui.setStatus("ollama", "Ollama");
+					ctx.ui.setStatus("ollama", found ? "Ollama" : undefined);
 				})
-				.catch(() => {});
+				.catch(() => {
+					ctx.ui.setStatus("ollama", undefined);
+				});
 		}
 	});
 

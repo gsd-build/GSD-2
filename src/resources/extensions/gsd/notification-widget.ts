@@ -5,8 +5,8 @@
 
 import type { ExtensionContext } from "@gsd/pi-coding-agent";
 
-import { getUnreadCount, readNotifications } from "./notification-store.js";
-import { formatShortcut } from "./files.js";
+import { getUnreadCount, onNotificationStoreChange } from "./notification-store.js";
+import { formattedShortcutPair } from "./shortcut-defs.js";
 
 // ─── Pure rendering ──���────────────────────────���─────────────────────────
 
@@ -14,18 +14,7 @@ export function buildNotificationWidgetLines(): string[] {
   const unread = getUnreadCount();
   if (unread === 0) return [];
 
-  const entries = readNotifications();
-  const latest = entries[0]; // newest-first
-  if (!latest) return [];
-
-  const icon = latest.severity === "error" ? "✗" : latest.severity === "warning" ? "⚠" : "●";
-  const badge = `${unread} unread`;
-  const msgMax = 80;
-  const truncated = latest.message.length > msgMax
-    ? latest.message.slice(0, msgMax - 1) + "…"
-    : latest.message;
-
-  return [`  ${icon} [${badge}]  ${truncated}  (${formatShortcut("Ctrl+Alt+N")} or /gsd notifications)`];
+  return [`  🔔 Notifications: ${unread} unread  (${formattedShortcutPair("notifications")})`];
 }
 
 // ─── Widget init ────────────────────────────────────────────────────────
@@ -51,6 +40,7 @@ export function initNotificationWidget(ctx: ExtensionContext): void {
       _tui.requestRender();
     };
 
+    const unsubscribe = onNotificationStoreChange(refresh);
     const refreshTimer = setInterval(refresh, REFRESH_INTERVAL_MS);
 
     return {
@@ -62,6 +52,7 @@ export function initNotificationWidget(ctx: ExtensionContext): void {
         cachedLines = undefined;
       },
       dispose(): void {
+        unsubscribe();
         clearInterval(refreshTimer);
       },
     };

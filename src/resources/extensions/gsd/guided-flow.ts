@@ -15,7 +15,7 @@ import { loadPrompt, inlineTemplate } from "./prompt-loader.js";
 import { buildSkillActivationBlock } from "./auto-prompts.js";
 import { deriveState } from "./state.js";
 import { invalidateAllCaches } from "./cache.js";
-import { startAuto } from "./auto.js";
+import { startAutoDetached } from "./auto.js";
 import { clearLock } from "./crash-recovery.js";
 import {
   assessInterruptedSession,
@@ -67,7 +67,6 @@ export {
   showQueue, handleQueueReorder, showQueueAdd,
   buildExistingMilestonesContext,
 } from "./guided-flow-queue.js";
-import { getErrorMessage } from "./error-utils.js";
 import { logWarning } from "./workflow-logger.js";
 
 // ─── ID Generation with Reservation ─────────────────────────────────────────
@@ -244,11 +243,7 @@ export function checkAutoStartAfterDiscuss(): boolean {
 
   pendingAutoStartMap.delete(basePath);
   ctx.ui.notify(`Milestone ${milestoneId} ready.`, "info");
-  startAuto(ctx, pi, basePath, false, { step }).catch((err) => {
-    ctx.ui.notify(`Auto-start failed: ${getErrorMessage(err)}`, "error");
-    logWarning("guided", `auto start error: ${getErrorMessage(err)}`);
-    debugLog("auto-start-failed", { error: getErrorMessage(err) });
-  });
+  startAutoDetached(ctx, pi, basePath, false, { step });
   return true;
 }
 
@@ -1305,7 +1300,7 @@ export async function showSmartEntry(
       ],
     });
     if (resume === "resume") {
-      await startAuto(ctx, pi, basePath, false, {
+      startAutoDetached(ctx, pi, basePath, false, {
         interrupted,
         step: interrupted.pausedSession?.stepMode ?? false,
       });
@@ -1647,7 +1642,7 @@ export async function showSmartEntry(
       });
 
       if (choice === "auto") {
-        await startAuto(ctx, pi, basePath, false);
+        startAutoDetached(ctx, pi, basePath, false);
       } else if (choice === "status") {
         const { fireStatusViaCommand } = await import("./commands.js");
         await fireStatusViaCommand(ctx);
@@ -1859,7 +1854,7 @@ export async function showSmartEntry(
     });
 
     if (choice === "auto") {
-      await startAuto(ctx, pi, basePath, false);
+      startAutoDetached(ctx, pi, basePath, false);
       return;
     }
 

@@ -7,9 +7,8 @@ const sourcePath = join(import.meta.dirname, "..", "auto-start.ts");
 const source = readFileSync(sourcePath, "utf-8");
 
 test("bootstrapAutoSession snapshots ctx.model before guided-flow entry (#2829)", () => {
-  // #3517 changed the snapshot to prefer GSD preferences, but the ordering
-  // guarantee still holds: the snapshot must be built before guided-flow.
-  const snapshotIdx = source.indexOf("const startModelSnapshot = preferredModel");
+  // The snapshot ordering guarantee still holds: build snapshot before guided-flow.
+  const snapshotIdx = source.indexOf("const startModelSnapshot = manualSessionOverride");
   assert.ok(snapshotIdx > -1, "auto-start.ts should snapshot model at bootstrap start");
 
   const firstDiscussIdx = source.indexOf('await showSmartEntry(ctx, pi, base, { step: requestedStepMode });');
@@ -29,20 +28,86 @@ test("bootstrapAutoSession restores autoModeStartModel from the early snapshot (
   assert.ok(snapshotRefIdx > -1, "autoModeStartModel should be restored from startModelSnapshot");
 });
 
-test("bootstrapAutoSession prefers GSD PREFERENCES.md over settings.json for start model (#3517)", () => {
-  // resolveDefaultSessionModel() should be called before the snapshot is built
-  const preferredIdx = source.indexOf("const preferredModel = resolveDefaultSessionModel(");
-  assert.ok(preferredIdx > -1, "auto-start.ts should call resolveDefaultSessionModel()");
+test("bootstrapAutoSession checks manual session override before preferences", () => {
+  const manualIdx = source.indexOf("const manualSessionOverride = getSessionModelOverride(");
+  assert.ok(manualIdx > -1, "auto-start.ts should read session model override first");
+
+  // resolveDefaultSessionModel() should still be called for fallback behavior
+  const preferredIdx = source.indexOf("const preferredModel = ");
+  assert.ok(preferredIdx > -1, "auto-start.ts should build preferredModel");
+  assert.ok(
+    source.indexOf("resolveDefaultSessionModel(") > -1,
+    "auto-start.ts should call resolveDefaultSessionModel()",
+  );
 
   // Session provider should be passed for bare model ID resolution
   const withProviderIdx = source.indexOf("resolveDefaultSessionModel(ctx.model?.provider)");
   assert.ok(withProviderIdx > -1, "auto-start.ts should pass ctx.model?.provider for bare ID resolution");
 
-  const snapshotIdx = source.indexOf("const startModelSnapshot = preferredModel");
-  assert.ok(snapshotIdx > -1, "startModelSnapshot should use preferredModel when available");
+  const snapshotIdx = source.indexOf("const startModelSnapshot = manualSessionOverride");
+  assert.ok(snapshotIdx > -1, "startModelSnapshot should prefer manual session override");
 
   assert.ok(
-    preferredIdx < snapshotIdx,
-    "resolveDefaultSessionModel() must be called before building startModelSnapshot",
+    manualIdx < snapshotIdx && preferredIdx < snapshotIdx,
+    "manual override and preference fallback must be resolved before building startModelSnapshot",
   );
+
+  // The validated preferred model must still appear as one of the snapshot
+  // sources so PREFERENCES.md continues to win over a stale settings.json
+  // default for built-in providers.
+  const snapshotBlock = source.slice(snapshotIdx, snapshotIdx + 400);
+  assert.ok(
+    snapshotBlock.includes("validatedPreferredModel") || snapshotBlock.includes("preferredModel"),
+    "startModelSnapshot must still consider preferredModel for built-in providers",
+  );
+});
+
+test("bootstrapAutoSession prefers session model over PREFERENCES.md when provider is custom (#4122)", () => {
+  // Custom providers (Ollama, vLLM, OpenAI-compatible proxies) live in
+  // ~/.gsd/agent/models.json, not PREFERENCES.md.  When the user picks one
+  // via /gsd model, that selection must win over any preferredModel from
+  // PREFERENCES.md, otherwise auto-mode tries to start a built-in provider
+  // the user is not logged into and pauses with "Not logged in".
+  const customCheckIdx = source.indexOf("isCustomProvider(ctx.model?.provider)");
+  assert.ok(
+    customCheckIdx > -1,
+    "auto-start.ts should call isCustomProvider() to detect custom-model sessions",
+  );
+
+  // sessionProviderIsCustom must gate preferredModel resolution so that when the
+  // session provider is custom, preferredModel is null and PREFERENCES.md is
+  // skipped entirely — the snapshot then falls through to ctx.model.
+  const gateIdx = source.indexOf("sessionProviderIsCustom");
+  assert.ok(gateIdx > -1, "auto-start.ts should bind sessionProviderIsCustom");
+
+  const preferredIdx = source.indexOf("const preferredModel = ");
+  assert.ok(preferredIdx > -1, "auto-start.ts should build preferredModel");
+
+  const preferredBlock = source.slice(preferredIdx, preferredIdx + 200);
+  assert.ok(
+    preferredBlock.includes("sessionProviderIsCustom"),
+    "preferredModel must be gated on sessionProviderIsCustom so PREFERENCES.md is skipped for custom providers",
+  );
+
+  const snapshotIdx = source.indexOf("const startModelSnapshot = ");
+  assert.ok(snapshotIdx > -1, "auto-start.ts should build startModelSnapshot");
+
+  assert.ok(
+    customCheckIdx < preferredIdx && preferredIdx < snapshotIdx,
+    "isCustomProvider() must be evaluated before preferredModel, which must be resolved before startModelSnapshot",
+  );
+});
+
+test("bootstrapAutoSession validates preferred model against live registry auth (#unconfigured-models)", () => {
+  // The raw PREFERENCES.md value must be validated against getAvailable()
+  // before being captured as the snapshot, so an unconfigured provider
+  // (no API key / OAuth) can't become autoModeStartModel.
+  const validationIdx = source.indexOf("ctx.modelRegistry.getAvailable()");
+  assert.ok(validationIdx > -1, "auto-start.ts should validate preferred model against getAvailable()");
+
+  const resolveModelIdIdx = source.indexOf("resolveModelId");
+  assert.ok(resolveModelIdIdx > -1, "auto-start.ts should resolve preferred model against the registry");
+
+  const warningIdx = source.indexOf("is not configured; falling back to session default");
+  assert.ok(warningIdx > -1, "auto-start.ts should warn when preferred model is unconfigured");
 });

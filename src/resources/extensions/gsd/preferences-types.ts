@@ -113,6 +113,7 @@ export const KNOWN_PREFERENCE_KEYS = new Set<string>([
   "discuss_preparation",
   "discuss_web_research",
   "discuss_depth",
+  "flat_rate_providers",
 ]);
 
 /** Canonical list of all dispatch unit types. */
@@ -359,6 +360,17 @@ export interface GSDPreferences {
    * Default: "standard".
    */
   discuss_depth?: "quick" | "standard" | "thorough";
+  /**
+   * Extra provider IDs to treat as flat-rate (no cost benefit from dynamic
+   * routing).  Dynamic routing is suppressed for any provider listed here,
+   * in addition to the built-in list (github-copilot, copilot, claude-code)
+   * and any provider auto-detected via `authMode: "externalCli"`.
+   *
+   * Intended for private subscription-backed proxies, enterprise-gated
+   * deployments, and custom CLI wrappers where every request costs the
+   * same regardless of model.  Case-insensitive.
+   */
+  flat_rate_providers?: string[];
 }
 
 export interface LoadedGSDPreferences {
@@ -383,4 +395,20 @@ export interface SkillResolutionReport {
   resolutions: Map<string, SkillResolution>;
   /** References that could not be resolved. */
   warnings: string[];
+}
+
+/**
+ * Format a skill reference for the system prompt.
+ * If resolved, shows the path so the agent knows exactly where to read.
+ * If unresolved, marks it clearly.
+ */
+export function formatSkillRef(ref: string, resolutions: Map<string, SkillResolution>): string {
+  const resolution = resolutions.get(ref);
+  if (!resolution || resolution.method === "unresolved") {
+    return `${ref} (⚠ not found — check skill name or path)`;
+  }
+  if (resolution.method === "absolute-path" || resolution.method === "absolute-dir") {
+    return ref;
+  }
+  return `${ref} → \`${resolution.resolvedPath}\``;
 }

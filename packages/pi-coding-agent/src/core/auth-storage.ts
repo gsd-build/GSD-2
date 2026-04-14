@@ -560,6 +560,36 @@ export class AuthStorage {
 	}
 
 	/**
+	 * Get the earliest timestamp at which any credential for this provider
+	 * will become available again.  Returns `undefined` when no credentials
+	 * are backed off (i.e. all are immediately available).
+	 *
+	 * Callers can use this to sleep exactly long enough for the cooldown to
+	 * clear instead of using a fixed retry delay that may be shorter than the
+	 * backoff window.
+	 */
+	getEarliestBackoffExpiry(provider: string): number | undefined {
+		const providerMap = this.credentialBackoff.get(provider);
+		if (!providerMap || providerMap.size === 0) return undefined;
+
+		const now = Date.now();
+		let earliest: number | undefined;
+
+		for (const [index, expiresAt] of providerMap) {
+			if (expiresAt <= now) {
+				// Already expired — clean up
+				providerMap.delete(index);
+				continue;
+			}
+			if (earliest === undefined || expiresAt < earliest) {
+				earliest = expiresAt;
+			}
+		}
+
+		return earliest;
+	}
+
+	/**
 	 * Check if a credential index is currently backed off.
 	 */
 	private isCredentialBackedOff(provider: string, index: number): boolean {
@@ -789,7 +819,7 @@ export class AuthStorage {
 	 */
 	async getApiKey(providerId: string, sessionId?: string, options?: { baseUrl?: string }): Promise<string | undefined> {
 		// If the model has a local baseUrl, return a dummy key to avoid auth blocking
-		if (options?.baseUrl) {
+		if (options?.baseUrl && !this.fallbackResolver?.(providerId)) {
 			try {
 				const hostname = new URL(options.baseUrl).hostname;
 				if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "0.0.0.0" || hostname === "::1") {

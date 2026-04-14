@@ -7,6 +7,8 @@
  */
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { DynamicRoutingConfig } from "./model-router.js";
 import { defaultRoutingConfig } from "./model-router.js";
 import type { TokenProfile, InlineLevel } from "./types.js";
@@ -183,6 +185,45 @@ export function resolveDefaultSessionModel(
   }
 
   return undefined;
+}
+
+/**
+ * Returns true if `provider` is defined as a custom provider in the user's
+ * `~/.gsd/agent/models.json` (Ollama, vLLM, LM Studio, OpenAI-compatible
+ * proxies, etc.).
+ *
+ * Used by auto-mode bootstrap to decide whether the session model
+ * (set via `/gsd model`) should override `PREFERENCES.md`.  Custom providers
+ * are never reachable from `PREFERENCES.md` (which only knows built-in
+ * providers), so when the user has explicitly selected one, it must take
+ * priority — otherwise auto-mode tries to start the built-in provider from
+ * PREFERENCES.md and fails with "Not logged in · Please run /login" (#4122).
+ *
+ * Reads models.json directly with a lightweight JSON parse to avoid
+ * pulling in the full model-registry at this call site.  Falls back to
+ * `~/.pi/agent/models.json` for parity with `resolveModelsJsonPath()`.
+ * Any read or parse error yields `false` (treat as not-custom) so a
+ * malformed models.json never breaks the session bootstrap.
+ */
+export function isCustomProvider(provider: string | undefined): boolean {
+  if (!provider) return false;
+  const candidates = [
+    join(homedir(), ".gsd", "agent", "models.json"),
+    join(homedir(), ".pi", "agent", "models.json"),
+  ];
+  for (const path of candidates) {
+    if (!existsSync(path)) continue;
+    try {
+      const raw = readFileSync(path, "utf-8");
+      const parsed = JSON.parse(raw) as { providers?: Record<string, unknown> };
+      if (parsed?.providers && Object.prototype.hasOwnProperty.call(parsed.providers, provider)) {
+        return true;
+      }
+    } catch {
+      // Ignore — malformed models.json must not break bootstrap.
+    }
+  }
+  return false;
 }
 
 /**

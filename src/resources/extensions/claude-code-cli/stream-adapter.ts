@@ -14,10 +14,11 @@ import type {
 	Context,
 	Model,
 	SimpleStreamOptions,
+	ThinkingLevel,
 	ToolCall,
 } from "@gsd/pi-ai";
 import type { ExtensionUIContext } from "@gsd/pi-coding-agent";
-import { EventStream } from "@gsd/pi-ai";
+import { EventStream, mapThinkingLevelToEffort, supportsAdaptiveThinking } from "@gsd/pi-ai";
 import { execSync } from "node:child_process";
 import { PartialMessageBuilder, ZERO_USAGE, mapUsage } from "./partial-builder.js";
 import { buildWorkflowMcpServers } from "../gsd/workflow-mcp.js";
@@ -118,6 +119,18 @@ function createAssistantStream(): AssistantMessageEventStream {
 	) as AssistantMessageEventStream;
 }
 
+export function getResultErrorMessage(result: SDKResultMessage): string {
+	if ("errors" in result && Array.isArray(result.errors) && result.errors.length > 0) {
+		return result.errors.join("; ");
+	}
+
+	if ("result" in result && typeof result.result === "string" && result.result.trim().length > 0) {
+		return result.result.trim();
+	}
+
+	return result.subtype === "success" ? "claude_code_request_failed" : result.subtype;
+}
+
 // ---------------------------------------------------------------------------
 // Claude binary resolution
 // ---------------------------------------------------------------------------
@@ -175,20 +188,36 @@ function extractMessageText(msg: { role: string; content: unknown }): string {
  * call effectively stateless. This version serialises the complete
  * conversation history (system prompt + all user/assistant turns) so
  * Claude Code has full context for multi-turn continuity.
+ *
+ * History is wrapped in XML-tag structure rather than `[User]`/`[Assistant]`
+ * bracket headers. Bracket headers read to the model as an in-context
+ * demonstration of how turns are delimited, causing it to fabricate fake
+ * user turns in its own output. XML tags read as document structure and
+ * don't get mirrored in free text.
  */
 export function buildPromptFromContext(context: Context): string {
-	const parts: string[] = [];
+	const hasContent = Boolean(context.systemPrompt) || context.messages.some((m) => extractMessageText(m));
+	if (!hasContent) return "";
+
+	const parts: string[] = [
+		"Respond only to the final user message below. " +
+			"Do not emit <user_message>, <assistant_message>, or <prior_system_context> tags in your response.",
+	];
 
 	if (context.systemPrompt) {
-		parts.push(`[System]\n${context.systemPrompt}`);
+		parts.push(`<prior_system_context>\n${context.systemPrompt}\n</prior_system_context>`);
 	}
 
+	const turns: string[] = [];
 	for (const msg of context.messages) {
 		const text = extractMessageText(msg);
 		if (!text) continue;
-
-		const label = msg.role === "user" ? "User" : msg.role === "assistant" ? "Assistant" : "System";
-		parts.push(`[${label}]\n${text}`);
+		const tag =
+			msg.role === "user" ? "user_message" : msg.role === "assistant" ? "assistant_message" : "system_message";
+		turns.push(`<${tag}>\n${text}\n</${tag}>`);
+	}
+	if (turns.length > 0) {
+		parts.push(`<conversation_history>\n${turns.join("\n")}\n</conversation_history>`);
 	}
 
 	return parts.join("\n\n");
@@ -506,37 +535,113 @@ export function createClaudeCodeElicitationHandler(
 	};
 }
 
+/**
+ * Aborted by the caller's AbortSignal — distinct from exhaustion. GSD's
+ * agent loop keys off `stopReason === "aborted"` to treat this as a clean
+ * user cancel instead of a retry-eligible provider failure.
+ */
+export function makeAbortedMessage(model: string, lastTextContent: string): AssistantMessage {
+	const message: AssistantMessage = {
+		role: "assistant",
+		content: lastTextContent
+			? [{ type: "text", text: lastTextContent }]
+			: [{ type: "text", text: "Claude Code stream aborted by caller" }],
+		api: "anthropic-messages",
+		provider: "claude-code",
+		model,
+		usage: { ...ZERO_USAGE },
+		stopReason: "aborted",
+		timestamp: Date.now(),
+	};
+	return message;
+}
+
 // ---------------------------------------------------------------------------
 // SDK options builder
 // ---------------------------------------------------------------------------
+
+/**
+ * Resolve the Claude Code permission mode for the current run.
+ *
+ * GSD subagents run underneath a host Claude Code session the user has
+ * already consented to, and their work (edits, shell inspection, MCP calls)
+ * spans the full workflow toolset. Defaulting the inner SDK to
+ * `bypassPermissions` avoids per-tool approval prompts that offer no
+ * meaningful safety beyond what the host session and the subagent prompts
+ * already enforce. `GSD_CLAUDE_CODE_PERMISSION_MODE` lets security-conscious
+ * users opt into a stricter mode (`acceptEdits`, `default`, `plan`).
+ *
+ * Tradeoff: bypass means a prompt-injection payload read from an untrusted
+ * file could trigger tool calls without a second gate. Accepted for GSD
+ * because the workflow is explicit user intent and the alternative
+ * (#4099) is continuous approval fatigue that blocks real work.
+ */
+export async function resolveClaudePermissionMode(
+	env: NodeJS.ProcessEnv = process.env,
+): Promise<"bypassPermissions" | "acceptEdits" | "default" | "plan"> {
+	const override = env.GSD_CLAUDE_CODE_PERMISSION_MODE?.trim();
+	if (override === "bypassPermissions" || override === "acceptEdits" || override === "default" || override === "plan") {
+		return override;
+	}
+	return "bypassPermissions";
+}
 
 /**
  * Build the options object passed to the Claude Agent SDK's `query()` call.
  *
  * Extracted for testability — callers can verify session persistence,
  * beta flags, and other configuration without mocking the full SDK.
+ *
+ * `permissionMode` / `allowDangerouslySkipPermissions` are resolved through
+ * {@link resolveClaudePermissionMode} so interactive runs don't silently
+ * bypass the SDK's permission gate. Callers that want the old always-bypass
+ * behaviour pass `permissionMode: "bypassPermissions"` explicitly.
  */
 export function buildSdkOptions(
 	modelId: string,
 	prompt: string,
-	extraOptions: Record<string, unknown> = {},
+	overrides?: { permissionMode?: "bypassPermissions" | "acceptEdits" | "default" | "plan" },
+	extraOptions: Record<string, unknown> & { reasoning?: ThinkingLevel } = {},
 ): Record<string, unknown> {
+	const { reasoning, ...sdkExtraOptions } = extraOptions;
 	const mcpServers = buildWorkflowMcpServers();
+	const permissionMode = overrides?.permissionMode ?? "bypassPermissions";
 	const disallowedTools = ["AskUserQuestion"];
+	// Pre-authorize the safe built-ins and every registered workflow MCP
+	// server's tools. `acceptEdits` mode (the interactive default) only
+	// auto-approves file edits — Read/Glob/Grep, basic shell inspection, and
+	// every `mcp__gsd-workflow__*` call still surface as "This command
+	// requires approval" and block GSD actions (#4099).
+	const allowedTools = [
+		"Read",
+		"Write",
+		"Edit",
+		"Glob",
+		"Grep",
+		"Bash(ls:*)",
+		"Bash(pwd)",
+		...(mcpServers ? Object.keys(mcpServers).map((serverName) => `mcp__${serverName}__*`) : []),
+	];
+	const effort =
+		reasoning && supportsAdaptiveThinking(modelId)
+			? mapThinkingLevelToEffort(reasoning, modelId)
+			: undefined;
 	return {
 		pathToClaudeCodeExecutable: getClaudePath(),
 		model: modelId,
 		includePartialMessages: true,
 		persistSession: true,
 		cwd: process.cwd(),
-		permissionMode: "bypassPermissions",
-		allowDangerouslySkipPermissions: true,
+		permissionMode,
+		allowDangerouslySkipPermissions: permissionMode === "bypassPermissions",
 		settingSources: ["project"],
 		systemPrompt: { type: "preset", preset: "claude_code" },
 		disallowedTools,
+		...(allowedTools.length > 0 ? { allowedTools } : {}),
 		...(mcpServers ? { mcpServers } : {}),
 		betas: modelId.includes("sonnet") ? ["context-1m-2025-08-07"] : [],
-		...extraOptions,
+		...(effort ? { effort } : {}),
+		...sdkExtraOptions,
 	};
 }
 
@@ -644,6 +749,29 @@ function attachExternalResultsToToolBlocks(
 	}
 }
 
+/**
+ * Merge tool-call blocks from the active partial-message builder into the
+ * running list of intermediate tool calls, preserving order and de-duping
+ * by tool-call id. Exposed for testing the F3 fix (final-turn tool calls
+ * dropped when `result` arrives without a preceding synthetic `user`).
+ */
+export function mergePendingToolCalls(
+	intermediate: AssistantMessage["content"],
+	pending: AssistantMessage["content"],
+): AssistantMessage["content"] {
+	const alreadyIncluded = new Set<string>();
+	for (const block of intermediate) {
+		if (block.type === "toolCall") alreadyIncluded.add(block.id);
+	}
+	for (const block of pending) {
+		if (block.type !== "toolCall") continue;
+		if (alreadyIncluded.has(block.id)) continue;
+		alreadyIncluded.add(block.id);
+		intermediate.push(block);
+	}
+	return intermediate;
+}
+
 // ---------------------------------------------------------------------------
 // streamSimple implementation
 // ---------------------------------------------------------------------------
@@ -700,16 +828,19 @@ async function pumpSdkMessages(
 		}
 
 		const prompt = buildPromptFromContext(context);
+		const permissionMode = await resolveClaudePermissionMode();
 		const sdkOpts = buildSdkOptions(
 			modelId,
 			prompt,
+			{ permissionMode },
 			typeof (options as ClaudeCodeStreamOptions | undefined)?.extensionUIContext === "object"
 				? {
+						reasoning: options?.reasoning,
 						onElicitation: createClaudeCodeElicitationHandler(
 							(options as ClaudeCodeStreamOptions | undefined)?.extensionUIContext,
 						),
 					}
-				: {},
+				: { reasoning: options?.reasoning },
 		);
 
 		const queryResult = sdk.query({
@@ -734,7 +865,17 @@ async function pumpSdkMessages(
 		stream.push({ type: "start", partial: initialPartial });
 
 		for await (const msg of queryResult as AsyncIterable<SDKMessage>) {
-			if (options?.signal?.aborted) break;
+			if (options?.signal?.aborted) {
+				// User-initiated cancel — emit an aborted error so the agent
+				// loop classifies this as a deliberate stop, not a transient
+				// provider failure that should be retried.
+				stream.push({
+					type: "error",
+					reason: "aborted",
+					error: makeAbortedMessage(modelId, lastTextContent),
+				});
+				return;
+			}
 
 			switch (msg.type) {
 				// -- Init --
@@ -845,6 +986,16 @@ async function pumpSdkMessages(
 					// events for proper TUI rendering, followed by the text response.
 					const finalContent: AssistantMessage["content"] = [];
 
+					// If the final turn ended without a synthetic user message
+					// (e.g. stop_reason: "tool_use" followed directly by result,
+					// or a turn with text but no tool execution), the `builder`
+					// still holds toolCall blocks that were never pushed into
+					// `intermediateToolBlocks`. Fold them in here so they aren't
+					// dropped from the final AssistantMessage.
+					if (builder) {
+						mergePendingToolCalls(intermediateToolBlocks, builder.message.content);
+					}
+
 					// Add tool calls from intermediate turns first (renders above text)
 					attachExternalResultsToToolBlocks(intermediateToolBlocks, toolResultsById);
 					finalContent.push(...intermediateToolBlocks);
@@ -882,11 +1033,7 @@ async function pumpSdkMessages(
 					};
 
 					if (result.is_error) {
-						const errText =
-							"errors" in result
-								? (result as any).errors?.join("; ")
-								: result.subtype;
-						finalMessage.errorMessage = errText;
+						finalMessage.errorMessage = getResultErrorMessage(result);
 						stream.push({ type: "error", reason: "error", error: finalMessage });
 					} else {
 						stream.push({ type: "done", reason: "stop", message: finalMessage });

@@ -24,7 +24,13 @@ import { getLoadedSkills, type Skill } from "@gsd/pi-coding-agent";
 import { join, basename } from "node:path";
 import { existsSync } from "node:fs";
 import { computeBudgets, resolveExecutorContextWindow, truncateAtSectionBoundary } from "./context-budget.js";
-import { getPendingGates } from "./gsd-db.js";
+import { getPendingGates, getPendingGatesForTurn } from "./gsd-db.js";
+import {
+  GATE_REGISTRY,
+  assertGateCoverage,
+  getGatesForTurn,
+  type GateDefinition,
+} from "./gate-registry.js";
 import { formatDecisionsCompact, formatRequirementsCompact } from "./structured-data-formatter.js";
 import { readPhaseAnchor, formatAnchorForPrompt } from "./phase-anchor.js";
 import { logWarning } from "./workflow-logger.js";
@@ -1395,6 +1401,17 @@ export async function buildExecuteTaskPrompt(
 
   const phaseAnchorSection = planAnchor ? formatAnchorForPrompt(planAnchor) : "";
 
+  // Task-scoped gates owned by execute-task (Q5/Q6/Q7). Pull only the
+  // gates that plan-slice actually seeded for this task — tasks with no
+  // external dependencies legitimately skip Q5, tasks with no runtime
+  // load dimension skip Q6, etc.
+  const etPending = getPendingGatesForTurn(mid, sid, "execute-task", tid);
+  assertGateCoverage(etPending, "execute-task", { requireAll: false });
+  const gatesToClose = renderGatesToCloseBlock(
+    getGatesForTurn("execute-task"),
+    { pending: new Set(etPending.map((g) => g.gate_id)), allowOmit: true },
+  );
+
   return loadPrompt("execute-task", {
     overridesSection,
     runtimeContext,
@@ -1412,6 +1429,7 @@ export async function buildExecuteTaskPrompt(
     taskSummaryPath,
     inlinedTemplates,
     verificationBudget,
+    gatesToClose,
     skillActivation: buildSkillActivationBlock({
       base,
       milestoneId: mid,
@@ -1477,6 +1495,19 @@ export async function buildCompleteSlicePrompt(
   const sliceSummaryPath = join(base, `${sliceRel}/${sid}-SUMMARY.md`);
   const sliceUatPath = join(base, `${sliceRel}/${sid}-UAT.md`);
 
+  // Gates owned by complete-slice (e.g. Q8). Pull from the DB so the
+  // prompt only prompts for gates the plan actually seeded. The tool
+  // handler closes each gate based on the SUMMARY.md section content
+  // after the assistant calls gsd_complete_slice.
+  const csPending = getPendingGatesForTurn(mid, sid, "complete-slice");
+  // coverage check: every pending row must be owned by complete-slice.
+  // requireAll:false because a slice may have already closed some gates.
+  assertGateCoverage(csPending, "complete-slice", { requireAll: false });
+  const gatesToClose = renderGatesToCloseBlock(
+    getGatesForTurn("complete-slice"),
+    { pending: new Set(csPending.map((g) => g.gate_id)), allowOmit: true },
+  );
+
   return loadPrompt("complete-slice", {
     workingDirectory: base,
     milestoneId: mid, sliceId: sid, sliceTitle: sTitle,
@@ -1485,6 +1516,7 @@ export async function buildCompleteSlicePrompt(
     inlinedContext,
     sliceSummaryPath,
     sliceUatPath,
+    gatesToClose,
   });
 }
 
@@ -1675,6 +1707,16 @@ export async function buildValidateMilestonePrompt(
   const validationOutputPath = join(base, `${relMilestonePath(base, mid)}/${mid}-VALIDATION.md`);
   const roadmapOutputPath = `${relMilestonePath(base, mid)}/${mid}-ROADMAP.md`;
 
+  // Every milestone validation turn owns MV01–MV04 unconditionally: the
+  // registry is the source of truth for which gates the validator must
+  // address, and the block below is what the template renders so the
+  // assistant can never accidentally skip one.
+  const mvGates = getGatesForTurn("validate-milestone");
+  const gatesToEvaluate = renderGatesToCloseBlock(mvGates, {
+    pending: new Set(mvGates.map((g) => g.id)),
+    allowOmit: false,
+  });
+
   return loadPrompt("validate-milestone", {
     workingDirectory: base,
     milestoneId: mid,
@@ -1683,6 +1725,7 @@ export async function buildValidateMilestonePrompt(
     inlinedContext,
     validationPath: validationOutputPath,
     remediationRound: String(remediationRound),
+    gatesToEvaluate,
     skillActivation: buildSkillActivationBlock({
       base,
       milestoneId: mid,
@@ -1883,6 +1926,7 @@ export async function buildReassessRoadmapPrompt(
 export async function buildReactiveExecutePrompt(
   mid: string, midTitle: string, sid: string, sTitle: string,
   readyTaskIds: string[], base: string,
+  subagentModel?: string,
 ): Promise<string> {
   const { loadSliceTaskIO, deriveTaskGraph, graphMetrics } = await import("./reactive-graph.js");
 
@@ -1927,10 +1971,11 @@ export async function buildReactiveExecutePrompt(
       { carryForwardPaths: depPaths },
     );
 
+    const modelSuffix = subagentModel ? ` with model: "${subagentModel}"` : "";
     subagentSections.push([
       `### ${tid}: ${tTitle}`,
       "",
-      "Use this as the prompt for a `subagent` call:",
+      `Use this as the prompt for a \`subagent\` call${modelSuffix}:`,
       "",
       "```",
       taskPrompt,
@@ -1955,42 +2000,68 @@ export async function buildReactiveExecutePrompt(
 }
 
 // ─── Gate Evaluation ──────────────────────────────────────────────────────
+//
+// Gate definitions (question, guidance, owner turn) now live in
+// gate-registry.ts so that prompt builders, dispatch rules, state
+// derivation, and tool handlers all consult the same source of truth.
+// See gate-registry.ts for the full ownership map.
 
-const GATE_QUESTIONS: Record<string, { question: string; guidance: string }> = {
-  Q3: {
-    question: "How can this be exploited?",
-    guidance: [
-      "Identify abuse scenarios: parameter tampering, replay attacks, privilege escalation.",
-      "Map data exposure risks: PII, tokens, secrets accessible through this slice.",
-      "Define input trust boundaries: untrusted user input reaching DB, API, or filesystem.",
-      "If none apply, return verdict 'omitted' with rationale explaining why.",
-    ].join("\n"),
-  },
-  Q4: {
-    question: "What existing promises does this break?",
-    guidance: [
-      "List which existing requirements (R001, R003, etc.) are touched by this slice.",
-      "Identify what must be re-tested after shipping.",
-      "Flag decisions that should be revisited given the new scope.",
-      "If no existing requirements are affected, return verdict 'omitted'.",
-    ].join("\n"),
-  },
-};
+/**
+ * Render a "Gates to Close" block for turns like `complete-slice` and
+ * `validate-milestone` that own gates which are closed as a side-effect
+ * of writing artifact sections (not via a dedicated gate-evaluate
+ * subagent loop).
+ *
+ * Returns a plain-text block or an empty string if there are no gates to
+ * close, so callers can drop it straight into a template variable.
+ */
+function renderGatesToCloseBlock(
+  gates: ReadonlyArray<GateDefinition>,
+  opts: { pending: ReadonlySet<string>; allowOmit: boolean },
+): string {
+  const applicable = gates.filter((g) => opts.pending.has(g.id));
+  if (applicable.length === 0) return "";
+
+  const lines: string[] = [];
+  lines.push("## Gates to Close");
+  lines.push("");
+  lines.push(
+    "These quality gates are still pending for this unit. You MUST address every one before calling the closing tool — the handler closes the DB row based on whether the corresponding artifact section is present.",
+  );
+  lines.push("");
+  for (const def of applicable) {
+    lines.push(`### ${def.id} — ${def.promptSection}`);
+    lines.push("");
+    lines.push(`**Question:** ${def.question}`);
+    lines.push("");
+    lines.push(def.guidance);
+    if (opts.allowOmit) {
+      lines.push("");
+      lines.push(
+        `If this gate genuinely does not apply to this unit, leave the **${def.promptSection}** section empty and the handler will record it as \`omitted\`. Otherwise, fill the section with concrete evidence.`,
+      );
+    }
+    lines.push("");
+  }
+  return lines.join("\n").trimEnd();
+}
 
 export async function buildParallelResearchSlicesPrompt(
   mid: string,
   midTitle: string,
   slices: Array<{ id: string; title: string }>,
   basePath: string,
+  subagentModel?: string,
 ): Promise<string> {
   // Build individual research-slice prompts for each slice
   const subagentSections: string[] = [];
+  const modelSuffix = subagentModel ? ` with model: "${subagentModel}"` : "";
   for (const slice of slices) {
     const slicePrompt = await buildResearchSlicePrompt(mid, midTitle, slice.id, slice.title, basePath);
     subagentSections.push([
       `### ${slice.id}: ${slice.title}`,
       "",
-      "Use this as the prompt for a `subagent` call (agent: `gsd-executor` or the default agent):",
+      `Use this as the prompt for a \`subagent\` call${modelSuffix} (agent: \`gsd-executor\` or the default agent):`,
       "",
       "```",
       slicePrompt,
@@ -2010,29 +2081,41 @@ export async function buildParallelResearchSlicesPrompt(
 export async function buildGateEvaluatePrompt(
   mid: string, midTitle: string, sid: string, sTitle: string,
   base: string,
+  subagentModel?: string,
 ): Promise<string> {
-  const pending = getPendingGates(mid, sid, "slice");
+  // Pull only the gates this turn actually owns (Q3/Q4). Filter via the
+  // registry so that scope:"slice" gates owned by other turns (Q8) can't
+  // leak into this prompt and can't block dispatch via silent skip.
+  const pending = getPendingGatesForTurn(mid, sid, "gate-evaluate");
+
+  // Fails loudly if the pending list contains a gate id the registry
+  // doesn't own for this turn. Missing owned gates is allowed here —
+  // `gate-evaluate` is dispatched whenever *any* of its owned gates are
+  // pending, not only when all of them are.
+  assertGateCoverage(pending, "gate-evaluate", { requireAll: false });
 
   // Load the slice plan for context
   const planFile = resolveSliceFile(base, mid, sid, "PLAN");
   const planContent = planFile ? (await loadFile(planFile)) ?? "(plan file empty)" : "(plan file not found)";
 
-  // Build per-gate subagent prompts
+  // Build per-gate subagent prompts from the pending rows. Because the
+  // registry has already validated every row, `getGateDefinition` cannot
+  // return undefined here.
+  const pendingIds = new Set(pending.map((g) => g.gate_id));
+  const gateDefs = getGatesForTurn("gate-evaluate").filter((def) => pendingIds.has(def.id));
+
   const subagentSections: string[] = [];
   const gateListLines: string[] = [];
 
-  for (const gate of pending) {
-    const meta = GATE_QUESTIONS[gate.gate_id];
-    if (!meta) continue;
-
-    gateListLines.push(`- **${gate.gate_id}**: ${meta.question}`);
+  for (const def of gateDefs) {
+    gateListLines.push(`- **${def.id}**: ${def.question}`);
 
     const subPrompt = [
-      `You are evaluating quality gate **${gate.gate_id}** for slice ${sid} (${sTitle}).`,
+      `You are evaluating quality gate **${def.id}** for slice ${sid} (${sTitle}).`,
       "",
-      `## Question: ${meta.question}`,
+      `## Question: ${def.question}`,
       "",
-      meta.guidance,
+      def.guidance,
       "",
       "## Slice Plan",
       "",
@@ -2044,16 +2127,17 @@ export async function buildGateEvaluatePrompt(
       `Call the \`gsd_save_gate_result\` tool with:`,
       `- \`milestoneId\`: "${mid}"`,
       `- \`sliceId\`: "${sid}"`,
-      `- \`gateId\`: "${gate.gate_id}"`,
+      `- \`gateId\`: "${def.id}"`,
       "- `verdict`: \"pass\" (no concerns), \"flag\" (concerns found), or \"omitted\" (not applicable)",
       "- `rationale`: one-sentence justification",
       "- `findings`: detailed markdown findings (or empty if omitted)",
     ].join("\n");
 
+    const modelSuffix = subagentModel ? ` with model: "${subagentModel}"` : "";
     subagentSections.push([
-      `### ${gate.gate_id}: ${meta.question}`,
+      `### ${def.id}: ${def.question}`,
       "",
-      "Use this as the prompt for a `subagent` call:",
+      `Use this as the prompt for a \`subagent\` call${modelSuffix}:`,
       "",
       "```",
       subPrompt,

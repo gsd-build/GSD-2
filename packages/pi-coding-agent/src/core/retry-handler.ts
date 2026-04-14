@@ -116,7 +116,7 @@ export class RetryHandler {
 		// generated error from getApiKey() when credentials are in a backoff window.
 		// Re-entering the retry handler for that message creates a cascade of empty
 		// error entries in the session file, breaking resume (#3429).
-		return /overloaded|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server.?error|internal.?error|connection.?error|connection.?refused|other side closed|fetch failed|upstream.?connect|reset before headers|terminated|retry delay|network.?(?:is\s+)?unavailable|credentials.*expired|extra usage is required|(?:out of|no) extra usage|third.party.*draw from extra|third.party.*not.*available/i.test(
+		return /overloaded|rate.?limit|too many requests|402|429|500|502|503|504|service.?unavailable|server.?error|internal.?error|connection.?error|connection.?refused|other side closed|fetch failed|upstream.?connect|reset before headers|terminated|retry delay|network.?(?:is\s+)?unavailable|credentials.*expired|requires more credits|can only afford|insufficient credits|not enough credits|extra usage is required|(?:out of|no) extra usage|third.party.*draw from extra|third.party.*not.*available/i.test(
 			err,
 		);
 	}
@@ -157,6 +157,14 @@ export class RetryHandler {
 			const errorType = this._classifyErrorType(message.errorMessage);
 			const isRateLimit = errorType === "rate_limit";
 			const isQuotaError = errorType === "quota_exhausted";
+
+			// Credit-aware retry (OpenRouter-style 402 affordability errors):
+			// when provider reports "can only afford N", lower maxTokens and retry
+			// on the same model before rotating credentials/providers.
+			if (isQuotaError) {
+				const adjusted = this._tryAffordableMaxTokensRetry(message, retryGeneration);
+				if (adjusted) return true;
+			}
 
 			// Credential rotation — only for transient rate limits (#3430).
 			// Quota errors ("Extra usage is required") are account-level billing
@@ -409,10 +417,61 @@ export class RetryHandler {
 		// Long-context entitlement errors are billing gates, not transient rate limits.
 		// Must be checked before the generic 429/rate_limit regex.
 		if (/extra usage is required|long context required/i.test(err)) return "quota_exhausted";
+		if (/requires more credits|can only afford|insufficient credits|not enough credits|credit balance/i.test(err))
+			return "quota_exhausted";
 		if (/quota|billing|exceeded.*limit|usage.*limit/i.test(err)) return "quota_exhausted";
 		if (/rate.?limit|too many requests|429/i.test(err)) return "rate_limit";
 		if (/500|502|503|504|server.?error|internal.?error|service.?unavailable/i.test(err)) return "server_error";
 		return "unknown";
+	}
+
+	/**
+	 * Attempt a same-model retry by reducing maxTokens when provider reports
+	 * an affordability cap (e.g., "can only afford 329").
+	 */
+	private _tryAffordableMaxTokensRetry(message: AssistantMessage, retryGeneration: number): boolean {
+		const currentModel = this._deps.getModel();
+		if (!currentModel || !message.errorMessage) return false;
+
+		// Example: "can only afford 329"
+		const match = message.errorMessage.match(/can only afford\s+([\d,]+)/i);
+		if (!match?.[1]) return false;
+
+		const affordable = Number.parseInt(match[1].replace(/,/g, ""), 10);
+		if (!Number.isFinite(affordable) || affordable <= 0) return false;
+
+		// Leave a small buffer so slight input variance doesn't immediately re-fail.
+		const safetyBuffer = Math.min(64, Math.max(16, Math.floor(affordable * 0.1)));
+		const targetMaxTokens = Math.max(64, affordable - safetyBuffer);
+		const downgradedMaxTokens = Math.min(currentModel.maxTokens, targetMaxTokens);
+		if (downgradedMaxTokens >= currentModel.maxTokens) return false;
+
+		const downgradedModel = {
+			...currentModel,
+			maxTokens: downgradedMaxTokens,
+		};
+
+		this._deps.agent.setModel(downgradedModel);
+		this._deps.onModelChange(downgradedModel);
+		this._removeLastAssistantError();
+
+		this._deps.emit({
+			type: "fallback_provider_switch",
+			from: `${currentModel.provider}/${currentModel.id} (maxTokens=${currentModel.maxTokens})`,
+			to: `${downgradedModel.provider}/${downgradedModel.id} (maxTokens=${downgradedModel.maxTokens})`,
+			reason: `credit-aware retry: provider affordable cap ${affordable} tokens`,
+		});
+
+		this._deps.emit({
+			type: "auto_retry_start",
+			attempt: this._retryAttempt + 1,
+			maxAttempts: this._deps.settingsManager.getRetrySettings().maxRetries,
+			delayMs: 0,
+			errorMessage: `${message.errorMessage} (reducing max tokens)`,
+		});
+
+		this._scheduleContinue(retryGeneration);
+		return true;
 	}
 
 	/**

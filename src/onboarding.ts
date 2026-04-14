@@ -323,6 +323,15 @@ async function runLlmStep(p: ClackModule, pc: PicoModule, authStorage: AuthStora
     p.log.info('Your Claude subscription will be used for inference. No API key needed.')
     // Store sentinel so hasAuth('claude-code') returns true on future boots
     authStorage.set('claude-code', { type: 'api_key', key: 'cli' })
+    // Persist claude-code as the default provider so the startup migration in
+    // cli.ts does not need to fire and the user is not left on "anthropic".
+    const settingsPath = join(agentDir, 'settings.json')
+    try {
+      const raw = existsSync(settingsPath) ? JSON.parse(readFileSync(settingsPath, 'utf-8')) : {}
+      raw.defaultProvider = 'claude-code'
+      mkdirSync(dirname(settingsPath), { recursive: true })
+      writeFileSync(settingsPath, JSON.stringify(raw, null, 2), 'utf-8')
+    } catch { /* non-fatal — startup migration will catch it */ }
     return true
   }
 

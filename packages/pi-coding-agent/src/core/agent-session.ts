@@ -1275,8 +1275,9 @@ export class AgentSession {
 	}
 
 	getRenderableToolDefinition(toolName: string): ToolDefinition | undefined {
+		const normalizedToolName = toolName.toLowerCase();
 		return [...this._getBuiltinToolDefinitions(), ...this._getRegisteredToolDefinitions()].find(
-			(tool) => tool.name === toolName,
+			(tool) => tool.name.toLowerCase() === normalizedToolName,
 		);
 	}
 

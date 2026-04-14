@@ -1,6 +1,8 @@
 /**
- * Tests for model config isolation between concurrent instances (#650, #1065)
- * and GSD preferences override of settings.json defaults (#3517).
+ * Tests for model config isolation between concurrent instances (#650, #1065),
+ * session-scoped model precedence behavior including manual session override,
+ * GSD preferences override of settings.json defaults (#3517), and custom
+ * provider precedence over PREFERENCES.md when set via `/gsd model` (#4122).
  */
 
 import { describe, it, beforeEach, afterEach } from "node:test";
@@ -157,75 +159,147 @@ describe("session model recovery on error (#1065)", () => {
   });
 });
 
-// ─── GSD Preferences override settings.json (#3517) ─────────────────────────
+// ─── Manual session model override precedence ───────────────────────────────
 
-describe("GSD preferences override settings.json for session model (#3517)", () => {
-  it("preferredModel takes priority over ctx.model when both are available", () => {
-    // Simulates auto-start.ts logic: preferredModel ?? ctx.model snapshot
-    const preferredModel = { provider: "openai-codex", id: "gpt-5.4" };
-    const ctxModel = { provider: "claude-code", id: "claude-sonnet-4-6" };
+describe("manual session model override precedence", () => {
+  it("manual session override takes priority over preferences and ctx.model", () => {
+    const manualSessionOverride = { provider: "openai-codex", id: "gpt-5.4" };
+    const preferredModel = { provider: "anthropic", id: "claude-sonnet-4-6" };
+    const ctxModel = { provider: "claude-code", id: "claude-opus-4-6" };
 
-    const startModelSnapshot = preferredModel
+    const startModelSnapshot = manualSessionOverride
+      ?? preferredModel
       ?? { provider: ctxModel.provider, id: ctxModel.id };
 
-    assert.equal(startModelSnapshot.provider, "openai-codex",
-      "preferredModel provider should win over ctx.model");
-    assert.equal(startModelSnapshot.id, "gpt-5.4",
-      "preferredModel id should win over ctx.model");
+    assert.equal(startModelSnapshot.provider, "openai-codex");
+    assert.equal(startModelSnapshot.id, "gpt-5.4");
   });
 
-  it("falls back to ctx.model when no GSD preferences are configured", () => {
+  it("falls back to preferences when no manual override is active", () => {
+    const manualSessionOverride: { provider: string; id: string } | undefined = undefined;
+    const preferredModel = { provider: "anthropic", id: "claude-sonnet-4-6" };
+    const ctxModel = { provider: "claude-code", id: "claude-opus-4-6" };
+
+    const startModelSnapshot = manualSessionOverride
+      ?? preferredModel
+      ?? { provider: ctxModel.provider, id: ctxModel.id };
+
+    assert.equal(startModelSnapshot.provider, "anthropic");
+    assert.equal(startModelSnapshot.id, "claude-sonnet-4-6");
+  });
+
+  it("falls back to ctx.model when no manual override or preferences are configured", () => {
+    const manualSessionOverride: { provider: string; id: string } | undefined = undefined;
     const preferredModel: { provider: string; id: string } | undefined = undefined;
-    const ctxModel = { provider: "claude-code", id: "claude-sonnet-4-6" };
+    const ctxModel = { provider: "claude-code", id: "claude-opus-4-6" };
 
-    const startModelSnapshot = preferredModel
+    const startModelSnapshot = manualSessionOverride
+      ?? preferredModel
       ?? { provider: ctxModel.provider, id: ctxModel.id };
 
-    assert.equal(startModelSnapshot.provider, "claude-code",
-      "should fall back to ctx.model provider when no preferences");
-    assert.equal(startModelSnapshot.id, "claude-sonnet-4-6",
-      "should fall back to ctx.model id when no preferences");
+    assert.equal(startModelSnapshot.provider, "claude-code");
+    assert.equal(startModelSnapshot.id, "claude-opus-4-6");
   });
 
-  it("handles null ctx.model with no preferences gracefully", () => {
+  it("handles null ctx.model with no override or preferences gracefully", () => {
+    const manualSessionOverride: { provider: string; id: string } | undefined = undefined;
     const preferredModel: { provider: string; id: string } | undefined = undefined;
     // Use a function to prevent TS from narrowing to `never` in the ternary
     function getCtxModel(): { provider: string; id: string } | null { return null; }
     const ctxModel = getCtxModel();
 
-    const startModelSnapshot = preferredModel
+    const startModelSnapshot = manualSessionOverride
+      ?? preferredModel
       ?? (ctxModel ? { provider: ctxModel.provider, id: ctxModel.id } : null);
 
     assert.equal(startModelSnapshot, null,
-      "should be null when neither preferences nor ctx.model exist");
-  });
-
-  it("bare model ID uses session provider when available", () => {
-    // Simulates: PREFERENCES.md has "gpt-5.4" (no provider), session is openai-codex
-    const preferredModel = { provider: "openai-codex", id: "gpt-5.4" }; // from resolveDefaultSessionModel("openai-codex")
-    const ctxModel = { provider: "openai-codex", id: "claude-sonnet-4-6" };
-
-    const startModelSnapshot = preferredModel
-      ?? { provider: ctxModel.provider, id: ctxModel.id };
-
-    assert.equal(startModelSnapshot.provider, "openai-codex");
-    assert.equal(startModelSnapshot.id, "gpt-5.4",
-      "bare model ID from preferences should still override ctx.model");
-  });
-
-  it("stale settings.json does not leak when preferences are set", () => {
-    // Scenario: settings.json has claude-code, PREFERENCES.md has openai-codex
-    const settingsJsonDefault = { provider: "claude-code", id: "claude-sonnet-4-6" };
-    const preferencesModel = { provider: "openai-codex", id: "gpt-5.4" };
-
-    // auto-start.ts captures preferredModel first, which preempts settingsJsonDefault
-    const startModelSnapshot = preferencesModel ?? settingsJsonDefault;
-
-    assert.equal(startModelSnapshot.provider, "openai-codex",
-      "PREFERENCES.md must override stale settings.json provider");
-    assert.equal(startModelSnapshot.id, "gpt-5.4",
-      "PREFERENCES.md must override stale settings.json model");
-    assert.notEqual(startModelSnapshot.provider, settingsJsonDefault.provider,
-      "settings.json provider must NOT leak through");
+      "should be null when no model source is available");
   });
 });
+
+// ─── Custom provider session model wins over PREFERENCES.md (#4122) ─────────
+
+describe("custom provider session model overrides PREFERENCES.md (#4122)", () => {
+  // Mirrors the auto-start.ts logic:
+  //   sessionProviderIsCustom && ctx.model
+  //     ? ctx.model
+  //     : (preferredModel ?? ctx.model ?? null)
+  function selectStartModel(args: {
+    ctxModel: { provider: string; id: string } | null;
+    preferredModel: { provider: string; id: string } | undefined;
+    sessionProviderIsCustom: boolean;
+  }): { provider: string; id: string } | null {
+    const { ctxModel, preferredModel, sessionProviderIsCustom } = args;
+    if (sessionProviderIsCustom && ctxModel) {
+      return { provider: ctxModel.provider, id: ctxModel.id };
+    }
+    return preferredModel
+      ?? (ctxModel ? { provider: ctxModel.provider, id: ctxModel.id } : null);
+  }
+
+  it("custom provider from /gsd model wins over PREFERENCES.md built-in default", () => {
+    // User runs `/gsd model ollama/llama3.1:8b`, then `/gsd auto`.
+    // PREFERENCES.md still has the project-template claude-code default.
+    const ctxModel = { provider: "ollama", id: "llama3.1:8b" };
+    const preferredModel = { provider: "claude-code", id: "claude-sonnet-4-6" };
+
+    const snapshot = selectStartModel({
+      ctxModel,
+      preferredModel,
+      sessionProviderIsCustom: true,
+    });
+
+    assert.equal(snapshot?.provider, "ollama",
+      "custom-provider session model must win over PREFERENCES.md");
+    assert.equal(snapshot?.id, "llama3.1:8b",
+      "custom-provider session model id must be preserved");
+    assert.notEqual(snapshot?.provider, "claude-code",
+      "claude-code from PREFERENCES.md must NOT be selected when session is custom");
+  });
+
+  it("built-in session provider still defers to PREFERENCES.md (#3517 preserved)", () => {
+    // ctx.model is a built-in provider (claude-code) but PREFERENCES.md has
+    // an explicit openai-codex preference.  PREFERENCES.md should still win.
+    const ctxModel = { provider: "claude-code", id: "claude-sonnet-4-6" };
+    const preferredModel = { provider: "openai-codex", id: "gpt-5.4" };
+
+    const snapshot = selectStartModel({
+      ctxModel,
+      preferredModel,
+      sessionProviderIsCustom: false,
+    });
+
+    assert.equal(snapshot?.provider, "openai-codex",
+      "PREFERENCES.md must still win when session provider is built-in");
+    assert.equal(snapshot?.id, "gpt-5.4");
+  });
+
+  it("custom provider with no PREFERENCES.md still uses ctx.model", () => {
+    const ctxModel = { provider: "vllm", id: "qwen2.5-coder:32b" };
+
+    const snapshot = selectStartModel({
+      ctxModel,
+      preferredModel: undefined,
+      sessionProviderIsCustom: true,
+    });
+
+    assert.equal(snapshot?.provider, "vllm");
+    assert.equal(snapshot?.id, "qwen2.5-coder:32b");
+  });
+
+  it("null ctx.model with custom flag falls through to preferredModel", () => {
+    // Defensive: sessionProviderIsCustom can only be true if ctx.model exists,
+    // but verify the guard works if that invariant is ever broken.
+    const preferredModel = { provider: "claude-code", id: "claude-sonnet-4-6" };
+
+    const snapshot = selectStartModel({
+      ctxModel: null,
+      preferredModel,
+      sessionProviderIsCustom: true,
+    });
+
+    assert.equal(snapshot?.provider, "claude-code",
+      "should fall back to preferredModel when ctx.model is null");
+  });
+});
+

@@ -15,6 +15,7 @@ export interface AgentConfig {
 	description: string;
 	tools?: string[];
 	model?: string;
+	conflictsWith?: string[];
 	systemPrompt: string;
 	source: "user" | "project";
 	filePath: string;
@@ -30,6 +31,13 @@ interface AgentFrontmatter extends Record<string, unknown> {
 	description?: string;
 	tools?: string | string[];
 	model?: string;
+	conflicts_with?: string;
+}
+
+export function parseConflictsWith(value: string | undefined): string[] | undefined {
+	if (typeof value !== "string") return undefined;
+	const conflicts = value.split(",").map((s) => s.trim()).filter(Boolean);
+	return conflicts.length > 0 ? conflicts : undefined;
 }
 
 function parseAgentTools(value: string | string[] | undefined): string[] | undefined {
@@ -85,12 +93,14 @@ function loadAgentsFromDir(dir: string, source: "user" | "project"): AgentConfig
 		}
 
 		const tools = parseAgentTools(frontmatter.tools);
+		const conflictsWith = parseConflictsWith(frontmatter.conflicts_with);
 
 		agents.push({
 			name: frontmatter.name,
 			description: frontmatter.description,
 			tools: tools && tools.length > 0 ? tools : undefined,
 			model: frontmatter.model,
+			conflictsWith,
 			systemPrompt: body,
 			source,
 			filePath,

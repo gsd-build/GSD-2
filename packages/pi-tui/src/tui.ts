@@ -197,6 +197,17 @@ export class Container implements Component {
 		this._prevRender = null;
 	}
 
+	/**
+	 * Remove all children without calling dispose on them.
+	 * Use when child lifecycle is owned elsewhere and the container is only a
+	 * render mount (e.g. extension widget containers in InteractiveMode, where
+	 * the extensionWidgets* maps own disposal).
+	 */
+	detachChildren(): void {
+		this.children = [];
+		this._prevRender = null;
+	}
+
 	invalidate(): void {
 		for (const child of this.children) {
 			child.invalidate?.();

@@ -22,6 +22,8 @@ A researcher explored the codebase and a planner decomposed the work — you are
 
 {{slicePlanExcerpt}}
 
+{{gatesToClose}}
+
 ## Backing Source Artifacts
 - Slice plan: `{{planPath}}`
 - Task plan source: `{{taskPlanPath}}`

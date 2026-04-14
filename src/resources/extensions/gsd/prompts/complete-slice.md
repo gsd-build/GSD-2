@@ -16,6 +16,8 @@ All relevant context has been preloaded below — the slice plan, all task summa
 
 {{inlinedContext}}
 
+{{gatesToClose}}
+
 **Match effort to complexity.** A simple slice with 1-2 tasks needs a brief summary and lightweight verification. A complex slice with 5 tasks across multiple subsystems needs thorough verification and a detailed summary. Scale the work below accordingly.
 
 Then:
@@ -23,7 +25,7 @@ Then:
 2. {{skillActivation}}
 3. Run all slice-level verification checks defined in the slice plan. All must pass before marking the slice done. If any fail, fix them first. Task artifacts use a **flat file layout** directly inside `tasks/` (for example `T01-SUMMARY.md`, `T02-SUMMARY.md`) rather than per-task subdirectories. If you need to count or re-read task summaries during verification, use `find .gsd/milestones/{{milestoneId}}/slices/{{sliceId}}/tasks -name "*-SUMMARY.md"` or `ls .gsd/milestones/{{milestoneId}}/slices/{{sliceId}}/tasks/*-SUMMARY.md`. Never use `tasks/*/SUMMARY.md` — that glob expects subdirectories that do not exist.
 4. If the slice plan includes observability/diagnostic surfaces, confirm they work. Skip this for simple slices that don't have observability sections.
-5. If the slice involved runtime behavior, fill the **Operational Readiness** section (Q8) in the slice summary: health signal, failure signal, recovery procedure, and monitoring gaps. Omit entirely for simple slices with no runtime concerns.
+5. Address every gate listed in the **Gates to Close** section above — each gate maps to a specific slice-summary section the handler inspects (for example, Q8 maps to **Operational Readiness**: health signal, failure signal, recovery procedure, and monitoring gaps). Leaving a section empty records the gate as `omitted`.
 6. If this slice produced evidence that a requirement changed status (Active → Validated, Active → Deferred, etc.), call `gsd_requirement_update` with the requirement ID, updated `status`, and `validation` evidence. Do NOT write `.gsd/REQUIREMENTS.md` directly — the engine renders it from the database.
 7. Prepare the slice completion content you will pass to `gsd_complete_slice` using the camelCase fields `milestoneId`, `sliceId`, `sliceTitle`, `oneLiner`, `narrative`, `verification`, and `uatContent`. Do **not** manually write `{{sliceSummaryPath}}`. Do **not** manually write `{{sliceUatPath}}` — the DB-backed tool is the canonical write path for both artifacts.
 8. Draft the UAT content you will pass as `uatContent` — a concrete UAT script with real test cases derived from the slice plan and task summaries. Include preconditions, numbered steps with expected outcomes, and edge cases. This must NOT be a placeholder or generic template — tailor every test case to what this slice actually built.

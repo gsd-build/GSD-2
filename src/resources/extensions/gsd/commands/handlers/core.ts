@@ -8,11 +8,45 @@ import { ensurePreferencesFile, handlePrefs, handlePrefsMode, handlePrefsWizard 
 import { runEnvironmentChecks } from "../../doctor-environment.js";
 import { deriveState } from "../../state.js";
 import { handleCmux } from "../../commands-cmux.js";
+import { setSessionModelOverride } from "../../session-model-override.js";
 import { projectRoot } from "../context.js";
-import { formatShortcut } from "../../files.js";
+import { formattedShortcutPair } from "../../shortcut-defs.js";
 
-export function showHelp(ctx: ExtensionCommandContext): void {
-  const lines = [
+export function showHelp(ctx: ExtensionCommandContext, args = ""): void {
+  const summaryLines = [
+    "GSD — Get Shit Done\n",
+    "QUICK START",
+    "  /gsd start <tpl>   Start a workflow template",
+    "  /gsd               Run next unit (same as /gsd next)",
+    "  /gsd auto          Run all queued units continuously",
+    "  /gsd pause         Pause auto-mode",
+    "  /gsd stop          Stop auto-mode gracefully",
+    "",
+    "VISIBILITY",
+    `  /gsd status         Dashboard  (${formattedShortcutPair("dashboard")})`,
+    `  /gsd parallel watch Parallel monitor  (${formattedShortcutPair("parallel")})`,
+    `  /gsd notifications  Notification history  (${formattedShortcutPair("notifications")})`,
+    "  /gsd visualize      Interactive 10-tab TUI",
+    "  /gsd queue          Show queued/dispatched units",
+    "",
+    "COURSE CORRECTION",
+    "  /gsd steer <desc>   Apply user override to active work",
+    "  /gsd capture <text> Quick-capture a thought to CAPTURES.md",
+    "  /gsd triage         Classify and route pending captures",
+    "  /gsd undo           Revert last completed unit  [--force]",
+    "  /gsd rethink        Conversational project reorganization",
+    "",
+    "SETUP",
+    "  /gsd init           Project init wizard",
+    "  /gsd setup          Global setup status  [llm|search|remote|keys|prefs]",
+    "  /gsd model          Switch active session model",
+    "  /gsd prefs          Manage preferences",
+    "  /gsd doctor         Diagnose and repair .gsd/ state",
+    "",
+    "Use /gsd help full for the complete command reference.",
+  ];
+
+  const fullLines = [
     "GSD — Get Shit Done\n",
     "WORKFLOW",
     "  /gsd start <tpl>   Start a workflow template (bugfix, spike, feature, hotfix, etc.)",
@@ -26,12 +60,13 @@ export function showHelp(ctx: ExtensionCommandContext): void {
     "  /gsd new-milestone  Create milestone from headless context (used by gsd headless)",
     "",
     "VISIBILITY",
-    `  /gsd status         Show progress dashboard  (${formatShortcut("Ctrl+Alt+G")})`,
+    `  /gsd status         Show progress dashboard  (${formattedShortcutPair("dashboard")})`,
+    `  /gsd parallel watch Open parallel worker monitor  (${formattedShortcutPair("parallel")})`,
     "  /gsd visualize      Interactive 10-tab TUI (progress, timeline, deps, metrics, health, agent, changes, knowledge, captures, export)",
     "  /gsd queue          Show queued/dispatched units and execution order",
     "  /gsd history        View execution history  [--cost] [--phase] [--model] [N]",
     "  /gsd changelog      Show categorized release notes  [version]",
-    `  /gsd notifications  View persistent notification history  [clear|tail|filter]  (${formatShortcut("Ctrl+Alt+N")})`,
+    `  /gsd notifications  View persistent notification history  [clear|tail|filter]  (${formattedShortcutPair("notifications")})`,
     "",
     "COURSE CORRECTION",
     "  /gsd steer <desc>   Apply user override to active work",
@@ -71,7 +106,8 @@ export function showHelp(ctx: ExtensionCommandContext): void {
     "  /gsd inspect        Show SQLite DB diagnostics (schema, row counts, recent entries)",
     "  /gsd update         Update GSD to the latest version via npm",
   ];
-  ctx.ui.notify(lines.join("\n"), "info");
+  const full = ["full", "--full", "all"].includes(args.trim().toLowerCase());
+  ctx.ui.notify((full ? fullLines : summaryLines).join("\n"), "info");
 }
 
 export async function handleStatus(ctx: ExtensionCommandContext): Promise<void> {
@@ -92,9 +128,9 @@ export async function handleStatus(ctx: ExtensionCommandContext): Promise<void> 
     {
       overlay: true,
       overlayOptions: {
-        width: "70%",
-        minWidth: 60,
-        maxHeight: "90%",
+        width: "90%",
+        minWidth: 80,
+        maxHeight: "92%",
         anchor: "center",
       },
     },
@@ -301,6 +337,17 @@ async function handleModel(trimmedArgs: string, ctx: ExtensionCommandContext, pi
     return;
   }
 
+  // /gsd model is an explicit per-session pin for GSD dispatches.
+  // This is captured at auto bootstrap so it survives internal session
+  // switches during /gsd auto and /gsd next runs.
+  const sessionId = ctx.sessionManager?.getSessionId?.();
+  if (sessionId) {
+    setSessionModelOverride(sessionId, {
+      provider: targetModel.provider,
+      id: targetModel.id,
+    });
+  }
+
   ctx.ui.notify(`Model: ${targetModel.provider}/${targetModel.id}`, "info");
 }
 
@@ -309,8 +356,8 @@ export async function handleCoreCommand(
   ctx: ExtensionCommandContext,
   pi?: ExtensionAPI,
 ): Promise<boolean> {
-  if (trimmed === "help" || trimmed === "h" || trimmed === "?") {
-    showHelp(ctx);
+  if (trimmed === "help" || trimmed === "h" || trimmed === "?" || trimmed.startsWith("help ")) {
+    showHelp(ctx, trimmed.startsWith("help ") ? trimmed.slice(5).trim() : "");
     return true;
   }
   if (trimmed === "status") {

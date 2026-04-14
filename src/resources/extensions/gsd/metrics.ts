@@ -41,6 +41,7 @@ export interface UnitMetrics {
   model: string;           // model ID used
   startedAt: number;       // ms timestamp
   finishedAt: number;      // ms timestamp
+  autoSessionKey?: string; // identifies one auto-mode run across pause/resume
   tokens: TokenCounts;
   cost: number;            // total USD cost
   toolCalls: number;
@@ -133,7 +134,16 @@ export function snapshotUnitMetrics(
   unitId: string,
   startedAt: number,
   model: string,
-  opts?: { tier?: string; modelDowngraded?: boolean; contextWindowTokens?: number; truncationSections?: number; continueHereFired?: boolean; promptCharCount?: number; baselineCharCount?: number },
+  opts?: {
+    tier?: string;
+    modelDowngraded?: boolean;
+    contextWindowTokens?: number;
+    truncationSections?: number;
+    continueHereFired?: boolean;
+    promptCharCount?: number;
+    baselineCharCount?: number;
+    autoSessionKey?: string;
+  },
 ): UnitMetrics | null {
   if (!ledger) return null;
 
@@ -181,6 +191,7 @@ export function snapshotUnitMetrics(
     model,
     startedAt,
     finishedAt: Date.now(),
+    ...(opts?.autoSessionKey ? { autoSessionKey: opts.autoSessionKey } : {}),
     tokens,
     cost,
     toolCalls,

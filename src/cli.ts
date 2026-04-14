@@ -16,9 +16,7 @@ import { agentDir, sessionsDir, authFilePath } from './app-paths.js'
 import { initResources, buildResourceLoader, getNewerManagedResourceVersion } from './resource-loader.js'
 import { ensureManagedTools } from './tool-bootstrap.js'
 import { loadStoredEnvKeys } from './wizard.js'
-import { migratePiCredentials } from './pi-migration.js'
-import { validateConfiguredModel } from './startup-model-validation.js'
-import { shouldMigrateAnthropicToClaudeCode } from './provider-migrations.js'
+import { migratePiCredentials, getPiDefaultModelAndProvider } from './pi-migration.js'
 import { shouldRunOnboarding, runOnboarding } from './onboarding.js'
 import chalk from 'chalk'
 import { checkForUpdates } from './update-check.js'
@@ -129,6 +127,48 @@ function parseCliArgs(argv: string[]): CliFlags {
     }
   }
   return flags
+}
+
+/**
+ * Validate the configured default model against the registry and reset it if
+ * it no longer exists.  Must run AFTER extensions have registered their
+ * providers so that extension models (e.g. pi-claude-cli) are visible.
+ */
+function validateConfiguredModel(
+  modelRegistry: ModelRegistry,
+  settingsManager: SettingsManager,
+): void {
+  const configuredProvider = settingsManager.getDefaultProvider()
+  const configuredModel = settingsManager.getDefaultModel()
+  const allModels = modelRegistry.getAll()
+  const availableModels = modelRegistry.getAvailable()
+  const configuredExists = configuredProvider && configuredModel &&
+    allModels.some((m) => m.provider === configuredProvider && m.id === configuredModel)
+  const configuredAvailable = configuredProvider && configuredModel &&
+    availableModels.some((m) => m.provider === configuredProvider && m.id === configuredModel)
+
+  if (!configuredModel || !configuredExists) {
+    // Model not configured at all, or removed from registry — pick a fallback.
+    // Only fires when the model is genuinely unknown (not just temporarily unavailable).
+    const piDefault = getPiDefaultModelAndProvider()
+    const preferred =
+      (piDefault
+        ? availableModels.find((m) => m.provider === piDefault.provider && m.id === piDefault.model)
+        : undefined) ||
+      availableModels.find((m) => m.provider === 'openai' && m.id === 'gpt-5.4') ||
+      availableModels.find((m) => m.provider === 'openai') ||
+      availableModels.find((m) => m.provider === 'anthropic' && m.id === 'claude-opus-4-6') ||
+      availableModels.find((m) => m.provider === 'anthropic' && m.id.includes('opus')) ||
+      availableModels.find((m) => m.provider === 'anthropic') ||
+      availableModels[0]
+    if (preferred) {
+      settingsManager.setDefaultModelAndProvider(preferred.provider, preferred.id)
+    }
+  }
+
+  if (settingsManager.getDefaultThinkingLevel() !== 'off' && !configuredExists) {
+    settingsManager.setDefaultThinkingLevel('off')
+  }
 }
 
 const cliFlags = parseCliArgs(process.argv)
@@ -282,6 +322,14 @@ if (cliFlags.messages[0] === 'sessions') {
   })
   rl.close()
 
+  // Clean up stdin state left by readline.createInterface().
+  // Without this, downstream TUI initialization gets corrupted listeners and exhibits
+  // duplicate terminal I/O. Match the pattern used after onboarding cleanup.
+  process.stdin.removeAllListeners('data')
+  process.stdin.removeAllListeners('keypress')
+  if (process.stdin.setRawMode) process.stdin.setRawMode(false)
+  process.stdin.pause()
+
   const choice = parseInt(answer, 10)
   if (isNaN(choice) || choice < 1 || choice > toShow.length) {
     process.stderr.write(chalk.dim('Cancelled.\n'))
@@ -374,8 +422,23 @@ if (!isPrintMode && process.stdout.columns && process.stdout.columns < 40) {
   )
 }
 
-// --list-models: print available models and exit (no TTY needed)
+// --list-models: load extensions so that extension-registered providers (e.g.
+// pi-claude-cli) appear in the listing, then flush their pending registrations
+// into the model registry before printing.
 if (cliFlags.listModels !== undefined) {
+  exitIfManagedResourcesAreNewer(agentDir)
+  initResources(agentDir)
+  const listModelsLoader = new DefaultResourceLoader({
+    agentDir,
+    additionalExtensionPaths: cliFlags.extensions.length > 0 ? cliFlags.extensions : undefined,
+  })
+  await listModelsLoader.reload()
+  const listModelsExtensions = listModelsLoader.getExtensions()
+  for (const { name, config } of listModelsExtensions.runtime.pendingProviderRegistrations) {
+    modelRegistry.registerProvider(name, config)
+  }
+  listModelsExtensions.runtime.pendingProviderRegistrations = []
+
   const models = modelRegistry.getAvailable()
   if (models.length === 0) {
     console.log('No models available. Set API keys in environment variables.')
@@ -468,29 +531,6 @@ if (isPrintMode) {
   })
   markStartup('createAgentSession')
 
-  // Migrate anthropic OAuth users to claude-code provider when CLI is available (#3772).
-  // Anthropic blocks third-party apps from using subscription quotas — routing through
-  // the local claude CLI binary is TOS-compliant.
-  if (shouldMigrateAnthropicToClaudeCode({
-    authStorage,
-    isClaudeCodeReady: modelRegistry.isProviderRequestReady('claude-code'),
-    defaultProvider: settingsManager.getDefaultProvider(),
-  })) {
-    const currentModelId = settingsManager.getDefaultModel()
-    if (currentModelId) {
-      const ccModel = modelRegistry.find('claude-code', currentModelId)
-      if (ccModel) {
-        try {
-          await session.setModel(ccModel)
-          // Only persist after successful session switch to avoid desync
-          settingsManager.setDefaultModelAndProvider('claude-code', currentModelId)
-        } catch {
-          // claude-code provider not ready — leave both session and settings unchanged
-        }
-      }
-    }
-  }
-
   // Validate configured model AFTER extensions have registered their models (#2626).
   // Before this, extension-provided models (e.g. claude-code/*) were not yet in the
   // registry, causing the user's valid choice to be silently overwritten.
@@ -524,6 +564,11 @@ if (isPrintMode) {
     }
   }
 
+  // Validate configured model now that extension providers are registered.
+  // Must run after createAgentSession() which flushes pendingProviderRegistrations
+  // so extension models (e.g. pi-claude-cli) are visible in the registry.
+  validateConfiguredModel(modelRegistry, settingsManager)
+
   // Apply --model override if specified
   if (cliFlags.model) {
     const available = modelRegistry.getAvailable()
@@ -546,6 +591,17 @@ if (isPrintMode) {
   if (mode === 'mcp') {
     printStartupTimings()
     const { startMcpServer } = await import('./mcp-server.js')
+
+    // Activate every registered tool before starting the MCP transport.
+    // `session.agent.state.tools` is the *active* subset, not the full
+    // registry — if we expose only the active set, extension-registered
+    // tools (gsd workflow, browser-tools, mac-tools, search-the-web, …)
+    // are invisible to MCP clients. Flipping the active set to every
+    // known tool name makes `state.tools` mirror the full registry for
+    // this MCP session, which is what an external client expects.
+    const allToolNames = session.getAllTools().map((t) => t.name)
+    session.setActiveToolsByName(allToolNames)
+
     await startMcpServer({
       tools: session.agent.state.tools ?? [],
       version: process.env.GSD_VERSION || '0.0.0',
@@ -664,29 +720,6 @@ const { session, extensionsResult, modelFallbackMessage: interactiveFallbackMsg 
 })
 markStartup('createAgentSession')
 
-// Migrate anthropic OAuth users to claude-code provider when CLI is available (#3772).
-// Anthropic blocks third-party apps from using subscription quotas — routing through
-// the local claude CLI binary is TOS-compliant.
-if (shouldMigrateAnthropicToClaudeCode({
-  authStorage,
-  isClaudeCodeReady: modelRegistry.isProviderRequestReady('claude-code'),
-  defaultProvider: settingsManager.getDefaultProvider(),
-})) {
-  const currentModelId = settingsManager.getDefaultModel()
-  if (currentModelId) {
-    const ccModel = modelRegistry.find('claude-code', currentModelId)
-    if (ccModel) {
-      try {
-        await session.setModel(ccModel)
-        // Only persist after successful session switch to avoid desync
-        settingsManager.setDefaultModelAndProvider('claude-code', currentModelId)
-      } catch {
-        // claude-code provider not ready — leave both session and settings unchanged
-      }
-    }
-  }
-}
-
 // Validate configured model AFTER extensions have registered their models (#2626).
 // Before this, extension-provided models (e.g. claude-code/*) were not yet in the
 // registry, causing the user's valid choice to be silently overwritten.
@@ -718,6 +751,11 @@ if (extensionsResult.errors.length > 0) {
     process.stderr.write(`[gsd] ${prefix}: ${err.error}\n`)
   }
 }
+
+// Validate configured model now that extension providers are registered.
+// Must run after createAgentSession() which flushes pendingProviderRegistrations
+// so extension models (e.g. pi-claude-cli) are visible in the registry.
+validateConfiguredModel(modelRegistry, settingsManager)
 
 // Restore scoped models from settings on startup.
 // The upstream InteractiveMode reads enabledModels from settings when /scoped-models is opened,

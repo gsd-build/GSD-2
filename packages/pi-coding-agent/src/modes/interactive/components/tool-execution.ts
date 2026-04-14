@@ -51,6 +51,60 @@ function str(value: unknown): string | null {
 	return null; // Invalid type
 }
 
+/**
+ * Split a Claude Code MCP tool name (`mcp__<server>__<tool>`) into its parts.
+ * Returns null for non-prefixed names. Duplicated from the claude-code-cli
+ * extension (parseMcpToolName) so this package doesn't have to import across
+ * the resources/extensions boundary.
+ */
+function parseMcpToolName(name: string): { server: string; tool: string } | null {
+	if (!name.startsWith("mcp__")) return null;
+	const rest = name.slice("mcp__".length);
+	const delim = rest.indexOf("__");
+	if (delim <= 0 || delim === rest.length - 2) return null;
+	return { server: rest.slice(0, delim), tool: rest.slice(delim + 2) };
+}
+
+const COMPACT_ARG_VALUE_LIMIT = 60;
+const GENERIC_OUTPUT_PREVIEW_LINES = 10;
+const GENERIC_ARGS_JSON_PREVIEW_LINES = 10;
+
+/**
+ * Format tool args for the generic-renderer fallback. Produces a one-line
+ * `k=v, k=v` summary when every value is a primitive that fits inline; falls
+ * back to a truncated JSON dump for structurally complex args.
+ */
+function formatCompactArgs(args: unknown, expanded: boolean): string {
+	if (args == null) return "";
+	if (typeof args !== "object") return String(args);
+
+	const entries = Object.entries(args as Record<string, unknown>);
+	if (entries.length === 0) return "";
+
+	const allPrimitive = entries.every(([, value]) => {
+		const t = typeof value;
+		if (t === "number" || t === "boolean") return true;
+		if (t === "string") return (value as string).length <= COMPACT_ARG_VALUE_LIMIT;
+		return value == null;
+	});
+
+	if (allPrimitive) {
+		return entries
+			.map(([key, value]) => {
+				if (typeof value === "string") return `${key}=${JSON.stringify(value)}`;
+				if (value == null) return `${key}=null`;
+				return `${key}=${String(value)}`;
+			})
+			.join(", ");
+	}
+
+	// Complex args: show truncated JSON.
+	const lines = JSON.stringify(args, null, 2).split("\n");
+	const maxLines = expanded ? lines.length : GENERIC_ARGS_JSON_PREVIEW_LINES;
+	if (lines.length <= maxLines) return lines.join("\n");
+	return lines.slice(0, maxLines).join("\n") + "\n...";
+}
+
 export interface ToolExecutionOptions {
 	showImages?: boolean; // default: true (only used if terminal supports images)
 }
@@ -323,6 +377,29 @@ export class ToolExecutionComponent extends Container {
 		this.updateDisplay();
 		// Convert non-PNG images to PNG for Kitty protocol (async)
 		this.maybeConvertImagesForKitty();
+	}
+
+	/**
+	 * Finalize a pending tool call as failed/interrupted while preserving any streamed partial output.
+	 */
+	completeWithError(message?: string): void {
+		this.isPartial = false;
+		if (this.result) {
+			let content = this.result.content;
+			if (message) {
+				const alreadyHasMessage = content.some((block) => block.type === "text" && block.text === message);
+				if (!alreadyHasMessage) {
+					content = [...content, { type: "text", text: message }];
+				}
+			}
+			this.result = { ...this.result, content, isError: true };
+		} else {
+			this.result = {
+				content: message ? [{ type: "text", text: message }] : [],
+				isError: true,
+			};
+		}
+		this.updateDisplay();
 	}
 
 	/**
@@ -652,6 +729,12 @@ export class ToolExecutionComponent extends Container {
 			text = `${theme.fg("toolTitle", theme.bold("read"))} ${pathDisplay}`;
 
 			if (this.result) {
+				if (this.result.isError) {
+					const errorText = this.getTextOutput().trim() || "read failed";
+					text += `\n\n${theme.fg("error", errorText)}`;
+					return text;
+				}
+
 				const rawOutput = this.getTextOutput();
 				// Strip hashline prefixes (e.g. "1#BQ:content") for TUI display
 				const output = rawOutput.replace(/^(\s*)\d+#[ZPMQVRWSNKTXJBYH]{2}:/gm, "$1");
@@ -804,6 +887,12 @@ export class ToolExecutionComponent extends Container {
 			}
 
 			if (this.result) {
+				if (this.result.isError) {
+					const errorText = this.getTextOutput().trim() || "ls failed";
+					text += `\n\n${theme.fg("error", errorText)}`;
+					return text;
+				}
+
 				const output = this.getTextOutput().trim();
 				if (output) {
 					const lines = output.split("\n");
@@ -846,6 +935,12 @@ export class ToolExecutionComponent extends Container {
 			}
 
 			if (this.result) {
+				if (this.result.isError) {
+					const errorText = this.getTextOutput().trim() || "find failed";
+					text += `\n\n${theme.fg("error", errorText)}`;
+					return text;
+				}
+
 				const output = this.getTextOutput().trim();
 				if (output) {
 					const lines = output.split("\n");
@@ -892,6 +987,12 @@ export class ToolExecutionComponent extends Container {
 			}
 
 			if (this.result) {
+				if (this.result.isError) {
+					const errorText = this.getTextOutput().trim() || "grep failed";
+					text += `\n\n${theme.fg("error", errorText)}`;
+					return text;
+				}
+
 				const output = this.getTextOutput().trim();
 				if (output) {
 					const lines = output.split("\n");
@@ -943,19 +1044,37 @@ export class ToolExecutionComponent extends Container {
 				}
 			}
 		} else {
-			// Generic tool (shouldn't reach here for custom tools)
-			text = theme.fg("toolTitle", theme.bold(this.toolName));
+			// Generic tool / MCP tool without a registered renderer.
+			// MCP tool names from Claude Code arrive as `mcp__<server>__<tool>`;
+			// render the server prefix in muted style so the tool name reads
+			// cleanly. GSD-registered MCP tools have already had their prefix
+			// stripped upstream in partial-builder.ts and won't reach this branch.
+			const parsed = parseMcpToolName(this.toolName);
+			const displayName = parsed ? parsed.tool : this.toolName;
+			const serverPrefix = parsed ? theme.fg("muted", `${parsed.server}\u00b7`) : "";
+			text = serverPrefix + theme.fg("toolTitle", theme.bold(displayName));
 
-			const contentLines = JSON.stringify(this.args, null, 2).split("\n");
-			const maxContentLines = 20;
-			const truncatedContent = contentLines.slice(0, maxContentLines);
-			if (contentLines.length > maxContentLines) {
-				truncatedContent.push("...");
+			const argsText = formatCompactArgs(this.args, this.expanded);
+			if (argsText) {
+				if (argsText.includes("\n")) {
+					text += `\n\n${theme.fg("toolOutput", argsText)}`;
+				} else {
+					text += " " + theme.fg("toolOutput", argsText);
+				}
 			}
-			text += `\n\n${truncatedContent.join("\n")}`;
-			const output = this.getTextOutput();
-			if (output) {
-				text += `\n${output}`;
+
+			if (this.result) {
+				const output = this.getTextOutput().trim();
+				if (output) {
+					const lines = output.split("\n");
+					const maxLines = this.expanded ? lines.length : GENERIC_OUTPUT_PREVIEW_LINES;
+					const displayLines = lines.slice(0, maxLines);
+					const remaining = lines.length - maxLines;
+					text += `\n\n${displayLines.map((line: string) => theme.fg("toolOutput", line)).join("\n")}`;
+					if (remaining > 0) {
+						text += `${theme.fg("muted", `\n... (${remaining} more lines,`)} ${keyHint("expandTools", "to expand")})`;
+					}
+				}
 			}
 		}
 

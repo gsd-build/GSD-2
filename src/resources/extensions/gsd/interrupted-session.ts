@@ -34,6 +34,7 @@ export interface PausedSessionMetadata {
   activeEngineId?: string;
   activeRunDir?: string | null;
   autoStartTime?: number;
+  milestoneLock?: string | null;
 }
 
 export interface InterruptedSessionAssessment {

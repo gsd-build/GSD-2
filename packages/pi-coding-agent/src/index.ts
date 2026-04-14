@@ -176,6 +176,7 @@ export { DefaultResourceLoader } from "./core/resource-loader.js";
 export {
 	type CreateAgentSessionOptions,
 	type CreateAgentSessionResult,
+	CredentialCooldownError,
 	// Factory
 	createAgentSession,
 	createBashTool,

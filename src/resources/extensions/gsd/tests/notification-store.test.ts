@@ -16,6 +16,7 @@ import {
   getLineCount,
   suppressPersistence,
   unsuppressPersistence,
+  onNotificationStoreChange,
   _resetNotificationStore,
 } from "../notification-store.js";
 
@@ -295,5 +296,22 @@ describe("notification-store", () => {
     assert.ok(existsSync(lockPath), "foreign lock file should not be deleted");
 
     rmSync(lockPath, { force: true });
+  });
+
+  test("listeners are notified on append, markAllRead, and clear", () => {
+    initNotificationStore(tmp);
+    let calls = 0;
+    const unsubscribe = onNotificationStoreChange(() => { calls++; });
+
+    appendNotification("msg1", "info");
+    assert.equal(calls, 1, "append should emit one change");
+
+    markAllRead();
+    assert.equal(calls, 2, "markAllRead should emit one change when state changes");
+
+    clearNotifications();
+    assert.equal(calls, 3, "clear should emit one change");
+
+    unsubscribe();
   });
 });

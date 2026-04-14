@@ -6,6 +6,128 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.73.1] - 2026-04-13
+
+### Fixed
+- **gsd**: address 3 silent-crash secondary issues from #3348 post-#3696 (#4133)
+- **gsd**: tolerate corrupt task arrays (#4056)
+- **gsd**: discard milestone DB and worktree state (#4065)
+- **model-resolver**: gate saved default restore on provider readiness
+- **tui**: stop pinned latest-output mirror from duplicating streaming text
+- **gsd**: wire subagent_model preference through to dispatch prompt builders
+- **ci**: address 5 pipeline integrity issues from release audit (#4119)
+- **ci**: regenerate package-lock.json during version bump (#4116)
+- **pi-coding-agent**: skip localhost dummy key when fallback resolver provides a configured key
+
+### Changed
+- **gsd**: delete 3 unreferenced dead files and orphaned test (#3728)
+
+## [2.73.0] - 2026-04-13
+
+### Added
+- **pi-ai**: add Alibaba DashScope as standalone provider (#3891)
+- **gsd**: add layered depth enforcement to discuss.md (#4079)
+
+### Fixed
+- **gsd**: reconcile stale slice rows and rebuild STATE.md before DB close (#3658)
+- **gsd**: block direct writes to gsd.db via hooks to prevent corruption (#3674)
+- **gsd**: break 3 circular dependencies in extension modules (#3730)
+- **claude-code**: default GSD subagents to bypassPermissions and pre-authorize safe built-ins (#4099 follow-up)
+- **gsd**: add memory pressure watchdog and persist stuck detection state (#3708)
+- **state**: prevent false degraded-mode warning when DB not yet initialized (#3922)
+- **async-jobs**: suppress stale follow-up for jobs consumed by await_job (#3787) (#3788)
+- **gsd**: rebuild STATE.md after unit completion (#3876)
+- **gsd**: let doctor heal dispatch fixable warnings (#3875)
+- **gsd**: preserve experimental preferences in merges (#3847)
+- **gsd**: heal legacy task arrays and evidence rows (#4027)
+- **gsd**: unlock depth verification outside guided flow (#4058)
+- **gsd**: preserve paused auto badge after provider pause (#4062)
+- **ollama**: add cloud auth support and resolve real context window via /api/show (#4017)
+- **security**: activate auth middleware and harden shutdown/update routes (#4023)
+- **gsd**: normalize workingDirectory prompt paths (#4057)
+- **claude-code**: pre-authorize workflow MCP tools so interactive acceptEdits mode stops blocking GSD commands
+- **cli**: resolve duplicate validateConfiguredModel and missing getPiDefaultModelAndProvider import
+- update GSD runtime ignore patterns for team mode (#2824)
+- **gsd**: prevent double frontmatter in task SUMMARY.md from projection re-render (#2818)
+- flush extension provider registrations before model resolution (#1923)
+- **gsd**: reset db-open attempted flag on close (#4024)
+- **gsd**: unblock mixed-dependency zero-dep slices (#4025)
+- **pi-tui**: filter kitty keypad private-use input (#4026)
+- **gsd**: disable db mmap on darwin (#4029)
+- **gsd**: reject empty roadmap stubs as milestone plans (#4063)
+- persist defaultProvider when user selects Claude Code CLI in onboarding (#4104)
+- **pi-ai**: filter unavailable github copilot models (#4031)
+- **claude-code**: wrap prompt history in XML tags to stop transcript fabrication
+- clean up MCP tool rendering in Claude Code CLI stream
+
+### Changed
+- **pi-ai**: regenerate model registry from upstream APIs (#3887)
+- require linked issue in PR template (#4112)
+
+## [2.72.0] - 2026-04-13
+
+### Added
+- **agents**: add GSD phase guard to prevent subagent/phase conflicts
+- **agents**: add 8 specialist subagents and slim pro agents
+- **tui**: improve gsd overlays, shortcuts, and notification flows
+
+### Fixed
+- **ci**: build artifacts in integration-tests job
+- **auto**: recover from OpenRouter credit affordability errors
+- **gsd**: cast unknown gate id in test to satisfy GateId type
+- **gsd**: route quality gates through a per-turn registry
+- **mcp**: expose every registered tool and fix SDK subpath resolution
+- **mcp**: resolve rebase regressions in stream-adapter
+- **mcp**: thread abort signals, restore tool fidelity, and fix subpath imports
+- **doctor**: skip key check for CLI-authenticated providers
+- **tui**: overlay subscription + Ctrl+Shift+P shortcut conflict
+- **models**: block unconfigured models from selection surfaces
+- **ollama**: clear footer status when provider unavailable
+- **gsd**: guard model override in minimal command contexts
+- **model**: require provider readiness for saved default selection
+- **gsd**: honor /gsd model as session override across dispatch
+- **gsd**: use milestone branch for merged worktree cleanup
+- **pi-coding-agent**: show full OAuth login URLs
+- **auto**: add structured cooldown error and bounded retry budget
+- **auto**: survive transient 429 credential cooldown in auto sessions
+- **pi-coding-agent**: match renderable tools case-insensitively
+- **headless**: keep idle timeout off during interactive tools
+- **claude-code-cli**: surface result text for success errors
+- **pi-ai**: use bearer auth for MiniMax Anthropic API
+- **gsd**: scope stuck-loop forensics to auto sessions
+- **gsd**: repair DB-only milestone unpark state
+- **gsd**: detach auto start from active turns
+- **cli**: include all internal node_modules entries in pnpm merged dir
+- **gsd**: enforce anti-fabrication turn-taking in discuss prompts
+- **cli**: address review findings for pnpm merged node_modules
+- **cli**: handle pnpm global installs by merging both node_modules roots
+- **gsd**: keep project db path after worktree enter
+- **gsd**: ignore prose inputs in pre-exec checks
+- **gsd**: read existing artifacts before write
+- **mcp-server**: use explicit sdk js subpaths
+- **cli**: preserve anthropic api provider
+- **gsd**: document flat task summary layout
+- **gsd**: require verification classes in validation prompts
+- **mcp-server**: open the DB for inline workflow tools
+- **gsd**: ignore pre-existing files in task ordering
+- **gsd**: detect property-value JSON invocation errors
+- **cli**: honor custom-provider defaults before onboarding
+- **gsd**: dedupe repeated notifications
+- **gsd**: open DB before bootstrap deriveState
+- **cli**: clean up stdin after sessions command readline interface closes
+- **gsd**: skip reverse dependents in dispatch fallback
+- **gsd**: classify plain connection-error as transient
+- **cli**: resolve hoisted node_modules for global installs
+- **pi-ai**: cast test tool fixtures to any for TSchema compatibility
+- **commands**: use specific validation reason in blocked-directory warning
+- **commands**: show friendly message when /gsd runs from $HOME instead of unhandled error
+
+### Changed
+- **ci**: run integration tests in parallel with build
+- **ci**: cache Next.js build artifacts with Blacksmith cache
+- sync package-lock.json version fields to 2.68.0
+- **pi-ai**: add cache_control breakpoints to tool definitions
+
 ## [2.71.0] - 2026-04-11
 
 ### Added
@@ -2740,7 +2862,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - License updated to MIT
 
-[Unreleased]: https://github.com/gsd-build/gsd-2/compare/v2.71.0...HEAD
+[Unreleased]: https://github.com/gsd-build/gsd-2/compare/v2.73.1...HEAD
+[2.73.1]: https://github.com/gsd-build/gsd-2/compare/v2.73.0...v2.73.1
+[2.73.0]: https://github.com/gsd-build/gsd-2/compare/v2.72.0...v2.73.0
+[2.72.0]: https://github.com/gsd-build/gsd-2/compare/v2.71.0...v2.72.0
 [2.71.0]: https://github.com/gsd-build/gsd-2/compare/v2.70.1...v2.71.0
 [2.70.1]: https://github.com/gsd-build/gsd-2/compare/v2.70.0...v2.70.1
 [2.70.0]: https://github.com/gsd-build/gsd-2/compare/v2.69.0...v2.70.0

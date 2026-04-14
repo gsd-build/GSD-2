@@ -10,6 +10,17 @@ import { appKey } from "../components/keybinding-hints.js";
 // Tracks the last processed content index to avoid re-scanning all blocks on every message_update
 let lastProcessedContentIndex = 0;
 
+// Tracks the previous content[] length so we can detect when an adapter resets
+// the assistant content array for a new provider sub-turn within one lifecycle.
+let lastContentLength = 0;
+
+// --- Segment walker state (per streaming assistant turn) ---
+type RenderedSegment =
+	| { kind: "text-run"; startIndex: number; endIndex: number; component: AssistantMessageComponent }
+	| { kind: "tool"; contentIndex: number; component: ToolExecutionComponent };
+
+let renderedSegments: RenderedSegment[] = [];
+
 function hasVisibleAssistantContent(message: { content: Array<any> }): boolean {
 	return message.content.some(
 		(c) =>
@@ -20,6 +31,28 @@ function hasVisibleAssistantContent(message: { content: Array<any> }): boolean {
 
 function hasAssistantToolBlocks(message: { content: Array<any> }): boolean {
 	return message.content.some((c) => c.type === "toolCall" || c.type === "serverToolUse");
+}
+
+// Pick the latest non-empty text block that appears strictly before the most
+// recent tool call. Text blocks that come after the last tool call are still
+// streaming live into the chat container, so mirroring them into the pinned
+// "Latest Output" zone would render the same tokens twice.
+export function findLatestPinnableText(contentBlocks: Array<any>): string {
+	let lastToolIdx = -1;
+	for (let i = contentBlocks.length - 1; i >= 0; i--) {
+		const c = contentBlocks[i];
+		if (c?.type === "toolCall" || c?.type === "serverToolUse") {
+			lastToolIdx = i;
+			break;
+		}
+	}
+	for (let i = lastToolIdx - 1; i >= 0; i--) {
+		const c = contentBlocks[i];
+		if (c?.type === "text" && typeof c.text === "string" && c.text.trim()) {
+			return c.text.trim();
+		}
+	}
+	return "";
 }
 
 // Tracks the latest assistant text for the pinned message zone
@@ -56,8 +89,10 @@ export async function handleAgentEvent(host: InteractiveModeStateHost & {
 	// Reset content index tracker and pinned state when a new assistant message starts
 	if (event.type === "message_start" && event.message.role === "assistant") {
 		lastProcessedContentIndex = 0;
+		lastContentLength = 0;
 		lastPinnedText = "";
 		hasToolsInTurn = false;
+		renderedSegments = [];
 		if (pinnedBorder) pinnedBorder.stopSpinner();
 		pinnedBorder = undefined;
 		pinnedTextComponent = undefined;
@@ -77,6 +112,8 @@ export async function handleAgentEvent(host: InteractiveModeStateHost & {
 					host.pinnedMessageContainer.clear();
 					lastPinnedText = "";
 					hasToolsInTurn = false;
+					renderedSegments = [];
+					lastContentLength = 0;
 					if (pinnedBorder) pinnedBorder.stopSpinner();
 					pinnedBorder = undefined;
 					pinnedTextComponent = undefined;
@@ -180,12 +217,22 @@ export async function handleAgentEvent(host: InteractiveModeStateHost & {
 				}
 
 				const contentBlocks = host.streamingMessage.content;
-				// Some adapters reuse a single assistant lifecycle while internally
-				// spanning multiple provider turns. When a new turn starts, content
-				// length can shrink back to 0/1; reset scan index to avoid skipping.
-				if (lastProcessedContentIndex >= contentBlocks.length) {
+				// Some adapters (notably claude-code) reuse a single assistant
+				// lifecycle while internally spanning multiple provider sub-turns.
+				// When a new sub-turn starts, content[] length shrinks back to 0/1.
+				// The scan loop needs its index reset, AND the segment walker's
+				// renderedSegments map must be cleared so existing text-run
+				// components don't get overwritten in place with new sub-turn
+				// content (#4144 regression). Prior sub-turn children stay in
+				// chatContainer as frozen history; new segments append after them.
+				if (contentBlocks.length < lastContentLength) {
+					renderedSegments = [];
+					lastPinnedText = "";
+					lastProcessedContentIndex = 0;
+				} else if (lastProcessedContentIndex >= contentBlocks.length) {
 					lastProcessedContentIndex = 0;
 				}
+				lastContentLength = contentBlocks.length;
 				for (let i = lastProcessedContentIndex; i < contentBlocks.length; i++) {
 					const content = contentBlocks[i];
 					if (content.type === "toolCall") {
@@ -251,24 +298,88 @@ export async function handleAgentEvent(host: InteractiveModeStateHost & {
 					}
 				}
 
-				// Render assistant text/thinking after tool components so mixed
-				// streams keep chronological ordering in the chat container.
-				const hasToolBlocks = hasAssistantToolBlocks(host.streamingMessage);
-				if (!host.streamingComponent && hasVisibleAssistantContent(host.streamingMessage)) {
-					host.streamingComponent = new AssistantMessageComponent(
-						undefined,
-						host.hideThinkingBlock,
-						host.getMarkdownThemeWithSettings(),
-						host.settingsManager.getTimestampFormat(),
-					);
-					host.chatContainer.addChild(host.streamingComponent);
-				}
-				if (host.streamingComponent) {
-					if (hasToolBlocks) {
-						host.chatContainer.removeChild(host.streamingComponent);
-						host.chatContainer.addChild(host.streamingComponent);
+				// Segment walker: render content blocks in stream order, append-only.
+				// Build desired segment plan from content[].
+				{
+					const blocks = host.streamingMessage.content;
+					type DesiredSegment =
+						| { kind: "text-run"; startIndex: number; endIndex: number }
+						| { kind: "tool"; contentIndex: number; toolId: string };
+					const desired: DesiredSegment[] = [];
+					let runStart = -1;
+					for (let i = 0; i < blocks.length; i++) {
+						const b = blocks[i];
+						const isText = b.type === "text" || b.type === "thinking";
+						const isTool = b.type === "toolCall" || b.type === "serverToolUse";
+						if (isText) {
+							if (runStart === -1) runStart = i;
+						} else {
+							if (runStart !== -1) {
+								desired.push({ kind: "text-run", startIndex: runStart, endIndex: i - 1 });
+								runStart = -1;
+							}
+							if (isTool) {
+								desired.push({ kind: "tool", contentIndex: i, toolId: b.id });
+							}
+						}
 					}
-					host.streamingComponent.updateContent(host.streamingMessage);
+					if (runStart !== -1) {
+						desired.push({ kind: "text-run", startIndex: runStart, endIndex: blocks.length - 1 });
+					}
+
+					// Append any newly needed segments (never reorder existing ones).
+					for (const seg of desired) {
+						if (seg.kind === "tool") {
+							// Tool segments are already handled above via pendingTools; just
+							// register them in renderedSegments if not yet tracked.
+							const existing = renderedSegments.find(
+								(s) => s.kind === "tool" && s.contentIndex === seg.contentIndex,
+							);
+							if (!existing) {
+								const comp = host.pendingTools.get(seg.toolId);
+								if (comp) {
+									renderedSegments.push({ kind: "tool", contentIndex: seg.contentIndex, component: comp });
+								}
+							}
+						} else {
+							// text-run segment
+							const existing = renderedSegments.find(
+								(s) => s.kind === "text-run" && s.startIndex === seg.startIndex,
+							);
+							if (!existing) {
+								const comp = new AssistantMessageComponent(
+									undefined,
+									host.hideThinkingBlock,
+									host.getMarkdownThemeWithSettings(),
+									host.settingsManager.getTimestampFormat(),
+									{ startIndex: seg.startIndex, endIndex: seg.endIndex },
+								);
+								host.chatContainer.addChild(comp);
+								renderedSegments.push({ kind: "text-run", startIndex: seg.startIndex, endIndex: seg.endIndex, component: comp });
+								host.streamingComponent = comp;
+							}
+						}
+					}
+
+					// Update all trailing text-run segments with the latest message so
+					// streaming text grows in place.
+					for (const seg of renderedSegments) {
+						if (seg.kind === "text-run") {
+							// Find corresponding desired segment to get current endIndex
+							const d = desired.find((ds) => ds.kind === "text-run" && ds.startIndex === seg.startIndex);
+							if (d && d.kind === "text-run" && d.endIndex !== seg.endIndex) {
+								seg.endIndex = d.endIndex;
+								seg.component.setRange({ startIndex: seg.startIndex, endIndex: seg.endIndex });
+							}
+							seg.component.updateContent(host.streamingMessage);
+						}
+					}
+
+					// Keep streamingComponent pointing at the last text-run for message_end compatibility.
+					const lastTextSeg = [...renderedSegments].reverse().find((s) => s.kind === "text-run");
+					if (lastTextSeg && lastTextSeg.kind === "text-run") {
+						host.streamingComponent = lastTextSeg.component;
+					}
 				}
 
 				// Update index: fully processed blocks won't need re-scanning.
@@ -286,15 +397,7 @@ export async function handleAgentEvent(host: InteractiveModeStateHost & {
 				if (hasTools) hasToolsInTurn = true;
 
 				if (hasToolsInTurn) {
-					// Collect the latest text block(s) from the assistant message
-					let latestText = "";
-					for (let i = contentBlocks.length - 1; i >= 0; i--) {
-						const c = contentBlocks[i] as any;
-						if (c.type === "text" && c.text?.trim()) {
-							latestText = c.text.trim();
-							break;
-						}
-					}
+					const latestText = findLatestPinnableText(contentBlocks);
 
 					if (latestText && latestText !== lastPinnedText) {
 						lastPinnedText = latestText;
@@ -362,6 +465,7 @@ export async function handleAgentEvent(host: InteractiveModeStateHost & {
 					host.chatContainer.addChild(host.streamingComponent);
 				}
 				if (host.streamingComponent) {
+					host.streamingComponent.setShowMetadata(true);
 					host.streamingComponent.updateContent(host.streamingMessage);
 				}
 
@@ -369,8 +473,13 @@ export async function handleAgentEvent(host: InteractiveModeStateHost & {
 					if (!errorMessage) {
 						errorMessage = host.streamingMessage.errorMessage || "Error";
 					}
-					for (const [, component] of host.pendingTools.entries()) {
-						component.updateResult({ content: [{ type: "text", text: errorMessage }], isError: true });
+					const pendingComponents = Array.from(host.pendingTools.values());
+					if (pendingComponents.length > 0) {
+						const [first, ...rest] = pendingComponents;
+						first.completeWithError(errorMessage);
+						for (const component of rest) {
+							component.completeWithError();
+						}
 					}
 					host.pendingTools.clear();
 				} else {
@@ -380,6 +489,8 @@ export async function handleAgentEvent(host: InteractiveModeStateHost & {
 				}
 				host.streamingComponent = undefined;
 				host.streamingMessage = undefined;
+				renderedSegments = [];
+				lastContentLength = 0;
 				// Clear pinned output once the message is finalized in the chat
 				// container — prevents duplicate display when the agent continues
 				// (e.g. form elicitation) after the assistant message ends.

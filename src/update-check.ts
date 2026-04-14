@@ -74,10 +74,18 @@ export async function fetchLatestVersionFromRegistry(
   }
 }
 
+export function resolveInstallCommand(pkg: string): string {
+  if ('bun' in process.versions) {
+    return `bun add -g ${pkg}`
+  }
+  return `npm install -g ${pkg}`
+}
+
 function printUpdateBanner(current: string, latest: string): void {
+  const installCmd = resolveInstallCommand('gsd-pi')
   process.stderr.write(
     `  ${chalk.yellow('Update available:')} ${chalk.dim(`v${current}`)} → ${chalk.bold(`v${latest}`)}\n` +
-    `  ${chalk.dim('Run')} npm update -g gsd-pi ${chalk.dim('or')} /gsd update ${chalk.dim('to upgrade')}\n\n`,
+    `  ${chalk.dim('Run')} ${installCmd} ${chalk.dim('or')} /gsd update ${chalk.dim('to upgrade')}\n\n`,
   )
 }
 
@@ -184,7 +192,7 @@ export async function checkAndPromptForUpdates(options: UpdateCheckOptions = {})
 
   const choice = await new Promise<string>((resolve) => {
     process.stderr.write(
-      `  ${chalk.bold('[1]')} Update now   ${chalk.dim(`npm install -g ${NPM_PACKAGE_NAME}@latest`)}\n` +
+      `  ${chalk.bold('[1]')} Update now   ${chalk.dim(resolveInstallCommand(`${NPM_PACKAGE_NAME}@latest`))}\n` +
       `  ${chalk.bold('[2]')} Skip\n\n`,
     )
 
@@ -210,13 +218,14 @@ export async function checkAndPromptForUpdates(options: UpdateCheckOptions = {})
   process.stdin.pause()
 
   if (choice === '1') {
-    process.stderr.write(`\n  ${chalk.dim('Running:')} npm install -g ${NPM_PACKAGE_NAME}@latest\n\n`)
+    const installCmd = resolveInstallCommand(`${NPM_PACKAGE_NAME}@latest`)
+    process.stderr.write(`\n  ${chalk.dim('Running:')} ${installCmd}\n\n`)
     try {
-      execSync(`npm install -g ${NPM_PACKAGE_NAME}@latest`, { stdio: 'inherit' })
+      execSync(installCmd, { stdio: 'inherit' })
       process.stderr.write(`\n  ${chalk.green.bold(`✓ Updated to v${latestVersion}`)}\n\n`)
       return true
     } catch {
-      process.stderr.write(`\n  ${chalk.yellow(`Update failed. You can run: npm install -g ${NPM_PACKAGE_NAME}@latest`)}\n\n`)
+      process.stderr.write(`\n  ${chalk.yellow(`Update failed. You can run: ${installCmd}`)}\n\n`)
     }
   } else {
     process.stderr.write(`  ${chalk.dim('Skipped. Run')} gsd update ${chalk.dim('anytime to upgrade.')}\n\n`)

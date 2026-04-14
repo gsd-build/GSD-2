@@ -78,8 +78,10 @@ describe("validateConfiguredModel — regression #3534", () => {
 		assert.notEqual(settings._model, "claude-opus-4-6[1m]");
 	});
 
-	it("does not fall back to google when anthropic models are available", () => {
-		// Simulate: stale setting triggers fallback, anthropic should be preferred over google
+	it("prefers the user's saved provider when falling back", () => {
+		// Simulate: stale model triggers fallback. The fallback should stay on
+		// the user's chosen provider rather than silently jumping to a different
+		// one — model-agnostic provider stickiness, not a hard-coded preference.
 		const registry = createMockRegistry([
 			{ provider: "anthropic", id: "claude-opus-4-6" },
 			{ provider: "google", id: "gemini-2.5-pro" },
@@ -88,9 +90,9 @@ describe("validateConfiguredModel — regression #3534", () => {
 
 		validateConfiguredModel(registry, settings);
 
-		// Should pick anthropic fallback, not google
+		// Provider stickiness: should stay on anthropic, since a model from
+		// that provider is still available.
 		assert.equal(settings._provider, "anthropic");
-		assert.equal(settings._model, "claude-opus-4-6");
 	});
 
 	it("resets thinking level when model is replaced", () => {
@@ -120,5 +122,32 @@ describe("validateConfiguredModel — regression #3534", () => {
 		// Should pick a fallback since nothing was configured
 		assert.ok(settings._provider);
 		assert.ok(settings._model);
+	});
+
+	it("falls back when configured model exists in registry but provider has no auth", () => {
+		// Simulate: user configured xai/grok-4 but XAI_API_KEY is unset, so
+		// xai is in getAll() but not getAvailable(). Previously this slipped
+		// through configuredExists and left an unusable default in place.
+		const allModels = [
+			{ provider: "xai", id: "grok-4-fast-non-reasoning" },
+			{ provider: "anthropic", id: "claude-opus-4-6" },
+		];
+		const availableModels = [
+			{ provider: "anthropic", id: "claude-opus-4-6" },
+		];
+		const registry = createMockRegistry(allModels, availableModels);
+		const settings = createMockSettings({
+			provider: "xai",
+			model: "grok-4-fast-non-reasoning",
+			thinking: "high",
+		});
+
+		validateConfiguredModel(registry, settings);
+
+		// Should have replaced with an authenticated fallback
+		assert.equal(settings._provider, "anthropic");
+		assert.equal(settings._model, "claude-opus-4-6");
+		// Thinking level resets because the original model was replaced
+		assert.equal(settings._thinking, "off");
 	});
 });

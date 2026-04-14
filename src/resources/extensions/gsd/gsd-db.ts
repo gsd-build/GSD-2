@@ -10,6 +10,7 @@ import { existsSync, copyFileSync, mkdirSync, realpathSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Decision, Requirement, GateRow, GateId, GateScope, GateStatus, GateVerdict } from "./types.js";
 import { GSDError, GSD_STALE_STATE } from "./errors.js";
+import { getGateIdsForTurn, type OwnerTurn } from "./gate-registry.js";
 import { logError, logWarning } from "./workflow-logger.js";
 
 const _require = createRequire(import.meta.url);
@@ -162,13 +163,36 @@ function openRawDb(path: string): unknown {
 
 const SCHEMA_VERSION = 14;
 
+function indexExists(db: DbAdapter, name: string): boolean {
+  return !!db.prepare(
+    "SELECT 1 as present FROM sqlite_master WHERE type = 'index' AND name = ?",
+  ).get(name);
+}
+
+function dedupeVerificationEvidenceRows(db: DbAdapter): void {
+  db.exec(`
+    DELETE FROM verification_evidence
+    WHERE rowid NOT IN (
+      SELECT MIN(rowid)
+      FROM verification_evidence
+      GROUP BY task_id, slice_id, milestone_id, command, verdict
+    )
+  `);
+}
+
+function ensureVerificationEvidenceDedupIndex(db: DbAdapter): void {
+  if (indexExists(db, "idx_verification_evidence_dedup")) return;
+  dedupeVerificationEvidenceRows(db);
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_verification_evidence_dedup ON verification_evidence(task_id, slice_id, milestone_id, command, verdict)");
+}
+
 function initSchema(db: DbAdapter, fileBacked: boolean): void {
   if (fileBacked) db.exec("PRAGMA journal_mode=WAL");
   if (fileBacked) db.exec("PRAGMA busy_timeout = 5000");
   if (fileBacked) db.exec("PRAGMA synchronous = NORMAL");
   if (fileBacked) db.exec("PRAGMA auto_vacuum = INCREMENTAL");
   if (fileBacked) db.exec("PRAGMA cache_size = -8000");   // 8 MB page cache
-  if (fileBacked) db.exec("PRAGMA mmap_size = 67108864");  // 64 MB mmap
+  if (fileBacked && process.platform !== "darwin") db.exec("PRAGMA mmap_size = 67108864");  // 64 MB mmap
   db.exec("PRAGMA temp_store = MEMORY");
   db.exec("PRAGMA foreign_keys = ON");
 
@@ -409,7 +433,7 @@ function initSchema(db: DbAdapter, fileBacked: boolean): void {
     db.exec("CREATE INDEX IF NOT EXISTS idx_milestones_status ON milestones(status)");
     db.exec("CREATE INDEX IF NOT EXISTS idx_quality_gates_pending ON quality_gates(milestone_id, slice_id, status)");
     db.exec("CREATE INDEX IF NOT EXISTS idx_verification_evidence_task ON verification_evidence(milestone_id, slice_id, task_id)");
-    db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_verification_evidence_dedup ON verification_evidence(task_id, slice_id, milestone_id, command, verdict)");
+    ensureVerificationEvidenceDedupIndex(db);
 
     // v14 index — slice dependency lookups
     db.exec("CREATE INDEX IF NOT EXISTS idx_slice_deps_target ON slice_dependencies(milestone_id, depends_on_slice_id)");
@@ -742,7 +766,7 @@ function migrateSchema(db: DbAdapter): void {
       db.exec("CREATE INDEX IF NOT EXISTS idx_milestones_status ON milestones(status)");
       db.exec("CREATE INDEX IF NOT EXISTS idx_quality_gates_pending ON quality_gates(milestone_id, slice_id, status)");
       db.exec("CREATE INDEX IF NOT EXISTS idx_verification_evidence_task ON verification_evidence(milestone_id, slice_id, task_id)");
-      db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_verification_evidence_dedup ON verification_evidence(task_id, slice_id, milestone_id, command, verdict)");
+      ensureVerificationEvidenceDedupIndex(db);
       db.prepare("INSERT INTO schema_version (version, applied_at) VALUES (:version, :applied_at)").run({
         ":version": 13,
         ":applied_at": new Date().toISOString(),
@@ -856,6 +880,7 @@ export function closeDatabase(): void {
     currentDb = null;
     currentPath = null;
     currentPid = 0;
+    _dbOpenAttempted = false;
   }
 }
 
@@ -1539,7 +1564,48 @@ export interface TaskRow {
   sequence: number;
 }
 
+function parseTaskArrayColumn(raw: unknown): string[] {
+  if (typeof raw !== "string" || raw.trim() === "") return [];
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed.map((value) => String(value));
+    if (parsed === null || parsed === undefined || parsed === "") return [];
+    return [String(parsed)];
+  } catch {
+    // Older/corrupt rows may contain comma-separated strings instead of JSON.
+    return raw
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+  }
+}
+
 function rowToTask(row: Record<string, unknown>): TaskRow {
+  const parseTaskArray = (value: unknown): string[] => {
+    if (Array.isArray(value)) {
+      return value.filter((entry): entry is string => typeof entry === "string");
+    }
+    if (typeof value !== "string") return [];
+
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((entry): entry is string => typeof entry === "string");
+      }
+      if (typeof parsed === "string" && parsed.trim()) {
+        return [parsed.trim()];
+      }
+    } catch {
+      // Older/corrupt DB rows may contain raw comma-separated paths instead of JSON arrays.
+    }
+
+    return trimmed.split(",").map((entry) => entry.trim()).filter(Boolean);
+  };
+
   return {
     milestone_id: row["milestone_id"] as string,
     slice_id: row["slice_id"] as string,
@@ -1554,15 +1620,15 @@ function rowToTask(row: Record<string, unknown>): TaskRow {
     blocker_discovered: (row["blocker_discovered"] as number) === 1,
     deviations: row["deviations"] as string,
     known_issues: row["known_issues"] as string,
-    key_files: JSON.parse((row["key_files"] as string) || "[]"),
-    key_decisions: JSON.parse((row["key_decisions"] as string) || "[]"),
+    key_files: parseTaskArrayColumn(row["key_files"]),
+    key_decisions: parseTaskArrayColumn(row["key_decisions"]),
     full_summary_md: row["full_summary_md"] as string,
     description: (row["description"] as string) ?? "",
     estimate: (row["estimate"] as string) ?? "",
-    files: JSON.parse((row["files"] as string) || "[]"),
+    files: parseTaskArray(row["files"]),
     verify: (row["verify"] as string) ?? "",
-    inputs: JSON.parse((row["inputs"] as string) || "[]"),
-    expected_output: JSON.parse((row["expected_output"] as string) || "[]"),
+    inputs: parseTaskArray(row["inputs"]),
+    expected_output: parseTaskArray(row["expected_output"]),
     observability_impact: (row["observability_impact"] as string) ?? "",
     full_plan_md: (row["full_plan_md"] as string) ?? "",
     sequence: (row["sequence"] as number) ?? 0,
@@ -2151,6 +2217,39 @@ export function deleteSlice(milestoneId: string, sliceId: string): void {
   });
 }
 
+export function deleteMilestone(milestoneId: string): void {
+  if (!currentDb) throw new GSDError(GSD_STALE_STATE, "gsd-db: No database open");
+  transaction(() => {
+    currentDb!.prepare(
+      `DELETE FROM verification_evidence WHERE milestone_id = :mid`,
+    ).run({ ":mid": milestoneId });
+    currentDb!.prepare(
+      `DELETE FROM quality_gates WHERE milestone_id = :mid`,
+    ).run({ ":mid": milestoneId });
+    currentDb!.prepare(
+      `DELETE FROM tasks WHERE milestone_id = :mid`,
+    ).run({ ":mid": milestoneId });
+    currentDb!.prepare(
+      `DELETE FROM slice_dependencies WHERE milestone_id = :mid`,
+    ).run({ ":mid": milestoneId });
+    currentDb!.prepare(
+      `DELETE FROM slices WHERE milestone_id = :mid`,
+    ).run({ ":mid": milestoneId });
+    currentDb!.prepare(
+      `DELETE FROM replan_history WHERE milestone_id = :mid`,
+    ).run({ ":mid": milestoneId });
+    currentDb!.prepare(
+      `DELETE FROM assessments WHERE milestone_id = :mid`,
+    ).run({ ":mid": milestoneId });
+    currentDb!.prepare(
+      `DELETE FROM artifacts WHERE milestone_id = :mid`,
+    ).run({ ":mid": milestoneId });
+    currentDb!.prepare(
+      `DELETE FROM milestones WHERE id = :mid`,
+    ).run({ ":mid": milestoneId });
+  });
+}
+
 export function updateSliceFields(milestoneId: string, sliceId: string, fields: {
   title?: string;
   risk?: string;
@@ -2301,4 +2400,54 @@ export function getPendingSliceGateCount(milestoneId: string, sliceId: string): 
      WHERE milestone_id = :mid AND slice_id = :sid AND scope = 'slice' AND status = 'pending'`,
   ).get({ ":mid": milestoneId, ":sid": sliceId });
   return row ? (row["cnt"] as number) : 0;
+}
+
+/**
+ * Return pending gate rows owned by a specific workflow turn.
+ *
+ * Unlike `getPendingGates(..., scope)`, this filters by the registry's
+ * `ownerTurn` metadata so callers can distinguish Q3/Q4 (owned by
+ * gate-evaluate) from Q8 (owned by complete-slice) even though both are
+ * scope:"slice". Pass `taskId` to narrow task-scoped results to one task.
+ */
+export function getPendingGatesForTurn(
+  milestoneId: string,
+  sliceId: string,
+  turn: OwnerTurn,
+  taskId?: string,
+): GateRow[] {
+  if (!currentDb) return [];
+  const ids = getGateIdsForTurn(turn);
+  if (ids.size === 0) return [];
+  const idList = [...ids];
+  const placeholders = idList.map((_, i) => `:gid${i}`).join(",");
+  const params: Record<string, unknown> = {
+    ":mid": milestoneId,
+    ":sid": sliceId,
+  };
+  idList.forEach((id, i) => {
+    params[`:gid${i}`] = id;
+  });
+  let sql =
+    `SELECT * FROM quality_gates
+     WHERE milestone_id = :mid AND slice_id = :sid
+       AND status = 'pending'
+       AND gate_id IN (${placeholders})`;
+  if (taskId !== undefined) {
+    sql += ` AND task_id = :tid`;
+    params[":tid"] = taskId;
+  }
+  return currentDb.prepare(sql).all(params).map(rowToGate);
+}
+
+/**
+ * Count pending gates for a turn. Convenience wrapper used by state
+ * derivation to decide whether a phase transition should pause.
+ */
+export function getPendingGateCountForTurn(
+  milestoneId: string,
+  sliceId: string,
+  turn: OwnerTurn,
+): number {
+  return getPendingGatesForTurn(milestoneId, sliceId, turn).length;
 }

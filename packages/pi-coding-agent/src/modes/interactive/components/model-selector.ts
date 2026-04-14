@@ -120,7 +120,12 @@ export class ModelSelectorComponent extends Container implements Focusable {
 		this.settingsManager = settingsManager;
 		this.modelRegistry = modelRegistry;
 		this.scopedModels = scopedModels;
-		this.scope = scopedModels.length > 0 ? "scoped" : "all";
+		// Only land in "scoped" view when at least one scoped model has working
+		// auth — otherwise the user would see an empty picker (#unconfigured-models).
+		const hasReadyScopedModel = scopedModels.some((scoped) =>
+			modelRegistry.isProviderRequestReady(scoped.model.provider),
+		);
+		this.scope = hasReadyScopedModel ? "scoped" : "all";
 		this.onSelectCallback = onSelect;
 		this.onCancelCallback = onCancel;
 
@@ -215,12 +220,16 @@ export class ModelSelectorComponent extends Container implements Focusable {
 		}
 
 		this.allModels = this.sortModelsWithinProvider(models);
+		// Scoped models must also be filtered by provider readiness so users
+		// can't pick a scoped model whose provider has no API key / OAuth.
 		this.scopedModelItems = this.sortModelsWithinProvider(
-			this.scopedModels.map((scoped) => ({
-				provider: scoped.model.provider,
-				id: scoped.model.id,
-				model: scoped.model,
-			})),
+			this.scopedModels
+				.filter((scoped) => this.modelRegistry.isProviderRequestReady(scoped.model.provider))
+				.map((scoped) => ({
+					provider: scoped.model.provider,
+					id: scoped.model.id,
+					model: scoped.model,
+				})),
 		);
 		this.activeModels = this.scope === "scoped" ? this.scopedModelItems : this.allModels;
 		this.filteredModels = this.activeModels;
