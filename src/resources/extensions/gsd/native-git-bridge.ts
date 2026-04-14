@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { GSDError, GSD_GIT_ERROR } from "./errors.js";
 import { GIT_NO_PROMPT_ENV } from "./git-constants.js";
 import { getErrorMessage } from "./error-utils.js";
+import { logWarning } from "./workflow-logger.js";
 
 // Issue #453: keep auto-mode bookkeeping on the stable git CLI path unless a
 // caller explicitly opts into the native helper.
@@ -690,6 +691,15 @@ export function nativeAddTracked(basePath: string): void {
   gitFileExec(basePath, ["add", "-u"]);
 }
 
+// Hard cap for the symlink-fallback `git add -A`. Normal repos finish in
+// well under a second; pathological repos (large non-gitignored trees, see
+// #1977) never finish. 30s is the kill threshold before we degrade to
+// tracked-only staging. Override via GSD_SYMLINK_ADD_TIMEOUT_MS for testing.
+function getSymlinkFallbackAddTimeoutMs(): number {
+  const raw = Number(process.env.GSD_SYMLINK_ADD_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : 30_000;
+}
+
 /**
  * Stage all files with pathspec exclusions (git add -A -- ':!pattern' ...).
  * Excluded paths are never hashed by git, preventing hangs on large
@@ -724,13 +734,45 @@ export function nativeAddAllWithExclusions(basePath: string, exclusions: readonl
       return;
     }
     // When .gsd is a symlink, git rejects `:!.gsd/...` pathspecs with
-    // "beyond a symbolic link". Fall back to `git add -u` which only
-    // stages changes to already-tracked files — O(tracked) not O(filesystem).
-    // Using `git add -A` here would traverse the entire working tree,
-    // hanging indefinitely on repos with large untracked data dirs. (#1977)
+    // "beyond a symbolic link". Run `git add -A` so new untracked files
+    // are still staged (#4125), but bound it with a hard timeout so
+    // repos with huge non-gitignored data trees can't hang (#1977).
+    // On timeout, degrade to `git add -u` — tracked modifications still
+    // land in the commit, only new untracked files are missed that round.
     if (stderr.includes("beyond a symbolic link")) {
-      gitFileExec(basePath, ["add", "-u"]);
-      return;
+      const timeoutMs = getSymlinkFallbackAddTimeoutMs();
+      try {
+        execFileSync("git", ["add", "-A"], {
+          cwd: basePath,
+          stdio: ["ignore", "pipe", "pipe"],
+          encoding: "utf-8",
+          env: GIT_NO_PROMPT_ENV,
+          timeout: timeoutMs,
+        });
+        return;
+      } catch (addErr: unknown) {
+        const killed = (addErr as { killed?: boolean }).killed === true
+          || (addErr as { signal?: string }).signal === "SIGTERM";
+        if (!killed) {
+          throw new GSDError(
+            GSD_GIT_ERROR,
+            `symlink fallback git add -A failed in ${basePath}: ${getErrorMessage(addErr)}`,
+          );
+        }
+        // SIGTERM may have left a stale index lock behind. Remove it before
+        // the tracked-only retry so we don't compound the failure.
+        const lockPath = join(basePath, ".git", "index.lock");
+        if (existsSync(lockPath)) {
+          try { unlinkSync(lockPath); } catch { /* best-effort */ }
+        }
+        logWarning(
+          "worktree",
+          `symlink fallback git add -A exceeded ${timeoutMs}ms; falling back to tracked-only staging (new untracked files not captured this commit)`,
+          { basePath, timeoutMs: String(timeoutMs) },
+        );
+        gitFileExec(basePath, ["add", "-u"]);
+        return;
+      }
     }
     throw new GSDError(GSD_GIT_ERROR, `git add -A with exclusions failed in ${basePath}: ${getErrorMessage(err)}`);
   }
