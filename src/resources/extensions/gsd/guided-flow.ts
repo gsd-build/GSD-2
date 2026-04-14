@@ -535,9 +535,11 @@ function bootstrapGsdProject(basePath: string): void {
   mkdirSync(join(root, "milestones"), { recursive: true });
   mkdirSync(join(root, "runtime"), { recursive: true });
 
-  ensureGitignore(basePath);
+  const prefs = loadEffectiveGSDPreferences()?.preferences ?? {};
+  const manageGitignore = prefs.git?.manage_gitignore;
+  ensureGitignore(basePath, { manageGitignore });
   ensurePreferences(basePath);
-  untrackRuntimeFiles(basePath);
+  if (manageGitignore !== false) untrackRuntimeFiles(basePath);
 }
 
 /**
@@ -1265,8 +1267,10 @@ export async function showSmartEntry(
   }
 
   // ── Ensure .gitignore has baseline patterns ──────────────────────────
-  ensureGitignore(basePath);
-  untrackRuntimeFiles(basePath);
+  const gitPrefs = loadEffectiveGSDPreferences()?.preferences?.git;
+  const manageGitignore = gitPrefs?.manage_gitignore;
+  ensureGitignore(basePath, { manageGitignore });
+  if (manageGitignore !== false) untrackRuntimeFiles(basePath);
 
   // ── Self-heal stale runtime records from crashed auto-mode sessions ──
   selfHealRuntimeRecords(basePath, ctx);
