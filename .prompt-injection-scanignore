@@ -1,2 +1,0 @@
-# False positives in GSD prompt templates — these are legitimate LLM instructions, not injection
-src/resources/extensions/gsd/prompts/doctor-heal.md:You are now responsible

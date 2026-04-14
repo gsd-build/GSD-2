@@ -1,4 +1,0 @@
-# Optimize for the current machine's CPU features in development.
-# CI/release builds should override via RUSTFLAGS for portability.
-[target.'cfg(not(target_env = "msvc"))']
-rustflags = ["-C", "target-cpu=native"]

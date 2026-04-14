@@ -1,8 +1,0 @@
-# .npmignore — override .gitignore for npm pack
-# When this file exists, npm ignores .gitignore entirely.
-# The "files" field in package.json determines what's included.
-# This file only needs to exclude things NOT covered by "files".
-
-# Everything not in the "files" array is excluded by default.
-# This file exists solely to prevent .gitignore from interfering
-# with npm pack (e.g., .gitignore excludes dist/ which we need).

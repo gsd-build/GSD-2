@@ -535,9 +535,11 @@ function bootstrapGsdProject(basePath: string): void {
   mkdirSync(join(root, "milestones"), { recursive: true });
   mkdirSync(join(root, "runtime"), { recursive: true });
 
-  ensureGitignore(basePath);
+  const prefs = loadEffectiveGSDPreferences()?.preferences ?? {};
+  const manageGitignore = prefs.git?.manage_gitignore;
+  ensureGitignore(basePath, { manageGitignore });
   ensurePreferences(basePath);
-  untrackRuntimeFiles(basePath);
+  if (manageGitignore !== false) untrackRuntimeFiles(basePath);
 }
 
 /**
