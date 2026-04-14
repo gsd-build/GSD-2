@@ -504,15 +504,19 @@ test("provider-error-resume.ts calls resetTransientRetryState before startAuto",
 test("phases.ts handles timeout session-creation failures with pause instead of stopAuto", () => {
   const src = readFileSync(join(__dirname, "..", "auto", "phases.ts"), "utf-8");
 
-  // The cancelled + isTransient + category=timeout path must pause, not hard-stop
+  // The cancelled + isTransient session-start path must pause, not hard-stop
   assert.ok(
-    src.includes('category === "timeout"'),
-    "phases.ts must check category === 'timeout' on transient cancelled unitResults",
+    src.includes('errorCategory === "timeout"'),
+    "phases.ts must check errorCategory === 'timeout' on transient cancelled unitResults",
+  );
+  assert.ok(
+    src.includes('errorCategory === "session-failed"'),
+    "phases.ts must also check errorCategory === 'session-failed' on transient cancelled unitResults",
   );
   // Must call pauseAuto (not stopAuto) for timeout cancellations
   assert.ok(
-    /category === "timeout"[\s\S]{0,300}pauseAuto/.test(src),
-    "phases.ts must call pauseAuto for session-timeout failures (not stopAuto or continue)",
+    /errorCategory === "timeout"[\s\S]{0,600}errorCategory === "session-failed"[\s\S]{0,600}pauseAuto/.test(src),
+    "phases.ts must call pauseAuto for transient session-start failures (not stopAuto or continue)",
   );
   // Must NOT use action: "continue" for transient cancellations (causes infinite loops)
   assert.ok(

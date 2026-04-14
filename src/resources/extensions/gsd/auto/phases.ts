@@ -1344,26 +1344,28 @@ export async function runUnitPhase(
   }
 
   if (unitResult.status === "cancelled") {
+    const errorCategory = unitResult.errorContext?.category;
     // Provider-error pause: pauseAuto already handled cleanup and scheduled
     // recovery. Don't hard-stop — just break out of the loop (#2762).
-    if (unitResult.errorContext?.category === "provider") {
-      debugLog("autoLoop", { phase: "exit", reason: "provider-pause", isTransient: unitResult.errorContext.isTransient });
+    if (errorCategory === "provider") {
+      debugLog("autoLoop", { phase: "exit", reason: "provider-pause", isTransient: unitResult.errorContext?.isTransient });
       return { action: "break", reason: "provider-pause" };
     }
-    // Session creation timeout (not a structural error): pause auto-mode
-    // and let the provider-error-resume timer handle recovery (#3767). This
-    // matches the provider-pause path — break out cleanly, don't hard-stop.
-    // Structural errors (TypeError, is not a function) are NOT transient
-    // and must hard-stop to avoid infinite retry loops.
+    // Transient session-start failures should pause auto-mode instead of
+    // hard-stopping. This keeps the control flow honest with the recoverable
+    // classification from runUnit() for timeout and thrown newSession failures.
     if (
       unitResult.errorContext?.isTransient &&
-      unitResult.errorContext?.category === "timeout"
+      (errorCategory === "timeout" || errorCategory === "session-failed")
     ) {
+      const transientMsg = errorCategory === "timeout"
+        ? `Session creation timed out for ${unitType} ${unitId}. Pausing auto-mode (recoverable).`
+        : `Session creation failed transiently for ${unitType} ${unitId}: ${unitResult.errorContext?.message ?? "unknown"}. Pausing auto-mode (recoverable).`;
       ctx.ui.notify(
-        `Session creation timed out for ${unitType} ${unitId}. Pausing auto-mode (recoverable).`,
+        transientMsg,
         "warning",
       );
-      debugLog("autoLoop", { phase: "session-timeout-pause", unitType, unitId });
+      debugLog("autoLoop", { phase: "session-start-transient-pause", unitType, unitId, category: errorCategory });
       await deps.pauseAuto(ctx, pi);
       return { action: "break", reason: "session-timeout" };
     }
