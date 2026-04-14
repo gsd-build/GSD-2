@@ -11,6 +11,7 @@ import { handleExport } from "../../export.js";
 import { handleHistory } from "../../history.js";
 import { handleUndo } from "../../undo.js";
 import { handleRemote } from "../../../remote-questions/mod.js";
+import { handlePrBranch } from "../../commands-pr-branch.js";
 import { projectRoot } from "../context.js";
 
 export async function handleOpsCommand(trimmed: string, ctx: ExtensionCommandContext, pi: ExtensionAPI): Promise<boolean> {
@@ -214,6 +215,10 @@ Examples:
   if (trimmed === "codebase" || trimmed.startsWith("codebase ")) {
     const { handleCodebase } = await import("../../commands-codebase.js");
     await handleCodebase(trimmed.replace(/^codebase\s*/, "").trim(), ctx, pi);
+    return true;
+  }
+  if (trimmed === "pr-branch" || trimmed.startsWith("pr-branch ")) {
+    await handlePrBranch(trimmed.replace(/^pr-branch\s*/, "").trim(), ctx);
     return true;
   }
   return false;
