@@ -323,7 +323,7 @@ export function nativeIsRepo(basePath: string): boolean {
     return native.gitIsRepo(basePath);
   }
   try {
-    execFileSync("git", ["rev-parse", "--git-dir"], { cwd: basePath, stdio: "pipe" });
+    gitFileExec(basePath, ["rev-parse", "--git-dir"], true);
     return true;
   } catch {
     return false;
@@ -1067,7 +1067,7 @@ export function nativeResetHard(basePath: string): void {
     native.gitResetHard(basePath);
     return;
   }
-  execFileSync("git", ["reset", "--hard", "HEAD"], { cwd: basePath, stdio: "pipe" });
+  gitFileExec(basePath, ["reset", "--hard", "HEAD"], true);
 }
 
 /**
