@@ -155,7 +155,9 @@ jobs:
           path: |
             *.tsbuildinfo
             packages/*/*.tsbuildinfo
-          key: tsbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'tsconfig*.json', 'packages/*/tsconfig.json') }}
+            dist
+            packages/*/dist
+          key: tsbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'tsconfig*.json', 'packages/*/tsconfig.json', 'src/**/*.ts', 'packages/*/src/**/*.ts') }}
           restore-keys: |
             tsbuild-${{ runner.os }}-
 
@@ -222,7 +224,9 @@ jobs:
           path: |
             *.tsbuildinfo
             packages/*/*.tsbuildinfo
-          key: tsbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'tsconfig*.json', 'packages/*/tsconfig.json') }}
+            dist
+            packages/*/dist
+          key: tsbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'tsconfig*.json', 'packages/*/tsconfig.json', 'src/**/*.ts', 'packages/*/src/**/*.ts') }}
           restore-keys: |
             tsbuild-${{ runner.os }}-
 
@@ -259,7 +263,9 @@ jobs:
           path: |
             *.tsbuildinfo
             packages/*/*.tsbuildinfo
-          key: tsbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'tsconfig*.json', 'packages/*/tsconfig.json') }}
+            dist
+            packages/*/dist
+          key: tsbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'tsconfig*.json', 'packages/*/tsconfig.json', 'src/**/*.ts', 'packages/*/src/**/*.ts') }}
           restore-keys: |
             tsbuild-${{ runner.os }}-
 
