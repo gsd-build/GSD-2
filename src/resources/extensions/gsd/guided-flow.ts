@@ -1267,8 +1267,10 @@ export async function showSmartEntry(
   }
 
   // ── Ensure .gitignore has baseline patterns ──────────────────────────
-  ensureGitignore(basePath);
-  untrackRuntimeFiles(basePath);
+  const gitPrefs = loadEffectiveGSDPreferences()?.preferences?.git;
+  const manageGitignore = gitPrefs?.manage_gitignore;
+  ensureGitignore(basePath, { manageGitignore });
+  if (manageGitignore !== false) untrackRuntimeFiles(basePath);
 
   // ── Self-heal stale runtime records from crashed auto-mode sessions ──
   selfHealRuntimeRecords(basePath, ctx);
