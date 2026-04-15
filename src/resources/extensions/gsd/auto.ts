@@ -823,8 +823,8 @@ export async function stopAuto(
           resolver.mergeAndExit(s.currentMilestoneId, notifyCtx);
         } else {
           // Milestone still in progress — preserve branch for later resumption
-          resolver.exitMilestone(s.currentMilestoneId, notifyCtx, {
-            preserveBranch: true,
+          resolver.exitMilestone(s.currentMilestoneId, notifyCtx, { 
+            preserveBranch: true, 
           });
         }
       }
@@ -1654,6 +1654,9 @@ function ensurePreconditions(
   base: string,
   state: GSDState,
 ): void {
+  const dispatchKey = `${unitType}/${unitId}`;
+  s.unitDispatchCount.set(dispatchKey, (s.unitDispatchCount.get(dispatchKey) ?? 0) + 1);
+
   const { milestone: mid, slice: sid } = parseUnitId(unitId);
 
   const mDir = resolveMilestonePath(base, mid);
@@ -1720,6 +1723,9 @@ export async function dispatchHookUnit(
     id: triggerUnitId,
     startedAt: hookStartedAt,
   };
+
+  const dispatchKey = `${hookUnitType}/${triggerUnitId}`;
+  s.unitDispatchCount.set(dispatchKey, (s.unitDispatchCount.get(dispatchKey) ?? 0) + 1);
 
   if (hookModel) {
     const availableModels = ctx.modelRegistry.getAvailable();
