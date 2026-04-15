@@ -688,8 +688,8 @@ test("autoLoop exits on terminal blocked state", async (t) => {
 
   assert.ok(deps.callLog.includes("deriveState"), "should have derived state");
   assert.ok(
-    deps.callLog.includes("stopAuto"),
-    "should have called stopAuto for blocked state",
+    deps.callLog.includes("pauseAuto"),
+    "should have called pauseAuto for blocked state",
   );
   assert.ok(
     !deps.callLog.includes("resolveDispatch"),
@@ -1267,7 +1267,7 @@ test("auto-loop.ts barrel re-exports autoLoop, runUnit, and resolveAgentEnd", ()
   );
 });
 
-test("auto.ts startAuto calls autoLoop (not dispatchNextUnit as first dispatch)", () => {
+test("auto.ts startAuto dispatches through the UOK kernel wrapper (legacy loop adapter)", () => {
   const src = readFileSync(
     resolve(import.meta.dirname, "..", "auto.ts"),
     "utf-8",
@@ -1279,8 +1279,12 @@ test("auto.ts startAuto calls autoLoop (not dispatchNextUnit as first dispatch)"
   const fnBlock =
     fnEnd > -1 ? src.slice(fnIdx, fnEnd) : src.slice(fnIdx, fnIdx + 5000);
   assert.ok(
-    fnBlock.includes("autoLoop("),
-    "startAuto must call autoLoop() instead of dispatchNextUnit()",
+    fnBlock.includes("runAutoLoopWithUok("),
+    "startAuto must dispatch through runAutoLoopWithUok()",
+  );
+  assert.ok(
+    fnBlock.includes("runLegacyLoop: autoLoop"),
+    "startAuto must preserve the legacy autoLoop adapter in kernel dispatch",
   );
 });
 

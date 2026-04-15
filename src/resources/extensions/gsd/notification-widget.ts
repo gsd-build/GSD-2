@@ -1,6 +1,6 @@
 // GSD Extension — Notification Widget
 // Always-on ambient widget rendered belowEditor showing unread count and
-// the most recent notification message. Refreshes every 5 seconds.
+// the most recent notification message. Refreshes every 30 seconds.
 // Widget key: "gsd-notifications", placement: "belowEditor"
 
 import type { ExtensionContext } from "@gsd/pi-coding-agent";
@@ -19,7 +19,7 @@ export function buildNotificationWidgetLines(): string[] {
 
 // ─── Widget init ────────────────────────────────────────────────────────
 
-const REFRESH_INTERVAL_MS = 5_000;
+const REFRESH_INTERVAL_MS = 30_000;
 
 /**
  * Initialize the always-on notification widget (belowEditor).

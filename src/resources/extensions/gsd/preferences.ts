@@ -50,6 +50,8 @@ export type {
   AutoSupervisorConfig,
   RemoteQuestionsConfig,
   CmuxPreferences,
+  UokTurnActionMode,
+  UokPreferences,
   CodebaseMapPreferences,
   GSDPreferences,
   LoadedGSDPreferences,
@@ -377,6 +379,32 @@ function mergePreferences(base: GSDPreferences, override: GSDPreferences): GSDPr
     pre_dispatch_hooks: mergePreDispatchHooks(base.pre_dispatch_hooks, override.pre_dispatch_hooks),
     dynamic_routing: (base.dynamic_routing || override.dynamic_routing)
       ? { ...(base.dynamic_routing ?? {}), ...(override.dynamic_routing ?? {}) } as DynamicRoutingConfig
+      : undefined,
+    uok: (base.uok || override.uok)
+      ? {
+          enabled: override.uok?.enabled ?? base.uok?.enabled,
+          legacy_fallback: (base.uok?.legacy_fallback || override.uok?.legacy_fallback)
+            ? { ...(base.uok?.legacy_fallback ?? {}), ...(override.uok?.legacy_fallback ?? {}) }
+            : undefined,
+          gates: (base.uok?.gates || override.uok?.gates)
+            ? { ...(base.uok?.gates ?? {}), ...(override.uok?.gates ?? {}) }
+            : undefined,
+          model_policy: (base.uok?.model_policy || override.uok?.model_policy)
+            ? { ...(base.uok?.model_policy ?? {}), ...(override.uok?.model_policy ?? {}) }
+            : undefined,
+          execution_graph: (base.uok?.execution_graph || override.uok?.execution_graph)
+            ? { ...(base.uok?.execution_graph ?? {}), ...(override.uok?.execution_graph ?? {}) }
+            : undefined,
+          gitops: (base.uok?.gitops || override.uok?.gitops)
+            ? { ...(base.uok?.gitops ?? {}), ...(override.uok?.gitops ?? {}) }
+            : undefined,
+          audit_unified: (base.uok?.audit_unified || override.uok?.audit_unified)
+            ? { ...(base.uok?.audit_unified ?? {}), ...(override.uok?.audit_unified ?? {}) }
+            : undefined,
+          plan_v2: (base.uok?.plan_v2 || override.uok?.plan_v2)
+            ? { ...(base.uok?.plan_v2 ?? {}), ...(override.uok?.plan_v2 ?? {}) }
+            : undefined,
+        }
       : undefined,
     token_profile: override.token_profile ?? base.token_profile,
     phases: (base.phases || override.phases)

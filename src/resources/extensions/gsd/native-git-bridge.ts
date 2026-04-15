@@ -323,7 +323,7 @@ export function nativeIsRepo(basePath: string): boolean {
     return native.gitIsRepo(basePath);
   }
   try {
-    execSync("git rev-parse --git-dir", { cwd: basePath, stdio: "pipe" });
+    execFileSync("git", ["rev-parse", "--git-dir"], { cwd: basePath, stdio: "pipe" });
     return true;
   } catch {
     return false;
@@ -790,16 +790,15 @@ export function nativeCommit(
 
   // Fallback: use git commit with stdin pipe for safe multi-line messages
   try {
-    const result = execSync(
-      `git commit --no-verify -F -${options?.allowEmpty ? " --allow-empty" : ""}`,
-      {
-        cwd: basePath,
-        stdio: ["pipe", "pipe", "pipe"],
-        encoding: "utf-8",
-        env: GIT_NO_PROMPT_ENV,
-        input: message,
-      },
-    ).trim();
+    const args = ["commit", "--no-verify", "-F", "-"];
+    if (options?.allowEmpty) args.push("--allow-empty");
+    const result = execFileSync("git", args, {
+      cwd: basePath,
+      stdio: ["pipe", "pipe", "pipe"],
+      encoding: "utf-8",
+      env: GIT_NO_PROMPT_ENV,
+      input: message,
+    }).trim();
     return result;
   } catch (err: unknown) {
     const errObj = err as { stdout?: string; stderr?: string; message?: string };
@@ -940,7 +939,7 @@ export function nativeResetHard(basePath: string): void {
     native.gitResetHard(basePath);
     return;
   }
-  execSync("git reset --hard HEAD", { cwd: basePath, stdio: "pipe" });
+  execFileSync("git", ["reset", "--hard", "HEAD"], { cwd: basePath, stdio: "pipe" });
 }
 
 /**

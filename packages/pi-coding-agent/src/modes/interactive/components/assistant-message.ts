@@ -87,6 +87,8 @@ export class AssistantMessageComponent extends Container {
 		const hasVisibleContent = slice.some(
 			(c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()),
 		);
+		const hasTextContent = message.content.some((c) => c.type === "text" && c.text.trim().length > 0);
+		const hasToolContent = message.content.some((c) => c.type === "toolCall" || c.type === "serverToolUse");
 
 		if (hasVisibleContent) {
 			this.contentContainer.addChild(new Spacer(1));
@@ -114,12 +116,16 @@ export class AssistantMessageComponent extends Container {
 					}
 				} else {
 					// Thinking traces in thinkingText color, italic
-					this.contentContainer.addChild(
-						new Markdown(content.thinking.trim(), 1, 0, this.markdownTheme, {
-							color: (text: string) => theme.fg("thinkingText", text),
-							italic: true,
-						}),
-					);
+					const thinkingMarkdown = new Markdown(content.thinking.trim(), 1, 0, this.markdownTheme, {
+						color: (text: string) => theme.fg("thinkingText", text),
+						italic: true,
+					});
+					// Keep visible chat output readable when thinking traces are long.
+					// Tool-bearing turns can stream text in a later assistant message.
+					if (hasTextContent || hasToolContent) {
+						thinkingMarkdown.maxLines = 8;
+					}
+					this.contentContainer.addChild(thinkingMarkdown);
 					if (hasVisibleContentAfter) {
 						this.contentContainer.addChild(new Spacer(1));
 					}

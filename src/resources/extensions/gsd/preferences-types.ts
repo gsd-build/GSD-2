@@ -83,6 +83,7 @@ export const KNOWN_PREFERENCE_KEYS = new Set<string>([
   "post_unit_hooks",
   "pre_dispatch_hooks",
   "dynamic_routing",
+  "uok",
   "token_profile",
   "phases",
   "auto_visualize",
@@ -208,6 +209,35 @@ export interface CmuxPreferences {
   browser?: boolean;
 }
 
+export type UokTurnActionMode = "commit" | "snapshot" | "status-only";
+
+export interface UokPreferences {
+  enabled?: boolean;
+  legacy_fallback?: {
+    enabled?: boolean;
+  };
+  gates?: {
+    enabled?: boolean;
+  };
+  model_policy?: {
+    enabled?: boolean;
+  };
+  execution_graph?: {
+    enabled?: boolean;
+  };
+  gitops?: {
+    enabled?: boolean;
+    turn_action?: UokTurnActionMode;
+    turn_push?: boolean;
+  };
+  audit_unified?: {
+    enabled?: boolean;
+  };
+  plan_v2?: {
+    enabled?: boolean;
+  };
+}
+
 /**
  * Opt-in experimental features. All features in this block are disabled by
  * default and must be explicitly enabled. They may change or be removed without
@@ -256,6 +286,8 @@ export interface GSDPreferences {
   post_unit_hooks?: PostUnitHookConfig[];
   pre_dispatch_hooks?: PreDispatchHookConfig[];
   dynamic_routing?: DynamicRoutingConfig;
+  /** Unified Orchestration Kernel controls (all flags default off). */
+  uok?: UokPreferences;
   /** Per-model capability overrides. Deep-merged with built-in profiles for capability-aware routing (ADR-004). */
   modelOverrides?: Record<string, { capabilities?: Partial<ModelCapabilities> }>;
   context_management?: ContextManagementConfig;

@@ -1,6 +1,6 @@
 {
   "name": "@gsd/pi-ai",
-  "version": "0.57.1",
+  "version": "2.74.0",
   "description": "Unified LLM API (vendored from pi-mono)",
   "type": "module",
   "main": "./dist/index.js",

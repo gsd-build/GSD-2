@@ -217,6 +217,20 @@ describe("workflow command handler", () => {
     );
   });
 
+  it("preserves quoted workflow run overrides (#4130)", async () => {
+    const { parseWorkflowRunArgs } = await import("../commands/handlers/workflow.ts");
+    assert.deepStrictEqual(
+      parseWorkflowRunArgs('demo-workflow target="multi word target" region=\'us east\''),
+      {
+        defName: "demo-workflow",
+        overrides: {
+          target: "multi word target",
+          region: "us east",
+        },
+      },
+    );
+  });
+
   it("'/gsd workflow run nonexistent' shows error for missing definition", async () => {
     const { handled, notifications } = await callHandler("workflow run nonexistent-def-12345");
     assert.ok(handled, "should be handled");

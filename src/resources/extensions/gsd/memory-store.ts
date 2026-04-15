@@ -3,7 +3,19 @@
 // Storage layer for auto-learned project memories. Follows context-store.ts patterns.
 // All functions degrade gracefully: return empty results when DB unavailable, never throw.
 
-import { isDbAvailable, _getAdapter, transaction } from './gsd-db.js';
+import {
+  isDbAvailable,
+  _getAdapter,
+  transaction,
+  insertMemoryRow,
+  rewriteMemoryId,
+  updateMemoryContentRow,
+  incrementMemoryHitCount,
+  supersedeMemoryRow,
+  markMemoryUnitProcessed,
+  decayMemoriesBefore,
+  supersedeLowestRankedMemories,
+} from './gsd-db.js';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -170,28 +182,22 @@ export function createMemory(fields: {
     const now = new Date().toISOString();
     // Insert with a temporary placeholder ID — seq is auto-assigned
     const placeholder = `_TMP_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    adapter.prepare(
-      `INSERT INTO memories (id, category, content, confidence, source_unit_type, source_unit_id, created_at, updated_at)
-       VALUES (:id, :category, :content, :confidence, :source_unit_type, :source_unit_id, :created_at, :updated_at)`,
-    ).run({
-      ':id': placeholder,
-      ':category': fields.category,
-      ':content': fields.content,
-      ':confidence': fields.confidence ?? 0.8,
-      ':source_unit_type': fields.source_unit_type ?? null,
-      ':source_unit_id': fields.source_unit_id ?? null,
-      ':created_at': now,
-      ':updated_at': now,
+    insertMemoryRow({
+      id: placeholder,
+      category: fields.category,
+      content: fields.content,
+      confidence: fields.confidence ?? 0.8,
+      sourceUnitType: fields.source_unit_type ?? null,
+      sourceUnitId: fields.source_unit_id ?? null,
+      createdAt: now,
+      updatedAt: now,
     });
-    // Derive the real ID from the assigned seq
+    // Derive the real ID from the assigned seq (SELECT is still fine via adapter)
     const row = adapter.prepare('SELECT seq FROM memories WHERE id = :id').get({ ':id': placeholder });
     if (!row) return placeholder; // fallback — should not happen
     const seq = row['seq'] as number;
     const realId = `MEM${String(seq).padStart(3, '0')}`;
-    adapter.prepare('UPDATE memories SET id = :real_id WHERE id = :placeholder').run({
-      ':real_id': realId,
-      ':placeholder': placeholder,
-    });
+    rewriteMemoryId(placeholder, realId);
     return realId;
   } catch {
     return null;
@@ -203,20 +209,9 @@ export function createMemory(fields: {
  */
 export function updateMemoryContent(id: string, content: string, confidence?: number): boolean {
   if (!isDbAvailable()) return false;
-  const adapter = _getAdapter();
-  if (!adapter) return false;
 
   try {
-    const now = new Date().toISOString();
-    if (confidence != null) {
-      adapter.prepare(
-        'UPDATE memories SET content = :content, confidence = :confidence, updated_at = :updated_at WHERE id = :id',
-      ).run({ ':content': content, ':confidence': confidence, ':updated_at': now, ':id': id });
-    } else {
-      adapter.prepare(
-        'UPDATE memories SET content = :content, updated_at = :updated_at WHERE id = :id',
-      ).run({ ':content': content, ':updated_at': now, ':id': id });
-    }
+    updateMemoryContentRow(id, content, confidence, new Date().toISOString());
     return true;
   } catch {
     return false;
@@ -228,13 +223,9 @@ export function updateMemoryContent(id: string, content: string, confidence?: nu
  */
 export function reinforceMemory(id: string): boolean {
   if (!isDbAvailable()) return false;
-  const adapter = _getAdapter();
-  if (!adapter) return false;
 
   try {
-    adapter.prepare(
-      'UPDATE memories SET hit_count = hit_count + 1, updated_at = :updated_at WHERE id = :id',
-    ).run({ ':updated_at': new Date().toISOString(), ':id': id });
+    incrementMemoryHitCount(id, new Date().toISOString());
     return true;
   } catch {
     return false;
@@ -246,13 +237,9 @@ export function reinforceMemory(id: string): boolean {
  */
 export function supersedeMemory(oldId: string, newId: string): boolean {
   if (!isDbAvailable()) return false;
-  const adapter = _getAdapter();
-  if (!adapter) return false;
 
   try {
-    adapter.prepare(
-      'UPDATE memories SET superseded_by = :new_id, updated_at = :updated_at WHERE id = :old_id',
-    ).run({ ':new_id': newId, ':updated_at': new Date().toISOString(), ':old_id': oldId });
+    supersedeMemoryRow(oldId, newId, new Date().toISOString());
     return true;
   } catch {
     return false;
@@ -284,14 +271,9 @@ export function isUnitProcessed(unitKey: string): boolean {
  */
 export function markUnitProcessed(unitKey: string, activityFile: string): boolean {
   if (!isDbAvailable()) return false;
-  const adapter = _getAdapter();
-  if (!adapter) return false;
 
   try {
-    adapter.prepare(
-      `INSERT OR IGNORE INTO memory_processed_units (unit_key, activity_file, processed_at)
-       VALUES (:key, :file, :at)`,
-    ).run({ ':key': unitKey, ':file': activityFile, ':at': new Date().toISOString() });
+    markMemoryUnitProcessed(unitKey, activityFile, new Date().toISOString());
     return true;
   } catch {
     return false;
@@ -310,7 +292,7 @@ export function decayStaleMemories(thresholdUnits = 20): void {
   if (!adapter) return;
 
   try {
-    // Find the timestamp of the Nth most recent processed unit
+    // Find the timestamp of the Nth most recent processed unit (read-only SELECT)
     const row = adapter.prepare(
       `SELECT processed_at FROM memory_processed_units
        ORDER BY processed_at DESC
@@ -320,11 +302,7 @@ export function decayStaleMemories(thresholdUnits = 20): void {
     if (!row) return; // not enough processed units yet
 
     const cutoff = row['processed_at'] as string;
-    adapter.prepare(
-      `UPDATE memories
-       SET confidence = MAX(0.1, confidence - 0.1), updated_at = :now
-       WHERE superseded_by IS NULL AND updated_at < :cutoff AND confidence > 0.1`,
-    ).run({ ':now': new Date().toISOString(), ':cutoff': cutoff });
+    decayMemoriesBefore(cutoff, new Date().toISOString());
   } catch {
     // non-fatal
   }
@@ -346,16 +324,7 @@ export function enforceMemoryCap(max = 50): void {
     if (count <= max) return;
 
     const excess = count - max;
-    // Batch update: supersede lowest-ranked active memories in a single statement
-    adapter.prepare(
-      `UPDATE memories SET superseded_by = 'CAP_EXCEEDED', updated_at = :now
-       WHERE id IN (
-         SELECT id FROM memories
-         WHERE superseded_by IS NULL
-         ORDER BY (confidence * (1.0 + hit_count * 0.1)) ASC
-         LIMIT :limit
-       )`,
-    ).run({ ':now': new Date().toISOString(), ':limit': excess });
+    supersedeLowestRankedMemories(excess, new Date().toISOString());
   } catch {
     // non-fatal
   }

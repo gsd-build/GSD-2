@@ -5,7 +5,7 @@ import {
   getMilestone,
   getSliceStatusSummary,
   getSliceTaskCounts,
-  _getAdapter,
+  readTransaction,
   saveGateResult,
 } from "../gsd-db.js";
 import { GATE_REGISTRY } from "../gate-registry.js";
@@ -616,12 +616,9 @@ export async function executeMilestoneStatus(
       };
     }
 
-    const adapter = _getAdapter()!;
-    adapter.exec("BEGIN");
-    try {
+    return readTransaction(() => {
       const milestone = getMilestone(params.milestoneId);
       if (!milestone) {
-        adapter.exec("COMMIT");
         return {
           content: [{ type: "text", text: `Milestone ${params.milestoneId} not found in database.` }],
           details: { operation: "milestone_status", milestoneId: params.milestoneId, found: false },
@@ -634,8 +631,6 @@ export async function executeMilestoneStatus(
         status: s.status,
         taskCounts: getSliceTaskCounts(params.milestoneId, s.id),
       }));
-
-      adapter.exec("COMMIT");
 
       const result = {
         milestoneId: milestone.id,
@@ -651,10 +646,7 @@ export async function executeMilestoneStatus(
         content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
         details: { operation: "milestone_status", milestoneId: milestone.id, sliceCount: slices.length },
       };
-    } catch (txErr) {
-      try { adapter.exec("ROLLBACK"); } catch { /* swallow */ }
-      throw txErr;
-    }
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     logWarning("tool", `gsd_milestone_status tool failed: ${msg}`);

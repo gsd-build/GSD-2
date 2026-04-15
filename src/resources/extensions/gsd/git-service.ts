@@ -34,6 +34,7 @@ import {
   nativeAddPaths,
   nativeResetSoft,
   nativeCommitSubject,
+  _resetHasChangesCache,
 } from "./native-git-bridge.js";
 import { GSDError, GSD_MERGE_CONFLICT, GSD_GIT_ERROR } from "./errors.js";
 import { getErrorMessage } from "./error-utils.js";
@@ -91,6 +92,17 @@ export const VALID_BRANCH_NAME = /^[a-zA-Z0-9_\-\/.]+$/;
 export interface CommitOptions {
   message: string;
   allowEmpty?: boolean;
+}
+
+export type TurnGitActionMode = "commit" | "snapshot" | "status-only";
+
+export interface TurnGitActionResult {
+  action: TurnGitActionMode;
+  status: "ok" | "failed";
+  commitMessage?: string;
+  snapshotLabel?: string;
+  dirty?: boolean;
+  error?: string;
 }
 
 // ─── Meaningful Commit Message Generation ───────────────────────────────────
@@ -820,6 +832,62 @@ export function createDraftPR(
 export function createGitService(basePath: string): GitServiceImpl {
   const gitPrefs = loadEffectiveGSDPreferences()?.preferences?.git ?? {};
   return new GitServiceImpl(basePath, gitPrefs);
+}
+
+function buildTurnSnapshotLabel(unitType: string, unitId: string): string {
+  const raw = `${unitType}/${unitId}`.trim();
+  if (!raw) return "turn";
+  return raw
+    .replace(/[^a-zA-Z0-9._/-]/g, "-")
+    .replace(/\/{2,}/g, "/")
+    .replace(/-{2,}/g, "-")
+    .replace(/^[-/]+|[-/]+$/g, "") || "turn";
+}
+
+export function runTurnGitAction(args: {
+  basePath: string;
+  action: TurnGitActionMode;
+  unitType: string;
+  unitId: string;
+  taskContext?: TaskCommitContext;
+}): TurnGitActionResult {
+  try {
+    // Force fresh working-tree status per turn; nativeHasChanges caches briefly.
+    _resetHasChangesCache();
+    if (args.action === "status-only") {
+      return {
+        action: args.action,
+        status: "ok",
+        dirty: nativeHasChanges(args.basePath),
+      };
+    }
+
+    const git = createGitService(args.basePath);
+    if (args.action === "snapshot") {
+      const label = buildTurnSnapshotLabel(args.unitType, args.unitId);
+      git.createSnapshot(label);
+      return {
+        action: args.action,
+        status: "ok",
+        snapshotLabel: label,
+        dirty: nativeHasChanges(args.basePath),
+      };
+    }
+
+    const commitMessage = git.autoCommit(args.unitType, args.unitId, [], args.taskContext) ?? undefined;
+    return {
+      action: args.action,
+      status: "ok",
+      commitMessage,
+      dirty: nativeHasChanges(args.basePath),
+    };
+  } catch (err) {
+    return {
+      action: args.action,
+      status: "failed",
+      error: getErrorMessage(err),
+    };
+  }
 }
 
 // ─── Commit Type Inference ─────────────────────────────────────────────────

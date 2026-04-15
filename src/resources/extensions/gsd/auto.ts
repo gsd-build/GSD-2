@@ -187,7 +187,7 @@ import {
   deregisterSigtermHandler as _deregisterSigtermHandler,
   detectWorkingTreeActivity,
 } from "./auto-supervisor.js";
-import { isDbAvailable } from "./gsd-db.js";
+import { isDbAvailable, getMilestone } from "./gsd-db.js";
 import { countPendingCaptures } from "./captures.js";
 import { clearCmuxSidebar, logCmuxEvent, syncCmuxSidebar } from "../cmux/index.js";
 
@@ -195,12 +195,15 @@ import { clearCmuxSidebar, logCmuxEvent, syncCmuxSidebar } from "../cmux/index.j
 import { startUnitSupervision } from "./auto-timers.js";
 import { runPostUnitVerification } from "./auto-verification.js";
 import {
+  autoCommitUnit,
   postUnitPreVerification,
   postUnitPostVerification,
 } from "./auto-post-unit.js";
 import { bootstrapAutoSession, openProjectDbIfPresent, type BootstrapDeps } from "./auto-start.js";
 import { initHealthWidget } from "./health-widget.js";
 import { autoLoop, resolveAgentEnd, resolveAgentEndCancelled, _resetPendingResolve, isSessionSwitchInFlight, type LoopDeps, type ErrorContext } from "./auto-loop.js";
+import { runAutoLoopWithUok } from "./uok/kernel.js";
+import { resolveUokFlags } from "./uok/flags.js";
 // Slice-level parallelism (#2340)
 import { getEligibleSlices } from "./slice-parallel-eligibility.js";
 import { startSliceParallel } from "./slice-parallel-orchestrator.js";
@@ -604,11 +607,29 @@ function buildSnapshotOpts(
   continueHereFired?: boolean;
   promptCharCount?: number;
   baselineCharCount?: number;
+  traceId?: string;
+  turnId?: string;
+  gitAction?: "commit" | "snapshot" | "status-only";
+  gitPush?: boolean;
+  gitStatus?: "ok" | "failed";
+  gitError?: string;
 } & Record<string, unknown> {
+  const prefs = loadEffectiveGSDPreferences()?.preferences;
+  const uokFlags = resolveUokFlags(prefs);
   return {
     ...(s.autoStartTime > 0 ? { autoSessionKey: String(s.autoStartTime) } : {}),
     promptCharCount: s.lastPromptCharCount,
     baselineCharCount: s.lastBaselineCharCount,
+    traceId: s.currentTraceId ?? undefined,
+    turnId: s.currentTurnId ?? undefined,
+    ...(uokFlags.gitops
+      ? {
+          gitAction: uokFlags.gitopsTurnAction,
+          gitPush: uokFlags.gitopsTurnPush,
+          gitStatus: s.lastGitActionStatus ?? undefined,
+          gitError: s.lastGitActionFailure ?? undefined,
+        }
+      : {}),
     ...(s.currentUnitRouting ?? {}),
   };
 }
@@ -761,24 +782,36 @@ export async function stopAuto(
           : { notify: () => {} };
         const resolver = buildResolver();
 
-        // Check if the milestone is complete — SUMMARY file is the authoritative signal.
+        // Check if the milestone is complete. DB status is the authoritative
+        // signal — only a successful gsd_complete_milestone call flips it to
+        // "complete" (tools/complete-milestone.ts). SUMMARY file presence is
+        // NOT sufficient: a blocker placeholder stub or a partial write can
+        // leave a file behind without the milestone actually being done,
+        // which previously caused stopAuto to merge a failed milestone and
+        // emit a misleading metadata-only merge warning (#4175).
+        // DB-unavailable projects fall back to SUMMARY-file presence.
         let milestoneComplete = false;
         try {
-          const summaryPath = resolveMilestoneFile(
-            s.originalBasePath || s.basePath,
-            s.currentMilestoneId,
-            "SUMMARY",
-          );
-          if (!summaryPath) {
-            // Also check in the worktree path (SUMMARY may not be synced yet)
-            const wtSummaryPath = resolveMilestoneFile(
-              s.basePath,
+          if (isDbAvailable()) {
+            const dbRow = getMilestone(s.currentMilestoneId);
+            milestoneComplete = dbRow?.status === "complete";
+          } else {
+            const summaryPath = resolveMilestoneFile(
+              s.originalBasePath || s.basePath,
               s.currentMilestoneId,
               "SUMMARY",
             );
-            milestoneComplete = wtSummaryPath !== null;
-          } else {
-            milestoneComplete = true;
+            if (!summaryPath) {
+              // Also check in the worktree path (SUMMARY may not be synced yet)
+              const wtSummaryPath = resolveMilestoneFile(
+                s.basePath,
+                s.currentMilestoneId,
+                "SUMMARY",
+              );
+              milestoneComplete = wtSummaryPath !== null;
+            } else {
+              milestoneComplete = true;
+            }
           }
         } catch (err) {
           // Non-fatal — fall through to preserveBranch path
@@ -1168,6 +1201,7 @@ function buildLoopDeps(): LoopDeps {
     getMainBranch,
     // Unit closeout + runtime records
     closeoutUnit,
+    autoCommitUnit,
     recordOutcome,
     writeLock,
     captureAvailableSkills,
@@ -1388,6 +1422,11 @@ export async function startAuto(
     s.stepMode = requestedStepMode;
     s.cmdCtx = ctx;
     s.basePath = base;
+    // Ensure the workflow-logger audit log is pinned to the project root
+    // even when auto-mode is entered via a path that bypasses the
+    // bootstrap/dynamic-tools ensureDbOpen() → setLogBasePath() chain
+    // (e.g. /clear resume, hot-reload).
+    setLogBasePath(base);
     s.unitDispatchCount.clear();
     s.unitLifetimeDispatches.clear();
     if (!getLedger()) initMetrics(base);
@@ -1494,7 +1533,13 @@ export async function startAuto(
     logCmuxEvent(loadEffectiveGSDPreferences()?.preferences, s.stepMode ? "Step-mode resumed." : "Auto-mode resumed.", "progress");
 
     captureProjectRootEnv(s.originalBasePath || s.basePath);
-    await autoLoop(ctx, pi, s, buildLoopDeps());
+    await runAutoLoopWithUok({
+      ctx,
+      pi,
+      s,
+      deps: buildLoopDeps(),
+      runLegacyLoop: autoLoop,
+    });
     cleanupAfterLoopExit(ctx);
     return;
   }
@@ -1529,7 +1574,13 @@ export async function startAuto(
   logCmuxEvent(loadEffectiveGSDPreferences()?.preferences, requestedStepMode ? "Step-mode started." : "Auto-mode started.", "progress");
 
   // Dispatch the first unit
-  await autoLoop(ctx, pi, s, buildLoopDeps());
+  await runAutoLoopWithUok({
+    ctx,
+    pi,
+    s,
+    deps: buildLoopDeps(),
+    runLegacyLoop: autoLoop,
+  });
   cleanupAfterLoopExit(ctx);
 }
 

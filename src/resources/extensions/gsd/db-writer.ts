@@ -346,8 +346,7 @@ export async function saveRequirementToDb(
     } catch (diskErr) {
       logError('manifest', 'disk write failed, rolling back DB row', { fn: 'saveRequirementToDb', error: String((diskErr as Error).message) });
       try {
-        const rollbackAdapter = db._getAdapter();
-        rollbackAdapter?.prepare('DELETE FROM requirements WHERE id = :id').run({ ':id': id });
+        db.deleteRequirementById(id);
       } catch (rollbackErr) {
         logError('manifest', 'SPLIT BRAIN: disk write failed AND DB rollback failed — DB has orphaned row', { fn: 'saveRequirementToDb', id, error: String((rollbackErr as Error).message) });
       }
@@ -471,7 +470,7 @@ export async function saveDecisionToDb(
     } catch (diskErr) {
       logError('manifest', 'disk write failed, rolling back DB row', { fn: 'saveDecisionToDb', error: String((diskErr as Error).message) });
       try {
-        adapter?.prepare('DELETE FROM decisions WHERE id = :id').run({ ':id': id });
+        db.deleteDecisionById(id);
       } catch (rollbackErr) {
         logError('manifest', 'SPLIT BRAIN: disk write failed AND DB rollback failed — DB has orphaned row', { fn: 'saveDecisionToDb', id, error: String((rollbackErr as Error).message) });
       }
@@ -714,8 +713,7 @@ export async function saveArtifactToDb(
         await saveFile(fullPath, opts.content);
       } catch (diskErr) {
         logError('manifest', 'disk write failed, rolling back DB row', { fn: 'saveArtifactToDb', error: String((diskErr as Error).message) });
-        const rollbackAdapter = db._getAdapter();
-        rollbackAdapter?.prepare('DELETE FROM artifacts WHERE path = :path').run({ ':path': opts.path });
+        db.deleteArtifactByPath(opts.path);
         throw diskErr;
       }
     }

@@ -6,6 +6,37 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.74.0] - 2026-04-14
+
+### Added
+- **gsd**: extend flat-rate provider detection to custom/externalCli providers
+- **claude-code**: pass thinking level as effort
+
+### Fixed
+- **claude-code-cli**: forward image blocks in SDK query prompt (#4183)
+- keep assistant text visible when thinking traces are long
+- **state**: DB-authoritative milestone completeness (#4179)
+- **auto-mode**: prevent false milestone merge after complete-milestone failure (#4175)
+- **auto**: pause on validate-milestone needs-remediation without slices (#4094)
+- **gsd**: notify users what to do next after /gsd step finishes
+- **cli**: restore --help handling when it follows a subcommand or unknown flag
+- **tui**: eliminate pinned output duplication and reduce render overhead
+- **auto**: prevent premature auto-mode stops on blocked phase + missing reassessment
+- **cli**: use junction symlinks in merged node_modules path
+- **tui**: reset segment state on claude-code sub-turn shrink
+- **gsd**: set completed_at when reconciling task status to complete
+- **tui**: keep AUTO-mode widgets alive and drop duplicate health panel
+- **gsd**: use bun for update when installed via Bun (#4145)
+- **tui**: render assistant tool calls inline with text instead of grouped at end
+- **gsd**: restore isAutoMode plumbing and workflow-logger catch in auto-model-selection
+- **gsd**: preserve custom-model selection on /gsd auto bootstrap (#4122)
+- **pi-coding-agent**: use safe compaction role markers
+- **pi-ai**: detect claude-code overflow text
+
+### Changed
+- remove stale src/app-paths.js leftover
+- **cli**: slim down top-level src/ — dedup, unused fallbacks, onboarding
+
 ## [2.73.1] - 2026-04-13
 
 ### Fixed
@@ -2862,7 +2893,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - License updated to MIT
 
-[Unreleased]: https://github.com/gsd-build/gsd-2/compare/v2.73.1...HEAD
+[Unreleased]: https://github.com/gsd-build/gsd-2/compare/v2.74.0...HEAD
+[2.74.0]: https://github.com/gsd-build/gsd-2/compare/v2.73.1...v2.74.0
 [2.73.1]: https://github.com/gsd-build/gsd-2/compare/v2.73.0...v2.73.1
 [2.73.0]: https://github.com/gsd-build/gsd-2/compare/v2.72.0...v2.73.0
 [2.72.0]: https://github.com/gsd-build/gsd-2/compare/v2.71.0...v2.72.0

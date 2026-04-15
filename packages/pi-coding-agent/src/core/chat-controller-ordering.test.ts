@@ -656,3 +656,240 @@ test("chat-controller does not duplicate text when content is [text, tool, text]
 
 	assert.deepEqual((secondText as any).range, { startIndex: 2, endIndex: 2 }, "range must not be cleared on message_end (would cause duplication)");
 });
+
+// Regression for the claude-code sub-turn bug that followed #4144:
+// an adapter can reset content[] back to 0/1 mid-lifecycle when a new provider
+// sub-turn begins. The segment walker must NOT update prior-sub-turn text-run
+// components in place (which would destroy earlier history) and must NOT reuse
+// stale tool registrations for a new tool at the same contentIndex. Prior
+// sub-turn children must stay frozen; new sub-turn segments must append after
+// them, and the pinned "Latest Output" mirror must re-evaluate for the new sub-turn.
+test("chat-controller freezes prior sub-turn and appends new segments when content shrinks", async () => {
+	(globalThis as any)[Symbol.for("@gsd/pi-coding-agent:theme")] = {
+		fg: (_key: string, text: string) => text,
+		bg: (_key: string, text: string) => text,
+		bold: (text: string) => text,
+		italic: (text: string) => text,
+		truncate: (text: string) => text,
+	};
+
+	const host = createHost();
+	host.getMarkdownThemeWithSettings = () => ({});
+
+	const t1 = { type: "toolCall", id: "t1", name: "tool_one", arguments: {} };
+	const t2 = { type: "toolCall", id: "t2", name: "tool_two", arguments: {} };
+
+	await handleAgentEvent(host, { type: "message_start", message: makeAssistant([]) } as any);
+
+	// Sub-turn 1: grow to [A, T1, B]
+	await handleAgentEvent(host, {
+		type: "message_update",
+		message: makeAssistant([{ type: "text", text: "A" }]),
+		assistantMessageEvent: {
+			type: "text_delta", contentIndex: 0, delta: "A",
+			partial: makeAssistant([{ type: "text", text: "A" }]),
+		},
+	} as any);
+	await handleAgentEvent(host, {
+		type: "message_update",
+		message: makeAssistant([{ type: "text", text: "A" }, t1]),
+		assistantMessageEvent: {
+			type: "toolcall_end", contentIndex: 1,
+			toolCall: { ...t1, externalResult: { content: [{ type: "text", text: "r1" }], details: {}, isError: false } },
+			partial: makeAssistant([{ type: "text", text: "A" }, t1]),
+		},
+	} as any);
+	await handleAgentEvent(host, {
+		type: "message_update",
+		message: makeAssistant([{ type: "text", text: "A" }, t1, { type: "text", text: "B" }]),
+		assistantMessageEvent: {
+			type: "text_delta", contentIndex: 2, delta: "B",
+			partial: makeAssistant([{ type: "text", text: "A" }, t1, { type: "text", text: "B" }]),
+		},
+	} as any);
+
+	assert.equal(host.chatContainer.children.length, 3, "sub-turn 1 renders 3 children");
+	const priorA = host.chatContainer.children[0];
+	const priorT1 = host.chatContainer.children[1];
+	const priorB = host.chatContainer.children[2];
+
+	// Sub-turn boundary: adapter resets content[] to [C]
+	await handleAgentEvent(host, {
+		type: "message_update",
+		message: makeAssistant([{ type: "text", text: "C" }]),
+		assistantMessageEvent: {
+			type: "text_delta", contentIndex: 0, delta: "C",
+			partial: makeAssistant([{ type: "text", text: "C" }]),
+		},
+	} as any);
+
+	// Prior 3 children must still exist in DOM — and a NEW text-run for "C" appended after them.
+	assert.equal(host.chatContainer.children.length, 4, "shrink must append new segment, not replace prior history");
+	assert.equal(host.chatContainer.children[0], priorA, "prior A component stays at index 0");
+	assert.equal(host.chatContainer.children[1], priorT1, "prior T1 component stays at index 1");
+	assert.equal(host.chatContainer.children[2], priorB, "prior B component stays at index 2");
+	assert.notEqual(host.chatContainer.children[3], priorA, "new C text-run must be a different component from prior A");
+	assert.equal(host.chatContainer.children[3]?.constructor?.name, "AssistantMessageComponent");
+
+	// Prior A component must still render "A", not be overwritten with "C".
+	function getRenderedTexts(comp: any): string[] {
+		const contentContainer = comp.children?.[0];
+		if (!contentContainer) return [];
+		return (contentContainer.children ?? [])
+			.filter((c: any) => c.constructor?.name === "Markdown")
+			.map((c: any) => (c as any).text as string);
+	}
+	assert.deepEqual(getRenderedTexts(priorA), ["A"], "prior A text-run must still contain 'A' after shrink");
+	assert.deepEqual(getRenderedTexts(priorB), ["B"], "prior B text-run must still contain 'B' after shrink");
+	assert.deepEqual(getRenderedTexts(host.chatContainer.children[3]), ["C"], "new text-run must contain only 'C'");
+
+	// Sub-turn 2 grows with a new tool T2 at contentIndex=1.
+	await handleAgentEvent(host, {
+		type: "message_update",
+		message: makeAssistant([{ type: "text", text: "C" }, t2]),
+		assistantMessageEvent: {
+			type: "toolcall_end", contentIndex: 1,
+			toolCall: { ...t2, externalResult: { content: [{ type: "text", text: "r2" }], details: {}, isError: false } },
+			partial: makeAssistant([{ type: "text", text: "C" }, t2]),
+		},
+	} as any);
+
+	// T2 must be appended after the new C text-run, not conflated with the stale T1 registration.
+	assert.equal(host.chatContainer.children.length, 5, "new tool appends after new text-run");
+	assert.equal(host.chatContainer.children[4]?.constructor?.name, "ToolExecutionComponent");
+	assert.notEqual(host.chatContainer.children[4], priorT1, "new T2 must be a different component from prior T1");
+
+	// Finalize so the module-level pinned spinner (setInterval) is torn down and the test process can exit.
+	await handleAgentEvent(host, { type: "message_end", message: makeAssistant([{ type: "text", text: "C" }, t2]) } as any);
+});
+
+// Regression: after a sub-turn shrink, lastPinnedText must be cleared so the
+// pinned "Latest Output" mirror can display text from the new sub-turn instead
+// of staying frozen on a stale snapshot (the "bottom green stays" symptom).
+test("chat-controller updates pinned zone after sub-turn shrink", async () => {
+	(globalThis as any)[Symbol.for("@gsd/pi-coding-agent:theme")] = {
+		fg: (_key: string, text: string) => text,
+		bg: (_key: string, text: string) => text,
+		bold: (text: string) => text,
+		italic: (text: string) => text,
+		truncate: (text: string) => text,
+	};
+
+	const host = createHost();
+	host.getMarkdownThemeWithSettings = () => ({});
+
+	const t1 = { type: "toolCall", id: "t1", name: "tool_one", arguments: {} };
+	const t2 = { type: "toolCall", id: "t2", name: "tool_two", arguments: {} };
+
+	await handleAgentEvent(host, { type: "message_start", message: makeAssistant([]) } as any);
+
+	// Sub-turn 1 with pinnable text before a tool → populates pinned zone with "first".
+	await handleAgentEvent(host, {
+		type: "message_update",
+		message: makeAssistant([{ type: "text", text: "first" }, t1]),
+		assistantMessageEvent: {
+			type: "toolcall_end", contentIndex: 1,
+			toolCall: { ...t1, externalResult: { content: [{ type: "text", text: "r1" }], details: {}, isError: false } },
+			partial: makeAssistant([{ type: "text", text: "first" }, t1]),
+		},
+	} as any);
+	const pinnedMarkdown = host.pinnedMessageContainer.children[1];
+	assert.equal((pinnedMarkdown as any)?.text, "first", "pinned zone seeded with sub-turn 1 text");
+
+	// Sub-turn boundary: content resets to [second, t2].
+	await handleAgentEvent(host, {
+		type: "message_update",
+		message: makeAssistant([{ type: "text", text: "second" }, t2]),
+		assistantMessageEvent: {
+			type: "toolcall_end", contentIndex: 1,
+			toolCall: { ...t2, externalResult: { content: [{ type: "text", text: "r2" }], details: {}, isError: false } },
+			partial: makeAssistant([{ type: "text", text: "second" }, t2]),
+		},
+	} as any);
+
+	// Pinned markdown must now reflect the new sub-turn's text, not stay frozen on "first".
+	assert.equal((pinnedMarkdown as any)?.text, "second", "pinned zone must update after sub-turn shrink (#4144 regression)");
+
+	// Finalize so the module-level pinned spinner (setInterval) is torn down and the test process can exit.
+	await handleAgentEvent(host, { type: "message_end", message: makeAssistant([{ type: "text", text: "second" }, t2]) } as any);
+});
+
+test("chat-controller: agent_end without message_end must not remove streaming component from DOM (regression #4197)", async () => {
+	const host = createHost();
+
+	await handleAgentEvent(host, {
+		type: "message_start",
+		message: makeAssistant([]),
+	} as any);
+
+	// Simulate partial streaming that creates an AssistantMessageComponent
+	await handleAgentEvent(host, {
+		type: "message_update",
+		message: makeAssistant([{ type: "text", text: "partial answer" }]),
+		assistantMessageEvent: {
+			type: "text_delta",
+			contentIndex: 0,
+			delta: "partial answer",
+			partial: makeAssistant([{ type: "text", text: "partial answer" }]),
+		},
+	} as any);
+
+	// Precondition: component is in DOM
+	assert.equal(
+		host.chatContainer.children.length,
+		1,
+		"streaming component must be in DOM after message_update",
+	);
+	const comp = host.chatContainer.children[0];
+
+	// Simulate abort: agent_end fires WITHOUT message_end
+	await handleAgentEvent(host, { type: "agent_end" } as any);
+
+	assert.equal(
+		host.chatContainer.children.length,
+		1,
+		"agent_end must NOT remove the streaming component from the DOM (issue #4197)",
+	);
+	assert.equal(
+		host.chatContainer.children[0],
+		comp,
+		"the same component instance must remain in the DOM after agent_end",
+	);
+});
+
+test("chat-controller: agent_end after message_end must not alter DOM", async () => {
+	const host = createHost();
+	const content = [{ type: "text", text: "complete answer" }];
+
+	await handleAgentEvent(host, {
+		type: "message_start",
+		message: makeAssistant([]),
+	} as any);
+
+	await handleAgentEvent(host, {
+		type: "message_update",
+		message: makeAssistant(content),
+		assistantMessageEvent: {
+			type: "text_delta",
+			contentIndex: 0,
+			delta: "complete answer",
+			partial: makeAssistant(content),
+		},
+	} as any);
+
+	await handleAgentEvent(host, {
+		type: "message_end",
+		message: makeAssistant(content),
+	} as any);
+
+	const countAfterMessageEnd = host.chatContainer.children.length;
+	assert.ok(countAfterMessageEnd > 0, "component must be present after message_end");
+
+	await handleAgentEvent(host, { type: "agent_end" } as any);
+
+	assert.equal(
+		host.chatContainer.children.length,
+		countAfterMessageEnd,
+		"agent_end after message_end must not add or remove DOM nodes",
+	);
+});

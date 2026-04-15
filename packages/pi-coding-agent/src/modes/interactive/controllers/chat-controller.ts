@@ -10,6 +10,10 @@ import { appKey } from "../components/keybinding-hints.js";
 // Tracks the last processed content index to avoid re-scanning all blocks on every message_update
 let lastProcessedContentIndex = 0;
 
+// Tracks the previous content[] length so we can detect when an adapter resets
+// the assistant content array for a new provider sub-turn within one lifecycle.
+let lastContentLength = 0;
+
 // --- Segment walker state (per streaming assistant turn) ---
 type RenderedSegment =
 	| { kind: "text-run"; startIndex: number; endIndex: number; component: AssistantMessageComponent }
@@ -85,6 +89,7 @@ export async function handleAgentEvent(host: InteractiveModeStateHost & {
 	// Reset content index tracker and pinned state when a new assistant message starts
 	if (event.type === "message_start" && event.message.role === "assistant") {
 		lastProcessedContentIndex = 0;
+		lastContentLength = 0;
 		lastPinnedText = "";
 		hasToolsInTurn = false;
 		renderedSegments = [];
@@ -108,6 +113,7 @@ export async function handleAgentEvent(host: InteractiveModeStateHost & {
 					lastPinnedText = "";
 					hasToolsInTurn = false;
 					renderedSegments = [];
+					lastContentLength = 0;
 					if (pinnedBorder) pinnedBorder.stopSpinner();
 					pinnedBorder = undefined;
 					pinnedTextComponent = undefined;
@@ -211,12 +217,22 @@ export async function handleAgentEvent(host: InteractiveModeStateHost & {
 				}
 
 				const contentBlocks = host.streamingMessage.content;
-				// Some adapters reuse a single assistant lifecycle while internally
-				// spanning multiple provider turns. When a new turn starts, content
-				// length can shrink back to 0/1; reset scan index to avoid skipping.
-				if (lastProcessedContentIndex >= contentBlocks.length) {
+				// Some adapters (notably claude-code) reuse a single assistant
+				// lifecycle while internally spanning multiple provider sub-turns.
+				// When a new sub-turn starts, content[] length shrinks back to 0/1.
+				// The scan loop needs its index reset, AND the segment walker's
+				// renderedSegments map must be cleared so existing text-run
+				// components don't get overwritten in place with new sub-turn
+				// content (#4144 regression). Prior sub-turn children stay in
+				// chatContainer as frozen history; new segments append after them.
+				if (contentBlocks.length < lastContentLength) {
+					renderedSegments = [];
+					lastPinnedText = "";
+					lastProcessedContentIndex = 0;
+				} else if (lastProcessedContentIndex >= contentBlocks.length) {
 					lastProcessedContentIndex = 0;
 				}
+				lastContentLength = contentBlocks.length;
 				for (let i = lastProcessedContentIndex; i < contentBlocks.length; i++) {
 					const content = contentBlocks[i];
 					if (content.type === "toolCall") {
@@ -474,6 +490,7 @@ export async function handleAgentEvent(host: InteractiveModeStateHost & {
 				host.streamingComponent = undefined;
 				host.streamingMessage = undefined;
 				renderedSegments = [];
+				lastContentLength = 0;
 				// Clear pinned output once the message is finalized in the chat
 				// container — prevents duplicate display when the agent continues
 				// (e.g. form elicitation) after the assistant message ends.
@@ -529,11 +546,14 @@ export async function handleAgentEvent(host: InteractiveModeStateHost & {
 				host.loadingAnimation = undefined;
 				host.statusContainer.clear();
 			}
-			if (host.streamingComponent) {
-				host.chatContainer.removeChild(host.streamingComponent);
-				host.streamingComponent = undefined;
-				host.streamingMessage = undefined;
+			if (host.streamingComponent && host.streamingMessage) {
+				host.streamingComponent.setShowMetadata(true);
+				host.streamingComponent.updateContent(host.streamingMessage);
 			}
+			host.streamingComponent = undefined;
+			host.streamingMessage = undefined;
+			renderedSegments = [];
+			lastContentLength = 0;
 			host.pendingTools.clear();
 			// Pinned output is only useful while work is actively streaming.
 			// Keep chat history as the single source after completion.

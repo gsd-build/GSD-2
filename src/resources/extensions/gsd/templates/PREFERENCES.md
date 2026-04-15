@@ -39,6 +39,24 @@ dynamic_routing:
   budget_pressure:
   cross_provider:
   hooks:
+uok:
+  enabled: true
+  legacy_fallback:
+    enabled: false
+  gates:
+    enabled: false
+  model_policy:
+    enabled: false
+  execution_graph:
+    enabled: false
+  gitops:
+    enabled: false
+    turn_action: status-only
+    turn_push: false
+  audit_unified:
+    enabled: false
+  plan_v2:
+    enabled: false
 auto_visualize:
 auto_report:
 parallel:

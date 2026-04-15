@@ -822,7 +822,7 @@ export function serializePreferencesToFrontmatter(prefs: Record<string, unknown>
     "budget_ceiling", "budget_enforcement", "context_pause_threshold",
     "notifications", "cmux", "remote_questions", "git",
     "post_unit_hooks", "pre_dispatch_hooks",
-    "dynamic_routing", "token_profile", "phases", "parallel",
+    "dynamic_routing", "uok", "token_profile", "phases", "parallel",
     "auto_visualize", "auto_report",
     "verification_commands", "verification_auto_fix", "verification_max_retries",
     "search_provider", "context_selection",

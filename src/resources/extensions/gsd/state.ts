@@ -345,8 +345,15 @@ function reconcileDiskToDb(basePath: string): MilestoneRow[] {
     const dbSliceIds = new Set(dbSlices.map(s => s.id));
 
     let roadmapContent: string;
-    try { roadmapContent = readFileSync(roadmapPath, "utf-8"); }
-    catch { continue; }
+    try {
+      roadmapContent = readFileSync(roadmapPath, "utf-8");
+    } catch (err) {
+      logWarning("state", "reconcileDiskToDb: roadmap read failed, skipping milestone", {
+        mid,
+        error: (err as Error).message,
+      });
+      continue;
+    }
 
     const parsed = parseRoadmap(roadmapContent);
     for (const s of parsed.slices) {
@@ -386,6 +393,10 @@ function buildCompletenessSet(basePath: string, milestones: MilestoneRow[]) {
   const completeMilestoneIds = new Set<string>();
   const parkedMilestoneIds = new Set<string>();
 
+  // DB-authoritative: a milestone is only "complete" when its DB row says so.
+  // SUMMARY-file presence is NOT a completion signal here — an orphan SUMMARY
+  // (crashed complete-milestone turn, partial merge, manual edit) must not
+  // flip derived state to complete and cascade into a false auto-merge (#4179).
   for (const m of milestones) {
     const parkedFile = resolveMilestoneFile(basePath, m.id, "PARKED");
     if (parkedFile || m.status === 'parked') {
@@ -393,11 +404,6 @@ function buildCompletenessSet(basePath: string, milestones: MilestoneRow[]) {
       continue;
     }
     if (isStatusDone(m.status)) {
-      completeMilestoneIds.add(m.id);
-      continue;
-    }
-    const summaryFile = resolveMilestoneFile(basePath, m.id, "SUMMARY");
-    if (summaryFile) {
       completeMilestoneIds.add(m.id);
       continue;
     }
@@ -429,18 +435,22 @@ async function buildRegistryAndFindActive(
       if (isGhostMilestone(basePath, m.id)) continue;
     }
 
-    const summaryFile = resolveMilestoneFile(basePath, m.id, "SUMMARY");
-
-    if (completeMilestoneIds.has(m.id) || (summaryFile !== null)) {
+    // DB-authoritative completeness (#4179): only trust completeMilestoneIds,
+    // which is itself derived from DB status. SUMMARY-file presence alone must
+    // not imply completion. The summary file may still be consulted below as a
+    // title source for legitimately-complete milestones whose DB row has no title.
+    if (completeMilestoneIds.has(m.id)) {
       let title = stripMilestonePrefix(m.title) || m.id;
-      if (summaryFile && !m.title) {
-        const summaryContent = await loadFile(summaryFile);
-        if (summaryContent) {
-          title = parseSummary(summaryContent).title || m.id;
+      if (!m.title) {
+        const summaryFile = resolveMilestoneFile(basePath, m.id, "SUMMARY");
+        if (summaryFile) {
+          const summaryContent = await loadFile(summaryFile);
+          if (summaryContent) {
+            title = parseSummary(summaryContent).title || m.id;
+          }
         }
       }
       registry.push({ id: m.id, title, status: 'complete' });
-      completeMilestoneIds.add(m.id);
       continue;
     }
 
@@ -481,7 +491,14 @@ async function buildRegistryAndFindActive(
         const validationContent = validationFile ? await loadFile(validationFile) : null;
         const validationTerminal = validationContent ? isValidationTerminal(validationContent) : false;
 
-        if (!validationTerminal || (validationTerminal && !summaryFile)) {
+        // DB-authoritative (#4179): completeness is already decided by
+        // completeMilestoneIds above. If we reached this branch, the DB says
+        // the milestone is NOT complete — so any SUMMARY file on disk is an
+        // orphan (crashed complete-milestone, partial merge, manual edit) and
+        // must not short-circuit this path. When validation is terminal, fall
+        // through to the default active-push below so `complete-milestone` can
+        // re-run idempotently.
+        if (!validationTerminal) {
           activeMilestone = { id: m.id, title };
           activeMilestoneSlices = slices;
           activeMilestoneFound = true;
@@ -630,13 +647,39 @@ function resolveSliceDependencies(activeMilestoneSlices: SliceRow[]): { activeSl
     }
   }
 
+  // First pass: find a slice with ALL dependencies satisfied (strict)
+  let bestFallback: SliceRow | null = null;
+  let bestFallbackSatisfied = -1;
+
   for (const s of activeMilestoneSlices) {
     if (isStatusDone(s.status)) continue;
     if (isDeferredStatus(s.status)) continue;
     if (s.depends.every(dep => doneSliceIds.has(dep))) {
       return { activeSlice: { id: s.id, title: s.title }, activeSliceRow: s };
     }
+    // Track the slice with the most satisfied dependencies as fallback
+    const satisfied = s.depends.filter(dep => doneSliceIds.has(dep)).length;
+    if (satisfied > bestFallbackSatisfied || (satisfied === bestFallbackSatisfied && !bestFallback)) {
+      bestFallback = s;
+      bestFallbackSatisfied = satisfied;
+    }
   }
+
+  // Fallback: if no slice has all deps met but there ARE incomplete non-deferred
+  // slices, pick the one with the most deps satisfied. This prevents hard-blocking
+  // when dependency metadata is stale (e.g. after reassessment added/removed slices)
+  // or when deps reference slices from previous milestones.
+  if (bestFallback) {
+    const unmet = bestFallback.depends.filter(dep => !doneSliceIds.has(dep));
+    logWarning("state",
+      `No slice has all deps satisfied — falling back to ${bestFallback.id} ` +
+      `(${bestFallbackSatisfied}/${bestFallback.depends.length} deps met, ` +
+      `unmet: ${unmet.join(", ")})`,
+      { mid: activeMilestoneSlices[0]?.milestone_id, sid: bestFallback.id },
+    );
+    return { activeSlice: { id: bestFallback.id, title: bestFallback.title }, activeSliceRow: bestFallback };
+  }
+
   return { activeSlice: null, activeSliceRow: null };
 }
 
@@ -684,7 +727,7 @@ async function reconcileSliceTasks(
     const summaryPath = resolveTaskFile(basePath, milestoneId, sliceId, t.id, "SUMMARY");
     if (summaryPath && existsSync(summaryPath)) {
       try {
-        updateTaskStatus(milestoneId, sliceId, t.id, "complete");
+        updateTaskStatus(milestoneId, sliceId, t.id, "complete", new Date().toISOString());
         logWarning("reconcile", `task ${milestoneId}/${sliceId}/${t.id} status reconciled from "${t.status}" to "complete" (#2514)`, { mid: milestoneId, sid: sliceId, tid: t.id });
         reconciled = true;
       } catch (e) {
@@ -1431,12 +1474,32 @@ export async function _deriveStateImpl(basePath: string): Promise<GSDState> {
       };
     }
   } else {
+    let bestFallbackLegacy: { id: string; title: string; depends: string[] } | null = null;
+    let bestFallbackLegacySatisfied = -1;
+
     for (const s of activeRoadmap.slices) {
       if (s.done) continue;
       if (s.depends.every(dep => doneSliceIds.has(dep))) {
         activeSlice = { id: s.id, title: s.title };
         break;
       }
+      // Track best fallback
+      const satisfied = s.depends.filter(dep => doneSliceIds.has(dep)).length;
+      if (satisfied > bestFallbackLegacySatisfied) {
+        bestFallbackLegacy = s;
+        bestFallbackLegacySatisfied = satisfied;
+      }
+    }
+
+    // Fallback: if no slice has all deps met, pick the one with the most deps satisfied
+    if (!activeSlice && bestFallbackLegacy) {
+      const unmet = bestFallbackLegacy.depends.filter(dep => !doneSliceIds.has(dep));
+      logWarning("state",
+        `No slice has all deps satisfied — falling back to ${bestFallbackLegacy.id} ` +
+        `(${bestFallbackLegacySatisfied}/${bestFallbackLegacy.depends.length} deps met, ` +
+        `unmet: ${unmet.join(", ")})`,
+      );
+      activeSlice = { id: bestFallbackLegacy.id, title: bestFallbackLegacy.title };
     }
   }
 

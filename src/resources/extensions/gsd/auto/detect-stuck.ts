@@ -5,6 +5,7 @@
  */
 
 import type { WindowEntry } from "./types.js";
+import { summarizeLogs } from "../workflow-logger.js";
 
 /**
  * Pattern matching ENOENT errors with a file path.
@@ -28,6 +29,13 @@ export function detectStuck(
 ): { stuck: true; reason: string } | null {
   if (window.length < 2) return null;
 
+  // Peek (not drain) the workflow-logger buffer so stuck reasons can surface
+  // the underlying diagnostic context (projection failures, DB degradations,
+  // reconcile warnings) that usually explains *why* the loop is stuck. The
+  // auto-loop's finalize step owns the buffer lifecycle — this is read-only.
+  const loggerSummary = summarizeLogs();
+  const suffix = loggerSummary ? ` — ${loggerSummary}` : "";
+
   const last = window[window.length - 1];
   const prev = window[window.length - 2];
 
@@ -35,7 +43,7 @@ export function detectStuck(
   if (last.error && prev.error && last.error === prev.error) {
     return {
       stuck: true,
-      reason: `Same error repeated: ${last.error.slice(0, 200)}`,
+      reason: `Same error repeated: ${last.error.slice(0, 200)}${suffix}`,
     };
   }
 
@@ -45,7 +53,7 @@ export function detectStuck(
     if (lastThree.every((u) => u.key === last.key)) {
       return {
         stuck: true,
-        reason: `${last.key} derived 3 consecutive times without progress`,
+        reason: `${last.key} derived 3 consecutive times without progress${suffix}`,
       };
     }
   }
@@ -60,7 +68,7 @@ export function detectStuck(
     ) {
       return {
         stuck: true,
-        reason: `Oscillation detected: ${w[0].key} ↔ ${w[1].key}`,
+        reason: `Oscillation detected: ${w[0].key} ↔ ${w[1].key}${suffix}`,
       };
     }
   }
@@ -77,7 +85,7 @@ export function detectStuck(
     if (count >= 2) {
       return {
         stuck: true,
-        reason: `Missing file referenced twice: ${filePath} (ENOENT)`,
+        reason: `Missing file referenced twice: ${filePath} (ENOENT)${suffix}`,
       };
     }
     enoentPaths.set(filePath, count);

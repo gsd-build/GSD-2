@@ -22,7 +22,12 @@ import {
   type GSDSkillRule,
 } from "./preferences-types.js";
 
-const VALID_TOKEN_PROFILES = new Set<TokenProfile>(["budget", "balanced", "quality"]);
+const VALID_TOKEN_PROFILES = new Set<TokenProfile>(["budget", "balanced", "quality", "burn-max"]);
+const VALID_UOK_TURN_ACTIONS = new Set<"commit" | "snapshot" | "status-only">([
+  "commit",
+  "snapshot",
+  "status-only",
+]);
 
 export function validatePreferences(preferences: GSDPreferences): {
   preferences: GSDPreferences;
@@ -161,12 +166,112 @@ export function validatePreferences(preferences: GSDPreferences): {
     }
   }
 
+  // ─── UOK Flags ──────────────────────────────────────────────────────
+  if (preferences.uok !== undefined) {
+    if (typeof preferences.uok === "object" && preferences.uok !== null) {
+      const raw = preferences.uok as Record<string, unknown>;
+      const valid: NonNullable<GSDPreferences["uok"]> = {};
+
+      if (raw.enabled !== undefined) {
+        if (typeof raw.enabled === "boolean") valid.enabled = raw.enabled;
+        else errors.push("uok.enabled must be a boolean");
+      }
+
+      const parseEnabledBlock = (
+        key: "legacy_fallback" | "gates" | "model_policy" | "execution_graph" | "audit_unified" | "plan_v2",
+      ): void => {
+        const value = raw[key];
+        if (value === undefined) return;
+        if (typeof value !== "object" || value === null) {
+          errors.push(`uok.${key} must be an object`);
+          return;
+        }
+        const block = value as Record<string, unknown>;
+        const parsed: { enabled?: boolean } = {};
+        if (block.enabled !== undefined) {
+          if (typeof block.enabled === "boolean") parsed.enabled = block.enabled;
+          else errors.push(`uok.${key}.enabled must be a boolean`);
+        }
+        const unknown = Object.keys(block).filter((k) => k !== "enabled");
+        for (const unk of unknown) {
+          warnings.push(`unknown uok.${key} key "${unk}" — ignored`);
+        }
+        if (Object.keys(parsed).length > 0) {
+          valid[key] = parsed;
+        }
+      };
+
+      parseEnabledBlock("legacy_fallback");
+      parseEnabledBlock("gates");
+      parseEnabledBlock("model_policy");
+      parseEnabledBlock("execution_graph");
+      parseEnabledBlock("audit_unified");
+      parseEnabledBlock("plan_v2");
+
+      if (raw.gitops !== undefined) {
+        if (typeof raw.gitops !== "object" || raw.gitops === null) {
+          errors.push("uok.gitops must be an object");
+        } else {
+          const gitops = raw.gitops as Record<string, unknown>;
+          const parsed: NonNullable<NonNullable<GSDPreferences["uok"]>["gitops"]> = {};
+          if (gitops.enabled !== undefined) {
+            if (typeof gitops.enabled === "boolean") parsed.enabled = gitops.enabled;
+            else errors.push("uok.gitops.enabled must be a boolean");
+          }
+          if (gitops.turn_action !== undefined) {
+            if (
+              typeof gitops.turn_action === "string" &&
+              VALID_UOK_TURN_ACTIONS.has(gitops.turn_action as "commit" | "snapshot" | "status-only")
+            ) {
+              parsed.turn_action = gitops.turn_action as "commit" | "snapshot" | "status-only";
+            } else {
+              errors.push("uok.gitops.turn_action must be one of: commit, snapshot, status-only");
+            }
+          }
+          if (gitops.turn_push !== undefined) {
+            if (typeof gitops.turn_push === "boolean") parsed.turn_push = gitops.turn_push;
+            else errors.push("uok.gitops.turn_push must be a boolean");
+          }
+          const unknown = Object.keys(gitops).filter((k) => !["enabled", "turn_action", "turn_push"].includes(k));
+          for (const unk of unknown) {
+            warnings.push(`unknown uok.gitops key "${unk}" — ignored`);
+          }
+          if (Object.keys(parsed).length > 0) {
+            valid.gitops = parsed;
+          }
+        }
+      }
+
+      const knownUokKeys = new Set([
+        "enabled",
+        "legacy_fallback",
+        "gates",
+        "model_policy",
+        "execution_graph",
+        "gitops",
+        "audit_unified",
+        "plan_v2",
+      ]);
+      for (const key of Object.keys(raw)) {
+        if (!knownUokKeys.has(key)) {
+          warnings.push(`unknown uok key "${key}" — ignored`);
+        }
+      }
+
+      if (Object.keys(valid).length > 0) {
+        validated.uok = valid;
+      }
+    } else {
+      errors.push("uok must be an object");
+    }
+  }
+
   // ─── Token Profile ─────────────────────────────────────────────────
   if (preferences.token_profile !== undefined) {
     if (typeof preferences.token_profile === "string" && VALID_TOKEN_PROFILES.has(preferences.token_profile as TokenProfile)) {
       validated.token_profile = preferences.token_profile as TokenProfile;
     } else {
-      errors.push(`token_profile must be one of: budget, balanced, quality`);
+      errors.push(`token_profile must be one of: budget, balanced, quality, burn-max`);
     }
   }
 

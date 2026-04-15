@@ -38,6 +38,67 @@ const WORKFLOW_USAGE = [
   "  resume            — Resume paused custom workflow auto-mode",
 ].join("\n");
 
+function splitWorkflowRunArgs(input: string): string[] {
+  const tokens: string[] = [];
+  let current = "";
+  let quote: '"' | "'" | null = null;
+  let escapeNext = false;
+
+  for (const ch of input) {
+    if (escapeNext) {
+      current += ch;
+      escapeNext = false;
+      continue;
+    }
+
+    if (ch === "\\") {
+      escapeNext = true;
+      continue;
+    }
+
+    if (quote) {
+      if (ch === quote) {
+        quote = null;
+      } else {
+        current += ch;
+      }
+      continue;
+    }
+
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      continue;
+    }
+
+    if (/\s/.test(ch)) {
+      if (current) {
+        tokens.push(current);
+        current = "";
+      }
+      continue;
+    }
+
+    current += ch;
+  }
+
+  if (escapeNext) current += "\\";
+  if (current) tokens.push(current);
+  return tokens;
+}
+
+export function parseWorkflowRunArgs(args: string): { defName: string; overrides: Record<string, string> } {
+  const parts = splitWorkflowRunArgs(args);
+  const defName = parts[0] ?? "";
+  const overrides: Record<string, string> = {};
+  for (let i = 1; i < parts.length; i++) {
+    const eqIdx = parts[i].indexOf("=");
+    if (eqIdx > 0) {
+      overrides[parts[i].slice(0, eqIdx)] = parts[i].slice(eqIdx + 1);
+    }
+  }
+  return { defName, overrides };
+}
+
 async function handleCustomWorkflow(
   sub: string,
   ctx: ExtensionCommandContext,
@@ -62,15 +123,7 @@ async function handleCustomWorkflow(
       ctx.ui.notify("Usage: /gsd workflow run <name> [param=value ...]", "warning");
       return true;
     }
-    const parts = args.split(/\s+/);
-    const defName = parts[0];
-    const overrides: Record<string, string> = {};
-    for (let i = 1; i < parts.length; i++) {
-      const eqIdx = parts[i].indexOf("=");
-      if (eqIdx > 0) {
-        overrides[parts[i].slice(0, eqIdx)] = parts[i].slice(eqIdx + 1);
-      }
-    }
+    const { defName, overrides } = parseWorkflowRunArgs(args);
     try {
       const base = projectRoot();
       const runDir = createRun(base, defName, Object.keys(overrides).length > 0 ? overrides : undefined);
@@ -168,6 +221,18 @@ async function handleCustomWorkflow(
 }
 
 export async function handleWorkflowCommand(trimmed: string, ctx: ExtensionCommandContext, pi: ExtensionAPI): Promise<boolean> {
+  // ── /gsd do — natural language routing (must be early to route to other commands) ──
+  if (trimmed === "do" || trimmed.startsWith("do ")) {
+    const { handleDo } = await import("../../commands-do.js");
+    await handleDo(trimmed.replace(/^do\s*/, "").trim(), ctx, pi);
+    return true;
+  }
+  // ── Backlog management ──
+  if (trimmed === "backlog" || trimmed.startsWith("backlog ")) {
+    const { handleBacklog } = await import("../../commands-backlog.js");
+    await handleBacklog(trimmed.replace(/^backlog\s*/, "").trim(), ctx, pi);
+    return true;
+  }
   // ── Custom workflow commands (`/gsd workflow ...`) ──
   if (trimmed === "workflow" || trimmed.startsWith("workflow ")) {
     const sub = trimmed.slice("workflow".length).trim();

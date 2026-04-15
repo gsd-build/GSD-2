@@ -100,8 +100,8 @@ const OTHER_PROVIDERS = [
 // ─── Dynamic imports ──────────────────────────────────────────────────────────
 
 /**
- * Dynamically import @clack/prompts and picocolors.
- * Dynamic import with fallback so the module doesn't crash if they're missing.
+ * Dynamically import @clack/prompts.
+ * Dynamic import with fallback so the module doesn't crash if it's missing.
  */
 async function loadClack(): Promise<ClackModule> {
   try {
@@ -111,10 +111,23 @@ async function loadClack(): Promise<ClackModule> {
   }
 }
 
+/**
+ * Build the PicoModule color surface from chalk. Chalk is already a
+ * dependency of the CLI; this adapter keeps the onboarding call sites stable
+ * while removing the redundant picocolors dep.
+ */
 async function loadPico(): Promise<PicoModule> {
   try {
-    const mod = await import('picocolors')
-    return mod.default ?? mod
+    const { default: chalk } = await import('chalk')
+    return {
+      cyan: (s: string) => chalk.cyan(s),
+      green: (s: string) => chalk.green(s),
+      yellow: (s: string) => chalk.yellow(s),
+      dim: (s: string) => chalk.dim(s),
+      bold: (s: string) => chalk.bold(s),
+      red: (s: string) => chalk.red(s),
+      reset: (s: string) => chalk.reset(s),
+    }
   } catch {
     // Fallback: return identity functions
     const identity = (s: string) => s
@@ -135,9 +148,34 @@ function openBrowser(url: string): void {
   }
 }
 
-/** Check if an error is a clack cancel signal */
-function isCancelError(p: ClackModule, err: unknown): boolean {
-  return p.isCancel(err)
+/** Sentinel returned by runStep when the user cancels — tells the caller
+ *  to abort the entire wizard. */
+const STEP_CANCELLED = Symbol('step-cancelled')
+type StepCancelled = typeof STEP_CANCELLED
+
+/**
+ * Run a single onboarding step with shared error handling:
+ *   - user cancel (Ctrl+C) → p.cancel(cancelMessage), returns STEP_CANCELLED
+ *   - other error → p.log.warn + optional info follow-up, returns null
+ *   - success → the step's return value
+ */
+async function runStep<T>(
+  p: ClackModule,
+  warnLabel: string,
+  fn: () => Promise<T>,
+  opts: { cancelMessage?: string; errorInfo?: string } = {},
+): Promise<T | null | StepCancelled> {
+  try {
+    return await fn()
+  } catch (err) {
+    if (p.isCancel(err)) {
+      p.cancel(opts.cancelMessage ?? 'Setup cancelled.')
+      return STEP_CANCELLED
+    }
+    p.log.warn(`${warnLabel}: ${err instanceof Error ? err.message : String(err)}`)
+    if (opts.errorInfo) p.log.info(opts.errorInfo)
+    return null
+  }
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -191,54 +229,30 @@ export async function runOnboarding(authStorage: AuthStorage): Promise<void> {
   p.intro(pc.bold('Welcome to GSD — let\'s get you set up'))
 
   // ── LLM Provider Selection ────────────────────────────────────────────────
-  let llmConfigured = false
-  try {
-    llmConfigured = await runLlmStep(p, pc, authStorage)
-  } catch (err) {
-    // User cancelled (Ctrl+C in clack throws) or unexpected error
-    if (isCancelError(p, err)) {
-      p.cancel('Setup cancelled — you can run /login inside GSD later.')
-      return
-    }
-    p.log.warn(`LLM setup failed: ${err instanceof Error ? err.message : String(err)}`)
-    p.log.info('You can configure your LLM provider later with /login inside GSD.')
-  }
+  const llmResult = await runStep(p, 'LLM setup failed', () => runLlmStep(p, pc, authStorage), {
+    cancelMessage: 'Setup cancelled — you can run /login inside GSD later.',
+    errorInfo: 'You can configure your LLM provider later with /login inside GSD.',
+  })
+  if (llmResult === STEP_CANCELLED) return
+  const llmConfigured = llmResult ?? false
 
   // ── Web Search Provider ──────────────────────────────────────────────────
-  let searchConfigured: string | null = null
-  try {
-    searchConfigured = await runWebSearchStep(p, pc, authStorage, llmConfigured)
-  } catch (err) {
-    if (isCancelError(p, err)) {
-      p.cancel('Setup cancelled.')
-      return
-    }
-    p.log.warn(`Web search setup failed: ${err instanceof Error ? err.message : String(err)}`)
-  }
+  const searchResult = await runStep(p, 'Web search setup failed',
+    () => runWebSearchStep(p, pc, authStorage, llmConfigured))
+  if (searchResult === STEP_CANCELLED) return
+  const searchConfigured = searchResult
 
   // ── Remote Questions ─────────────────────────────────────────────────────
-  let remoteConfigured: string | null = null
-  try {
-    remoteConfigured = await runRemoteQuestionsStep(p, pc, authStorage)
-  } catch (err) {
-    if (isCancelError(p, err)) {
-      p.cancel('Setup cancelled.')
-      return
-    }
-    p.log.warn(`Remote questions setup failed: ${err instanceof Error ? err.message : String(err)}`)
-  }
+  const remoteResult = await runStep(p, 'Remote questions setup failed',
+    () => runRemoteQuestionsStep(p, pc, authStorage))
+  if (remoteResult === STEP_CANCELLED) return
+  const remoteConfigured = remoteResult
 
   // ── Tool API Keys ─────────────────────────────────────────────────────────
-  let toolKeyCount = 0
-  try {
-    toolKeyCount = await runToolKeysStep(p, pc, authStorage)
-  } catch (err) {
-    if (isCancelError(p, err)) {
-      p.cancel('Setup cancelled.')
-      return
-    }
-    p.log.warn(`Tool key setup failed: ${err instanceof Error ? err.message : String(err)}`)
-  }
+  const toolResult = await runStep(p, 'Tool key setup failed',
+    () => runToolKeysStep(p, pc, authStorage))
+  if (toolResult === STEP_CANCELLED) return
+  const toolKeyCount = toolResult ?? 0
 
   // ── Summary ───────────────────────────────────────────────────────────────
   const summaryLines: string[] = []

@@ -10,12 +10,14 @@ import type { ExtensionAPI, ExtensionContext } from "@gsd/pi-coding-agent";
 import type { GSDPreferences } from "./preferences.js";
 import { resolveModelWithFallbacksForUnit, resolveDynamicRoutingConfig } from "./preferences.js";
 import type { ComplexityTier } from "./complexity-classifier.js";
-import { classifyUnitComplexity, tierLabel } from "./complexity-classifier.js";
+import { classifyUnitComplexity, extractTaskMetadata, tierLabel } from "./complexity-classifier.js";
 import { resolveModelForComplexity, escalateTier, getEligibleModels, loadCapabilityOverrides, adjustToolSet, filterToolsForProvider } from "./model-router.js";
 import { getLedger, getProjectTotals } from "./metrics.js";
 import { unitPhaseLabel } from "./auto-dashboard.js";
 import { getSessionModelOverride } from "./session-model-override.js";
 import { logWarning } from "./workflow-logger.js";
+import { resolveUokFlags } from "./uok/flags.js";
+import { applyModelPolicyFilter } from "./uok/model-policy.js";
 
 export interface ModelSelectionResult {
   /** Routing metadata for metrics recording */
@@ -75,6 +77,7 @@ export async function selectAndApplyModel(
   /** Explicit /gsd model pin captured at bootstrap for long-running auto loops. */
   sessionModelOverride?: { provider: string; id: string } | null,
 ): Promise<ModelSelectionResult> {
+  const uokFlags = resolveUokFlags(prefs);
   const effectiveSessionModelOverride = sessionModelOverride === undefined
     ? getSessionModelOverride(ctx.sessionManager.getSessionId())
     : (sessionModelOverride ?? undefined);
@@ -97,6 +100,9 @@ export async function selectAndApplyModel(
 
   if (modelConfig) {
     const availableModels = ctx.modelRegistry.getAvailable();
+    const modelPolicyTraceId = `model:${ctx.sessionManager.getSessionId()}:${Date.now()}`;
+    const modelPolicyTurnId = `${unitType}:${unitId}`;
+    let policyAllowedModelKeys: Set<string> | null = null;
 
     // ─── Dynamic Model Routing ─────────────────────────────────────────
     // Dynamic routing (complexity-based downgrading) only applies in auto-mode.
@@ -106,8 +112,40 @@ export async function selectAndApplyModel(
     if (!isAutoMode) {
       routingConfig.enabled = false;
     }
+    // burn-max defaults to quality-first dispatch (no downgrade routing).
+    if (prefs?.token_profile === "burn-max") {
+      routingConfig.enabled = false;
+    }
     let effectiveModelConfig = modelConfig;
     let routingTierLabel = "";
+    let routingEligibleModels = availableModels;
+
+    const taskMetadataForPolicy = unitType === "execute-task"
+      ? extractTaskMetadata(unitId, basePath)
+      : undefined;
+
+    if (uokFlags.modelPolicy) {
+      const policy = applyModelPolicyFilter(
+        availableModels,
+        {
+          basePath,
+          traceId: modelPolicyTraceId,
+          turnId: modelPolicyTurnId,
+          unitType,
+          taskMetadata: taskMetadataForPolicy,
+          currentProvider: ctx.model?.provider,
+          allowCrossProvider: routingConfig.cross_provider !== false,
+          requiredTools: pi.getActiveTools(),
+        },
+      );
+      routingEligibleModels = policy.eligible;
+      policyAllowedModelKeys = new Set(
+        policy.eligible.map((m) => `${m.provider.toLowerCase()}/${m.id.toLowerCase()}`),
+      );
+      if (routingEligibleModels.length === 0) {
+        throw new Error(`Model policy denied all candidate models for ${unitType}/${unitId}`);
+      }
+    }
 
     // Disable routing for flat-rate providers like GitHub Copilot (#3453).
     // All models cost the same per request, so downgrading to a cheaper
@@ -115,7 +153,7 @@ export async function selectAndApplyModel(
     // Fail-closed: if primary model can't be resolved, fall back to
     // provider-level signals rather than allowing unwanted downgrades.
     if (routingConfig.enabled) {
-      const primaryModel = resolveModelId(modelConfig.primary, availableModels, ctx.model?.provider);
+      const primaryModel = resolveModelId(modelConfig.primary, routingEligibleModels, ctx.model?.provider);
       if (primaryModel) {
         const primaryFlatRateCtx = buildFlatRateContext(primaryModel.provider, ctx, prefs);
         if (isFlatRateProvider(primaryModel.provider, primaryFlatRateCtx)) {
@@ -149,8 +187,14 @@ export async function selectAndApplyModel(
       const shouldClassify = !isHook || routingConfig.hooks !== false;
 
       if (shouldClassify) {
-        let classification = classifyUnitComplexity(unitType, unitId, basePath, budgetPct);
-        const availableModelIds = availableModels.map(m => m.id);
+        let classification = classifyUnitComplexity(
+          unitType,
+          unitId,
+          basePath,
+          budgetPct,
+          taskMetadataForPolicy,
+        );
+        const availableModelIds = routingEligibleModels.map(m => m.id);
 
         // Escalate tier on retry when escalate_on_failure is enabled (default: true)
         if (
@@ -257,13 +301,26 @@ export async function selectAndApplyModel(
     }
 
     const modelsToTry = [effectiveModelConfig.primary, ...effectiveModelConfig.fallbacks];
+    let attemptedPolicyEligible = false;
 
     for (const modelId of modelsToTry) {
-      const model = resolveModelId(modelId, availableModels, ctx.model?.provider);
+      const resolutionPool = uokFlags.modelPolicy ? routingEligibleModels : availableModels;
+      const model = resolveModelId(modelId, resolutionPool, ctx.model?.provider);
 
       if (!model) {
         if (verbose) ctx.ui.notify(`Model ${modelId} not found, trying fallback.`, "info");
         continue;
+      }
+
+      if (policyAllowedModelKeys) {
+        const key = `${model.provider.toLowerCase()}/${model.id.toLowerCase()}`;
+        if (!policyAllowedModelKeys.has(key)) {
+          if (verbose) {
+            ctx.ui.notify(`Model policy denied ${model.provider}/${model.id}; trying fallback.`, "warning");
+          }
+          continue;
+        }
+        attemptedPolicyEligible = true;
       }
 
       // Warn if the ID is ambiguous across providers
@@ -330,6 +387,10 @@ export async function selectAndApplyModel(
           ctx.ui.notify(`All preferred models unavailable for ${unitType}. Using default.`, "warning");
         }
       }
+    }
+
+    if (uokFlags.modelPolicy && policyAllowedModelKeys && !attemptedPolicyEligible) {
+      throw new Error(`Model policy denied dispatch for ${unitType}/${unitId} before prompt send`);
     }
   } else if (autoModeStartModel) {
     // No model preference for this unit type — re-apply the model captured

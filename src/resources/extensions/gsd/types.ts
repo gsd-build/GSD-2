@@ -306,7 +306,7 @@ export interface HookDispatchResult {
 
 export type BudgetEnforcementMode = "warn" | "pause" | "halt";
 
-export type TokenProfile = "budget" | "balanced" | "quality";
+export type TokenProfile = "budget" | "balanced" | "quality" | "burn-max";
 
 export type InlineLevel = "full" | "standard" | "minimal";
 

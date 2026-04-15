@@ -350,7 +350,14 @@ export async function renderStateProjection(basePath: string): Promise<void> {
     // Probe DB handle — adapter may be set but underlying handle closed
     const adapter = _getAdapter();
     if (!adapter) return;
-    try { adapter.prepare("SELECT 1").get(); } catch { return; }
+    try {
+      adapter.prepare("SELECT 1").get();
+    } catch (err) {
+      logWarning("projection", "renderStateProjection: DB handle probe failed, skipping render", {
+        error: (err as Error).message,
+      });
+      return;
+    }
     const state = await deriveState(basePath);
     const content = renderStateContent(state);
     const dir = join(basePath, ".gsd");

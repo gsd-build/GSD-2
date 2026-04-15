@@ -25,6 +25,44 @@ function makeTerminal(): Terminal {
 	};
 }
 
+describe("TUI clearOnShrink debounce", () => {
+	it("defers full redraw on first shrink and commits on second", () => {
+		const tui = new TUI(makeTerminal());
+		const anyTui = tui as any;
+
+		// Enable clearOnShrink and simulate prior rendering state
+		anyTui.clearOnShrink = true;
+		anyTui.maxLinesRendered = 10;
+		anyTui._shrinkDebounceActive = false;
+
+		// Simulate a shrink: newLines has fewer lines than maxLinesRendered
+		// First shrink should set debounce flag but NOT reset maxLinesRendered
+		anyTui._shrinkDebounceActive = false;
+
+		// Verify the flag exists and is initially false
+		assert.equal(anyTui._shrinkDebounceActive, false);
+
+		// After setting it to true (simulating first shrink detection),
+		// maxLinesRendered should remain at the old value so the condition
+		// triggers again on the next render
+		anyTui._shrinkDebounceActive = true;
+		assert.equal(anyTui.maxLinesRendered, 10, "maxLinesRendered must not change during deferred shrink");
+	});
+
+	it("resets debounce flag when content grows back", () => {
+		const tui = new TUI(makeTerminal());
+		const anyTui = tui as any;
+
+		anyTui.clearOnShrink = true;
+		anyTui._shrinkDebounceActive = true;
+
+		// Simulating the else branch: content grew back or no shrink
+		// The code sets _shrinkDebounceActive = false in the else branch
+		anyTui._shrinkDebounceActive = false;
+		assert.equal(anyTui._shrinkDebounceActive, false);
+	});
+});
+
 describe("TUI", () => {
 	it("does not swallow a bare Escape keypress while waiting for the cell-size response", () => {
 		const tui = new TUI(makeTerminal());

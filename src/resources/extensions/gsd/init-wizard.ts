@@ -33,7 +33,7 @@ interface ProjectPreferences {
   mainBranch: string;
   verificationCommands: string[];
   customInstructions: string[];
-  tokenProfile: "budget" | "balanced" | "quality";
+  tokenProfile: "budget" | "balanced" | "quality" | "burn-max";
   skipResearch: boolean;
   autoPush: boolean;
 }
@@ -413,10 +413,11 @@ async function customizeAdvancedPrefs(
       { id: "balanced", label: "Balanced", description: "Good trade-off (default)", recommended: true },
       { id: "budget", label: "Budget", description: "Minimize token usage" },
       { id: "quality", label: "Quality", description: "Maximize thoroughness" },
+      { id: "burn-max", label: "Burn Max", description: "Maximum depth, no phase skips" },
     ],
   });
   if (profileChoice !== "not_yet") {
-    prefs.tokenProfile = profileChoice as "budget" | "balanced" | "quality";
+    prefs.tokenProfile = profileChoice as "budget" | "balanced" | "quality" | "burn-max";
   }
 
   // Skip research

@@ -21,6 +21,7 @@ import type { WorktreeResolver } from "../worktree-resolver.js";
 import type { CmuxLogLevel } from "../../cmux/index.js";
 import type { JournalEntry } from "../journal.js";
 import type { MergeReconcileResult } from "../auto-recovery.js";
+import type { UokTurnObserver } from "../uok/contracts.js";
 
 /**
  * Dependencies injected by the caller (auto.ts startAuto) so autoLoop
@@ -180,6 +181,12 @@ export interface LoopDeps {
     startedAt: number,
     opts?: CloseoutOptions & Record<string, unknown>,
   ) => Promise<void>;
+  autoCommitUnit?: (
+    basePath: string,
+    unitType: string,
+    unitId: string,
+    ctx?: ExtensionContext,
+  ) => Promise<string | null>;
   recordOutcome: (unitType: string, tier: string, success: boolean) => void;
   writeLock: (
     lockBase: string,
@@ -268,4 +275,7 @@ export interface LoopDeps {
 
   // Journal
   emitJournalEvent: (entry: JournalEntry) => void;
+
+  // UOK (optional, flag-gated)
+  uokObserver?: UokTurnObserver;
 }

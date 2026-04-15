@@ -2306,9 +2306,13 @@ export class InteractiveMode {
 
 	private rebuildChatFromMessages(): void {
 		this.chatContainer.clear();
+		this.pinnedMessageContainer.clear();
 		const context = this.sessionManager.buildSessionContext();
 		this.renderSessionContext(context);
-		this.populatePinnedFromMessages(context.messages);
+		// Pinned content NOT re-populated here — the streaming lifecycle in
+		// chat-controller.ts manages the pinned zone during active work.
+		// populatePinnedFromMessages() remains in renderInitialMessages()
+		// for the session-resume case at startup.
 	}
 
 	/**

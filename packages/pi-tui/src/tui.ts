@@ -255,6 +255,7 @@ export class TUI extends Container {
 	private cellSizeQueryPending = false;
 	private showHardwareCursor = process.env.PI_HARDWARE_CURSOR === "1" || process.env.TERM_PROGRAM === "WarpTerminal";
 	private clearOnShrink = process.env.PI_CLEAR_ON_SHRINK === "1"; // Clear empty rows when content shrinks (default: off)
+	private _shrinkDebounceActive = false;
 	private maxLinesRendered = 0; // Track terminal's working area (max lines ever rendered)
 	private previousViewportTop = 0; // Track previous viewport top for resize-aware cursor moves
 	private fullRedrawCount = 0;
@@ -723,9 +724,25 @@ export class TUI extends Container {
 		// (overlays need the padding, so only do this when no overlays are active)
 		// Configurable via setClearOnShrink() or PI_CLEAR_ON_SHRINK=0 env var
 		if (this.clearOnShrink && newLines.length < this.maxLinesRendered && this.overlayStack.length === 0) {
-			logRedraw(`clearOnShrink (maxLinesRendered=${this.maxLinesRendered})`);
-			fullRender(true);
-			return;
+			if (!this._shrinkDebounceActive) {
+				// First shrink detection: defer the full redraw by one tick.
+				// If content grows back immediately (pinned clear → new streaming),
+				// the full redraw is avoided.
+				this._shrinkDebounceActive = true;
+				// Do NOT update maxLinesRendered here — keep the old value so the
+				// condition `newLines.length < maxLinesRendered` still triggers on
+				// the next render if content stays shrunk.
+				logRedraw(`clearOnShrink deferred (maxLinesRendered=${this.maxLinesRendered})`);
+				// Fall through to differential render for this frame
+			} else {
+				// Still shrunk on second render — commit the full redraw
+				this._shrinkDebounceActive = false;
+				logRedraw(`clearOnShrink committed (maxLinesRendered=${this.maxLinesRendered})`);
+				fullRender(true);
+				return;
+			}
+		} else {
+			this._shrinkDebounceActive = false;
 		}
 
 		// Find first and last changed lines

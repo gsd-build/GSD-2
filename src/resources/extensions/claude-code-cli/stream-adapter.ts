@@ -97,6 +97,31 @@ interface ParsedTextInputField {
 	secure: boolean;
 }
 
+interface SDKInputImageBlock {
+	type: "image";
+	source: {
+		type: "base64";
+		media_type: string;
+		data: string;
+	};
+}
+
+interface SDKInputTextBlock {
+	type: "text";
+	text: string;
+}
+
+type SDKInputUserContentBlock = SDKInputImageBlock | SDKInputTextBlock;
+
+interface SDKInputUserMessage {
+	type: "user";
+	message: {
+		role: "user";
+		content: SDKInputUserContentBlock[];
+	};
+	parent_tool_use_id: null;
+}
+
 const OTHER_OPTION_LABEL = "None of the above";
 const SENSITIVE_FIELD_PATTERN = /(password|passphrase|secret|token|api[_\s-]*key|private[_\s-]*key|credential)/i;
 
@@ -221,6 +246,74 @@ export function buildPromptFromContext(context: Context): string {
 	}
 
 	return parts.join("\n\n");
+}
+
+function stripDataUriPrefix(value: string): string {
+	const commaIndex = value.indexOf(",");
+	if (value.startsWith("data:") && commaIndex !== -1) {
+		return value.slice(commaIndex + 1);
+	}
+	return value;
+}
+
+function inferMimeTypeFromDataUri(value: string): string | null {
+	const match = /^data:([^;,]+);base64,/.exec(value);
+	return match?.[1] ?? null;
+}
+
+export function extractImageBlocksFromContext(context: Context): SDKInputImageBlock[] {
+	const imageBlocks: SDKInputImageBlock[] = [];
+
+	for (const msg of context.messages) {
+		if (msg.role !== "user" || !Array.isArray(msg.content)) continue;
+		for (const part of msg.content) {
+			if (!part || typeof part !== "object") continue;
+			const block = part as { type?: unknown; data?: unknown; mimeType?: unknown };
+			if (block.type !== "image" || typeof block.data !== "string") continue;
+
+			const mimeType =
+				typeof block.mimeType === "string" && block.mimeType.length > 0
+					? block.mimeType
+					: inferMimeTypeFromDataUri(block.data);
+			if (!mimeType) continue;
+
+			imageBlocks.push({
+				type: "image",
+				source: {
+					type: "base64",
+					media_type: mimeType,
+					data: stripDataUriPrefix(block.data),
+				},
+			});
+		}
+	}
+
+	return imageBlocks;
+}
+
+export function buildSdkQueryPrompt(
+	context: Context,
+	textPrompt: string = buildPromptFromContext(context),
+): string | AsyncIterable<SDKInputUserMessage> {
+	const imageBlocks = extractImageBlocksFromContext(context);
+	if (imageBlocks.length === 0) {
+		return textPrompt;
+	}
+
+	const content: SDKInputUserContentBlock[] = [...imageBlocks];
+	if (textPrompt) {
+		content.push({ type: "text", text: textPrompt });
+	}
+
+	const sdkMessage: SDKInputUserMessage = {
+		type: "user",
+		message: { role: "user", content },
+		parent_tool_use_id: null,
+	};
+
+	return (async function* () {
+		yield sdkMessage;
+	})();
 }
 
 // ---------------------------------------------------------------------------
@@ -828,6 +921,7 @@ async function pumpSdkMessages(
 		}
 
 		const prompt = buildPromptFromContext(context);
+		const queryPrompt = buildSdkQueryPrompt(context, prompt);
 		const permissionMode = await resolveClaudePermissionMode();
 		const sdkOpts = buildSdkOptions(
 			modelId,
@@ -844,7 +938,7 @@ async function pumpSdkMessages(
 		);
 
 		const queryResult = sdk.query({
-			prompt,
+			prompt: queryPrompt,
 			options: {
 				...sdkOpts,
 				abortController: controller,

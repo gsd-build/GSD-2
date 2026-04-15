@@ -227,6 +227,26 @@ test("model change notify in selectAndApplyModel is gated behind verbose flag", 
   );
 });
 
+test("model policy resolves candidates from the policy-eligible pool", () => {
+  const src = readFileSync(join(__dirname, "..", "auto-model-selection.ts"), "utf-8");
+  assert.ok(
+    src.includes("const resolutionPool = uokFlags.modelPolicy ? routingEligibleModels : availableModels"),
+    "selectAndApplyModel should resolve model IDs against policy-eligible models when model policy is enabled",
+  );
+});
+
+test("model policy receives task metadata for requirement-vector decisions", () => {
+  const src = readFileSync(join(__dirname, "..", "auto-model-selection.ts"), "utf-8");
+  assert.ok(
+    src.includes("taskMetadata: taskMetadataForPolicy"),
+    "applyModelPolicyFilter should receive task metadata so requirement vectors are unit-aware",
+  );
+  assert.ok(
+    src.includes("extractTaskMetadata(unitId, basePath)"),
+    "execute-task dispatch should derive metadata before policy filtering",
+  );
+});
+
 test("resolveModelId: anthropic wins over claude-code when session provider is not claude-code", () => {
   const availableModels = [
     { id: "claude-sonnet-4-6", provider: "claude-code" },

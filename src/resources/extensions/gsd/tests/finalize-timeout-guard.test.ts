@@ -26,6 +26,14 @@ import { MAX_FINALIZE_TIMEOUTS } from "../auto/types.ts";
 
 const { assertTrue, assertEq, report } = createTestContext();
 
+function getRunFinalizeBody(phasesSource: string): string {
+  const fnIdx = phasesSource.indexOf("export async function runFinalize(");
+  assertTrue(fnIdx > 0, "runFinalize function should exist in phases.ts");
+
+  const nextExportIdx = phasesSource.indexOf("\nexport ", fnIdx + 1);
+  return phasesSource.slice(fnIdx, nextExportIdx > fnIdx ? nextExportIdx : undefined);
+}
+
 // ═══ Test: withTimeout resolves when inner promise resolves promptly ══════════
 
 {
@@ -145,11 +153,7 @@ const { assertTrue, assertEq, report } = createTestContext();
     "utf-8",
   );
 
-  // Find the runFinalize function body
-  const fnIdx = phasesSource.indexOf("export async function runFinalize(");
-  assertTrue(fnIdx > 0, "runFinalize function should exist in phases.ts");
-
-  const fnBody = phasesSource.slice(fnIdx, fnIdx + 8000);
+  const fnBody = getRunFinalizeBody(phasesSource);
 
   // postUnitPreVerification must be wrapped in withTimeout
   const preTimeoutIdx = fnBody.indexOf("withTimeout(");
@@ -207,8 +211,7 @@ const { assertTrue, assertEq, report } = createTestContext();
     "utf-8",
   );
 
-  const fnIdx = phasesSource.indexOf("export async function runFinalize(");
-  const fnBody = phasesSource.slice(fnIdx, fnIdx + 8000);
+  const fnBody = getRunFinalizeBody(phasesSource);
 
   // Both timeout handlers should increment consecutiveFinalizeTimeouts
   const incrementCount = (fnBody.match(/consecutiveFinalizeTimeouts\+\+/g) || []).length;

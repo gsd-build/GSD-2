@@ -106,6 +106,8 @@ export class AutoSession {
 
   // ── Current unit ─────────────────────────────────────────────────────────
   currentUnit: CurrentUnit | null = null;
+  currentTraceId: string | null = null;
+  currentTurnId: string | null = null;
   currentUnitRouting: UnitRouting | null = null;
   currentMilestoneId: string | null = null;
 
@@ -137,6 +139,10 @@ export class AutoSession {
   /** Set when a GSD tool execution ends with isError due to malformed/truncated
    *  JSON arguments. Checked by postUnitPreVerification to break retry loops. */
   lastToolInvocationError: string | null = null;
+  /** Set when turn-level git action fails during closeout. */
+  lastGitActionFailure: string | null = null;
+  /** Last turn-level git action status captured during finalize. */
+  lastGitActionStatus: "ok" | "failed" | null = null;
 
   // ── Isolation degradation ────────────────────────────────────────────
   /** Set to true when worktree creation fails; prevents merge of nonexistent branch. */
@@ -219,6 +225,8 @@ export class AutoSession {
 
     // Unit
     this.currentUnit = null;
+    this.currentTraceId = null;
+    this.currentTurnId = null;
     this.currentUnitRouting = null;
     this.currentMilestoneId = null;
 
@@ -250,6 +258,8 @@ export class AutoSession {
     this.rewriteAttemptCount = 0;
     this.consecutiveCompleteBootstraps = 0;
     this.lastToolInvocationError = null;
+    this.lastGitActionFailure = null;
+    this.lastGitActionStatus = null;
     this.isolationDegraded = false;
     this.milestoneMergedInPhases = false;
     this.checkpointSha = null;

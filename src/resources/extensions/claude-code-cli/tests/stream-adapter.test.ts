@@ -10,8 +10,10 @@ import {
 	mergePendingToolCalls,
 	resolveClaudePermissionMode,
 	buildPromptFromContext,
+	buildSdkQueryPrompt,
 	buildSdkOptions,
 	createClaudeCodeElicitationHandler,
+	extractImageBlocksFromContext,
 	extractToolResultsFromSdkUserMessage,
 	getClaudeLookupCommand,
 	parseAskUserQuestionsElicitation,
@@ -164,6 +166,92 @@ describe("stream-adapter — full context prompt (#2859)", () => {
 		const context: Context = { messages: [] };
 		const prompt = buildPromptFromContext(context);
 		assert.equal(prompt, "");
+	});
+});
+
+describe("stream-adapter — image prompt forwarding (#4183)", () => {
+	test("extractImageBlocksFromContext maps user image parts to Anthropic base64 image blocks", () => {
+		const context: Context = {
+			messages: [
+				{
+					role: "user",
+					content: [
+						{ type: "text", text: "look" },
+						{
+							type: "image",
+							data: "data:image/png;base64,abc123",
+							mimeType: "image/png",
+						},
+					],
+				} as Message,
+			],
+		};
+
+		const imageBlocks = extractImageBlocksFromContext(context);
+		assert.deepEqual(imageBlocks, [
+			{
+				type: "image",
+				source: {
+					type: "base64",
+					media_type: "image/png",
+					data: "abc123",
+				},
+			},
+		]);
+	});
+
+	test("buildSdkQueryPrompt returns plain string when no images exist in context", () => {
+		const context: Context = {
+			messages: [{ role: "user", content: "hello" } as Message],
+		};
+		const textPrompt = buildPromptFromContext(context);
+
+		const prompt = buildSdkQueryPrompt(context, textPrompt);
+		assert.equal(typeof prompt, "string");
+		assert.equal(prompt, textPrompt);
+	});
+
+	test("buildSdkQueryPrompt wraps images and prompt text in an SDK user message iterable", async () => {
+		const context: Context = {
+			messages: [
+				{
+					role: "user",
+					content: [
+						{ type: "image", data: "ZmFrZQ==", mimeType: "image/jpeg" },
+						{ type: "text", text: "What is in this image?" },
+					],
+				} as Message,
+			],
+		};
+		const textPrompt = buildPromptFromContext(context);
+
+		const prompt = buildSdkQueryPrompt(context, textPrompt);
+		assert.notEqual(typeof prompt, "string");
+		assert.ok(prompt && typeof (prompt as any)[Symbol.asyncIterator] === "function");
+
+		const messages: any[] = [];
+		for await (const item of prompt as AsyncIterable<any>) {
+			messages.push(item);
+		}
+		assert.equal(messages.length, 1);
+		assert.deepEqual(messages[0], {
+			type: "user",
+			message: {
+				role: "user",
+				content: [
+					{
+						type: "image",
+						source: {
+							type: "base64",
+							media_type: "image/jpeg",
+							data: "ZmFrZQ==",
+						},
+					},
+					{ type: "text", text: textPrompt },
+				],
+			},
+			parent_tool_use_id: null,
+		});
 	});
 });
 
