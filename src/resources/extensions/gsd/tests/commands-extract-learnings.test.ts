@@ -12,6 +12,7 @@ import {
   buildExtractLearningsPrompt,
   buildFrontmatter,
   extractProjectName,
+  type ExtractLearningsPromptContext,
 } from "../commands-extract-learnings.js";
 
 // ─── parseExtractLearningsArgs ────────────────────────────────────────────────
@@ -336,5 +337,77 @@ describe("extractProjectName", () => {
 
     const result = extractProjectName(tmpBase);
     assert.equal(result, tmpBase.split("/").at(-1));
+  });
+});
+
+// ─── buildExtractLearningsPrompt — Look for hints ────────────────────────────
+
+describe("buildExtractLearningsPrompt — Look for hints", () => {
+  function makeCtx(overrides: Partial<ExtractLearningsPromptContext> = {}): ExtractLearningsPromptContext {
+    return {
+      milestoneId: "M001",
+      milestoneName: "Auth System",
+      outputPath: "/project/.gsd/milestones/M001/M001-LEARNINGS.md",
+      relativeOutputPath: ".gsd/milestones/M001/M001-LEARNINGS.md",
+      planContent: "# M001 Plan\n\nDecided to use JWT.",
+      summaryContent: "# M001 Summary\n\nCompleted auth flow.",
+      verificationContent: null,
+      uatContent: null,
+      missingArtifacts: [],
+      projectName: "my-project",
+      ...overrides,
+    };
+  }
+
+  it("prompt includes Look for: block for Decisions", () => {
+    const prompt = buildExtractLearningsPrompt(makeCtx());
+    assert.ok(
+      prompt.includes("Look for:"),
+      "Expected at least one 'Look for:' block in prompt",
+    );
+  });
+
+  it("prompt has Look for: block in each of the 4 categories", () => {
+    const prompt = buildExtractLearningsPrompt(makeCtx());
+    const count = (prompt.match(/^Look for:/gm) ?? []).length;
+    assert.equal(count, 4, `Expected 4 'Look for:' blocks, got ${count}`);
+  });
+
+  it("Decisions Look for: block references PLAN.md", () => {
+    const prompt = buildExtractLearningsPrompt(makeCtx());
+    const decisionsSection = prompt.slice(
+      prompt.indexOf("### Decisions"),
+      prompt.indexOf("### Lessons"),
+    );
+    assert.ok(
+      decisionsSection.includes("PLAN.md"),
+      "Decisions Look for: block should reference PLAN.md",
+    );
+  });
+
+  it("Lessons Look for: block references VERIFICATION.md", () => {
+    const prompt = buildExtractLearningsPrompt(makeCtx());
+    const lessonsSection = prompt.slice(
+      prompt.indexOf("### Lessons"),
+      prompt.indexOf("### Patterns"),
+    );
+    assert.ok(
+      lessonsSection.includes("VERIFICATION.md"),
+      "Lessons Look for: block should reference VERIFICATION.md",
+    );
+  });
+
+  it("Surprises Look for: block mentions unexpected or deviation", () => {
+    const prompt = buildExtractLearningsPrompt(makeCtx());
+    const surprisesSection = prompt.slice(
+      prompt.indexOf("### Surprises"),
+      prompt.indexOf("### Source Attribution"),
+    );
+    assert.ok(
+      surprisesSection.toLowerCase().includes("unexpected") ||
+        surprisesSection.toLowerCase().includes("longer") ||
+        surprisesSection.toLowerCase().includes("shorter"),
+      "Surprises Look for: block should mention unexpected durations or deviations",
+    );
   });
 });

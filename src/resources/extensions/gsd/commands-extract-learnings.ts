@@ -114,14 +114,38 @@ Write a LEARNINGS document to \`${ctx.outputPath}\` with the following 4 section
 ### Decisions
 Key architectural and design decisions made during this milestone, including the rationale and alternatives considered.
 
+Look for:
+- Explicit decisions documented in PLAN.md or SUMMARY.md
+- Technology choices and their rationale
+- Trade-offs that were evaluated and why one option was chosen
+- Design decisions referenced in implementation notes
+
 ### Lessons
 What the team learned — technical discoveries, process insights, and knowledge gaps that were filled.
+
+Look for:
+- Unexpected complexity called out in SUMMARY.md
+- Issues discovered during verification (VERIFICATION.md)
+- Failed approaches and what replaced them
+- UAT feedback that revealed gaps in the original plan
 
 ### Patterns
 Reusable patterns, approaches, or solutions that emerged and should be applied in future work.
 
+Look for:
+- Successful implementation approaches described in SUMMARY.md
+- Testing patterns from VERIFICATION.md or UAT.md
+- Workflow or process patterns that saved time
+- Code or architecture patterns worth repeating
+
 ### Surprises
 Unexpected challenges, discoveries, or outcomes — things that deviated from assumptions.
+
+Look for:
+- Tasks that took significantly longer or shorter than expected
+- Unexpected dependencies or interactions between components
+- Edge cases not anticipated in planning
+- External factors (API changes, environment issues) that required adaptation
 
 ### Source Attribution (REQUIRED)
 
