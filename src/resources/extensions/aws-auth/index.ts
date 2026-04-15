@@ -19,14 +19,22 @@
  *
  * This extension is completely inert unless BOTH conditions are met:
  *   1. A Bedrock API request fails with a recognized AWS auth error
- *   2. `awsAuthRefresh` is configured in settings.json
+ *   2. A refresh command is available (explicit config OR auto-detected SSO profile)
  *
- * Non-Bedrock users and Bedrock users without `awsAuthRefresh` configured
- * are not affected in any way.
+ * ## Credential refresh resolution (in order)
  *
- * ## Setup
+ *   1. Explicit `awsAuthRefresh` in settings.json (project-level, then global)
+ *   2. `AWS_PROFILE` env var → `aws sso login --profile $AWS_PROFILE`
+ *   3. Auto-detected SSO profile from ~/.aws/config:
+ *      - Prefers profiles whose role name contains "bedrock" (case-insensitive)
+ *      - Falls back to the first SSO profile found
  *
- * Add to ~/.gsd/agent/settings.json (or project-level .gsd/settings.json):
+ * Non-Bedrock users and users without SSO profiles are not affected.
+ *
+ * ## Setup (optional — auto-detection usually works)
+ *
+ * Override auto-detection by adding to ~/.gsd/agent/settings.json
+ * (or project-level .gsd/settings.json):
  *
  *   { "awsAuthRefresh": "aws sso login --profile my-profile" }
  *
@@ -54,8 +62,71 @@ const AWS_AUTH_ERROR_RE =
 	/ExpiredToken|security token.*expired|unable to locate credentials|SSO.*(?:session|token).*(?:expired|not found|invalid)|UnrecognizedClient|Could not load credentials|Invalid identity token|token is expired|credentials.*(?:could not|cannot|failed to).*(?:load|resolve|find)|The.*token.*is.*not.*valid|token has expired|SSOTokenProviderFailure|Error loading SSO Token|Token.*does not exist/i;
 
 /**
- * Reads the `awsAuthRefresh` command from settings.json.
- * Checks project-level first, then global (~/.gsd/agent/settings.json).
+ * Parses ~/.aws/config to find SSO profiles.
+ * Returns the best profile name for `aws sso login --profile <name>`.
+ * Prefers profiles whose sso_role_name contains "bedrock".
+ */
+function detectSsoProfile(): string | undefined {
+	const configPath = join(homedir(), ".aws", "config");
+	if (!existsSync(configPath)) return undefined;
+
+	let content: string;
+	try {
+		content = readFileSync(configPath, "utf-8");
+	} catch {
+		return undefined;
+	}
+
+	interface SsoProfile {
+		name: string;
+		roleName?: string;
+	}
+
+	const profiles: SsoProfile[] = [];
+	let currentProfile: string | undefined;
+	let currentRoleName: string | undefined;
+	let isSso = false;
+
+	for (const line of content.split("\n")) {
+		const trimmed = line.trim();
+
+		const profileMatch = trimmed.match(/^\[profile\s+(.+)\]$/);
+		if (profileMatch || trimmed === "[default]") {
+			if (currentProfile && isSso) {
+				profiles.push({ name: currentProfile, roleName: currentRoleName });
+			}
+			currentProfile = profileMatch ? profileMatch[1] : "default";
+			currentRoleName = undefined;
+			isSso = false;
+			continue;
+		}
+
+		if (trimmed.startsWith("sso_session") || trimmed.startsWith("sso_start_url")) {
+			isSso = true;
+		}
+		const roleMatch = trimmed.match(/^sso_role_name\s*=\s*(.+)$/);
+		if (roleMatch) {
+			currentRoleName = roleMatch[1].trim();
+		}
+	}
+	if (currentProfile && isSso) {
+		profiles.push({ name: currentProfile, roleName: currentRoleName });
+	}
+
+	if (profiles.length === 0) return undefined;
+
+	const bedrockProfile = profiles.find((p) =>
+		p.roleName && /bedrock/i.test(p.roleName),
+	);
+
+	return (bedrockProfile || profiles[0]).name;
+}
+
+/**
+ * Resolves the refresh command using a three-tier fallback:
+ *   1. Explicit `awsAuthRefresh` in settings.json
+ *   2. `AWS_PROFILE` env var
+ *   3. Auto-detected SSO profile from ~/.aws/config
  */
 function getAwsAuthRefreshCommand(): string | undefined {
 	const configDir = process.env.PI_CONFIG_DIR || ".gsd";
@@ -70,6 +141,13 @@ function getAwsAuthRefreshCommand(): string | undefined {
 			if (settings.awsAuthRefresh) return settings.awsAuthRefresh;
 		} catch {}
 	}
+
+	const envProfile = process.env.AWS_PROFILE;
+	if (envProfile) return `aws sso login --profile ${envProfile}`;
+
+	const detected = detectSsoProfile();
+	if (detected) return `aws sso login --profile ${detected}`;
+
 	return undefined;
 }
 

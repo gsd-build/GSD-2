@@ -60,6 +60,7 @@ function modelToProviderId(model: string): string | null {
       anthropic: "anthropic",
       openai: "openai",
       "github-copilot": "github-copilot",
+      "amazon-bedrock": "amazon-bedrock",
     };
     if (prefixMap[prefix]) return prefixMap[prefix];
   }
@@ -71,6 +72,7 @@ function modelToProviderId(model: string): string | null {
   if (lower.startsWith("llama") || lower.startsWith("mixtral")) return "groq";
   if (lower.startsWith("grok"))          return "xai";
   if (lower.startsWith("mistral") || lower.startsWith("codestral")) return "mistral";
+  if (lower.startsWith("amazon.") || lower.startsWith("us.amazon.")) return "amazon-bedrock";
 
   return null;
 }
@@ -194,6 +196,7 @@ const CLI_AUTH_PROVIDERS = new Set([
   "openai-codex",
   "google-gemini-cli",
   "google-antigravity",
+  "amazon-bedrock",
 ]);
 
 function checkLlmProviders(): ProviderCheckResult[] {
