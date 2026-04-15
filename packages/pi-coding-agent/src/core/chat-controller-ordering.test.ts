@@ -234,7 +234,7 @@ test("chat-controller renders serverToolUse before trailing text matching conten
 	assert.equal(host.chatContainer.children[1]?.constructor?.name, "AssistantMessageComponent");
 });
 
-test("chat-controller drops provisional pre-tool text for claude-code MCP turns", async () => {
+test("chat-controller keeps pre-tool prose visible until post-tool prose arrives, then prunes it", async () => {
 	(globalThis as any)[Symbol.for("@gsd/pi-coding-agent:theme")] = {
 		fg: (_key: string, text: string) => text,
 		bg: (_key: string, text: string) => text,
@@ -273,7 +273,7 @@ test("chat-controller drops provisional pre-tool text for claude-code MCP turns"
 	assert.equal(host.chatContainer.children.length, 1);
 	assert.equal(host.chatContainer.children[0]?.constructor?.name, "AssistantMessageComponent");
 
-	// MCP tool appears; provisional text should be removed from the chat stack.
+	// MCP tool appears; provisional text should remain visible until post-tool prose exists.
 	await handleAgentEvent(
 		host,
 		{
@@ -294,11 +294,16 @@ test("chat-controller drops provisional pre-tool text for claude-code MCP turns"
 			},
 		} as any,
 	);
-	assert.equal(host.chatContainer.children.length, 1, "provisional pre-tool text should be pruned");
-	assert.equal(host.chatContainer.children[0]?.constructor?.name, "ToolExecutionComponent");
+	assert.equal(host.chatContainer.children.length, 2, "pre-tool prose should remain during tool-only window");
+	assert.equal(host.chatContainer.children[0]?.constructor?.name, "AssistantMessageComponent");
+	assert.equal(host.chatContainer.children[1]?.constructor?.name, "ToolExecutionComponent");
 
-	// Final assistant output should render below the tool.
-	const finalContent = [mcpTool, { type: "text", text: "Which missing feature matters most to you?" }];
+	// Post-tool prose arrives: pre-tool prose should now be pruned.
+	const finalContent = [
+		{ type: "text", text: "Let me inspect the workspace first." },
+		mcpTool,
+		{ type: "text", text: "Which missing feature matters most to you?" },
+	];
 	await handleAgentEvent(
 		host,
 		{
@@ -306,7 +311,7 @@ test("chat-controller drops provisional pre-tool text for claude-code MCP turns"
 			message: makeAssistant(finalContent),
 			assistantMessageEvent: {
 				type: "text_delta",
-				contentIndex: 1,
+				contentIndex: 2,
 				delta: "Which missing feature matters most to you?",
 				partial: makeAssistant(finalContent),
 			},
@@ -318,6 +323,73 @@ test("chat-controller drops provisional pre-tool text for claude-code MCP turns"
 
 	// Finalize to tear down any pinned spinner state.
 	await handleAgentEvent(host, { type: "message_end", message: makeAssistant(finalContent) } as any);
+});
+
+test("chat-controller keeps pre-tool thinking visible for claude-code MCP turns without post-tool prose", async () => {
+	(globalThis as any)[Symbol.for("@gsd/pi-coding-agent:theme")] = {
+		fg: (_key: string, text: string) => text,
+		bg: (_key: string, text: string) => text,
+		bold: (text: string) => text,
+		italic: (text: string) => text,
+		truncate: (text: string) => text,
+	};
+
+	const host = createHost();
+	host.getMarkdownThemeWithSettings = () => ({});
+
+	const mcpTool = {
+		type: "toolCall",
+		id: "mcp-tool-thinking-1",
+		name: "read",
+		mcpServer: "filesystem",
+		arguments: { filePath: "/tmp/demo.txt" },
+	};
+
+	await handleAgentEvent(host, { type: "message_start", message: makeAssistant([]) } as any);
+
+	const thinkingOnly = [{ type: "thinking", thinking: "I should inspect the workspace." }];
+	await handleAgentEvent(
+		host,
+		{
+			type: "message_update",
+			message: makeAssistant(thinkingOnly),
+			assistantMessageEvent: {
+				type: "thinking_delta",
+				contentIndex: 0,
+				delta: "I should inspect the workspace.",
+				partial: makeAssistant(thinkingOnly),
+			},
+		} as any,
+	);
+	assert.equal(host.chatContainer.children.length, 1);
+	assert.equal(host.chatContainer.children[0]?.constructor?.name, "AssistantMessageComponent");
+
+	await handleAgentEvent(
+		host,
+		{
+			type: "message_update",
+			message: makeAssistant([thinkingOnly[0], mcpTool]),
+			assistantMessageEvent: {
+				type: "toolcall_end",
+				contentIndex: 1,
+				toolCall: {
+					...mcpTool,
+					externalResult: {
+						content: [{ type: "text", text: "file preview" }],
+						details: {},
+						isError: false,
+					},
+				},
+				partial: makeAssistant([thinkingOnly[0], mcpTool]),
+			},
+		} as any,
+	);
+
+	assert.equal(host.chatContainer.children.length, 2, "thinking should remain visible while only tool output is present");
+	assert.equal(host.chatContainer.children[0]?.constructor?.name, "AssistantMessageComponent");
+	assert.equal(host.chatContainer.children[1]?.constructor?.name, "ToolExecutionComponent");
+
+	await handleAgentEvent(host, { type: "message_end", message: makeAssistant([thinkingOnly[0], mcpTool]) } as any);
 });
 
 test("chat-controller prunes orphaned provisional text after claude-code sub-turn shrink when MCP tools appear", async () => {
@@ -374,7 +446,7 @@ test("chat-controller prunes orphaned provisional text after claude-code sub-tur
 	);
 	assert.equal(host.chatContainer.children.length, 2, "shrink keeps prior text until MCP tool context appears");
 
-	// MCP tool appears in sub-turn 2: both old orphaned text and current pre-tool text should be pruned.
+	// MCP tool appears in sub-turn 2: tool-only windows keep provisional prose visible.
 	await handleAgentEvent(
 		host,
 		{
@@ -395,8 +467,10 @@ test("chat-controller prunes orphaned provisional text after claude-code sub-tur
 			},
 		} as any,
 	);
-	assert.equal(host.chatContainer.children.length, 1, "stale text runs should be removed once MCP tool is present");
-	assert.equal(host.chatContainer.children[0]?.constructor?.name, "ToolExecutionComponent");
+	assert.equal(host.chatContainer.children.length, 3, "stale text runs are deferred until post-tool prose arrives");
+	assert.equal(host.chatContainer.children[0]?.constructor?.name, "AssistantMessageComponent");
+	assert.equal(host.chatContainer.children[1]?.constructor?.name, "AssistantMessageComponent");
+	assert.equal(host.chatContainer.children[2]?.constructor?.name, "ToolExecutionComponent");
 
 	const finalContent = [mcpTool, { type: "text", text: "Final visible question?" }];
 	await handleAgentEvent(

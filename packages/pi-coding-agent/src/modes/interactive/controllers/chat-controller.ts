@@ -16,7 +16,13 @@ let lastContentLength = 0;
 
 // --- Segment walker state (per streaming assistant turn) ---
 type RenderedSegment =
-	| { kind: "text-run"; startIndex: number; endIndex: number; component: AssistantMessageComponent }
+	| {
+		kind: "text-run";
+		startIndex: number;
+		endIndex: number;
+		contentType: "text" | "thinking";
+		component: AssistantMessageComponent;
+	}
 	| { kind: "tool"; contentIndex: number; component: ToolExecutionComponent };
 
 let renderedSegments: RenderedSegment[] = [];
@@ -319,44 +325,75 @@ export async function handleAgentEvent(host: InteractiveModeStateHost & {
 						}
 						return false;
 					});
-					const shouldDropPreToolText = isClaudeCodeProvider && hasMcpToolBlock;
 					const firstToolIdx = blocks.findIndex((b: any) => b.type === "toolCall" || b.type === "serverToolUse");
+					const hasPostToolText = firstToolIdx >= 0
+						&& blocks.some(
+							(b: any, idx: number) => (
+								idx > firstToolIdx
+								&& b?.type === "text"
+								&& typeof b?.text === "string"
+								&& b.text.trim().length > 0
+							),
+						);
+					// Only prune provisional pre-tool prose after post-tool prose exists,
+					// so MCP tool-only windows do not blank the assistant content.
+					const shouldDropPreToolProse = isClaudeCodeProvider && hasMcpToolBlock && hasPostToolText;
 					type DesiredSegment =
-						| { kind: "text-run"; startIndex: number; endIndex: number }
+						| { kind: "text-run"; startIndex: number; endIndex: number; contentType: "text" | "thinking" }
 						| { kind: "tool"; contentIndex: number; toolId: string };
 					const desired: DesiredSegment[] = [];
 					let runStart = -1;
+					let runEnd = -1;
+					let runType: "text" | "thinking" | undefined;
+					const closeRun = () => {
+						if (runStart !== -1 && runType) {
+							desired.push({ kind: "text-run", startIndex: runStart, endIndex: runEnd, contentType: runType });
+							runStart = -1;
+							runEnd = -1;
+							runType = undefined;
+						}
+					};
 					for (let i = 0; i < blocks.length; i++) {
 						const b = blocks[i];
-						const isText = b.type === "text" || b.type === "thinking";
+						const blockType = b.type === "text" || b.type === "thinking" ? b.type : undefined;
+						const isTextLike = blockType === "text" || blockType === "thinking";
 						const isTool = b.type === "toolCall" || b.type === "serverToolUse";
-						if (isText) {
-							if (shouldDropPreToolText && firstToolIdx >= 0 && i < firstToolIdx) {
-								continue;
+						// For Claude Code MCP turns, prune only pre-tool prose, never thinking.
+						const shouldSkipProse = shouldDropPreToolProse && firstToolIdx >= 0 && i < firstToolIdx && blockType === "text";
+						if (shouldSkipProse) {
+							closeRun();
+							continue;
+						}
+						if (isTextLike) {
+							if (runStart === -1) {
+								runStart = i;
+								runEnd = i;
+								runType = blockType;
+							} else if (runType !== blockType) {
+								closeRun();
+								runStart = i;
+								runEnd = i;
+								runType = blockType;
+							} else {
+								runEnd = i;
 							}
-							if (runStart === -1) runStart = i;
 						} else {
-							if (runStart !== -1) {
-								desired.push({ kind: "text-run", startIndex: runStart, endIndex: i - 1 });
-								runStart = -1;
-							}
+							closeRun();
 							if (isTool) {
 								desired.push({ kind: "tool", contentIndex: i, toolId: b.id });
 							}
 						}
 					}
-					if (runStart !== -1) {
-						desired.push({ kind: "text-run", startIndex: runStart, endIndex: blocks.length - 1 });
-					}
+					closeRun();
 
 					// Claude Code MCP can emit provisional pre-tool prose that gets
 					// superseded by post-tool output. Prune stale text-run segments so
 					// the final assistant output remains below tool output.
-					if (shouldDropPreToolText && firstToolIdx >= 0) {
+					if (shouldDropPreToolProse && firstToolIdx >= 0) {
 						if (orphanedSegments.length > 0) {
 							const remainingOrphans: RenderedSegment[] = [];
 							for (const orphan of orphanedSegments) {
-								if (orphan.kind === "text-run") {
+								if (orphan.kind === "text-run" && orphan.contentType === "text") {
 									host.chatContainer.removeChild(orphan.component);
 									if (host.streamingComponent === orphan.component) {
 										host.streamingComponent = undefined;
@@ -367,10 +404,10 @@ export async function handleAgentEvent(host: InteractiveModeStateHost & {
 							}
 							orphanedSegments = remainingOrphans;
 						}
-						const desiredTextStarts = new Set(
+						const desiredTextKeys = new Set(
 							desired
 								.filter((seg): seg is Extract<DesiredSegment, { kind: "text-run" }> => seg.kind === "text-run")
-								.map((seg) => seg.startIndex),
+								.map((seg) => `${seg.contentType}:${seg.startIndex}`),
 						);
 						const desiredToolIndices = new Set(
 							desired
@@ -379,7 +416,11 @@ export async function handleAgentEvent(host: InteractiveModeStateHost & {
 						);
 						const nextRendered: RenderedSegment[] = [];
 						for (const seg of renderedSegments) {
-							if (seg.kind === "text-run" && !desiredTextStarts.has(seg.startIndex)) {
+							if (
+								seg.kind === "text-run"
+								&& seg.contentType === "text"
+								&& !desiredTextKeys.has(`${seg.contentType}:${seg.startIndex}`)
+							) {
 								host.chatContainer.removeChild(seg.component);
 								if (host.streamingComponent === seg.component) {
 									host.streamingComponent = undefined;
@@ -411,7 +452,7 @@ export async function handleAgentEvent(host: InteractiveModeStateHost & {
 						} else {
 							// text-run segment
 							const existing = renderedSegments.find(
-								(s) => s.kind === "text-run" && s.startIndex === seg.startIndex,
+								(s) => s.kind === "text-run" && s.startIndex === seg.startIndex && s.contentType === seg.contentType,
 							);
 							if (!existing) {
 								const comp = new AssistantMessageComponent(
@@ -422,7 +463,13 @@ export async function handleAgentEvent(host: InteractiveModeStateHost & {
 									{ startIndex: seg.startIndex, endIndex: seg.endIndex },
 								);
 								host.chatContainer.addChild(comp);
-								renderedSegments.push({ kind: "text-run", startIndex: seg.startIndex, endIndex: seg.endIndex, component: comp });
+								renderedSegments.push({
+									kind: "text-run",
+									startIndex: seg.startIndex,
+									endIndex: seg.endIndex,
+									contentType: seg.contentType,
+									component: comp,
+								});
 								host.streamingComponent = comp;
 							}
 						}
@@ -433,7 +480,9 @@ export async function handleAgentEvent(host: InteractiveModeStateHost & {
 					for (const seg of renderedSegments) {
 						if (seg.kind === "text-run") {
 							// Find corresponding desired segment to get current endIndex
-							const d = desired.find((ds) => ds.kind === "text-run" && ds.startIndex === seg.startIndex);
+							const d = desired.find(
+								(ds) => ds.kind === "text-run" && ds.startIndex === seg.startIndex && ds.contentType === seg.contentType,
+							);
 							if (d && d.kind === "text-run" && d.endIndex !== seg.endIndex) {
 								seg.endIndex = d.endIndex;
 								seg.component.setRange({ startIndex: seg.startIndex, endIndex: seg.endIndex });
