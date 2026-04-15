@@ -34,6 +34,7 @@ import {
 import { formatDecisionsCompact, formatRequirementsCompact } from "./structured-data-formatter.js";
 import { readPhaseAnchor, formatAnchorForPrompt } from "./phase-anchor.js";
 import { logWarning } from "./workflow-logger.js";
+import { inlineGraphSubgraph } from "./graph-context.js";
 
 // ─── Preamble Cap ─────────────────────────────────────────────────────────────
 
@@ -1175,6 +1176,10 @@ export async function buildResearchSlicePrompt(
   const knowledgeInlineRS = await inlineKnowledgeScoped(base, keywords);
   if (knowledgeInlineRS) inlined.push(knowledgeInlineRS);
 
+  // Knowledge graph: subgraph for this slice (graceful — skipped if no graph.json)
+  const graphBlockRS = await inlineGraphSubgraph(base, `${sid} ${sTitle}`, { budget: 3000 });
+  if (graphBlockRS) inlined.push(graphBlockRS);
+
   inlined.push(inlineTemplate("research", "Research"));
 
   const depContent = await inlineDependencySummaries(mid, sid, base);
@@ -1249,6 +1254,10 @@ export async function buildPlanSlicePrompt(
   const keywordsPS = extractKeywords(sTitle);
   const knowledgeInlinePS = await inlineKnowledgeScoped(base, keywordsPS);
   if (knowledgeInlinePS) inlined.push(knowledgeInlinePS);
+
+  // Knowledge graph: subgraph for this slice (graceful — skipped if no graph.json)
+  const graphBlockPS = await inlineGraphSubgraph(base, `${sid} ${sTitle}`, { budget: 3000 });
+  if (graphBlockPS) inlined.push(graphBlockPS);
 
   inlined.push(inlineTemplate("plan", "Slice Plan"));
   if (inlineLevel === "full") {
@@ -1366,12 +1375,16 @@ export async function buildExecuteTaskPrompt(
   // Only include if it has content (not a "not found" result)
   const knowledgeContent = knowledgeInlineET && !knowledgeInlineET.includes("not found") ? knowledgeInlineET : null;
 
+  // Knowledge graph: tight subgraph for this task (graceful — skipped if no graph.json)
+  const graphBlockET = await inlineGraphSubgraph(base, `${tid} ${tTitle}`, { budget: 2000 });
+
   const inlinedTemplates = inlineLevel === "minimal"
     ? inlineTemplate("task-summary", "Task Summary")
     : [
         inlineTemplate("task-summary", "Task Summary"),
         inlineTemplate("decisions", "Decisions"),
         ...(knowledgeContent ? [knowledgeContent] : []),
+        ...(graphBlockET ? [graphBlockET] : []),
       ].join("\n\n---\n\n");
 
   const taskSummaryPath = join(base, `${relSlicePath(base, mid, sid)}/tasks/${tid}-SUMMARY.md`);

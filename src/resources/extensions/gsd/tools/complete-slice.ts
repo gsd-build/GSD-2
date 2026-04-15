@@ -424,6 +424,25 @@ export async function handleCompleteSlice(
     logError("tool", `complete-slice event log FAILED — completion invisible to reconciliation`, { error: (eventErr as Error).message });
   }
 
+  // Fire-and-forget graph rebuild — must NOT await, must NOT crash slice completion.
+  // Dynamic import of the package name (not a relative path) so it resolves
+  // correctly via package.json#exports in both development and production.
+  // eslint-disable-next-line @typescript-eslint/no-floating-promises
+  (async () => {
+    try {
+      const graphMod = await import("@gsd-build/mcp-server") as {
+        buildGraph: (dir: string) => Promise<{ nodes: unknown[]; edges: unknown[]; builtAt: string }>;
+        writeGraph: (gsdRoot: string, graph: unknown) => Promise<void>;
+        resolveGsdRoot: (basePath: string) => string;
+      };
+      const g = await graphMod.buildGraph(basePath);
+      await graphMod.writeGraph(graphMod.resolveGsdRoot(basePath), g);
+    } catch (graphErr) {
+      // Graph rebuild is best-effort — log at warning level but never propagate
+      logWarning("tool", `complete-slice graph rebuild failed (non-fatal): ${(graphErr as Error).message ?? String(graphErr)}`);
+    }
+  })();
+
   return {
     sliceId: params.sliceId,
     milestoneId: params.milestoneId,

@@ -172,6 +172,84 @@ if (cliFlags.messages[0] === 'update') {
   process.exit(0)
 }
 
+// ---------------------------------------------------------------------------
+// Graph subcommand — `gsd graph build|status|query|diff`
+// ---------------------------------------------------------------------------
+if (cliFlags.messages[0] === 'graph') {
+  const sub = cliFlags.messages[1]
+  const { buildGraph, writeGraph, graphStatus, graphQuery, graphDiff, resolveGsdRoot } = await import('@gsd-build/mcp-server')
+
+  const projectDir = process.cwd()
+  const gsdRoot = resolveGsdRoot(projectDir)
+
+  if (!sub || sub === 'build') {
+    try {
+      const graph = await buildGraph(projectDir)
+      await writeGraph(gsdRoot, graph)
+      process.stdout.write(`Graph built: ${graph.nodes.length} nodes, ${graph.edges.length} edges\n`)
+    } catch (err) {
+      process.stderr.write(`[gsd] graph build failed: ${err instanceof Error ? err.message : String(err)}\n`)
+      process.exit(1)
+    }
+  } else if (sub === 'status') {
+    try {
+      const result = await graphStatus(projectDir)
+      if (!result.exists) {
+        process.stdout.write('Graph: not built yet. Run: gsd graph build\n')
+      } else {
+        process.stdout.write(`Graph status:\n`)
+        process.stdout.write(`  exists:    ${result.exists}\n`)
+        process.stdout.write(`  nodes:     ${result.nodeCount}\n`)
+        process.stdout.write(`  edges:     ${result.edgeCount}\n`)
+        process.stdout.write(`  stale:     ${result.stale}\n`)
+        process.stdout.write(`  ageHours:  ${result.ageHours !== undefined ? result.ageHours.toFixed(2) : 'n/a'}\n`)
+        process.stdout.write(`  lastBuild: ${result.lastBuild ?? 'n/a'}\n`)
+      }
+    } catch (err) {
+      process.stderr.write(`[gsd] graph status failed: ${err instanceof Error ? err.message : String(err)}\n`)
+      process.exit(1)
+    }
+  } else if (sub === 'query') {
+    const term = cliFlags.messages[2]
+    if (!term) {
+      process.stderr.write('Usage: gsd graph query <term>\n')
+      process.exit(1)
+    }
+    try {
+      const result = await graphQuery(projectDir, term)
+      if (result.nodes.length === 0) {
+        process.stdout.write(`No nodes found for term: "${term}"\n`)
+      } else {
+        process.stdout.write(`Query results for "${term}" (${result.nodes.length} nodes, ${result.edges.length} edges):\n`)
+        for (const node of result.nodes) {
+          process.stdout.write(`  [${node.type}] ${node.label} (${node.confidence})\n`)
+        }
+      }
+    } catch (err) {
+      process.stderr.write(`[gsd] graph query failed: ${err instanceof Error ? err.message : String(err)}\n`)
+      process.exit(1)
+    }
+  } else if (sub === 'diff') {
+    try {
+      const result = await graphDiff(projectDir)
+      process.stdout.write(`Graph diff:\n`)
+      process.stdout.write(`  nodes added:    ${result.nodes.added.length}\n`)
+      process.stdout.write(`  nodes removed:  ${result.nodes.removed.length}\n`)
+      process.stdout.write(`  nodes changed:  ${result.nodes.changed.length}\n`)
+      process.stdout.write(`  edges added:    ${result.edges.added.length}\n`)
+      process.stdout.write(`  edges removed:  ${result.edges.removed.length}\n`)
+    } catch (err) {
+      process.stderr.write(`[gsd] graph diff failed: ${err instanceof Error ? err.message : String(err)}\n`)
+      process.exit(1)
+    }
+  } else {
+    process.stderr.write(`Unknown graph command: ${sub}\n`)
+    process.stderr.write('Commands: build, status, query <term>, diff\n')
+    process.exit(1)
+  }
+  process.exit(0)
+}
+
 exitIfManagedResourcesAreNewer(agentDir)
 
 // Early TTY check — must come before heavy initialization to avoid dangling
