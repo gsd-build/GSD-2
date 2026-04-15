@@ -1,9 +1,10 @@
 import type { ExtensionUIContext } from "../../../core/extensions/index.js";
 
+import type { ExtensionUIControllerHost } from "../interactive-mode-state.js";
 import { Theme, getAvailableThemesWithPaths, getThemeByName, setTheme, setThemeInstance, theme } from "../theme/theme.js";
 import { appKey } from "../components/keybinding-hints.js";
 
-export function createExtensionUIContext(host: any): ExtensionUIContext {
+export function createExtensionUIContext(host: ExtensionUIControllerHost): ExtensionUIContext {
 	return {
 		select: (title, options, opts) => host.showExtensionSelector(title, options, opts),
 		confirm: (title, message, opts) => host.showExtensionConfirm(title, message, opts),

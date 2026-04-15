@@ -161,122 +161,125 @@ export interface InteractiveModeOptions {
 export class InteractiveMode {
 	// Cap rendered chat components to prevent unbounded memory/CPU growth.
 	// Only render-components are removed — session transcript stays on disk.
-	private static readonly MAX_CHAT_COMPONENTS = 100;
+	static readonly MAX_CHAT_COMPONENTS = 100;
 
-	private session: AgentSession;
-	private ui: TUI;
-	private chatContainer: Container;
-	private pendingMessagesContainer: Container;
-	private statusContainer: Container;
-	private pinnedMessageContainer: Container;
-	private defaultEditor: CustomEditor;
-	private editor: EditorComponent;
-	private autocompleteProvider: CombinedAutocompleteProvider | undefined;
-	private editorContainer: Container;
-	private footer: FooterComponent;
-	private footerDataProvider: FooterDataProvider;
-	private keybindings: KeybindingsManager;
-	private version: string;
-	private isInitialized = false;
-	private onInputCallback?: (text: string) => void;
-	private loadingAnimation: Loader | undefined = undefined;
-	private pendingWorkingMessage: string | undefined = undefined;
-	private readonly defaultWorkingMessage = "Working...";
+	session: AgentSession;
+	ui: TUI;
+	chatContainer: Container;
+	pendingMessagesContainer: Container;
+	statusContainer: Container;
+	pinnedMessageContainer: Container;
+	defaultEditor: CustomEditor;
+	editor: EditorComponent;
+	autocompleteProvider: CombinedAutocompleteProvider | undefined;
+	editorContainer: Container;
+	footer: FooterComponent;
+	footerDataProvider: FooterDataProvider;
+	keybindings: KeybindingsManager;
+	version: string;
+	isInitialized = false;
+	onInputCallback?: (text: string) => void;
+	loadingAnimation: Loader | undefined = undefined;
+	pendingWorkingMessage: string | undefined = undefined;
+	readonly defaultWorkingMessage = "Working...";
 
-	private lastSigintTime = 0;
-	private lastEscapeTime = 0;
-	private changelogMarkdown: string | undefined = undefined;
+	lastSigintTime = 0;
+	lastEscapeTime = 0;
+	changelogMarkdown: string | undefined = undefined;
 
 	// Status line tracking (for mutating immediately-sequential status updates)
-	private lastStatusSpacer: Spacer | undefined = undefined;
-	private lastStatusText: Text | undefined = undefined;
+	lastStatusSpacer: Spacer | undefined = undefined;
+	lastStatusText: Text | undefined = undefined;
 
 	// Streaming message tracking
-	private streamingComponent: AssistantMessageComponent | undefined = undefined;
-	private streamingMessage: AssistantMessage | undefined = undefined;
+	streamingComponent: AssistantMessageComponent | undefined = undefined;
+	streamingMessage: AssistantMessage | undefined = undefined;
 
 	// Tool execution tracking: toolCallId -> component
-	private pendingTools = new Map<string, ToolExecutionComponent>();
+	pendingTools = new Map<string, ToolExecutionComponent>();
 
 	// Tool output expansion state
-	private toolOutputExpanded = false;
+	toolOutputExpanded = false;
 
 	// Thinking block visibility state
-	private hideThinkingBlock = false;
+	hideThinkingBlock = false;
 
 	// Skill commands: command name -> skill file path
-	private skillCommands = new Map<string, string>();
+	skillCommands = new Map<string, string>();
 
 	// Agent subscription unsubscribe function
-	private unsubscribe?: () => void;
+	unsubscribe?: () => void;
 
 	// Branch change listener unsubscribe function
-	private _branchChangeUnsub?: () => void;
+	_branchChangeUnsub?: () => void;
+
+	// Theme change listener unsubscribe function
+	_themeChangeUnsub?: () => void;
 
 	// Track if editor is in bash mode (text starts with !)
-	private isBashMode = false;
+	isBashMode = false;
 
 	// Contextual tips — session-scoped, non-intrusive hints
-	private contextualTips = new ContextualTips();
+	contextualTips = new ContextualTips();
 
 	// Track current bash execution component
-	private bashComponent: BashExecutionComponent | undefined = undefined;
+	bashComponent: BashExecutionComponent | undefined = undefined;
 
 	// Track pending bash components (shown in pending area, moved to chat on submit)
-	private pendingBashComponents: BashExecutionComponent[] = [];
+	pendingBashComponents: BashExecutionComponent[] = [];
 
 	// Auto-compaction state
-	private autoCompactionLoader: Loader | undefined = undefined;
-	private autoCompactionEscapeHandler?: () => void;
+	autoCompactionLoader: Loader | undefined = undefined;
+	autoCompactionEscapeHandler?: () => void;
 
 	// Auto-retry state
-	private retryLoader: Loader | undefined = undefined;
-	private retryEscapeHandler?: () => void;
+	retryLoader: Loader | undefined = undefined;
+	retryEscapeHandler?: () => void;
 
 	// Messages queued while compaction is running
-	private compactionQueuedMessages: CompactionQueuedMessage[] = [];
+	compactionQueuedMessages: CompactionQueuedMessage[] = [];
 
 	// Shutdown state
-	private shutdownRequested = false;
+	shutdownRequested = false;
 
 	// Extension UI state
-	private extensionSelector: ExtensionSelectorComponent | undefined = undefined;
-	private extensionInput: ExtensionInputComponent | undefined = undefined;
-	private extensionEditor: ExtensionEditorComponent | undefined = undefined;
-	private extensionTerminalInputUnsubscribers = new Set<() => void>();
+	extensionSelector: ExtensionSelectorComponent | undefined = undefined;
+	extensionInput: ExtensionInputComponent | undefined = undefined;
+	extensionEditor: ExtensionEditorComponent | undefined = undefined;
+	extensionTerminalInputUnsubscribers = new Set<() => void>();
 
 	// Extension widgets (components rendered above/below the editor)
-	private extensionWidgetsAbove = new Map<string, Component & { dispose?(): void }>();
-	private extensionWidgetsBelow = new Map<string, Component & { dispose?(): void }>();
-	private widgetContainerAbove!: Container;
-	private widgetContainerBelow!: Container;
+	extensionWidgetsAbove = new Map<string, Component & { dispose?(): void }>();
+	extensionWidgetsBelow = new Map<string, Component & { dispose?(): void }>();
+	widgetContainerAbove!: Container;
+	widgetContainerBelow!: Container;
 
 	// Custom footer from extension (undefined = use built-in footer)
-	private customFooter: (Component & { dispose?(): void }) | undefined = undefined;
+	customFooter: (Component & { dispose?(): void }) | undefined = undefined;
 
 	// Header container that holds the built-in or custom header
-	private headerContainer: Container;
+	headerContainer: Container;
 
 	// Built-in header (logo + keybinding hints + changelog)
-	private builtInHeader: Component | undefined = undefined;
+	builtInHeader: Component | undefined = undefined;
 
 	// Custom header from extension (undefined = use built-in header)
-	private customHeader: (Component & { dispose?(): void }) | undefined = undefined;
+	customHeader: (Component & { dispose?(): void }) | undefined = undefined;
 
 	// Convenience accessors
-	private get agent() {
+	get agent() {
 		return this.session.agent;
 	}
-	private get sessionManager() {
+	get sessionManager() {
 		return this.session.sessionManager;
 	}
-	private get settingsManager() {
+	get settingsManager() {
 		return this.session.settingsManager;
 	}
 
 	constructor(
 		session: AgentSession,
-		private options: InteractiveModeOptions = {},
+		public options: InteractiveModeOptions = {},
 	) {
 		this.session = session;
 		this.version = VERSION;
@@ -311,7 +314,7 @@ export class InteractiveMode {
 		initTheme(this.settingsManager.getTheme(), true);
 	}
 
-	private setupAutocomplete(): void {
+	setupAutocomplete(): void {
 		// Define commands for autocomplete
 		const slashCommands: SlashCommand[] = BUILTIN_SLASH_COMMANDS.map((command) => ({
 			name: command.name,
@@ -520,7 +523,7 @@ export class InteractiveMode {
 		this.subscribeToAgent();
 
 		// Set up theme file watcher
-		onThemeChange(() => {
+		this._themeChangeUnsub = onThemeChange(() => {
 			this.ui.invalidate();
 			this.updateEditorBorderColor();
 			this.ui.requestRender();
@@ -538,7 +541,7 @@ export class InteractiveMode {
 	/**
 	 * Update terminal title with session name and cwd.
 	 */
-	private updateTerminalTitle(): void {
+	updateTerminalTitle(): void {
 		const cwdBasename = path.basename(process.cwd());
 		const sessionName = this.sessionManager.getSessionName();
 		if (sessionName) {
@@ -621,7 +624,7 @@ export class InteractiveMode {
 	/**
 	 * Check npm registry for a newer version.
 	 */
-	private async checkForNewVersion(): Promise<string | undefined> {
+	async checkForNewVersion(): Promise<string | undefined> {
 		if (process.env.PI_SKIP_VERSION_CHECK || process.env.PI_OFFLINE) return undefined;
 
 		try {
@@ -643,7 +646,7 @@ export class InteractiveMode {
 		}
 	}
 
-	private async checkTmuxKeyboardSetup(): Promise<string | undefined> {
+	async checkTmuxKeyboardSetup(): Promise<string | undefined> {
 		if (!process.env.TMUX) return undefined;
 
 		const runTmuxShow = (option: string): Promise<string | undefined> => {
@@ -691,7 +694,7 @@ export class InteractiveMode {
 	 * Get changelog entries to display on startup.
 	 * Only shows new entries since last seen version, skips for resumed sessions.
 	 */
-	private getChangelogForDisplay(): string | undefined {
+	getChangelogForDisplay(): string | undefined {
 		// Skip changelog for resumed/continued sessions (already have messages)
 		if (this.session.state.messages.length > 0) {
 			return undefined;
@@ -716,7 +719,7 @@ export class InteractiveMode {
 		return undefined;
 	}
 
-	private getMarkdownThemeWithSettings(): MarkdownTheme {
+	getMarkdownThemeWithSettings(): MarkdownTheme {
 		return {
 			...getMarkdownTheme(),
 			codeBlockIndent: this.settingsManager.getCodeBlockIndent(),
@@ -727,7 +730,7 @@ export class InteractiveMode {
 	// Extension System
 	// =========================================================================
 
-	private formatDisplayPath(p: string): string {
+	formatDisplayPath(p: string): string {
 		const home = os.homedir();
 		let result = p;
 
@@ -742,7 +745,7 @@ export class InteractiveMode {
 	/**
 	 * Get a short path relative to the package root for display.
 	 */
-	private getShortPath(fullPath: string, source: string): string {
+	getShortPath(fullPath: string, source: string): string {
 		// For npm packages, show path relative to node_modules/pkg/
 		const npmMatch = fullPath.match(/node_modules\/(@?[^/]+(?:\/[^/]+)?)\/(.*)/);
 		if (npmMatch && source.startsWith("npm:")) {
@@ -759,7 +762,7 @@ export class InteractiveMode {
 		return this.formatDisplayPath(fullPath);
 	}
 
-	private getDisplaySourceInfo(
+	getDisplaySourceInfo(
 		source: string,
 		scope: string,
 	): { label: string; scopeLabel?: string; color: "accent" | "muted" } {
@@ -785,18 +788,18 @@ export class InteractiveMode {
 		return { label: source, scopeLabel, color: "accent" };
 	}
 
-	private getScopeGroup(source: string, scope: string): "user" | "project" | "path" {
+	getScopeGroup(source: string, scope: string): "user" | "project" | "path" {
 		if (source === "cli" || scope === "temporary") return "path";
 		if (scope === "user") return "user";
 		if (scope === "project") return "project";
 		return "path";
 	}
 
-	private isPackageSource(source: string): boolean {
+	isPackageSource(source: string): boolean {
 		return source.startsWith("npm:") || source.startsWith("git:");
 	}
 
-	private buildScopeGroups(
+	buildScopeGroups(
 		paths: string[],
 		metadata: Map<string, { source: string; scope: string; origin: string }>,
 	): Array<{ scope: "user" | "project" | "path"; paths: string[]; packages: Map<string, string[]> }> {
@@ -830,7 +833,7 @@ export class InteractiveMode {
 		);
 	}
 
-	private formatScopeGroups(
+	formatScopeGroups(
 		groups: Array<{ scope: "user" | "project" | "path"; paths: string[]; packages: Map<string, string[]> }>,
 		options: {
 			formatPath: (p: string) => string;
@@ -864,7 +867,7 @@ export class InteractiveMode {
 	 * Find metadata for a path, checking parent directories if exact match fails.
 	 * Package manager stores metadata for directories, but we display file paths.
 	 */
-	private findMetadata(
+	findMetadata(
 		p: string,
 		metadata: Map<string, { source: string; scope: string; origin: string }>,
 	): { source: string; scope: string; origin: string } | undefined {
@@ -888,7 +891,7 @@ export class InteractiveMode {
 	/**
 	 * Format a path with its source/scope info from metadata.
 	 */
-	private formatPathWithSource(
+	formatPathWithSource(
 		p: string,
 		metadata: Map<string, { source: string; scope: string; origin: string }>,
 	): string {
@@ -905,7 +908,7 @@ export class InteractiveMode {
 	/**
 	 * Format resource diagnostics with nice collision display using metadata.
 	 */
-	private formatDiagnostics(
+	formatDiagnostics(
 		diagnostics: readonly ResourceDiagnostic[],
 		metadata: Map<string, { source: string; scope: string; origin: string }>,
 	): string {
@@ -962,7 +965,7 @@ export class InteractiveMode {
 		return lines.join("\n");
 	}
 
-	private showLoadedResources(options?: {
+	showLoadedResources(options?: {
 		extensionPaths?: string[];
 		force?: boolean;
 		showDiagnosticsWhenQuiet?: boolean;
@@ -1110,7 +1113,7 @@ export class InteractiveMode {
 	/**
 	 * Initialize the extension system with TUI-based UI context.
 	 */
-	private async initExtensions(): Promise<void> {
+	async initExtensions(): Promise<void> {
 		if (this.options.bindExtensions !== false) {
 			const uiContext = this.createExtensionUIContext();
 			await this.session.bindExtensions({
@@ -1213,14 +1216,14 @@ export class InteractiveMode {
 	/**
 	 * Get a tool definition by name (for custom rendering).
 	 */
-	private getRegisteredToolDefinition(toolName: string) {
+	getRegisteredToolDefinition(toolName: string) {
 		return this.session.getRenderableToolDefinition(toolName);
 	}
 
 	/**
 	 * Format web search result content for display in the TUI.
 	 */
-	private formatWebSearchResult(content: unknown): string {
+	formatWebSearchResult(content: unknown): string {
 		if (!content) return "Web search completed";
 
 		// Error result
@@ -1248,7 +1251,7 @@ export class InteractiveMode {
 	/**
 	 * Set up keyboard shortcuts registered by extensions.
 	 */
-	private setupExtensionShortcuts(extensionRunner: ExtensionRunner): void {
+	setupExtensionShortcuts(extensionRunner: ExtensionRunner): void {
 		const shortcuts = extensionRunner.getShortcuts(this.keybindings.getEffectiveConfig());
 		if (shortcuts.size === 0) return;
 
@@ -1302,7 +1305,7 @@ export class InteractiveMode {
 	/**
 	 * Set extension status text in the footer.
 	 */
-	private setExtensionStatus(key: string, text: string | undefined): void {
+	setExtensionStatus(key: string, text: string | undefined): void {
 		this.footerDataProvider.setExtensionStatus(key, text);
 		this.ui.requestRender();
 	}
@@ -1310,7 +1313,7 @@ export class InteractiveMode {
 	/**
 	 * Set an extension widget (string array or custom component).
 	 */
-	private setExtensionWidget(
+	setExtensionWidget(
 		key: string,
 		content: string[] | ((tui: TUI, thm: Theme) => Component & { dispose?(): void }) | undefined,
 		options?: ExtensionWidgetOptions,
@@ -1352,7 +1355,7 @@ export class InteractiveMode {
 		this.renderWidgets();
 	}
 
-	private clearExtensionWidgets(): void {
+	clearExtensionWidgets(): void {
 		for (const widget of this.extensionWidgetsAbove.values()) {
 			widget.dispose?.();
 		}
@@ -1364,7 +1367,7 @@ export class InteractiveMode {
 		this.renderWidgets();
 	}
 
-	private resetExtensionUI(): void {
+	resetExtensionUI(): void {
 		if (this.extensionSelector) {
 			this.hideExtensionSelector();
 		}
@@ -1392,12 +1395,12 @@ export class InteractiveMode {
 	}
 
 	// Maximum total widget lines to prevent viewport overflow
-	private static readonly MAX_WIDGET_LINES = 10;
+	static readonly MAX_WIDGET_LINES = 10;
 
 	/**
 	 * Render all extension widgets to the widget container.
 	 */
-	private renderWidgets(): void {
+	renderWidgets(): void {
 		if (!this.widgetContainerAbove || !this.widgetContainerBelow) return;
 
 		// widgetContainerAbove: spacer collapses when pinned content is visible
@@ -1418,7 +1421,7 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	private renderWidgetContainer(
+	renderWidgetContainer(
 		container: Container,
 		widgets: Map<string, Component & { dispose?(): void }>,
 		spacerWhenEmpty: boolean,
@@ -1446,7 +1449,7 @@ export class InteractiveMode {
 	/**
 	 * Set a custom footer component, or restore the built-in footer.
 	 */
-	private setExtensionFooter(
+	setExtensionFooter(
 		factory:
 			| ((tui: TUI, thm: Theme, footerData: ReadonlyFooterDataProvider) => Component & { dispose?(): void })
 			| undefined,
@@ -1479,7 +1482,7 @@ export class InteractiveMode {
 	/**
 	 * Set a custom header component, or restore the built-in header.
 	 */
-	private setExtensionHeader(factory: ((tui: TUI, thm: Theme) => Component & { dispose?(): void }) | undefined): void {
+	setExtensionHeader(factory: ((tui: TUI, thm: Theme) => Component & { dispose?(): void }) | undefined): void {
 		// Header may not be initialized yet if called during early initialization
 		if (!this.builtInHeader) {
 			return;
@@ -1514,7 +1517,7 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	private addExtensionTerminalInputListener(
+	addExtensionTerminalInputListener(
 		handler: (data: string) => { consume?: boolean; data?: string } | undefined,
 	): () => void {
 		const unsubscribe = this.ui.addInputListener(handler);
@@ -1525,7 +1528,7 @@ export class InteractiveMode {
 		};
 	}
 
-	private clearExtensionTerminalInputListeners(): void {
+	clearExtensionTerminalInputListeners(): void {
 		for (const unsubscribe of this.extensionTerminalInputUnsubscribers) {
 			unsubscribe();
 		}
@@ -1535,7 +1538,7 @@ export class InteractiveMode {
 	/**
 	 * Create the ExtensionUIContext for extensions.
 	 */
-	private createExtensionUIContext(): ExtensionUIContext {
+	createExtensionUIContext(): ExtensionUIContext {
 		return buildExtensionUIContext(this);
 	}
 
@@ -1546,7 +1549,7 @@ export class InteractiveMode {
 	/**
 	 * Show a selector for extensions.
 	 */
-	private showExtensionSelector(
+	showExtensionSelector(
 		title: string,
 		options: string[],
 		opts?: ExtensionUIDialogOptions,
@@ -1596,7 +1599,7 @@ export class InteractiveMode {
 	/**
 	 * Hide the extension selector.
 	 */
-	private hideExtensionSelector(): void {
+	hideExtensionSelector(): void {
 		this.extensionSelector?.dispose();
 		this.editorContainer.clear();
 		this.editorContainer.addChild(this.editor);
@@ -1608,7 +1611,7 @@ export class InteractiveMode {
 	/**
 	 * Show a confirmation dialog for extensions.
 	 */
-	private async showExtensionConfirm(
+	async showExtensionConfirm(
 		title: string,
 		message: string,
 		opts?: ExtensionUIDialogOptions,
@@ -1620,7 +1623,7 @@ export class InteractiveMode {
 	/**
 	 * Show a text input for extensions.
 	 */
-	private showExtensionInput(
+	showExtensionInput(
 		title: string,
 		placeholder?: string,
 		opts?: ExtensionUIDialogOptions,
@@ -1663,7 +1666,7 @@ export class InteractiveMode {
 	/**
 	 * Hide the extension input.
 	 */
-	private hideExtensionInput(): void {
+	hideExtensionInput(): void {
 		this.extensionInput?.dispose();
 		this.editorContainer.clear();
 		this.editorContainer.addChild(this.editor);
@@ -1675,7 +1678,7 @@ export class InteractiveMode {
 	/**
 	 * Show a multi-line editor for extensions (with Ctrl+G support).
 	 */
-	private showExtensionEditor(title: string, prefill?: string): Promise<string | undefined> {
+	showExtensionEditor(title: string, prefill?: string): Promise<string | undefined> {
 		return new Promise((resolve) => {
 			this.extensionEditor = new ExtensionEditorComponent(
 				this.ui,
@@ -1702,7 +1705,7 @@ export class InteractiveMode {
 	/**
 	 * Hide the extension editor.
 	 */
-	private hideExtensionEditor(): void {
+	hideExtensionEditor(): void {
 		this.editorContainer.clear();
 		this.editorContainer.addChild(this.editor);
 		this.extensionEditor = undefined;
@@ -1714,7 +1717,7 @@ export class InteractiveMode {
 	 * Set a custom editor component from an extension.
 	 * Pass undefined to restore the default editor.
 	 */
-	private setCustomEditorComponent(
+	setCustomEditorComponent(
 		factory: ((tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) => EditorComponent) | undefined,
 	): void {
 		// Save text from current editor before switching
@@ -1783,7 +1786,7 @@ export class InteractiveMode {
 	/**
 	 * Show a notification for extensions.
 	 */
-	private showExtensionNotify(message: string, type?: "info" | "warning" | "error" | "success"): void {
+	showExtensionNotify(message: string, type?: "info" | "warning" | "error" | "success"): void {
 		if (type === "error") {
 			this.showError(message);
 		} else if (type === "warning") {
@@ -1794,7 +1797,7 @@ export class InteractiveMode {
 	}
 
 	/** Show a custom component with keyboard focus. Overlay mode renders on top of existing content. */
-	private async showExtensionCustom<T>(
+	async showExtensionCustom<T>(
 		factory: (
 			tui: TUI,
 			theme: Theme,
@@ -1875,7 +1878,7 @@ export class InteractiveMode {
 	/**
 	 * Show an extension error in the UI.
 	 */
-	private showExtensionError(extensionPath: string, error: string, stack?: string): void {
+	showExtensionError(extensionPath: string, error: string, stack?: string): void {
 		const errorMsg = `Extension "${extensionPath}" error: ${error}`;
 		const errorText = new Text(theme.fg("error", errorMsg), 1, 0);
 		this.chatContainer.addChild(errorText);
@@ -1897,7 +1900,7 @@ export class InteractiveMode {
 	// Key Handlers
 	// =========================================================================
 
-	private setupKeyHandlers(): void {
+	setupKeyHandlers(): void {
 		// Set up handlers on defaultEditor - they use this.editor for text access
 		// so they work correctly regardless of which editor is active
 		this.defaultEditor.onEscape = () => {
@@ -1963,7 +1966,7 @@ export class InteractiveMode {
 		};
 	}
 
-	private async handleClipboardImagePaste(): Promise<void> {
+	async handleClipboardImagePaste(): Promise<void> {
 		try {
 			const image = await readClipboardImage();
 			if (!image) {
@@ -1985,7 +1988,7 @@ export class InteractiveMode {
 		}
 	}
 
-	private getSlashCommandContext(): SlashCommandContext {
+	getSlashCommandContext(): SlashCommandContext {
 		return {
 			session: this.session,
 			ui: this.ui,
@@ -2025,23 +2028,27 @@ export class InteractiveMode {
 		};
 	}
 
-	private setupEditorSubmitHandler(): void {
-		setupEditorSubmitHandlerController(this as any);
+	setupEditorSubmitHandler(): void {
+		setupEditorSubmitHandlerController(this);
 	}
 
-	private subscribeToAgent(): void {
+	subscribeToAgent(): void {
 		let eventQueue: Promise<void> = Promise.resolve();
 		this.unsubscribe = this.session.subscribe((event) => {
-			eventQueue = eventQueue.then(() => this.handleEvent(event)).catch(() => {});
+			eventQueue = eventQueue.then(() => this.handleEvent(event)).catch((err: unknown) => {
+				const message = err instanceof Error ? err.message : String(err);
+				this.showError(`Event handler error: ${message}`);
+			});
 		});
 	}
 
-	private async handleEvent(event: AgentSessionEvent): Promise<void> {
-		await handleAgentEvent(this as any, event);
+	async handleEvent(event: AgentSessionEvent): Promise<void> {
+		if (!this.isInitialized) return;
+		await handleAgentEvent(this, event);
 	}
 
 	/** Extract text content from a user message */
-	private getUserMessageText(message: Message): string {
+	getUserMessageText(message: Message): string {
 		if (message.role !== "user") return "";
 		const textBlocks =
 			typeof message.content === "string"
@@ -2056,7 +2063,7 @@ export class InteractiveMode {
 	 * If multiple status messages are emitted back-to-back (without anything else being added to the chat),
 	 * we update the previous status line instead of appending new ones to avoid log spam.
 	 */
-	private showStatus(message: string, options?: { append?: boolean }): void {
+	showStatus(message: string, options?: { append?: boolean }): void {
 		const append = options?.append ?? false;
 		const children = this.chatContainer.children;
 		const last = children.length > 0 ? children[children.length - 1] : undefined;
@@ -2077,7 +2084,7 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	private addMessageToChat(message: AgentMessage, options?: { populateHistory?: boolean }): void {
+	addMessageToChat(message: AgentMessage, options?: { populateHistory?: boolean }): void {
 		switch (message.role) {
 			case "bashExecution": {
 				const component = new BashExecutionComponent(message.command, this.ui, message.excludeFromContext);
@@ -2174,7 +2181,7 @@ export class InteractiveMode {
 	 * Remove oldest components when chat exceeds MAX_CHAT_COMPONENTS.
 	 * Only render-components are removed — session data stays in SessionManager.
 	 */
-	private trimChatHistory(): void {
+	trimChatHistory(): void {
 		while (this.chatContainer.children.length > InteractiveMode.MAX_CHAT_COMPONENTS) {
 			const oldest = this.chatContainer.children[0];
 			this.chatContainer.removeChild(oldest);
@@ -2187,7 +2194,7 @@ export class InteractiveMode {
 	 * @param options.updateFooter Update footer state
 	 * @param options.populateHistory Add user messages to editor history
 	 */
-	private renderSessionContext(
+	renderSessionContext(
 		sessionContext: SessionContext,
 		options: { updateFooter?: boolean; populateHistory?: boolean } = {},
 	): void {
@@ -2304,7 +2311,7 @@ export class InteractiveMode {
 		});
 	}
 
-	private rebuildChatFromMessages(): void {
+	rebuildChatFromMessages(): void {
 		this.chatContainer.clear();
 		this.pinnedMessageContainer.clear();
 		const context = this.sessionManager.buildSessionContext();
@@ -2319,7 +2326,7 @@ export class InteractiveMode {
 	 * After rebuilding chat from messages, pin the last assistant text above the
 	 * editor if tool results would otherwise push it out of the viewport.
 	 */
-	private populatePinnedFromMessages(messages: AgentMessage[]): void {
+	populatePinnedFromMessages(messages: AgentMessage[]): void {
 		this.pinnedMessageContainer.clear();
 
 		// Walk backwards to find the last assistant message
@@ -2366,7 +2373,7 @@ export class InteractiveMode {
 	// Key handlers
 	// =========================================================================
 
-	private handleCtrlC(): void {
+	handleCtrlC(): void {
 		const now = Date.now();
 		if (now - this.lastSigintTime < 500) {
 			void this.shutdown();
@@ -2376,7 +2383,7 @@ export class InteractiveMode {
 		}
 	}
 
-	private handleCtrlD(): void {
+	handleCtrlD(): void {
 		// Only called when editor is empty (enforced by CustomEditor)
 		void this.shutdown();
 	}
@@ -2385,9 +2392,9 @@ export class InteractiveMode {
 	 * Gracefully shutdown the agent.
 	 * Emits shutdown event to extensions, then exits.
 	 */
-	private isShuttingDown = false;
+	isShuttingDown = false;
 
-	private async shutdown(): Promise<void> {
+	async shutdown(): Promise<void> {
 		const shutdownBehavior = this.options.shutdownBehavior ?? "exit_process";
 		if (shutdownBehavior === "ignore") {
 			this.showStatus("Quit is unavailable in the browser-attached terminal");
@@ -2441,12 +2448,12 @@ export class InteractiveMode {
 	/**
 	 * Check if shutdown was requested and perform shutdown if so.
 	 */
-	private async checkShutdownRequested(): Promise<void> {
+	async checkShutdownRequested(): Promise<void> {
 		if (!this.shutdownRequested) return;
 		await this.shutdown();
 	}
 
-	private handleCtrlZ(): void {
+	handleCtrlZ(): void {
 		// On Windows, SIGTSTP doesn't exist - Ctrl+Z is not supported
 		if (process.platform === "win32") {
 			return;
@@ -2477,7 +2484,7 @@ export class InteractiveMode {
 		}
 	}
 
-	private async handleFollowUp(): Promise<void> {
+	async handleFollowUp(): Promise<void> {
 		const text = (this.editor.getExpandedText?.() ?? this.editor.getText()).trim();
 		if (!text) return;
 
@@ -2514,7 +2521,7 @@ export class InteractiveMode {
 		}
 	}
 
-	private handleDequeue(): void {
+	handleDequeue(): void {
 		const restored = this.restoreQueuedMessagesToEditor();
 		if (restored === 0) {
 			this.showStatus("No queued messages to restore");
@@ -2523,7 +2530,7 @@ export class InteractiveMode {
 		}
 	}
 
-	private updateEditorBorderColor(): void {
+	updateEditorBorderColor(): void {
 		if (this.isBashMode) {
 			this.editor.borderColor = theme.getBashModeBorderColor();
 		} else {
@@ -2533,7 +2540,7 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	private cycleThinkingLevel(): void {
+	cycleThinkingLevel(): void {
 		const newLevel = this.session.cycleThinkingLevel();
 		if (newLevel === undefined) {
 			this.showStatus("Current model does not support thinking");
@@ -2544,7 +2551,7 @@ export class InteractiveMode {
 		}
 	}
 
-	private async cycleModel(direction: "forward" | "backward"): Promise<void> {
+	async cycleModel(direction: "forward" | "backward"): Promise<void> {
 		try {
 			const result = await this.session.cycleModel(direction);
 			if (result === undefined) {
@@ -2562,11 +2569,11 @@ export class InteractiveMode {
 		}
 	}
 
-	private toggleToolOutputExpansion(): void {
+	toggleToolOutputExpansion(): void {
 		this.setToolsExpanded(!this.toolOutputExpanded);
 	}
 
-	private setToolsExpanded(expanded: boolean): void {
+	setToolsExpanded(expanded: boolean): void {
 		this.toolOutputExpanded = expanded;
 		for (const child of this.chatContainer.children) {
 			if (isExpandable(child)) {
@@ -2576,7 +2583,7 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	private toggleThinkingBlockVisibility(): void {
+	toggleThinkingBlockVisibility(): void {
 		this.hideThinkingBlock = !this.hideThinkingBlock;
 		this.settingsManager.setHideThinkingBlock(this.hideThinkingBlock);
 
@@ -2594,7 +2601,7 @@ export class InteractiveMode {
 		this.showStatus(`Thinking blocks: ${this.hideThinkingBlock ? "hidden" : "visible"}`);
 	}
 
-	private openExternalEditor(): void {
+	openExternalEditor(): void {
 		// Determine editor (respect $VISUAL, then $EDITOR)
 		const editorCmd = process.env.VISUAL || process.env.EDITOR;
 		if (!editorCmd) {
@@ -2706,7 +2713,7 @@ export class InteractiveMode {
 	 * Get all queued messages (read-only).
 	 * Combines session queue and compaction queue.
 	 */
-	private getAllQueuedMessages(): { steering: string[]; followUp: string[] } {
+	getAllQueuedMessages(): { steering: string[]; followUp: string[] } {
 		return {
 			steering: [
 				...this.session.getSteeringMessages(),
@@ -2723,7 +2730,7 @@ export class InteractiveMode {
 	 * Clear all queued messages and return their contents.
 	 * Clears both session queue and compaction queue.
 	 */
-	private clearAllQueues(): { steering: string[]; followUp: string[] } {
+	clearAllQueues(): { steering: string[]; followUp: string[] } {
 		const { steering, followUp } = this.session.clearQueue();
 		const compactionSteering = this.compactionQueuedMessages
 			.filter((msg) => msg.mode === "steer")
@@ -2738,7 +2745,7 @@ export class InteractiveMode {
 		};
 	}
 
-	private updatePendingMessagesDisplay(): void {
+	updatePendingMessagesDisplay(): void {
 		this.pendingMessagesContainer.clear();
 		const { steering: steeringMessages, followUp: followUpMessages } = this.getAllQueuedMessages();
 		if (steeringMessages.length > 0 || followUpMessages.length > 0) {
@@ -2757,7 +2764,7 @@ export class InteractiveMode {
 		}
 	}
 
-	private restoreQueuedMessagesToEditor(options?: { abort?: boolean; currentText?: string }): number {
+	restoreQueuedMessagesToEditor(options?: { abort?: boolean; currentText?: string }): number {
 		const { steering, followUp } = this.clearAllQueues();
 		const allQueued = [...steering, ...followUp];
 		if (allQueued.length === 0) {
@@ -2778,7 +2785,7 @@ export class InteractiveMode {
 		return allQueued.length;
 	}
 
-	private queueCompactionMessage(text: string, mode: "steer" | "followUp"): void {
+	queueCompactionMessage(text: string, mode: "steer" | "followUp"): void {
 		if (text.startsWith("/") && !this.isKnownSlashCommand(text)) {
 			const command = text.split(/\s/)[0];
 			this.showError(`Unknown command: ${command}. Use slash autocomplete to see available commands.`);
@@ -2792,7 +2799,7 @@ export class InteractiveMode {
 		this.showStatus("Queued message for after compaction");
 	}
 
-	private isExtensionCommand(text: string): boolean {
+	isExtensionCommand(text: string): boolean {
 		if (!text.startsWith("/")) return false;
 
 		const extensionRunner = this.session.extensionRunner;
@@ -2803,7 +2810,7 @@ export class InteractiveMode {
 		return !!extensionRunner.getCommand(commandName);
 	}
 
-	private isKnownSlashCommand(text: string): boolean {
+	isKnownSlashCommand(text: string): boolean {
 		if (!text.startsWith("/")) return false;
 
 		const spaceIndex = text.indexOf(" ");
@@ -2829,7 +2836,7 @@ export class InteractiveMode {
 		return false;
 	}
 
-	private async flushCompactionQueue(options?: { willRetry?: boolean }): Promise<void> {
+	async flushCompactionQueue(options?: { willRetry?: boolean }): Promise<void> {
 		if (this.compactionQueuedMessages.length === 0) {
 			return;
 		}
@@ -2907,7 +2914,7 @@ export class InteractiveMode {
 	}
 
 	/** Move pending bash components from pending area to chat */
-	private flushPendingBashComponents(): void {
+	flushPendingBashComponents(): void {
 		for (const component of this.pendingBashComponents) {
 			this.pendingMessagesContainer.removeChild(component);
 			this.chatContainer.addChild(component);
@@ -2923,7 +2930,7 @@ export class InteractiveMode {
 	 * Shows a selector component in place of the editor.
 	 * @param create Factory that receives a `done` callback and returns the component and focus target
 	 */
-	private showSelector(create: (done: () => void) => { component: Component; focus: Component }): void {
+	showSelector(create: (done: () => void) => { component: Component; focus: Component }): void {
 		const done = () => {
 			this.editorContainer.clear();
 			this.editorContainer.addChild(this.editor);
@@ -2936,7 +2943,7 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	private showSettingsSelector(): void {
+	showSettingsSelector(): void {
 		this.showSelector((done) => {
 			const selector = new SettingsSelectorComponent(
 				{
@@ -3079,24 +3086,24 @@ export class InteractiveMode {
 		});
 	}
 
-	private async handleModelCommand(searchTerm?: string): Promise<void> {
+	async handleModelCommand(searchTerm?: string): Promise<void> {
 		await handleModelCommandController(this, searchTerm);
 	}
 
-	private async findExactModelMatch(searchTerm: string): Promise<Model<any> | undefined> {
+	async findExactModelMatch(searchTerm: string): Promise<Model<any> | undefined> {
 		return findExactModelMatchController(this, searchTerm);
 	}
 
-	private async getModelCandidates(): Promise<Model<any>[]> {
+	async getModelCandidates(): Promise<Model<any>[]> {
 		return getModelCandidatesController(this);
 	}
 
 	/** Update the footer's available provider count from current model candidates */
-	private async updateAvailableProviderCount(): Promise<void> {
+	async updateAvailableProviderCount(): Promise<void> {
 		await updateAvailableProviderCountController(this);
 	}
 
-	private showModelSelector(initialSearchInput?: string): void {
+	showModelSelector(initialSearchInput?: string): void {
 		this.showSelector((done) => {
 			const selector = new ModelSelectorComponent(
 				this.ui,
@@ -3127,7 +3134,7 @@ export class InteractiveMode {
 		});
 	}
 
-	private async showModelsSelector(): Promise<void> {
+	async showModelsSelector(): Promise<void> {
 		// Get all available models
 		this.session.modelRegistry.refresh();
 		const allModels = this.session.modelRegistry.getAvailable();
@@ -3245,7 +3252,7 @@ export class InteractiveMode {
 		});
 	}
 
-	private showUserMessageSelector(): void {
+	showUserMessageSelector(): void {
 		const userMessages = this.session.getUserMessagesForForking();
 
 		if (userMessages.length === 0) {
@@ -3280,7 +3287,7 @@ export class InteractiveMode {
 		});
 	}
 
-	private showTreeSelector(initialSelectedId?: string): void {
+	showTreeSelector(initialSelectedId?: string): void {
 		const tree = this.sessionManager.getTree();
 		const realLeafId = this.sessionManager.getLeafId();
 		const initialFilterMode = this.settingsManager.getTreeFilterMode();
@@ -3408,7 +3415,7 @@ export class InteractiveMode {
 		});
 	}
 
-	private showSessionSelector(): void {
+	showSessionSelector(): void {
 		this.showSelector((done) => {
 			const selector = new SessionSelectorComponent(
 				(onProgress) =>
@@ -3443,7 +3450,7 @@ export class InteractiveMode {
 		});
 	}
 
-	private async handleResumeSession(sessionPath: string): Promise<void> {
+	async handleResumeSession(sessionPath: string): Promise<void> {
 		// Stop loading animation
 		if (this.loadingAnimation) {
 			this.loadingAnimation.stop();
@@ -3472,7 +3479,7 @@ export class InteractiveMode {
 		}
 	}
 
-	private showProviderManager(): void {
+	showProviderManager(): void {
 		this.showSelector((done) => {
 			const component = new ProviderManagerComponent(
 				this.ui,
@@ -3508,7 +3515,7 @@ export class InteractiveMode {
 		});
 	}
 
-	private async showOAuthSelector(mode: "login" | "logout"): Promise<void> {
+	async showOAuthSelector(mode: "login" | "logout"): Promise<void> {
 		if (mode === "logout") {
 			const providers = this.session.modelRegistry.authStorage.list();
 			const loggedInProviders = providers.filter(
@@ -3579,7 +3586,7 @@ export class InteractiveMode {
 		});
 	}
 
-	private async showLoginDialog(providerId: string): Promise<void> {
+	async showLoginDialog(providerId: string): Promise<void> {
 		const providerInfo = this.session.modelRegistry.authStorage.getOAuthProviders().find((p) => p.id === providerId);
 		const providerName = providerInfo?.name || providerId;
 
@@ -3675,7 +3682,7 @@ export class InteractiveMode {
 	// Command handlers
 	// =========================================================================
 
-	private async handleReloadCommand(): Promise<void> {
+	async handleReloadCommand(): Promise<void> {
 		if (this.session.isStreaming) {
 			this.showWarning("Wait for the current response to finish before reloading.");
 			return;
@@ -3746,7 +3753,7 @@ export class InteractiveMode {
 		}
 	}
 
-	private async handleClearCommand(): Promise<void> {
+	async handleClearCommand(): Promise<void> {
 		// Stop loading animation
 		if (this.loadingAnimation) {
 			this.loadingAnimation.stop();
@@ -3774,7 +3781,7 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	private handleDebugCommand(): void {
+	handleDebugCommand(): void {
 		const width = this.ui.terminal.columns;
 		const height = this.ui.terminal.rows;
 		const allLines = this.ui.render(width);
@@ -3807,19 +3814,19 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	private handleDaxnuts(): void {
+	handleDaxnuts(): void {
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new DaxnutsComponent(this.ui));
 		this.ui.requestRender();
 	}
 
-	private checkDaxnutsEasterEgg(model: { provider: string; id: string }): void {
+	checkDaxnutsEasterEgg(model: { provider: string; id: string }): void {
 		if (model.provider === "opencode" && model.id.toLowerCase().includes("kimi-k2.5")) {
 			this.handleDaxnuts();
 		}
 	}
 
-	private async handleBashCommand(command: string, excludeFromContext = false, displayCommand?: string, loginShell?: boolean): Promise<void> {
+	async handleBashCommand(command: string, excludeFromContext = false, displayCommand?: string, loginShell?: boolean): Promise<void> {
 		const extensionRunner = this.session.extensionRunner;
 		const label = displayCommand || command;
 
@@ -3909,7 +3916,7 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	private async executeCompaction(customInstructions?: string, isAuto = false): Promise<CompactionResult | undefined> {
+	async executeCompaction(customInstructions?: string, isAuto = false): Promise<CompactionResult | undefined> {
 		// Stop loading animation
 		if (this.loadingAnimation) {
 			this.loadingAnimation.stop();
@@ -3971,27 +3978,38 @@ export class InteractiveMode {
 	}
 
 	stop(): void {
+		// Snapshot init flag and flip it immediately so in-flight event queue
+		// tails drain via the isInitialized guard in handleEvent().
+		const wasInitialized = this.isInitialized;
+		this.isInitialized = false;
+
+		// Stop receiving new agent events and drain any pending getUserInput
+		// promise so the run() loop can exit.
+		if (this.unsubscribe) {
+			this.unsubscribe();
+			this.unsubscribe = undefined;
+		}
+		if (this.onInputCallback) {
+			this.onInputCallback("");
+			this.onInputCallback = undefined;
+		}
+
 		if (this.loadingAnimation) {
 			this.loadingAnimation.stop();
 			this.loadingAnimation = undefined;
 		}
 		this.clearExtensionTerminalInputListeners();
 
-		// Clean up branch change listener (Fix 1)
+		// Clean up branch change listener
 		this._branchChangeUnsub?.();
 		this._branchChangeUnsub = undefined;
 
-		// Clean up theme change listener and watcher (Fix 2)
-		onThemeChange(() => {});
+		// Clean up theme change listener and watcher
+		this._themeChangeUnsub?.();
+		this._themeChangeUnsub = undefined;
 		stopThemeWatcher();
 
-		// Resolve any pending getUserInput promise so the run() loop can exit (Fix 3)
-		if (this.onInputCallback) {
-			this.onInputCallback("");
-			this.onInputCallback = undefined;
-		}
-
-		// Dispose extension widgets, custom footer, and custom header (Fix 4)
+		// Dispose extension widgets, custom footer, and custom header
 		this.clearExtensionWidgets();
 		if (this.customFooter?.dispose) {
 			this.customFooter.dispose();
@@ -4005,12 +4023,9 @@ export class InteractiveMode {
 
 		this.footer.dispose();
 		this.footerDataProvider.dispose();
-		if (this.unsubscribe) {
-			this.unsubscribe();
-		}
-		if (this.isInitialized) {
+
+		if (wasInitialized) {
 			this.ui.stop();
-			this.isInitialized = false;
 		}
 	}
 }

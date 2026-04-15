@@ -1,6 +1,9 @@
+// @gsd/pi-coding-agent — Model controller functions invoked from interactive-mode
 import type { Model } from "@gsd/pi-ai";
 
-export async function handleModelCommand(host: any, searchTerm?: string): Promise<void> {
+import type { ModelControllerHost } from "../interactive-mode-state.js";
+
+export async function handleModelCommand(host: ModelControllerHost, searchTerm?: string): Promise<void> {
 	if (!searchTerm) {
 		host.showModelSelector();
 		return;
@@ -23,7 +26,7 @@ export async function handleModelCommand(host: any, searchTerm?: string): Promis
 	host.showModelSelector(searchTerm);
 }
 
-export async function findExactModelMatch(host: any, searchTerm: string): Promise<Model<any> | undefined> {
+export async function findExactModelMatch(host: ModelControllerHost, searchTerm: string): Promise<Model<any> | undefined> {
 	const term = searchTerm.trim();
 	if (!term) return undefined;
 
@@ -50,14 +53,14 @@ export async function findExactModelMatch(host: any, searchTerm: string): Promis
 	return exactMatches.length === 1 ? exactMatches[0] : undefined;
 }
 
-export async function getModelCandidates(host: any): Promise<Model<any>[]> {
+export async function getModelCandidates(host: ModelControllerHost): Promise<Model<any>[]> {
 	if (host.session.scopedModels.length > 0) {
 		// Filter scoped models by provider auth readiness so callers like
 		// findExactModelMatch can't resolve a scoped-but-unconfigured model.
 		const registry = host.session.modelRegistry;
 		return host.session.scopedModels
-			.filter((scoped: any) => registry.isProviderRequestReady(scoped.model.provider))
-			.map((scoped: any) => scoped.model);
+			.filter((scoped) => registry.isProviderRequestReady(scoped.model.provider))
+			.map((scoped) => scoped.model);
 	}
 
 	host.session.modelRegistry.refresh();
@@ -68,9 +71,8 @@ export async function getModelCandidates(host: any): Promise<Model<any>[]> {
 	}
 }
 
-export async function updateAvailableProviderCount(host: any): Promise<void> {
+export async function updateAvailableProviderCount(host: ModelControllerHost): Promise<void> {
 	const models = await getModelCandidates(host);
 	const uniqueProviders = new Set(models.map((m) => m.provider));
 	host.footerDataProvider.setAvailableProviderCount(uniqueProviders.size);
 }
-
