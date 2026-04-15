@@ -46,7 +46,8 @@ export type KnownProvider =
 	| "alibaba-coding-plan"
 	| "alibaba-dashscope"
 	| "ollama"
-	| "ollama-cloud";
+	| "ollama-cloud"
+	| "longcat";
 export type Provider = KnownProvider | string;
 
 export type ThinkingLevel = "minimal" | "low" | "medium" | "high" | "xhigh";

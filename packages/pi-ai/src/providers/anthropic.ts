@@ -45,7 +45,12 @@ function mergeHeaders(...headerSources: (Record<string, string> | undefined)[]):
 }
 
 export function usesAnthropicBearerAuth(provider: Model<"anthropic-messages">["provider"]): boolean {
-	return provider === "alibaba-coding-plan" || provider === "minimax" || provider === "minimax-cn";
+	return (
+		provider === "alibaba-coding-plan" ||
+		provider === "minimax" ||
+		provider === "minimax-cn" ||
+		provider === "longcat"
+	);
 }
 
 async function createClient(

@@ -12,6 +12,7 @@ test("usesAnthropicBearerAuth covers Bearer-only Anthropic-compatible providers 
 	assert.equal(usesAnthropicBearerAuth("alibaba-coding-plan"), true);
 	assert.equal(usesAnthropicBearerAuth("minimax"), true);
 	assert.equal(usesAnthropicBearerAuth("minimax-cn"), true);
+	assert.equal(usesAnthropicBearerAuth("longcat"), true);
 	assert.equal(usesAnthropicBearerAuth("anthropic"), false);
 });
 
