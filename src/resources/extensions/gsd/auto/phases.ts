@@ -1495,6 +1495,21 @@ export async function runUnitPhase(
   }
 
   if (unitResult.status === "cancelled") {
+    // Any explicit pause path resolves the in-flight unit and flips auto-mode
+    // into paused state before runFinalize sees the cancellation. Break out
+    // cleanly instead of misclassifying the unit as a session-creation failure.
+    if (!s.active && s.paused) {
+      const pauseCategory = unitResult.errorContext?.category ?? "paused";
+      await emitCancelledUnitEnd(ic, unitType, unitId, unitStartSeq, unitResult.errorContext);
+      debugLog("autoLoop", {
+        phase: "exit",
+        reason: "paused-unwind",
+        pauseCategory,
+        isTransient: unitResult.errorContext?.isTransient,
+      });
+      return { action: "break", reason: `${pauseCategory}-pause` };
+    }
+
     // Provider-error pause: pauseAuto already handled cleanup and scheduled
     // recovery. Don't hard-stop — just break out of the loop (#2762).
     if (unitResult.errorContext?.category === "provider") {
@@ -1502,25 +1517,36 @@ export async function runUnitPhase(
       debugLog("autoLoop", { phase: "exit", reason: "provider-pause", isTransient: unitResult.errorContext.isTransient });
       return { action: "break", reason: "provider-pause" };
     }
-    // Session creation timeout (not a structural error): pause auto-mode
-    // and let the provider-error-resume timer handle recovery (#3767). This
-    // matches the provider-pause path — break out cleanly, don't hard-stop.
-    // Structural errors (TypeError, is not a function) are NOT transient
-    // and must hard-stop to avoid infinite retry loops.
-    if (
+
+    // Transient session bootstrap failures should pause (resumable), not
+    // hard-stop. Hard-stop is reserved for structural/non-transient failures.
+    const transientPauseCategory =
       unitResult.errorContext?.isTransient &&
-      unitResult.errorContext?.category === "timeout"
-    ) {
-      ctx.ui.notify(
-        `Session creation timed out for ${unitType} ${unitId}. Pausing auto-mode (recoverable).`,
-        "warning",
-      );
-      debugLog("autoLoop", { phase: "session-timeout-pause", unitType, unitId });
+      (unitResult.errorContext?.category === "timeout" ||
+        unitResult.errorContext?.category === "session-failed")
+        ? unitResult.errorContext.category
+        : null;
+
+    if (transientPauseCategory) {
+      const transientMsg = transientPauseCategory === "timeout"
+        ? `Session creation timed out for ${unitType} ${unitId}. Pausing auto-mode (recoverable).`
+        : `Session creation failed for ${unitType} ${unitId}: ${unitResult.errorContext?.message ?? "unknown"}. Pausing auto-mode (recoverable).`;
+      ctx.ui.notify(transientMsg, "warning");
+      debugLog("autoLoop", {
+        phase: "session-bootstrap-pause",
+        unitType,
+        unitId,
+        category: transientPauseCategory,
+      });
       await deps.pauseAuto(ctx, pi);
       await deps.autoCommitUnit?.(s.basePath, unitType, unitId, ctx);
       await emitCancelledUnitEnd(ic, unitType, unitId, unitStartSeq, unitResult.errorContext);
-      return { action: "break", reason: "session-timeout" };
+      return {
+        action: "break",
+        reason: transientPauseCategory === "timeout" ? "session-timeout" : "session-failed-transient",
+      };
     }
+
     // All other cancelled states (structural errors, non-transient failures): hard stop
     if (s.currentUnit) {
       await deps.closeoutUnit(

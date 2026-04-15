@@ -667,3 +667,100 @@ test("session-failed cancellations close out and emit unit-end before hard stop"
   assert.equal((endEvents[0].data as any).artifactVerified, false);
   assert.equal((endEvents[0].data as any).errorContext.category, "session-failed");
 });
+
+test("transient session-failed cancellations pause (recoverable) and still emit unit-end", async () => {
+  const capture = createEventCapture();
+  const { resolveAgentEndCancelled, _resetPendingResolve } = await import("../auto-loop.js");
+  _resetPendingResolve();
+
+  let pauseCalls = 0;
+  let commitCalls = 0;
+  let stopCalls = 0;
+  const deps = makeMockDeps(capture, {
+    pauseAuto: async () => { pauseCalls++; },
+    autoCommitUnit: async () => {
+      commitCalls++;
+      return "commit";
+    },
+    stopAuto: async () => { stopCalls++; },
+  });
+  const ic = makeIC(deps);
+  const iterData: IterationData = {
+    unitType: "execute-task",
+    unitId: "M001/S01/T01",
+    prompt: "do stuff",
+    finalPrompt: "do stuff",
+    pauseAfterUatDispatch: false,
+    state: { phase: "executing", activeMilestone: { id: "M001" }, activeSlice: { id: "S01" }, registry: [], blockers: [] } as any,
+    mid: "M001",
+    midTitle: "Test",
+    isRetry: false,
+    previousTier: undefined,
+  };
+  const loopState: LoopState = { recentUnits: [{ key: "execute-task/M001/S01/T01" }], stuckRecoveryAttempts: 0, consecutiveFinalizeTimeouts: 0 };
+
+  const unitPromise = runUnitPhase(ic, iterData, loopState);
+  await new Promise(r => setTimeout(r, 50));
+
+  resolveAgentEndCancelled({
+    message: "Session creation failed: fetch failed",
+    category: "session-failed",
+    isTransient: true,
+  });
+
+  const result = await unitPromise;
+  assert.equal(result.action, "break");
+  assert.equal((result as any).reason, "session-failed-transient");
+  assert.equal(pauseCalls, 1, "transient session-failed cancellations should pause once");
+  assert.equal(commitCalls, 1, "transient session-failed cancellations should auto-commit once");
+  assert.equal(stopCalls, 0, "transient session-failed cancellations should not hard-stop");
+
+  const endEvents = capture.events.filter(e => e.eventType === "unit-end");
+  assert.equal(endEvents.length, 1, "transient session-failed cancellations should emit unit-end");
+  assert.equal((endEvents[0].data as any).status, "cancelled");
+  assert.equal((endEvents[0].data as any).errorContext.category, "session-failed");
+});
+
+test("paused-unwind cancellations still emit unit-end for forensics", async () => {
+  const capture = createEventCapture();
+  const { resolveAgentEndCancelled, _resetPendingResolve } = await import("../auto-loop.js");
+  _resetPendingResolve();
+
+  const deps = makeMockDeps(capture);
+  const ic = makeIC(deps);
+  const iterData: IterationData = {
+    unitType: "execute-task",
+    unitId: "M001/S01/T01",
+    prompt: "do stuff",
+    finalPrompt: "do stuff",
+    pauseAfterUatDispatch: false,
+    state: { phase: "executing", activeMilestone: { id: "M001" }, activeSlice: { id: "S01" }, registry: [], blockers: [] } as any,
+    mid: "M001",
+    midTitle: "Test",
+    isRetry: false,
+    previousTier: undefined,
+  };
+  const loopState: LoopState = { recentUnits: [{ key: "execute-task/M001/S01/T01" }], stuckRecoveryAttempts: 0, consecutiveFinalizeTimeouts: 0 };
+
+  const unitPromise = runUnitPhase(ic, iterData, loopState);
+  await new Promise(r => setTimeout(r, 50));
+
+  // Simulate an explicit pause path winning the race before runUnitPhase handles
+  // cancellation classification.
+  ic.s.active = false;
+  ic.s.paused = true;
+  resolveAgentEndCancelled({
+    message: "Provider error paused auto-mode",
+    category: "provider",
+    isTransient: true,
+  });
+
+  const result = await unitPromise;
+  assert.equal(result.action, "break");
+  assert.equal((result as any).reason, "provider-pause");
+
+  const endEvents = capture.events.filter(e => e.eventType === "unit-end");
+  assert.equal(endEvents.length, 1, "paused-unwind cancellations should emit unit-end");
+  assert.equal((endEvents[0].data as any).status, "cancelled");
+  assert.equal((endEvents[0].data as any).errorContext.category, "provider");
+});

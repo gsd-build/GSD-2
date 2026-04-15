@@ -509,15 +509,34 @@ test("phases.ts handles timeout session-creation failures with pause instead of 
     src.includes('category === "timeout"'),
     "phases.ts must check category === 'timeout' on transient cancelled unitResults",
   );
-  // Must call pauseAuto (not stopAuto) for timeout cancellations
+  // Timeout/session-failed transient categories are normalized through
+  // transientPauseCategory and should pause rather than hard-stop.
   assert.ok(
-    /category === "timeout"[\s\S]{0,300}pauseAuto/.test(src),
-    "phases.ts must call pauseAuto for session-timeout failures (not stopAuto or continue)",
+    /transientPauseCategory[\s\S]{0,1200}await deps\.pauseAuto/.test(src),
+    "phases.ts must call pauseAuto for recoverable session bootstrap failures",
+  );
+  // Must preserve explicit timeout reason for downstream iteration-end/event reporting
+  assert.ok(
+    src.includes('reason: transientPauseCategory === "timeout" ? "session-timeout" : "session-failed-transient"'),
+    "timeout cancellations should map to session-timeout reason",
   );
   // Must NOT use action: "continue" for transient cancellations (causes infinite loops)
   assert.ok(
     !/isTransient[\s\S]{0,500}action:\s*"continue"/.test(src),
     "phases.ts must NOT return action:continue for cancelled units — use break+pause instead",
+  );
+});
+
+test("phases.ts treats transient session-failed cancellations as recoverable pause", () => {
+  const src = readFileSync(join(__dirname, "..", "auto", "phases.ts"), "utf-8");
+
+  assert.ok(
+    src.includes('category === "session-failed"'),
+    "phases.ts must explicitly classify transient session-failed cancellations",
+  );
+  assert.ok(
+    src.includes('"session-failed-transient"'),
+    "transient session-failed cancellations should break with a dedicated recoverable reason",
   );
 });
 
