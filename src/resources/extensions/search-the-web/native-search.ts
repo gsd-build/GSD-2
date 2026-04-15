@@ -96,7 +96,14 @@ export function registerNativeSearchHooks(pi: NativeSearchPI): { getIsAnthropic:
     const wasAnthropic = isAnthropicProvider;
     isAnthropicProvider = event.model.provider === "anthropic";
 
-    const hasBrave = !!process.env.BRAVE_API_KEY;
+    // Any configured custom search backend counts — tavily, brave, or ollama
+    // (Ollama's hosted web_search product, authed via OLLAMA_API_KEY).
+    // Users with any one of these have a working search path; we must not nag
+    // them about missing BRAVE_API_KEY when their configured backend works.
+    const hasCustomSearchKey =
+      !!process.env.TAVILY_API_KEY ||
+      !!process.env.BRAVE_API_KEY ||
+      !!process.env.OLLAMA_API_KEY;
 
     // When Anthropic (and not preferring Brave): disable custom search tools —
     // native web_search is server-side and more reliable.
@@ -121,9 +128,9 @@ export function registerNativeSearchHooks(pi: NativeSearchPI): { getIsAnthropic:
       ctx.ui.notify("Native Anthropic web search active", "info");
     } else if (isAnthropicProvider && preferBraveSearch() && !wasAnthropic && event.source !== "restore") {
       ctx.ui.notify("Brave search active (PREFER_BRAVE_SEARCH)", "info");
-    } else if (!isAnthropicProvider && !hasBrave) {
+    } else if (!isAnthropicProvider && !hasCustomSearchKey) {
       ctx.ui.notify(
-        "Web search: Set BRAVE_API_KEY or use an Anthropic model for built-in search",
+        "Web search unavailable: set TAVILY_API_KEY, BRAVE_API_KEY, or OLLAMA_API_KEY",
         "warning"
       );
     }
