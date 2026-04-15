@@ -44,6 +44,14 @@ test("/gsd description includes discuss", () => {
   );
 });
 
+test("/gsd description includes debug", () => {
+  const pi = createMockPi();
+  registerGSDCommand(pi as any);
+
+  const gsd = pi.commands.get("gsd");
+  assert.ok(gsd.description.includes("debug"), "description should include debug");
+});
+
 test("/gsd next completions include --debug", () => {
   const pi = createMockPi();
   registerGSDCommand(pi as any);
@@ -52,6 +60,18 @@ test("/gsd next completions include --debug", () => {
   const completions = gsd.getArgumentCompletions("next ");
   const debug = completions.find((c: any) => c.value === "next --debug");
   assert.ok(debug, "next --debug should appear in completions");
+});
+
+test("/gsd debug completions include list|status|continue|--diagnose", () => {
+  const pi = createMockPi();
+  registerGSDCommand(pi as any);
+
+  const gsd = pi.commands.get("gsd");
+  const completions = gsd.getArgumentCompletions("debug ");
+  const values = completions.map((c: any) => c.value);
+  for (const expected of ["debug list", "debug status", "debug continue", "debug --diagnose"]) {
+    assert.ok(values.includes(expected), `missing completion: ${expected}`);
+  }
 });
 
 test("/gsd widget completions include full|small|min|off", () => {
