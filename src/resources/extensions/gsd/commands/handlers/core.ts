@@ -99,6 +99,8 @@ export function showHelp(ctx: ExtensionCommandContext, args = ""): void {
     "",
     "MAINTENANCE",
     "  /gsd doctor         Diagnose and repair .gsd/ state  [audit|fix|heal] [scope]",
+    "  /gsd eval-review    Review AI-SPEC vs SUMMARY for a slice  [slice-id] [--force]",
+    "  /gsd eval-fix [slice-id]    Fix gaps identified in EVAL-REVIEW.md",
     "  /gsd export         Export milestone/slice results  [--json|--markdown|--html] [--all]",
     "  /gsd cleanup        Remove merged branches or snapshots  [branches|snapshots]",
     "  /gsd migrate        Migrate .planning/ (v1) to .gsd/ (v2) format",

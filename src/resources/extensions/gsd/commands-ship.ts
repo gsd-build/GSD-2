@@ -9,6 +9,7 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@gsd/pi-coding-agent
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 
 import { deriveState } from "./state.js";
 import { resolveMilestoneFile, resolveSlicePath, resolveSliceFile } from "./paths.js";
@@ -180,6 +181,31 @@ export async function handleShip(
       "warning",
     );
     return;
+  }
+
+  // 2b. Warn if active slice has no EVAL-REVIEW or verdict is NOT IMPLEMENTED (non-blocking)
+  const activeSliceId = state.activeSlice?.id ?? null;
+  if (activeSliceId) {
+    const sliceDir = join(basePath, ".gsd", "milestones", milestoneId, "slices", activeSliceId);
+    const evalReviewPath = join(sliceDir, `${activeSliceId}-EVAL-REVIEW.md`);
+    if (!existsSync(evalReviewPath)) {
+      ctx.ui.notify(
+        `No EVAL-REVIEW.md found for ${activeSliceId}. Consider running /gsd eval-review before shipping.`,
+        "warning",
+      );
+      // Non-blocking: continue with ship
+    } else {
+      const evalContent = readFileSync(evalReviewPath, "utf-8");
+      const verdictMatch = evalContent.match(/\*\*Verdict:\*\*\s*([^\n]+)/);
+      const verdict = verdictMatch?.[1]?.trim() ?? "";
+      if (verdict === "NOT IMPLEMENTED") {
+        ctx.ui.notify(
+          `EVAL-REVIEW for ${activeSliceId} shows NOT IMPLEMENTED. Run /gsd eval-fix to address gaps.`,
+          "warning",
+        );
+        // Non-blocking: continue with ship
+      }
+    }
   }
 
   // 3. Generate PR content
