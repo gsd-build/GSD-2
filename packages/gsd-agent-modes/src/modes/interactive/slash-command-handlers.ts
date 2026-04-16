@@ -285,7 +285,7 @@ async function handleShareCommand(ctx: SlashCommandContext): Promise<void> {
 	ctx.ui.setFocus(loader);
 	ctx.requestRender();
 
-	const restoreEditor = () => {
+	const restoreEditor = (): void => {
 		loader.dispose();
 		ctx.editorContainer.clear();
 		ctx.editorContainer.addChild(ctx.editor);

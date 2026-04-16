@@ -9,7 +9,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { listDescendants } from "@gsd/native";
 import type { AgentMessage } from "@gsd/pi-agent-core";
-import type { AssistantMessage, ImageContent, Message, Model, OAuthProviderId } from "@gsd/pi-ai";
+import type { Api, AssistantMessage, ImageContent, Message, Model, OAuthProviderId } from "@gsd/pi-ai";
 import type {
 	AutocompleteItem,
 	EditorComponent,
@@ -54,8 +54,6 @@ import type {
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
 	ExtensionWidgetOptions,
-	ServerToolUseBlock,
-	WebSearchResultBlock,
 } from "@gsd/agent-types";
 import { FooterDataProvider } from "@gsd/pi-coding-agent";
 import type { ReadonlyFooterDataProvider } from "@gsd/agent-types";
@@ -85,7 +83,7 @@ import { ExtensionEditorComponent } from "./components/extension-editor.js";
 import { ExtensionInputComponent } from "./components/extension-input.js";
 import { ExtensionSelectorComponent } from "./components/extension-selector.js";
 import { FooterComponent } from "./components/footer.js";
-import { appKey, appKeyHint, editorKey, formatKeyForDisplay, keyHint, rawKeyHint } from "./components/keybinding-hints.js";
+import { appKey, appKeyHint, keyHint, rawKeyHint } from "./components/keybinding-hints.js";
 import { LoginDialogComponent } from "./components/login-dialog.js";
 import { ModelSelectorComponent, providerDisplayName } from "./components/model-selector.js";
 import { OAuthSelectorComponent } from "./components/oauth-selector.js";
@@ -99,7 +97,7 @@ import { TreeSelectorComponent } from "./components/tree-selector.js";
 import { UserMessageComponent } from "./components/user-message.js";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.js";
 import { ContextualTips } from "@gsd/pi-coding-agent";
-import { type SlashCommandContext, dispatchSlashCommand, getAppKeyDisplay } from "./slash-command-handlers.js";
+import { type SlashCommandContext, getAppKeyDisplay } from "./slash-command-handlers.js";
 import { handleAgentEvent } from "./controllers/chat-controller.js";
 import { createExtensionUIContext as buildExtensionUIContext } from "./controllers/extension-ui-controller.js";
 import { setupEditorSubmitHandler as setupEditorSubmitHandlerController } from "./controllers/input-controller.js";
@@ -111,16 +109,13 @@ import {
 } from "./controllers/model-controller.js";
 import {
 	getAvailableThemes,
-	getAvailableThemesWithPaths,
 	getEditorTheme,
 	getMarkdownTheme,
-	getThemeByName,
 	initTheme,
 	onThemeChange,
 	stopThemeWatcher,
 	setRegisteredThemes,
 	setTheme,
-	setThemeInstance,
 	Theme,
 	type ThemeColor,
 } from "@gsd/pi-coding-agent";
@@ -386,13 +381,13 @@ export class InteractiveMode {
 	private customHeader: (Component & { dispose?(): void }) | undefined = undefined;
 
 	// Convenience accessors
-	private get agent() {
+	private get agent(): AgentSession["agent"] {
 		return this.session.agent;
 	}
-	private get sessionManager() {
+	private get sessionManager(): AgentSession["sessionManager"] {
 		return this.session.sessionManager;
 	}
-	private get settingsManager() {
+	private get settingsManager(): AgentSession["settingsManager"] {
 		return this.session.settingsManager;
 	}
 
@@ -422,14 +417,16 @@ export class InteractiveMode {
 		this.editorContainer = new Container();
 		this.editorContainer.addChild(this.editor as Component);
 		this.footerDataProvider = new FooterDataProvider();
-		this.footer = new FooterComponent(session as any /* vendor-seam: dual-module-path — AgentSession resolves to @gsd/pi-coding-agent in FooterComponent but @gsd/agent-core here */, this.footerDataProvider);
+		/* vendor-seam: dual-module-path — AgentSession resolves to @gsd/pi-coding-agent in FooterComponent but @gsd/agent-core here */
+		this.footer = new FooterComponent(session as unknown as import("@gsd/pi-coding-agent").AgentSession, this.footerDataProvider);
 		this.footer.setAutoCompactEnabled(session.autoCompactionEnabled);
 
 		// Load hide thinking block setting
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
 
 		// Register themes from resource loader and initialize
-		setRegisteredThemes(this.session.resourceLoader.getThemes().themes as any /* vendor-seam: dual-module-path — Theme resolves differently through ResourceLoader vs setRegisteredThemes import path */);
+		/* vendor-seam: dual-module-path — Theme resolves differently through ResourceLoader vs setRegisteredThemes import path */
+		setRegisteredThemes(this.session.resourceLoader.getThemes().themes as unknown as Parameters<typeof setRegisteredThemes>[0]);
 		initTheme(this.settingsManager.getTheme(), true);
 	}
 
@@ -545,7 +542,7 @@ export class InteractiveMode {
 
 			// Build startup instructions using keybinding hint helpers
 			const kb = this.keybindings;
-			const hint = (action: AppAction, desc: string) => appKeyHint(kb, action, desc);
+			const hint = (action: AppAction, desc: string): string => appKeyHint(kb, action, desc);
 
 			const instructions = [
 				hint("interrupt", "to interrupt"),
@@ -1092,7 +1089,7 @@ export class InteractiveMode {
 		}
 
 		const metadata = (this.session.resourceLoader as unknown as GSDResourceLoader).getPathMetadata?.();
-		const sectionHeader = (name: string, color: ThemeColor = "mdHeading") => theme.fg(color, `[${name}]`);
+		const sectionHeader = (name: string, color: ThemeColor = "mdHeading"): string => theme.fg(color, `[${name}]`);
 
 		const skillsResult = this.session.resourceLoader.getSkills();
 		const promptsResult = this.session.resourceLoader.getPrompts();
@@ -1316,7 +1313,8 @@ export class InteractiveMode {
 			});
 		}
 
-		setRegisteredThemes(this.session.resourceLoader.getThemes().themes as any /* vendor-seam: dual-module-path — Theme resolves differently through ResourceLoader vs setRegisteredThemes import path */);
+		/* vendor-seam: dual-module-path — Theme resolves differently through ResourceLoader vs setRegisteredThemes import path */
+		setRegisteredThemes(this.session.resourceLoader.getThemes().themes as unknown as Parameters<typeof setRegisteredThemes>[0]);
 		this.setupAutocomplete();
 
 		const extensionRunner = this.session.extensionRunner;
@@ -1332,7 +1330,7 @@ export class InteractiveMode {
 	/**
 	 * Get a tool definition by name (for custom rendering).
 	 */
-	private getRegisteredToolDefinition(toolName: string) {
+	private getRegisteredToolDefinition(toolName: string): ReturnType<AgentSession["getRenderableToolDefinition"]> {
 		return this.session.getRenderableToolDefinition(toolName);
 	}
 
@@ -1438,7 +1436,7 @@ export class InteractiveMode {
 		options?: ExtensionWidgetOptions,
 	): void {
 		const placement = options?.placement ?? "aboveEditor";
-		const removeExisting = (map: Map<string, Component & { dispose?(): void }>) => {
+		const removeExisting = (map: Map<string, Component & { dispose?(): void }>): void => {
 			const existing = map.get(key);
 			if (existing?.dispose) existing.dispose();
 			map.delete(key);
@@ -1526,7 +1524,8 @@ export class InteractiveMode {
 		// so there's no extra blank line between pinned output and the editor border.
 		// Use detachChildren() (not clear()) — the extensionWidgetsAbove map owns
 		// disposal; clear() would dispose every mounted widget on every re-render.
-		(this.widgetContainerAbove as unknown as GSDContainer).detachChildren?.() ?? this.widgetContainerAbove.clear();
+		const aboveGSD = this.widgetContainerAbove as unknown as GSDContainer;
+		if (aboveGSD.detachChildren) { aboveGSD.detachChildren(); } else { this.widgetContainerAbove.clear(); }
 		const pinned = this.pinnedMessageContainer;
 		this.widgetContainerAbove.addChild({
 			render: () => pinned.children.length > 0 ? [] : [""],
@@ -1548,7 +1547,8 @@ export class InteractiveMode {
 	): void {
 		// Detach without disposing — the widgets map owns lifecycle; disposing
 		// here would kill refresh timers and subscriptions on every re-render.
-		(container as unknown as GSDContainer).detachChildren?.() ?? container.clear();
+		const containerGSD = container as unknown as GSDContainer;
+		if (containerGSD.detachChildren) { containerGSD.detachChildren(); } else { container.clear(); }
 
 		if (widgets.size === 0) {
 			if (spacerWhenEmpty) {
@@ -1686,7 +1686,7 @@ export class InteractiveMode {
 				return;
 			}
 
-			const onAbort = () => {
+			const onAbort = (): void => {
 				this.hideExtensionSelector();
 				resolve(undefined);
 			};
@@ -1753,7 +1753,7 @@ export class InteractiveMode {
 				return;
 			}
 
-			const onAbort = () => {
+			const onAbort = (): void => {
 				this.hideExtensionInput();
 				resolve(undefined);
 			};
@@ -1934,7 +1934,7 @@ export class InteractiveMode {
 		const savedText = this.editor.getText();
 		const isOverlay = options?.overlay ?? false;
 
-		const restoreEditor = () => {
+		const restoreEditor = (): void => {
 			this.editorContainer.clear();
 			this.editorContainer.addChild(this.editor);
 			this.editor.setText(savedText);
@@ -1946,7 +1946,7 @@ export class InteractiveMode {
 			let component: Component & { dispose?(): void };
 			let closed = false;
 
-			const close = (result: T) => {
+			const close = (result: T): void => {
 				if (closed) return;
 				closed = true;
 				if (isOverlay) this.ui.hideOverlay();
@@ -2586,15 +2586,15 @@ export class InteractiveMode {
 		try {
 			const descendants = listDescendants(process.pid);
 			for (const childPid of descendants) {
-				try { process.kill(childPid, "SIGTERM"); } catch {}
+				try { process.kill(childPid, "SIGTERM"); } catch (_e: unknown) { /* ignore — process may have already exited */ }
 			}
 			if (descendants.length > 0) {
 				await new Promise(resolve => setTimeout(resolve, 500));
 				for (const childPid of descendants) {
-					try { process.kill(childPid, "SIGKILL"); } catch {}
+					try { process.kill(childPid, "SIGKILL"); } catch (_e: unknown) { /* ignore — process may have already exited */ }
 				}
 			}
-		} catch {}
+		} catch (_e: unknown) { /* ignore — listDescendants may fail on some platforms */ }
 
 		process.exit(0);
 	}
@@ -2615,7 +2615,7 @@ export class InteractiveMode {
 
 		// Ignore SIGINT while suspended so Ctrl+C in the terminal does not
 		// kill the backgrounded process. The handler is removed on resume.
-		const ignoreSigint = () => {};
+		const ignoreSigint = (): void => {};
 		process.on("SIGINT", ignoreSigint);
 
 		try {
@@ -3010,7 +3010,7 @@ export class InteractiveMode {
 		this.compactionQueuedMessages = [];
 		this.updatePendingMessagesDisplay();
 
-		const restoreQueue = (error: unknown) => {
+		const restoreQueue = (error: unknown): void => {
 			this.session.clearQueue();
 			this.compactionQueuedMessages = queuedMessages;
 			this.updatePendingMessagesDisplay();
@@ -3096,7 +3096,7 @@ export class InteractiveMode {
 	 * @param create Factory that receives a `done` callback and returns the component and focus target
 	 */
 	private showSelector(create: (done: () => void) => { component: Component; focus: Component }): void {
-		const done = () => {
+		const done = (): void => {
 			this.editorContainer.clear();
 			this.editorContainer.addChild(this.editor);
 			this.ui.setFocus(this.editor);
@@ -3255,11 +3255,11 @@ export class InteractiveMode {
 		await handleModelCommandController(this, searchTerm);
 	}
 
-	private async findExactModelMatch(searchTerm: string): Promise<Model<any> | undefined> {
+	private async findExactModelMatch(searchTerm: string): Promise<Model<Api> | undefined> {
 		return findExactModelMatchController(this, searchTerm);
 	}
 
-	private async getModelCandidates(): Promise<Model<any>[]> {
+	private async getModelCandidates(): Promise<Model<Api>[]> {
 		return getModelCandidatesController(this);
 	}
 
@@ -3340,7 +3340,7 @@ export class InteractiveMode {
 		let currentHasFilter = hasFilter;
 
 		// Helper to update session's scoped models (session-only, no persist)
-		const updateSessionModels = async (enabledIds: Set<string>) => {
+		const updateSessionModels = async (enabledIds: Set<string>): Promise<void> => {
 			if (enabledIds.size > 0 && enabledIds.size < allModels.length) {
 				const newScopedModels = await resolveModelScope(Array.from(enabledIds), this.session.modelRegistry);
 				this.session.setScopedModels(
@@ -3702,7 +3702,7 @@ export class InteractiveMode {
 					// OAuthSelectorComponent calls this synchronously (no await),
 					// so we must catch async errors here to prevent unhandled rejections
 					// when the user cancels the login dialog (#821).
-					const handleAsync = async () => {
+					const handleAsync = async (): Promise<void> => {
 						if (mode === "login") {
 							await this.showLoginDialog(providerId);
 						} else {
@@ -3771,7 +3771,7 @@ export class InteractiveMode {
 
 		// Restore editor helper — also disposes the dialog to reject any
 		// dangling promises and prevent the UI from getting stuck.
-		const restoreEditor = () => {
+		const restoreEditor = (): void => {
 			dialog.dispose();
 			this.editorContainer.clear();
 			this.editorContainer.addChild(this.editor);
@@ -3829,7 +3829,7 @@ export class InteractiveMode {
 						}
 					}
 				}
-			} catch (error: unknown) {
+			} catch (_error: unknown) {
 				// Model switch failed — user can manually switch via /model
 			}
 
@@ -3868,7 +3868,7 @@ export class InteractiveMode {
 		this.ui.setFocus(loader);
 		this.ui.requestRender();
 
-		const dismissLoader = (editor: Component) => {
+		const dismissLoader = (editor: Component): void => {
 			loader.dispose();
 			this.editorContainer.clear();
 			this.editorContainer.addChild(editor);
@@ -3878,7 +3878,8 @@ export class InteractiveMode {
 
 		try {
 			await this.session.reload();
-			setRegisteredThemes(this.session.resourceLoader.getThemes().themes as any /* vendor-seam: dual-module-path — Theme resolves differently through ResourceLoader vs setRegisteredThemes import path */);
+			/* vendor-seam: dual-module-path — Theme resolves differently through ResourceLoader vs setRegisteredThemes import path */
+			setRegisteredThemes(this.session.resourceLoader.getThemes().themes as unknown as Parameters<typeof setRegisteredThemes>[0]);
 			this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
 			const themeName = this.settingsManager.getTheme();
 			const themeResult = themeName ? setTheme(themeName, true) : { success: true };

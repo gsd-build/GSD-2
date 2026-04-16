@@ -53,7 +53,7 @@ export type RpcMode = Promise<never>;
  * Listens for JSON commands on stdin, outputs events and responses on stdout.
  */
 export async function runRpcMode(session: AgentSession): Promise<never> {
-	const output = (obj: RpcResponse | RpcExtensionUIRequest | object) => {
+	const output = (obj: RpcResponse | RpcExtensionUIRequest | object): void => {
 		process.stdout.write(serializeJsonLine(obj));
 	};
 
@@ -75,7 +75,7 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 	// Pending extension UI requests waiting for response
 	const pendingExtensionRequests = new Map<
 		string,
-		{ resolve: (value: any) => void; reject: (error: Error) => void }
+		{ resolve: (value: RpcExtensionUIResponse) => void; reject: (error: Error) => void }
 	>();
 
 	// Shutdown request flag
@@ -125,7 +125,7 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			ui.setStatus(key, text);
 		}
 		for (const [key, widget] of widgetState.entries()) {
-			ui.setWidget(key, widget.content as any, widget.options);
+			ui.setWidget(key, widget.content as string[] | undefined, widget.options);
 		}
 		ui.setWorkingMessage(workingMessageState);
 		if (titleState) {
@@ -182,13 +182,13 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 		return new Promise((resolve, reject) => {
 			let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
-			const cleanup = () => {
+			const cleanup = (): void => {
 				if (timeoutId) clearTimeout(timeoutId);
 				opts?.signal?.removeEventListener("abort", onAbort);
 				pendingExtensionRequests.delete(id);
 			};
 
-			const onAbort = () => {
+			const onAbort = (): void => {
 				cleanup();
 				resolve(defaultValue);
 			};
@@ -217,7 +217,7 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 	 */
 	const createExtensionUIContext = (): ExtensionUIContext => ({
 		select: (title, options, opts) =>
-			createDialogPromise(opts, undefined, { method: "select", title, options, timeout: opts?.timeout, allowMultiple: (opts as any)?.allowMultiple }, (r) =>
+			createDialogPromise(opts, undefined, { method: "select", title, options, timeout: opts?.timeout, allowMultiple: (opts as unknown as { allowMultiple?: boolean })?.allowMultiple }, (r) =>
 				"cancelled" in r && r.cancelled ? undefined : "values" in r ? (Array.isArray(r.values) ? r.values.join("\n") : r.values as string) : "value" in r ? r.value as string : undefined,
 			),
 
@@ -227,7 +227,7 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			),
 
 		input: (title, placeholder, opts) =>
-			createDialogPromise(opts, undefined, { method: "input", title, placeholder, timeout: opts?.timeout, secure: (opts as any)?.secure }, (r) =>
+			createDialogPromise(opts, undefined, { method: "input", title, placeholder, timeout: opts?.timeout, secure: (opts as unknown as { secure?: boolean })?.secure }, (r) =>
 				"cancelled" in r && r.cancelled ? undefined : "value" in r ? r.value : undefined,
 			),
 
@@ -300,7 +300,7 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 				} as RpcExtensionUIRequest);
 			}
 			void withEmbeddedUiContext((ui) => {
-				ui.setWidget(key, content as any, options);
+				ui.setWidget(key, content as string[] | undefined, options);
 			});
 		},
 
@@ -740,7 +740,7 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 						name: cmd.name,
 						description: cmd.description,
 						source: "extension",
-						path: (cmd as any).sourceInfo?.path,
+						path: cmd.sourceInfo.path,
 					});
 				}
 
@@ -809,6 +809,11 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 				return success(id, "shutdown");
 			}
 
+			case "init": {
+				// init is handled in handleInputLine before reaching handleCommand; this branch is unreachable
+				return error(id, "init", "Protocol version already locked. init must be the first command.");
+			}
+
 			default: {
 				const unknownCommand = command as { type: string; id?: string };
 				return error(unknownCommand.id, unknownCommand.type, `Unknown command: ${unknownCommand.type}`);
@@ -820,7 +825,7 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 	 * Check if shutdown was requested and perform shutdown if so.
 	 * Called after handling each command when waiting for the next command.
 	 */
-	let detachInput = () => {};
+	let detachInput = (): void => {};
 
 	async function checkShutdownRequested(): Promise<void> {
 		if (!shutdownRequested) return;
@@ -837,7 +842,7 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 		process.exit(0);
 	}
 
-	const handleInputLine = async (line: string) => {
+	const handleInputLine = async (line: string): Promise<void> => {
 		try {
 			const parsed = JSON.parse(line);
 
@@ -884,8 +889,9 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 
 			// Check for deferred shutdown request (idle between commands)
 			await checkShutdownRequested();
-		} catch (e: any) {
-			output(error(undefined, "parse", `Failed to parse command: ${e.message}`));
+		} catch (e: unknown) {
+			const message = e instanceof Error ? e.message : String(e);
+			output(error(undefined, "parse", `Failed to parse command: ${message}`));
 		}
 	};
 

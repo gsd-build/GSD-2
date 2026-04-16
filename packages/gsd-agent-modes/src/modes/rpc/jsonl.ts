@@ -22,11 +22,11 @@ export function attachJsonlLineReader(stream: Readable, onLine: (line: string) =
 	const decoder = new StringDecoder("utf8");
 	let buffer = "";
 
-	const emitLine = (line: string) => {
+	const emitLine = (line: string): void => {
 		onLine(line.endsWith("\r") ? line.slice(0, -1) : line);
 	};
 
-	const onData = (chunk: string | Buffer) => {
+	const onData = (chunk: string | Buffer): void => {
 		buffer += typeof chunk === "string" ? chunk : decoder.write(chunk);
 
 		while (true) {
@@ -40,7 +40,7 @@ export function attachJsonlLineReader(stream: Readable, onLine: (line: string) =
 		}
 	};
 
-	const onEnd = () => {
+	const onEnd = (): void => {
 		buffer += decoder.end();
 		if (buffer.length > 0) {
 			emitLine(buffer);

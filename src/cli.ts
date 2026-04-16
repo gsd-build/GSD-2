@@ -483,7 +483,7 @@ if (cliFlags.listModels !== undefined) {
     return a.id.localeCompare(b.id)
   })
 
-  const fmt = (n: number) => n >= 1_000_000 ? `${n / 1_000_000}M` : n >= 1_000 ? `${n / 1_000}K` : `${n}`
+  const fmt = (n: number): string => n >= 1_000_000 ? `${n / 1_000_000}M` : n >= 1_000 ? `${n / 1_000}K` : `${n}`
   const rows = filtered.map((m) => [
     m.provider,
     m.id,
@@ -494,7 +494,7 @@ if (cliFlags.listModels !== undefined) {
   ])
   const hdrs = ['provider', 'model', 'name', 'context', 'max-out', 'thinking']
   const widths = hdrs.map((h, i) => Math.max(h.length, ...rows.map((r) => r[i].length)))
-  const pad = (s: string, w: number) => s.padEnd(w)
+  const pad = (s: string, w: number): string => s.padEnd(w)
   console.log(hdrs.map((h, i) => pad(h, widths[i])).join('  '))
   for (const row of rows) {
     console.log(row.map((c, i) => pad(c, widths[i])).join('  '))

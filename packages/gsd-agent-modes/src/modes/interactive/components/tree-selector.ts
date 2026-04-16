@@ -12,7 +12,7 @@ import {
 } from "@gsd/pi-tui";
 // SessionTreeNode is not exported from pi-coding-agent index in 0.67.2 — define locally.
 interface SessionTreeNode {
-	entry: { id: string; parentId: string | null; timestamp: string; [key: string]: any };
+	entry: { id: string; parentId: string | null; timestamp: string; [key: string]: unknown };
 	children: SessionTreeNode[];
 	label?: string;
 	labelTimestamp?: string;
@@ -308,7 +308,6 @@ class TreeList implements Component {
 			}
 
 			// Apply filter mode
-			let passesFilter = true;
 			// Entry types hidden in default view (settings/bookkeeping)
 			const isSettingsEntry =
 				entry.type === "label" ||
@@ -316,6 +315,7 @@ class TreeList implements Component {
 				entry.type === "model_change" ||
 				entry.type === "thinking_level_change";
 
+			let passesFilter: boolean;
 			switch (this.filterMode) {
 				case "user-only":
 					// Just user messages
@@ -333,7 +333,7 @@ class TreeList implements Component {
 					// Show everything
 					passesFilter = true;
 					break;
-				default:
+				case "default":
 					// Default mode: hide settings/bookkeeping entries
 					passesFilter = !isSettingsEntry;
 					break;
@@ -593,7 +593,7 @@ class TreeList implements Component {
 				return " [labeled]";
 			case "all":
 				return " [all]";
-			default:
+			case "default":
 				return "";
 		}
 	}
@@ -686,7 +686,7 @@ class TreeList implements Component {
 		const entry = node.entry;
 		let result: string;
 
-		const normalize = (s: string) => s.replace(/[\n\t]/g, " ").trim();
+		const normalize = (s: string): string => s.replace(/[\n\t]/g, " ").trim();
 
 		switch (entry.type) {
 			case "message": {

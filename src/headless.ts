@@ -444,7 +444,7 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
   const pendingResponseTimers = new Map<string, ReturnType<typeof setTimeout>>()
   let supervisedFallback = false
   let stopSupervisedReader: (() => void) | null = null
-  const onStdinClose = () => {
+  const onStdinClose = (): void => {
     supervisedFallback = true
     process.stderr.write('[headless] Warning: orchestrator stdin closed, falling back to auto-response\n')
   }
@@ -729,7 +729,7 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
   })
 
   // Signal handling
-  const signalHandler = () => {
+  const signalHandler = (): void => {
     process.stderr.write('\n[headless] Interrupted, stopping child process...\n')
     interrupted = true
     exitCode = EXIT_CANCELLED
@@ -760,10 +760,8 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
   }
 
   // v2 protocol negotiation — attempt init for structured completion events
-  let v2Enabled = false
   try {
     await client.init({ clientId: 'gsd-headless' })
-    v2Enabled = true
   } catch {
     process.stderr.write('[headless] Warning: v2 init failed, falling back to v1 string-matching\n')
   }
@@ -859,7 +857,6 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
     // Disable the overall timeout — auto-mode has its own internal supervisor.
     if (timeoutTimer) clearTimeout(timeoutTimer)
     completed = false
-    milestoneReady = false
     blocked = false
     const autoCompletionPromise = new Promise<void>((resolve) => {
       resolveCompletion = resolve

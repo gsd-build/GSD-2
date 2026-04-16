@@ -99,7 +99,9 @@
     "docker:build-runtime": "docker build --target runtime -t ghcr.io/gsd-build/gsd-pi .",
     "docker:build-builder": "docker build --target builder -t ghcr.io/gsd-build/gsd-ci-builder .",
     "prepublishOnly": "npm run sync-pkg-version && npm run sync-platform-versions && node scripts/prepublish-check.mjs && npm run build && npm run typecheck:extensions && npm run validate-pack",
-    "test:live-regression": "node --experimental-strip-types tests/live-regression/run.ts"
+    "test:live-regression": "node --experimental-strip-types tests/live-regression/run.ts",
+    "lint": "eslint packages/gsd-agent-core/src packages/gsd-agent-modes/src packages/gsd-agent-types/src src",
+    "lint:fix": "eslint --fix packages/gsd-agent-core/src packages/gsd-agent-modes/src packages/gsd-agent-types/src src"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.73.0",
@@ -141,13 +143,18 @@
     "zod-to-json-schema": "^3.24.6"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@gsd-build/mcp-server": "*",
     "@types/node": "^24.12.0",
     "@types/picomatch": "^4.0.2",
-    "@gsd-build/mcp-server": "*",
+    "@typescript-eslint/eslint-plugin": "^8.58.2",
+    "@typescript-eslint/parser": "^8.58.2",
     "c8": "^11.0.0",
     "esbuild": "^0.25.12",
+    "eslint": "^10.2.0",
     "jiti": "^2.6.1",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "typescript-eslint": "^8.58.2"
   },
   "optionalDependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.83",

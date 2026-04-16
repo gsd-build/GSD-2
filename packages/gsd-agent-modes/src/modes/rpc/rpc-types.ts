@@ -6,7 +6,7 @@
  */
 
 import type { AgentMessage, ThinkingLevel } from "@gsd/pi-agent-core";
-import type { ImageContent, Model } from "@gsd/pi-ai";
+import type { Api, ImageContent, Model } from "@gsd/pi-ai";
 import type { SessionStats, BashResult, CompactionResult } from "@gsd/agent-types";
 
 // ============================================================================
@@ -104,7 +104,7 @@ export interface RpcSlashCommand {
 // ============================================================================
 
 export interface RpcSessionState {
-	model?: Model<any>;
+	model?: Model<Api>;
 	thinkingLevel: ThinkingLevel;
 	isStreaming: boolean;
 	isCompacting: boolean;
@@ -145,21 +145,21 @@ export type RpcResponse =
 			type: "response";
 			command: "set_model";
 			success: true;
-			data: Model<any>;
+			data: Model<Api>;
 	  }
 	| {
 			id?: string;
 			type: "response";
 			command: "cycle_model";
 			success: true;
-			data: { model: Model<any>; thinkingLevel: ThinkingLevel; isScoped: boolean } | null;
+			data: { model: Model<Api>; thinkingLevel: ThinkingLevel; isScoped: boolean } | null;
 	  }
 	| {
 			id?: string;
 			type: "response";
 			command: "get_available_models";
 			success: true;
-			data: { models: Model<any>[] };
+			data: { models: Model<Api>[] };
 	  }
 
 	// Thinking
