@@ -11,10 +11,10 @@ import {
 	Text,
 	type TUI,
 } from "@gsd/pi-tui";
-import type { AuthStorage } from "@gsd/pi-coding-agent";
+import type { AuthStorage } from "@gsd/agent-types";
 // getDiscoverableProviders and ModelsJsonWriter removed in pi-coding-agent 0.67.2
 import { providerDisplayName } from "./model-selector.js";
-import type { ModelRegistry } from "@gsd/pi-coding-agent";
+import type { ModelRegistry } from "@gsd/agent-types";
 import { theme } from "../../../theme.js";
 import { rawKeyHint } from "./keybinding-hints.js";
 

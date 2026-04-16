@@ -1,5 +1,5 @@
 import { CancellableLoader, Container, Loader, Spacer, Text, type TUI } from "@gsd/pi-tui";
-import type { Theme } from "@gsd/pi-coding-agent";
+import type { Theme } from "@gsd/agent-types";
 import { DynamicBorder } from "./dynamic-border.js";
 import { keyHint } from "./keybinding-hints.js";
 

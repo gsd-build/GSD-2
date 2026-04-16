@@ -1,4 +1,4 @@
-import type { ExtensionUIContext } from "@gsd/pi-coding-agent";
+import type { ExtensionUIContext } from "@gsd/agent-types";
 
 import { Theme, getAvailableThemesWithPaths, getThemeByName, setTheme, setThemeInstance } from "@gsd/pi-coding-agent";
 import { theme } from "../../../theme.js";

@@ -3,7 +3,7 @@
  */
 
 import { type Keybinding, getKeybindings, type KeyId } from "@gsd/pi-tui";
-import type { AppAction } from "@gsd/pi-coding-agent";
+import type { AppAction } from "@gsd/agent-types";
 import { KeybindingsManager } from "@gsd/agent-core";
 import { theme } from "../../../theme.js";
 

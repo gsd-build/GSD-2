@@ -1,6 +1,6 @@
 import { type Component, truncateToWidth, visibleWidth } from "@gsd/pi-tui";
-import type { AgentSession } from "@gsd/pi-coding-agent";
-import type { ReadonlyFooterDataProvider } from "@gsd/pi-coding-agent";
+import type { AgentSession } from "@gsd/agent-types";
+import type { ReadonlyFooterDataProvider } from "@gsd/agent-types";
 import { theme } from "../../../theme.js";
 import { providerDisplayName } from "./model-selector.js";
 

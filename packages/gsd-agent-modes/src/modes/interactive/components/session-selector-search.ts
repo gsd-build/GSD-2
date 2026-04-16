@@ -1,5 +1,5 @@
 import { fuzzyMatch } from "@gsd/pi-tui";
-import type { SessionInfo } from "@gsd/pi-coding-agent";
+import type { SessionInfo } from "@gsd/agent-types";
 
 export type SortMode = "threaded" | "recent" | "relevance";
 

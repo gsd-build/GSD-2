@@ -1,5 +1,5 @@
 import { Editor, type EditorOptions, type EditorTheme, type TUI, isKittyProtocolActive } from "@gsd/pi-tui";
-import type { AppAction } from "@gsd/pi-coding-agent";
+import type { AppAction } from "@gsd/agent-types";
 import { KeybindingsManager } from "@gsd/agent-core";
 
 /**

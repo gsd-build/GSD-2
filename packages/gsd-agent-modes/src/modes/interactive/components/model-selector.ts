@@ -9,8 +9,8 @@ import {
 	Text,
 	type TUI,
 } from "@gsd/pi-tui";
-import type { ModelRegistry } from "@gsd/pi-coding-agent";
-import type { SettingsManager } from "@gsd/pi-coding-agent";
+import type { ModelRegistry } from "@gsd/agent-types";
+import type { SettingsManager } from "@gsd/agent-types";
 import { theme } from "../../../theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { keyHint } from "./keybinding-hints.js";

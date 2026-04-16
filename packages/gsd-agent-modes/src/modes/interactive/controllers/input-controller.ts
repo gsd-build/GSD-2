@@ -1,6 +1,6 @@
 import { dispatchSlashCommand } from "../slash-command-handlers.js";
 import type { InteractiveModeStateHost } from "../interactive-mode-state.js";
-import type { ContextualTips } from "@gsd/pi-coding-agent";
+import type { ContextualTips } from "@gsd/agent-types";
 
 export function setupEditorSubmitHandler(host: InteractiveModeStateHost & {
 	getSlashCommandContext: () => any;

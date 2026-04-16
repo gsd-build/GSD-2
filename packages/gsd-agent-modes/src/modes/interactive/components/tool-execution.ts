@@ -11,8 +11,9 @@ import {
 	truncateToWidth,
 } from "@gsd/pi-tui";
 import stripAnsi from "strip-ansi";
-import type { ToolDefinition } from "@gsd/pi-coding-agent";
-import { computeEditDiff, type EditDiffError, type EditDiffResult } from "@gsd/pi-coding-agent";
+import type { ToolDefinition } from "@gsd/agent-types";
+import { computeEditDiff } from "@gsd/pi-coding-agent";
+import type { EditDiffError, EditDiffResult } from "@gsd/agent-types";
 import { allTools } from "@gsd/pi-coding-agent";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize } from "@gsd/pi-coding-agent";
 import { convertToPng } from "@gsd/pi-coding-agent";

@@ -15,8 +15,8 @@ import {
 	visibleWidth,
 } from "@gsd/pi-tui";
 import { CONFIG_DIR_NAME } from "@gsd/pi-coding-agent";
-import type { PathMetadata, ResolvedPaths, ResolvedResource } from "@gsd/pi-coding-agent";
-import type { PackageSource, SettingsManager } from "@gsd/pi-coding-agent";
+import type { PathMetadata, ResolvedPaths, ResolvedResource } from "@gsd/agent-types";
+import type { PackageSource, SettingsManager } from "@gsd/agent-types";
 import { theme } from "../../../theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { rawKeyHint } from "./keybinding-hints.js";

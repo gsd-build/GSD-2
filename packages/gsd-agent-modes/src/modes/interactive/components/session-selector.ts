@@ -14,7 +14,7 @@ import {
 	visibleWidth,
 } from "@gsd/pi-tui";
 import { KeybindingsManager } from "@gsd/agent-core";
-import type { SessionInfo } from "@gsd/pi-coding-agent";
+import type { SessionInfo } from "@gsd/agent-types";
 import { theme } from "../../../theme.js";
 
 /** Progress callback for session list loading (not exported from pi-coding-agent index). */
