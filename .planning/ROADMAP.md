@@ -75,7 +75,7 @@ Plans:
   2. `grep -r ": any\b\|as any\b\| any;" packages/gsd-agent-core/src/ packages/gsd-agent-modes/src/ packages/gsd-agent-types/src/` returns zero matches
   3. `npm run test:unit && npm run test:packages` exits 0 with zero failing tests (both pre-existing failures and new ones resolved)
   4. Every switch/if-else chain over a union type in GSD packages contains a `never` exhaustive check (verifiable via grep for union type names lacking a default branch)
-**Plans:** 10/10 plans complete
+**Plans:** 11 plans
 
 Plans:
 - [x] 10-01-PLAN.md — Vendor patches (isToolResultEventType, getEditorKeybindings) + assertNever + @gsd/agent-types type additions
@@ -88,6 +88,7 @@ Plans:
 - [x] 10-08-PLAN.md — Gap closure: vendor patches (editorKey, ProcessTerminal.isTTY, repairToolJson) to fix 244 test failures
 - [x] 10-09-PLAN.md — Gap closure: any elimination in gsd-agent-modes components/controllers (49 occurrences)
 - [x] 10-10-PLAN.md — Gap closure: ESLint green pass (unused-vars, return-types, switch-exhaustiveness, remaining any)
+- [ ] 10-11-PLAN.md — Gap closure: fix 174 test failures from removed @gsd/pi-coding-agent 0.67.2 API imports
 
 ### Phase 11: Integration and Release
 **Goal**: A clean-state build from scratch exits 0, the installed binary reports version 2.8.0, and PR #4282 is updated with a description of all v1.1 changes.
@@ -132,5 +133,5 @@ Plans:
 | 7. Vendor Swap | 6/6 | Complete | 2026-04-16 |
 | 8. Breaking API Migrations | 7/7 | Complete | 2026-04-16 |
 | 9. @gsd/agent-types Package | 0/3 | Planning complete | - |
-| 10. TypeScript Strict + Zero Any | 10/10 | Complete   | 2026-04-16 |
+| 10. TypeScript Strict + Zero Any | 10/11 | Gap closure   | 2026-04-16 |
 | 11. Integration and Release | 0/? | Not started | - |
