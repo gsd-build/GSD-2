@@ -1245,10 +1245,11 @@ describe('git-service', async () => {
 
   // ─── nativeAddAllWithExclusions: symlinked .gsd fallback ───────────────
 
-  test('nativeAddAllWithExclusions: symlinked .gsd fallback', () => {
+  test('nativeAddAllWithExclusions: symlinked .gsd fallback stages untracked files (#4125)', () => {
     // When .gsd is a symlink, git rejects `:!.gsd/...` pathspecs with
-    // "fatal: pathspec '...' is beyond a symbolic link". The fix falls
-    // back to `git add -u` (tracked files only), NOT `git add -A`.
+    // "fatal: pathspec '...' is beyond a symbolic link". The fallback runs
+    // a bounded `git add -A` so new untracked files reach the commit.
+    // .gitignore handles `.gsd/` exclusion (not pathspec). (#4125)
     const repo = initTempRepo();
 
     // Create the real .gsd directory outside the repo, then symlink it
@@ -1269,11 +1270,12 @@ describe('git-service', async () => {
     run('git commit -m "add app"', repo);
     writeFileSync(join(repo, "src/app.ts"), "export const x = 2;");
 
-    // Create an untracked file simulating large data (NOT in .gitignore)
-    // This is the key scenario: large untracked dirs that git add -A would traverse
-    createFile(repo, "data/large-model.bin", "pretend this is 10GB");
+    // Create an untracked file (the typical case — agents create new files
+    // during execute-task, e.g. schema.ts, migrations, components). Before
+    // #4125 was fixed the symlink fallback used `git add -u`, silently
+    // dropping these from the auto-commit.
+    createFile(repo, "src/new-feature.ts", "export const feature = true;");
 
-    // nativeAddAllWithExclusions should NOT throw despite .gsd being a symlink
     let threw = false;
     try {
       nativeAddAllWithExclusions(repo, RUNTIME_EXCLUSION_PATHS);
@@ -1283,16 +1285,64 @@ describe('git-service', async () => {
     }
     assert.ok(!threw, "nativeAddAllWithExclusions does not throw with symlinked .gsd");
 
-    // Verify the tracked modified file was staged
     const staged = run("git diff --cached --name-only", repo);
-    assert.ok(staged.includes("src/app.ts"), "modified tracked file staged despite symlinked .gsd");
+    assert.ok(staged.includes("src/app.ts"),
+      "modified tracked file staged despite symlinked .gsd");
+    assert.ok(staged.includes("src/new-feature.ts"),
+      "#4125: untracked file staged by bounded git add -A in symlink fallback");
+    assert.ok(!staged.includes(".gsd"),
+      ".gsd content not staged (.gitignore blocks it)");
 
-    // CRITICAL: untracked files must NOT be staged — the symlink fallback
-    // should use `git add -u` (tracked only), not `git add -A` (all files).
-    // Using `git add -A` on a repo with large untracked data dirs hangs. (#1977)
-    assert.ok(!staged.includes("data/large-model.bin"),
-      "symlink fallback must not stage untracked files (would hang on large repos)");
-    assert.ok(!staged.includes(".gsd"), ".gsd content not staged");
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(externalGsd, { recursive: true, force: true });
+  });
+
+  // ─── nativeAddAllWithExclusions: symlink fallback timeout → -u (#1977) ─
+
+  test('nativeAddAllWithExclusions: symlink fallback timeout degrades to -u (#1977)', () => {
+    // Regression guard for #1977: if the bounded `git add -A` exceeds its
+    // timeout (stand-in for a pathological repo with huge non-gitignored
+    // trees), the fallback must degrade to `git add -u` instead of hanging.
+    const repo = initTempRepo();
+
+    const externalGsd = mkdtempSync(join(tmpdir(), "gsd-external-timeout-"));
+    mkdirSync(join(externalGsd, "activity"), { recursive: true });
+    symlinkSync(externalGsd, join(repo, ".gsd"));
+    writeFileSync(join(repo, ".gitignore"), ".gsd\n");
+
+    createFile(repo, "src/tracked.ts", "export const x = 1;");
+    run("git add -A", repo);
+    run('git commit -m "add tracked"', repo);
+    writeFileSync(join(repo, "src/tracked.ts"), "export const x = 2;");
+
+    createFile(repo, "src/new-untracked.ts", "export const y = 1;");
+
+    // Force a timeout on the bounded git add -A. 1ms is reliably below
+    // git process startup, so SIGTERM fires before any staging happens.
+    const prior = process.env.GSD_SYMLINK_ADD_TIMEOUT_MS;
+    process.env.GSD_SYMLINK_ADD_TIMEOUT_MS = "1";
+
+    let threw = false;
+    try {
+      nativeAddAllWithExclusions(repo, RUNTIME_EXCLUSION_PATHS);
+    } catch (e) {
+      threw = true;
+      console.error("  unexpected error:", e);
+    } finally {
+      if (prior === undefined) delete process.env.GSD_SYMLINK_ADD_TIMEOUT_MS;
+      else process.env.GSD_SYMLINK_ADD_TIMEOUT_MS = prior;
+    }
+
+    assert.ok(!threw,
+      "symlink fallback timeout must not throw — degrades gracefully to -u");
+
+    const staged = run("git diff --cached --name-only", repo);
+    assert.ok(staged.includes("src/tracked.ts"),
+      "timeout path: tracked modifications still staged via -u");
+    assert.ok(!staged.includes("src/new-untracked.ts"),
+      "timeout path: untracked files skipped (acceptable degradation vs hang)");
+    assert.ok(!existsSync(join(repo, ".git", "index.lock")),
+      "timeout path: stale index.lock cleaned up before -u retry");
 
     rmSync(repo, { recursive: true, force: true });
     rmSync(externalGsd, { recursive: true, force: true });
