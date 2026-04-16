@@ -8,7 +8,7 @@ Five sequential phases upgrade vendored pi-mono packages from 0.57.1 to 0.67.2, 
 
 ## Phases
 
-- [ ] **Phase 07: Vendor Swap** - Replace all four pi-mono 0.57.1 source trees with 0.67.2 and achieve a compiling workspace
+- [x] **Phase 07: Vendor Swap** - Replace all four pi-mono 0.57.1 source trees with 0.67.2 and achieve a compiling workspace (completed 2026-04-16)
 - [ ] **Phase 08: Breaking API Migrations** - Migrate session API, ModelRegistry, and edit tool callers to 0.67.2 contracts
 - [ ] **Phase 09: @gsd/agent-types Package** - Create shared type package to break the pi-coding-agent ↔ gsd-agent-core/gsd-agent-modes circular dep
 - [ ] **Phase 10: TypeScript Strict + Zero Any** - Enforce strict: true, eliminate all `any`, add exhaustive union checks, fix all test failures
@@ -37,7 +37,14 @@ Five sequential phases upgrade vendored pi-mono packages from 0.57.1 to 0.67.2, 
   3. `grep -r "session_directory" packages/pi-coding-agent/src/ packages/gsd-agent-core/src/ packages/gsd-agent-modes/src/` returns zero matches
   4. `tsc --noEmit` on `gsd-agent-core` and `gsd-agent-modes` alone exits 0 (pi-coding-agent circular dep errors are acceptable until Phase 09)
   5. A rubber-duck trace document exists in `.planning/` capturing the `session_start` + `event.reason` migration decision
-**Plans**: TBD
+**Plans:** 5 plans
+
+Plans:
+- [ ] 08-01-PLAN.md — Fix 24 type errors (broken re-exports, lifecycle hooks, provider-manager, memory settings)
+- [ ] 08-02-PLAN.md — Rubber-duck trace doc, ModelRegistry factory migration, session_directory removal
+- [ ] 08-03-PLAN.md — Session event emission migration (session_switch/fork to session_start)
+- [ ] 08-04-PLAN.md — AgentSession to AgentSessionRuntime refactor with state preservation tests
+- [ ] 08-05-PLAN.md — TOOL-01/TOOL-02 completion and Phase 08 compile gate verification
 
 ### Phase 09: @gsd/agent-types Package
 **Goal**: A new `@gsd/agent-types` workspace package holds all type-only definitions shared between `pi-coding-agent`, `gsd-agent-core`, and `gsd-agent-modes`; the circular import between those three packages is broken at the compiler level.
@@ -102,8 +109,8 @@ Five sequential phases upgrade vendored pi-mono packages from 0.57.1 to 0.67.2, 
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 7. Vendor Swap | 0/? | Not started | - |
-| 8. Breaking API Migrations | 0/? | Not started | - |
+| 7. Vendor Swap | 6/6 | Complete | 2026-04-16 |
+| 8. Breaking API Migrations | 0/5 | Planning complete | - |
 | 9. @gsd/agent-types Package | 0/? | Not started | - |
 | 10. TypeScript Strict + Zero Any | 0/? | Not started | - |
 | 11. Integration and Release | 0/? | Not started | - |
