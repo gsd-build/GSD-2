@@ -75,15 +75,15 @@ Plans:
   2. `grep -r ": any\b\|as any\b\| any;" packages/gsd-agent-core/src/ packages/gsd-agent-modes/src/ packages/gsd-agent-types/src/` returns zero matches
   3. `npm run test:unit && npm run test:packages` exits 0 with zero failing tests (both pre-existing failures and new ones resolved)
   4. Every switch/if-else chain over a union type in GSD packages contains a `never` exhaustive check (verifiable via grep for union type names lacking a default branch)
-**Plans:** 3/7 plans executed
+**Plans:** 6/7 plans executed
 
 Plans:
 - [x] 10-01-PLAN.md — Vendor patches (isToolResultEventType, getEditorKeybindings) + assertNever + @gsd/agent-types type additions
 - [x] 10-02-PLAN.md — Root src/ errors: cli.ts fixes + security-overrides ownership + getCredentialsForProvider migration
 - [x] 10-03-PLAN.md — Root src/ errors: barrel imports + model-router removed symbols + partial-builder pi-ai fix
-- [ ] 10-04-PLAN.md — GSD any elimination: InteractiveModeStateHost typing + interactive-mode.ts cast removal
-- [ ] 10-05-PLAN.md — GSD any elimination: agent-session.ts casts + dual-module-path TS2345 fix + tsc gate
-- [ ] 10-06-PLAN.md — Test suite refactoring: security-overrides.test.ts + tui-running-and-success-box.test.ts
+- [x] 10-04-PLAN.md — GSD any elimination: InteractiveModeStateHost typing + interactive-mode.ts cast removal
+- [x] 10-05-PLAN.md — GSD any elimination: agent-session.ts casts + dual-module-path TS2345 fix + tsc gate
+- [x] 10-06-PLAN.md — Test suite refactoring: security-overrides.test.ts + tui-running-and-success-box.test.ts
 - [ ] 10-07-PLAN.md — ESLint install + config + CI pi-* protection + final Phase 10 gates
 
 ### Phase 11: Integration and Release
@@ -129,5 +129,5 @@ Plans:
 | 7. Vendor Swap | 6/6 | Complete | 2026-04-16 |
 | 8. Breaking API Migrations | 7/7 | Complete | 2026-04-16 |
 | 9. @gsd/agent-types Package | 0/3 | Planning complete | - |
-| 10. TypeScript Strict + Zero Any | 3/7 | In Progress|  |
+| 10. TypeScript Strict + Zero Any | 6/7 | In Progress|  |
 | 11. Integration and Release | 0/? | Not started | - |
