@@ -85,7 +85,7 @@ if (firstArg === '--help' || firstArg === '-h') {
       execFileSync(
         process.execPath,
         ['--experimental-sqlite', ...process.execArgv, ...process.argv.slice(1)],
-        { stdio: 'inherit', env: { ...process.env, __GSD_SQLITE_REEXEC: '1' } },
+        { stdio: 'inherit', env: { ...process.env, __GSD_SQLITE_REEXEC: '1' }, killSignal: 'SIGTERM' },
       )
       process.exit(0)
     } catch (err: any) {
