@@ -38,6 +38,23 @@ export const GOOGLE_ANTIGRAVITY_MODELS = {
 			contextWindow: 200000,
 			maxTokens: 128000,
 		} satisfies Model<"google-gemini-cli">,
+		"claude-opus-4-7-thinking": {
+			id: "claude-opus-4-7-thinking",
+			name: "Claude Opus 4.7 Thinking (Antigravity)",
+			api: "google-gemini-cli",
+			provider: "google-antigravity",
+			baseUrl: "https://daily-cloudcode-pa.sandbox.googleapis.com",
+			reasoning: true,
+			input: ["text", "image"],
+			cost: {
+				input: 5,
+				output: 25,
+				cacheRead: 0.5,
+				cacheWrite: 6.25,
+			},
+			contextWindow: 200000,
+			maxTokens: 128000,
+		} satisfies Model<"google-gemini-cli">,
 		"claude-sonnet-4-5": {
 			id: "claude-sonnet-4-5",
 			name: "Claude Sonnet 4.5 (Antigravity)",
