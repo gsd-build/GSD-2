@@ -10,6 +10,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { JournalEntry } from "../journal.js";
@@ -315,6 +318,75 @@ test("runDispatch checks prior-slice completion against the project root in work
       args: ["/tmp/project", "main", "execute-task", "M001/S01/T01"],
     },
   ]);
+});
+
+test("runDispatch pauses when complete-milestone summary exists on disk but the unit is still stuck (#4289)", async (t) => {
+  const capture = createEventCapture();
+  let pauseCalls = 0;
+  let stopCalls = 0;
+  const base = join(tmpdir(), `gsd-stuck-complete-${randomUUID()}`);
+  t.after(() => {
+    rmSync(base, { recursive: true, force: true });
+  });
+
+  mkdirSync(join(base, ".gsd", "milestones", "M001"), { recursive: true });
+  mkdirSync(join(base, "src"), { recursive: true });
+  writeFileSync(join(base, ".gsd", "milestones", "M001", "M001-SUMMARY.md"), "# Summary\nDone.\n");
+  writeFileSync(join(base, "src", "app.ts"), "export const ok = true;\n");
+
+  execFileSync("git", ["init", "-b", "main"], { cwd: base, stdio: "ignore" });
+  execFileSync("git", ["config", "user.name", "Codex"], { cwd: base, stdio: "ignore" });
+  execFileSync("git", ["config", "user.email", "codex@example.com"], { cwd: base, stdio: "ignore" });
+  writeFileSync(join(base, "README.md"), "# test\n");
+  execFileSync("git", ["add", "README.md"], { cwd: base, stdio: "ignore" });
+  execFileSync("git", ["commit", "-m", "chore: seed"], { cwd: base, stdio: "ignore" });
+  execFileSync("git", ["checkout", "-b", "fix/test"], { cwd: base, stdio: "ignore" });
+  execFileSync("git", ["add", ".gsd/milestones/M001/M001-SUMMARY.md", "src/app.ts"], { cwd: base, stdio: "ignore" });
+  execFileSync("git", ["commit", "-m", "feat: summary exists but db is stale"], { cwd: base, stdio: "ignore" });
+
+  const deps = makeMockDeps(capture, {
+    pauseAuto: async () => { pauseCalls++; },
+    stopAuto: async () => { stopCalls++; },
+    resolveDispatch: async () => ({
+      action: "dispatch" as const,
+      unitType: "complete-milestone",
+      unitId: "M001",
+      prompt: "complete the milestone",
+      matchedRule: "completing-milestone-rule",
+    }),
+  });
+
+  const ic = makeIC(deps, {
+    s: {
+      ...makeSession(),
+      basePath: base,
+      currentMilestoneId: "M001",
+    } as any,
+  });
+  const preData: PreDispatchData = {
+    state: {
+      phase: "completing-milestone",
+      activeMilestone: { id: "M001", title: "Test", status: "active" },
+      registry: [{ id: "M001", status: "active" }],
+      blockers: [],
+    } as any,
+    mid: "M001",
+    midTitle: "Test Milestone",
+  };
+
+  const result = await runDispatch(ic, preData, {
+    recentUnits: [
+      { key: "complete-milestone/M001" },
+      { key: "complete-milestone/M001" },
+    ],
+    stuckRecoveryAttempts: 0,
+    consecutiveFinalizeTimeouts: 0,
+  });
+
+  assert.equal(result.action, "break");
+  assert.equal((result as any).reason, "complete-milestone-artifact-db-mismatch");
+  assert.equal(pauseCalls, 1, "complete-milestone disk/db mismatch should pause auto-mode");
+  assert.equal(stopCalls, 0, "mismatch pause should not hard-stop the loop");
 });
 
 test("runUnitPhase emits unit-start and unit-end with causedBy reference", async () => {
