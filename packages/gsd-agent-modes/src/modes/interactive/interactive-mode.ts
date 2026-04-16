@@ -46,23 +46,25 @@ import {
 } from "@gsd/pi-coding-agent";
 import type { AgentSession, AgentSessionEvent } from "@gsd/agent-core";
 import { parseSkillBlock } from "@gsd/pi-coding-agent";
-import type { CompactionResult } from "@gsd/pi-coding-agent";
+import type { CompactionResult } from "@gsd/agent-types";
 import type {
 	ExtensionContext,
 	ExtensionRunner,
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
 	ExtensionWidgetOptions,
-} from "@gsd/pi-coding-agent";
-import { FooterDataProvider, type ReadonlyFooterDataProvider } from "@gsd/pi-coding-agent";
-import { type AppAction } from "@gsd/pi-coding-agent";
+} from "@gsd/agent-types";
+import { FooterDataProvider } from "@gsd/pi-coding-agent";
+import type { ReadonlyFooterDataProvider } from "@gsd/agent-types";
+import type { AppAction } from "@gsd/agent-types";
 import { KeybindingsManager } from "@gsd/agent-core";
 import { createCompactionSummaryMessage } from "@gsd/pi-coding-agent";
 import { resolveModelScope } from "@gsd/pi-coding-agent";
-import type { ResourceDiagnostic } from "@gsd/pi-coding-agent";
-import { type SessionContext, SessionManager } from "@gsd/pi-coding-agent";
+import type { ResourceDiagnostic } from "@gsd/agent-types";
+import { SessionManager } from "@gsd/pi-coding-agent";
+import type { SessionContext } from "@gsd/agent-types";
 import { BUILTIN_SLASH_COMMANDS } from "@gsd/pi-coding-agent";
-import type { TruncationResult } from "@gsd/pi-coding-agent";
+import type { TruncationResult } from "@gsd/agent-types";
 import { getChangelogPath, getNewEntries, parseChangelog } from "@gsd/pi-coding-agent";
 import { extensionForImageMimeType, readClipboardImage } from "@gsd/pi-coding-agent";
 import { ensureTool } from "@gsd/pi-coding-agent";

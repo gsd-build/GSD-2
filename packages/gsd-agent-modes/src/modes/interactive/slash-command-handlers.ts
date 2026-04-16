@@ -29,10 +29,10 @@ import {
 	getShareViewerUrl,
 } from "@gsd/pi-coding-agent";
 import type { AgentSession } from "@gsd/agent-core";
-import type { AppAction } from "@gsd/pi-coding-agent";
+import type { AppAction } from "@gsd/agent-types";
 import { KeybindingsManager } from "@gsd/agent-core";
-import type { SessionManager } from "@gsd/pi-coding-agent";
-import type { SettingsManager } from "@gsd/pi-coding-agent";
+import type { SessionManager } from "@gsd/agent-types";
+import type { SettingsManager } from "@gsd/agent-types";
 import { copyToClipboard } from "@gsd/pi-coding-agent";
 import { getChangelogPath, parseChangelog } from "@gsd/pi-coding-agent";
 import { ArminComponent } from "./components/armin.js";
