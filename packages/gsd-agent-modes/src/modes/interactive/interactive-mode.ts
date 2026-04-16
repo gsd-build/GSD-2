@@ -47,12 +47,15 @@ import {
 import type { AgentSession, AgentSessionEvent } from "@gsd/agent-core";
 import { parseSkillBlock } from "@gsd/pi-coding-agent";
 import type { CompactionResult } from "@gsd/agent-types";
+import { isServerToolUseBlock, isWebSearchResultBlock } from "@gsd/agent-types";
 import type {
 	ExtensionContext,
 	ExtensionRunner,
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
 	ExtensionWidgetOptions,
+	ServerToolUseBlock,
+	WebSearchResultBlock,
 } from "@gsd/agent-types";
 import { FooterDataProvider } from "@gsd/pi-coding-agent";
 import type { ReadonlyFooterDataProvider } from "@gsd/agent-types";
@@ -68,6 +71,7 @@ import type { TruncationResult } from "@gsd/agent-types";
 import { getChangelogPath, getNewEntries, parseChangelog } from "@gsd/pi-coding-agent";
 import { extensionForImageMimeType, readClipboardImage } from "@gsd/pi-coding-agent";
 import { ensureTool } from "@gsd/pi-coding-agent";
+import type { RegisteredCommand } from "@gsd/pi-coding-agent";
 import { AssistantMessageComponent } from "./components/assistant-message.js";
 import { BashExecutionComponent } from "./components/bash-execution.js";
 import { BorderedLoader } from "./components/bordered-loader.js";
@@ -131,6 +135,80 @@ function isExpandable(obj: unknown): obj is Expandable {
 	return typeof obj === "object" && obj !== null && "setExpanded" in obj && typeof obj.setExpanded === "function";
 }
 
+/**
+ * Extension interface for SettingsManager — covers optional GSD-specific methods
+ * that exist on the concrete runtime instance but are not in the base SettingsManager
+ * interface (added by GSD without modifying pi-coding-agent).
+ */
+interface GSDSettingsManager {
+	getTimestampFormat?(): string | undefined;
+	setTimestampFormat?(format: string): void;
+	getRespectGitignoreInPicker?(): boolean;
+	setRespectGitignoreInPicker?(enabled: boolean): void;
+}
+
+/**
+ * Extension interface for CombinedAutocompleteProvider — covers optional
+ * GSD-specific methods not in the public type.
+ */
+interface GSDAutocompleteProvider {
+	setRespectGitignore?(enabled: boolean): void;
+}
+
+/**
+ * Extension interface for ResourceLoader — covers getPathMetadata which exists
+ * on DefaultResourceLoader but not on the ResourceLoader interface.
+ */
+interface GSDResourceLoader {
+	getPathMetadata?(): import("@gsd/agent-types").PathMetadata | undefined;
+}
+
+/**
+ * Extension interface for SessionManager — covers wasInterrupted which exists
+ * on the concrete SessionManager but not on the type.
+ */
+interface GSDSessionManager {
+	wasInterrupted?(): boolean;
+}
+
+/**
+ * Extension interface for ExtensionUIDialogOptions — covers the secure flag used
+ * by showExtensionInput but absent from the base pi-coding-agent type.
+ */
+interface GSDExtensionUIDialogOptions extends ExtensionUIDialogOptions {
+	secure?: boolean;
+}
+
+/**
+ * Extension interface for Container — covers detachChildren() which exists on the
+ * concrete pi-tui Container at runtime but is not in the public interface type.
+ */
+interface GSDContainer {
+	detachChildren?(): void;
+	clear(): void;
+}
+
+/**
+ * Extension interface for ModelRegistry — covers optional GSD-specific methods
+ * (discoverModels, getApiKeyForProvider) that exist on the concrete runtime class
+ * but are not in the ModelRegistry interface type.
+ */
+interface GSDModelRegistry {
+	discoverModels?(providers: string[]): Promise<Array<{ error?: string }>>;
+	getApiKeyForProvider?(provider: string): Promise<string | undefined>;
+}
+
+/**
+ * Extension callback error type — covers optional stack field on extension errors
+ * (present at runtime but not in ExtensionErrorListener callback type).
+ */
+interface GSDExtensionCallbackError {
+	extensionPath: string;
+	event: string;
+	error: string;
+	stack?: string;
+}
+
 export type AssistantReplaySegment =
 	| { kind: "assistant"; startIndex: number; endIndex: number }
 	| { kind: "tool"; contentIndex: number };
@@ -139,14 +217,15 @@ export type AssistantReplaySegment =
  * Build replay segments for historical assistant messages so rebuild paths
  * preserve the original content[] ordering between assistant prose and tools.
  */
-export function buildAssistantReplaySegments(contentBlocks: Array<any>): AssistantReplaySegment[] {
+export function buildAssistantReplaySegments(contentBlocks: Array<unknown>): AssistantReplaySegment[] {
 	const segments: AssistantReplaySegment[] = [];
 	let runStart = -1;
 
 	for (let i = 0; i < contentBlocks.length; i++) {
 		const block = contentBlocks[i];
-		const isAssistantText = block?.type === "text" || block?.type === "thinking";
-		const isTool = block?.type === "toolCall" || block?.type === "serverToolUse";
+		const blockType = typeof block === "object" && block !== null && "type" in block ? (block as { type: unknown }).type : undefined;
+		const isAssistantText = blockType === "text" || blockType === "thinking";
+		const isTool = blockType === "toolCall" || blockType === "serverToolUse";
 
 		if (isAssistantText) {
 			if (runStart === -1) runStart = i;
@@ -343,14 +422,14 @@ export class InteractiveMode {
 		this.editorContainer = new Container();
 		this.editorContainer.addChild(this.editor as Component);
 		this.footerDataProvider = new FooterDataProvider();
-		this.footer = new FooterComponent(session as any, this.footerDataProvider);
+		this.footer = new FooterComponent(session as any /* vendor-seam: dual-module-path — AgentSession resolves to @gsd/pi-coding-agent in FooterComponent but @gsd/agent-core here */, this.footerDataProvider);
 		this.footer.setAutoCompactEnabled(session.autoCompactionEnabled);
 
 		// Load hide thinking block setting
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
 
 		// Register themes from resource loader and initialize
-		setRegisteredThemes(this.session.resourceLoader.getThemes().themes as any);
+		setRegisteredThemes(this.session.resourceLoader.getThemes().themes as any /* vendor-seam: dual-module-path — Theme resolves differently through ResourceLoader vs setRegisteredThemes import path */);
 		initTheme(this.settingsManager.getTheme(), true);
 	}
 
@@ -419,7 +498,7 @@ export class InteractiveMode {
 		const builtinCommandNames = new Set(slashCommands.map((c) => c.name));
 		const extensionCommands: SlashCommand[] = (
 			this.session.extensionRunner?.getRegisteredCommands() ?? []
-		).filter((cmd: any) => !builtinCommandNames.has(cmd.name)).map((cmd: any) => ({
+		).filter((cmd: RegisteredCommand) => !builtinCommandNames.has(cmd.name)).map((cmd: RegisteredCommand) => ({
 			name: cmd.name,
 			description: cmd.description ?? "(extension command)",
 			getArgumentCompletions: cmd.getArgumentCompletions,
@@ -1012,7 +1091,7 @@ export class InteractiveMode {
 			return;
 		}
 
-		const metadata = (this.session.resourceLoader as any).getPathMetadata?.();
+		const metadata = (this.session.resourceLoader as unknown as GSDResourceLoader).getPathMetadata?.();
 		const sectionHeader = (name: string, color: ThemeColor = "mdHeading") => theme.fg(color, `[${name}]`);
 
 		const skillsResult = this.session.resourceLoader.getSkills();
@@ -1231,12 +1310,13 @@ export class InteractiveMode {
 					}
 				},
 				onError: (error) => {
-					this.showExtensionError(error.extensionPath, error.error, (error as any).stack);
+					const gsdError = error as unknown as GSDExtensionCallbackError;
+					this.showExtensionError(gsdError.extensionPath, gsdError.error, gsdError.stack);
 				},
 			});
 		}
 
-		setRegisteredThemes(this.session.resourceLoader.getThemes().themes as any);
+		setRegisteredThemes(this.session.resourceLoader.getThemes().themes as any /* vendor-seam: dual-module-path — Theme resolves differently through ResourceLoader vs setRegisteredThemes import path */);
 		this.setupAutocomplete();
 
 		const extensionRunner = this.session.extensionRunner;
@@ -1262,18 +1342,20 @@ export class InteractiveMode {
 	private formatWebSearchResult(content: unknown): string {
 		if (!content) return "Web search completed";
 
-		// Error result
-		if (typeof content === "object" && "type" in (content as any) && (content as any).type === "web_search_tool_result_error") {
-			const error = content as any;
+		// Error result — web_search_tool_result_error is a runtime-only type not in pi-ai types
+		if (typeof content === "object" && content !== null && "type" in content &&
+			(content as { type: unknown }).type === "web_search_tool_result_error") {
+			const error = content as { type: string; error_code?: string };
 			return `Search error: ${error.error_code || "unknown"}`;
 		}
 
-		// Array of search results
+		// Array of search results — items are runtime-only web_search_result objects
 		if (Array.isArray(content)) {
-			const results = content.filter((r: any) => r.type === "web_search_result");
+			const results = (content as Array<{ type?: string; title?: string; url?: string }>)
+				.filter((r) => r.type === "web_search_result");
 			if (results.length === 0) return "No results found";
 			return results
-				.map((r: any) => {
+				.map((r) => {
 					const title = r.title || "Untitled";
 					const url = r.url || "";
 					return `${title}\n  ${url}`;
@@ -1444,7 +1526,7 @@ export class InteractiveMode {
 		// so there's no extra blank line between pinned output and the editor border.
 		// Use detachChildren() (not clear()) — the extensionWidgetsAbove map owns
 		// disposal; clear() would dispose every mounted widget on every re-render.
-		(this.widgetContainerAbove as any).detachChildren?.() ?? this.widgetContainerAbove.clear();
+		(this.widgetContainerAbove as unknown as GSDContainer).detachChildren?.() ?? this.widgetContainerAbove.clear();
 		const pinned = this.pinnedMessageContainer;
 		this.widgetContainerAbove.addChild({
 			render: () => pinned.children.length > 0 ? [] : [""],
@@ -1466,7 +1548,7 @@ export class InteractiveMode {
 	): void {
 		// Detach without disposing — the widgets map owns lifecycle; disposing
 		// here would kill refresh timers and subscriptions on every re-render.
-		(container as any).detachChildren?.() ?? container.clear();
+		(container as unknown as GSDContainer).detachChildren?.() ?? container.clear();
 
 		if (widgets.size === 0) {
 			if (spacerWhenEmpty) {
@@ -1690,7 +1772,7 @@ export class InteractiveMode {
 					this.hideExtensionInput();
 					resolve(undefined);
 				},
-				{ tui: this.ui, timeout: opts?.timeout, secure: (opts as any)?.secure },
+				{ tui: this.ui, timeout: opts?.timeout, secure: (opts as unknown as GSDExtensionUIDialogOptions)?.secure },
 			);
 
 			this.editorContainer.clear();
@@ -2068,7 +2150,7 @@ export class InteractiveMode {
 	}
 
 	private setupEditorSubmitHandler(): void {
-		setupEditorSubmitHandlerController(this as any);
+		setupEditorSubmitHandlerController(this as unknown as Parameters<typeof setupEditorSubmitHandlerController>[0]);
 	}
 
 	private subscribeToAgent(): void {
@@ -2079,7 +2161,7 @@ export class InteractiveMode {
 	}
 
 	private async handleEvent(event: AgentSessionEvent): Promise<void> {
-		await handleAgentEvent(this as any, event);
+		await handleAgentEvent(this as unknown as Parameters<typeof handleAgentEvent>[0], event);
 	}
 
 	/** Extract text content from a user message */
@@ -2120,7 +2202,7 @@ export class InteractiveMode {
 	}
 
 	private addMessageToChat(message: AgentMessage, options?: { populateHistory?: boolean }): void {
-		const timestampFormat = (this.settingsManager as any).getTimestampFormat?.();
+		const timestampFormat = (this.settingsManager as unknown as GSDSettingsManager).getTimestampFormat?.();
 		switch (message.role) {
 			case "bashExecution": {
 				const component = new BashExecutionComponent(message.command, this.ui, message.excludeFromContext);
@@ -2235,7 +2317,7 @@ export class InteractiveMode {
 		options: { updateFooter?: boolean; populateHistory?: boolean } = {},
 	): void {
 		this.pendingTools.clear();
-		const timestampFormat = (this.settingsManager as any).getTimestampFormat?.();
+		const timestampFormat = (this.settingsManager as unknown as GSDSettingsManager).getTimestampFormat?.();
 
 		if (options.updateFooter) {
 			this.footer.invalidate();
@@ -2245,7 +2327,7 @@ export class InteractiveMode {
 		for (const message of sessionContext.messages) {
 			// Assistant messages need special handling for tool calls
 			if (message.role === "assistant") {
-				const hasToolBlocks = message.content.some((c: any) => c.type === "toolCall" || c.type === "serverToolUse");
+				const hasToolBlocks = message.content.some((c) => c.type === "toolCall" || isServerToolUseBlock(c));
 				if (!hasToolBlocks) {
 					this.addMessageToChat(message);
 					continue;
@@ -2295,11 +2377,11 @@ export class InteractiveMode {
 						} else {
 							this.pendingTools.set(content.id, component);
 						}
-					} else if ((content as any).type === "serverToolUse") {
+					} else if (isServerToolUseBlock(content)) {
 						// Server-side tool (e.g., native web search)
 						const component = new ToolExecutionComponent(
-							(content as any).name,
-							(content as any).input ?? {},
+							content.name,
+							content.input,
 							{ showImages: this.settingsManager.getShowImages() },
 							undefined,
 							this.ui,
@@ -2308,11 +2390,11 @@ export class InteractiveMode {
 						this.chatContainer.addChild(component);
 						// Find matching webSearchResult in this message's content
 						const resultBlock = message.content.find(
-							(c: any) => c.type === "webSearchResult" && c.toolUseId === (content as any).id,
+							(c) => isWebSearchResultBlock(c) && c.toolUseId === content.id,
 						);
-						if (resultBlock && (resultBlock as any).type === "webSearchResult") {
-							const searchContent = (resultBlock as any).content;
-							const isError = searchContent && typeof searchContent === "object" && "type" in (searchContent as any) && (searchContent as any).type === "web_search_tool_result_error";
+						if (resultBlock && isWebSearchResultBlock(resultBlock)) {
+							const searchContent = resultBlock.content;
+							const isError = searchContent && typeof searchContent === "object" && "type" in searchContent && (searchContent as { type: unknown }).type === "web_search_tool_result_error";
 							const resultText = this.formatWebSearchResult(searchContent);
 							component.updateResult({
 								content: [{ type: "text", text: resultText }],
@@ -2320,7 +2402,9 @@ export class InteractiveMode {
 							});
 						} else {
 							// No result yet (aborted stream?) — show as pending
-							this.pendingTools.set((content as any).id, component);
+							if (content.id) {
+								this.pendingTools.set(content.id, component);
+							}
 						}
 					}
 				}
@@ -2418,7 +2502,8 @@ export class InteractiveMode {
 		}
 		if (lastTextIndex >= 0) {
 			for (let i = lastTextIndex + 1; i < content.length; i++) {
-				if ((content[i] as any).type === "toolCall" || (content[i] as any).type === "serverToolUse") {
+				const block = content[i];
+				if (block.type === "toolCall" || isServerToolUseBlock(block)) {
 					hasToolAfterText = true;
 					break;
 				}
@@ -3046,10 +3131,10 @@ export class InteractiveMode {
 					showHardwareCursor: this.settingsManager.getShowHardwareCursor(),
 					editorPaddingX: this.settingsManager.getEditorPaddingX(),
 					autocompleteMaxVisible: this.settingsManager.getAutocompleteMaxVisible(),
-					respectGitignoreInPicker: (this.settingsManager as any).getRespectGitignoreInPicker?.() ?? true,
+					respectGitignoreInPicker: (this.settingsManager as unknown as GSDSettingsManager).getRespectGitignoreInPicker?.() ?? true,
 					quietStartup: this.settingsManager.getQuietStartup(),
 					clearOnShrink: this.settingsManager.getClearOnShrink(),
-					timestampFormat: (this.settingsManager as any).getTimestampFormat?.(),
+					timestampFormat: (this.settingsManager as unknown as GSDSettingsManager).getTimestampFormat?.(),
 				},
 				{
 					onAutoCompactChange: (enabled) => {
@@ -3150,11 +3235,11 @@ export class InteractiveMode {
 						this.ui.setClearOnShrink(enabled);
 					},
 					onRespectGitignoreInPickerChange: (enabled) => {
-						(this.settingsManager as any).setRespectGitignoreInPicker?.(enabled);
-						(this.autocompleteProvider as any)?.setRespectGitignore?.(enabled);
+						(this.settingsManager as unknown as GSDSettingsManager).setRespectGitignoreInPicker?.(enabled);
+						(this.autocompleteProvider as unknown as GSDAutocompleteProvider | undefined)?.setRespectGitignore?.(enabled);
 					},
 					onTimestampFormatChange: (format) => {
-						(this.settingsManager as any).setTimestampFormat?.(format);
+						(this.settingsManager as unknown as GSDSettingsManager).setTimestampFormat?.(format);
 					},
 					onCancel: () => {
 						done();
@@ -3552,7 +3637,7 @@ export class InteractiveMode {
 		this.chatContainer.clear();
 		this.renderInitialMessages();
 
-		if ((this.session.sessionManager as any).wasInterrupted?.()) {
+		if ((this.session.sessionManager as unknown as GSDSessionManager).wasInterrupted?.()) {
 			this.showStatus("Resumed session (previous session ended unexpectedly — last action may be incomplete)");
 		} else {
 			this.showStatus("Resumed session");
@@ -3572,7 +3657,7 @@ export class InteractiveMode {
 				async (provider: string) => {
 					this.showStatus(`Discovering models for ${provider}...`);
 					try {
-						const results = await (this.session.modelRegistry as any).discoverModels?.([provider]) ?? [];
+						const results = await (this.session.modelRegistry as unknown as GSDModelRegistry).discoverModels?.([provider]) ?? [];
 						const result = results[0];
 						if (result?.error) {
 							this.showError(`Discovery failed: ${result.error}`);
@@ -3733,7 +3818,7 @@ export class InteractiveMode {
 			try {
 				const currentModel = this.session.model;
 				if (currentModel) {
-					const currentKey = await (this.session.modelRegistry as any).getApiKeyForProvider?.(currentModel.provider);
+					const currentKey = await (this.session.modelRegistry as unknown as GSDModelRegistry).getApiKeyForProvider?.(currentModel.provider);
 					if (!currentKey) {
 						const available = this.session.modelRegistry.getAvailable();
 						const newProviderModel = available.find((m) => m.provider === providerId);
@@ -3793,7 +3878,7 @@ export class InteractiveMode {
 
 		try {
 			await this.session.reload();
-			setRegisteredThemes(this.session.resourceLoader.getThemes().themes as any);
+			setRegisteredThemes(this.session.resourceLoader.getThemes().themes as any /* vendor-seam: dual-module-path — Theme resolves differently through ResourceLoader vs setRegisteredThemes import path */);
 			this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
 			const themeName = this.settingsManager.getTheme();
 			const themeResult = themeName ? setTheme(themeName, true) : { success: true };
