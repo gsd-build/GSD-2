@@ -99,6 +99,49 @@ function makeProjectWithArtifacts(projectDir: string): void {
 }
 
 // ---------------------------------------------------------------------------
+// LEARNINGS.md fixture helpers
+// ---------------------------------------------------------------------------
+
+function writeLearningsFixture(projectDir: string, milestoneId: string, content: string): void {
+  writeFixture(projectDir, `.gsd/milestones/${milestoneId}/${milestoneId}-LEARNINGS.md`, content);
+}
+
+const SAMPLE_LEARNINGS = `---
+phase: "M001"
+phase_name: "User Auth"
+project: "my-project"
+generated: "2026-04-15T10:00:00Z"
+counts:
+  decisions: 2
+  lessons: 1
+  patterns: 1
+  surprises: 1
+missing_artifacts: []
+---
+
+# Learnings: User Auth
+
+## Decisions
+- Use JWT for stateless auth across services.
+  Source: M001-PLAN.md/Architecture
+
+- Store refresh tokens in HTTP-only cookies only.
+  Source: M001-PLAN.md/Security
+
+## Lessons
+- Integration tests need a real DB — mocks missed migration bugs.
+  Source: M001-SUMMARY.md/Testing
+
+## Patterns
+- Repository pattern abstracts DB access and simplifies testing.
+  Source: M001-PLAN.md/Design
+
+## Surprises
+- Token expiry edge case caused silent auth failures in prod.
+  Source: M001-SUMMARY.md/Issues
+`;
+
+// ---------------------------------------------------------------------------
 // buildGraph tests
 // ---------------------------------------------------------------------------
 
@@ -159,6 +202,141 @@ describe('buildGraph', () => {
         `Invalid confidence: ${node.confidence}`,
       );
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildGraph — LEARNINGS.md parsing tests
+// ---------------------------------------------------------------------------
+
+describe('buildGraph — LEARNINGS.md parsing', () => {
+  let projectDir: string;
+
+  beforeEach(() => {
+    projectDir = tmpProject();
+    // Create minimal milestone directory so parseMilestoneFiles finds it
+    mkdirSync(join(projectDir, '.gsd', 'milestones', 'M001'), { recursive: true });
+    writeLearningsFixture(projectDir, 'M001', SAMPLE_LEARNINGS);
+  });
+
+  afterEach(() => rmSync(projectDir, { recursive: true, force: true }));
+
+  it('extracts decision nodes from ## Decisions section', async () => {
+    const graph = await buildGraph(projectDir);
+    const decisions = graph.nodes.filter((n) => n.type === 'decision' || (n.type === 'rule' && n.id.startsWith('decision:')));
+    // Decisions should be extracted with a 'decision' type (or similar existing type)
+    const decisionNodes = graph.nodes.filter((n) => n.id.includes('decision:M001'));
+    assert.ok(decisionNodes.length >= 2, `Expected >= 2 decision nodes, got ${decisionNodes.length}`);
+  });
+
+  it('extracts lesson nodes from ## Lessons section', async () => {
+    const graph = await buildGraph(projectDir);
+    const lessonNodes = graph.nodes.filter((n) => n.id.includes('lesson:M001'));
+    assert.ok(lessonNodes.length >= 1, `Expected >= 1 lesson node, got ${lessonNodes.length}`);
+    assert.ok(lessonNodes.every((n) => n.type === 'lesson'), 'All lesson nodes must have type "lesson"');
+  });
+
+  it('extracts pattern nodes from ## Patterns section', async () => {
+    const graph = await buildGraph(projectDir);
+    const patternNodes = graph.nodes.filter((n) => n.id.includes('pattern:M001'));
+    assert.ok(patternNodes.length >= 1, `Expected >= 1 pattern node, got ${patternNodes.length}`);
+    assert.ok(patternNodes.every((n) => n.type === 'pattern'), 'All pattern nodes must have type "pattern"');
+  });
+
+  it('maps surprises to lesson nodes', async () => {
+    const graph = await buildGraph(projectDir);
+    // Surprises should be mapped to lesson type since no "surprise" NodeType exists
+    const surpriseNodes = graph.nodes.filter((n) => n.id.includes('surprise:M001'));
+    assert.ok(surpriseNodes.length >= 1, `Expected >= 1 surprise node, got ${surpriseNodes.length}`);
+    assert.ok(surpriseNodes.every((n) => n.type === 'lesson'), 'Surprises must be mapped to type "lesson"');
+  });
+
+  it('node labels contain the learning text', async () => {
+    const graph = await buildGraph(projectDir);
+    const hasJwtDecision = graph.nodes.some((n) =>
+      n.label.toLowerCase().includes('jwt') || n.description?.toLowerCase().includes('jwt'),
+    );
+    assert.ok(hasJwtDecision, 'Expected a node describing the JWT decision');
+  });
+
+  it('node description includes source attribution', async () => {
+    const graph = await buildGraph(projectDir);
+    const learningNodes = graph.nodes.filter((n) =>
+      n.id.includes(':M001:') || n.id.match(/:(decision|lesson|pattern|surprise):M001/),
+    );
+    const withSource = learningNodes.filter((n) => n.description?.includes('Source:') || n.description?.includes('M001-PLAN'));
+    assert.ok(withSource.length > 0, 'Expected at least one node with source attribution in description');
+  });
+
+  it('adds relates_to edge from learning node to milestone node', async () => {
+    const graph = await buildGraph(projectDir);
+    const edgesToMilestone = graph.edges.filter(
+      (e) => e.to === 'milestone:M001' || e.from === 'milestone:M001',
+    );
+    // At least one learning node should relate to the milestone
+    const learningEdges = graph.edges.filter(
+      (e) => (e.from.includes('M001') && (e.type === 'relates_to' || e.type === 'contains')) ||
+              (e.to.includes('M001') && e.type === 'relates_to'),
+    );
+    assert.ok(learningEdges.length > 0 || edgesToMilestone.length > 0,
+      'Expected edges connecting learning nodes to milestone');
+  });
+
+  it('skips LEARNINGS.md gracefully when file is malformed', async () => {
+    const badProject = tmpProject();
+    mkdirSync(join(badProject, '.gsd', 'milestones', 'M002'), { recursive: true });
+    writeLearningsFixture(badProject, 'M002', '\0\0\0 not valid yaml or markdown \0\0\0');
+    // Must not throw
+    const graph = await buildGraph(badProject);
+    assert.ok(graph.nodes.length >= 0);
+    assert.equal(typeof graph.builtAt, 'string');
+    rmSync(badProject, { recursive: true, force: true });
+  });
+
+  it('produces no learning nodes when all sections are empty', async () => {
+    const emptyProject = tmpProject();
+    mkdirSync(join(emptyProject, '.gsd', 'milestones', 'M003'), { recursive: true });
+    writeLearningsFixture(emptyProject, 'M003', `---
+phase: "M003"
+phase_name: "Empty"
+project: "test"
+generated: "2026-04-15T10:00:00Z"
+counts:
+  decisions: 0
+  lessons: 0
+  patterns: 0
+  surprises: 0
+missing_artifacts: []
+---
+
+# Learnings: Empty
+
+## Decisions
+
+## Lessons
+
+## Patterns
+
+## Surprises
+`);
+    const graph = await buildGraph(emptyProject);
+    const learningNodes = graph.nodes.filter((n) =>
+      n.id.includes('decision:M003') ||
+      n.id.includes('lesson:M003') ||
+      n.id.includes('pattern:M003') ||
+      n.id.includes('surprise:M003'),
+    );
+    assert.equal(learningNodes.length, 0, 'Empty sections should produce no nodes');
+    rmSync(emptyProject, { recursive: true, force: true });
+  });
+
+  it('does not crash when LEARNINGS.md is missing entirely', async () => {
+    const noLearningsProject = tmpProject();
+    mkdirSync(join(noLearningsProject, '.gsd', 'milestones', 'M004'), { recursive: true });
+    // No LEARNINGS.md file written
+    const graph = await buildGraph(noLearningsProject);
+    assert.ok(graph.nodes.length >= 0);
+    rmSync(noLearningsProject, { recursive: true, force: true });
   });
 });
 

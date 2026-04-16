@@ -44,19 +44,19 @@ uok:
   legacy_fallback:
     enabled: false
   gates:
-    enabled: false
+    enabled: true
   model_policy:
-    enabled: false
+    enabled: true
   execution_graph:
-    enabled: false
+    enabled: true
   gitops:
-    enabled: false
+    enabled: true
     turn_action: status-only
     turn_push: false
   audit_unified:
-    enabled: false
+    enabled: true
   plan_v2:
-    enabled: false
+    enabled: true
 auto_visualize:
 auto_report:
 parallel:
@@ -89,6 +89,7 @@ remote_questions:
 uat_dispatch:
 post_unit_hooks: []
 pre_dispatch_hooks: []
+# language:
 # experimental:
 #   rtk: false
 ---

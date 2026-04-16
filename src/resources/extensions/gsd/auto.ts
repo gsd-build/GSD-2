@@ -201,7 +201,7 @@ import {
 } from "./auto-post-unit.js";
 import { bootstrapAutoSession, openProjectDbIfPresent, type BootstrapDeps } from "./auto-start.js";
 import { initHealthWidget } from "./health-widget.js";
-import { autoLoop, resolveAgentEnd, resolveAgentEndCancelled, _resetPendingResolve, isSessionSwitchInFlight, type LoopDeps, type ErrorContext } from "./auto-loop.js";
+import { runLegacyAutoLoop, runUokKernelLoop, resolveAgentEnd, resolveAgentEndCancelled, _resetPendingResolve, isSessionSwitchInFlight, type LoopDeps, type ErrorContext } from "./auto-loop.js";
 import { runAutoLoopWithUok } from "./uok/kernel.js";
 import { resolveUokFlags } from "./uok/flags.js";
 // Slice-level parallelism (#2340)
@@ -1538,7 +1538,8 @@ export async function startAuto(
       pi,
       s,
       deps: buildLoopDeps(),
-      runLegacyLoop: autoLoop,
+      runKernelLoop: runUokKernelLoop,
+      runLegacyLoop: runLegacyAutoLoop,
     });
     cleanupAfterLoopExit(ctx);
     return;
@@ -1579,34 +1580,12 @@ export async function startAuto(
     pi,
     s,
     deps: buildLoopDeps(),
-    runLegacyLoop: autoLoop,
+    runKernelLoop: runUokKernelLoop,
+    runLegacyLoop: runLegacyAutoLoop,
   });
   cleanupAfterLoopExit(ctx);
 }
 
-// ─── Agent End Handler ────────────────────────────────────────────────────────
-
-/**
- * Deprecated thin wrapper — kept as export for backward compatibility.
- * The actual agent_end processing now happens via resolveAgentEnd() in auto-loop.ts,
- * which is called directly from index.ts. The autoLoop() while loop handles all
- * post-unit processing (verification, hooks, dispatch) that this function used to do.
- *
- * If called by straggler code, it simply resolves the pending promise so the loop
- * can continue.
- */
-export async function handleAgentEnd(
-  ctx: ExtensionContext,
-  pi: ExtensionAPI,
-): Promise<void> {
-  if (!s.active || !s.cmdCtx) {
-    // Even when inactive, resolve any pending promise so the loop is unblocked.
-    resolveAgentEndCancelled();
-    return;
-  }
-  clearUnitTimeout();
-  resolveAgentEnd({ messages: [] });
-}
 // describeNextUnit is imported from auto-dashboard.ts and re-exported
 export { describeNextUnit } from "./auto-dashboard.js";
 

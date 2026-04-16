@@ -1267,7 +1267,7 @@ test("auto-loop.ts barrel re-exports autoLoop, runUnit, and resolveAgentEnd", ()
   );
 });
 
-test("auto.ts startAuto dispatches through the UOK kernel wrapper (legacy loop adapter)", () => {
+test("auto.ts startAuto dispatches through the UOK kernel wrapper with explicit kernel and legacy paths", () => {
   const src = readFileSync(
     resolve(import.meta.dirname, "..", "auto.ts"),
     "utf-8",
@@ -1283,8 +1283,12 @@ test("auto.ts startAuto dispatches through the UOK kernel wrapper (legacy loop a
     "startAuto must dispatch through runAutoLoopWithUok()",
   );
   assert.ok(
-    fnBlock.includes("runLegacyLoop: autoLoop"),
-    "startAuto must preserve the legacy autoLoop adapter in kernel dispatch",
+    fnBlock.includes("runKernelLoop: runUokKernelLoop"),
+    "startAuto must wire the explicit UOK kernel loop path",
+  );
+  assert.ok(
+    fnBlock.includes("runLegacyLoop: runLegacyAutoLoop"),
+    "startAuto must preserve explicit legacy fallback dispatch",
   );
 });
 
@@ -1332,7 +1336,7 @@ test("startAuto guards against concurrent invocation (#2923)", () => {
   );
 });
 
-test("agent_end handler calls resolveAgentEnd (not handleAgentEnd)", () => {
+test("agent_end handler calls resolveAgentEnd (not the legacy auto.ts path)", () => {
   const hooksSrc = readFileSync(
     resolve(import.meta.dirname, "..", "bootstrap", "register-hooks.ts"),
     "utf-8",
@@ -1347,7 +1351,7 @@ test("agent_end handler calls resolveAgentEnd (not handleAgentEnd)", () => {
   );
   assert.ok(
     recoverySrc.includes("resolveAgentEnd(event)"),
-    "agent_end success path must call resolveAgentEnd(event) instead of handleAgentEnd(ctx, pi)",
+    "agent_end success path must call resolveAgentEnd(event) instead of legacy wrappers",
   );
   assert.ok(
     recoverySrc.includes("isSessionSwitchInFlight()"),
@@ -1386,32 +1390,6 @@ test("auto-timeout-recovery.ts calls resolveAgentEnd instead of dispatchNextUnit
   assert.ok(
     src.includes("resolveAgentEnd("),
     "auto-timeout-recovery.ts must call resolveAgentEnd to re-iterate the loop on timeout recovery",
-  );
-});
-
-test("handleAgentEnd in auto.ts is a thin wrapper calling resolveAgentEnd", () => {
-  const src = readFileSync(
-    resolve(import.meta.dirname, "..", "auto.ts"),
-    "utf-8",
-  );
-  const fnIdx = src.indexOf("export async function handleAgentEnd");
-  assert.ok(fnIdx > -1, "handleAgentEnd must exist");
-  const fnEnd = src.indexOf("\n// ─── ", fnIdx + 100);
-  const fnBlock =
-    fnEnd > -1 ? src.slice(fnIdx, fnEnd) : src.slice(fnIdx, fnIdx + 1000);
-  assert.ok(
-    fnBlock.includes("resolveAgentEnd("),
-    "handleAgentEnd must call resolveAgentEnd",
-  );
-  // The function should be short — no reentrancy guard, no verification, no dispatch
-  assert.ok(
-    !fnBlock.includes("dispatchNextUnit"),
-    "handleAgentEnd must not call dispatchNextUnit (it's now a thin wrapper)",
-  );
-  assert.ok(
-    !fnBlock.includes("postUnitPreVerification") &&
-      !fnBlock.includes("postUnitPostVerification"),
-    "handleAgentEnd must not contain verification logic (moved to autoLoop)",
   );
 });
 

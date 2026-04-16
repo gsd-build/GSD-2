@@ -27,7 +27,8 @@ export type NodeType =
   | 'rule'
   | 'pattern'
   | 'lesson'
-  | 'concept';
+  | 'concept'
+  | 'decision';
 
 export type EdgeType =
   | 'contains'
@@ -387,6 +388,151 @@ function parseTasksFromPlan(
 }
 
 // ---------------------------------------------------------------------------
+// LEARNINGS.md parser
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse all *-LEARNINGS.md files found in milestone directories.
+ * Extracts Decisions, Lessons, Patterns, and Surprises as typed graph nodes.
+ * Surprises are mapped to the 'lesson' NodeType (no distinct type exists).
+ * Parse errors per file are caught — the file is skipped, never rethrows.
+ */
+function parseLearningsFiles(gsdRoot: string, nodes: GraphNode[], edges: GraphEdge[]): void {
+  const milestoneIds = findMilestoneIds(gsdRoot);
+
+  for (const milestoneId of milestoneIds) {
+    try {
+      parseSingleLearningsFile(gsdRoot, milestoneId, nodes, edges);
+    } catch {
+      // Skip this milestone's LEARNINGS.md on any error
+    }
+  }
+}
+
+function parseSingleLearningsFile(
+  gsdRoot: string,
+  milestoneId: string,
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+): void {
+  const mDir = resolveMilestoneDir(gsdRoot, milestoneId);
+  if (!mDir) return;
+
+  const learningsPath = join(mDir, `${milestoneId}-LEARNINGS.md`);
+  if (!existsSync(learningsPath)) return;
+
+  let content: string;
+  try {
+    content = readFileSync(learningsPath, 'utf-8');
+  } catch {
+    return;
+  }
+
+  // Strip YAML frontmatter if present
+  const withoutFrontmatter = content.replace(/^---[\s\S]*?---\n?/, '');
+
+  const milestoneNodeId = `milestone:${milestoneId}`;
+  const sourceFile = `milestones/${milestoneId}/${milestoneId}-LEARNINGS.md`;
+
+  // Parse each section: [sectionName, nodeType, idPrefix]
+  const sections: Array<[string, NodeType, string]> = [
+    ['Decisions', 'decision', 'decision'],
+    ['Lessons', 'lesson', 'lesson'],
+    ['Patterns', 'pattern', 'pattern'],
+    ['Surprises', 'lesson', 'surprise'],
+  ];
+
+  for (const [sectionName, nodeType, idPrefix] of sections) {
+    const sectionMatch = withoutFrontmatter.match(
+      new RegExp(`##\\s+${sectionName}\\s*\\n([\\s\\S]*?)(?=\\n##\\s|$)`, 'i'),
+    );
+    if (!sectionMatch) continue;
+
+    const sectionContent = sectionMatch[1];
+    parseLearningsSection(
+      sectionContent,
+      milestoneId,
+      idPrefix,
+      nodeType,
+      milestoneNodeId,
+      sourceFile,
+      nodes,
+      edges,
+    );
+  }
+}
+
+function parseLearningsSection(
+  sectionContent: string,
+  milestoneId: string,
+  idPrefix: string,
+  nodeType: NodeType,
+  milestoneNodeId: string,
+  sourceFile: string,
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+): void {
+  // Each item is a bullet line starting with "- " followed by optional
+  // indented "Source: ..." line.
+  // We collect bullet items and their associated source attribution.
+  const lines = sectionContent.split('\n');
+  let itemIndex = 0;
+  let currentText: string | null = null;
+  let currentSource: string | null = null;
+
+  const flushItem = (): void => {
+    if (!currentText) return;
+    itemIndex += 1;
+    const nodeId = `${idPrefix}:${milestoneId}:${itemIndex}`;
+    const description = currentSource ? `${currentSource}` : undefined;
+
+    nodes.push({
+      id: nodeId,
+      label: currentText,
+      type: nodeType,
+      description,
+      confidence: 'EXTRACTED',
+      sourceFile,
+    });
+
+    // Edge: milestone relates_to this learning node
+    edges.push({
+      from: milestoneNodeId,
+      to: nodeId,
+      type: 'relates_to',
+      confidence: 'EXTRACTED',
+    });
+
+    currentText = null;
+    currentSource = null;
+  };
+
+  for (const line of lines) {
+    const bulletMatch = line.match(/^[-*]\s+(.+)/);
+    if (bulletMatch) {
+      flushItem();
+      currentText = bulletMatch[1].trim();
+      continue;
+    }
+
+    // Indented source attribution: "  Source: ..."
+    const sourceMatch = line.match(/^\s+Source:\s+(.+)/i);
+    if (sourceMatch && currentText !== null) {
+      currentSource = `Source: ${sourceMatch[1].trim()}`;
+      continue;
+    }
+
+    // Continuation of current item text (indented non-source line)
+    const continuationMatch = line.match(/^\s{2,}(.+)/);
+    if (continuationMatch && currentText !== null && currentSource === null) {
+      currentText += ' ' + continuationMatch[1].trim();
+    }
+  }
+
+  flushItem();
+}
+
+// ---------------------------------------------------------------------------
 // buildGraph
 // ---------------------------------------------------------------------------
 
@@ -407,6 +553,7 @@ export async function buildGraph(projectDir: string): Promise<KnowledgeGraph> {
     parseStateFile,
     parseKnowledgeFile,
     parseMilestoneFiles,
+    parseLearningsFiles,
   ];
 
   for (const parser of parsers) {

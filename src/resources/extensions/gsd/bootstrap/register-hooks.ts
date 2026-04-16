@@ -3,6 +3,10 @@ import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@gsd/pi-coding-agent";
 import { isToolCallEventType } from "@gsd/pi-coding-agent";
 
+import type { GSDEcosystemBeforeAgentStartHandler } from "../ecosystem/gsd-extension-api.js";
+import { updateSnapshot } from "../ecosystem/gsd-extension-api.js";
+import { getEcosystemReadyPromise } from "../ecosystem/loader.js";
+
 import { buildMilestoneFileName, resolveMilestonePath, resolveSliceFile, resolveSlicePath } from "../paths.js";
 import { buildBeforeAgentStartResult } from "./system-context.js";
 import { handleAgentEnd } from "./agent-end-recovery.js";
@@ -35,7 +39,10 @@ async function syncServiceTierStatus(ctx: ExtensionContext): Promise<void> {
   ctx.ui.setStatus("gsd-fast", formatServiceTierFooterStatus(getEffectiveServiceTier(), ctx.model?.id));
 }
 
-export function registerHooks(pi: ExtensionAPI): void {
+export function registerHooks(
+  pi: ExtensionAPI,
+  ecosystemHandlers: GSDEcosystemBeforeAgentStartHandler[],
+): void {
   pi.on("session_start", async (_event, ctx) => {
     initNotificationStore(process.cwd());
     installNotifyInterceptor(ctx);
@@ -45,8 +52,12 @@ export function registerHooks(pi: ExtensionAPI): void {
     resetToolCallLoopGuard();
     resetAskUserQuestionsCache();
     await syncServiceTierStatus(ctx);
-    const { prepareWorkflowMcpForProject } = await import("../workflow-mcp-auto-prep.js");
-    prepareWorkflowMcpForProject(ctx, process.cwd());
+    // Skip MCP auto-prep when running inside an auto-worktree (see session_switch below).
+    const { isInAutoWorktree } = await import("../auto-worktree.js");
+    if (!isInAutoWorktree(process.cwd())) {
+      const { prepareWorkflowMcpForProject } = await import("../workflow-mcp-auto-prep.js");
+      prepareWorkflowMcpForProject(ctx, process.cwd());
+    }
 
     // Apply show_token_cost preference (#1515)
     try {
@@ -87,13 +98,63 @@ export function registerHooks(pi: ExtensionAPI): void {
     resetAskUserQuestionsCache();
     clearDiscussionFlowState();
     await syncServiceTierStatus(ctx);
-    const { prepareWorkflowMcpForProject } = await import("../workflow-mcp-auto-prep.js");
-    prepareWorkflowMcpForProject(ctx, process.cwd());
+    // Skip MCP auto-prep when running inside an auto-worktree. The worktree
+    // already has .mcp.json from createAutoWorktree, and re-running the writer
+    // post-chdir rewrites the file mid-run (non-idempotent due to cwd-relative
+    // CLI path resolution), dirtying the tree and breaking the milestone merge.
+    const { isInAutoWorktree } = await import("../auto-worktree.js");
+    if (!isInAutoWorktree(process.cwd())) {
+      const { prepareWorkflowMcpForProject } = await import("../workflow-mcp-auto-prep.js");
+      prepareWorkflowMcpForProject(ctx, process.cwd());
+    }
     loadToolApiKeys();
   });
 
   pi.on("before_agent_start", async (event, ctx: ExtensionContext) => {
-    return buildBeforeAgentStartResult(event, ctx);
+    // Wait for ecosystem loader to finish (no-op after first turn).
+    await getEcosystemReadyPromise();
+
+    // GSD's own context injection (existing behavior — unchanged).
+    const gsdResult = await buildBeforeAgentStartResult(event, ctx);
+
+    // Refresh the snapshot used by ecosystem getPhase()/getActiveUnit().
+    // deriveState has its own ~100ms cache so this is cheap on repeat calls.
+    try {
+      const state = await deriveState(process.cwd());
+      updateSnapshot(state);
+    } catch {
+      updateSnapshot(null);
+    }
+
+    // Chain ecosystem handlers using pi's runner.ts chaining protocol:
+    // each handler sees the systemPrompt mutated by prior handlers.
+    let currentSystemPrompt = gsdResult?.systemPrompt ?? event.systemPrompt;
+    // `any` because pi's BeforeAgentStartEventResult.message uses an internal
+    // CustomMessage type that's not re-exported (see ecosystem/gsd-extension-api.ts).
+    let lastMessage: any = gsdResult?.message;
+
+    for (const handler of ecosystemHandlers) {
+      try {
+        const r = await handler(
+          { ...event, systemPrompt: currentSystemPrompt },
+          ctx,
+        );
+        if (r?.systemPrompt !== undefined) currentSystemPrompt = r.systemPrompt;
+        if (r?.message) lastMessage = r.message;
+      } catch (err) {
+        safetyLogWarning(
+          "ecosystem",
+          `before_agent_start handler failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
+    // Compose result. Return undefined if nothing changed (preserves runner contract).
+    if (currentSystemPrompt === event.systemPrompt && !lastMessage) return undefined;
+    return {
+      systemPrompt: currentSystemPrompt !== event.systemPrompt ? currentSystemPrompt : undefined,
+      message: lastMessage,
+    };
   });
 
   pi.on("agent_end", async (event, ctx: ExtensionContext) => {
@@ -125,7 +186,10 @@ export function registerHooks(pi: ExtensionAPI): void {
     await ensureDbOpen();
     const state = await deriveState(basePath);
     if (!state.activeMilestone || !state.activeSlice || !state.activeTask) return;
-    if (state.phase !== "executing") return;
+    // Write checkpoint for ALL phases, not just "executing" — discuss, research,
+    // and planning also carry in-memory state (user answers, gate verification)
+    // that would be lost on compaction (#4258).
+    // if (state.phase !== "executing") return;
 
     const sliceDir = resolveSlicePath(basePath, state.activeMilestone.id, state.activeSlice.id);
     if (!sliceDir) return;
@@ -261,7 +325,7 @@ export function registerHooks(pi: ExtensionAPI): void {
   // ── Safety harness: evidence collection + destructive command warnings ──
   pi.on("tool_call", async (event, ctx) => {
     if (!isAutoActive()) return;
-    safetyRecordToolCall(event.toolName, event.input as Record<string, unknown>);
+    safetyRecordToolCall(event.toolCallId, event.toolName, event.input as Record<string, unknown>);
 
     // Destructive command classification (warn only, never block)
     if (isToolCallEventType("bash", event)) {

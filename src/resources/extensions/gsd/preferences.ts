@@ -447,6 +447,7 @@ function mergePreferences(base: GSDPreferences, override: GSDPreferences): GSDPr
     slice_parallel: (base.slice_parallel || override.slice_parallel)
       ? { ...(base.slice_parallel ?? {}), ...(override.slice_parallel ?? {}) }
       : undefined,
+    language: override.language ?? base.language,
   };
 }
 
@@ -560,6 +561,11 @@ export function renderPreferencesForSystemPrompt(preferences: GSDPreferences, re
     for (const instruction of preferences.custom_instructions) {
       lines.push(`  - ${instruction}`);
     }
+  }
+
+  if (preferences.language) {
+    const safeLang = preferences.language.replace(/[\r\n]/g, " ").slice(0, 50);
+    lines.push(`- Language: Always respond in ${safeLang}.`);
   }
 
   return lines.join("\n");

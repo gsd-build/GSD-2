@@ -7,8 +7,8 @@ import type { Api, Model } from "./types.js";
 // Custom provider preservation (regression: #2339)
 //
 // Custom providers (like alibaba-coding-plan) are manually maintained and
-// NOT sourced from models.dev. They must survive models.generated.ts
-// regeneration by living in models.custom.ts.
+// NOT sourced from models.dev. They must survive generated catalog
+// regeneration by living in models/custom.ts.
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe("model registry — custom providers", () => {
@@ -68,7 +68,7 @@ describe("model registry — custom providers", () => {
 	it("getModel retrieves alibaba-coding-plan models by provider+id", () => {
 		// Use type assertion to test runtime behavior — alibaba-coding-plan may come
 		// from custom models rather than the generated file, so the narrow
-		// GeneratedProvider type doesn't include it until models.custom.ts is merged.
+		// GeneratedProvider type doesn't include it until models/custom.ts is merged.
 		const model = getModel("alibaba-coding-plan" as any, "qwen3.5-plus" as any);
 		assert.ok(model, "Expected getModel to return a model for alibaba-coding-plan/qwen3.5-plus");
 		assert.equal(model.id, "qwen3.5-plus");
@@ -92,11 +92,12 @@ describe("model registry — custom zai provider (GLM-5.1)", () => {
 		assert.equal(model.api, "openai-completions");
 	});
 
-	it("glm-5.1 has reasoning enabled and correct context window", () => {
+	it("glm-5.1 has reasoning enabled and uses generated catalog precedence", () => {
 		const model = getModel("zai" as any, "glm-5.1" as any);
 		assert.ok(model);
 		assert.equal(model.reasoning, true);
-		assert.equal(model.contextWindow, 204800);
+		// Generated catalog entries are loaded first; custom models are additive-only.
+		assert.equal(model.contextWindow, 200000);
 		assert.equal(model.maxTokens, 131072);
 	});
 

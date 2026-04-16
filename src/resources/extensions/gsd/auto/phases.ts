@@ -29,6 +29,8 @@ import { debugLog } from "../debug-logger.js";
 import { PROJECT_FILES } from "../detection.js";
 import { MergeConflictError } from "../git-service.js";
 import { setCurrentPhase, clearCurrentPhase } from "../../shared/gsd-phase-state.js";
+import { pauseAutoForProviderError } from "../provider-error-pause.js";
+import { resumeAutoAfterProviderDelay } from "../bootstrap/provider-error-resume.js";
 import { join, basename, dirname, parse as parsePath } from "node:path";
 import { existsSync, cpSync, readdirSync } from "node:fs";
 import {
@@ -58,6 +60,15 @@ import {
   getWorkflowTransportSupportError,
   getRequiredWorkflowToolsForAutoUnit,
 } from "../workflow-mcp.js";
+
+// ─── Session timeout auto-resume state ────────────────────────────────────────
+
+let consecutiveSessionTimeouts = 0;
+const MAX_SESSION_TIMEOUT_AUTO_RESUMES = 3;
+
+export function resetSessionTimeoutState(): void {
+  consecutiveSessionTimeouts = 0;
+}
 
 // ─── generateMilestoneReport ──────────────────────────────────────────────────
 
@@ -1502,24 +1513,75 @@ export async function runUnitPhase(
       debugLog("autoLoop", { phase: "exit", reason: "provider-pause", isTransient: unitResult.errorContext.isTransient });
       return { action: "break", reason: "provider-pause" };
     }
-    // Session creation timeout (not a structural error): pause auto-mode
-    // and let the provider-error-resume timer handle recovery (#3767). This
-    // matches the provider-pause path — break out cleanly, don't hard-stop.
+    // Timeout category covers two distinct scenarios:
+    //   1. Session creation timeout (120s) — transient, auto-resume with backoff
+    //   2. Unit hard timeout (30min+) — stuck agent, pause for manual review
     // Structural errors (TypeError, is not a function) are NOT transient
     // and must hard-stop to avoid infinite retry loops.
     if (
       unitResult.errorContext?.isTransient &&
       unitResult.errorContext?.category === "timeout"
     ) {
+      const isSessionCreationTimeout = unitResult.errorContext.message?.includes("Session creation timed out");
+
+      if (isSessionCreationTimeout) {
+        consecutiveSessionTimeouts += 1;
+        const baseRetryAfterMs = 30_000;
+        const retryAfterMs = baseRetryAfterMs * 2 ** Math.max(0, consecutiveSessionTimeouts - 1);
+        const allowAutoResume = consecutiveSessionTimeouts <= MAX_SESSION_TIMEOUT_AUTO_RESUMES;
+
+        if (!allowAutoResume) {
+          ctx.ui.notify(
+            `Session creation timed out ${consecutiveSessionTimeouts} consecutive times for ${unitType} ${unitId}. Pausing for manual review.`,
+            "warning",
+          );
+        }
+
+        debugLog("autoLoop", {
+          phase: "session-timeout-pause",
+          unitType, unitId,
+          consecutiveSessionTimeouts,
+          retryAfterMs,
+          allowAutoResume,
+        });
+
+        const errorDetail = ` for ${unitType} ${unitId}`;
+        await pauseAutoForProviderError(
+          ctx.ui,
+          errorDetail,
+          () => deps.pauseAuto(ctx, pi),
+          {
+            isRateLimit: false,
+            isTransient: allowAutoResume,
+            retryAfterMs,
+            resume: allowAutoResume
+              ? () => {
+                  void resumeAutoAfterProviderDelay(pi, ctx).catch((err) => {
+                    const message = err instanceof Error ? err.message : String(err);
+                    ctx.ui.notify(
+                      `Session timeout recovery failed: ${message}`,
+                      "error",
+                    );
+                  });
+                }
+              : undefined,
+          },
+        );
+        await deps.autoCommitUnit?.(s.basePath, unitType, unitId, ctx);
+        await emitCancelledUnitEnd(ic, unitType, unitId, unitStartSeq, unitResult.errorContext);
+        return { action: "break", reason: "session-timeout" };
+      }
+
+      // Unit hard timeout (30min+): pause without auto-resume — stuck agent
       ctx.ui.notify(
-        `Session creation timed out for ${unitType} ${unitId}. Pausing auto-mode (recoverable).`,
+        `Unit timed out for ${unitType} ${unitId} (supervision may have failed). Pausing auto-mode.`,
         "warning",
       );
-      debugLog("autoLoop", { phase: "session-timeout-pause", unitType, unitId });
+      debugLog("autoLoop", { phase: "unit-hard-timeout-pause", unitType, unitId });
       await deps.pauseAuto(ctx, pi);
       await deps.autoCommitUnit?.(s.basePath, unitType, unitId, ctx);
       await emitCancelledUnitEnd(ic, unitType, unitId, unitStartSeq, unitResult.errorContext);
-      return { action: "break", reason: "session-timeout" };
+      return { action: "break", reason: "unit-hard-timeout" };
     }
     // All other cancelled states (structural errors, non-transient failures): hard stop
     if (s.currentUnit) {
@@ -1549,6 +1611,8 @@ export async function runUnitPhase(
   // Guard: stopAuto() may have nulled s.currentUnit via s.reset() while
   // this coroutine was suspended at `await runUnit(...)` (#2939).
   if (s.currentUnit) {
+    // Reset session timeout counter — any successful unit clears the slate
+    consecutiveSessionTimeouts = 0;
     await deps.closeoutUnit(
       ctx,
       s.basePath,

@@ -219,7 +219,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add package.json package-lock.json web/package-lock.json CHANGELOG.md native/npm/*/package.json pkg/package.json packages/pi-coding-agent/package.json
+          git add package.json package-lock.json web/package-lock.json CHANGELOG.md native/npm/*/package.json pkg/package.json packages/*/package.json
           git commit -m "release: v${RELEASE_VERSION}"
           git tag "v${RELEASE_VERSION}"
           git pull --rebase origin main

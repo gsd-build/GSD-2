@@ -264,18 +264,30 @@ export function verifyExpectedArtifact(
   const absPath = resolveExpectedArtifactPath(unitType, unitId, base);
   // For unit types with no verifiable artifact (null path), the parent directory
   // is missing on disk — treat as stale completion state so the key gets evicted (#313).
-  if (!absPath) return false;
-  if (!existsSync(absPath)) return false;
+  if (!absPath) {
+    logWarning("recovery", `verify-fail ${unitType} ${unitId}: resolveExpectedArtifactPath returned null (parent dir missing)`);
+    return false;
+  }
+  if (!existsSync(absPath)) {
+    logWarning("recovery", `verify-fail ${unitType} ${unitId}: existsSync false for ${absPath}`);
+    return false;
+  }
 
   if (unitType === "validate-milestone") {
     const validationContent = readFileSync(absPath, "utf-8");
-    if (!isValidationTerminal(validationContent)) return false;
+    if (!isValidationTerminal(validationContent)) {
+      logWarning("recovery", `verify-fail ${unitType} ${unitId}: validation not terminal (len=${validationContent.length}) at ${absPath}`);
+      return false;
+    }
   }
 
   if (unitType === "plan-milestone") {
     try {
       const roadmap = parseLegacyRoadmap(readFileSync(absPath, "utf-8"));
-      if (roadmap.slices.length === 0) return false;
+      if (roadmap.slices.length === 0) {
+        logWarning("recovery", `verify-fail ${unitType} ${unitId}: roadmap has zero slices at ${absPath}`);
+        return false;
+      }
     } catch (err) {
       logWarning("recovery", `plan-milestone roadmap verification failed: ${err instanceof Error ? err.message : String(err)}`);
       return false;
@@ -292,7 +304,10 @@ export function verifyExpectedArtifact(
     // Accept checkbox-style (- [x] **T01: ...) or heading-style (### T01 -- / ### T01: / ### T01 —)
     const hasCheckboxTask = /^- \[[xX ]\] \*\*T\d+:/m.test(planContent);
     const hasHeadingTask = /^#{2,4}\s+T\d+\s*(?:--|—|:)/m.test(planContent);
-    if (!hasCheckboxTask && !hasHeadingTask) return false;
+    if (!hasCheckboxTask && !hasHeadingTask) {
+      logWarning("recovery", `verify-fail ${unitType} ${unitId}: plan has no task checkbox/heading (len=${planContent.length}) at ${absPath}`);
+      return false;
+    }
   }
 
   // execute-task: DB status is authoritative. Fall back to checked-checkbox
@@ -349,10 +364,15 @@ export function verifyExpectedArtifact(
 
         if (taskIds && taskIds.length > 0) {
           const tasksDir = resolveTasksDir(base, mid, sid);
-          if (tasksDir) {
-            for (const tid of taskIds) {
-              const taskPlanFile = join(tasksDir, `${tid}-PLAN.md`);
-              if (!existsSync(taskPlanFile)) return false;
+          if (!tasksDir) {
+            logWarning("recovery", `verify-fail ${unitType} ${unitId}: resolveTasksDir returned null for ${mid}/${sid}`);
+            return false;
+          }
+          for (const tid of taskIds) {
+            const taskPlanFile = join(tasksDir, `${tid}-PLAN.md`);
+            if (!existsSync(taskPlanFile)) {
+              logWarning("recovery", `verify-fail ${unitType} ${unitId}: task plan missing ${taskPlanFile}`);
+              return false;
             }
           }
         }
@@ -442,7 +462,22 @@ export function writeBlockerPlaceholder(
     const { milestone: mid, slice: sid, task: tid } = parseUnitId(unitId);
     const ts = new Date().toISOString();
     if (unitType === "execute-task" && mid && sid && tid) {
-      try { updateTaskStatus(mid, sid, tid, "complete", ts); } catch (e) { logWarning("recovery", `updateTaskStatus failed during context exhaustion: ${e instanceof Error ? e.message : String(e)}`); }
+      try {
+        updateTaskStatus(mid, sid, tid, "complete", ts);
+        const planPath = resolveSliceFile(base, mid, sid, "PLAN");
+        if (planPath && existsSync(planPath)) {
+          const planContent = readFileSync(planPath, "utf-8");
+          const updatedPlan = planContent.replace(
+            new RegExp(`^(\\s*-\\s+)\\[ \\]\\s+\\*\\*${tid}:`, "m"),
+            `$1[x] **${tid}:`,
+          );
+          if (updatedPlan !== planContent) {
+            atomicWriteSync(planPath, updatedPlan);
+          }
+        }
+      } catch (e) {
+        logWarning("recovery", `updateTaskStatus failed during context exhaustion: ${e instanceof Error ? e.message : String(e)}`);
+      }
       // Append event so worktree reconciliation can replay this recovery completion
       try { appendEvent(base, { cmd: "complete-task", params: { milestoneId: mid, sliceId: sid, taskId: tid }, ts, actor: "system", trigger_reason: "blocker-placeholder-recovery" }); } catch (e) { logWarning("recovery", `appendEvent failed for task recovery: ${e instanceof Error ? e.message : String(e)}`); }
     }

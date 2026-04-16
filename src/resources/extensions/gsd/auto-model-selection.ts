@@ -535,10 +535,10 @@ export function buildFlatRateContext(
   prefs?: { flat_rate_providers?: readonly string[] },
 ): FlatRateContext {
   let authMode: FlatRateContext["authMode"];
-  const getAuthMode = ctx?.modelRegistry?.getProviderAuthMode;
-  if (typeof getAuthMode === "function") {
+  const registry = ctx?.modelRegistry;
+  if (registry && typeof registry.getProviderAuthMode === "function") {
     try {
-      const mode = getAuthMode(provider);
+      const mode = registry.getProviderAuthMode(provider);
       if (mode === "apiKey" || mode === "oauth" || mode === "externalCli" || mode === "none") {
         authMode = mode;
       }

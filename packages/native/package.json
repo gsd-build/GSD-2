@@ -1,6 +1,6 @@
 {
   "name": "@gsd/native",
-  "version": "2.74.0",
+  "version": "2.75.0",
   "description": "Native Rust bindings for GSD — high-performance native modules via N-API",
   "type": "commonjs",
   "main": "./dist/index.js",

@@ -4,7 +4,7 @@ import type { GSDState } from "../../types.js";
 
 import { computeProgressScore, formatProgressLine } from "../../progress-score.js";
 import { loadEffectiveGSDPreferences, getGlobalGSDPreferencesPath, getProjectGSDPreferencesPath } from "../../preferences.js";
-import { ensurePreferencesFile, handlePrefs, handlePrefsMode, handlePrefsWizard } from "../../commands-prefs-wizard.js";
+import { ensurePreferencesFile, handlePrefs, handlePrefsMode, handlePrefsWizard, handleLanguage } from "../../commands-prefs-wizard.js";
 import { runEnvironmentChecks } from "../../doctor-environment.js";
 import { deriveState } from "../../state.js";
 import { handleCmux } from "../../commands-cmux.js";
@@ -35,6 +35,10 @@ export function showHelp(ctx: ExtensionCommandContext, args = ""): void {
     "  /gsd triage         Classify and route pending captures",
     "  /gsd undo           Revert last completed unit  [--force]",
     "  /gsd rethink        Conversational project reorganization",
+    "",
+    "OBSERVABILITY",
+    "  /gsd logs           Browse activity and debug logs",
+    "  /gsd debug          Create/list/continue persistent debug sessions",
     "",
     "SETUP",
     "  /gsd init           Project init wizard",
@@ -67,6 +71,8 @@ export function showHelp(ctx: ExtensionCommandContext, args = ""): void {
     "  /gsd history        View execution history  [--cost] [--phase] [--model] [N]",
     "  /gsd changelog      Show categorized release notes  [version]",
     `  /gsd notifications  View persistent notification history  [clear|tail|filter]  (${formattedShortcutPair("notifications")})`,
+    "  /gsd logs           Browse activity logs, debug logs, and metrics",
+    "  /gsd debug          Create/list/continue persistent debug sessions",
     "",
     "COURSE CORRECTION",
     "  /gsd steer <desc>   Apply user override to active work",
@@ -393,6 +399,10 @@ export async function handleCoreCommand(
   }
   if (trimmed === "prefs" || trimmed.startsWith("prefs ")) {
     await handlePrefs(trimmed.replace(/^prefs\s*/, "").trim(), ctx);
+    return true;
+  }
+  if (trimmed === "language" || trimmed.startsWith("language ")) {
+    await handleLanguage(trimmed.replace(/^language\s*/, "").trim(), ctx);
     return true;
   }
   if (trimmed === "cmux" || trimmed.startsWith("cmux ")) {

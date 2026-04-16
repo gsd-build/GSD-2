@@ -1107,5 +1107,15 @@ export function validatePreferences(preferences: GSDPreferences): {
     }
   }
 
+  // ─── Language ────────────────────────────────────────────────────────
+  if (preferences.language !== undefined) {
+    const trimmed = typeof preferences.language === "string" ? preferences.language.trim() : undefined;
+    if (trimmed && trimmed.length <= 50 && !/[\r\n]/.test(trimmed)) {
+      validated.language = trimmed;
+    } else {
+      errors.push(`language must be a non-empty string up to 50 characters with no newlines (e.g. "Chinese", "de", "日本語")`);
+    }
+  }
+
   return { preferences: validated, errors, warnings };
 }

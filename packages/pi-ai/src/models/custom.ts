@@ -1,8 +1,8 @@
 // Manually-maintained model definitions for providers NOT tracked by models.dev.
 //
-// The auto-generated file (models.generated.ts) is rebuilt from the models.dev
-// third-party catalog. Providers that use proprietary endpoints and are not
-// listed on models.dev must be defined here so they survive regeneration.
+// The auto-generated files under models/generated/*.ts are rebuilt from the
+// models.dev third-party catalog. Providers that use proprietary endpoints and
+// are not listed on models.dev must be defined here so they survive regeneration.
 //
 // See: https://github.com/gsd-build/gsd-2/issues/2339
 //
@@ -11,7 +11,7 @@
 //   2. Add its API key mapping to env-api-keys.ts.
 //   3. Add its provider name to KnownProvider in types.ts (if not already there).
 
-import type { Model } from "./types.js";
+import type { Model } from "../types.js";
 
 export const CUSTOM_MODELS = {
 	// ─── Alibaba Coding Plan ─────────────────────────────────────────────

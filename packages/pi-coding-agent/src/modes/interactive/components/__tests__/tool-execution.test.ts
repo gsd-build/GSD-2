@@ -48,6 +48,25 @@ function renderToolCollapsed(
 }
 
 describe("ToolExecutionComponent", () => {
+	test("renders framed header with Running status while tool is partial", () => {
+		const rendered = renderToolCollapsed("mcp__demo__do_thing", { ok: true });
+
+		assert.match(rendered, /Tool demo\u00b7do_thing/);
+		assert.match(rendered, /Running/);
+	});
+
+	test("renders framed header with Error status for failed tool result", () => {
+		const rendered = renderTool(
+			"mcp__demo__do_thing",
+			{ ok: true },
+			{ content: [{ type: "text", text: "boom" }], isError: true },
+		);
+
+		assert.match(rendered, /Tool demo\u00b7do_thing/);
+		assert.match(rendered, /Error/);
+		assert.match(rendered, /boom/);
+	});
+
 	test("renders capitalized Claude Code Bash tool names with bash output instead of generic args JSON", () => {
 		const rendered = renderTool(
 			"Bash",

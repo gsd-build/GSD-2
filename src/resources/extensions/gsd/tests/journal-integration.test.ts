@@ -595,13 +595,13 @@ test("unit-end event contains errorContext when unit is cancelled with structure
   const unitPromise = runUnitPhase(ic, iterData, loopState);
   await new Promise(r => setTimeout(r, 50));
 
-  // Resolve with errorContext (simulates a timeout cancel)
+  // Resolve with errorContext (simulates a unit hard timeout — not session creation)
   resolveAgentEndCancelled({ message: "Hard timeout error: exceeded limit", category: "timeout", isTransient: true });
 
   const result = await unitPromise;
-  // Transient timeout cancellations pause (recoverable) instead of hard-stopping
+  // Unit hard timeouts pause (recoverable) without auto-resume
   assert.equal(result.action, "break");
-  assert.equal((result as any).reason, "session-timeout");
+  assert.equal((result as any).reason, "unit-hard-timeout");
   assert.equal(pauseCalls, 1, "timeout cancellations should pause auto-mode exactly once");
   assert.equal(commitCalls, 1, "timeout cancellations should flush a unit auto-commit once");
 

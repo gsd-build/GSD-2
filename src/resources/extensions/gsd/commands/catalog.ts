@@ -15,7 +15,7 @@ export interface GsdCommandDefinition {
 type CompletionMap = Record<string, readonly GsdCommandDefinition[]>;
 
 export const GSD_COMMAND_DESCRIPTION =
-  "GSD — Get Shit Done: /gsd help|start|templates|next|auto|stop|pause|status|widget|visualize|queue|quick|discuss|capture|triage|dispatch|history|undo|undo-task|reset-slice|rate|skip|export|cleanup|model|mode|prefs|config|keys|hooks|run-hook|skill-health|doctor|logs|forensics|changelog|migrate|remote|steer|knowledge|new-milestone|parallel|cmux|park|unpark|init|setup|inspect|extensions|update|fast|mcp|rethink|codebase|notifications|ship|do|session-report|backlog|pr-branch|add-tests";
+  "GSD — Get Shit Done: /gsd help|start|templates|next|auto|stop|pause|status|widget|visualize|queue|quick|discuss|capture|triage|dispatch|history|undo|undo-task|reset-slice|rate|skip|export|cleanup|model|mode|prefs|config|keys|hooks|run-hook|skill-health|doctor|logs|debug|forensics|changelog|migrate|remote|steer|knowledge|new-milestone|parallel|cmux|park|unpark|init|setup|inspect|extensions|update|fast|mcp|rethink|codebase|notifications|ship|do|session-report|backlog|pr-branch|add-tests|language";
 
 export const TOP_LEVEL_SUBCOMMANDS: readonly GsdCommandDefinition[] = [
   { cmd: "help", desc: "Categorized command reference with descriptions" },
@@ -52,6 +52,7 @@ export const TOP_LEVEL_SUBCOMMANDS: readonly GsdCommandDefinition[] = [
   { cmd: "notifications", desc: "View, filter, and clear persistent notification history" },
   { cmd: "doctor", desc: "Runtime health checks with auto-fix" },
   { cmd: "logs", desc: "Browse activity logs, debug logs, and metrics" },
+  { cmd: "debug", desc: "Create and inspect persistent /gsd debug sessions" },
   { cmd: "forensics", desc: "Examine execution logs" },
   { cmd: "init", desc: "Project init wizard — detect, configure, bootstrap .gsd/" },
   { cmd: "setup", desc: "Global setup status and configuration" },
@@ -80,6 +81,7 @@ export const TOP_LEVEL_SUBCOMMANDS: readonly GsdCommandDefinition[] = [
   { cmd: "backlog", desc: "Manage backlog items (add, promote, remove, list)" },
   { cmd: "pr-branch", desc: "Create clean PR branch filtering .gsd/ commits" },
   { cmd: "add-tests", desc: "Generate tests for completed slices" },
+  { cmd: "language", desc: "Set or clear the global response language (e.g. /gsd language Chinese)" },
 ];
 
 const NESTED_COMPLETIONS: CompletionMap = {
@@ -127,6 +129,12 @@ const NESTED_COMPLETIONS: CompletionMap = {
     { cmd: "debug", desc: "List or view debug log files" },
     { cmd: "tail", desc: "Show last N activity log summaries" },
     { cmd: "clear", desc: "Remove old activity and debug logs" },
+  ],
+  debug: [
+    { cmd: "list", desc: "List persisted debug sessions" },
+    { cmd: "status", desc: "Show status for one debug session slug" },
+    { cmd: "continue", desc: "Resume an existing debug session slug" },
+    { cmd: "--diagnose", desc: "Inspect malformed artifacts and session health" },
   ],
   keys: [
     { cmd: "list", desc: "Show key status dashboard" },
@@ -268,6 +276,10 @@ const NESTED_COMPLETIONS: CompletionMap = {
   "pr-branch": [
     { cmd: "--dry-run", desc: "Preview what would be filtered" },
     { cmd: "--name", desc: "Custom branch name" },
+  ],
+  language: [
+    { cmd: "off",   desc: "Clear the language preference (revert to default)" },
+    { cmd: "clear", desc: "Alias for off — clear the language preference" },
   ],
 };
 

@@ -438,6 +438,20 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			// the retry handler and creating cascading error entries (#3429).
 			const hasAuth = modelRegistry.authStorage.hasAuth(resolvedProvider);
 			if (hasAuth) {
+				// Anthropic OAuth was removed in v2.74.0 for TOS compliance (#3952).
+				// Users who upgraded from an older version may still have OAuth
+				// credentials in auth.json that will never resolve to a valid API key.
+				// Surface a targeted migration message instead of the generic cooldown.
+				if (
+					resolvedProvider === "anthropic" &&
+					modelRegistry.authStorage.hasLegacyOAuthCredential(resolvedProvider)
+				) {
+					throw new Error(
+						`Your Anthropic credentials were set up via OAuth, which is no longer supported. ` +
+							`Please re-authenticate: run '/login', select 'Paste an API key' → Anthropic. ` +
+							`Alternatively, switch to the Claude Code CLI provider.`,
+					);
+				}
 				const expiry = modelRegistry.authStorage.getEarliestBackoffExpiry(resolvedProvider);
 				const retryAfterMs = expiry !== undefined ? Math.max(0, expiry - Date.now()) : undefined;
 				throw new CredentialCooldownError(resolvedProvider, retryAfterMs);

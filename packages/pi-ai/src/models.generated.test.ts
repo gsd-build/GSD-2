@@ -1,7 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { MODELS } from "./models.generated.js";
-import { getModel, getModels, getProviders } from "./models.js";
+import { MODELS, getModel, getModels, getProviders } from "./models/index.js";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Regression: qwen/qwen3.6-plus missing from OpenRouter (issue #3582)
@@ -327,6 +326,16 @@ describe("removed models are absent from the registry", () => {
 		{ provider: "openrouter", id: "meituan/longcat-flash-thinking" },
 		{ provider: "vercel-ai-gateway", id: "xai/grok-2-vision" },
 		{ provider: "anthropic", id: "claude-3-7-sonnet-latest" },
+		// Groq decommissioned models — issue #4257
+		{ provider: "groq", id: "llama3-70b-8192" },
+		{ provider: "groq", id: "llama3-8b-8192" },
+		{ provider: "groq", id: "deepseek-r1-distill-llama-70b" },
+		{ provider: "groq", id: "gemma2-9b-it" },
+		{ provider: "groq", id: "meta-llama/llama-4-maverick-17b-128e-instruct" },
+		{ provider: "groq", id: "mistral-saba-24b" },
+		{ provider: "groq", id: "moonshotai/kimi-k2-instruct" },
+		{ provider: "groq", id: "moonshotai/kimi-k2-instruct-0905" },
+		{ provider: "groq", id: "qwen-qwq-32b" },
 	];
 
 	for (const { provider, id } of removedModels) {

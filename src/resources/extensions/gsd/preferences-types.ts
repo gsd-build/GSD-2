@@ -115,6 +115,7 @@ export const KNOWN_PREFERENCE_KEYS = new Set<string>([
   "discuss_web_research",
   "discuss_depth",
   "flat_rate_providers",
+  "language",
 ]);
 
 /** Canonical list of all dispatch unit types. */
@@ -286,7 +287,7 @@ export interface GSDPreferences {
   post_unit_hooks?: PostUnitHookConfig[];
   pre_dispatch_hooks?: PreDispatchHookConfig[];
   dynamic_routing?: DynamicRoutingConfig;
-  /** Unified Orchestration Kernel controls (all flags default off). */
+  /** Unified Orchestration Kernel controls (default-on, with opt-out and emergency legacy fallback). */
   uok?: UokPreferences;
   /** Per-model capability overrides. Deep-merged with built-in profiles for capability-aware routing (ADR-004). */
   modelOverrides?: Record<string, { capabilities?: Partial<ModelCapabilities> }>;
@@ -403,6 +404,11 @@ export interface GSDPreferences {
    * same regardless of model.  Case-insensitive.
    */
   flat_rate_providers?: string[];
+  /**
+   * Language preference for GSD responses. Accepts any language name or code
+   * (e.g. "Chinese", "zh", "German", "de", "日本語"). Persists across /clear.
+   */
+  language?: string;
 }
 
 export interface LoadedGSDPreferences {

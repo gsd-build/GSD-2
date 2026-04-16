@@ -102,6 +102,7 @@ function isSamePath(a: string, b: string): boolean {
   try {
     return realpathSync(a) === realpathSync(b);
   } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return false;
     logWarning("worktree", `isSamePath failed: ${(e as Error).message}`);
     return false;
   }

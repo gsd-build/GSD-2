@@ -18,7 +18,7 @@ import type {
 	ToolCall,
 } from "@gsd/pi-ai";
 import type { ExtensionUIContext } from "@gsd/pi-coding-agent";
-import { EventStream, mapThinkingLevelToEffort, supportsAdaptiveThinking } from "@gsd/pi-ai";
+import { EventStream } from "@gsd/pi-ai";
 import { execSync } from "node:child_process";
 import { PartialMessageBuilder, ZERO_USAGE, mapUsage } from "./partial-builder.js";
 import { buildWorkflowMcpServers } from "../gsd/workflow-mcp.js";
@@ -679,6 +679,34 @@ export async function resolveClaudePermissionMode(
 	return "bypassPermissions";
 }
 
+// NOTE: These helpers intentionally mirror @gsd/pi-ai anthropic-shared
+// behavior so this extension remains typecheck-stable even when the published
+// @gsd/pi-ai barrel lags behind monorepo source exports.
+function modelSupportsAdaptiveThinking(modelId: string): boolean {
+	return (
+		modelId.includes("opus-4-6")
+		|| modelId.includes("opus-4.6")
+		|| modelId.includes("sonnet-4-6")
+		|| modelId.includes("sonnet-4.6")
+	);
+}
+
+function mapThinkingLevelToAnthropicEffort(level: ThinkingLevel | undefined, modelId: string): "low" | "medium" | "high" | "max" {
+	switch (level) {
+		case "minimal":
+		case "low":
+			return "low";
+		case "medium":
+			return "medium";
+		case "high":
+			return "high";
+		case "xhigh":
+			return modelId.includes("opus-4-6") || modelId.includes("opus-4.6") ? "max" : "high";
+		default:
+			return "high";
+	}
+}
+
 /**
  * Build the options object passed to the Claude Agent SDK's `query()` call.
  *
@@ -716,8 +744,8 @@ export function buildSdkOptions(
 		...(mcpServers ? Object.keys(mcpServers).map((serverName) => `mcp__${serverName}__*`) : []),
 	];
 	const effort =
-		reasoning && supportsAdaptiveThinking(modelId)
-			? mapThinkingLevelToEffort(reasoning, modelId)
+		reasoning && modelSupportsAdaptiveThinking(modelId)
+			? mapThinkingLevelToAnthropicEffort(reasoning, modelId)
 			: undefined;
 	return {
 		pathToClaudeCodeExecutable: getClaudePath(),

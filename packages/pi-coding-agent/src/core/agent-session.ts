@@ -1558,9 +1558,12 @@ export class AgentSession {
 			}
 		}
 
-		this._disconnectFromAgent();
-		await this.abort();
-		this.agent.reset();
+	// #4243: Must call abort() BEFORE _disconnectFromAgent() so that
+	// message_end/agent_end events fire and the #4216 finalization code
+	// can run before we unsubscribe from the event bus.
+	await this.abort();
+	this._disconnectFromAgent();
+	this.agent.reset();
 		// Update cwd to current process directory — auto-mode may have chdir'd
 		// into a worktree since the original session was created.
 		const previousCwd = this._cwd;
@@ -2411,9 +2414,12 @@ export class AgentSession {
 			}
 		}
 
-		this._disconnectFromAgent();
-		await this.abort();
-		this._steeringMessages = [];
+	// #4243: Must call abort() BEFORE _disconnectFromAgent() so that
+	// message_end/agent_end events fire and the #4216 finalization code
+	// can run before we unsubscribe from the event bus.
+	await this.abort();
+	this._disconnectFromAgent();
+	this._steeringMessages = [];
 		this._followUpMessages = [];
 		this._pendingNextTurnMessages = [];
 

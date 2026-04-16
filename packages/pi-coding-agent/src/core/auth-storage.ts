@@ -466,6 +466,16 @@ export class AuthStorage {
 	}
 
 	/**
+	 * Returns true if the stored credential for a provider is of type "oauth".
+	 * Used to detect stale OAuth credentials for providers where OAuth has been
+	 * removed (e.g. Anthropic, #3952) so callers can surface a targeted
+	 * migration message instead of a generic cooldown error.
+	 */
+	hasLegacyOAuthCredential(provider: string): boolean {
+		return this.getCredentialsForProvider(provider).some((c) => c.type === "oauth");
+	}
+
+	/**
 	 * Get all credentials (for passing to getOAuthApiKey).
 	 * Returns normalized format where each provider has a single credential
 	 * (the first one) for backward compatibility with OAuth refresh.

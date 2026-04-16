@@ -269,10 +269,12 @@ export function checkAutoStartAfterDiscuss(): boolean {
   } catch (e) { logWarning("guided", `CONTEXT-DRAFT.md unlink failed: ${(e as Error).message}`); }
 
   // Cleanup: remove discussion manifest after auto-start (only needed during discussion)
-  try { unlinkSync(manifestPath); } catch (e) { logWarning("guided", `manifest unlink failed: ${(e as Error).message}`); }
+  if (existsSync(manifestPath)) {
+    try { unlinkSync(manifestPath); } catch (e) { logWarning("guided", `manifest unlink failed: ${(e as Error).message}`); }
+  }
 
   pendingAutoStartMap.delete(basePath);
-  ctx.ui.notify(`Milestone ${milestoneId} ready.`, "info");
+  ctx.ui.notify(`Milestone ${milestoneId} ready.`, "success");
   startAutoDetached(ctx, pi, basePath, false, { step });
   return true;
 }

@@ -6,6 +6,72 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.75.0] - 2026-04-15
+
+### Added
+- **tui**: render compaction notice in the shared chat-frame style
+- **prefs**: add persistent language preference via /gsd language
+- **tui**: align tool execution cards with chat frame styling
+- **tui**: blend chat frame with shared timestamp and model header
+- **extensions**: add GSDExtensionAPI for .gsd/extensions/ (#3338)
+- **graph**: parse LEARNINGS.md into knowledge graph and rebuild after extraction
+- **gsd**: add /gsd extract-learnings command
+- **gsd-uok**: flip default to UOK with emergency legacy fallback
+- **gsd-uok**: enforce plan-v2 compile gates and graph metadata
+- **gsd-uok**: unify audit envelopes across logger metrics and activity
+- **gsd-uok**: add turn-level git transaction modes and closeout gates
+- **gsd-uok**: unify reactive and parallel scheduling via execution graph
+- **gsd-uok**: enforce model policy filtering before routing
+- **gsd-uok**: unify gate plane across pre/post validation checks
+- **graph**: implement knowledge graph system (closes #4202)
+- **gsd**: add v1→v2 command parity — 12 missing commands
+
+### Fixed
+- **ci**: stage all workspace package.json files in release commit
+- **tui**: pin rendered block to terminal bottom on clear
+- **gsd**: silence benign auto-mode warnings and bind getProviderAuthMode correctly
+- **gsd**: stop wiping the artifacts table on every cache invalidation
+- **tui**: unstick tool cards after compaction and promote success notifications
+- **mcp**: route tool writes to active worktree when milestone has one
+- **mcp**: make projectDir optional in workflow tool schemas
+- **mcp**: allow external-state worktree paths in workflow project root guard
+- **gsd**: stop .mcp.json churn in auto-worktrees and fix evidence id matching
+- **auto**: reset session timeout counter on auto-resume
+- **auto**: schedule auto-resume timer for session creation timeouts
+- **agent-session**: call abort() before _disconnectFromAgent() in newSession/resumeSession (#4243)
+- **gsd**: checkpoint all session phases during compaction, not just executing (#4258)
+- **gsd**: expand pre-execution check notification with details + evidence path (#4259)
+- **chat**: replay final assistant content on message end
+- **interactive**: preserve assistant-tool ordering on chat rebuild
+- **chat**: preserve claude MCP thinking visibility during tool windows
+- **chat**: cap claude reasoning blocks to keep chat visible
+- **chat**: prune orphaned claude MCP provisional sub-turn text
+- **chat**: prune orphaned claude MCP provisional sub-turn text
+- **chat**: prune claude MCP provisional text above tool output
+- **ci**: harden graph fallback and update regression guards
+- **gsd**: restore autoCommit import after rebase conflict
+- **gsd**: align ADR-009 integration with type-safe builds
+- **ci**: remove unsound tsbuildinfo cache causing TS2307 on fresh runners
+- **pi-coding-agent**: remove explanatory comment from agent_end handler
+- **pi-coding-agent**: finalize streaming component on agent_end instead of removing it
+- **release**: sync all workspace versions and harden release scripts
+- **ci**: run CI on pipeline.yml changes
+- **ci**: install web host deps in dev-publish job
+- **gsd**: harden pr-branch/ship argv-safety and canonical artifact paths
+- align v1→v2 commands with upstream types, remove engine-dependent slice mutations
+- **ci**: disable incremental resources build cache state
+- **gsd**: open project DB in headless query
+- **gsd**: preserve quoted workflow run overrides
+- **gsd**: replace execSync with execFileSync in nativeCommit, nativeIsRepo, nativeResetHard fallbacks
+- **ci**: cache dist alongside tsbuildinfo and use workflow-logger in catch blocks
+- **gsd**: isolate /gsd command registration from extension bootstrap failures
+- **gsd**: close out cancelled auto units
+- **pi-coding-agent**: fall back to env keys for built-ins
+
+### Changed
+- **gsd**: remove /gsd map-codebase command
+- **gsd**: enforce single-writer invariant for engine DB
+
 ## [2.74.0] - 2026-04-14
 
 ### Added
@@ -2893,7 +2959,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - License updated to MIT
 
-[Unreleased]: https://github.com/gsd-build/gsd-2/compare/v2.74.0...HEAD
+[Unreleased]: https://github.com/gsd-build/gsd-2/compare/v2.75.0...HEAD
+[2.75.0]: https://github.com/gsd-build/gsd-2/compare/v2.74.0...v2.75.0
 [2.74.0]: https://github.com/gsd-build/gsd-2/compare/v2.73.1...v2.74.0
 [2.73.1]: https://github.com/gsd-build/gsd-2/compare/v2.73.0...v2.73.1
 [2.73.0]: https://github.com/gsd-build/gsd-2/compare/v2.72.0...v2.73.0
