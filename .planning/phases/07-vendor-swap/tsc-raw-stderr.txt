@@ -1,0 +1,38 @@
+> npm run build:native-pkg && npm run build:pi-tui && npm run build:pi-ai && npm run build:pi-agent-core && npm run build:pi-coding-agent
+> tsc -p tsconfig.json
+> tsc -p tsconfig.json
+> tsc -p tsconfig.json
+> tsc -p tsconfig.json
+> tsc -p tsconfig.json && npm run copy-assets
+src/core/extensions/index.ts(32,2): error TS2305: Module '"./types.js"' has no exported member 'AppAction'.
+src/core/extensions/index.ts(43,2): error TS2305: Module '"./types.js"' has no exported member 'AdjustToolSetEvent'.
+src/core/extensions/index.ts(44,2): error TS2305: Module '"./types.js"' has no exported member 'AdjustToolSetResult'.
+src/core/extensions/index.ts(100,2): error TS2305: Module '"./types.js"' has no exported member 'LifecycleHookContext'.
+src/core/extensions/index.ts(101,2): error TS2305: Module '"./types.js"' has no exported member 'LifecycleHookHandler'.
+src/core/extensions/index.ts(102,2): error TS2305: Module '"./types.js"' has no exported member 'LifecycleHookMap'.
+src/core/extensions/index.ts(103,2): error TS2305: Module '"./types.js"' has no exported member 'LifecycleHookPhase'.
+src/core/extensions/index.ts(104,2): error TS2305: Module '"./types.js"' has no exported member 'LifecycleHookScope'.
+src/core/extensions/index.ts(122,2): error TS2305: Module '"./types.js"' has no exported member 'SessionDirectoryEvent'.
+src/core/extensions/index.ts(123,2): error TS2305: Module '"./types.js"' has no exported member 'SessionDirectoryHandler'.
+src/core/extensions/index.ts(124,2): error TS2305: Module '"./types.js"' has no exported member 'SessionDirectoryResult'.
+src/core/extensions/index.ts(126,2): error TS2724: '"./types.js"' has no exported member named 'SessionForkEvent'. Did you mean 'SessionEvent'?
+src/core/extensions/index.ts(130,2): error TS2724: '"./types.js"' has no exported member named 'SessionSwitchEvent'. Did you mean 'SessionBeforeSwitchEvent'?
+src/core/extensions/index.ts(137,2): error TS2305: Module '"./types.js"' has no exported member 'ToolCompatibility'.
+src/core/extensions/index.ts(153,2): error TS2305: Module '"./types.js"' has no exported member 'BashTransformEvent'.
+src/core/extensions/index.ts(154,2): error TS2305: Module '"./types.js"' has no exported member 'BashTransformEventResult'.
+src/core/extensions/index.ts(160,31): error TS2724: '"./types.js"' has no exported member named 'isToolResultEventType'. Did you mean 'LsToolResultEvent'?
+src/modes/interactive/components/provider-manager.ts(69,48): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/modes/interactive/components/provider-manager.ts(69,67): error TS2341: Property 'modelsJsonPath' is private and only accessible within class 'ModelRegistry'.
+src/modes/interactive/components/provider-manager.ts(175,27): error TS2345: Argument of type '"selectUp"' is not assignable to parameter of type 'keyof Keybindings'.
+src/modes/interactive/components/provider-manager.ts(180,34): error TS2345: Argument of type '"selectDown"' is not assignable to parameter of type 'keyof Keybindings'.
+src/modes/interactive/components/provider-manager.ts(185,34): error TS2345: Argument of type '"selectCancel"' is not assignable to parameter of type 'keyof Keybindings'.
+src/modes/interactive/components/provider-manager.ts(216,34): error TS2345: Argument of type '"selectConfirm"' is not assignable to parameter of type 'keyof Keybindings'.
+src/resources/extensions/memory/index.ts(60,23): error TS2551: Property 'getMemorySettings' does not exist on type 'SettingsManager'. Did you mean 'getRetrySettings'?
+npm error Lifecycle script `build` failed with error:
+npm error code 2
+npm error path /Users/trekkie/projects/gsd-2/.claude/worktrees/agent-acefebf0/packages/pi-coding-agent
+npm error workspace @gsd/pi-coding-agent@2.74.0
+npm error location /Users/trekkie/projects/gsd-2/.claude/worktrees/agent-acefebf0/packages/pi-coding-agent
+npm error command failed
+npm error command sh -c tsc -p tsconfig.json && npm run copy-assets
