@@ -26,7 +26,7 @@ import type {
 import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@gsd/pi-ai";
 import { modelsAreEqual, resetApiProviders, supportsXhigh } from "@gsd/pi-ai";
 import { Type } from "@sinclair/typebox";
-import { getDocsPath } from "@gsd/pi-coding-agent";
+import { getDocsPath, getAgentDir } from "@gsd/pi-coding-agent";
 import { getErrorMessage } from "@gsd/pi-coding-agent";
 import { theme } from "@gsd/pi-coding-agent";
 import { stripFrontmatter } from "@gsd/pi-coding-agent";
@@ -80,6 +80,12 @@ import { BUILTIN_SLASH_COMMANDS, type SlashCommandInfo, type SlashCommandLocatio
 import { buildSystemPrompt } from "./system-prompt.js";
 import type { BashOperations } from "@gsd/pi-coding-agent";
 import { createAllTools } from "@gsd/pi-coding-agent";
+import {
+	AgentSessionRuntime,
+	createAgentSessionRuntime,
+	type CreateAgentSessionRuntimeFactory,
+	type AgentSessionServices,
+} from "@gsd/pi-coding-agent";
 
 // ============================================================================
 // Skill Block Parsing
@@ -290,6 +296,9 @@ export class AgentSession {
 
 	// Provider fallback resolver
 	private _fallbackResolver: FallbackResolver;
+
+	// AgentSessionRuntime for coordinating session lifecycle transitions (D-12)
+	private _runtime: AgentSessionRuntime | undefined;
 
 	// Tool registry for extension getTools/setTools
 	private _toolRegistry: Map<string, AgentTool> = new Map();
@@ -683,6 +692,187 @@ export class AgentSession {
 			};
 			await this._extensionRunner.emit(extensionEvent);
 		}
+	}
+
+	// =========================================================================
+	// Session State Snapshot / Restore (D-14)
+	// =========================================================================
+
+	/**
+	 * Capture a shallow snapshot of listener and message state before a session transition.
+	 * Used by _restoreState() to re-attach listeners and message arrays after the transition
+	 * tears down and recreates the runtime.
+	 */
+	private _snapshotState(): {
+		listeners: AgentSessionEventListener[];
+		steering: string[];
+		followUp: string[];
+		pending: import("@gsd/pi-coding-agent").CustomMessage[];
+	} {
+		return {
+			listeners: [...this._eventListeners],
+			steering: [...this._steeringMessages],
+			followUp: [...this._followUpMessages],
+			pending: [...this._pendingNextTurnMessages],
+		};
+	}
+
+	/**
+	 * Restore listener and message state after a session transition has completed.
+	 * Re-registers all event listeners captured by _snapshotState() on this session
+	 * and restores the pending message arrays.
+	 */
+	private _restoreState(snapshot: ReturnType<AgentSession["_snapshotState"]>): void {
+		this._eventListeners = snapshot.listeners;
+		this._steeringMessages = snapshot.steering;
+		this._followUpMessages = snapshot.followUp;
+		this._pendingNextTurnMessages = snapshot.pending;
+	}
+
+	// =========================================================================
+	// AgentSessionRuntime Factory (D-12)
+	// =========================================================================
+
+	/**
+	 * Create and return a CreateAgentSessionRuntimeFactory closure that captures this
+	 * AgentSession. When the factory is called by AgentSessionRuntime (after teardown),
+	 * it re-initialises this session's internal state to match the incoming sessionManager
+	 * and sessionStartEvent, then returns a CreateAgentSessionRuntimeResult wrapping this
+	 * session so AgentSessionRuntime can track it.
+	 *
+	 * The factory is kept alive on _runtime and reused for all subsequent transitions.
+	 */
+	private _createRuntimeFactory(): CreateAgentSessionRuntimeFactory {
+		// eslint-disable-next-line @typescript-eslint/no-this-alias
+		const gsdSession = this;
+
+		return async (options: {
+			cwd: string;
+			agentDir: string;
+			sessionManager: import("@gsd/pi-coding-agent").SessionManager;
+			sessionStartEvent?: import("@gsd/pi-coding-agent").SessionStartEvent;
+		}): Promise<import("@gsd/pi-coding-agent").CreateAgentSessionRuntimeResult> => {
+			const reason = options.sessionStartEvent?.reason ?? "new";
+			const previousCwd = gsdSession._cwd;
+			gsdSession._cwd = options.cwd;
+
+			// Apply the incoming sessionManager state to the GSD session's readonly SM.
+			// options.sessionManager has already been wired up by the runtime caller
+			// (SessionManager.create / open / createBranchedSession). Mirror the same
+			// state into gsdSession.sessionManager so GSD's SM stays authoritative.
+			if (reason === "resume") {
+				const targetFile = options.sessionManager.getSessionFile();
+				if (targetFile) {
+					gsdSession.sessionManager.setSessionFile(targetFile);
+				}
+			}
+			// For "new" and "fork" the sessionManager was already mutated by the GSD
+			// transition method before calling _runtime (see newSession / fork callers).
+			// No extra SM mutation is needed here.
+
+			gsdSession.agent.sessionId = gsdSession.sessionManager.getSessionId();
+
+			// Rebuild tools if cwd changed, otherwise refresh registry (#633, #3616).
+			if (gsdSession._cwd !== previousCwd) {
+				gsdSession._buildRuntime({
+					activeToolNames: gsdSession.getActiveToolNames(),
+					includeAllExtensionTools: true,
+				});
+			} else {
+				gsdSession._refreshToolRegistry({
+					activeToolNames: gsdSession.getActiveToolNames(),
+					includeAllExtensionTools: true,
+				});
+			}
+
+			gsdSession._reconnectToAgent();
+
+			// Emit session_start to extensions (Pitfall 7: single emission point).
+			if (options.sessionStartEvent && gsdSession._extensionRunner) {
+				await gsdSession._extensionRunner.emit(options.sessionStartEvent);
+			}
+
+			// Build a minimal AgentSessionServices compatible object from what GSD
+			// already holds — pi's runtime uses this for cwd tracking and process.chdir.
+			const services: AgentSessionServices = {
+				cwd: options.cwd,
+				agentDir: options.agentDir,
+				authStorage: gsdSession._modelRegistry.authStorage,
+				settingsManager: gsdSession.settingsManager,
+				modelRegistry: gsdSession._modelRegistry,
+				resourceLoader: gsdSession._resourceLoader,
+				diagnostics: [],
+			};
+
+			return {
+				// Cast: GSD's AgentSession is structurally compatible with pi's AgentSession
+				// (same fields: agent, sessionManager, extensionRunner, sessionFile, dispose).
+				// Nominal incompatibility arises only from different module paths.
+				session: gsdSession as unknown as import("@gsd/pi-coding-agent").AgentSession,
+				services,
+				diagnostics: [],
+				extensionsResult: gsdSession._resourceLoader.getExtensions(),
+			};
+		};
+	}
+
+	/**
+	 * Ensure _runtime is initialised. Creates it lazily on first session transition
+	 * using createAgentSessionRuntime so that the runtime's factory is wired once
+	 * and reused for all subsequent newSession / switchSession / fork calls.
+	 *
+	 * The initial call uses the current session state — no actual session reset occurs
+	 * on first init because the session is already live.
+	 */
+	private async _ensureRuntime(): Promise<AgentSessionRuntime> {
+		if (this._runtime) return this._runtime;
+
+		const factory = this._createRuntimeFactory();
+		// Prefer the agentDir stored on DefaultResourceLoader (runtime property) or
+		// fall back to the global getAgentDir() helper imported from @gsd/pi-coding-agent.
+		const agentDir: string = (this._resourceLoader as unknown as { agentDir?: string }).agentDir ?? getAgentDir();
+
+		// Build minimal services for the initial runtime construction.
+		const services: AgentSessionServices = {
+			cwd: this._cwd,
+			agentDir,
+			authStorage: this._modelRegistry.authStorage,
+			settingsManager: this.settingsManager,
+			modelRegistry: this._modelRegistry,
+			resourceLoader: this._resourceLoader,
+			diagnostics: [],
+		};
+
+		// createAgentSessionRuntime calls factory once to build the initial result.
+		// We pass a factory that short-circuits on the first call (init-only) because
+		// the session is already live — no teardown/rebuild needed.
+		let initDone = false;
+		const initFactory: CreateAgentSessionRuntimeFactory = async (opts) => {
+			if (!initDone) {
+				initDone = true;
+				// First call: session already live, just return current state.
+				return {
+					session: this as unknown as import("@gsd/pi-coding-agent").AgentSession,
+					services,
+					diagnostics: [],
+					extensionsResult: this._resourceLoader.getExtensions(),
+				};
+			}
+			// Subsequent calls: delegate to the real factory.
+			return factory(opts);
+		};
+
+		this._runtime = await createAgentSessionRuntime(initFactory, {
+			cwd: this._cwd,
+			agentDir,
+			sessionManager: this.sessionManager,
+		});
+
+		// Replace the one-shot initFactory with the real factory so all future
+		// transitions go through the proper path.
+		(this._runtime as any)["createRuntime"] = factory;
+
+		return this._runtime;
 	}
 
 	/**
@@ -1544,6 +1734,9 @@ export class AgentSession {
 		parentSession?: string;
 		setup?: (sessionManager: SessionManager) => Promise<void>;
 	}): Promise<boolean> {
+		// Snapshot state before transition so listeners and message queues survive (D-14).
+		const snapshot = this._snapshotState();
+
 		const previousSessionFile = this.sessionFile;
 
 		// Emit session_before_switch event with reason "new" (can be cancelled)
@@ -1558,63 +1751,33 @@ export class AgentSession {
 			}
 		}
 
-	// #4243: Must call abort() BEFORE _disconnectFromAgent() so that
-	// message_end/agent_end events fire and the #4216 finalization code
-	// can run before we unsubscribe from the event bus.
-	await this.abort();
-	this._disconnectFromAgent();
-	this.agent.reset();
-		// Update cwd to current process directory — auto-mode may have chdir'd
-		// into a worktree since the original session was created.
-		const previousCwd = this._cwd;
-		this._cwd = process.cwd();
+		// Mutate sessionManager in place BEFORE calling the runtime so the factory
+		// can call getSessionId() on the already-updated SM.
 		this.sessionManager.newSession({ parentSession: options?.parentSession });
-		this.agent.sessionId = this.sessionManager.getSessionId();
-		this._steeringMessages = [];
-		this._followUpMessages = [];
-		this._pendingNextTurnMessages = [];
-
 		this.sessionManager.appendThinkingLevelChange(this.thinkingLevel);
 
-		// Rebuild tools when cwd changed (e.g., auto-mode entered a worktree).
-		// Tools capture cwd at creation time for path resolution — without
-		// rebuilding, write/read/edit/bash resolve relative paths against
-		// the original project root instead of the worktree (#633).
-		if (this._cwd !== previousCwd) {
-			this._buildRuntime({
-				activeToolNames: this.getActiveToolNames(),
-				includeAllExtensionTools: true,
-			});
-		} else {
-			// Even when cwd hasn't changed, restore the full tool set (#3616).
-			// Extensions (e.g., discuss flows) may narrow the active tool list
-			// via setActiveTools() during a session. Without this refresh, the
-			// narrowed set persists into the next session — causing tools like
-			// gsd_plan_slice to be missing from auto-mode subagent sessions.
-			this._refreshToolRegistry({
-				activeToolNames: this.getActiveToolNames(),
-				includeAllExtensionTools: true,
-			});
+		// #4243: Must call abort() BEFORE _disconnectFromAgent() so that
+		// message_end/agent_end events fire and the #4216 finalization code
+		// can run before we unsubscribe from the event bus.
+		await this.abort();
+		this._disconnectFromAgent();
+		this.agent.reset();
+
+		// Delegate to AgentSessionRuntime for lifecycle coordination (D-12).
+		// The factory (_createRuntimeFactory) re-initialises this session's internals
+		// (cwd update, tool rebuild, agent reconnect, session_start emission).
+		const runtime = await this._ensureRuntime();
+		const result = await runtime.newSession({
+			parentSession: options?.parentSession,
+			setup: options?.setup,
+		});
+
+		if (result.cancelled) {
+			return false;
 		}
 
-		// Run setup callback if provided (e.g., to append initial messages)
-		if (options?.setup) {
-			await options.setup(this.sessionManager);
-			// Sync agent state with session manager after setup
-			const sessionContext = this.sessionManager.buildSessionContext();
-			this.agent.replaceMessages(sessionContext.messages);
-		}
-
-		this._reconnectToAgent();
-
-		// Emit session_start event with reason "new" to extensions
-		if (this._extensionRunner) {
-			await this._extensionRunner.emit({
-				type: "session_start",
-				reason: "new",
-				previousSessionFile,
-			});
-		}
+		// Restore listener and message queue state that survived the transition (D-14).
+		this._restoreState(snapshot);
 
 		// Emit session event to custom tools
 		this._emitSessionStateChanged("new_session");
@@ -2399,6 +2562,9 @@ export class AgentSession {
 	 * @returns true if switch completed, false if cancelled by extension
 	 */
 	async switchSession(sessionPath: string): Promise<boolean> {
+		// Snapshot state before transition so listeners and message queues survive (D-14).
+		const snapshot = this._snapshotState();
+
 		const previousSessionFile = this.sessionManager.getSessionFile();
 
 		// Emit session_before_switch event (can be cancelled)
@@ -2414,36 +2580,26 @@ export class AgentSession {
 			}
 		}
 
-	// #4243: Must call abort() BEFORE _disconnectFromAgent() so that
-	// message_end/agent_end events fire and the #4216 finalization code
-	// can run before we unsubscribe from the event bus.
-	await this.abort();
-	this._disconnectFromAgent();
-	this._steeringMessages = [];
-		this._followUpMessages = [];
-		this._pendingNextTurnMessages = [];
+		// #4243: Must call abort() BEFORE _disconnectFromAgent() so that
+		// message_end/agent_end events fire and the #4216 finalization code
+		// can run before we unsubscribe from the event bus.
+		await this.abort();
+		this._disconnectFromAgent();
 
-		// Set new session
-		this.sessionManager.setSessionFile(sessionPath);
-		this.agent.sessionId = this.sessionManager.getSessionId();
+		// Delegate to AgentSessionRuntime for lifecycle coordination (D-12).
+		// The factory (_createRuntimeFactory) handles setSessionFile, agent reconnect,
+		// and session_start emission for the "resume" reason.
+		const runtime = await this._ensureRuntime();
+		const result = await runtime.switchSession(sessionPath);
 
-		// Reload messages
-		const sessionContext = this.sessionManager.buildSessionContext();
-
-		// Emit session_start event to extensions
-		if (this._extensionRunner) {
-			await this._extensionRunner.emit({
-				type: "session_start",
-				reason: "resume",
-				previousSessionFile,
-			});
+		if (result.cancelled) {
+			return false;
 		}
 
-		// Emit session event to custom tools
-
+		// Reload messages and restore model/thinking level (GSD-specific logic not in pi runtime).
+		const sessionContext = this.sessionManager.buildSessionContext();
 		this.agent.replaceMessages(sessionContext.messages);
 
-		// Restore model if saved
 		if (sessionContext.model) {
 			const previousModel = this.model;
 			const availableModels = await this._modelRegistry.getAvailable();
@@ -2471,7 +2627,9 @@ export class AgentSession {
 			this.sessionManager.appendThinkingLevelChange(effectiveLevel);
 		}
 
-		this._reconnectToAgent();
+		// Restore listener and message queue state that survived the transition (D-14).
+		this._restoreState(snapshot);
+
 		this._emitSessionStateChanged("switch_session");
 		return true;
 	}
@@ -2494,6 +2652,9 @@ export class AgentSession {
 	 *   - cancelled: True if an extension cancelled the fork
 	 */
 	async fork(entryId: string): Promise<{ selectedText: string; cancelled: boolean }> {
+		// Snapshot state before transition so listeners and message queues survive (D-14).
+		const snapshot = this._snapshotState();
+
 		const previousSessionFile = this.sessionFile;
 		const selectedEntry = this.sessionManager.getEntry(entryId);
 
@@ -2518,9 +2679,7 @@ export class AgentSession {
 			skipConversationRestore = result?.skipConversationRestore ?? false;
 		}
 
-		// Clear pending messages (bound to old session state)
-		this._pendingNextTurnMessages = [];
-
+		// Mutate sessionManager in place BEFORE calling the runtime (same pattern as newSession).
 		if (!selectedEntry.parentId) {
 			this.sessionManager.newSession({ parentSession: previousSessionFile });
 		} else {
@@ -2531,7 +2690,9 @@ export class AgentSession {
 		// Reload messages from entries (works for both file and in-memory mode)
 		const sessionContext = this.sessionManager.buildSessionContext();
 
-		// Emit session_start event with reason "fork" to extensions (after fork completes)
+		// Emit session_start event with reason "fork" to extensions (after fork completes).
+		// Ensure _runtime is initialised so the field is live (D-12).
+		await this._ensureRuntime();
 		if (this._extensionRunner) {
 			await this._extensionRunner.emit({
 				type: "session_start",
@@ -2540,11 +2701,12 @@ export class AgentSession {
 			});
 		}
 
-		// Emit session event to custom tools (with reason "fork")
-
 		if (!skipConversationRestore) {
 			this.agent.replaceMessages(sessionContext.messages);
 		}
+
+		// Restore listener and message queue state that survived the transition (D-14).
+		this._restoreState(snapshot);
 
 		this._emitSessionStateChanged("fork");
 		return { selectedText, cancelled: false };
