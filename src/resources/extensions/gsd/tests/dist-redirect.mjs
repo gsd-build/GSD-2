@@ -5,6 +5,12 @@ import { fileURLToPath } from 'node:url';
 const require = createRequire(import.meta.url);
 
 const ROOT = new URL("../../../../../", import.meta.url);
+const ROOT_HREF = ROOT.href;
+
+/** True when the parentURL points into the repo's own source, not node_modules or an unrelated /src/ path. */
+function isRepoSource(parentURL) {
+  return parentURL && parentURL.startsWith(ROOT_HREF) && !parentURL.includes('/node_modules/');
+}
 
 export function resolve(specifier, context, nextResolve) {
   // 1. Redirect all workspace package bare imports to source.
@@ -32,9 +38,10 @@ export function resolve(specifier, context, nextResolve) {
   }
   // 2. Redirect packages/*/dist/ → packages/*/src/ with .js→.ts for strip-types
   //    Also handles local imports — skip rewrite for dist/ paths that are real compiled artifacts.
+  //    Only applies when the importing file is repo source (not node_modules).
 
   else if (specifier.endsWith('.js') && (specifier.startsWith('./') || specifier.startsWith('../'))) {
-    if (context.parentURL && context.parentURL.includes('/src/')) {
+    if (isRepoSource(context.parentURL)) {
       if (specifier.includes('/dist/')) {
         specifier = specifier.replace('/dist/', '/src/').replace(/\.js$/, '.ts');
       } else {
@@ -48,6 +55,7 @@ export function resolve(specifier, context, nextResolve) {
     (specifier.startsWith('./') || specifier.startsWith('../')) &&
     !specifier.match(/\.\w+$/) &&
     context.parentURL &&
+    isRepoSource(context.parentURL) &&
     context.parentURL.includes('/web/')
   ) {
     const baseUrl = new URL(specifier, context.parentURL);

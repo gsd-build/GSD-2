@@ -48,3 +48,49 @@ test("resolve-ts loader transpiles pi-coding-agent source files that strip-only 
   assert.match(loaded.source, /constructor\(_deps\)/, "transpiled constructor should be valid JavaScript")
   assert.doesNotMatch(loaded.source, /private readonly _deps/, "TypeScript parameter property syntax should be removed")
 })
+
+test("resolve-ts loader does not rewrite .js imports from node_modules", async () => {
+  // Simulates ws/wrapper.mjs importing ./lib/stream.js — parentURL is inside node_modules
+  const nodeModulesParent = new URL("../../node_modules/ws/wrapper.mjs", import.meta.url).href
+  const resolved = await resolveWithTestLoader(
+    "./lib/stream.js",
+    { parentURL: nodeModulesParent },
+    nextResolve,
+  )
+  assert.equal(
+    resolved.url,
+    "./lib/stream.js",
+    "node_modules imports should pass through unchanged (not rewritten to .ts)",
+  )
+})
+
+test("resolve-ts loader rewrites .js to .ts for repo source imports", async () => {
+  // Simulates a relative import from within the repo's src/ directory
+  const repoSourceParent = new URL("../../src/cli.ts", import.meta.url).href
+  const resolved = await resolveWithTestLoader(
+    "./app-paths.js",
+    { parentURL: repoSourceParent },
+    nextResolve,
+  )
+  assert.equal(
+    resolved.url,
+    "./app-paths.ts",
+    "repo source .js imports should be rewritten to .ts",
+  )
+})
+
+test("resolve-ts loader does not resolve extensionless imports from node_modules web/ paths", async () => {
+  // A parentURL containing /web/ but inside node_modules should not trigger
+  // the extensionless .ts/.tsx resolution (section 3 of dist-redirect.mjs)
+  const nodeModulesWebParent = new URL("../../node_modules/some-pkg/web/index.mjs", import.meta.url).href
+  const resolved = await resolveWithTestLoader(
+    "./utils",
+    { parentURL: nodeModulesWebParent },
+    nextResolve,
+  )
+  assert.equal(
+    resolved.url,
+    "./utils",
+    "extensionless imports from node_modules web/ paths should pass through unchanged",
+  )
+})
