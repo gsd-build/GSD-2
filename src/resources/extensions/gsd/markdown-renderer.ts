@@ -166,6 +166,52 @@ function renderRoadmapMarkdown(milestone: MilestoneRow, slices: SliceRow[]): str
     lines.push("");
   }
 
+  if (milestone.key_risks.length > 0) {
+    lines.push("## Key Risks / Unknowns");
+    lines.push("");
+    for (const r of milestone.key_risks) {
+      lines.push(`- ${r.risk} — ${r.whyItMatters}`);
+    }
+    lines.push("");
+  }
+
+  if (milestone.proof_strategy.length > 0) {
+    lines.push("## Proof Strategy");
+    lines.push("");
+    for (const p of milestone.proof_strategy) {
+      lines.push(`- ${p.riskOrUnknown} → retire in ${p.retireIn} by proving ${p.whatWillBeProven}`);
+    }
+    lines.push("");
+  }
+
+  const verClasses: string[] = [];
+  if (milestone.verification_contract) verClasses.push(`- **Contract:** ${milestone.verification_contract}`);
+  if (milestone.verification_integration) verClasses.push(`- **Integration:** ${milestone.verification_integration}`);
+  if (milestone.verification_operational) verClasses.push(`- **Operational:** ${milestone.verification_operational}`);
+  if (milestone.verification_uat) verClasses.push(`- **UAT:** ${milestone.verification_uat}`);
+  if (verClasses.length > 0) {
+    lines.push("## Verification Classes");
+    lines.push("");
+    lines.push(...verClasses);
+    lines.push("");
+  }
+
+  if (milestone.definition_of_done.length > 0) {
+    lines.push("## Milestone Definition of Done");
+    lines.push("");
+    for (const item of milestone.definition_of_done) {
+      lines.push(`- ${item}`);
+    }
+    lines.push("");
+  }
+
+  if (milestone.requirement_coverage.trim()) {
+    lines.push("## Requirement Coverage");
+    lines.push("");
+    lines.push(milestone.requirement_coverage.trim());
+    lines.push("");
+  }
+
   lines.push("## Slices");
   lines.push("");
   for (const slice of slices) {
