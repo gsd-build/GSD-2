@@ -93,16 +93,61 @@ See [Parallel Orchestration](./parallel-orchestration.md) for full documentation
 | `/gsd templates` | List available workflow templates |
 | `/gsd templates info <name>` | Show detailed template info |
 
-## Custom Workflows (v2.42)
+## Custom Workflows
+
+The unified plugin system. Every workflow — bundled, user-authored, or
+remotely installed — is discoverable via `/gsd workflow <name>` and declares
+one of four execution modes:
+
+| Mode              | What it does                                                                              |
+|-------------------|-------------------------------------------------------------------------------------------|
+| `oneshot`         | Prompt-only, no state, no branch. For reviews, triage, changelog generation.              |
+| `yaml-step`       | Full engine with GRAPH.yaml, iterate, and shell-verify. For fan-out batch work.           |
+| `markdown-phase`  | Multi-phase with STATE.json + phase-approval gates. For release, performance audit.       |
+| `auto-milestone`  | Hooks into the full `/gsd auto` pipeline. Reserved for `full-project`.                    |
+
+### Discovery order (project > global > bundled)
+
+1. `.gsd/workflows/<name>.{yaml,md}` — project-local, checked into the repo.
+2. `~/.gsd/workflows/<name>.{yaml,md}` — global, private to the machine.
+3. Bundled — ships with GSD (see the full list with `/gsd workflow`).
+
+Legacy `.gsd/workflow-defs/` YAML definitions are still picked up for
+backwards compatibility.
+
+### Commands
 
 | Command | Description |
 |---------|-------------|
-| `/gsd workflow new` | Create a new workflow definition (via skill) |
-| `/gsd workflow run <name>` | Create a run and start auto-mode |
-| `/gsd workflow list` | List workflow runs |
-| `/gsd workflow validate <name>` | Validate a workflow definition YAML |
+| `/gsd workflow` | List all discoverable plugins, grouped by mode |
+| `/gsd workflow <name> [args]` | Run a plugin directly (resolved via precedence chain) |
+| `/gsd workflow info <name>` | Show plugin metadata — source, mode, phases, path |
+| `/gsd workflow new` | Create a new workflow definition (via the `create-workflow` skill) |
+| `/gsd workflow install <source>` | Install a plugin from `https://...`, `gist:<id>`, or `gh:owner/repo/path[@ref]` |
+| `/gsd workflow uninstall <name>` | Remove an installed plugin and its provenance record |
+| `/gsd workflow run <name> [k=v]` | Explicit YAML run form (same as `/gsd workflow <name>` for yaml-step plugins) |
+| `/gsd workflow list` | List YAML workflow runs (history) |
+| `/gsd workflow validate <name>` | Validate a YAML definition |
 | `/gsd workflow pause` | Pause custom workflow auto-mode |
 | `/gsd workflow resume` | Resume paused custom workflow auto-mode |
+
+### Bundled plugins
+
+- **Phased (`markdown-phase`)**: `bugfix`, `small-feature`, `spike`, `hotfix`,
+  `refactor`, `security-audit`, `dep-upgrade`, `release`, `api-breaking-change`,
+  `performance-audit`, `observability-setup`, `ci-bootstrap`.
+- **Oneshot**: `pr-review`, `changelog-gen`, `issue-triage`, `pr-triage`,
+  `onboarding-check`, `dead-code`, `accessibility-audit`.
+- **YAML engine (`yaml-step`)**: `test-backfill`, `docs-sync`, `rename-symbol`,
+  `env-audit`.
+- **Auto-milestone**: `full-project` (reached via `/gsd start full-project` or
+  `/gsd auto`).
+
+### Authoring a custom plugin
+
+Run `/gsd workflow new <name>` to scaffold via the `create-workflow` skill.
+Plugins are plain YAML (`.yaml`) or markdown (`.md`) files. See
+`src/resources/extensions/gsd/workflow-templates/` for bundled examples.
 
 ## Extensions
 

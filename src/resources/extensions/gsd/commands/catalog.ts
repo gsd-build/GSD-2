@@ -73,7 +73,7 @@ export const TOP_LEVEL_SUBCOMMANDS: readonly GsdCommandDefinition[] = [
   { cmd: "fast", desc: "Toggle OpenAI service tier (on/off/flex/status)" },
   { cmd: "mcp", desc: "MCP server status, connectivity, and local config bootstrap (status, check, init)" },
   { cmd: "rethink", desc: "Conversational project reorganization — reorder, park, discard, add milestones" },
-  { cmd: "workflow", desc: "Custom workflow lifecycle (new, run, list, validate, pause, resume)" },
+  { cmd: "workflow", desc: "Custom workflow lifecycle (new, run, list, info, install, uninstall, validate, pause, resume) or run <name> directly" },
   { cmd: "codebase", desc: "Generate, refresh, and inspect the codebase map cache (.gsd/CODEBASE.md)" },
   { cmd: "ship", desc: "Create PR from milestone artifacts and open for review" },
   { cmd: "do", desc: "Route freeform text to the right GSD command" },
@@ -243,8 +243,11 @@ const NESTED_COMPLETIONS: CompletionMap = {
   ],
   workflow: [
     { cmd: "new", desc: "Create a new workflow definition (via skill)" },
-    { cmd: "run", desc: "Create a run and start auto-mode" },
+    { cmd: "run", desc: "Create a YAML run and start auto-mode" },
     { cmd: "list", desc: "List workflow runs" },
+    { cmd: "info", desc: "Show plugin details (source, mode, phases)" },
+    { cmd: "install", desc: "Install a plugin from a URL / gist: / gh:" },
+    { cmd: "uninstall", desc: "Remove an installed plugin" },
     { cmd: "validate", desc: "Validate a workflow definition YAML" },
     { cmd: "pause", desc: "Pause custom workflow auto-mode" },
     { cmd: "resume", desc: "Resume paused custom workflow auto-mode" },
@@ -412,6 +415,45 @@ export function getGsdArgumentCompletions(prefix: string) {
       // ignore filesystem errors during completion
     }
     return [];
+  }
+
+  // Completion for `/gsd workflow info <name>` — list all discoverable plugins (project + global).
+  if (command === "workflow" && subcommand === "info" && parts.length <= 3) {
+    const results: GsdCommandDefinition[] = [];
+    const seen = new Set<string>();
+    const scanDir = (dir: string, source: string) => {
+      if (!existsSync(dir)) return;
+      try {
+        for (const f of readdirSync(dir)) {
+          if (!/\.(ya?ml|md)$/i.test(f)) continue;
+          const name = f.replace(/\.(ya?ml|md)$/i, "");
+          if (!name.startsWith(third)) continue;
+          if (seen.has(name)) continue;
+          seen.add(name);
+          results.push({ cmd: name, desc: `Workflow plugin (${source})` });
+        }
+      } catch { /* ignore */ }
+    };
+    try {
+      const base = resolveProjectRoot(process.cwd());
+      scanDir(join(base, ".gsd", "workflows"), "project");
+      scanDir(join(base, ".gsd", "workflow-defs"), "project-legacy");
+      scanDir(join(gsdHome, "workflows"), "global");
+    } catch { /* ignore */ }
+    // Also include bundled template names.
+    try {
+      const registry = loadRegistry();
+      for (const id of Object.keys(registry.templates)) {
+        if (seen.has(id) || !id.startsWith(third)) continue;
+        seen.add(id);
+        results.push({ cmd: id, desc: "Workflow plugin (bundled)" });
+      }
+    } catch { /* ignore */ }
+    return results.map((r) => ({
+      value: `workflow info ${r.cmd}`,
+      label: r.cmd,
+      description: r.desc,
+    }));
   }
 
   const nested = NESTED_COMPLETIONS[command];

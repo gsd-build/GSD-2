@@ -424,6 +424,8 @@ On first run, GSD launches a branded setup wizard that walks you through LLM pro
 | `/gsd migrate`          | Migrate a v1 `.planning` directory to `.gsd` format             |
 | `/gsd help`             | Categorized command reference for all GSD subcommands           |
 | `/gsd mode`             | Switch workflow mode (solo/team) with coordinated defaults      |
+| `/gsd workflow`         | Unified workflow plugins — list, run `<name>`, install, info, validate |
+| `/gsd start <template>` | Launch a bundled or custom workflow template (bugfix, release, etc.) |
 | `/gsd forensics`        | Full-access GSD debugger for auto-mode failure investigation    |
 | `/gsd cleanup`          | Archive phase directories from completed milestones             |
 | `/gsd doctor`           | Runtime health checks — issues surface across widget, visualizer, and reports |
