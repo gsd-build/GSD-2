@@ -39,6 +39,8 @@ Then:
 
 **File system safety:** Task summaries are preloaded in the inlined context above. Task artifacts use a **flat file layout** — files such as `T01-SUMMARY.md` and `T02-SUMMARY.md` live directly inside the `tasks/` directory, not inside per-task subdirectories like `tasks/T01/SUMMARY.md`. If you need to re-read any of them, use `find .gsd/milestones/{{milestoneId}}/slices/{{sliceId}}/tasks -name "*-SUMMARY.md"` to list file paths first. Never use `tasks/*/SUMMARY.md`, and never pass `{{slicePath}}` or any other directory path directly to the `read` tool. The `read` tool only accepts file paths, not directories.
 
+**File system safety:** Task summaries are preloaded in the inlined context above. If you need to re-read any of them, use `find .gsd/milestones/{{milestoneId}}/slices/{{sliceId}}/tasks -name "*-SUMMARY.md"` to list file paths first — never pass `{{slicePath}}` or any other directory path directly to the `read` tool. The `read` tool only accepts file paths, not directories.
+
 **You MUST call `gsd_complete_slice` with the slice summary and UAT content before finishing. The tool persists to both DB and disk and renders `{{sliceSummaryPath}}` and `{{sliceUatPath}}` automatically.**
 
 When done, say: "Slice {{sliceId}} complete."
