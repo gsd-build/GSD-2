@@ -394,7 +394,7 @@ export function loadDefinitionFromFile(filePath: string): WorkflowDefinition {
 // ─── Parameter Substitution ──────────────────────────────────────────────
 
 /** Regex matching `{{key}}` placeholders — captures the key name. */
-const PARAM_PATTERN = /\{\{(\w+)\}\}/g;
+const PARAM_PATTERN = /\{\{\s*(\w+)\s*\}\}/g;
 
 /**
  * Replace `{{key}}` placeholders in a single prompt string.

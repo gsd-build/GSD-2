@@ -760,3 +760,24 @@ steps:
   assert.deepEqual(def.steps[0].requires, []);
   assert.deepEqual(def.steps[0].produces, []);
 });
+
+// ─── Regression #3189: spaced placeholders ────────────────────────────────
+// PARAM_PATTERN must match {{ key }} (with surrounding whitespace) as well as
+// {{key}} (no spaces). Before the fix, spaced placeholders were silently left
+// unreplaced in generated prompts.
+
+test("substitutePromptString: replaces {{ key }} with surrounding spaces (#3189)", () => {
+  const result = substitutePromptString(
+    "Hello {{ name }}, your score is {{ score }}.",
+    { name: "Alice", score: "42" },
+  );
+  assert.equal(result, "Hello Alice, your score is 42.");
+});
+
+test("substitutePromptString: unchanged behaviour for {{key}} without spaces (#3189)", () => {
+  const result = substitutePromptString(
+    "Hello {{name}}.",
+    { name: "Bob" },
+  );
+  assert.equal(result, "Hello Bob.");
+});
