@@ -5,7 +5,7 @@
 
 import type { ExtensionContext } from "@gsd/pi-coding-agent";
 
-import { getUnreadCount, onNotificationStoreChange } from "./notification-store.js";
+import { getUnreadCount, onNotificationStoreChange, readNotifications } from "./notification-store.js";
 import { formattedShortcutPair } from "./shortcut-defs.js";
 
 // ─── Pure rendering ──���────────────────────────���─────────────────────────
@@ -14,7 +14,20 @@ export function buildNotificationWidgetLines(): string[] {
   const unread = getUnreadCount();
   if (unread === 0) return [];
 
-  return [`  🔔 Notifications: ${unread} unread  (${formattedShortcutPair("notifications")})`];
+  const entries = readNotifications();
+  const latest = entries[0]; // newest-first
+  if (!latest) return [];
+
+  const icon = latest.severity === "error" ? "✗" : latest.severity === "warning" ? "⚠" : "●";
+  const badge = `${unread} unread`;
+  const msgMax = 80;
+  // Flatten multiline messages to prevent layout shift in the belowEditor widget
+  const flat = latest.message.replace(/\n+/g, " ").replace(/\s{2,}/g, " ").trim();
+  const truncated = flat.length > msgMax
+    ? flat.slice(0, msgMax - 1) + "…"
+    : flat;
+
+  return [`  ${icon} [${badge}]  ${truncated}  (${formattedShortcutPair("notifications")})`];
 }
 
 // ─── Widget init ────────────────────────────────────────────────────────
