@@ -52,11 +52,11 @@ function capPreamble(preamble: string): string {
  * Uses the budget engine to compute task count ranges and inline context budgets
  * based on the configured executor model's context window.
  */
-function formatExecutorConstraints(): string {
+function formatExecutorConstraints(modelRegistry?: any): string {
   let windowTokens: number;
   try {
     const prefs = loadEffectiveGSDPreferences();
-    windowTokens = resolveExecutorContextWindow(undefined, prefs?.preferences);
+    windowTokens = resolveExecutorContextWindow(modelRegistry, prefs?.preferences);
   } catch (e) {
     logWarning("prompt", `resolveExecutorContextWindow failed: ${(e as Error).message}`);
     windowTokens = 200_000; // safe default
@@ -1217,7 +1217,7 @@ export async function buildResearchSlicePrompt(
 }
 
 export async function buildPlanSlicePrompt(
-  mid: string, _midTitle: string, sid: string, sTitle: string, base: string, level?: InlineLevel,
+  mid: string, _midTitle: string, sid: string, sTitle: string, base: string, ctx?: any, level?: InlineLevel,
 ): Promise<string> {
   const inlineLevel = level ?? resolveInlineLevel();
   const roadmapPath = resolveMilestoneFile(base, mid, "ROADMAP");
@@ -1277,7 +1277,7 @@ export async function buildPlanSlicePrompt(
   const inlinedContext = capPreamble(`## Inlined Context (preloaded — do not re-read these files)\n\n${inlined.join("\n\n---\n\n")}`);
 
   // Build executor context constraints from the budget engine
-  const executorContextConstraints = formatExecutorConstraints();
+  const executorContextConstraints = formatExecutorConstraints(ctx?.modelRegistry);
 
   const outputRelPath = relSliceFile(base, mid, sid, "PLAN");
   const commitInstruction = "Do not commit — .gsd/ planning docs are managed externally and not tracked in git.";
@@ -1399,7 +1399,7 @@ export async function buildExecuteTaskPrompt(
 
   // Compute verification budget for the executor's context window (issue #707)
   const prefs = loadEffectiveGSDPreferences();
-  const contextWindow = resolveExecutorContextWindow(undefined, prefs?.preferences);
+  const contextWindow = resolveExecutorContextWindow(ctx?.modelRegistry, prefs?.preferences, ctx?.model?.contextWindow);
   const budgets = computeBudgets(contextWindow);
   const verificationBudget = `~${Math.round(budgets.verificationBudgetChars / 1000)}K chars`;
 
