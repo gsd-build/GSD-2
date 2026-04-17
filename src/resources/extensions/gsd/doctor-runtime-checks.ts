@@ -11,6 +11,7 @@ import { readCrashLock, isLockProcessAlive, clearLock } from "./crash-recovery.j
 import { ensureGitignore } from "./gitignore.js";
 import { readAllSessionStatuses, isSessionStale, removeSessionStatus } from "./session-status-io.js";
 import { recoverFailedMigration } from "./migrate-external.js";
+import { splitCompletedKey } from "./forensics.js";
 
 export async function checkRuntimeHealth(
   basePath: string,
@@ -118,9 +119,6 @@ export async function checkRuntimeHealth(
       const orphaned: string[] = [];
 
       for (const key of keys) {
-        // Key format: "unitType/unitId" e.g. "execute-task/M001/S01/T01"
-        // Hook units have compound types: "hook/<hookName>/unitId"
-        const { splitCompletedKey } = await import("./forensics.js");
         const parsed = splitCompletedKey(key);
         if (!parsed) continue;
         const { unitType, unitId } = parsed;
