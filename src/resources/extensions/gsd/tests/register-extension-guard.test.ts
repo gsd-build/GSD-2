@@ -57,3 +57,25 @@ test("handleRecoverableExtensionProcessError leaves unrelated errors unhandled",
   );
   assert.equal(handled, false);
 });
+
+// Regression test for https://github.com/gsd-build/gsd-2/issues/3206
+// ERR_INVALID_ARG_TYPE from MCP server stdout writes during paste must not crash the process.
+test("handleRecoverableExtensionProcessError swallows ERR_INVALID_ARG_TYPE", () => {
+  let stderr = "";
+  const originalWrite = process.stderr.write.bind(process.stderr);
+  process.stderr.write = ((chunk: string | Uint8Array) => {
+    stderr += String(chunk);
+    return true;
+  }) as typeof process.stderr.write;
+  try {
+    const handled = handleRecoverableExtensionProcessError(
+      Object.assign(new Error("The 'chunk' argument must be of type string or an instance of Buffer"), {
+        code: "ERR_INVALID_ARG_TYPE",
+      }),
+    );
+    assert.equal(handled, true);
+    assert.match(stderr, /\[gsd\].*ERR_INVALID_ARG_TYPE/);
+  } finally {
+    process.stderr.write = originalWrite;
+  }
+});
