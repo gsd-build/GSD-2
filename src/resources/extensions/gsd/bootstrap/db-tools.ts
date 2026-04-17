@@ -211,6 +211,47 @@ export function registerDbTools(pi: ExtensionAPI): void {
         details: { operation: "save_requirement", error: "db_unavailable" } as any,
       };
     }
+
+    // ─── CONTEXT.md Validation Gate ────────────────────────────────────
+    // When saving a CONTEXT artifact, enforce that the Milestone Intent section
+    // exists and contains the required sub-sections. This prevents the discussion
+    // agent from writing incomplete context that loses user pain and priorities.
+    if (params.artifact_type === "CONTEXT") {
+      const content = params.content as string;
+      const missingFields: string[] = [];
+
+      if (!content.includes("## Milestone Intent")) {
+        missingFields.push("## Milestone Intent (entire section missing)");
+      } else {
+        if (!content.includes("### Core Problem Being Eliminated")) {
+          missingFields.push("### Core Problem Being Eliminated");
+        }
+        if (!content.includes("### Priority Stack")) {
+          missingFields.push("### Priority Stack");
+        }
+        if (content.includes("### Priority Stack") && !content.match(/\*\*KERN\*\*/i)) {
+          missingFields.push("Priority Stack must contain at least one **KERN** item");
+        }
+        if (!content.includes("### Success Feels Like")) {
+          missingFields.push("### Success Feels Like");
+        }
+        if (!content.includes("### Milestone Class")) {
+          missingFields.push("### Milestone Class");
+        }
+      }
+
+      if (!content.match(/^milestone_class:\s*(feature|transformation)/m)) {
+        missingFields.push("Frontmatter 'milestone_class: feature|transformation' is missing");
+      }
+
+      if (missingFields.length > 0) {
+        return {
+          content: [{ type: "text" as const, text: `Error: CONTEXT.md is missing required Milestone Intent fields:\n${missingFields.map(f => `- ${f}`).join("\n")}\n\nThe Milestone Intent section is mandatory. Go back to the discussion and establish the user's core pain, priority stack (with at least one KERN item), success criteria, and milestone class before writing CONTEXT.md.` }],
+          details: { operation: "save_summary", error: "missing_milestone_intent", missingFields } as any,
+        };
+      }
+    }
+
     try {
       const { saveRequirementToDb } = await import("../db-writer.js");
       const result = await saveRequirementToDb(

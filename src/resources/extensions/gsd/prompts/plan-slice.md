@@ -10,6 +10,8 @@ All relevant context has been preloaded below — start working immediately with
 
 {{inlinedContext}}
 
+{{milestoneIntentSection}}
+
 ### Dependency Slice Summaries
 
 Pay particular attention to **Forward Intelligence** sections — they contain hard-won knowledge about what's fragile, what assumptions changed, and what this slice should watch out for.

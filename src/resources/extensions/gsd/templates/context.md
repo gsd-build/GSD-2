@@ -1,3 +1,11 @@
+---
+research_depth: {{researchDepth}}
+research_signals:
+  - {{signal}}
+research_focus: {{researchFocus}}
+milestone_class: {{feature_OR_transformation}}
+---
+
 # {{milestoneId}}: {{milestoneTitle}}
 
 **Gathered:** {{date}}
@@ -6,6 +14,29 @@
 ## Project Description
 
 {{description}}
+
+## Milestone Intent
+
+This section is the **pipeline-persistent core** — it is injected into EVERY downstream prompt (planner, executor, completer) so the user's pain and priorities survive context compression. Keep it concise (~500 chars max) and brutally honest.
+
+### Core Problem Being Eliminated
+
+{{what the user does TODAY that they must NOT have to do AFTER this milestone — one sentence, concrete, behavioral}}
+
+### Priority Stack
+
+1. {{requirement or capability}} — **KERN** — {{why this is non-negotiable; without this the milestone failed}}
+2. {{requirement or capability}} — important — {{why}}
+3. {{requirement or capability}} — nice-to-have — {{why}}
+
+### Success Feels Like
+
+- {{concrete behavioral delta: "I open X and Y already knows Z — no manual transfer"}}
+- {{concrete behavioral delta: "When I do X, the system automatically does Y"}}
+
+### Milestone Class
+
+**{{feature | transformation}}** — A `feature` milestone adds new user-visible capabilities to an existing workflow. A `transformation` milestone changes HOW the system behaves — the user's workflow itself is different afterward. Transformation milestones may produce less visible UI but more behavioral change.
 
 ## Why This Milestone
 
@@ -106,3 +137,13 @@ To call this milestone complete, we must prove:
 ## Open Questions
 
 - {{question}} — {{currentThinking}}
+
+## Seed Material
+
+External documents that informed this milestone's context. The **planner MUST read these** before decomposing into slices — they contain depth that CONTEXT.md summarizes but cannot fully capture. If files are large, focus on sections relevant to the Priority Stack.
+
+- `{{path/to/research-report.md}}` — {{what it contains and why it matters}}
+- `{{path/to/voice-exploration.md}}` — {{what it contains and why it matters}}
+- `{{path/to/external-chat-export.md}}` — {{what it contains and why it matters}}
+
+If no external seed material exists (the discussion captured everything), omit this section entirely.

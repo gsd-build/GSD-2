@@ -39,10 +39,12 @@ import { inlineGraphSubgraph } from "./graph-context.js";
 // ─── Preamble Cap ─────────────────────────────────────────────────────────────
 
 const MAX_PREAMBLE_CHARS = 30_000;
+const MAX_PREAMBLE_CHARS_DEEP = 50_000;
 
-function capPreamble(preamble: string): string {
-  if (preamble.length <= MAX_PREAMBLE_CHARS) return preamble;
-  return truncateAtSectionBoundary(preamble, MAX_PREAMBLE_CHARS).content;
+function capPreamble(preamble: string, deep = false): string {
+  const cap = deep ? MAX_PREAMBLE_CHARS_DEEP : MAX_PREAMBLE_CHARS;
+  if (preamble.length <= cap) return preamble;
+  return truncateAtSectionBoundary(preamble, cap).content;
 }
 
 // ─── Executor Constraints ─────────────────────────────────────────────────────
@@ -157,6 +159,61 @@ export async function inlineFileOptional(
   const content = absPath ? await loadFile(absPath) : null;
   if (!content) return null;
   return `### ${label}\nSource: \`${relPath}\`\n\n${content.trim()}`;
+}
+
+/**
+ * Extract the Milestone Intent section from CONTEXT.md for pipeline-persistent injection.
+ *
+ * The Intent section is written during the discussion phase and contains the user's
+ * core pain, priority stack, and success-feels-like — in ~500 chars. It is injected
+ * into EVERY downstream prompt (planner, executor, completer) so the user's pain
+ * survives context compression across session boundaries.
+ *
+ * Returns null if CONTEXT.md doesn't exist or has no Milestone Intent section.
+ */
+export async function inlineMilestoneIntent(
+  base: string, mid: string,
+): Promise<string | null> {
+  const contextPath = resolveMilestoneFile(base, mid, "CONTEXT");
+  if (!contextPath) return null;
+  const content = await loadFile(contextPath);
+  if (!content) return null;
+
+  const intentSection = extractMarkdownSection(content, "Milestone Intent");
+  if (!intentSection || intentSection.length < 20) return null;
+
+  // Also extract milestone_class from frontmatter if present
+  const classMatch = content.match(/^milestone_class:\s*(.+)$/m);
+  const milestoneClass = classMatch ? classMatch[1].trim() : "feature";
+
+  const isTransformation = milestoneClass === "transformation";
+
+  const lines = [
+    `## Milestone Intent (Pipeline-Persistent — DO NOT IGNORE)`,
+    ``,
+    `**Milestone class:** ${milestoneClass}`,
+    ``,
+    intentSection.trim(),
+    ``,
+    `> This section was written during the discussion phase and represents the user's core pain and priorities.`,
+    `> Every implementation decision should be evaluated against the KERN priority above.`,
+    `> If a task could serve the KERN priority better with a different approach, prefer that approach.`,
+  ];
+
+  if (isTransformation) {
+    lines.push(
+      ``,
+      `### Transformation Guidance`,
+      ``,
+      `This is a **transformation** milestone — the user's workflow must fundamentally change.`,
+      `- Prefer changes to system BEHAVIOR over building visualization surfaces`,
+      `- If this task could directly eliminate the Core Problem, that approach is always preferable to adding an observable/dashboard/page that merely SHOWS the problem`,
+      `- Foundation work that enables behavioral change is valuable — don't shortcut it into a UI wrapper`,
+      `- The user's success metric is not "I can see X" but "I no longer have to do Y"`,
+    );
+  }
+
+  return lines.join("\n");
 }
 
 /**
@@ -1030,6 +1087,9 @@ export async function buildResearchMilestonePrompt(mid: string, midTitle: string
   const contextRel = relMilestoneFile(base, mid, "CONTEXT");
 
   const inlined: string[] = [];
+  // Milestone Intent: pipeline-persistent — researcher sees the user's core pain
+  const intentForResearchMilestone = await inlineMilestoneIntent(base, mid);
+  if (intentForResearchMilestone) inlined.push(intentForResearchMilestone);
   inlined.push(await inlineFile(contextPath, contextRel, "Milestone Context"));
   const projectInline = await inlineProjectFromDb(base);
   if (projectInline) inlined.push(projectInline);
@@ -1074,6 +1134,9 @@ export async function buildPlanMilestonePrompt(mid: string, midTitle: string, ba
   const researchAnchor = readPhaseAnchor(base, mid, "research-milestone");
   if (researchAnchor) inlined.push(formatAnchorForPrompt(researchAnchor));
 
+  // Milestone Intent: pipeline-persistent — planner MUST decompose around the KERN
+  const intentForPlanMilestone = await inlineMilestoneIntent(base, mid);
+  if (intentForPlanMilestone) inlined.push(intentForPlanMilestone);
   inlined.push(await inlineFile(contextPath, contextRel, "Milestone Context"));
   const researchInline = await inlineFileOptional(researchPath, researchRel, "Milestone Research");
   if (researchInline) inlined.push(researchInline);
@@ -1112,7 +1175,25 @@ export async function buildPlanMilestonePrompt(mid: string, midTitle: string, ba
     inlined.push(inlineTemplate("task-plan", "Task Plan"));
   }
 
-  const inlinedContext = capPreamble(`## Inlined Context (preloaded — do not re-read these files)\n\n${inlined.join("\n\n---\n\n")}`);
+  // Detect deep research — if CONTEXT.md specifies deep research or a RESEARCH.md > 20K exists,
+  // increase the preamble cap to 50K so the planner sees the full research context
+  const contextContentForDepth = contextPath ? await loadFile(contextPath) : null;
+  const hasDeepResearch = (() => {
+    if (contextContentForDepth?.match(/research_depth:\s*(deep|standard)/)) return true;
+    if (contextContentForDepth?.match(/milestone_class:\s*transformation/)) return true;
+    if (researchInline && researchInline.length > 20_000) return true;
+    return false;
+  })();
+
+  // Extract Seed Material references from CONTEXT.md
+  if (contextContentForDepth) {
+    const seedSection = extractMarkdownSection(contextContentForDepth, "Seed Material");
+    if (seedSection && seedSection.length > 20) {
+      inlined.push(`### Seed Material (READ BEFORE DECOMPOSING)\n\n${seedSection.trim()}\n\n> These files contain the user's deep thinking and research. Read them before planning slices — CONTEXT.md is a summary, these are the primary sources.`);
+    }
+  }
+
+  const inlinedContext = capPreamble(`## Inlined Context (preloaded — do not re-read these files)\n\n${inlined.join("\n\n---\n\n")}`, hasDeepResearch);
 
   const outputRelPath = relMilestoneFile(base, mid, "ROADMAP");
   const researchOutputPath = join(base, relMilestoneFile(base, mid, "RESEARCH"));
@@ -1152,6 +1233,10 @@ export async function buildResearchSlicePrompt(
   const sliceContextRel = relSliceFile(base, mid, sid, "CONTEXT");
 
   const inlined: string[] = [];
+
+  // Milestone Intent: pipeline-persistent — slice researcher sees the user's core pain
+  const intentForResearchSlice = await inlineMilestoneIntent(base, mid);
+  if (intentForResearchSlice) inlined.push(intentForResearchSlice);
 
   // Use roadmap excerpt instead of full roadmap for context reduction
   const roadmapExcerptRS = await inlineRoadmapExcerpt(base, mid, sid);
@@ -1279,6 +1364,9 @@ export async function buildPlanSlicePrompt(
   // Build executor context constraints from the budget engine
   const executorContextConstraints = formatExecutorConstraints();
 
+  // Milestone Intent: inject into slice planner so task decomposition respects user priorities
+  const sliceMilestoneIntent = await inlineMilestoneIntent(base, mid) ?? "";
+
   const outputRelPath = relSliceFile(base, mid, sid, "PLAN");
   const commitInstruction = "Do not commit — .gsd/ planning docs are managed externally and not tracked in git.";
   return loadPrompt("plan-slice", {
@@ -1289,6 +1377,7 @@ export async function buildPlanSlicePrompt(
     researchPath: researchRel,
     outputPath: join(base, outputRelPath),
     inlinedContext,
+    milestoneIntentSection: sliceMilestoneIntent,
     dependencySummaries: depContent,
     sourceFilePaths: buildSourceFilePaths(base, mid, sid),
     executorContextConstraints,
@@ -1430,10 +1519,14 @@ export async function buildExecuteTaskPrompt(
     { pending: new Set(etPending.map((g) => g.gate_id)), allowOmit: true },
   );
 
+  // Milestone Intent: pipeline-persistent core pain and priorities from CONTEXT.md.
+  const milestoneIntentSection = await inlineMilestoneIntent(base, mid) ?? "";
+
   return loadPrompt("execute-task", {
     overridesSection,
     runtimeContext,
     phaseAnchorSection,
+    milestoneIntentSection,
     workingDirectory: base,
     milestoneId: mid, sliceId: sid, sliceTitle: sTitle, taskId: tid, taskTitle: tTitle,
     planPath: join(base, relSliceFile(base, mid, sid, "PLAN")),
@@ -1474,6 +1567,9 @@ export async function buildCompleteSlicePrompt(
   const sliceContextRel = relSliceFile(base, mid, sid, "CONTEXT");
 
   const inlined: string[] = [];
+  // Milestone Intent: pipeline-persistent — completer evaluates slice against the KERN priority
+  const intentForCompleteSlice = await inlineMilestoneIntent(base, mid);
+  if (intentForCompleteSlice) inlined.push(intentForCompleteSlice);
   inlined.push(await inlineFile(roadmapPath, roadmapRel, "Milestone Roadmap"));
   const sliceCtxInline = await inlineFileOptional(sliceContextPath, sliceContextRel, "Slice Context (from discussion)");
   if (sliceCtxInline) inlined.push(sliceCtxInline);
@@ -1546,6 +1642,9 @@ export async function buildCompleteMilestonePrompt(
   const roadmapRel = relMilestoneFile(base, mid, "ROADMAP");
 
   const inlined: string[] = [];
+  // Milestone Intent: pipeline-persistent — milestone completer must verify the KERN was actually delivered
+  const intentForCompleteMilestone = await inlineMilestoneIntent(base, mid);
+  if (intentForCompleteMilestone) inlined.push(intentForCompleteMilestone);
   inlined.push(await inlineFile(roadmapPath, roadmapRel, "Milestone Roadmap"));
 
   // Inline all slice summaries (deduplicated by slice ID)
@@ -1622,6 +1721,9 @@ export async function buildValidateMilestonePrompt(
   const roadmapRel = relMilestoneFile(base, mid, "ROADMAP");
 
   const inlined: string[] = [];
+  // Milestone Intent: pipeline-persistent — validator checks whether the KERN priority was actually delivered
+  const intentForValidateMilestone = await inlineMilestoneIntent(base, mid);
+  if (intentForValidateMilestone) inlined.push(intentForValidateMilestone);
   inlined.push(await inlineFile(roadmapPath, roadmapRel, "Milestone Roadmap"));
 
   // Inline verification classes from planning (if available in DB)
@@ -1764,6 +1866,9 @@ export async function buildReplanSlicePrompt(
   const sliceContextRel = relSliceFile(base, mid, sid, "CONTEXT");
 
   const inlined: string[] = [];
+  // Milestone Intent: pipeline-persistent — replanner must preserve KERN priority through the replan
+  const intentForReplanSlice = await inlineMilestoneIntent(base, mid);
+  if (intentForReplanSlice) inlined.push(intentForReplanSlice);
   inlined.push(await inlineFile(roadmapPath, roadmapRel, "Milestone Roadmap"));
   const sliceCtxInline = await inlineFileOptional(sliceContextPath, sliceContextRel, "Slice Context (from discussion)");
   if (sliceCtxInline) inlined.push(sliceCtxInline);
@@ -1839,6 +1944,9 @@ export async function buildRunUatPrompt(
   mid: string, sliceId: string, uatPath: string, uatContent: string, base: string,
 ): Promise<string> {
   const inlined: string[] = [];
+  // Milestone Intent: pipeline-persistent — UAT should test the KERN priority path
+  const intentForRunUat = await inlineMilestoneIntent(base, mid);
+  if (intentForRunUat) inlined.push(intentForRunUat);
   inlined.push(await inlineFile(resolveSliceFile(base, mid, sliceId, "UAT"), uatPath, `${sliceId} UAT`));
 
   const summaryPath = resolveSliceFile(base, mid, sliceId, "SUMMARY");
@@ -1885,6 +1993,9 @@ export async function buildReassessRoadmapPrompt(
   const sliceContextRel = relSliceFile(base, mid, completedSliceId, "CONTEXT");
 
   const inlined: string[] = [];
+  // Milestone Intent: pipeline-persistent — reassessment must not drop the KERN priority from the roadmap
+  const intentForReassessRoadmap = await inlineMilestoneIntent(base, mid);
+  if (intentForReassessRoadmap) inlined.push(intentForReassessRoadmap);
   inlined.push(await inlineFile(roadmapPath, roadmapRel, "Current Roadmap"));
   const sliceCtxInline = await inlineFileOptional(sliceContextPath, sliceContextRel, "Slice Context (from discussion)");
   if (sliceCtxInline) inlined.push(sliceCtxInline);
@@ -2122,6 +2233,9 @@ export async function buildGateEvaluatePrompt(
   const pendingIds = new Set(pending.map((g) => g.gate_id));
   const gateDefs = getGatesForTurn("gate-evaluate").filter((def) => pendingIds.has(def.id));
 
+  // Load milestone intent for gate context
+  const intentForGate = await inlineMilestoneIntent(base, mid) ?? "";
+
   const subagentSections: string[] = [];
   const gateListLines: string[] = [];
 
@@ -2131,6 +2245,7 @@ export async function buildGateEvaluatePrompt(
     const subPrompt = [
       `You are evaluating quality gate **${def.id}** for slice ${sid} (${sTitle}).`,
       "",
+      ...(intentForGate ? [intentForGate, ""] : []),
       `## Question: ${def.question}`,
       "",
       def.guidance,
