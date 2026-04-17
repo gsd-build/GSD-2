@@ -18,6 +18,7 @@ import { loadToolApiKeys } from "../commands-config.js";
 import { loadFile, saveFile, formatContinue } from "../files.js";
 import { deriveState } from "../state.js";
 import { getAutoDashboardData, isAutoActive, isAutoPaused, markToolEnd, markToolStart, recordToolInvocationError } from "../auto.js";
+import { hideFooter } from "../auto-dashboard.js";
 import { isParallelActive, shutdownParallel } from "../parallel-orchestrator.js";
 import { checkToolCallLoop, resetToolCallLoopGuard } from "./tool-call-loop-guard.js";
 import { saveActivityLog } from "../activity-log.js";
@@ -88,6 +89,9 @@ export function registerHooks(
       } catch { /* non-fatal */ }
     }
     loadToolApiKeys();
+    if (isAutoActive()) {
+      ctx.ui.setFooter(hideFooter);
+    }
   });
 
   pi.on("session_switch", async (_event, ctx) => {
@@ -108,6 +112,9 @@ export function registerHooks(
       prepareWorkflowMcpForProject(ctx, process.cwd());
     }
     loadToolApiKeys();
+    if (isAutoActive()) {
+      ctx.ui.setFooter(hideFooter);
+    }
   });
 
   pi.on("before_agent_start", async (event, ctx: ExtensionContext) => {
