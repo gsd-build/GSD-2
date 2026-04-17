@@ -1,0 +1,15 @@
+{
+  "id": "gsd-watch",
+  "name": "GSD Watch",
+  "version": "1.0.0",
+  "description": "Live TUI dashboard — navigable tree of milestones, phases, and plans with status badges",
+  "tier": "bundled",
+  "requires": { "platform": ">=2.29.0" },
+  "provides": {
+    "commands": ["watch"]
+  },
+  "dependencies": {
+    "extensions": ["gsd"],
+    "runtime": ["chokidar"]
+  }
+}
