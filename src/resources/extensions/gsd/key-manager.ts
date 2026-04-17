@@ -153,8 +153,16 @@ export interface KeyStatus {
 export function getAllKeyStatuses(auth: AuthStorage): KeyStatus[] {
   return PROVIDER_REGISTRY.map((provider) => {
     const rawCred = auth.get(provider.id);
+    // auth.get() may return a single credential or an array (multi-key round-robin).
+    // Normalize to a single credential for display purposes.
+    const singleCred = Array.isArray(rawCred)
+      ? (rawCred as AuthCredential[]).find(c => c.type !== "api_key" || !!(c as ApiKeyCredential).key) ?? rawCred[0]
+      : rawCred;
     // Filter out empty-key entries (left by legacy removeProviderToken or skipped onboarding)
-    const cred = rawCred && !(rawCred.type === "api_key" && !(rawCred as ApiKeyCredential).key) ? rawCred : undefined;
+    const cred = singleCred && !(singleCred.type === "api_key" && !(singleCred as ApiKeyCredential).key) ? singleCred : undefined;
+    const credentialCount = Array.isArray(rawCred)
+      ? (rawCred as AuthCredential[]).filter(c => c.type !== "api_key" || !!(c as ApiKeyCredential).key).length
+      : (cred ? 1 : 0);
     const envKey = provider.envVar ? process.env[provider.envVar] : undefined;
 
     if (cred) {
@@ -162,8 +170,10 @@ export function getAllKeyStatuses(auth: AuthStorage): KeyStatus[] {
         provider,
         configured: true,
         source: "auth.json" as const,
-        credentialCount: 1,
-        description: describeCredential(cred),
+        credentialCount,
+        description: credentialCount > 1
+          ? `${credentialCount} API keys (round-robin)`
+          : describeCredential(cred),
         backedOff: false,
       };
     }

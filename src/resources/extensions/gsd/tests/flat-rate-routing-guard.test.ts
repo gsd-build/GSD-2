@@ -37,15 +37,26 @@ describe("flat-rate provider routing guard (#3453)", () => {
     // resolvePreferredModelConfig should not synthesize a routing
     // config from tier_models — it should return undefined so the
     // user's selected model is preserved.
-    const result = resolvePreferredModelConfig("execute-task", {
-      provider: "github-copilot",
-      id: "claude-sonnet-4",
-    });
+    // Isolate from user's real ~/.gsd/preferences.md via GSD_HOME
+    const savedGsdHome = process.env.GSD_HOME;
+    const savedHome = process.env.HOME;
+    try {
+      process.env.GSD_HOME = "/tmp/gsd-no-such-home-for-test-flat-rate";
+      process.env.HOME = "/tmp/gsd-no-such-home-for-test-flat-rate";
+      const result = resolvePreferredModelConfig("execute-task", {
+        provider: "github-copilot",
+        id: "claude-sonnet-4",
+      });
 
-    // Should be undefined (no routing config created for flat-rate)
-    // Note: this only tests the guard — if explicit per-unit config exists
-    // in preferences, that takes precedence regardless.
-    assert.equal(result, undefined, "Should not create routing config for copilot");
+      // Should be undefined (no routing config created for flat-rate)
+      // Note: this only tests the guard — if explicit per-unit config exists
+      // in preferences, that takes precedence regardless.
+      assert.equal(result, undefined, "Should not create routing config for copilot");
+    } finally {
+      if (savedGsdHome !== undefined) process.env.GSD_HOME = savedGsdHome;
+      else delete process.env.GSD_HOME;
+      process.env.HOME = savedHome;
+    }
   });
 });
 

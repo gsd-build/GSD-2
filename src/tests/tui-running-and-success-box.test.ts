@@ -20,10 +20,11 @@ const guidedFlowSrc = readFileSync(
 );
 
 describe("guided-flow milestone notification (GSD-owned behavior)", () => {
-  it('emits "Milestone ready" as a success notification', () => {
+  it('emits "Milestone ready" as an info notification', () => {
+    // pi 0.67.2 removed "success" from the notify type union; changed to "info"
     assert.ok(
-      guidedFlowSrc.includes('ctx.ui.notify(`Milestone ${milestoneId} ready.`, "success")'),
-      "guided-flow must emit the milestone-ready notification with type 'success' so it renders in the green box",
+      guidedFlowSrc.includes('ctx.ui.notify(`Milestone ${milestoneId} ready.`, "info")'),
+      "guided-flow must emit the milestone-ready notification with type 'info'",
     );
   });
 });

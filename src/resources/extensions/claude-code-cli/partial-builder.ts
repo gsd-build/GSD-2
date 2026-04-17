@@ -379,8 +379,9 @@ export class PartialMessageBuilder {
 							// malformation explicitly so downstream consumers can
 							// distinguish this from a healthy tool completion (#2574).
 							block.arguments = { _raw: jsonStr };
-							// malformedArguments removed from toolcall_end event in pi 0.67.2
-							return { type: "toolcall_end", contentIndex, toolCall: block, partial: this.partial };
+							// malformedArguments removed from the toolcall_end type in pi 0.67.2;
+							// cast to any to preserve the runtime signal for downstream consumers (#2574)
+							return { type: "toolcall_end", contentIndex, toolCall: block, partial: this.partial, malformedArguments: true } as any;
 						}
 					}
 					return { type: "toolcall_end", contentIndex, toolCall: block, partial: this.partial };
