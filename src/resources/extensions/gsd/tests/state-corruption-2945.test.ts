@@ -295,6 +295,7 @@ describe("#2945 Bug 3: mergeAndExit must teardown worktree after successful merg
       loadEffectiveGSDPreferences: () => undefined,
       invalidateAllCaches: () => {},
       captureIntegrationBranch: () => {},
+      enterBranchModeForMilestone: () => {},
     };
 
     // Import and create resolver
