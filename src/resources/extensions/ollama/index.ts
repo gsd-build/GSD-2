@@ -76,8 +76,8 @@ async function probeAndRegister(pi: ExtensionAPI): Promise<boolean> {
 		authMode: "apiKey",
 		apiKey: process.env.OLLAMA_API_KEY ?? "ollama",
 		baseUrl,
-		api: "ollama-chat",
-		streamSimple: streamOllamaChat,
+                api: "ollama-chat",
+                streamSimple: streamOllamaChat,
 		isReady: () => true,
 		models: models.map((m) => ({
 			id: m.id,

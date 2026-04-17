@@ -12,7 +12,6 @@
  */
 
 import type { ExtensionAPI } from "@gsd/pi-coding-agent";
-import { Text } from "@gsd/pi-tui";
 import * as client from "./ollama-client.js";
 import { discoverModels, formatModelForDisplay } from "./ollama-discovery.js";
 import { formatModelSize } from "./model-capabilities.js";
@@ -100,10 +99,18 @@ async function handleStatus(ctx: any): Promise<void> {
 	}
 
 	await ctx.ui.custom(
-		(tui: any, theme: any, _kb: any, done: (r: undefined) => void) => {
-			const text = new Text(lines.map((l) => theme.fg("fg", l)).join("\n"), 0, 0);
-			setTimeout(() => done(undefined), 0);
-			return text;
+		(_tui: any, theme: any, _kb: any, done: (r: undefined) => void) => {
+			function handleInput(_data: string) {
+				done(undefined);
+			}
+			function render(width: number): string[] {
+				return [
+					...lines.map((l) => theme.fg("text", l)),
+					"",
+					theme.fg("dim", " Press any key to dismiss"),
+				];
+			}
+			return { render, handleInput, invalidate: () => {} };
 		},
 	);
 }
@@ -127,10 +134,14 @@ async function handleList(ctx: any): Promise<void> {
 	}
 
 	await ctx.ui.custom(
-		(tui: any, theme: any, _kb: any, done: (r: undefined) => void) => {
-			const text = new Text(lines.map((l) => theme.fg("fg", l)).join("\n"), 0, 0);
-			setTimeout(() => done(undefined), 0);
-			return text;
+		(_tui: any, theme: any, _kb: any, done: (r: undefined) => void) => {
+			function handleInput(_data: string) {
+				done(undefined);
+			}
+			function render(width: number): string[] {
+				return lines.map((l) => theme.fg("text", l));
+			}
+			return { render, handleInput, invalidate: () => {} };
 		},
 	);
 }
@@ -233,10 +244,14 @@ async function handlePs(ctx: any): Promise<void> {
 		}
 
 		await ctx.ui.custom(
-			(tui: any, theme: any, _kb: any, done: (r: undefined) => void) => {
-				const text = new Text(lines.map((l) => theme.fg("fg", l)).join("\n"), 0, 0);
-				setTimeout(() => done(undefined), 0);
-				return text;
+			(_tui: any, theme: any, _kb: any, done: (r: undefined) => void) => {
+				function handleInput(_data: string) {
+					done(undefined);
+				}
+				function render(width: number): string[] {
+					return lines.map((l) => theme.fg("text", l));
+				}
+				return { render, handleInput, invalidate: () => {} };
 			},
 		);
 	} catch (err) {

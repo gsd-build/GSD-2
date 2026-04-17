@@ -236,6 +236,22 @@ export async function dispatchSlashCommand(
 		return true;
 	}
 
+	// If input starts with "/" but no built-in command matched, check if an
+	// extension owns this command before showing an error.  Returning false
+	// lets the caller (input-controller) fall through to session.prompt() which
+	// routes extension commands correctly.
+	if (text.startsWith("/")) {
+		const spaceIdx = text.indexOf(" ");
+		const commandName = spaceIdx === -1 ? text.slice(1) : text.slice(1, spaceIdx);
+		const extensionRunner = ctx.session.extensionRunner;
+		if (extensionRunner?.getCommand(commandName)) {
+			return false; // handled by extension system
+		}
+		const command = text.split(/\s/)[0];
+		ctx.showError(`Unknown command: ${command}. Type /help for available commands.`);
+		return true;
+	}
+
 	return false;
 }
 
