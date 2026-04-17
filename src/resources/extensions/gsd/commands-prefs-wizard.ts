@@ -226,12 +226,14 @@ export function buildCategorySummaries(prefs: Record<string, unknown>): Record<s
   }
 
   // Notifications
-  const notif = prefs.notifications as Record<string, boolean> | undefined;
+  const notif = prefs.notifications as Record<string, unknown> | undefined;
   let notifSummary = "(defaults)";
   if (notif && Object.keys(notif).length > 0) {
     const allKeys = ["enabled", "on_complete", "on_error", "on_budget", "on_milestone", "on_attention"];
     const enabledCount = allKeys.filter(k => notif[k] !== false).length;
-    notifSummary = `${enabledCount}/${allKeys.length} enabled`;
+    const kind = notif.kind as string | undefined;
+    const kindStr = kind ? ` (${kind})` : "";
+    notifSummary = `${enabledCount}/${allKeys.length} enabled${kindStr}`;
   }
 
   // Advanced
@@ -626,7 +628,7 @@ async function configureBudget(ctx: ExtensionCommandContext, prefs: Record<strin
 }
 
 async function configureNotifications(ctx: ExtensionCommandContext, prefs: Record<string, unknown>): Promise<void> {
-  const notif: Record<string, boolean> = (prefs.notifications as Record<string, boolean>) ?? {};
+  const notif: Record<string, unknown> = (prefs.notifications as Record<string, unknown>) ?? {};
   const notifFields = [
     { key: "enabled", label: "Notifications enabled (master toggle)", defaultVal: true },
     { key: "on_complete", label: "Notify on unit completion", defaultVal: true },
@@ -647,6 +649,17 @@ async function configureNotifications(ctx: ExtensionCommandContext, prefs: Recor
       notif[field.key] = choice === "true";
     }
   }
+
+  // Notification kind (toast vs sound-only)
+  const currentKind = notif.kind as string | undefined;
+  const kindChoice = await ctx.ui.select(
+    `Notification style${currentKind ? ` (current: ${currentKind})` : " (default: toast)"}:`,
+    ["toast", "sound", "(keep current)"],
+  );
+  if (kindChoice && kindChoice !== "(keep current)") {
+    notif.kind = kindChoice;
+  }
+
   if (Object.keys(notif).length > 0) {
     prefs.notifications = notif;
   }
