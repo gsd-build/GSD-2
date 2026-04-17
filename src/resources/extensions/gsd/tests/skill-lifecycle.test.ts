@@ -52,6 +52,13 @@ describe("skill-telemetry", () => {
     const result = getSkillLastUsed(units);
     assert.equal(result.size, 0);
   });
+
+  it("detectStaleSkills returns empty list when there are no units yet", async () => {
+    const { detectStaleSkills } = await import("../skill-telemetry.js");
+
+    const result = detectStaleSkills([], 30);
+    assert.deepEqual(result, []);
+  });
 });
 
 // ─── Skill Health ─────────────────────────────────────────────────────────────
