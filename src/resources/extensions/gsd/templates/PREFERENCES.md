@@ -9,7 +9,11 @@ custom_instructions: []
 models: {}
 skill_discovery:
 skill_staleness_days:
-auto_supervisor: {}
+auto_supervisor:
+  soft_timeout_minutes:
+  idle_timeout_minutes:
+  hard_timeout_minutes:
+  disable_context_pressure_wrapup:
 git:
   auto_push:
   push_branches:
