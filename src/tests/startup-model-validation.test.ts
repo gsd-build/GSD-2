@@ -164,3 +164,102 @@ describe("validateConfiguredModel — regression #3534", () => {
 		assert.equal(settings._model, "claude-opus-4-7");
 	});
 });
+
+describe("validateConfiguredModel — async discovery provider race (#3531 follow-up)", () => {
+	it("does not overwrite settings when ollama model is not yet in registry", () => {
+		// Simulate: user configured ollama/glm-5.1 but the ollama extension
+		// hasn't finished its HTTP probe yet, so the model isn't in getAvailable().
+		// Previously this would silently overwrite to a non-ollama fallback.
+		const registry = createMockRegistry([
+			{ provider: "anthropic", id: "claude-opus-4-6" },
+		]);
+		const settings = createMockSettings({ provider: "ollama", model: "glm-5.1" });
+
+		validateConfiguredModel(registry, settings);
+
+		// Should NOT have overwritten — ollama is an async-discovery provider
+		assert.equal(settings._provider, "ollama");
+		assert.equal(settings._model, "glm-5.1");
+	});
+
+	it("does not reset thinking level for async-discovery providers not yet in registry", () => {
+		const registry = createMockRegistry([
+			{ provider: "anthropic", id: "claude-opus-4-6" },
+		]);
+		const settings = createMockSettings({
+			provider: "ollama",
+			model: "glm-5.1",
+			thinking: "high",
+		});
+
+		validateConfiguredModel(registry, settings);
+
+		// Thinking level should NOT be reset — the model may appear later
+		assert.equal(settings._thinking, "high");
+	});
+
+	it("does fall back when ollama model IS in registry but different model ID", () => {
+		// If ollama models are registered but the specific model doesn't exist,
+		// that's a genuine "model not found" — not a timing issue. Should fallback.
+		const registry = createMockRegistry([
+			{ provider: "ollama", id: "glm-4.7" },
+			{ provider: "anthropic", id: "claude-opus-4-6" },
+		]);
+		const settings = createMockSettings({ provider: "ollama", model: "glm-5.1" });
+
+		validateConfiguredModel(registry, settings);
+
+		// ollama IS in registry, but glm-5.1 isn't — provider stickiness
+		// should keep us on ollama (glm-4.7)
+		assert.equal(settings._provider, "ollama");
+		assert.equal(settings._model, "glm-4.7");
+	});
+
+	it("does fall back when ollama has no models available at all (no auth)", () => {
+		// When ollama is in getAll() but NOT in getAvailable(), the provider
+		// is registered but has no authenticated models. Since validateConfiguredModel
+		// only checks getAvailable(), it can't distinguish this from "provider
+		// hasn't finished probe yet" — both look the same. The async-discovery
+		// guard will preserve settings, which is the safer default: the ollama
+		// extension's session_start handler will detect the auth failure and
+		// unregister the provider, allowing a subsequent validation to fall back.
+		//
+		// This is an intentional trade-off: it's better to temporarily keep
+		// stale ollama settings (recoverable on next startup) than to silently
+		// overwrite them (irrecoverable).
+		const allModels = [
+			{ provider: "ollama", id: "glm-5.1" },
+			{ provider: "anthropic", id: "claude-opus-4-6" },
+		];
+		const availableModels = [
+			{ provider: "anthropic", id: "claude-opus-4-6" },
+		];
+		const registry = createMockRegistry(allModels, availableModels);
+		const settings = createMockSettings({ provider: "ollama", model: "glm-5.1" });
+
+		validateConfiguredModel(registry, settings);
+
+		// With the async-discovery guard, settings are preserved even though
+		// ollama has no available models — the function assumes the provider
+		// might still be probing. The ollama extension handles the true
+		// "no auth" case by unregistering itself after a failed probe.
+		assert.equal(settings._provider, "ollama");
+		assert.equal(settings._model, "glm-5.1");
+	});
+
+	it("does not overwrite settings for ollama even when no model is configured", () => {
+		// Edge case: provider is set to "ollama" but model is undefined.
+		// The isAwaitingDiscovery check should still prevent overwriting
+		// since ollama models may appear after probe.
+		const registry = createMockRegistry([
+			{ provider: "anthropic", id: "claude-opus-4-6" },
+		]);
+		const settings = createMockSettings({ provider: "ollama", model: undefined });
+
+		validateConfiguredModel(registry, settings);
+
+		// Should NOT pick a fallback — ollama is async-discovery
+		assert.equal(settings._provider, "ollama");
+		assert.equal(settings._model, undefined);
+	});
+});

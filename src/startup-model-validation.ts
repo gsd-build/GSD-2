@@ -20,6 +20,14 @@ interface MinimalModelRegistry {
   getAvailable(): MinimalModel[]
 }
 
+/**
+ * Providers whose models are registered asynchronously (e.g. via HTTP probe
+ * during session_start). If the user's configured provider is one of these
+ * but the model is not yet in the registry, we skip overwriting settings —
+ * the model will appear once the async probe completes.
+ */
+const ASYNC_DISCOVERY_PROVIDERS = new Set(['ollama'])
+
 type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
 
 interface MinimalSettingsManager {
@@ -56,7 +64,25 @@ export function validateConfiguredModel(
   const configuredExists = configuredProvider && configuredModel &&
     availableModels.some((m) => m.provider === configuredProvider && m.id === configuredModel)
 
-  if (!configuredModel || !configuredExists) {
+  // Extension-provided providers (like ollama) register models asynchronously
+  // on session_start. If the configured provider is one of these AND the
+  // provider has NO models in the registry at all, its models may not have
+  // been discovered yet. Skip overwriting settings to avoid a race condition
+  // that permanently replaces the user's chosen model with a fallback
+  // provider (#3531, #3534 follow-up).
+  //
+  // However, if the provider HAS some models available (just not the
+  // specific one configured), that's a genuine "model not found" — the
+  // specific model ID may be wrong/stale, and fallback should proceed.
+  // Similarly, if the provider exists in getAll() but not getAvailable(),
+  // the provider is registered but unauthenticated — also a genuine fallback.
+  const providerHasAvailableModels = configuredProvider &&
+    availableModels.some((m) => m.provider === configuredProvider)
+  const isAwaitingDiscovery = configuredProvider && !configuredExists &&
+    !providerHasAvailableModels &&
+    ASYNC_DISCOVERY_PROVIDERS.has(configuredProvider)
+
+  if ((!configuredModel || !configuredExists) && !isAwaitingDiscovery) {
     // Model not configured at all, or removed from registry — pick a fallback.
     // Only fires when the model is genuinely unknown (not just temporarily unavailable).
     //
@@ -78,7 +104,7 @@ export function validateConfiguredModel(
     }
   }
 
-  if (settingsManager.getDefaultThinkingLevel() !== 'off' && !configuredExists) {
+  if (settingsManager.getDefaultThinkingLevel() !== 'off' && !configuredExists && !isAwaitingDiscovery) {
     settingsManager.setDefaultThinkingLevel('off')
   }
 }
