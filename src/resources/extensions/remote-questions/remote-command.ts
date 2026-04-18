@@ -157,7 +157,7 @@ async function handleSetupDiscord(ctx: ExtensionCommandContext): Promise<void> {
 }
 
 async function handleSetupTelegram(ctx: ExtensionCommandContext): Promise<void> {
-  const token = await promptMaskedInput(ctx, "Telegram Bot Token", "Paste your bot token from @BotFather");
+  const token = await promptMaskedInput(ctx, "Telegram Bot Token", "Paste your bot token from @BotFather. If you can't paste the token here, set up TELEGRAM_BOT_TOKEN and restart GSD.");
   if (!token) return void ctx.ui.notify("Telegram setup cancelled.", "info");
   if (!/^\d+:[A-Za-z0-9_-]+$/.test(token)) return void ctx.ui.notify("Invalid token format — Telegram bot tokens look like 123456789:ABCdefGHI...", "warning");
 

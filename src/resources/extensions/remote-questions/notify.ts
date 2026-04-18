@@ -18,14 +18,14 @@ import { PER_REQUEST_TIMEOUT_MS } from "./types.js";
  * SECURITY: This is intentionally one-way. Never use remote channels
  * to collect secrets or sensitive values.
  */
-export async function sendRemoteNotification(title: string, message: string): Promise<void> {
+export async function sendRemoteNotification(title: string, message: string): Promise<boolean> {
   let config: ResolvedConfig | null;
   try {
     config = resolveRemoteConfig();
   } catch {
-    return; // Remote not configured — skip silently
+    return false; // Remote not configured — skip silently
   }
-  if (!config) return;
+  if (!config) return false;
 
   try {
     switch (config.channel) {
@@ -38,9 +38,13 @@ export async function sendRemoteNotification(title: string, message: string): Pr
       case "telegram":
         await sendTelegramNotification(config, title, message);
         break;
+      default:
+        return false;
     }
+    return true;
   } catch {
     // Non-fatal — remote notifications are best-effort
+    return false;
   }
 }
 
@@ -57,7 +61,18 @@ async function sendSlackNotification(config: ResolvedConfig, title: string, mess
     }),
     signal: AbortSignal.timeout(PER_REQUEST_TIMEOUT_MS),
   });
-  if (!response.ok) throw new Error(`Slack HTTP ${response.status}`);
+
+  let payload: any;
+  try {
+    payload = await response.json();
+  } catch (error) {
+    throw new Error(`Slack HTTP ${response.status} ${response.statusText} (invalid JSON: ${error instanceof Error ? error.message : String(error)})`);
+  }
+
+  if (!response.ok || payload?.ok !== true) {
+    const detail = payload?.error ? String(payload.error) : JSON.stringify(payload);
+    throw new Error(`Slack HTTP ${response.status} ${response.statusText}: ${detail}`);
+  }
 }
 
 async function sendDiscordNotification(config: ResolvedConfig, title: string, message: string): Promise<void> {
