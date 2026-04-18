@@ -187,6 +187,49 @@ test('launchWebMode prefers the packaged standalone host and opens the resolved 
   assert.equal(webMode.readPidFile(pidFilePath), 99999)
 })
 
+test('launchWebMode uses GSD_WEB_AUTH_TOKEN from env when set', async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), 'gsd-web-stable-token-'))
+  const standaloneRoot = join(tmp, 'dist', 'web', 'standalone')
+  const serverPath = join(standaloneRoot, 'server.js')
+  mkdirSync(standaloneRoot, { recursive: true })
+  writeFileSync(serverPath, 'console.log("stub")\n')
+
+  const stableToken = 'a'.repeat(64)
+  let openedUrl = ''
+  let spawnEnv: Record<string, any> | undefined
+  const pidFilePath = join(tmp, 'web-server.pid')
+
+  t.after(() => { rmSync(tmp, { recursive: true, force: true }) })
+
+  await webMode.launchWebMode(
+    {
+      cwd: '/tmp/stable-token-project',
+      projectSessionsDir: '/tmp/.gsd/sessions/--tmp-stable-token-project--',
+      agentDir: '/tmp/.gsd/agent',
+      packageRoot: tmp,
+    },
+    {
+      initResources: () => {},
+      resolvePort: async () => 45124,
+      execPath: '/custom/node',
+      env: { GSD_WEB_AUTH_TOKEN: stableToken },
+      spawn: (_command, _args, options) => {
+        spawnEnv = (options as Record<string, any>).env
+        return { pid: 99998, once: () => undefined, unref: () => {} } as any
+      },
+      waitForBootReady: async () => undefined,
+      openBrowser: (url) => { openedUrl = url },
+      pidFilePath,
+      writePidFile: (path, pid) => { webMode.writePidFile(path, pid) },
+      stderr: { write: () => true },
+    },
+  )
+
+  // The stable token from env should be used in both the browser URL and child env
+  assert.equal(openedUrl, `http://127.0.0.1:45124/#token=${stableToken}`)
+  assert.equal(spawnEnv?.GSD_WEB_AUTH_TOKEN, stableToken)
+})
+
 test('stopWebMode kills process by PID and removes PID file', (t) => {
   const tmp = mkdtempSync(join(tmpdir(), 'gsd-web-stop-'))
   const pidFilePath = join(tmp, 'web-server.pid')
