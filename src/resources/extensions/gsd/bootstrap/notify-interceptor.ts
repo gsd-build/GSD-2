@@ -15,7 +15,7 @@ const REMOTE_DEDUP_WINDOW_MS = 30_000;
 const REMOTE_DEDUP_PRUNE_THRESHOLD = 200;
 const _recentRemoteNotificationTimestamps = new Map<string, number>();
 
-function shouldSendRemote(message: string, type?: "info" | "warning" | "error" | "success"): boolean {
+function shouldSendRemote(message: string): boolean {
   const normalized = String(message ?? "").trim();
   if (!normalized) return false;
   return true;
@@ -35,15 +35,20 @@ function buildRemoteTitle(type?: "info" | "warning" | "error" | "success"): stri
   }
 }
 
-function shouldSkipDuplicateRemote(message: string, type?: "info" | "warning" | "error" | "success"): boolean {
+function isDuplicateRemote(message: string, type?: "info" | "warning" | "error" | "success"): boolean {
   const severity = type ?? "info";
   const normalized = String(message ?? "").trim();
   const dedupKey = `${severity}:${normalized}`;
   const now = Date.now();
   const lastSeen = _recentRemoteNotificationTimestamps.get(dedupKey);
-  if (lastSeen !== undefined && now - lastSeen < REMOTE_DEDUP_WINDOW_MS) {
-    return true;
-  }
+  return lastSeen !== undefined && now - lastSeen < REMOTE_DEDUP_WINDOW_MS;
+}
+
+function recordRemoteDelivery(message: string, type?: "info" | "warning" | "error" | "success"): void {
+  const severity = type ?? "info";
+  const normalized = String(message ?? "").trim();
+  const dedupKey = `${severity}:${normalized}`;
+  const now = Date.now();
 
   _recentRemoteNotificationTimestamps.set(dedupKey, now);
   if (_recentRemoteNotificationTimestamps.size > REMOTE_DEDUP_PRUNE_THRESHOLD) {
@@ -51,8 +56,6 @@ function shouldSkipDuplicateRemote(message: string, type?: "info" | "warning" | 
       if (now - ts > REMOTE_DEDUP_WINDOW_MS) _recentRemoteNotificationTimestamps.delete(key);
     }
   }
-
-  return false;
 }
 
 /**
@@ -72,12 +75,17 @@ export function installNotifyInterceptor(ctx: ExtensionContext): void {
       // Non-fatal — never let persistence break the UI
     }
 
-    try {
-      if (shouldSendRemote(message, type) && !shouldSkipDuplicateRemote(message, type)) {
-        void sendRemoteNotification(buildRemoteTitle(type), String(message ?? ""));
-      }
-    } catch {
-      // Non-fatal — remote notifications are best-effort
+    if (shouldSendRemote(message) && !isDuplicateRemote(message, type)) {
+      void (async () => {
+        try {
+          const delivered = await sendRemoteNotification(buildRemoteTitle(type), String(message ?? ""));
+          if (delivered) {
+            recordRemoteDelivery(message, type);
+          }
+        } catch {
+          // Non-fatal — remote notifications are best-effort
+        }
+      })();
     }
 
     originalNotify(message, type);

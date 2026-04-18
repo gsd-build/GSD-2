@@ -18,14 +18,14 @@ import { PER_REQUEST_TIMEOUT_MS } from "./types.js";
  * SECURITY: This is intentionally one-way. Never use remote channels
  * to collect secrets or sensitive values.
  */
-export async function sendRemoteNotification(title: string, message: string): Promise<void> {
+export async function sendRemoteNotification(title: string, message: string): Promise<boolean> {
   let config: ResolvedConfig | null;
   try {
     config = resolveRemoteConfig();
   } catch {
-    return; // Remote not configured — skip silently
+    return false; // Remote not configured — skip silently
   }
-  if (!config) return;
+  if (!config) return false;
 
   try {
     switch (config.channel) {
@@ -39,8 +39,10 @@ export async function sendRemoteNotification(title: string, message: string): Pr
         await sendTelegramNotification(config, title, message);
         break;
     }
+    return true;
   } catch {
     // Non-fatal — remote notifications are best-effort
+    return false;
   }
 }
 
