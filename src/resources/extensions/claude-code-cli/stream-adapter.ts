@@ -250,6 +250,16 @@ export function buildPromptFromContext(context: Context): string {
 	];
 
 	if (context.systemPrompt) {
+		// Pi-native tools (e.g. ask_user_questions, secure_env_collect) appear in the
+		// harness system prompt but are not registered as Claude Code tools. Surfacing
+		// this upfront prevents the model from spending reasoning cycles searching the
+		// deferred tool list for tools it cannot call.
+		parts.push(
+			"Note: The system context below is from the pi harness. " +
+			"Pi-native tools mentioned there (such as `ask_user_questions` and `secure_env_collect`) " +
+			"are NOT available as direct tools in this Claude Code session. " +
+			"To ask the user a question, output plain text.",
+		);
 		parts.push(`<prior_system_context>\n${context.systemPrompt}\n</prior_system_context>`);
 	}
 

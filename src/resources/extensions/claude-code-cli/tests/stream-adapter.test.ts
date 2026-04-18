@@ -345,6 +345,39 @@ describe("stream-adapter — no transcript fabrication (#4102)", () => {
 		const prompt = buildPromptFromContext(context);
 		assert.equal(prompt, "", "empty context must not emit a bare directive");
 	});
+
+	test("buildPromptFromContext emits pi-tool disclaimer before <prior_system_context> when system prompt is present", () => {
+		const context: Context = {
+			systemPrompt: "You are helpful. Use ask_user_questions to prompt the user.",
+			messages: [{ role: "user", content: "Hello" } as Message],
+		};
+
+		const prompt = buildPromptFromContext(context);
+
+		assert.ok(prompt.includes("Pi-native tools"), "prompt must include pi-tool disclaimer");
+		assert.ok(prompt.includes("ask_user_questions"), "disclaimer must name the pi-specific tool");
+		// The disclaimer must appear before the system prompt content (not injected inside the block).
+		// We check against the system prompt text rather than the tag string, because the tag string
+		// also appears in the leading "do not emit" directive at the top of the prompt.
+		assert.ok(
+			prompt.indexOf("Pi-native tools") < prompt.indexOf("You are helpful"),
+			"disclaimer must precede the system prompt content",
+		);
+		assert.ok(
+			!prompt.includes("<prior_system_context>\nNote:"),
+			"disclaimer must not be injected inside the <prior_system_context> block",
+		);
+	});
+
+	test("buildPromptFromContext omits pi-tool disclaimer when no system prompt", () => {
+		const context: Context = {
+			messages: [{ role: "user", content: "Hello" } as Message],
+		};
+
+		const prompt = buildPromptFromContext(context);
+
+		assert.ok(!prompt.includes("Pi-native tools"), "no disclaimer when there is no system prompt to annotate");
+	});
 });
 
 describe("stream-adapter — Claude Code external tool results", () => {
