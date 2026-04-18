@@ -38,6 +38,8 @@ export async function sendRemoteNotification(title: string, message: string): Pr
       case "telegram":
         await sendTelegramNotification(config, title, message);
         break;
+      default:
+        return false;
     }
     return true;
   } catch {
