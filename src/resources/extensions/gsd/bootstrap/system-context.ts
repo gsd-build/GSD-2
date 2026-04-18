@@ -237,9 +237,23 @@ export function loadKnowledgeBlock(gsdHomeDir: string, cwd: string): { block: st
     return { block: "", globalSizeKb: 0 };
   }
 
+  // Cap knowledge block to ~8 000 chars to avoid bloating every system prompt.
+  // Same cap as CODEBASE.md — both are injected on every prompt round-trip.
+  const MAX_KNOWLEDGE_CHARS = 8_000;
+
   const parts: string[] = [];
-  if (globalKnowledge) parts.push(`## Global Knowledge\n\n${globalKnowledge}`);
-  if (projectKnowledge) parts.push(`## Project Knowledge\n\n${projectKnowledge}`);
+  if (globalKnowledge) {
+    const truncated = globalKnowledge.length > MAX_KNOWLEDGE_CHARS
+      ? globalKnowledge.slice(0, MAX_KNOWLEDGE_CHARS) + "\n\n*(truncated — see ~/.gsd/agent/KNOWLEDGE.md for full content)*"
+      : globalKnowledge;
+    parts.push(`## Global Knowledge\n\n${truncated}`);
+  }
+  if (projectKnowledge) {
+    const truncated = projectKnowledge.length > MAX_KNOWLEDGE_CHARS
+      ? projectKnowledge.slice(0, MAX_KNOWLEDGE_CHARS) + "\n\n*(truncated — see .gsd/KNOWLEDGE.md for full content)*"
+      : projectKnowledge;
+    parts.push(`## Project Knowledge\n\n${truncated}`);
+  }
   return {
     block: `\n\n[KNOWLEDGE — Rules, patterns, and lessons learned]\n\n${parts.join("\n\n")}`,
     globalSizeKb,
