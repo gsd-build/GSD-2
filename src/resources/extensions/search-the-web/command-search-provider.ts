@@ -19,6 +19,7 @@ import {
   resolveSearchProvider,
   type SearchProviderPreference,
 } from './provider.js'
+import { isAnthropicApi } from './native-search.js'
 
 const VALID_PREFERENCES: SearchProviderPreference[] = ['tavily', 'brave', 'ollama', 'auto']
 
@@ -90,7 +91,7 @@ export function registerSearchProviderCommand(pi: ExtensionAPI): void {
 
       setSearchProviderPreference(chosen)
       const effective = resolveSearchProvider()
-      const isAnthropic = ctx.model?.provider === 'anthropic'
+      const isAnthropic = isAnthropicApi(ctx.model)
       const nativeNote = isAnthropic ? '\nNote: Native Anthropic web search is also active (automatic, no API key needed).' : ''
       ctx.ui.notify(
         `Search provider set to ${chosen}. Effective provider: ${effective ?? 'none (no API keys)'}${nativeNote}`,

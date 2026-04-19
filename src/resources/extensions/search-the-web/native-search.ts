@@ -36,6 +36,43 @@ export function preferBraveSearch(): boolean {
   return process.env.PREFER_BRAVE_SEARCH === "1" || process.env.PREFER_BRAVE_SEARCH === "true";
 }
 
+/**
+ * True when the model is served by an Anthropic-compatible API, regardless of
+ * which transport carries the request. Match on `api` (semantic, transport-
+ * agnostic) so we correctly classify all provider names that front genuine
+ * Anthropic models — `"anthropic"` (canonical SDK), `"claude-code"` (Claude
+ * Code OAuth), `"anthropic-vertex"` (Anthropic via Google Vertex), etc.
+ *
+ * Critical distinction: `provider`/`api` fields are *authoritative when
+ * present*. We only fall back to a model-name prefix heuristic when neither
+ * is supplied (e.g. session-restore paths where the SDK doesn't pass the
+ * resolved Model object). This protects against the Copilot/Bedrock case
+ * (#444) where a `claude-*` model name is served by a non-Anthropic
+ * transport — those must NOT be classified as Anthropic.
+ *
+ * See #4478 for the bug this helper fixes.
+ */
+export function isAnthropicApi(
+  model: { api?: string; provider?: string; id?: string; name?: string } | undefined | null,
+): boolean {
+  if (!model) return false;
+  // Primary: api field is the semantic, transport-agnostic signal.
+  if (model.api === "anthropic-messages" || model.api === "anthropic-vertex") return true;
+  // Secondary: known provider names that front Anthropic models when api is
+  // absent from the event payload (some legacy paths populate provider only).
+  if (model.provider === "anthropic" || model.provider === "claude-code") return true;
+  // If api OR provider was specified but did NOT match the Anthropic set
+  // above, trust that signal — the model is not Anthropic-served. Don't
+  // fall back to model-name heuristic, because Copilot/Bedrock can serve
+  // claude-* models without using the Anthropic API (#444).
+  if (model.api !== undefined || model.provider !== undefined) return false;
+  // Last resort: no api/provider info at all. Match on model-name prefix.
+  const modelName = typeof model.id === "string" ? model.id
+    : typeof model.name === "string" ? model.name
+    : "";
+  return modelName.startsWith("claude-");
+}
+
 /** Minimal interface matching the subset of ExtensionAPI we use */
 export interface NativeSearchPI {
   on(event: string, handler: (...args: any[]) => any): void;
@@ -94,7 +131,7 @@ export function registerNativeSearchHooks(pi: NativeSearchPI): { getIsAnthropic:
   pi.on("model_select", async (event: any, ctx: any) => {
     modelSelectFired = true;
     const wasAnthropic = isAnthropicProvider;
-    isAnthropicProvider = event.model.provider === "anthropic";
+    isAnthropicProvider = isAnthropicApi(event.model);
 
     const hasBrave = !!process.env.BRAVE_API_KEY;
 
@@ -134,20 +171,22 @@ export function registerNativeSearchHooks(pi: NativeSearchPI): { getIsAnthropic:
     const payload = event.payload as Record<string, unknown>;
     if (!payload) return;
 
-    // Detect Anthropic provider. Use the model object from the event (most
-    // reliable — comes directly from the resolved Model), then fall back to
-    // the model_select flag, then to the model name heuristic (last resort).
-    // The model name heuristic is needed for session restores where
-    // modelsAreEqual suppresses model_select AND the SDK doesn't pass model.
-    const eventModel = event.model as { provider: string } | undefined;
+    // Detect Anthropic-served model. Use the resolved Model object from the
+    // event when available (most reliable), then fall back to the cached
+    // model_select state, then to a model-name heuristic on the payload as a
+    // last resort. The model-name fallback is needed for session restores
+    // where modelsAreEqual suppresses model_select AND the SDK doesn't pass
+    // the resolved Model. All paths route through `isAnthropicApi` so the
+    // classification stays consistent across transports (#4478).
+    const eventModel = event.model as { api?: string; provider?: string; id?: string; name?: string } | undefined;
     let isAnthropic: boolean;
-    if (eventModel?.provider) {
-      isAnthropic = eventModel.provider === "anthropic";
+    if (eventModel) {
+      isAnthropic = isAnthropicApi(eventModel);
     } else if (modelSelectFired) {
       isAnthropic = isAnthropicProvider;
     } else {
       const modelName = typeof payload.model === "string" ? payload.model : "";
-      isAnthropic = modelName.startsWith("claude-");
+      isAnthropic = isAnthropicApi({ id: modelName });
     }
     if (!isAnthropic) return;
 

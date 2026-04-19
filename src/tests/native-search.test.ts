@@ -1013,3 +1013,138 @@ test("stripThinkingFromHistory handles string content (no array)", () => {
   stripThinkingFromHistory(messages);
   assert.equal(messages[1].content, "just a string");
 });
+
+// ─── Regression tests for #4478 ────────────────────────────────────────────
+// Provider classification must match on api/model-name, not on a literal
+// `provider === "anthropic"` string compare. Otherwise users on claude-code
+// OAuth (provider: "claude-code", api: "anthropic-messages") get the Brave
+// warning AND lose native web_search injection.
+
+test("#4478 isAnthropicApi recognizes claude-code provider with anthropic-messages api", async () => {
+  const { isAnthropicApi } = await import(
+    "../resources/extensions/search-the-web/native-search.ts"
+  );
+  assert.equal(
+    isAnthropicApi({ provider: "claude-code", api: "anthropic-messages", id: "claude-sonnet-4-6" }),
+    true,
+    "claude-code OAuth path must be classified as Anthropic",
+  );
+  assert.equal(
+    isAnthropicApi({ provider: "anthropic", api: "anthropic-messages", id: "claude-opus-4-7" }),
+    true,
+    "canonical anthropic provider must remain classified as Anthropic",
+  );
+  assert.equal(
+    isAnthropicApi({ provider: "anthropic-vertex", api: "anthropic-vertex", id: "claude-sonnet-4-6" }),
+    true,
+    "anthropic-vertex transport must be classified as Anthropic",
+  );
+  assert.equal(
+    isAnthropicApi({ provider: "openai", api: "openai-completions", id: "gpt-4o" }),
+    false,
+    "non-Anthropic providers must not be classified as Anthropic",
+  );
+  assert.equal(
+    isAnthropicApi(undefined),
+    false,
+    "undefined model must return false (no false positives on missing data)",
+  );
+  assert.equal(
+    isAnthropicApi({ id: "claude-sonnet-4-6" }),
+    true,
+    "model-name prefix fallback must work when api/provider are absent",
+  );
+  assert.equal(
+    isAnthropicApi({ id: "gpt-4o" }),
+    false,
+    "model-name fallback must reject non-Claude prefixes",
+  );
+});
+
+test("#4478 model_select for claude-code provider does NOT fire Brave warning", async () => {
+  const pi = createMockPI();
+  registerNativeSearchHooks(pi);
+
+  // Ensure no BRAVE_API_KEY in env for this assertion
+  const savedBrave = process.env.BRAVE_API_KEY;
+  delete process.env.BRAVE_API_KEY;
+
+  try {
+    await pi.fire("model_select", {
+      type: "model_select",
+      model: { provider: "claude-code", api: "anthropic-messages", id: "claude-sonnet-4-6" },
+      previousModel: undefined,
+      source: "set",
+    });
+
+    const warnings = pi.notifications.filter((n) => n.level === "warning");
+    assert.equal(
+      warnings.length,
+      0,
+      `claude-code provider should not trigger Brave warning. Got: ${JSON.stringify(warnings)}`,
+    );
+
+    const infos = pi.notifications.filter((n) => n.level === "info");
+    assert.ok(
+      infos.some((n) => n.message === "Native Anthropic web search active"),
+      "claude-code provider should emit 'Native Anthropic web search active' info notification",
+    );
+  } finally {
+    if (savedBrave !== undefined) process.env.BRAVE_API_KEY = savedBrave;
+  }
+});
+
+test("#4478 model_select for claude-code provider disables custom search tools", async () => {
+  const pi = createMockPI();
+  registerNativeSearchHooks(pi);
+
+  // Confirm tools start with custom search tools active
+  assert.ok(pi.getActiveTools().includes("search-the-web"));
+  assert.ok(pi.getActiveTools().includes("google_search"));
+
+  await pi.fire("model_select", {
+    type: "model_select",
+    model: { provider: "claude-code", api: "anthropic-messages", id: "claude-sonnet-4-6" },
+    previousModel: undefined,
+    source: "set",
+  });
+
+  const active = pi.getActiveTools();
+  for (const name of CUSTOM_SEARCH_TOOL_NAMES) {
+    assert.ok(
+      !active.includes(name),
+      `Custom search tool '${name}' should be disabled when claude-code (Anthropic-fronting) provider is active`,
+    );
+  }
+});
+
+test("#4478 before_provider_request injects native web_search for claude-code provider", async () => {
+  const pi = createMockPI();
+  registerNativeSearchHooks(pi);
+
+  // model_select first to populate isAnthropicProvider state
+  await pi.fire("model_select", {
+    type: "model_select",
+    model: { provider: "claude-code", api: "anthropic-messages", id: "claude-sonnet-4-6" },
+    previousModel: undefined,
+    source: "set",
+  });
+
+  const payload: Record<string, unknown> = {
+    model: "claude-sonnet-4-6",
+    tools: [{ name: "bash", type: "custom" }],
+  };
+
+  await pi.fire("before_provider_request", {
+    type: "before_provider_request",
+    model: { provider: "claude-code", api: "anthropic-messages", id: "claude-sonnet-4-6" },
+    payload,
+  });
+
+  const tools = payload.tools as any[];
+  const nativeTool = tools.find((t: any) => t.type === "web_search_20250305");
+  assert.ok(
+    nativeTool,
+    "Should inject web_search_20250305 tool for claude-code provider (anthropic-messages api)",
+  );
+});
