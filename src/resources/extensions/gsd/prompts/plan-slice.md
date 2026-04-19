@@ -53,6 +53,7 @@ Then:
    - For simple slices: executable commands or script assertions are fine.
    - If the project is non-trivial and has no test framework, the first task should set one up.
    - If this slice establishes a boundary contract, verification must exercise that contract.
+   - Planned test files must only read from or import paths that are tracked in git. Do NOT plan tests whose inputs or fixtures are paths listed in `.gitignore` (e.g. `.gsd/`, `.planning/`, `.audits/`). If the scenario seems to require such a file, plan an inline fixture or a tracked sample instead.
 4. **For non-trivial slices only** — plan observability, proof level, and integration closure:
    - Include `Observability / Diagnostics` for backend, integration, async, stateful, or UI slices where failure diagnosis matters.
    - Fill `Proof Level` and `Integration Closure` when the slice crosses runtime boundaries or has meaningful integration concerns.

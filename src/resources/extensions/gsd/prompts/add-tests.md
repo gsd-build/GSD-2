@@ -31,5 +31,6 @@ You are generating tests for recently completed GSD work.
 - Do NOT modify implementation files — only create or update test files
 - Name test files consistently with the project's conventions
 - Keep tests focused and readable
+- Tests must only reference files that are tracked in git. Do NOT import, read, or depend on paths listed in `.gitignore` — in particular GSD-local state such as `.gsd/`, `.planning/`, and `.audits/`. If a test seems to need one of those files, replace it with an inline fixture or a tracked sample; otherwise the test will fail for everyone but the author.
 
 {{skillActivation}}
