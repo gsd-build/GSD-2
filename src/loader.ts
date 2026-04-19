@@ -68,6 +68,30 @@ if (firstArg === '--help' || firstArg === '-h') {
     )
     process.exit(1)
   }
+
+  // -- node:sqlite flag injection (Node 22-23 only) --
+  // node:sqlite is experimental on Node <24 and requires --experimental-sqlite.
+  // Without it, gsd-db.ts loadProvider() fails with ERR_UNKNOWN_BUILTIN_MODULE
+  // and all DB tools silently return "GSD database is not available".
+  // Re-exec once with the flag injected. On Node >=24, node:sqlite is stable.
+  if (
+    nodeMajor < 24 &&
+    !process.execArgv.includes('--experimental-sqlite') &&
+    !(process.env.NODE_OPTIONS || '').includes('--experimental-sqlite') &&
+    !process.env.__GSD_SQLITE_REEXEC
+  ) {
+    const { execFileSync } = await import('child_process')
+    try {
+      execFileSync(
+        process.execPath,
+        ['--experimental-sqlite', ...process.execArgv, ...process.argv.slice(1)],
+        { stdio: 'inherit', env: { ...process.env, __GSD_SQLITE_REEXEC: '1' }, killSignal: 'SIGTERM' },
+      )
+      process.exit(0)
+    } catch (err: any) {
+      process.exit(err.status ?? 1)
+    }
+  }
 }
 
 import { agentDir, appRoot } from './app-paths.js'
