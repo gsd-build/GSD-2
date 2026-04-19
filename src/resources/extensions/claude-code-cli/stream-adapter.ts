@@ -255,6 +255,11 @@ export function buildPromptFromContext(context: Context): string {
 
 	const turns: string[] = [];
 	for (const msg of context.messages) {
+		// Skip async job result notifications — they are delivered as user-role
+		// messages but must not be treated as user input (#3168).
+		if ((msg as any).customType === "async_job_result") continue;
+		if ((msg as any).isFollowUp === true) continue;
+
 		const text = extractMessageText(msg);
 		if (!text) continue;
 		const tag =
