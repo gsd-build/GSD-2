@@ -980,6 +980,18 @@ describe("workflow MCP tools", () => {
         findings: "No new attack surface was introduced.",
       });
       assert.match((gateResult as any).content[0].text as string, /Gate Q3 result saved/);
+      // #4472: executor `details` must be adapted to MCP `structuredContent`
+      // so it survives the protocol transport intact.
+      assert.equal(
+        (gateResult as any).details,
+        undefined,
+        "executor `details` field must be stripped from MCP tool result",
+      );
+      assert.deepEqual(
+        (gateResult as any).structuredContent,
+        { operation: "save_gate_result", gateId: "Q3", verdict: "pass" },
+        "executor details must be forwarded on the MCP `structuredContent` channel",
+      );
       const gateRows = _getAdapter()!.prepare(
         "SELECT status, verdict, rationale FROM quality_gates WHERE milestone_id = ? AND slice_id = ? AND gate_id = ?",
       ).all("M006", "S06", "Q3") as Array<Record<string, unknown>>;
