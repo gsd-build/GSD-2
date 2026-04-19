@@ -173,7 +173,7 @@ function buildExtractionUserPrompt(
  * Extract assistant message text from activity JSONL.
  * Returns concatenated text content from assistant role entries.
  */
-function extractTranscriptFromActivity(raw: string, maxChars = 30_000): string {
+export function extractTranscriptFromActivity(raw: string, maxChars = 30_000): string {
   const lines = raw.split('\n');
   const parts: string[] = [];
   let totalChars = 0;
@@ -182,11 +182,12 @@ function extractTranscriptFromActivity(raw: string, maxChars = 30_000): string {
     if (!line.trim()) continue;
     try {
       const entry = JSON.parse(line);
-      if (entry.role !== 'assistant') continue;
+      const msg = (entry.type === 'message' && entry.message) ? entry.message : entry;
+      if (msg.role !== 'assistant') continue;
 
       // Handle content array or direct text
-      if (Array.isArray(entry.content)) {
-        for (const block of entry.content) {
+      if (Array.isArray(msg.content)) {
+        for (const block of msg.content) {
           if (block.type === 'text' && block.text) {
             const text = block.text;
             if (totalChars + text.length > maxChars) {
@@ -197,8 +198,8 @@ function extractTranscriptFromActivity(raw: string, maxChars = 30_000): string {
             totalChars += text.length;
           }
         }
-      } else if (typeof entry.content === 'string') {
-        const text = entry.content;
+      } else if (typeof msg.content === 'string') {
+        const text = msg.content;
         if (totalChars + text.length > maxChars) {
           parts.push(text.substring(0, maxChars - totalChars));
           return parts.join('\n\n');
