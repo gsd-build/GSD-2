@@ -1579,3 +1579,69 @@ describe("checkTaskOrdering directory inputs (#4446)", () => {
     );
   });
 });
+
+describe("checkFilePathConsistency self-referential inputs (#4459)", () => {
+  test("input that is also in the same task's expected_output is not blocking when missing on disk", (t) => {
+    const tempDir = join(tmpdir(), `pre-exec-self-output-${Date.now()}`);
+    mkdirSync(tempDir, { recursive: true });
+    t.after(() => rmSync(tempDir, { recursive: true, force: true }));
+
+    const tasks = [
+      createTask({
+        id: "T02",
+        sequence: 0,
+        inputs: ["src/components/email/SnoozePopover.jsx"],
+        expected_output: ["src/components/email/SnoozePopover.jsx"],
+      }),
+    ];
+
+    const results = checkFilePathConsistency(tasks, tempDir);
+    assert.deepEqual(
+      results,
+      [],
+      "File declared as both input and expected_output of the same task should not block — the task itself produces it",
+    );
+  });
+
+  test("input missing from disk, missing from prior outputs, and missing from own expected_output still blocks", (t) => {
+    const tempDir = join(tmpdir(), `pre-exec-self-output-missing-${Date.now()}`);
+    mkdirSync(tempDir, { recursive: true });
+    t.after(() => rmSync(tempDir, { recursive: true, force: true }));
+
+    const tasks = [
+      createTask({
+        id: "T02",
+        sequence: 0,
+        inputs: ["src/components/email/SnoozePopover.jsx"],
+        expected_output: ["src/other/unrelated.jsx"],
+      }),
+    ];
+
+    const results = checkFilePathConsistency(tasks, tempDir);
+    assert.equal(results.length, 1, "Genuinely missing input should still be reported");
+    assert.equal(results[0].blocking, true);
+    assert.equal(results[0].target, "src/components/email/SnoozePopover.jsx");
+  });
+
+  test("self-output exemption matches across path normalization (./ prefix)", (t) => {
+    const tempDir = join(tmpdir(), `pre-exec-self-output-norm-${Date.now()}`);
+    mkdirSync(tempDir, { recursive: true });
+    t.after(() => rmSync(tempDir, { recursive: true, force: true }));
+
+    const tasks = [
+      createTask({
+        id: "T02",
+        sequence: 0,
+        inputs: ["./src/generated.ts"],
+        expected_output: ["src/generated.ts"],
+      }),
+    ];
+
+    const results = checkFilePathConsistency(tasks, tempDir);
+    assert.deepEqual(
+      results,
+      [],
+      "./src/generated.ts and src/generated.ts should compare equal after normalization",
+    );
+  });
+});

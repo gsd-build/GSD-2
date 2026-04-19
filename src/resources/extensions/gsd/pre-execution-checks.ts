@@ -403,10 +403,13 @@ function getExpectedOutputsUpTo(tasks: TaskRow[], taskIndex: number): Set<string
 /**
  * Check that all files referenced in task.inputs either:
  *   1. Exist on disk, OR
- *   2. Are in a prior task's expected_output
+ *   2. Are in a prior task's expected_output, OR
+ *   3. Are in the current task's own expected_output — the task produces them,
+ *      so they don't need to pre-exist (#4459, mirroring the exemption #3626
+ *      introduced for task.files).
  *
- * task.files ("files likely touched") is excluded — it intentionally includes
- * files the task will create, so they don't need to pre-exist (#3626).
+ * task.files ("files likely touched") is excluded entirely from this check —
+ * it intentionally includes files the task will create (#3626).
  *
  * All paths are normalized before comparison to ensure ./src/a.ts matches src/a.ts.
  */
@@ -419,6 +422,7 @@ export function checkFilePathConsistency(
   for (let i = 0; i < tasks.length; i++) {
     const task = tasks[i];
     const priorOutputs = getExpectedOutputsUpTo(tasks, i);
+    const ownOutputs = new Set<string>(task.expected_output.map(normalizeFilePath));
     const filesToCheck = [...task.inputs];
 
     for (const file of filesToCheck) {
@@ -436,23 +440,23 @@ export function checkFilePathConsistency(
 
       // Check if file is in prior expected outputs (priorOutputs already normalized)
       const inPriorOutputs = priorOutputs.has(normalizedFile);
+      const inOwnOutputs = ownOutputs.has(normalizedFile);
 
       // Directory inputs are satisfied when something produces a file beneath
       // them — either a prior task or the current task itself.
       let directorySatisfied = false;
-      if (!existsOnDisk && !inPriorOutputs && isDirectoryReference(file)) {
-        const sameTaskOutputs = task.expected_output.map(normalizeFilePath);
+      if (!existsOnDisk && !inPriorOutputs && !inOwnOutputs && isDirectoryReference(file)) {
         directorySatisfied =
           anyOutputUnderDirectory(normalizedFile, priorOutputs) ||
-          anyOutputUnderDirectory(normalizedFile, sameTaskOutputs);
+          anyOutputUnderDirectory(normalizedFile, ownOutputs);
       }
 
-      if (!existsOnDisk && !inPriorOutputs && !directorySatisfied) {
+      if (!existsOnDisk && !inPriorOutputs && !inOwnOutputs && !directorySatisfied) {
         results.push({
           category: "file",
           target: file,
           passed: false,
-          message: `Task ${task.id} references '${file}' which doesn't exist and isn't created by prior tasks`,
+          message: `Task ${task.id} references '${file}' which doesn't exist and isn't created by prior or same-task outputs`,
           blocking: true,
         });
       }
