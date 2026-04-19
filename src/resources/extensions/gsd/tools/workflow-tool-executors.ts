@@ -10,6 +10,8 @@ import {
 } from "../gsd-db.js";
 import { GATE_REGISTRY } from "../gate-registry.js";
 import { saveArtifactToDb } from "../db-writer.js";
+import { resolveMilestoneFile, resolveSliceFile } from "../paths.js";
+import { unlinkSync } from "node:fs";
 import type { CompleteMilestoneParams } from "./complete-milestone.js";
 import { handleCompleteMilestone } from "./complete-milestone.js";
 import { handleCompleteTask } from "./complete-task.js";
@@ -103,6 +105,18 @@ export async function executeSummarySave(
       },
       basePath,
     );
+
+    if (params.artifact_type === "CONTEXT" && !params.task_id) {
+      try {
+        const draftFile = params.slice_id
+          ? resolveSliceFile(basePath, params.milestone_id, params.slice_id, "CONTEXT-DRAFT")
+          : resolveMilestoneFile(basePath, params.milestone_id, "CONTEXT-DRAFT");
+        if (draftFile) unlinkSync(draftFile);
+      } catch (e) {
+        logWarning("tool", `CONTEXT-DRAFT.md unlink failed: ${(e as Error).message}`);
+      }
+    }
+
     return {
       content: [{ type: "text", text: `Saved ${params.artifact_type} artifact to ${relativePath}` }],
       details: { operation: "save_summary", path: relativePath, artifact_type: params.artifact_type },

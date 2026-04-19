@@ -6,6 +6,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **gsd**: promote `CONTEXT-DRAFT.md` to final `CONTEXT.md` in the `gsd_summary_save` tool path (#4442)
+
 ## [2.75.0] - 2026-04-15
 
 ### Added
