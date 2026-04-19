@@ -34,6 +34,7 @@ const packageMap = {
   'pi-coding-agent': { scope: '@gsd', name: 'pi-coding-agent' },
   'pi-tui': { scope: '@gsd', name: 'pi-tui' },
   'rpc-client': { scope: '@gsd-build', name: 'rpc-client' },
+  'mcp-server': { scope: '@gsd-build', name: 'mcp-server' },
 }
 
 for (const scopeDir of Object.values(scopeDirs)) {
