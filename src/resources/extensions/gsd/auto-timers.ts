@@ -1,9 +1,12 @@
 /**
- * Unit supervision timers — soft timeout warning, idle watchdog,
- * hard timeout, and context-pressure monitor.
+ * Unit supervision timers — soft timeout warning, consolidated supervision
+ * tick (idle watchdog + context-pressure), and hard timeout.
+ *
+ * The idle watchdog and context-pressure monitor are consolidated into a single
+ * 15s setInterval to share the readUnitRuntimeRecord() call and reduce timer overhead.
  *
  * Originally extracted from dispatchNextUnit() in auto.ts (now deleted — replaced by autoLoop).
- * via startUnitSupervision() and torn down by the caller via clearUnitTimeout().
+ * Set up via startUnitSupervision() and torn down by the caller via clearUnitTimeout().
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@gsd/pi-coding-agent";
@@ -145,11 +148,65 @@ export function startUnitSupervision(sctx: SupervisionContext): void {
     );
   }, softTimeoutMs);
 
-  // ── 2. Idle watchdog ──
+  // ── 2. Consolidated supervision tick (idle watchdog + context-pressure) ──
+  // Merged into a single setInterval to share the readUnitRuntimeRecord() call
+  // and reduce timer overhead. Previously these were two independent 15s timers.
+  const executorContextWindow = resolveExecutorContextWindow(
+    ctx.modelRegistry as Parameters<typeof resolveExecutorContextWindow>[0],
+    prefs as Parameters<typeof resolveExecutorContextWindow>[1],
+    ctx.model?.contextWindow,
+  );
+  const continueHereThreshold = computeBudgets(executorContextWindow).continueThresholdPercent;
+  let continueHereDone = false;
+
   s.idleWatchdogHandle = setInterval(async () => {
     try {
       if (!s.active || !s.currentUnit) return;
+
+      // Read runtime ONCE for both checks
       const runtime = readUnitRuntimeRecord(s.basePath, unitType, unitId);
+
+      // ── Context-pressure check (lightweight, non-blocking) ──
+      if (!continueHereDone && s.cmdCtx) {
+        if (runtime?.continueHereFired) {
+          continueHereDone = true; // already fired in a previous tick or session
+        } else if (runtime) {
+          const contextUsage = s.cmdCtx.getContextUsage();
+          if (contextUsage?.percent != null && contextUsage.percent >= continueHereThreshold) {
+            writeUnitRuntimeRecord(s.basePath, unitType, unitId, s.currentUnit!.startedAt, {
+              continueHereFired: true,
+            });
+            continueHereDone = true;
+
+            if (s.verbose) {
+              ctx.ui.notify(
+                `Context at ${contextUsage.percent}% (threshold: ${continueHereThreshold}%) — sending wrap-up signal.`,
+                "info",
+              );
+            }
+
+            pi.sendMessage(
+              {
+                customType: "gsd-auto-wrapup",
+                display: s.verbose,
+                content: [
+                  "**CONTEXT BUDGET WARNING — wrap up this unit now.**",
+                  `Context window is at ${contextUsage.percent}% (threshold: ${continueHereThreshold}%).`,
+                  "The next unit needs a fresh context to work effectively. Wrap up now:",
+                  "1. Finish any in-progress file writes",
+                  "2. Write or update the required durable artifacts (summary, checkboxes)",
+                  "3. Mark task state on disk correctly",
+                  "4. Leave precise resume notes if anything remains unfinished",
+                  "Do NOT start new sub-tasks or investigations.",
+                ].join("\n"),
+              },
+              { triggerTurn: true },
+            );
+          }
+        }
+      }
+
+      // ── Idle watchdog check ──
       if (!runtime) return;
       if (Date.now() - runtime.lastProgressAt < idleTimeoutMs) return;
 
@@ -221,16 +278,16 @@ export function startUnitSupervision(sctx: SupervisionContext): void {
       await pauseAuto(ctx, pi);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      logError("timer", `[idle-watchdog] Unhandled error: ${message}`);
+      logError("timer", `[supervision-tick] Unhandled error: ${message}`);
       // Unblock any pending unit promise so the auto-loop is not orphaned.
       resolveAgentEndCancelled({ message: `Idle watchdog error: ${message}`, category: "idle", isTransient: true });
       try {
-        ctx.ui.notify(`Idle watchdog error: ${message}`, "warning");
+        ctx.ui.notify(`Supervision tick error: ${message}`, "warning");
       } catch (err) { /* best effort */
         logWarning("timer", `notification failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
-  }, 15000);
+  }, 15_000);
 
   // ── 3. Hard timeout ──
   s.unitTimeoutHandle = setTimeout(async () => {
@@ -267,61 +324,5 @@ export function startUnitSupervision(sctx: SupervisionContext): void {
       }
     }
   }, hardTimeoutMs);
-
-  // ── 4. Context-pressure continue-here monitor ──
-  if (s.continueHereHandle) {
-    clearInterval(s.continueHereHandle);
-    s.continueHereHandle = null;
-  }
-  const executorContextWindow = resolveExecutorContextWindow(
-    ctx.modelRegistry as Parameters<typeof resolveExecutorContextWindow>[0],
-    prefs as Parameters<typeof resolveExecutorContextWindow>[1],
-    ctx.model?.contextWindow,
-  );
-  const continueHereThreshold = computeBudgets(executorContextWindow).continueThresholdPercent;
-  s.continueHereHandle = setInterval(() => {
-    if (!s.active || !s.currentUnit || !s.cmdCtx) return;
-    const runtime = readUnitRuntimeRecord(s.basePath, unitType, unitId);
-    if (runtime?.continueHereFired) return;
-
-    const contextUsage = s.cmdCtx.getContextUsage();
-    if (!contextUsage || contextUsage.percent == null || contextUsage.percent < continueHereThreshold) return;
-
-    writeUnitRuntimeRecord(s.basePath, unitType, unitId, s.currentUnit!.startedAt, {
-      continueHereFired: true,
-    });
-
-    if (s.verbose) {
-      ctx.ui.notify(
-        `Context at ${contextUsage.percent}% (threshold: ${continueHereThreshold}%) — sending wrap-up signal.`,
-        "info",
-      );
-    }
-
-    // Only trigger a new turn if no tools are currently in flight (#3512).
-    const contextTrigger = getInFlightToolCount() === 0;
-    pi.sendMessage(
-      {
-        customType: "gsd-auto-wrapup",
-        display: s.verbose,
-        content: [
-          "**CONTEXT BUDGET WARNING — wrap up this unit now.**",
-          `Context window is at ${contextUsage.percent}% (threshold: ${continueHereThreshold}%).`,
-          "The next unit needs a fresh context to work effectively. Wrap up now:",
-          "1. Finish any in-progress file writes",
-          "2. Write or update the required durable artifacts (summary, checkboxes)",
-          "3. Mark task state on disk correctly",
-          "4. Leave precise resume notes if anything remains unfinished",
-          "Do NOT start new sub-tasks or investigations.",
-        ].join("\n"),
-      },
-      { triggerTurn: contextTrigger },
-    );
-
-    if (s.continueHereHandle) {
-      clearInterval(s.continueHereHandle);
-      s.continueHereHandle = null;
-    }
-  }, 15_000);
 }
 

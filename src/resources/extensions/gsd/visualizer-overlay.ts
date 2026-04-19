@@ -119,7 +119,7 @@ export class GSDVisualizerOverlay {
         this.invalidate();
         this.tui.requestRender();
       }).catch(() => {}); // retry on next interval
-    }, 5000);
+    }, 30_000);
   }
 
   private parseSGRMouse(data: string): { button: number; x: number; y: number; press: boolean } | null {
