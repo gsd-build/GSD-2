@@ -1,5 +1,5 @@
 ---
-name: to-prd
+name: write-milestone-brief
 description: Synthesize the current conversation into a milestone brief (PRD). Writes to `M###-CONTEXT.md` by default, or files a GitHub issue only with explicit user confirmation. Use when asked to "turn this into a PRD", "draft a milestone brief", "capture this context", "write it up", or when enough has been discussed to commit the plan to paper. Does not interview — it synthesizes what is already known.
 ---
 

@@ -1,5 +1,5 @@
 ---
-name: to-issues
+name: decompose-into-slices
 description: Break a plan or milestone brief into independently-grabbable vertical slices (tracer bullets). Produces slices in `M###-ROADMAP.md` by default, or GitHub issues only with explicit user confirmation. Use when asked to "break this into slices", "decompose the plan", "vertical slices", "break into issues", or when a plan is ready but needs task-level decomposition. Prefers many thin slices over few thick ones; marks dependency order explicitly.
 ---
 
@@ -11,7 +11,7 @@ Decompose an approved plan into the smallest useful vertical slices that each cu
 This skill runs after the brief is stable — `M###-CONTEXT.md` exists and the user has signed off on scope. It's the bridge from "we know what we're building" to "we know in what order and chunks." The vertical-slice discipline (tracer bullets) is non-negotiable here — it's the core of what makes GSD slices demoable and parallel-safe.
 
 Typical invocation points:
-- After `to-prd` (or after a `discuss` phase that produced a brief)
+- After `write-milestone-brief` (or after a `discuss` phase that produced a brief)
 - When a roadmap exists but slices are too thick, too few, or poorly ordered
 - When exporting the plan for external collaborators (GitHub issues)
 </context>

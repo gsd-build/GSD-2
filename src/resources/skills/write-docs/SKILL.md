@@ -1,5 +1,5 @@
 ---
-name: doc-coauthoring
+name: write-docs
 description: Collaborative document authoring workflow for proposals, technical specs, decision docs, README sections, ADRs, and long-form prose that must work for fresh readers. Use when asked to "write the docs", "draft a proposal", "write a spec", "write an RFC", "write the README", or when a document needs to be understandable by someone without this session's context. Three stages: gather context, iterate on structure, reader-test for a stranger.
 ---
 
@@ -13,7 +13,7 @@ GSD already produces durable artifacts (`M###-CONTEXT.md`, `S##-SUMMARY.md`, `DE
 Invocation points:
 - User asks to write or rewrite a piece of documentation
 - Before shipping a feature that adds user-facing behavior — docs need updates
-- After `to-prd` when the PRD needs a public-facing summary for non-GSD consumers
+- After `write-milestone-brief` when the brief needs a public-facing summary for non-GSD consumers
 - PR description for a meaningful change
 </context>
 
