@@ -50,6 +50,7 @@ import { withTimeout, FINALIZE_PRE_TIMEOUT_MS, FINALIZE_POST_TIMEOUT_MS } from "
 import { getEligibleSlices } from "../slice-parallel-eligibility.js";
 import { startSliceParallel } from "../slice-parallel-orchestrator.js";
 import { isDbAvailable, getMilestoneSlices } from "../gsd-db.js";
+import type { MinimalModelRegistry } from "../context-budget.js";
 import { ensurePlanV2Graph } from "../uok/plan-v2.js";
 import { resolveUokFlags } from "../uok/flags.js";
 import { UokGateRunner } from "../uok/gate-runner.js";
@@ -857,6 +858,8 @@ export async function runDispatch(
     prefs,
     session: s,
     structuredQuestionsAvailable,
+    sessionContextWindow: ctx.model?.contextWindow,
+    modelRegistry: ctx.modelRegistry as MinimalModelRegistry | undefined,
   });
 
   if (dispatchResult.action === "stop") {

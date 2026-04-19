@@ -1,13 +1,8 @@
 /**
  * Prompt budget enforcement tests — verifies that budget-aware prompt builders
- * truncate content at section boundaries and that plan-slice includes executor
- * context constraints.
- *
- * Tests:
- *   1. inlineDependencySummaries() truncates when budget is small, passes through when large
- *   2. plan-slice.md template includes {{executorContextConstraints}} placeholder
- *   3. Executor constraints formatting varies with context window size
- *   4. Different context windows produce different budget-constrained outputs
+ * truncate content at section boundaries, that plan-slice includes executor
+ * context constraints, and that prompt builders thread the real executor
+ * context window through to the budget engine (issue #4142).
  */
 
 import { describe, it, beforeEach, afterEach } from "node:test";
@@ -487,5 +482,134 @@ describe("prompt-budget: execute-task builder truncation pattern", () => {
       assert.ok(result.content.includes("[...truncated"), "should truncate when content exceeds 128K budget");
       assert.ok(result.droppedSections > 0, "should report dropped sections");
     }
+  });
+});
+
+// ─── Regression: prompt builders must thread modelRegistry + sessionContextWindow (issue #4142) ───
+//
+// `resolveExecutorContextWindow()` resolves the executor context window in 3
+// steps: (1) look up the configured executor model in `modelRegistry`, (2) fall
+// back to `sessionContextWindow`, (3) fall back to `DEFAULT_CONTEXT_WINDOW`
+// (200K). Before this fix, prompt-builder call sites passed `undefined` for
+// both knobs and always landed on Step 3 — even on 1M-token models. These
+// source-level assertions pin the wiring so future refactors cannot regress it.
+
+describe("prompt-budget: modelRegistry + sessionContextWindow wiring", () => {
+  const autoPromptsSrc = readFileSync(join(__dirname, "..", "auto-prompts.ts"), "utf-8");
+  const autoDispatchSrc = readFileSync(join(__dirname, "..", "auto-dispatch.ts"), "utf-8");
+  const autoDirectDispatchSrc = readFileSync(join(__dirname, "..", "auto-direct-dispatch.ts"), "utf-8");
+  const phasesSrc = readFileSync(join(__dirname, "..", "auto", "phases.ts"), "utf-8");
+
+  it("formatExecutorConstraints accepts and forwards both knobs", () => {
+    assert.match(
+      autoPromptsSrc,
+      /function formatExecutorConstraints\([^)]*sessionContextWindow[^)]*modelRegistry[^)]*\)/s,
+      "formatExecutorConstraints must accept sessionContextWindow and modelRegistry",
+    );
+    assert.match(
+      autoPromptsSrc,
+      /resolveExecutorContextWindow\(\s*modelRegistry\s*,\s*prefs\?\.preferences\s*,\s*sessionContextWindow/,
+      "formatExecutorConstraints must forward both to resolveExecutorContextWindow",
+    );
+  });
+
+  it("renderSlicePrompt options declare both knobs and forward to formatExecutorConstraints", () => {
+    assert.match(
+      autoPromptsSrc,
+      /async function renderSlicePrompt\(options:\s*\{[^}]*sessionContextWindow\?[^}]*modelRegistry\?/s,
+      "renderSlicePrompt options must declare both fields",
+    );
+    assert.match(
+      autoPromptsSrc,
+      /formatExecutorConstraints\(sessionContextWindow,\s*modelRegistry\)/,
+      "renderSlicePrompt must forward both to formatExecutorConstraints",
+    );
+  });
+
+  it("buildPlanSlicePrompt options declare both knobs and thread them into renderSlicePrompt", () => {
+    assert.match(
+      autoPromptsSrc,
+      /export async function buildPlanSlicePrompt\([\s\S]*?options\?:\s*\{[^}]*sessionContextWindow\?[^}]*modelRegistry\?/,
+      "buildPlanSlicePrompt options must declare both fields",
+    );
+    assert.match(
+      autoPromptsSrc,
+      /sessionContextWindow:\s*options\?\.sessionContextWindow,\s*modelRegistry:\s*options\?\.modelRegistry/,
+      "buildPlanSlicePrompt must forward both into renderSlicePrompt",
+    );
+  });
+
+  it("ExecuteTaskPromptOptions declares both knobs", () => {
+    assert.match(
+      autoPromptsSrc,
+      /interface ExecuteTaskPromptOptions\s*\{[^}]*sessionContextWindow\?[^}]*modelRegistry\?/s,
+      "ExecuteTaskPromptOptions must declare both fields",
+    );
+  });
+
+  it("buildExecuteTaskPrompt forwards opts.modelRegistry + opts.sessionContextWindow to resolveExecutorContextWindow", () => {
+    assert.match(
+      autoPromptsSrc,
+      /resolveExecutorContextWindow\(\s*opts\.modelRegistry\s*,\s*prefs\?\.preferences\s*,\s*opts\.sessionContextWindow/,
+      "buildExecuteTaskPrompt must forward both into resolveExecutorContextWindow",
+    );
+  });
+
+  it("buildReactiveExecutePrompt accepts opts and forwards to embedded buildExecuteTaskPrompt", () => {
+    assert.match(
+      autoPromptsSrc,
+      /export async function buildReactiveExecutePrompt\([\s\S]*?opts\?:\s*\{[^}]*sessionContextWindow\?[^}]*modelRegistry\?/,
+      "buildReactiveExecutePrompt must accept sessionContextWindow + modelRegistry",
+    );
+    assert.match(
+      autoPromptsSrc,
+      /sessionContextWindow:\s*opts\?\.sessionContextWindow,\s*modelRegistry:\s*opts\?\.modelRegistry/,
+      "buildReactiveExecutePrompt must forward both into the embedded buildExecuteTaskPrompt call",
+    );
+  });
+
+  it("DispatchContext declares both knobs", () => {
+    assert.match(
+      autoDispatchSrc,
+      /interface DispatchContext\s*\{[^}]*sessionContextWindow\?[^}]*modelRegistry\?/s,
+      "DispatchContext must declare both fields so dispatch rules can thread them",
+    );
+  });
+
+  it("DISPATCH_RULES destructure and forward both knobs at every prompt-builder call site", () => {
+    // Every plan-slice / execute-task / reactive-execute rule must destructure
+    // both names from its match context so new call sites can't silently drop them.
+    const matchLines = autoDispatchSrc.match(/match:\s*async\s*\(\{[^}]*sessionContextWindow[^}]*modelRegistry[^}]*\}/g) ?? [];
+    assert.ok(
+      matchLines.length >= 5,
+      `expected ≥5 dispatch rules destructuring both knobs, got ${matchLines.length}`,
+    );
+
+    const forwardCount = (autoDispatchSrc.match(/sessionContextWindow,\s*modelRegistry/g) ?? []).length;
+    assert.ok(
+      forwardCount >= 5,
+      `expected ≥5 forward sites of { sessionContextWindow, modelRegistry }, got ${forwardCount}`,
+    );
+  });
+
+  it("runDispatch populates both knobs from ctx.model / ctx.modelRegistry", () => {
+    assert.match(
+      phasesSrc,
+      /sessionContextWindow:\s*ctx\.model\?\.contextWindow/,
+      "runDispatch must populate sessionContextWindow from ctx.model?.contextWindow",
+    );
+    assert.match(
+      phasesSrc,
+      /modelRegistry:\s*ctx\.modelRegistry/,
+      "runDispatch must populate modelRegistry from ctx.modelRegistry",
+    );
+  });
+
+  it("dispatchDirectPhase forwards both knobs to buildPlanSlicePrompt and buildExecuteTaskPrompt", () => {
+    const passes = (autoDirectDispatchSrc.match(/sessionContextWindow:\s*ctx\.model\?\.contextWindow[\s\S]*?modelRegistry:\s*ctx\.modelRegistry/g) ?? []).length;
+    assert.ok(
+      passes >= 2,
+      `dispatchDirectPhase must forward the pair at both prompt-builder call sites (≥2), got ${passes}`,
+    );
   });
 });

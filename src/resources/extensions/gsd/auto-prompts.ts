@@ -23,7 +23,7 @@ import type { GSDPreferences } from "./preferences.js";
 import { getLoadedSkills, type Skill } from "@gsd/pi-coding-agent";
 import { join, basename } from "node:path";
 import { existsSync } from "node:fs";
-import { computeBudgets, resolveExecutorContextWindow, truncateAtSectionBoundary } from "./context-budget.js";
+import { computeBudgets, resolveExecutorContextWindow, truncateAtSectionBoundary, type MinimalModelRegistry } from "./context-budget.js";
 import { getPendingGates, getPendingGatesForTurn } from "./gsd-db.js";
 import {
   GATE_REGISTRY,
@@ -94,14 +94,19 @@ function capPreamble(preamble: string): string {
  * Uses the budget engine to compute task count ranges and inline context budgets
  * based on the configured executor model's context window.
  */
-function formatExecutorConstraints(): string {
+function formatExecutorConstraints(
+  sessionContextWindow?: number,
+  modelRegistry?: MinimalModelRegistry,
+): string {
   let windowTokens: number;
   try {
     const prefs = loadEffectiveGSDPreferences();
-    windowTokens = resolveExecutorContextWindow(undefined, prefs?.preferences);
+    windowTokens = resolveExecutorContextWindow(modelRegistry, prefs?.preferences, sessionContextWindow);
   } catch (e) {
     logWarning("prompt", `resolveExecutorContextWindow failed: ${(e as Error).message}`);
-    windowTokens = 200_000; // safe default
+    // Delegate to the budget engine without prefs (the path that just threw)
+    // so DEFAULT_CONTEXT_WINDOW stays the single source of truth.
+    windowTokens = resolveExecutorContextWindow(undefined, undefined, sessionContextWindow);
   }
   const budgets = computeBudgets(windowTokens);
   const { min, max } = budgets.taskCountRange;
@@ -1288,8 +1293,13 @@ async function renderSlicePrompt(options: {
   promptTemplate: "plan-slice" | "refine-slice";
   prependBlocks?: string[];
   extraVars?: Record<string, string>;
+  sessionContextWindow?: number;
+  modelRegistry?: MinimalModelRegistry;
 }): Promise<string> {
-  const { mid, sid, sTitle, base, level, promptTemplate, prependBlocks = [], extraVars = {} } = options;
+  const {
+    mid, sid, sTitle, base, level, promptTemplate, prependBlocks = [], extraVars = {},
+    sessionContextWindow, modelRegistry,
+  } = options;
 
   const roadmapPath = resolveMilestoneFile(base, mid, "ROADMAP");
   const roadmapRel = relMilestoneFile(base, mid, "ROADMAP");
@@ -1341,7 +1351,7 @@ async function renderSlicePrompt(options: {
   if (overridesInline) inlined.unshift(overridesInline);
 
   const inlinedContext = capPreamble(`## Inlined Context (preloaded — do not re-read these files)\n\n${inlined.join("\n\n---\n\n")}`);
-  const executorContextConstraints = formatExecutorConstraints();
+  const executorContextConstraints = formatExecutorConstraints(sessionContextWindow, modelRegistry);
   const outputRelPath = relSliceFile(base, mid, sid, "PLAN");
   const commitInstruction = "Do not commit — .gsd/ planning docs are managed externally and not tracked in git.";
 
@@ -1370,7 +1380,7 @@ async function renderSlicePrompt(options: {
 
 export async function buildPlanSlicePrompt(
   mid: string, _midTitle: string, sid: string, sTitle: string, base: string, level?: InlineLevel,
-  options?: { softScopeHint?: string },
+  options?: { softScopeHint?: string; sessionContextWindow?: number; modelRegistry?: MinimalModelRegistry },
 ): Promise<string> {
   const prependBlocks: string[] = [];
   // ADR-011: when the refining-phase dispatch rule gracefully downgrades to
@@ -1388,6 +1398,8 @@ export async function buildPlanSlicePrompt(
     level: level ?? resolveInlineLevel(),
     promptTemplate: "plan-slice",
     prependBlocks,
+    sessionContextWindow: options?.sessionContextWindow,
+    modelRegistry: options?.modelRegistry,
   });
 }
 
@@ -1400,6 +1412,7 @@ export async function buildPlanSlicePrompt(
  */
 export async function buildRefineSlicePrompt(
   mid: string, _midTitle: string, sid: string, sTitle: string, base: string, level?: InlineLevel,
+  options?: { sessionContextWindow?: number; modelRegistry?: MinimalModelRegistry },
 ): Promise<string> {
   // Pull the stored sketch scope from the DB — the hard constraint we plan within.
   let sketchScope = "";
@@ -1426,6 +1439,8 @@ export async function buildRefineSlicePrompt(
     promptTemplate: "refine-slice",
     prependBlocks,
     extraVars: { sketchScope },
+    sessionContextWindow: options?.sessionContextWindow,
+    modelRegistry: options?.modelRegistry,
   });
 }
 
@@ -1434,6 +1449,10 @@ export interface ExecuteTaskPromptOptions {
   level?: InlineLevel;
   /** Override carry-forward paths (dependency-based instead of order-based). */
   carryForwardPaths?: string[];
+  /** Session model context window in tokens, forwarded to the budget engine. */
+  sessionContextWindow?: number;
+  /** Model registry forwarded to the budget engine for executor-model lookup. */
+  modelRegistry?: MinimalModelRegistry;
 }
 
 export async function buildExecuteTaskPrompt(
@@ -1525,7 +1544,7 @@ export async function buildExecuteTaskPrompt(
 
   // Compute verification budget for the executor's context window (issue #707)
   const prefs = loadEffectiveGSDPreferences();
-  const contextWindow = resolveExecutorContextWindow(undefined, prefs?.preferences);
+  const contextWindow = resolveExecutorContextWindow(opts.modelRegistry, prefs?.preferences, opts.sessionContextWindow);
   const budgets = computeBudgets(contextWindow);
   const verificationBudget = `~${Math.round(budgets.verificationBudgetChars / 1000)}K chars`;
 
@@ -2101,6 +2120,7 @@ export async function buildReactiveExecutePrompt(
   mid: string, midTitle: string, sid: string, sTitle: string,
   readyTaskIds: string[], base: string,
   subagentModel?: string,
+  opts?: { sessionContextWindow?: number; modelRegistry?: MinimalModelRegistry },
 ): Promise<string> {
   const { loadSliceTaskIO, deriveTaskGraph, graphMetrics } = await import("./reactive-graph.js");
 
@@ -2142,7 +2162,11 @@ export async function buildReactiveExecutePrompt(
     // Build a full execute-task prompt with dependency-based carry-forward
     const taskPrompt = await buildExecuteTaskPrompt(
       mid, sid, sTitle, tid, tTitle, base,
-      { carryForwardPaths: depPaths },
+      {
+        carryForwardPaths: depPaths,
+        sessionContextWindow: opts?.sessionContextWindow,
+        modelRegistry: opts?.modelRegistry,
+      },
     );
 
     const modelSuffix = subagentModel ? ` with model: "${subagentModel}"` : "";

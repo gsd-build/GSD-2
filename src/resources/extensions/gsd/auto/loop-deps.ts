@@ -16,7 +16,7 @@ import type {
   VerificationContext,
   VerificationResult,
 } from "../auto-verification.js";
-import type { DispatchAction } from "../auto-dispatch.js";
+import type { DispatchAction, DispatchContext } from "../auto-dispatch.js";
 import type { WorktreeResolver } from "../worktree-resolver.js";
 import type { CmuxLogLevel } from "../../cmux/index.js";
 import type { JournalEntry } from "../journal.js";
@@ -145,15 +145,7 @@ export interface LoopDeps {
   } | null>;
 
   // Dispatch
-  resolveDispatch: (dctx: {
-    basePath: string;
-    mid: string;
-    midTitle: string;
-    state: GSDState;
-    prefs: GSDPreferences | undefined;
-    session?: AutoSession;
-    structuredQuestionsAvailable?: "true" | "false";
-  }) => Promise<DispatchAction>;
+  resolveDispatch: (dctx: DispatchContext) => Promise<DispatchAction>;
   runPreDispatchHooks: (
     unitType: string,
     unitId: string,

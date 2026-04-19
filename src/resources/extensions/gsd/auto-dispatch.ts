@@ -12,6 +12,7 @@
 import type { GSDState } from "./types.js";
 import type { GSDPreferences } from "./preferences.js";
 import type { UatType } from "./files.js";
+import type { MinimalModelRegistry } from "./context-budget.js";
 import { loadFile, extractUatType, loadActiveOverrides } from "./files.js";
 import { isDbAvailable, getMilestoneSlices, getPendingGates, markAllGatesOmitted, getMilestone, updateMilestoneStatus } from "./gsd-db.js";
 import { isClosedStatus } from "./status-guards.js";
@@ -81,6 +82,10 @@ export interface DispatchContext {
   prefs: GSDPreferences | undefined;
   session?: import("./auto/session.js").AutoSession;
   structuredQuestionsAvailable?: "true" | "false";
+  /** Session model context window in tokens, forwarded to the budget engine's prompt builders. */
+  sessionContextWindow?: number;
+  /** Model registry forwarded to the budget engine so it can look up the configured executor model. */
+  modelRegistry?: MinimalModelRegistry;
 }
 
 export interface DispatchRule {
@@ -521,7 +526,7 @@ export const DISPATCH_RULES: DispatchRule[] = [
     // auto-heal without either adding an explicit `setSliceSketchFlag(..., false)`
     // call here or doing so inside the plan-slice tool handler.
     name: "refining → refine-slice",
-    match: async ({ state, mid, midTitle, basePath, prefs }) => {
+    match: async ({ state, mid, midTitle, basePath, prefs, sessionContextWindow, modelRegistry }) => {
       if (state.phase !== "refining") return null;
       if (!state.activeSlice) return missingSliceStop(mid, state.phase);
       const sid = state.activeSlice.id;
@@ -546,7 +551,7 @@ export const DISPATCH_RULES: DispatchRule[] = [
           unitId: `${mid}/${sid}`,
           prompt: await buildPlanSlicePrompt(
             mid, midTitle, sid, sTitle, basePath, undefined,
-            softScopeHint ? { softScopeHint } : undefined,
+            { ...(softScopeHint ? { softScopeHint } : {}), sessionContextWindow, modelRegistry },
           ),
         };
       }
@@ -554,13 +559,16 @@ export const DISPATCH_RULES: DispatchRule[] = [
         action: "dispatch",
         unitType: "refine-slice",
         unitId: `${mid}/${sid}`,
-        prompt: await buildRefineSlicePrompt(mid, midTitle, sid, sTitle, basePath),
+        prompt: await buildRefineSlicePrompt(
+          mid, midTitle, sid, sTitle, basePath, undefined,
+          { sessionContextWindow, modelRegistry },
+        ),
       };
     },
   },
   {
     name: "planning → plan-slice",
-    match: async ({ state, mid, midTitle, basePath }) => {
+    match: async ({ state, mid, midTitle, basePath, sessionContextWindow, modelRegistry }) => {
       if (state.phase !== "planning") return null;
       if (!state.activeSlice) return missingSliceStop(mid, state.phase);
       const sid = state.activeSlice!.id;
@@ -575,6 +583,8 @@ export const DISPATCH_RULES: DispatchRule[] = [
           sid,
           sTitle,
           basePath,
+          undefined,
+          { sessionContextWindow, modelRegistry },
         ),
       };
     },
@@ -635,7 +645,7 @@ export const DISPATCH_RULES: DispatchRule[] = [
   },
   {
     name: "executing → reactive-execute (parallel dispatch)",
-    match: async ({ state, mid, midTitle, basePath, prefs }) => {
+    match: async ({ state, mid, midTitle, basePath, prefs, sessionContextWindow, modelRegistry }) => {
       if (state.phase !== "executing" || !state.activeTask) return null;
       if (!state.activeSlice) return null; // fall through
 
@@ -726,6 +736,7 @@ export const DISPATCH_RULES: DispatchRule[] = [
             selected,
             basePath,
             subagentModel,
+            { sessionContextWindow, modelRegistry },
           ),
         };
       } catch (err) {
@@ -737,7 +748,7 @@ export const DISPATCH_RULES: DispatchRule[] = [
   },
   {
     name: "executing → execute-task (recover missing task plan → plan-slice)",
-    match: async ({ state, mid, midTitle, basePath }) => {
+    match: async ({ state, mid, midTitle, basePath, sessionContextWindow, modelRegistry }) => {
       if (state.phase !== "executing" || !state.activeTask) return null;
       if (!state.activeSlice) return missingSliceStop(mid, state.phase);
       const sid = state.activeSlice!.id;
@@ -761,6 +772,8 @@ export const DISPATCH_RULES: DispatchRule[] = [
             sid,
             sTitle,
             basePath,
+            undefined,
+            { sessionContextWindow, modelRegistry },
           ),
         };
       }
@@ -770,7 +783,7 @@ export const DISPATCH_RULES: DispatchRule[] = [
   },
   {
     name: "executing → execute-task",
-    match: async ({ state, mid, basePath }) => {
+    match: async ({ state, mid, basePath, sessionContextWindow, modelRegistry }) => {
       if (state.phase !== "executing" || !state.activeTask) return null;
       if (!state.activeSlice) return missingSliceStop(mid, state.phase);
       const sid = state.activeSlice!.id;
@@ -789,6 +802,7 @@ export const DISPATCH_RULES: DispatchRule[] = [
           tid,
           tTitle,
           basePath,
+          { sessionContextWindow, modelRegistry },
         ),
       };
     },
