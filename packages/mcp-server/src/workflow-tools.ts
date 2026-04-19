@@ -571,6 +571,27 @@ export const WORKFLOW_TOOL_NAMES = [
   "gsd_journal_query",
 ] as const;
 
+/**
+ * Adapt an executor `ToolExecutionResult` ({ content, details?, isError? }) to
+ * the MCP `CallToolResult` shape ({ content, structuredContent?, isError? }).
+ *
+ * MCP transports (including stdio) only serialize fields declared in the
+ * protocol, so a non-standard `details` field is silently dropped over the
+ * wire. Mirroring it into `structuredContent` — the protocol's supported
+ * channel for structured tool payloads — preserves the data for clients that
+ * render from it (e.g. the save_gate_result renderer that reads gateId /
+ * verdict). See #4472.
+ */
+function adaptExecutorResult(result: unknown): unknown {
+  if (!result || typeof result !== "object") return result;
+  const r = result as Record<string, unknown>;
+  if (!("details" in r)) return result;
+  const { details, ...rest } = r;
+  const isPlainObject =
+    details !== null && typeof details === "object" && !Array.isArray(details);
+  return isPlainObject ? { ...rest, structuredContent: details } : rest;
+}
+
 async function runSerializedWorkflowOperation<T>(fn: () => Promise<T>): Promise<T> {
   // The shared DB adapter and workflow log base path are process-global, so
   // workflow MCP mutations must not overlap within a single server process.
@@ -652,23 +673,25 @@ async function handleTaskComplete(
     verificationEvidence,
   } = args;
   const { executeTaskComplete } = await getWorkflowToolExecutors();
-  return runSerializedWorkflowOperation(() =>
-    executeTaskComplete(
-      {
-        taskId,
-        sliceId,
-        milestoneId,
-        oneLiner,
-        narrative,
-        verification,
-        deviations,
-        knownIssues,
-        keyFiles,
-        keyDecisions,
-        blockerDiscovered,
-        verificationEvidence,
-      },
-      projectDir,
+  return adaptExecutorResult(
+    await runSerializedWorkflowOperation(() =>
+      executeTaskComplete(
+        {
+          taskId,
+          sliceId,
+          milestoneId,
+          oneLiner,
+          narrative,
+          verification,
+          deviations,
+          knownIssues,
+          keyFiles,
+          keyDecisions,
+          blockerDiscovered,
+          verificationEvidence,
+        },
+        projectDir,
+      ),
     ),
   );
 }
@@ -680,7 +703,9 @@ async function handleSliceComplete(
   await enforceWorkflowWriteGate("gsd_slice_complete", projectDir, args.milestoneId);
   const { executeSliceComplete } = await getWorkflowToolExecutors();
   const { projectDir: _projectDir, ...params } = args;
-  return runSerializedWorkflowOperation(() => executeSliceComplete(params, projectDir));
+  return adaptExecutorResult(
+    await runSerializedWorkflowOperation(() => executeSliceComplete(params, projectDir)),
+  );
 }
 
 async function handleReplanSlice(
@@ -690,7 +715,9 @@ async function handleReplanSlice(
   await enforceWorkflowWriteGate("gsd_replan_slice", projectDir, args.milestoneId);
   const { executeReplanSlice } = await getWorkflowToolExecutors();
   const { projectDir: _projectDir, ...params } = args;
-  return runSerializedWorkflowOperation(() => executeReplanSlice(params, projectDir));
+  return adaptExecutorResult(
+    await runSerializedWorkflowOperation(() => executeReplanSlice(params, projectDir)),
+  );
 }
 
 async function handleCompleteMilestone(
@@ -700,7 +727,9 @@ async function handleCompleteMilestone(
   await enforceWorkflowWriteGate("gsd_complete_milestone", projectDir, args.milestoneId);
   const { executeCompleteMilestone } = await getWorkflowToolExecutors();
   const { projectDir: _projectDir, ...params } = args;
-  return runSerializedWorkflowOperation(() => executeCompleteMilestone(params, projectDir));
+  return adaptExecutorResult(
+    await runSerializedWorkflowOperation(() => executeCompleteMilestone(params, projectDir)),
+  );
 }
 
 async function handleValidateMilestone(
@@ -710,7 +739,9 @@ async function handleValidateMilestone(
   await enforceWorkflowWriteGate("gsd_validate_milestone", projectDir, args.milestoneId);
   const { executeValidateMilestone } = await getWorkflowToolExecutors();
   const { projectDir: _projectDir, ...params } = args;
-  return runSerializedWorkflowOperation(() => executeValidateMilestone(params, projectDir));
+  return adaptExecutorResult(
+    await runSerializedWorkflowOperation(() => executeValidateMilestone(params, projectDir)),
+  );
 }
 
 async function handleReassessRoadmap(
@@ -720,7 +751,9 @@ async function handleReassessRoadmap(
   await enforceWorkflowWriteGate("gsd_reassess_roadmap", projectDir, args.milestoneId);
   const { executeReassessRoadmap } = await getWorkflowToolExecutors();
   const { projectDir: _projectDir, ...params } = args;
-  return runSerializedWorkflowOperation(() => executeReassessRoadmap(params, projectDir));
+  return adaptExecutorResult(
+    await runSerializedWorkflowOperation(() => executeReassessRoadmap(params, projectDir)),
+  );
 }
 
 async function handleSaveGateResult(
@@ -730,7 +763,9 @@ async function handleSaveGateResult(
   await enforceWorkflowWriteGate("gsd_save_gate_result", projectDir, args.milestoneId);
   const { executeSaveGateResult } = await getWorkflowToolExecutors();
   const { projectDir: _projectDir, ...params } = args;
-  return runSerializedWorkflowOperation(() => executeSaveGateResult(params, projectDir));
+  return adaptExecutorResult(
+    await runSerializedWorkflowOperation(() => executeSaveGateResult(params, projectDir)),
+  );
 }
 
 async function ensureMilestoneDbRow(milestoneId: string): Promise<void> {
@@ -1227,7 +1262,9 @@ export function registerWorkflowTools(server: McpToolServer): void {
       const { projectDir, ...params } = parsed;
       await enforceWorkflowWriteGate("gsd_plan_milestone", projectDir, params.milestoneId);
       const { executePlanMilestone } = await getWorkflowToolExecutors();
-      return runSerializedWorkflowOperation(() => executePlanMilestone(params, projectDir));
+      return adaptExecutorResult(
+        await runSerializedWorkflowOperation(() => executePlanMilestone(params, projectDir)),
+      );
     },
   );
 
@@ -1240,7 +1277,9 @@ export function registerWorkflowTools(server: McpToolServer): void {
       const { projectDir, ...params } = parsed;
       await enforceWorkflowWriteGate("gsd_plan_slice", projectDir, params.milestoneId);
       const { executePlanSlice } = await getWorkflowToolExecutors();
-      return runSerializedWorkflowOperation(() => executePlanSlice(params, projectDir));
+      return adaptExecutorResult(
+        await runSerializedWorkflowOperation(() => executePlanSlice(params, projectDir)),
+      );
     },
   );
 
@@ -1441,8 +1480,10 @@ export function registerWorkflowTools(server: McpToolServer): void {
           `artifact_type must be one of: ${supportedArtifactTypes.join(", ")}`,
         );
       }
-      return runSerializedWorkflowOperation(() =>
-        executors.executeSummarySave({ milestone_id, slice_id, task_id, artifact_type, content }, projectDir),
+      return adaptExecutorResult(
+        await runSerializedWorkflowOperation(() =>
+          executors.executeSummarySave({ milestone_id, slice_id, task_id, artifact_type, content }, projectDir),
+        ),
       );
     },
   );
@@ -1477,7 +1518,9 @@ export function registerWorkflowTools(server: McpToolServer): void {
       const { projectDir, milestoneId } = parseWorkflowArgs(milestoneStatusSchema, args);
       await enforceWorkflowWriteGate("gsd_milestone_status", projectDir, milestoneId);
       const { executeMilestoneStatus } = await getWorkflowToolExecutors();
-      return runSerializedWorkflowOperation(() => executeMilestoneStatus({ milestoneId }, projectDir));
+      return adaptExecutorResult(
+        await runSerializedWorkflowOperation(() => executeMilestoneStatus({ milestoneId }, projectDir)),
+      );
     },
   );
 

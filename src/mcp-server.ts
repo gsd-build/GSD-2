@@ -121,7 +121,23 @@ export async function startMcpServer(options: {
         // by stringifying into a text block so clients see the payload.
         return { type: 'text' as const, text: JSON.stringify(block) }
       })
-      return { content }
+
+      // Forward a tool's runtime `details` field to MCP's `structuredContent`
+      // channel. The protocol drops non-standard fields on the wire, so tools
+      // that populate `details` for client-side renderers (e.g. save_gate_result)
+      // would otherwise arrive empty on the other side. See #4472.
+      const runtimeDetails = (result as { details?: unknown }).details
+      const runtimeIsError = (result as { isError?: unknown }).isError === true
+      const base: Record<string, unknown> = { content }
+      if (
+        runtimeDetails !== null
+        && typeof runtimeDetails === 'object'
+        && !Array.isArray(runtimeDetails)
+      ) {
+        base.structuredContent = runtimeDetails
+      }
+      if (runtimeIsError) base.isError = true
+      return base
     } catch (err: unknown) {
       // AbortError from a cancelled tool surfaces as a normal error — MCP
       // clients interpret `isError: true` as a failed call, which is the

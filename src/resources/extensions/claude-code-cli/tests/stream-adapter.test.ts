@@ -379,6 +379,76 @@ describe("stream-adapter — Claude Code external tool results", () => {
 		]);
 	});
 
+	test("extractToolResultsFromSdkUserMessage reads structuredContent as a sibling field (#4472)", () => {
+		const message: SDKUserMessage = {
+			type: "user",
+			session_id: "sess-1",
+			parent_tool_use_id: "tool-mcp-1",
+			message: {
+				role: "user",
+				content: [
+					{
+						type: "mcp_tool_result",
+						tool_use_id: "tool-mcp-1",
+						content: [{ type: "text", text: "Gate Q3 result saved: verdict=pass" }],
+						is_error: false,
+						structuredContent: { gateId: "Q3", verdict: "pass" },
+					} as unknown as Record<string, unknown>,
+				],
+			},
+		};
+
+		const results = extractToolResultsFromSdkUserMessage(message);
+		assert.deepEqual(results[0].result.details, { gateId: "Q3", verdict: "pass" });
+	});
+
+	test("extractToolResultsFromSdkUserMessage reads structuredContent from a content sub-block (#4472)", () => {
+		const message: SDKUserMessage = {
+			type: "user",
+			session_id: "sess-1",
+			parent_tool_use_id: "tool-mcp-2",
+			message: {
+				role: "user",
+				content: [
+					{
+						type: "mcp_tool_result",
+						tool_use_id: "tool-mcp-2",
+						content: [
+							{ type: "text", text: "Gate Q4 result saved: verdict=flag" },
+							{ type: "structuredContent", structuredContent: { gateId: "Q4", verdict: "flag" } },
+						],
+						is_error: false,
+					} as unknown as Record<string, unknown>,
+				],
+			},
+		};
+
+		const results = extractToolResultsFromSdkUserMessage(message);
+		assert.deepEqual(results[0].result.details, { gateId: "Q4", verdict: "flag" });
+	});
+
+	test("extractToolResultsFromSdkUserMessage accepts snake_case structured_content defensively (#4472)", () => {
+		const message: SDKUserMessage = {
+			type: "user",
+			session_id: "sess-1",
+			parent_tool_use_id: "tool-mcp-3",
+			message: {
+				role: "user",
+				content: [
+					{
+						type: "mcp_tool_result",
+						tool_use_id: "tool-mcp-3",
+						content: [{ type: "text", text: "ok" }],
+						structured_content: { operation: "save_gate_result" },
+					} as unknown as Record<string, unknown>,
+				],
+			},
+		};
+
+		const results = extractToolResultsFromSdkUserMessage(message);
+		assert.deepEqual(results[0].result.details, { operation: "save_gate_result" });
+	});
+
 	test("extractToolResultsFromSdkUserMessage falls back to tool_use_result", () => {
 		const message: SDKUserMessage = {
 			type: "user",
