@@ -4,7 +4,7 @@ import { join, sep } from "node:path";
 import type { DoctorIssue, DoctorIssueCode } from "./doctor-types.js";
 import { loadFile } from "./files.js";
 import { parseRoadmap as parseLegacyRoadmap } from "./parsers-legacy.js";
-import { isDbAvailable, getMilestoneSlices } from "./gsd-db.js";
+import { isDbAvailable, getMilestone } from "./gsd-db.js";
 import { resolveMilestoneFile } from "./paths.js";
 import { deriveState, isMilestoneComplete } from "./state.js";
 import { listWorktrees, resolveGitDir, worktreesDir } from "./worktree-manager.js";
@@ -52,6 +52,22 @@ function isSameOrNestedPath(candidate: string, container: string): boolean {
     normalizedCandidate.startsWith(`${normalizedContainer}/`);
 }
 
+async function isCompletedMilestoneTerminal(basePath: string, milestoneId: string): Promise<boolean> {
+  const summaryPath = resolveMilestoneFile(basePath, milestoneId, "SUMMARY");
+  if (!summaryPath) return false;
+
+  if (isDbAvailable()) {
+    const milestone = getMilestone(milestoneId);
+    return !!milestone && milestone.status === "complete";
+  }
+
+  const roadmapPath = resolveMilestoneFile(basePath, milestoneId, "ROADMAP");
+  const roadmapContent = roadmapPath ? await loadFile(roadmapPath) : null;
+  if (!roadmapContent) return false;
+  const roadmap = parseLegacyRoadmap(roadmapContent);
+  return isMilestoneComplete(roadmap);
+}
+
 export async function checkGitHealth(
   basePath: string,
   issues: DoctorIssue[],
@@ -81,23 +97,9 @@ export async function checkGitHealth(
       // Extract milestone ID from branch name "milestone/M001" → "M001"
       const milestoneId = wt.branch.replace(/^milestone\//, "");
       const milestoneEntry = state.registry.find(m => m.id === milestoneId);
-
-      // Check if milestone is complete via roadmap
-      let isComplete = false;
-      if (milestoneEntry) {
-        if (isDbAvailable()) {
-          const dbSlices = getMilestoneSlices(milestoneId);
-          isComplete = dbSlices.length > 0 && dbSlices.every(s => s.status === "complete");
-        } else {
-          const roadmapPath = resolveMilestoneFile(basePath, milestoneId, "ROADMAP");
-          const roadmapContent = roadmapPath ? await loadFile(roadmapPath) : null;
-          if (roadmapContent) {
-            const roadmap = parseLegacyRoadmap(roadmapContent);
-            isComplete = isMilestoneComplete(roadmap);
-          }
-        }
-        // When DB unavailable and no roadmap, isComplete stays false
-      }
+      const isComplete = milestoneEntry
+        ? await isCompletedMilestoneTerminal(basePath, milestoneId)
+        : false;
 
       if (isComplete) {
         issues.push({
@@ -151,15 +153,9 @@ export async function checkGitHealth(
           const milestoneId = branch.replace(/^milestone\//, "");
           const roadmapPath = resolveMilestoneFile(basePath, milestoneId, "ROADMAP");
           let branchMilestoneComplete = false;
-          if (isDbAvailable()) {
-            const dbSlices = getMilestoneSlices(milestoneId);
-            branchMilestoneComplete = dbSlices.length > 0 && dbSlices.every(s => s.status === "complete");
-          } else {
-            const roadmapContent = roadmapPath ? await loadFile(roadmapPath) : null;
-            if (!roadmapContent) continue;
-            const roadmap = parseLegacyRoadmap(roadmapContent);
-            branchMilestoneComplete = isMilestoneComplete(roadmap);
-          }
+          const roadmapContent = roadmapPath ? await loadFile(roadmapPath) : null;
+          if (!roadmapContent) continue;
+          branchMilestoneComplete = await isCompletedMilestoneTerminal(basePath, milestoneId);
           if (branchMilestoneComplete) {
             issues.push({
               severity: "info",

@@ -15,7 +15,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync, chmodSync } from "node:fs";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { tmpdir } from "node:os";
 
 import {
@@ -640,13 +640,45 @@ test("runProviderChecks reports ok for Anthropic via claude-code binary in PATH"
     COPILOT_GITHUB_TOKEN: undefined,
     GH_TOKEN: undefined,
     GITHUB_TOKEN: undefined,
-    PATH: `${binDir}:${process.env.PATH ?? ""}`,
+    PATH: `${binDir}${delimiter}${process.env.PATH ?? ""}`,
   }, () => {
     try {
       const results = runProviderChecks();
       const anthropic = results.find(r => r.name === "anthropic");
       assert.ok(anthropic, "anthropic result should exist");
       assert.equal(anthropic!.status, "ok", "should be ok when claude CLI binary is in PATH");
+      assert.ok(anthropic!.message.toLowerCase().includes("claude"), "should mention claude-code as source");
+    } finally {
+      rmSync(tmpHome, { recursive: true, force: true });
+    }
+  });
+});
+
+test("runProviderChecks detects claude.cmd in PATH on Windows (#4503)", { skip: process.platform !== "win32" }, () => {
+  const tmpHome = realpathSync(mkdtempSync(join(tmpdir(), "gsd-providers-cc-win-route-home-")));
+  const binDir = join(tmpHome, "bin");
+  mkdirSync(binDir, { recursive: true });
+
+  // On Windows, users commonly install Claude via a .cmd shim.
+  const fakeClaudeCmd = join(binDir, "claude.cmd");
+  writeFileSync(fakeClaudeCmd, "@echo off\r\necho mock\r\n");
+
+  withEnv({
+    HOME: tmpHome,
+    ANTHROPIC_API_KEY: undefined,
+    ANTHROPIC_OAUTH_TOKEN: undefined,
+    COPILOT_GITHUB_TOKEN: undefined,
+    GH_TOKEN: undefined,
+    GITHUB_TOKEN: undefined,
+    // Explicitly use ';' to mirror Windows PATH entries.
+    PATH: `${binDir};${process.env.PATH ?? ""}`,
+    PATHEXT: ".COM;.EXE;.BAT;.CMD",
+  }, () => {
+    try {
+      const results = runProviderChecks();
+      const anthropic = results.find(r => r.name === "anthropic");
+      assert.ok(anthropic, "anthropic result should exist");
+      assert.equal(anthropic!.status, "ok", "should be ok when claude.cmd is in PATH");
       assert.ok(anthropic!.message.toLowerCase().includes("claude"), "should mention claude-code as source");
     } finally {
       rmSync(tmpHome, { recursive: true, force: true });

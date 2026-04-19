@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import { execSync } from "node:child_process";
 
 import { runGSDDoctor } from "../../doctor.ts";
+import { closeDatabase, insertMilestone, insertSlice, openDatabase } from "../../gsd-db.ts";
 function run(cmd: string, cwd: string): string {
   return execSync(cmd, { cwd, stdio: ["ignore", "pipe", "pipe"], encoding: "utf-8" }).trim();
 }
@@ -56,10 +57,62 @@ Test
 ## Boundary Map
 _None_
 `);
+  writeFileSync(join(msDir, "M001-SUMMARY.md"), `---
+id: M001
+title: "Test Milestone"
+status: complete
+completed_at: 2026-04-18T00:00:00Z
+---
+
+# M001: Test Milestone
+
+Completed.
+`);
 
   // Commit .gsd files
   run("git add -A", dir);
   run("git commit -m \"add milestone\"", dir);
+
+  return dir;
+}
+
+/** Create a repo whose slices are done but milestone closeout is still pending. */
+function createRepoWithSlicesDoneButNoMilestoneSummary(): string {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "doc-git-test-")));
+  run("git init", dir);
+  run("git config user.email test@test.com", dir);
+  run("git config user.name Test", dir);
+
+  writeFileSync(join(dir, "README.md"), "# test\n");
+  run("git add .", dir);
+  run("git commit -m init", dir);
+  run("git branch -M main", dir);
+
+  const msDir = join(dir, ".gsd", "milestones", "M001");
+  mkdirSync(msDir, { recursive: true });
+  writeFileSync(join(msDir, "ROADMAP.md"), `---
+id: M001
+title: "Completing Milestone"
+---
+
+# M001: Completing Milestone
+
+## Vision
+Test
+
+## Success Criteria
+- Done
+
+## Slices
+- [x] **S01: Test slice** \`risk:low\` \`depends:[]\`
+  > After this: done
+
+## Boundary Map
+_None_
+`);
+
+  run("git add -A", dir);
+  run("git commit -m \"add completing milestone\"", dir);
 
   return dir;
 }
@@ -295,6 +348,31 @@ describe('doctor-git', async () => {
       const detect = await runGSDDoctor(dir, { isolationMode: "worktree" });
       const orphanIssues = detect.issues.filter(i => i.code === "orphaned_auto_worktree");
       assert.deepStrictEqual(orphanIssues.length, 0, "active worktree NOT flagged as orphaned");
+    });
+    } else {
+    }
+
+    // ─── Test 6b: completing-milestone worktree NOT flagged ────────────
+    if (process.platform !== "win32") {
+    test('completing-milestone worktree safety (DB-backed, no summary)', async () => {
+      const dir = createRepoWithSlicesDoneButNoMilestoneSummary();
+      cleanups.push(dir);
+
+      mkdirSync(join(dir, ".gsd", "worktrees"), { recursive: true });
+      run("git worktree add -b milestone/M001 .gsd/worktrees/M001", dir);
+
+      const dbPath = join(dir, ".gsd", "gsd.db");
+      assert.equal(openDatabase(dbPath), true, "opens gsd.db");
+      try {
+        insertMilestone({ id: "M001", title: "Completing Milestone", status: "active" });
+        insertSlice({ id: "S01", milestoneId: "M001", title: "Test slice", status: "complete", risk: "low", depends: [] });
+
+        const detect = await runGSDDoctor(dir, { isolationMode: "worktree" });
+        const orphanIssues = detect.issues.filter(i => i.code === "orphaned_auto_worktree");
+        assert.deepStrictEqual(orphanIssues.length, 0, "completing milestone NOT flagged as orphaned");
+      } finally {
+        closeDatabase();
+      }
     });
     } else {
     }

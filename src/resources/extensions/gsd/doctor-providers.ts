@@ -12,7 +12,7 @@
  */
 
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { AuthStorage } from "@gsd/pi-coding-agent";
 import { getEnvApiKey } from "@gsd/pi-ai";
 import { loadEffectiveGSDPreferences } from "./preferences.js";
@@ -167,8 +167,28 @@ const CLI_BINARY_MAP: Record<string, string> = {
 function isCliBinaryInPath(providerId: string): boolean {
   const binary = CLI_BINARY_MAP[providerId];
   if (!binary) return false;
-  const pathDirs = (process.env.PATH ?? "").split(":");
-  return pathDirs.some(dir => dir && existsSync(join(dir, binary)));
+
+  const pathDirs = (process.env.PATH ?? "").split(delimiter).filter(Boolean);
+
+  // On Windows, command shims are commonly installed as .cmd/.exe/.bat/.com.
+  // Scan PATHEXT candidates in addition to the bare binary name.
+  const executableNames: string[] = [binary];
+  if (process.platform === "win32") {
+    const rawPathExt = process.env.PATHEXT
+      ?.split(";")
+      .map(ext => ext.trim())
+      .filter(Boolean) ?? [];
+    const normalizedPathExt = rawPathExt.map(ext =>
+      ext.startsWith(".") ? ext.toLowerCase() : `.${ext.toLowerCase()}`,
+    );
+    const defaultExt = [".exe", ".cmd", ".bat", ".com"];
+    for (const ext of [...normalizedPathExt, ...defaultExt]) {
+      const candidate = `${binary}${ext}`;
+      if (!executableNames.includes(candidate)) executableNames.push(candidate);
+    }
+  }
+
+  return pathDirs.some(dir => executableNames.some(name => existsSync(join(dir, name))));
 }
 
 function resolveKey(providerId: string): KeyLookup {
