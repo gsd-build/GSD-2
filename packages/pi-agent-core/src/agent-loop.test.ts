@@ -408,3 +408,148 @@ describe("agent-loop — schema overload retry cap (#2783)", () => {
 		}
 	});
 });
+
+/**
+ * Regression test for #4342: prepareToolCall case-sensitive tool lookup breaks
+ * execute-task when the model emits a lowercase tool name (e.g. "skill"
+ * instead of "Skill").
+ *
+ * The fix makes the lookup case-insensitive and normalizes toolCall.name to
+ * the registered (canonical) tool name so the UI displays the correct casing.
+ */
+describe("agent-loop — case-insensitive tool lookup (#4342)", () => {
+	it("matches a tool when the model emits a differently-cased name", async () => {
+		const tool: AgentTool<any> = {
+			name: "Skill",
+			label: "Skill",
+			description: "Run a skill",
+			parameters: Type.Object({
+				skill: Type.String(),
+			}),
+			execute: async () => ({
+				content: [{ type: "text" as const, text: "skill executed" }],
+				details: {},
+			}),
+		};
+
+		// Model emits lowercase "skill" instead of "Skill"
+		const lowercaseToolCall = makeAssistantMessage({
+			content: [
+				{
+					type: "toolCall",
+					id: `tc_case_${Date.now()}`,
+					name: "skill",
+					arguments: { skill: "test-skill" },
+				},
+			],
+			stopReason: "toolUse",
+		});
+		const finalStop = makeAssistantMessage({
+			content: [{ type: "text", text: "Done." }],
+			stopReason: "stop",
+		});
+
+		const mockStream = createMockStreamFn([lowercaseToolCall, finalStop]);
+
+		const context: AgentContext = {
+			systemPrompt: "You are a test agent.",
+			messages: [{ role: "user", content: [{ type: "text", text: "Run skill" }], timestamp: Date.now() }],
+			tools: [tool],
+		};
+
+		const config: AgentLoopConfig = {
+			model: TEST_MODEL,
+			convertToLlm: (msgs) => msgs.filter((m): m is any => m.role !== "custom"),
+			toolExecution: "sequential",
+		};
+
+		const stream = agentLoop(
+			[{ role: "user", content: [{ type: "text", text: "Run skill" }], timestamp: Date.now() }],
+			context,
+			config,
+			undefined,
+			mockStream as any,
+		);
+
+		const events = await collectEvents(stream);
+
+		// The tool must execute successfully — no "Tool skill not found" error
+		const toolEnd = events.find(
+			(e): e is Extract<AgentEvent, { type: "tool_execution_end" }> => e.type === "tool_execution_end",
+		);
+		assert.ok(toolEnd, "expected tool_execution_end event");
+		assert.equal(toolEnd.isError, false, "tool execution should succeed despite case mismatch");
+		assert.deepEqual(toolEnd.result.content, [{ type: "text", text: "skill executed" }]);
+	});
+
+	it("normalizes the tool call name to the canonical registered name for UI display", async () => {
+		const tool: AgentTool<any> = {
+			name: "Skill",
+			label: "Skill",
+			description: "Run a skill",
+			parameters: Type.Object({
+				skill: Type.String(),
+			}),
+			execute: async () => ({
+				content: [{ type: "text" as const, text: "ok" }],
+				details: {},
+			}),
+		};
+
+		// Model emits "SKILL" (all-caps) instead of "Skill"
+		const wrongCaseToolCall = makeAssistantMessage({
+			content: [
+				{
+					type: "toolCall",
+					id: `tc_norm_${Date.now()}`,
+					name: "SKILL",
+					arguments: { skill: "test-skill" },
+				},
+			],
+			stopReason: "toolUse",
+		});
+		const finalStop = makeAssistantMessage({
+			content: [{ type: "text", text: "Done." }],
+			stopReason: "stop",
+		});
+
+		const mockStream = createMockStreamFn([wrongCaseToolCall, finalStop]);
+
+		const context: AgentContext = {
+			systemPrompt: "You are a test agent.",
+			messages: [{ role: "user", content: [{ type: "text", text: "Run skill" }], timestamp: Date.now() }],
+			tools: [tool],
+		};
+
+		const config: AgentLoopConfig = {
+			model: TEST_MODEL,
+			convertToLlm: (msgs) => msgs.filter((m): m is any => m.role !== "custom"),
+			toolExecution: "sequential",
+		};
+
+		const stream = agentLoop(
+			[{ role: "user", content: [{ type: "text", text: "Run skill" }], timestamp: Date.now() }],
+			context,
+			config,
+			undefined,
+			mockStream as any,
+		);
+
+		const events = await collectEvents(stream);
+
+		// The tool_execution_end event's toolName should be the canonical "Skill",
+		// not the model-emitted "SKILL" — this is what the UI displays.
+		const toolEnd = events.find(
+			(e): e is Extract<AgentEvent, { type: "tool_execution_end" }> => e.type === "tool_execution_end",
+		);
+		assert.ok(toolEnd, "expected tool_execution_end event");
+		assert.equal(toolEnd.toolName, "Skill", "toolName in end event should be the canonical registered name");
+
+		// tool_execution_start must also carry the canonical name
+		const toolStart = events.find(
+			(e): e is Extract<AgentEvent, { type: "tool_execution_start" }> => e.type === "tool_execution_start",
+		);
+		assert.ok(toolStart, "expected tool_execution_start event");
+		assert.equal(toolStart.toolName, "Skill", "toolName in start event should be the canonical registered name");
+	});
+});
