@@ -5,56 +5,38 @@
  * the full GSD runtime dependencies.
  */
 
-import { describe, it, beforeEach } from "node:test";
+import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import { resolveProxyUrl } from "../config.js";
 
-// Inline implementation for testing — mirrors the logic in config.ts
-function resolveProxyUrl(configProxyUrl?: string): string | undefined {
-  const envProxy = process.env.TELEGRAM_PROXY_URL;
-  if (envProxy) {
-    return envProxy;
-  }
+const PROXY_ENV_KEYS = [
+  "TELEGRAM_PROXY_URL",
+  "https_proxy",
+  "HTTPS_PROXY",
+  "http_proxy",
+  "HTTP_PROXY",
+  "all_proxy",
+  "ALL_PROXY",
+] as const;
 
-  if (configProxyUrl) {
-    return configProxyUrl;
-  }
-
-  return process.env.https_proxy || process.env.HTTPS_PROXY ||
-         process.env.http_proxy || process.env.HTTP_PROXY ||
-         process.env.all_proxy || process.env.ALL_PROXY ||
-         undefined;
-}
+const originalEnv: Record<string, string | undefined> = {};
 
 describe("resolveProxyUrl", () => {
-  // Store original env vars
-  const originalTelegramProxy = process.env.TELEGRAM_PROXY_URL;
-  const originalHttpsProxy = process.env.https_proxy;
-  const originalHTTPS_PROXY = process.env.HTTPS_PROXY;
-  const originalHttpProxy = process.env.http_proxy;
-  const originalHTTP_PROXY = process.env.HTTP_PROXY;
-  const originalAllProxy = process.env.all_proxy;
-  const originalALL_PROXY = process.env.ALL_PROXY;
-
   beforeEach(() => {
-    // Clear all proxy-related env vars before each test
-    delete process.env.TELEGRAM_PROXY_URL;
-    delete process.env.https_proxy;
-    delete process.env.HTTPS_PROXY;
-    delete process.env.http_proxy;
-    delete process.env.HTTP_PROXY;
-    delete process.env.all_proxy;
-    delete process.env.ALL_PROXY;
+    for (const key of PROXY_ENV_KEYS) {
+      originalEnv[key] = process.env[key];
+      delete process.env[key];
+    }
   });
 
-  // Restore original env vars after all tests
-  it("restores environment after tests", () => {
-    if (originalTelegramProxy !== undefined) process.env.TELEGRAM_PROXY_URL = originalTelegramProxy;
-    if (originalHttpsProxy !== undefined) process.env.https_proxy = originalHttpsProxy;
-    if (originalHTTPS_PROXY !== undefined) process.env.HTTPS_PROXY = originalHTTPS_PROXY;
-    if (originalHttpProxy !== undefined) process.env.http_proxy = originalHttpProxy;
-    if (originalHTTP_PROXY !== undefined) process.env.HTTP_PROXY = originalHTTP_PROXY;
-    if (originalAllProxy !== undefined) process.env.all_proxy = originalAllProxy;
-    if (originalALL_PROXY !== undefined) process.env.ALL_PROXY = originalALL_PROXY;
+  afterEach(() => {
+    for (const key of PROXY_ENV_KEYS) {
+      if (originalEnv[key] === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = originalEnv[key];
+      }
+    }
   });
 
   it("returns undefined when no proxy is configured", () => {

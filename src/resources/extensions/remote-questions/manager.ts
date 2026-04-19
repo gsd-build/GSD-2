@@ -33,7 +33,7 @@ export function startCommandPolling(
     return () => {};
   }
 
-  const adapter = new TelegramAdapter(config.token, config.channelId, basePath);
+  const adapter = new TelegramAdapter(config.token, config.channelId, basePath, config.proxyUrl);
 
   const timer = setInterval(() => {
     void adapter.pollAndHandleCommands(basePath).catch(() => {

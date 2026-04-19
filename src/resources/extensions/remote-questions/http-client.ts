@@ -8,6 +8,22 @@
 import { ProxyAgent } from "undici";
 import { PER_REQUEST_TIMEOUT_MS } from "./types.js";
 
+const proxyAgentCache = new Map<string, ProxyAgent>();
+
+function redactProxyUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    if (parsed.username || parsed.password) {
+      parsed.username = "";
+      parsed.password = "";
+      return parsed.toString();
+    }
+  } catch {
+    // ignore invalid URL
+  }
+  return url;
+}
+
 export interface ApiRequestOptions {
   /** Authorization header scheme. Omit to skip the Authorization header entirely. */
   authScheme?: "Bearer" | "Bot";
@@ -61,12 +77,18 @@ export async function apiRequest(
 
   // Configure proxy if proxyUrl is provided
   if (proxyUrl) {
-    try {
-      init.dispatcher = new ProxyAgent(proxyUrl);
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      throw new Error(`${errorLabel}: Failed to configure proxy (${proxyUrl}): ${errorMessage}`);
+    let agent = proxyAgentCache.get(proxyUrl);
+    if (!agent) {
+      try {
+        agent = new ProxyAgent(proxyUrl);
+        proxyAgentCache.set(proxyUrl, agent);
+      } catch (err) {
+        const redactedUrl = redactProxyUrl(proxyUrl);
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        throw new Error(`${errorLabel}: Failed to configure proxy (${redactedUrl}): ${errorMessage}`);
+      }
     }
+    init.dispatcher = agent;
   }
 
   if (body !== undefined) {
