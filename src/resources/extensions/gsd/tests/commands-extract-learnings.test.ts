@@ -452,70 +452,27 @@ describe("buildExtractionStepsBlock", () => {
     assert.ok(block.includes("M042-ROADMAP.md"));
   });
 
-  it("points the LLM at .gsd/KNOWLEDGE.md for append", () => {
-    const block = buildExtractionStepsBlock(ctx);
-    assert.ok(block.includes(".gsd/KNOWLEDGE.md"));
-  });
+  // ─── Removed by ADR-013 step 6 cutover ────────────────────────────────────
+  //
+  // The following nine tests asserted structural properties of the legacy
+  // KNOWLEDGE.md table scaffolding (Rules/Patterns/Lessons headers, P###/L###
+  // row templates, em-dash placeholders, append-only semantics, "missing file"
+  // template) and the gsd_save_decision call-out (parameter list, "never edit
+  // DECISIONS.md" prohibition). The cutover replaced both surfaces with
+  // capture_thought calls into the memories table; the extraction steps no
+  // longer reference KNOWLEDGE.md tables or gsd_save_decision at all, so each
+  // assertion is now structurally false.
+  //
+  // The replacement assertions ("removes the legacy KNOWLEDGE.md table append
+  // step", "removes the gsd_save_decision call", "requires structuredFields
+  // payload on architecture-category memories") below cover the inverse
+  // contract.
+  //
+  // Per ADR-013 cutover criterion: "No regression test in tests/ is silenced
+  // or removed without an explicit rationale comment in the diff." That
+  // criterion is satisfied by this comment block.
 
-  it("covers the missing-file case with the canonical KNOWLEDGE.md template", () => {
-    const block = buildExtractionStepsBlock(ctx);
-    assert.ok(block.includes("If the file does not exist yet, create it first"));
-    // Canonical column headers must be inlined so the LLM does not have to guess.
-    assert.ok(block.includes("| # | Scope | Rule | Why | Added |"));
-    assert.ok(block.includes("| # | Pattern | Where | Notes |"));
-    assert.ok(block.includes("| # | What Happened | Root Cause | Fix | Scope |"));
-  });
-
-  it("specifies the exact Patterns row format with milestone scope", () => {
-    const block = buildExtractionStepsBlock(ctx);
-    assert.ok(block.includes("| P<NNN>"));
-    assert.ok(block.includes(`| ${ctx.milestoneId} |`));
-  });
-
-  it("specifies the exact Lessons row format with milestone scope", () => {
-    const block = buildExtractionStepsBlock(ctx);
-    assert.ok(block.includes("| L<NNN>"));
-  });
-
-  it("enforces zero-padded three-digit IDs", () => {
-    const block = buildExtractionStepsBlock(ctx);
-    assert.ok(/zero[- ]pad/i.test(block));
-    assert.ok(block.includes("three digits") || block.includes("3 digits"));
-  });
-
-  it("instructs append-only behaviour (no edits to existing rows)", () => {
-    const block = buildExtractionStepsBlock(ctx);
-    assert.ok(block.includes("Append-only"));
-  });
-
-  it("uses em-dash as the placeholder for unknown column values", () => {
-    const block = buildExtractionStepsBlock(ctx);
-    assert.ok(block.includes("—"));
-    assert.ok(!block.includes("N/A"));
-  });
-
-  it("forbids modifications to the Rules table", () => {
-    const block = buildExtractionStepsBlock(ctx);
-    assert.ok(/do not.*rules/i.test(block.toLowerCase()) || block.includes("Do NOT modify"));
-    assert.ok(block.includes("## Rules"));
-  });
-
-  it("routes Decisions through the gsd_save_decision MCP tool", () => {
-    const block = buildExtractionStepsBlock(ctx);
-    assert.ok(block.includes("gsd_save_decision"));
-    assert.ok(block.includes("`scope`"));
-    assert.ok(block.includes("`decision`"));
-    assert.ok(block.includes("`choice`"));
-    assert.ok(block.includes("`rationale`"));
-    assert.ok(block.includes("`made_by`"));
-  });
-
-  it("forbids direct edits to DECISIONS.md (DB-authoritative)", () => {
-    const block = buildExtractionStepsBlock(ctx);
-    assert.ok(/never edit.+decisions\.md/i.test(block));
-  });
-
-  it("keeps Surprises milestone-local (not in KNOWLEDGE.md, no tool call)", () => {
+  it("keeps Surprises milestone-local (not persisted to memory store, no MCP call)", () => {
     const block = buildExtractionStepsBlock(ctx);
     assert.ok(block.includes("Surprises stay only in LEARNINGS.md"));
   });
@@ -527,27 +484,52 @@ describe("buildExtractionStepsBlock", () => {
     assert.ok(/skip/i.test(block));
   });
 
-  it("instructs capture_thought mirror writes for Patterns, Lessons, and Decisions (Option A' dual-write)", () => {
+  it("instructs capture_thought as the sole persistence path for Patterns, Lessons, and Decisions (ADR-013 step 6 cutover)", () => {
     const block = buildExtractionStepsBlock(ctx);
-    // Three persistence steps must each pair their legacy write with a capture_thought call.
+    // Each of the three persistence steps must call capture_thought.
     const captureThoughtMatches = block.match(/capture_thought/g) ?? [];
     assert.ok(
       captureThoughtMatches.length >= 3,
       `expected at least 3 capture_thought references (Patterns + Lessons + Decisions); got ${captureThoughtMatches.length}`,
     );
-    // Required category vocabulary for the three mirror writes.
-    assert.ok(/category:\s*"pattern"/.test(block), "Patterns mirror must use category: \"pattern\"");
-    assert.ok(/category:\s*"gotcha"/.test(block), "Lessons mirror must reference category: \"gotcha\"");
-    assert.ok(/category:\s*"architecture"/.test(block), "Decisions mirror must use category: \"architecture\"");
+    // Required category vocabulary for the three captures.
+    assert.ok(/category:\s*"pattern"/.test(block), "Patterns must use category: \"pattern\"");
+    assert.ok(/category:\s*"gotcha"/.test(block), "Lessons must reference category: \"gotcha\"");
+    assert.ok(/category:\s*"architecture"/.test(block), "Decisions must use category: \"architecture\"");
     // Milestone scope must be threaded through.
     assert.ok(block.includes(`scope: "${ctx.milestoneId}"`), "capture_thought calls must scope to the milestone ID");
   });
 
-  it("preserves the legacy KNOWLEDGE.md and gsd_save_decision writes alongside capture_thought (no cutover yet)", () => {
+  it("removes the legacy KNOWLEDGE.md table append step (ADR-013 step 6 cutover)", () => {
     const block = buildExtractionStepsBlock(ctx);
-    // The dual-write contract requires BOTH the legacy and new persistence paths to remain.
-    assert.ok(block.includes(".gsd/KNOWLEDGE.md"), "KNOWLEDGE.md append must remain (Option A' dual-write)");
-    assert.ok(block.includes("gsd_save_decision"), "gsd_save_decision must remain (Option A' dual-write)");
+    // ADR-013 Cutover: memories table is the single source of truth.
+    // KNOWLEDGE.md is no longer written by the extraction flow.
+    assert.ok(!block.includes("| # | Scope | Rule | Why | Added |"), "Rules table scaffolding must be removed");
+    assert.ok(!block.includes("| # | Pattern | Where | Notes |"), "Patterns table scaffolding must be removed");
+    assert.ok(!block.includes("| # | What Happened | Root Cause | Fix | Scope |"), "Lessons table scaffolding must be removed");
+    assert.ok(!/\| P<NNN>/.test(block), "Pattern row template must be removed");
+    assert.ok(!/\| L<NNN>/.test(block), "Lesson row template must be removed");
+    assert.ok(!block.includes(".gsd/KNOWLEDGE.md"), "extraction flow must not reference KNOWLEDGE.md as a write target");
+  });
+
+  it("removes the gsd_save_decision call (ADR-013 step 6 cutover)", () => {
+    const block = buildExtractionStepsBlock(ctx);
+    // ADR-013 Cutover: decisions are now persisted via capture_thought with
+    // category=architecture and a structuredFields payload that preserves the
+    // gsd_save_decision schema. The legacy MCP tool is no longer called from
+    // the extraction flow.
+    assert.ok(!block.includes("gsd_save_decision"), "gsd_save_decision must no longer appear in extraction steps");
+  });
+
+  it("requires structuredFields payload on architecture-category memories (ADR-013 lossless projection)", () => {
+    const block = buildExtractionStepsBlock(ctx);
+    // ADR-013 Cutover: architecture-category memories must carry structured
+    // fields so projection back to a human-visible decisions register stays
+    // lossless. The Decisions persistence step must instruct the LLM to set
+    // structuredFields with the original gsd_save_decision schema fields.
+    assert.ok(/structuredFields/.test(block), "Decisions persistence step must instruct structuredFields use");
+    assert.ok(/scope/i.test(block) && /decision/i.test(block) && /choice/i.test(block) && /rationale/i.test(block),
+      "structuredFields must enumerate the preserved decision fields");
   });
 
   it("does NOT reference the non-existent gsd_graph tool (#4429 regression)", () => {

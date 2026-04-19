@@ -4,13 +4,17 @@
  * Analyses completed milestone artefacts and dispatches an LLM turn that
  * extracts structured knowledge into 4 categories (Decisions · Lessons ·
  * Patterns · Surprises), writes a LEARNINGS.md audit trail, and persists
- * the durable subset to GSD's cross-session surfaces:
+ * the durable subset into the GSD memory store via capture_thought:
  *
- *   - Patterns + Lessons → appended to .gsd/KNOWLEDGE.md (inlined into
- *     every future dispatch prompt via auto-prompts::inlineGsdRootFile).
- *   - Decisions → persisted via the gsd_save_decision MCP tool, which
- *     regenerates .gsd/DECISIONS.md from the DB.
+ *   - Patterns  → capture_thought(category="pattern")
+ *   - Lessons   → capture_thought(category="gotcha" | "convention")
+ *   - Decisions → capture_thought(category="architecture", structuredFields=...)
  *   - Surprises → stay only in LEARNINGS.md (milestone-local context).
+ *
+ * Per ADR-013 step 6 (cutover), the memories table is the single source of
+ * truth for cross-session durable knowledge. The legacy KNOWLEDGE.md table
+ * appends and gsd_save_decision call-outs were removed from this flow; the
+ * pre-existing decisions table was migrated by the step 5 backfill.
  *
  * The same extraction steps are reused by the complete-milestone prompt
  * via buildExtractionStepsBlock — single source of truth.
@@ -78,7 +82,7 @@ export interface ExtractLearningsPromptContext {
  * Minimal context required to render the structured-extraction steps block.
  *
  * The block is milestone-scoped — it only needs the milestone ID (used for
- * `scope` columns and `gsd_save_decision` calls) and the LEARNINGS.md output
+ * `scope` on every capture_thought call) and the LEARNINGS.md output
  * path (both absolute for unambiguous writes and relative for display in the
  * prompt). Artefact content is NOT part of this context because both render
  * sites (manual path and complete-milestone auto path) supply it separately.
@@ -218,130 +222,63 @@ Using the \`write\` tool, persist the full structured report to
 LEARNINGS.md is the full, cited audit trail. Write it first — subsequent steps
 feed from its content.
 
-### Step 3 — Read \`.gsd/KNOWLEDGE.md\` to prepare append
+### Step 3 — Optionally pre-query the memory store for semantic duplicates
 
-Read \`.gsd/KNOWLEDGE.md\`. It is a markdown file with three tables:
-\`## Rules\`, \`## Patterns\`, and \`## Lessons Learned\`.
+Before persisting any extracted item in Steps 4–6, you may call
+\`memory_query\` with 2–3 keywords from the item to check whether the
+memory store already holds a semantically equivalent entry at high
+confidence. Skip those items in their respective steps. The memory store
+is the single source of truth for cross-session durable knowledge — no
+other persistence call is part of this flow.
 
-If the file does not exist yet, create it first using the \`write\` tool with
-exactly this canonical structure, then treat all tables as empty (next IDs
-\`P001\` / \`L001\`):
+### Step 4 — Persist Patterns via \`capture_thought\`
 
-\`\`\`
-# Project Knowledge
-
-Append-only register of project-specific rules, patterns, and lessons learned.
-Agents read this before every unit. Add entries when you discover something worth remembering.
-
-## Rules
-
-| # | Scope | Rule | Why | Added |
-|---|-------|------|-----|-------|
-
-## Patterns
-
-| # | Pattern | Where | Notes |
-|---|---------|-------|-------|
-
-## Lessons Learned
-
-| # | What Happened | Root Cause | Fix | Scope |
-|---|--------------|------------|-----|-------|
-\`\`\`
-
-If the file already exists:
-
-- find the highest existing \`P###\` ID in the \`## Patterns\` table — the next pattern ID is that + 1, zero-padded to three digits
-- find the highest existing \`L###\` ID in the \`## Lessons Learned\` table — same rule for the next lesson ID
-- read the existing \`Pattern\` and \`What Happened\` column text so you can skip semantic duplicates in steps 4 and 5
-
-### Step 4 — Append Patterns to \`## Patterns\` AND mirror to memory store
-
-For each extracted Pattern that is **not** already represented in the table
-(semantic match, not exact-string match), append exactly one row to the
-\`## Patterns\` table in \`.gsd/KNOWLEDGE.md\`:
-
-\`\`\`
-| P<NNN> | <Pattern — one concise line> | <Where — component / file / subsystem> | ${ctx.milestoneId} |
-\`\`\`
-
-Rules:
-- Zero-pad IDs to three digits (\`P017\`, not \`P17\`).
-- Append-only — never reorder, edit, or delete existing rows.
-- If a column value is genuinely unknown, write \`—\` (em-dash). Never leave a cell empty.
-
-**After appending each row, also call \`capture_thought\`** with:
+For each extracted Pattern, call \`capture_thought\` exactly once with:
 - \`category: "pattern"\`
 - \`content\`: a 1–2 sentence restatement combining the Pattern, Where, and any non-obvious notes
 - \`scope: "${ctx.milestoneId}"\`
 
-This dual-write keeps KNOWLEDGE.md as the human-visible audit table while
-making the same insight retrievable via \`memory_query\` in future sessions.
+Skip the call if a high-confidence semantic duplicate is already present
+(see Step 7 dedup rule).
 
-### Step 5 — Append Lessons to \`## Lessons Learned\` AND mirror to memory store
+### Step 5 — Persist Lessons via \`capture_thought\`
 
-For each extracted Lesson that is not already represented, append one row to
-the \`## Lessons Learned\` table:
-
-\`\`\`
-| L<NNN> | <What happened> | <Root cause> | <Fix or forward guidance> | ${ctx.milestoneId} |
-\`\`\`
-
-Same ID numbering, append-only, and em-dash rules as Step 4.
-
-**After appending each row, also call \`capture_thought\`** with:
+For each extracted Lesson, call \`capture_thought\` exactly once with:
 - \`category: "gotcha"\` when the Lesson describes a pitfall, surprise root cause, or recurring failure mode; \`category: "convention"\` when it describes a project-wide rule or normative practice
 - \`content\`: a 1–3 sentence restatement of What Happened + Root Cause + Fix
 - \`scope: "${ctx.milestoneId}"\`
 
-### Step 6 — Do NOT modify the \`## Rules\` table
+Skip the call if a high-confidence semantic duplicate is already present
+(see Step 7 dedup rule).
 
-The \`## Rules\` table holds project-wide constraints authored manually via
-\`/gsd knowledge\`. Milestone learnings never produce rules — leave this
-table untouched.
+### Step 6 — Persist Decisions via \`capture_thought\`
 
-### Step 7 — Persist Decisions via \`gsd_save_decision\` AND mirror to memory store
-
-For each extracted Decision, call the \`gsd_save_decision\` MCP tool exactly
-once with these parameters:
-
-- \`scope\` (string) — \`"${ctx.milestoneId}"\`
-- \`decision\` (string) — the question or issue that was decided
-- \`choice\` (string) — the concrete option selected
-- \`rationale\` (string) — why this choice was made, with a brief citation to the source artefact
-- \`made_by\` (string) — \`"agent"\`
-- \`revisable\` (string, optional) — \`"yes"\` or \`"no"\` only if the source artefact clearly indicates reversibility; otherwise omit
-
-The tool writes the decision to the GSD database and regenerates
-\`.gsd/DECISIONS.md\` atomically. Never edit \`DECISIONS.md\` manually — the
-file is DB-authoritative and manual edits will be overwritten.
-
-**After \`gsd_save_decision\` succeeds, also call \`capture_thought\`** with:
+For each extracted Decision, call \`capture_thought\` exactly once with:
 - \`category: "architecture"\`
 - \`content\`: a 1–3 sentence restatement combining decision + choice + rationale (e.g. "Chose X over Y because Z")
 - \`scope: "${ctx.milestoneId}"\`
+- \`structuredFields\`: an object preserving the original decision schema:
+  \`{ scope: "${ctx.milestoneId}", decision: <question>, choice: <option>, rationale: <why>, made_by: "agent", revisable: "yes" | "no" | omit }\`
 
-This dual-write makes the decision retrievable via \`memory_query\` in future
-sessions while keeping \`gsd_save_decision\` as the canonical structured record.
+Skip the call if a high-confidence semantic duplicate is already present.
+
+The structured payload is required for architecture-category memories so
+later projection back to a human-visible decisions register stays lossless
+(ADR-013 source-of-truth boundaries).
+
+### Step 7 — Deduplication rule (applies to Steps 4, 5, 6)
+
+Before each \`capture_thought\` call, optionally call \`memory_query\` with 2–3
+keywords from the entry. If a semantically equivalent memory is returned at
+high confidence, skip the capture entirely. Prefer skipping a near-duplicate
+over creating a second slightly-different row — redundancy degrades the
+signal.
 
 ### Step 8 — Surprises stay only in LEARNINGS.md
 
 Surprises are milestone-local context and are NOT cross-session-reusable. Do
-not append them to \`KNOWLEDGE.md\`. Do not persist them via any MCP tool.
-They are captured only in the LEARNINGS.md file written in Step 2.
-
-### Step 9 — Deduplication rule (applies to Steps 4, 5, 7)
-
-Before appending a Pattern or Lesson row, or before calling
-\`gsd_save_decision\`, check whether a semantically equivalent entry already
-exists in the target surface. If so, skip that item entirely — including the
-paired \`capture_thought\` call. Prefer skipping a near-duplicate over creating
-a second slightly-different row — redundancy degrades the signal.
-
-For the \`capture_thought\` mirror writes, optionally call \`memory_query\` with
-2–3 keywords from the entry first; if a high-confidence semantic duplicate is
-returned, skip the \`capture_thought\` call (the legacy KNOWLEDGE.md or
-\`gsd_save_decision\` write may still proceed if its target is empty).`;
+not persist them via \`capture_thought\` or any other MCP tool. They are
+captured only in the LEARNINGS.md file written in Step 2.`;
 }
 
 /**
@@ -352,7 +289,7 @@ returned, skip the \`capture_thought\` call (the legacy KNOWLEDGE.md or
  * canonical {@link buildExtractionStepsBlock} procedure. The same procedure is
  * rendered verbatim in the auto-mode `complete-milestone` turn via the
  * `{{extractLearningsSteps}}` placeholder, guaranteeing a single source of
- * truth for how learnings flow into `KNOWLEDGE.md` and the DECISIONS database.
+ * truth for how learnings flow into the GSD memory store via capture_thought.
  *
  * Missing optional artefacts are surfaced as a note at the end of the artefact
  * section so the LLM can mark them explicitly in the LEARNINGS frontmatter.
