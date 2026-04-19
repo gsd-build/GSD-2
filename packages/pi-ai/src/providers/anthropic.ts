@@ -24,6 +24,15 @@ import {
 // Re-export types used by other modules
 export type { AnthropicEffort, AnthropicOptions };
 export { extractRetryAfterMs };
+export { resolveAnthropicBaseUrl };
+
+/**
+ * Resolve the Anthropic API base URL.
+ * Supports custom proxy endpoints via ANTHROPIC_BASE_URL env var.
+ */
+export function resolveAnthropicBaseUrl(modelBaseUrl: string): string {
+	return process.env.ANTHROPIC_BASE_URL || modelBaseUrl;
+}
 
 /**
  * Resolve the base URL for Anthropic API requests.
@@ -112,13 +121,13 @@ async function createClient(
 		betaFeatures.push("interleaved-thinking-2025-05-14");
 	}
 
-	// API key auth (Anthropic OAuth removed per TOS compliance — use API keys or Claude CLI)
 	// Some Anthropic-compatible providers require Bearer auth instead of x-api-key.
+	// Support custom Anthropic API proxy via ANTHROPIC_BASE_URL
 	const usesBearerAuth = usesAnthropicBearerAuth(model.provider);
 	const client = new AnthropicClass({
 		apiKey: usesBearerAuth ? null : apiKey,
 		authToken: usesBearerAuth ? apiKey : undefined,
-		baseURL: model.baseUrl,
+		baseURL: resolveAnthropicBaseUrl(model.baseUrl),
 		dangerouslyAllowBrowser: true,
 		defaultHeaders: mergeHeaders(
 			{
