@@ -5,6 +5,7 @@ import {
   IDLE_TIMEOUT_MS,
   NEW_MILESTONE_IDLE_TIMEOUT_MS,
   getHeadlessIdleTimeout,
+  shouldArmHeadlessIdleTimeout,
   shouldArmIdleTimeout,
 } from "../headless-events.js";
 
@@ -24,4 +25,10 @@ test("shouldArmIdleTimeout requires both tool activity and a positive timeout", 
   assert.equal(shouldArmIdleTimeout(0, IDLE_TIMEOUT_MS), false);
   assert.equal(shouldArmIdleTimeout(1, 0), false);
   assert.equal(shouldArmIdleTimeout(2, IDLE_TIMEOUT_MS), true);
+});
+
+test("shouldArmHeadlessIdleTimeout stays disabled while interactive tools are pending", () => {
+  assert.equal(shouldArmHeadlessIdleTimeout(0, 0), false);
+  assert.equal(shouldArmHeadlessIdleTimeout(1, 1), false);
+  assert.equal(shouldArmHeadlessIdleTimeout(2, 0), true);
 });
