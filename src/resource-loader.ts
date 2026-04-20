@@ -393,7 +393,7 @@ function reconcileMergedNodeModules(
       // Skip the gsd-pi package itself and dotfiles
       if (entry.name === basename(packageRoot)) continue
       if (entry.name.startsWith('.')) continue
-      try { symlinkSync(join(hoisted, entry.name), join(agentNodeModules, entry.name)); linkedCount++ } catch { /* skip individual */ }
+      try { symlinkSync(join(hoisted, entry.name), join(agentNodeModules, entry.name), 'junction'); linkedCount++ } catch { /* skip individual */ }
     }
   } catch (err) {
     console.error(`[gsd] WARN: Failed to read hoisted node_modules at ${hoisted}: ${err instanceof Error ? err.message : err}`)
@@ -408,7 +408,7 @@ function reconcileMergedNodeModules(
       const link = join(agentNodeModules, entry.name)
       // Replace hoisted symlink with internal version (internal takes precedence)
       try { lstatSync(link); unlinkSync(link) } catch { /* didn't exist — will create below */ }
-      try { symlinkSync(join(internal, entry.name), link); linkedCount++ } catch { /* skip individual */ }
+      try { symlinkSync(join(internal, entry.name), link, 'junction'); linkedCount++ } catch { /* skip individual */ }
     }
   } catch (err) {
     console.error(`[gsd] WARN: Failed to read internal node_modules at ${internal}: ${err instanceof Error ? err.message : err}`)
@@ -522,7 +522,7 @@ function pruneRemovedBundledExtensions(
  *
  * Inspectable: `ls ~/.gsd/agent/extensions/`
  */
-export function initResources(agentDir: string): void {
+export function initResources(agentDir: string, skillsDir: string = join(homedir(), '.agents', 'skills')): void {
   mkdirSync(agentDir, { recursive: true })
 
   const currentVersion = getBundledGsdVersion()
@@ -561,13 +561,7 @@ export function initResources(agentDir: string): void {
 
   syncResourceDir(bundledExtensionsDir, join(agentDir, 'extensions'))
   syncResourceDir(join(resourcesDir, 'agents'), join(agentDir, 'agents'))
-  // Skills are no longer force-synced here. Users install skills via the
-  // skills.sh CLI (`npx skills add <repo>`) into ~/.agents/skills/ which
-  // is the industry-standard Agent Skills ecosystem directory.
-  //
-  // Migration from the legacy ~/.gsd/agent/skills/ directory is handled
-  // above the manifest check so it runs on every launch (including retries
-  // after partial copy failures).
+  syncResourceDir(join(resourcesDir, 'skills'), skillsDir)
 
   // Sync GSD-WORKFLOW.md to agentDir as a fallback for when GSD_WORKFLOW_PATH
   // env var is not set (e.g. fork/dev builds, alternative entry points).

@@ -15,6 +15,26 @@ function git(cwd: string, ...args: string[]): string {
   }).trim();
 }
 
+test("validateFileChanges works on repos with a single commit (no HEAD~1)", (t) => {
+  const base = mkdtempSync(join(tmpdir(), "gsd-file-change-validator-"));
+  t.after(() => rmSync(base, { recursive: true, force: true }));
+
+  git(base, "init");
+  git(base, "config", "user.email", "test@example.com");
+  git(base, "config", "user.name", "Test User");
+
+  writeFileSync(join(base, "foo.ts"), "export const x = 1;\n");
+  git(base, "add", ".");
+  git(base, "commit", "-m", "initial");
+
+  // With only one commit, HEAD~1 doesn't exist — this must not throw
+  const audit = validateFileChanges(base, ["foo.ts"], []);
+
+  assert.ok(audit, "audit should be produced for single-commit repo");
+  assert.deepEqual(audit.unexpectedFiles, []);
+  assert.deepEqual(audit.missingFiles, []);
+});
+
 test("validateFileChanges ignores inline descriptions in expected output paths", (t) => {
   const base = mkdtempSync(join(tmpdir(), "gsd-file-change-validator-"));
   t.after(() => rmSync(base, { recursive: true, force: true }));

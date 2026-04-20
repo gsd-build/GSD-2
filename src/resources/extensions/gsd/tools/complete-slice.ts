@@ -21,7 +21,10 @@ import {
   getMilestone,
   updateSliceStatus,
   setSliceSummaryMd,
+  saveGateResult,
+  getPendingGatesForTurn,
 } from "../gsd-db.js";
+import { getGatesForTurn } from "../gate-registry.js";
 import { resolveSliceFile, resolveSlicePath, clearPathCache } from "../paths.js";
 import { checkOwnership, sliceUnitKey } from "../unit-ownership.js";
 import { saveFile, clearParseCache } from "../files.js";
@@ -37,6 +40,23 @@ export interface CompleteSliceResult {
   milestoneId: string;
   summaryPath: string;
   uatPath: string;
+}
+
+/**
+ * Map a complete-slice-owned gate id to the CompleteSliceParams field
+ * whose presence drives `pass` vs. `omitted`. Keep this in lockstep with
+ * the gates declared in gate-registry.ts under ownerTurn "complete-slice".
+ */
+function sliceGateFieldForId(
+  id: string,
+  params: CompleteSliceParams,
+): string | undefined {
+  switch (id) {
+    case "Q8":
+      return params.operationalReadiness;
+    default:
+      return undefined;
+  }
 }
 
 /**
@@ -168,6 +188,10 @@ ${reqSurfaced}
 ## Requirements Invalidated or Re-scoped
 
 ${reqInvalidated}
+
+## Operational Readiness
+
+${params.operationalReadiness?.trim() || "None."}
 
 ## Deviations
 
@@ -330,6 +354,45 @@ export async function handleCompleteSlice(
   // Store rendered markdown in DB for D004 recovery
   setSliceSummaryMd(params.milestoneId, params.sliceId, summaryMd, uatMd);
 
+  // ── Close gates owned by complete-slice (Q8) ───────────────────────────
+  // Each owned gate maps to a specific summary section via the registry.
+  // If the caller populated the corresponding field, record `pass`; if the
+  // field is empty, record `omitted`. Without this loop, Q8 would stay
+  // pending forever and block future state derivation (see gate-registry).
+  try {
+    const pendingGates = getPendingGatesForTurn(
+      params.milestoneId,
+      params.sliceId,
+      "complete-slice",
+    );
+    if (pendingGates.length > 0) {
+      const ownedDefs = new Map(getGatesForTurn("complete-slice").map((g) => [g.id, g] as const));
+      for (const row of pendingGates) {
+        const def = ownedDefs.get(row.gate_id);
+        if (!def) continue;
+        // Map gate id → param field it maps to. Keep the map local so
+        // adding a new complete-slice gate is a single place change.
+        const field = sliceGateFieldForId(def.id, params);
+        const hasContent = typeof field === "string" && field.trim().length > 0;
+        saveGateResult({
+          milestoneId: params.milestoneId,
+          sliceId: params.sliceId,
+          gateId: def.id,
+          verdict: hasContent ? "pass" : "omitted",
+          rationale: hasContent
+            ? `${def.promptSection} section populated in slice summary`
+            : `${def.promptSection} section left empty — recorded as omitted`,
+          findings: hasContent ? (field as string).trim() : "",
+        });
+      }
+    }
+  } catch (gateErr) {
+    logWarning(
+      "tool",
+      `complete-slice gate close warning for ${params.milestoneId}/${params.sliceId}: ${(gateErr as Error).message}`,
+    );
+  }
+
   // Invalidate all caches
   invalidateStateCache();
   clearPathCache();
@@ -360,6 +423,32 @@ export async function handleCompleteSlice(
   } catch (eventErr) {
     logError("tool", `complete-slice event log FAILED — completion invisible to reconciliation`, { error: (eventErr as Error).message });
   }
+
+  // Fire-and-forget graph rebuild — must NOT await, must NOT crash slice completion.
+  // Dynamic import of the package name (not a relative path) so it resolves
+  // correctly via package.json#exports in both development and production.
+  // eslint-disable-next-line @typescript-eslint/no-floating-promises
+  (async () => {
+    try {
+      const graphMod = await import("@gsd-build/mcp-server") as unknown as Partial<{
+        buildGraph: (dir: string) => Promise<{ nodes: unknown[]; edges: unknown[]; builtAt: string }>;
+        writeGraph: (gsdRoot: string, graph: unknown) => Promise<void>;
+        resolveGsdRoot: (basePath: string) => string;
+      }>;
+      if (
+        typeof graphMod.buildGraph !== "function"
+        || typeof graphMod.writeGraph !== "function"
+        || typeof graphMod.resolveGsdRoot !== "function"
+      ) {
+        throw new Error("graph helpers unavailable from @gsd-build/mcp-server");
+      }
+      const g = await graphMod.buildGraph(basePath);
+      await graphMod.writeGraph(graphMod.resolveGsdRoot(basePath), g);
+    } catch (graphErr) {
+      // Graph rebuild is best-effort — log at warning level but never propagate
+      logWarning("tool", `complete-slice graph rebuild failed (non-fatal): ${(graphErr as Error).message ?? String(graphErr)}`);
+    }
+  })();
 
   return {
     sliceId: params.sliceId,

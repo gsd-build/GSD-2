@@ -52,7 +52,6 @@ describe("notification-widget", () => {
 
     const lines = buildNotificationWidgetLines();
     assert.equal(lines.length, 1);
-    // Must not contain any newline characters
     assert.ok(!lines[0].includes("\n"), "widget line must not contain newlines");
   });
 
@@ -61,7 +60,6 @@ describe("notification-widget", () => {
     const lines = buildNotificationWidgetLines();
     assert.equal(lines.length, 1);
     assert.ok(!lines[0].includes("\n"));
-    // The flattened message content itself should not have runs of multiple spaces
     assert.ok(lines[0].includes("Line one Line two Line three"), "should collapse newlines and extra whitespace into single spaces");
   });
 
@@ -101,7 +99,6 @@ describe("notification-widget", () => {
   });
 
   test("real-world codebase stats notification produces no newlines", () => {
-    // This is the exact message that caused the UI layout shift bug
     const statsMsg =
       "Codebase Map Stats:\n" +
       "  Files: 500\n" +

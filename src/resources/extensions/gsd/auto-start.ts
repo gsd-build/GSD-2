@@ -83,7 +83,11 @@ import { join } from "node:path";
 import { sep as pathSep } from "node:path";
 
 import { resolveProjectRootDbPath } from "./bootstrap/dynamic-tools.js";
-import { resolveDefaultSessionModel, resolveDynamicRoutingConfig } from "./preferences-models.js";
+import {
+  isCustomProvider,
+  resolveDefaultSessionModel,
+  resolveDynamicRoutingConfig,
+} from "./preferences-models.js";
 import type { WorktreeResolver } from "./worktree-resolver.js";
 import { getSessionModelOverride } from "./session-model-override.js";
 
@@ -269,13 +273,23 @@ export async function bootstrapAutoSession(
   //
   // Precedence:
   // 1) Explicit session override via /gsd model (this session)
-  // 2) GSD model preferences from PREFERENCES.md (validated against live auth)
-  // 3) Current session model from settings/session restore (if provider ready)
+  // 2) Current session model from settings/session restore (if provider ready)
+  // 3) GSD model preferences from PREFERENCES.md (validated against live auth)
   //
   // This preserves #3517 defaults while honoring explicit runtime model
   // selection for subsequent /gsd runs in the same session.
+  //
+  // Exception (#4122): when the session provider is a custom provider declared
+  // in ~/.gsd/agent/models.json (Ollama, vLLM, OpenAI-compatible proxy, etc.),
+  // PREFERENCES.md is skipped entirely. PREFERENCES.md cannot reference custom
+  // providers, so honoring it would silently reroute auto-mode to a built-in
+  // provider the user is not logged into and surface as "Not logged in · Please
+  // run /login" before pausing and resetting to claude-code/claude-sonnet-4-6.
   const manualSessionOverride = getSessionModelOverride(ctx.sessionManager.getSessionId());
-  const preferredModel = resolveDefaultSessionModel(ctx.model?.provider);
+  const sessionProviderIsCustom = isCustomProvider(ctx.model?.provider);
+  const preferredModel = sessionProviderIsCustom
+    ? null
+    : resolveDefaultSessionModel(ctx.model?.provider);
   // Validate the preferred model against the live registry + provider auth so
   // an unconfigured PREFERENCES.md entry (no API key / OAuth) can't become the
   // start-model snapshot. Without this, every subsequent unit would try to
@@ -300,11 +314,14 @@ export async function bootstrapAutoSession(
   }
   const sessionModelReady =
     ctx.model && ctx.modelRegistry.isProviderRequestReady(ctx.model.provider);
+  const currentSessionModel = (sessionModelReady && ctx.model)
+    ? { provider: ctx.model.provider, id: ctx.model.id }
+    : null;
+  const startThinkingSnapshot = pi.getThinkingLevel();
   const startModelSnapshot = manualSessionOverride
+    ?? currentSessionModel
     ?? validatedPreferredModel
-    ?? (sessionModelReady && ctx.model
-      ? { provider: ctx.model.provider, id: ctx.model.id }
-      : null);
+    ?? null;
 
   try {
     // Validate GSD_PROJECT_ID early so the user gets immediate feedback
@@ -450,11 +467,12 @@ export async function bootstrapAutoSession(
     // Detect survivor milestone branches in both pre-planning and complete phases.
     // In phase=complete, the milestone artifacts exist but finalization (merge,
     // worktree cleanup) was never run — the survivor branch must be merged.
+    // Applies to both worktree and branch isolation modes.
     let hasSurvivorBranch = false;
     if (
       state.activeMilestone &&
       (state.phase === "pre-planning" || state.phase === "complete") &&
-      shouldUseWorktreeIsolation() &&
+      getIsolationMode() !== "none" &&
       !detectWorktreeName(base) &&
       !base.includes(`${pathSep}.gsd${pathSep}worktrees${pathSep}`)
     ) {
@@ -624,6 +642,9 @@ export async function bootstrapAutoSession(
     s.consecutiveCompleteBootstraps = 0;
 
     // ── Initialize session state ──
+    // Notify shared phase state so subagent conflict checks can fire
+    const { activateGSD: activateGSDPhaseState } = await import("../shared/gsd-phase-state.js");
+    activateGSDPhaseState();
     s.active = true;
     s.stepMode = requestedStepMode;
     s.verbose = verboseMode;
@@ -646,8 +667,9 @@ export async function bootstrapAutoSession(
     s.pendingQuickTasks = [];
     s.currentUnit = null;
     s.currentMilestoneId = state.activeMilestone?.id ?? null;
-    s.originalModelId = ctx.model?.id ?? null;
-    s.originalModelProvider = ctx.model?.provider ?? null;
+    s.originalModelId = startModelSnapshot?.id ?? ctx.model?.id ?? null;
+    s.originalModelProvider = startModelSnapshot?.provider ?? ctx.model?.provider ?? null;
+    s.originalThinkingLevel = startThinkingSnapshot ?? null;
 
     // Register SIGTERM handler
     registerSigtermHandler(base);
@@ -694,7 +716,7 @@ export async function bootstrapAutoSession(
 
     if (
       s.currentMilestoneId &&
-      shouldUseWorktreeIsolation() &&
+      getIsolationMode() !== "none" &&
       !detectWorktreeName(base) &&
       !isUnderGsdWorktrees(base)
     ) {
@@ -761,6 +783,7 @@ export async function bootstrapAutoSession(
         id: startModelSnapshot.id,
       };
     }
+    s.autoModeStartThinkingLevel = startThinkingSnapshot ?? null;
     s.manualSessionModelOverride = manualSessionOverride ?? null;
 
     // Apply worker model override from parallel orchestrator (#worker-model).
@@ -789,6 +812,9 @@ export async function bootstrapAutoSession(
 
     ctx.ui.setStatus("gsd-auto", s.stepMode ? "next" : "auto");
     ctx.ui.setFooter(hideFooter);
+    // Hide gsd-health during AUTO — gsd-progress is the single source of truth
+    // for last-commit / cost / health signal while auto is running.
+    ctx.ui.setWidget("gsd-health", undefined);
     const modeLabel = s.stepMode ? "Step-mode" : "Auto-mode";
     const pendingCount = (state.registry ?? []).filter(
       (m) => m.status !== "complete" && m.status !== "parked",
@@ -808,12 +834,20 @@ export async function bootstrapAutoSession(
       ? `${s.autoModeStartModel.provider}/${s.autoModeStartModel.id}`
       : ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "default";
 
-    // Flat-rate providers (e.g. GitHub Copilot, claude-code) suppress routing
-    // at dispatch time (#3453) — reflect that in the banner.
-    const { isFlatRateProvider } = await import("./auto-model-selection.js");
+    // Flat-rate providers (e.g. GitHub Copilot, claude-code, user-declared
+    // subscription proxies, externalCli CLIs) suppress routing at dispatch
+    // time (#3453) — reflect that in the banner.  Thread the same
+    // FlatRateContext used by selectAndApplyModel so user-declared
+    // flat-rate providers and externalCli auto-detection are respected.
+    const { isFlatRateProvider, buildFlatRateContext } = await import("./auto-model-selection.js");
+    const bannerPrefs = loadEffectiveGSDPreferences()?.preferences;
     const effectiveProvider = s.autoModeStartModel?.provider ?? ctx.model?.provider;
     const effectivelyEnabled = routingConfig.enabled
-      && !(effectiveProvider && isFlatRateProvider(effectiveProvider));
+      && (routingConfig.allow_flat_rate_providers
+        || !(effectiveProvider && isFlatRateProvider(
+          effectiveProvider,
+          buildFlatRateContext(effectiveProvider, ctx, bannerPrefs),
+        )));
 
     // The actual ceiling may come from tier_models.heavy, not the start model.
     const effectiveCeiling = (routingConfig.enabled && routingConfig.tier_models?.heavy)

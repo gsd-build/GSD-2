@@ -20,8 +20,10 @@ import { readRoadmap } from './readers/roadmap.js';
 import { readHistory } from './readers/metrics.js';
 import { readCaptures } from './readers/captures.js';
 import { readKnowledge } from './readers/knowledge.js';
+import { buildGraph, writeGraph, writeSnapshot, graphStatus, graphQuery, graphDiff } from './readers/graph.js';
+import { resolveGsdRoot } from './readers/paths.js';
 import { runDoctorLite } from './readers/doctor-lite.js';
-import { registerWorkflowTools } from './workflow-tools.js';
+import { registerWorkflowTools, validateProjectDir } from './workflow-tools.js';
 import { applySecrets, checkExistingEnvKeys, detectDestination } from './env-writer.js';
 
 // ---------------------------------------------------------------------------
@@ -55,46 +57,80 @@ function textContent(text: string): { content: Array<{ type: 'text'; text: strin
 // gsd_query filesystem reader
 // ---------------------------------------------------------------------------
 
-async function readProjectState(projectDir: string, _query: string): Promise<Record<string, unknown>> {
+/**
+ * Normalized query categories for {@link readProjectState}.
+ *
+ * Maps user-supplied query strings (or empty) to the set of fields we return.
+ * Accepts common synonyms so the MCP client can pass intuitive values.
+ */
+const QUERY_FIELDS = {
+  all: ['state', 'project', 'requirements', 'milestones'] as const,
+  state: ['state'] as const,
+  status: ['state'] as const,
+  project: ['project'] as const,
+  requirements: ['requirements'] as const,
+  milestones: ['milestones'] as const,
+} as const;
+
+type QueryCategory = keyof typeof QUERY_FIELDS;
+type ProjectStateField = (typeof QUERY_FIELDS)[QueryCategory][number];
+
+function normalizeQuery(query: string | undefined): QueryCategory {
+  const key = (query ?? 'all').trim().toLowerCase();
+  if (key in QUERY_FIELDS) return key as QueryCategory;
+  return 'all';
+}
+
+async function readProjectState(projectDir: string, query: string | undefined): Promise<Record<string, unknown>> {
   const gsdDir = join(resolve(projectDir), '.gsd');
-  const result: Record<string, unknown> = { projectDir: resolve(projectDir) };
+  const category = normalizeQuery(query);
+  const wanted = new Set<ProjectStateField>(QUERY_FIELDS[category]);
 
-  // STATE.md — current execution state
-  try {
-    result.state = await readFile(join(gsdDir, 'STATE.md'), 'utf-8');
-  } catch {
-    result.state = null;
-  }
+  const result: Record<string, unknown> = {
+    projectDir: resolve(projectDir),
+    query: category,
+  };
 
-  // PROJECT.md — project description
-  try {
-    result.project = await readFile(join(gsdDir, 'PROJECT.md'), 'utf-8');
-  } catch {
-    result.project = null;
-  }
-
-  // REQUIREMENTS.md — requirement contract
-  try {
-    result.requirements = await readFile(join(gsdDir, 'REQUIREMENTS.md'), 'utf-8');
-  } catch {
-    result.requirements = null;
-  }
-
-  // List milestones with basic metadata
-  const milestonesDir = join(gsdDir, 'milestones');
-  try {
-    const entries = await readdir(milestonesDir, { withFileTypes: true });
-    const milestones: Array<{ id: string; hasRoadmap: boolean; hasSummary: boolean }> = [];
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      const mDir = join(milestonesDir, entry.name);
-      const hasRoadmap = await fileExists(join(mDir, `${entry.name}-ROADMAP.md`));
-      const hasSummary = await fileExists(join(mDir, `${entry.name}-SUMMARY.md`));
-      milestones.push({ id: entry.name, hasRoadmap, hasSummary });
+  if (wanted.has('state')) {
+    try {
+      result.state = await readFile(join(gsdDir, 'STATE.md'), 'utf-8');
+    } catch {
+      result.state = null;
     }
-    result.milestones = milestones;
-  } catch {
-    result.milestones = [];
+  }
+
+  if (wanted.has('project')) {
+    try {
+      result.project = await readFile(join(gsdDir, 'PROJECT.md'), 'utf-8');
+    } catch {
+      result.project = null;
+    }
+  }
+
+  if (wanted.has('requirements')) {
+    try {
+      result.requirements = await readFile(join(gsdDir, 'REQUIREMENTS.md'), 'utf-8');
+    } catch {
+      result.requirements = null;
+    }
+  }
+
+  if (wanted.has('milestones')) {
+    const milestonesDir = join(gsdDir, 'milestones');
+    try {
+      const entries = await readdir(milestonesDir, { withFileTypes: true });
+      const milestones: Array<{ id: string; hasRoadmap: boolean; hasSummary: boolean }> = [];
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const mDir = join(milestonesDir, entry.name);
+        const hasRoadmap = await fileExists(join(mDir, `${entry.name}-ROADMAP.md`));
+        const hasSummary = await fileExists(join(mDir, `${entry.name}-SUMMARY.md`));
+        milestones.push({ id: entry.name, hasRoadmap, hasSummary });
+      }
+      result.milestones = milestones;
+    } catch {
+      result.milestones = [];
+    }
   }
 
   return result;
@@ -128,8 +164,25 @@ interface ElicitRequestFormParams {
   };
 }
 
+/**
+ * Handler extra — the second argument passed by McpServer.tool handlers.
+ * Contains an AbortSignal scoped to the JSON-RPC request (cancelled when
+ * the client cancels the `tools/call`) plus other per-request metadata.
+ * Tools that can actually be stopped mid-flight should honour `signal`.
+ */
+export interface McpToolExtra {
+  signal?: AbortSignal;
+  requestId?: string | number;
+  sendNotification?: (notification: unknown) => void | Promise<void>;
+}
+
 interface McpServerInstance {
-  tool(name: string, description: string, params: Record<string, unknown>, handler: (args: Record<string, unknown>) => Promise<unknown>): unknown;
+  tool(
+    name: string,
+    description: string,
+    params: Record<string, unknown>,
+    handler: (args: Record<string, unknown>, extra?: McpToolExtra) => Promise<unknown>,
+  ): unknown;
   server: {
     elicitInput(
       params: AskUserQuestionsElicitRequest | ElicitRequestFormParams,
@@ -302,7 +355,12 @@ export async function createMcpServer(sessionManager: SessionManager): Promise<{
   );
 
   // -----------------------------------------------------------------------
-  // gsd_execute — start a new GSD auto-mode session
+  // gsd_execute — start a new GSD auto-mode session.
+  //
+  // If the JSON-RPC request is aborted while the session is starting (or
+  // immediately after), we cancel the session so we don't leak a background
+  // RpcClient process. Once the session is running the caller should use
+  // `gsd_cancel` to stop it via sessionId.
   // -----------------------------------------------------------------------
   server.tool(
     'gsd_execute',
@@ -313,12 +371,20 @@ export async function createMcpServer(sessionManager: SessionManager): Promise<{
       model: z.string().optional().describe('Model ID override'),
       bare: z.boolean().optional().describe('Run in bare mode (skip user config)'),
     },
-    async (args: Record<string, unknown>) => {
+    async (args: Record<string, unknown>, extra?: McpToolExtra) => {
       const { projectDir, command, model, bare } = args as {
         projectDir: string; command?: string; model?: string; bare?: boolean;
       };
       try {
         const sessionId = await sessionManager.startSession(projectDir, { command, model, bare });
+
+        // If the client aborted while startSession was running, cancel the
+        // newly-created session rather than leaving an orphaned process.
+        if (extra?.signal?.aborted) {
+          await sessionManager.cancelSession(sessionId).catch(() => { /* swallow */ });
+          return errorContent('gsd_execute aborted by client before returning');
+        }
+
         return jsonContent({ sessionId, status: 'started' });
       } catch (err) {
         return errorContent(err instanceof Error ? err.message : String(err));
@@ -411,19 +477,28 @@ export async function createMcpServer(sessionManager: SessionManager): Promise<{
   );
 
   // -----------------------------------------------------------------------
-  // gsd_query — read project state from filesystem (no session needed)
+  // gsd_query — read project state from filesystem (no session needed).
+  //
+  // `query` is optional: when omitted the tool returns all fields (STATE.md,
+  // PROJECT.md, requirements, milestone listing). Accepted narrow values:
+  // "state" / "status", "project", "requirements", "milestones", "all".
+  // Unknown values fall back to "all" for forward-compatibility.
   // -----------------------------------------------------------------------
   server.tool(
     'gsd_query',
-    'Query GSD project state from the filesystem. Returns STATE.md, PROJECT.md, requirements, and milestone listing. Does not require an active session.',
+    'Query GSD project state from the filesystem. By default returns STATE.md, PROJECT.md, requirements, and milestone listing. Pass `query` to narrow the response (accepted: "state"/"status", "project", "requirements", "milestones", "all"). Does not require an active session.',
     {
       projectDir: z.string().describe('Absolute path to the project directory'),
-      query: z.string().describe('What to query (e.g. "status", "milestones", "requirements")'),
+      query: z
+        .enum(['all', 'state', 'status', 'project', 'requirements', 'milestones'])
+        .optional()
+        .describe('Narrow the response to a single field (default: "all")'),
     },
     async (args: Record<string, unknown>) => {
-      const { projectDir, query } = args as { projectDir: string; query: string };
+      const { projectDir, query } = args as { projectDir: string; query?: string };
       try {
-        const state = await readProjectState(projectDir, query);
+        const validated = validateProjectDir(projectDir);
+        const state = await readProjectState(validated, query);
         return jsonContent(state);
       } catch (err) {
         return errorContent(err instanceof Error ? err.message : String(err));
@@ -515,7 +590,7 @@ export async function createMcpServer(sessionManager: SessionManager): Promise<{
       };
 
       try {
-        const resolvedProjectDir = resolve(projectDir);
+        const resolvedProjectDir = validateProjectDir(projectDir);
         const resolvedEnvPath = resolve(resolvedProjectDir, envFilePath ?? '.env');
 
         // (1) Check which keys already exist
@@ -622,7 +697,7 @@ export async function createMcpServer(sessionManager: SessionManager): Promise<{
     async (args: Record<string, unknown>) => {
       const { projectDir } = args as { projectDir: string };
       try {
-        return jsonContent(readProgress(projectDir));
+        return jsonContent(readProgress(validateProjectDir(projectDir)));
       } catch (err) {
         return errorContent(err instanceof Error ? err.message : String(err));
       }
@@ -642,7 +717,7 @@ export async function createMcpServer(sessionManager: SessionManager): Promise<{
     async (args: Record<string, unknown>) => {
       const { projectDir, milestoneId } = args as { projectDir: string; milestoneId?: string };
       try {
-        return jsonContent(readRoadmap(projectDir, milestoneId));
+        return jsonContent(readRoadmap(validateProjectDir(projectDir), milestoneId));
       } catch (err) {
         return errorContent(err instanceof Error ? err.message : String(err));
       }
@@ -662,7 +737,7 @@ export async function createMcpServer(sessionManager: SessionManager): Promise<{
     async (args: Record<string, unknown>) => {
       const { projectDir, limit } = args as { projectDir: string; limit?: number };
       try {
-        return jsonContent(readHistory(projectDir, limit));
+        return jsonContent(readHistory(validateProjectDir(projectDir), limit));
       } catch (err) {
         return errorContent(err instanceof Error ? err.message : String(err));
       }
@@ -682,7 +757,7 @@ export async function createMcpServer(sessionManager: SessionManager): Promise<{
     async (args: Record<string, unknown>) => {
       const { projectDir, scope } = args as { projectDir: string; scope?: string };
       try {
-        return jsonContent(runDoctorLite(projectDir, scope));
+        return jsonContent(runDoctorLite(validateProjectDir(projectDir), scope));
       } catch (err) {
         return errorContent(err instanceof Error ? err.message : String(err));
       }
@@ -702,7 +777,7 @@ export async function createMcpServer(sessionManager: SessionManager): Promise<{
     async (args: Record<string, unknown>) => {
       const { projectDir, filter } = args as { projectDir: string; filter?: 'all' | 'pending' | 'actionable' };
       try {
-        return jsonContent(readCaptures(projectDir, filter ?? 'all'));
+        return jsonContent(readCaptures(validateProjectDir(projectDir), filter ?? 'all'));
       } catch (err) {
         return errorContent(err instanceof Error ? err.message : String(err));
       }
@@ -721,7 +796,89 @@ export async function createMcpServer(sessionManager: SessionManager): Promise<{
     async (args: Record<string, unknown>) => {
       const { projectDir } = args as { projectDir: string };
       try {
-        return jsonContent(readKnowledge(projectDir));
+        return jsonContent(readKnowledge(validateProjectDir(projectDir)));
+      } catch (err) {
+        return errorContent(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  // -----------------------------------------------------------------------
+  // gsd_graph — knowledge graph for GSD projects
+  //
+  // Modes:
+  //   build   Parse .gsd/ artifacts and write graph.json atomically.
+  //   query   Search the graph for nodes matching a term (BFS, budget-trimmed).
+  //   status  Check whether graph.json exists and whether it is stale (>24h).
+  //   diff    Compare graph.json with the last build snapshot.
+  // -----------------------------------------------------------------------
+  server.tool(
+    'gsd_graph',
+    [
+      'Manage the GSD project knowledge graph. No session required.',
+      '',
+      'Modes:',
+      '  build   Parse .gsd/ artifacts (STATE.md, milestone ROADMAPs, slice PLANs,',
+      '          KNOWLEDGE.md) and write .gsd/graphs/graph.json atomically.',
+      '  query   Search graph nodes by term (BFS from seed matches, budget-trimmed).',
+      '          Returns matching nodes and reachable edges within the token budget.',
+      '  status  Show whether graph.json exists, its age, node/edge counts, and',
+      '          whether it is stale (built more than 24 hours ago).',
+      '  diff    Compare current graph.json with .last-build-snapshot.json.',
+      '          Returns added, removed, and changed nodes and edges.',
+    ].join('\n'),
+    {
+      projectDir: z.string().describe('Absolute path to the project directory'),
+      mode: z.enum(['build', 'query', 'status', 'diff']).describe(
+        'Operation: build | query | status | diff',
+      ),
+      term: z.string().optional().describe('Search term for query mode (case-insensitive)'),
+      budget: z.number().optional().describe('Token budget for query mode (default: 4000)'),
+      snapshot: z.boolean().optional().describe('Write snapshot before build (for future diff)'),
+    },
+    async (args: Record<string, unknown>) => {
+      const { projectDir: rawProjectDir, mode, term, budget, snapshot } = args as {
+        projectDir: string;
+        mode: 'build' | 'query' | 'status' | 'diff';
+        term?: string;
+        budget?: number;
+        snapshot?: boolean;
+      };
+
+      try {
+        const projectDir = validateProjectDir(rawProjectDir);
+        const gsdRoot = resolveGsdRoot(projectDir);
+
+        switch (mode) {
+          case 'build': {
+            if (snapshot) {
+              await writeSnapshot(gsdRoot).catch(() => { /* best-effort */ });
+            }
+            const graph = await buildGraph(projectDir);
+            await writeGraph(gsdRoot, graph);
+            return jsonContent({
+              built: true,
+              nodeCount: graph.nodes.length,
+              edgeCount: graph.edges.length,
+              builtAt: graph.builtAt,
+            });
+          }
+
+          case 'query': {
+            const result = await graphQuery(projectDir, term ?? '', budget);
+            return jsonContent(result);
+          }
+
+          case 'status': {
+            const result = await graphStatus(projectDir);
+            return jsonContent(result);
+          }
+
+          case 'diff': {
+            const result = await graphDiff(projectDir);
+            return jsonContent(result);
+          }
+        }
       } catch (err) {
         return errorContent(err instanceof Error ? err.message : String(err));
       }

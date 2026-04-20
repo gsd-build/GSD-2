@@ -5,10 +5,13 @@ import {
   getMilestone,
   getSliceStatusSummary,
   getSliceTaskCounts,
-  _getAdapter,
+  readTransaction,
   saveGateResult,
 } from "../gsd-db.js";
+import { GATE_REGISTRY } from "../gate-registry.js";
 import { saveArtifactToDb } from "../db-writer.js";
+import { resolveMilestoneFile, resolveSliceFile } from "../paths.js";
+import { unlinkSync } from "node:fs";
 import type { CompleteMilestoneParams } from "./complete-milestone.js";
 import { handleCompleteMilestone } from "./complete-milestone.js";
 import { handleCompleteTask } from "./complete-task.js";
@@ -102,6 +105,18 @@ export async function executeSummarySave(
       },
       basePath,
     );
+
+    if (params.artifact_type === "CONTEXT" && !params.task_id) {
+      try {
+        const draftFile = params.slice_id
+          ? resolveSliceFile(basePath, params.milestone_id, params.slice_id, "CONTEXT-DRAFT")
+          : resolveMilestoneFile(basePath, params.milestone_id, "CONTEXT-DRAFT");
+        if (draftFile) unlinkSync(draftFile);
+      } catch (e) {
+        logWarning("tool", `CONTEXT-DRAFT.md unlink failed: ${(e as Error).message}`);
+      }
+    }
+
     return {
       content: [{ type: "text", text: `Saved ${params.artifact_type} artifact to ${relativePath}` }],
       details: { operation: "save_summary", path: relativePath, artifact_type: params.artifact_type },
@@ -427,7 +442,9 @@ export async function executeSaveGateResult(
       };
   }
 
-  const validGates = ["Q3", "Q4", "Q5", "Q6", "Q7", "Q8"];
+  // Source of truth: gate-registry.ts. Every declared GateId is accepted,
+  // so adding a new gate in one place automatically flows through here.
+  const validGates = Object.keys(GATE_REGISTRY);
   if (!validGates.includes(params.gateId)) {
     return {
       content: [{ type: "text", text: `Error: Invalid gateId "${params.gateId}". Must be one of: ${validGates.join(", ")}` }],
@@ -613,12 +630,9 @@ export async function executeMilestoneStatus(
       };
     }
 
-    const adapter = _getAdapter()!;
-    adapter.exec("BEGIN");
-    try {
+    return readTransaction(() => {
       const milestone = getMilestone(params.milestoneId);
       if (!milestone) {
-        adapter.exec("COMMIT");
         return {
           content: [{ type: "text", text: `Milestone ${params.milestoneId} not found in database.` }],
           details: { operation: "milestone_status", milestoneId: params.milestoneId, found: false },
@@ -631,8 +645,6 @@ export async function executeMilestoneStatus(
         status: s.status,
         taskCounts: getSliceTaskCounts(params.milestoneId, s.id),
       }));
-
-      adapter.exec("COMMIT");
 
       const result = {
         milestoneId: milestone.id,
@@ -648,10 +660,7 @@ export async function executeMilestoneStatus(
         content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
         details: { operation: "milestone_status", milestoneId: milestone.id, sliceCount: slices.length },
       };
-    } catch (txErr) {
-      try { adapter.exec("ROLLBACK"); } catch { /* swallow */ }
-      throw txErr;
-    }
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     logWarning("tool", `gsd_milestone_status tool failed: ${msg}`);

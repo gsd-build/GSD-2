@@ -18,6 +18,8 @@ All relevant context has been preloaded below — the roadmap, all slice summari
 
 {{inlinedContext}}
 
+{{gatesToEvaluate}}
+
 ## Execution Protocol
 
 ### Step 1 — Dispatch Parallel Reviewers

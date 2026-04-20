@@ -32,6 +32,28 @@ test("classifyError detects rate limit from message", () => {
   assert.equal(result.kind, "rate-limit");
 });
 
+test("classifyError treats Anthropic quota-window phrasing as transient rate-limit (#4373)", () => {
+  const result = classifyError("You've hit your limit · resets soon");
+  assert.ok(isTransient(result));
+  assert.equal(result.kind, "rate-limit");
+  assert.ok("retryAfterMs" in result && result.retryAfterMs === 60_000);
+});
+
+test("classifyError treats usage-limit phrasing as transient rate-limit (#4373)", () => {
+  const result = classifyError("usage limit reached for this workspace");
+  assert.ok(isTransient(result));
+  assert.equal(result.kind, "rate-limit");
+});
+
+test("classifyError treats OpenRouter affordability errors as transient rate-limit class", () => {
+  const result = classifyError(
+    "402 This request requires more credits, or fewer max_tokens. You requested up to 32000 tokens, but can only afford 329.",
+  );
+  assert.ok(isTransient(result));
+  assert.equal(result.kind, "rate-limit");
+  assert.ok("retryAfterMs" in result && result.retryAfterMs > 0);
+});
+
 test("classifyError extracts reset delay from message", () => {
   const result = classifyError("rate limit exceeded, reset in 45s");
   assert.equal(result.kind, "rate-limit");
@@ -125,6 +147,49 @@ test("classifyError: rate limit takes precedence over auth keywords", () => {
   assert.ok(isTransient(result));
 });
 
+// ── unsupported-model: account/plan entitlement rejection (#4513) ──────────
+
+test("classifyError: Codex ChatGPT-account entitlement rejection is unsupported-model", () => {
+  const result = classifyError(
+    "The 'gpt-5.1-codex-max' model is not supported when using Codex with a ChatGPT account.",
+  );
+  assert.equal(result.kind, "unsupported-model");
+  assert.ok(!isTransient(result));
+});
+
+test("classifyError: 'model not available for this plan' is unsupported-model", () => {
+  const result = classifyError("This model is not available for your current plan.");
+  assert.equal(result.kind, "unsupported-model");
+});
+
+test("classifyError: 'account does not have access to model' is unsupported-model", () => {
+  const result = classifyError("Your account does not have access to the gpt-5 model.");
+  assert.equal(result.kind, "unsupported-model");
+});
+
+test("classifyError: 'tier does not support deployment' is unsupported-model", () => {
+  const result = classifyError("The free tier does not support this deployment.");
+  assert.equal(result.kind, "unsupported-model");
+});
+
+test("classifyError: 'account suspended' stays permanent (not unsupported-model)", () => {
+  const result = classifyError("Your account has been suspended. Contact support.");
+  assert.equal(result.kind, "permanent");
+});
+
+test("classifyError: 'invalid account' stays permanent", () => {
+  const result = classifyError("invalid account credentials");
+  assert.equal(result.kind, "permanent");
+});
+
+test("classifyError: rate limit on unsupported-model phrasing stays rate-limit", () => {
+  // A throttled account is not an entitlement failure.
+  const result = classifyError(
+    "429 rate limit — model not supported when using your account right now",
+  );
+  assert.equal(result.kind, "rate-limit");
+});
+
 // ── STREAM_RE: V8 JSON parse error variants (#2916) ────────────────────────
 
 test("classifyError: 'Expected comma/brace after property value in JSON' is transient stream", () => {
@@ -191,6 +256,10 @@ test("isTransientNetworkError detects connection reset", () => {
 
 test("isTransientNetworkError detects DNS errors", () => {
   assert.ok(isTransientNetworkError("dns resolution failed"));
+});
+
+test("isTransientNetworkError detects unexpected EOF", () => {
+  assert.ok(isTransientNetworkError("unexpected EOF"));
 });
 
 test("isTransientNetworkError rejects auth errors", () => {
@@ -446,6 +515,22 @@ test("agent-end-recovery.ts resumes transient provider pauses through startAuto 
   );
 });
 
+test("agent-end-recovery.ts does not defer rate-limit errors to core retry handler before fallback (#4373)", () => {
+  const src = readFileSync(join(__dirname, "..", "bootstrap", "agent-end-recovery.ts"), "utf-8");
+  assert.ok(
+    src.includes('if (isTransient(cls) && cls.kind !== "rate-limit")'),
+    "rate-limit errors must bypass transient core-retry deferral so fallback can execute (#4373)",
+  );
+});
+
+test("agent-end-recovery.ts updates dashboard dispatched model after fallback switch", () => {
+  const src = readFileSync(join(__dirname, "..", "bootstrap", "agent-end-recovery.ts"), "utf-8");
+  assert.ok(
+    src.includes("setCurrentDispatchedModelId"),
+    "agent-end-recovery.ts should update currentDispatchedModelId when recovery switches model",
+  );
+});
+
 // ── Codex error extraction (#1166) ──────────────────────────────────────────
 
 test("openai-codex-responses.ts extracts nested error fields", () => {
@@ -488,6 +573,16 @@ test("provider-error-resume.ts calls resetTransientRetryState before startAuto",
     resetIdx !== -1 && startIdx !== -1 && resetIdx < startIdx,
     "resetTransientRetryState() must be called before deps.startAuto()",
   );
+  // Session timeout counter must also be reset before startAuto
+  assert.ok(
+    src.includes("resetSessionTimeoutState"),
+    "provider-error-resume.ts must import and call resetSessionTimeoutState",
+  );
+  const sessionResetIdx = src.indexOf("resetSessionTimeoutState()");
+  assert.ok(
+    sessionResetIdx !== -1 && startIdx !== -1 && sessionResetIdx < startIdx,
+    "resetSessionTimeoutState() must be called before deps.startAuto()",
+  );
 });
 
 // ── Fix 2: Session creation timeout treated as transient in phases.ts ───────
@@ -495,20 +590,73 @@ test("provider-error-resume.ts calls resetTransientRetryState before startAuto",
 test("phases.ts handles timeout session-creation failures with pause instead of stopAuto", () => {
   const src = readFileSync(join(__dirname, "..", "auto", "phases.ts"), "utf-8");
 
-  // The cancelled + isTransient + category=timeout path must pause, not hard-stop
+  // The cancelled + isTransient session-start path must pause, not hard-stop
   assert.ok(
-    src.includes('category === "timeout"'),
-    "phases.ts must check category === 'timeout' on transient cancelled unitResults",
+    src.includes('errorCategory === "timeout"'),
+    "phases.ts must check errorCategory === 'timeout' on transient cancelled unitResults",
   );
-  // Must call pauseAuto (not stopAuto) for timeout cancellations
   assert.ok(
-    /category === "timeout"[\s\S]{0,300}pauseAuto/.test(src),
+    src.includes('errorCategory === "session-failed"'),
+    "phases.ts must also check errorCategory === 'session-failed' on transient cancelled unitResults",
+  );
+  // Must call pauseAuto or pauseAutoForProviderError (not stopAuto) for timeout cancellations
+  assert.ok(
+    /errorCategory === "timeout"[\s\S]{0,1800}pauseAuto/.test(src),
     "phases.ts must call pauseAuto for session-timeout failures (not stopAuto or continue)",
+  );
+  assert.ok(
+    /errorCategory === "session-failed"[\s\S]{0,700}pauseAuto/.test(src),
+    "phases.ts must call pauseAuto for transient session-start failures (not stopAuto or continue)",
   );
   // Must NOT use action: "continue" for transient cancellations (causes infinite loops)
   assert.ok(
     !/isTransient[\s\S]{0,500}action:\s*"continue"/.test(src),
     "phases.ts must NOT return action:continue for cancelled units — use break+pause instead",
+  );
+});
+
+// ── Fix 2b: Session creation timeout schedules auto-resume timer ─────────────
+
+test("phases.ts schedules auto-resume timer for session creation timeouts", () => {
+  const src = readFileSync(join(__dirname, "..", "auto", "phases.ts"), "utf-8");
+
+  // Must use pauseAutoForProviderError (not bare pauseAuto) for session-timeout
+  assert.ok(
+    src.includes("pauseAutoForProviderError"),
+    "phases.ts must use pauseAutoForProviderError for session-timeout auto-resume",
+  );
+  // Must schedule resume via resumeAutoAfterProviderDelay
+  assert.ok(
+    src.includes("resumeAutoAfterProviderDelay"),
+    "phases.ts must schedule resume via resumeAutoAfterProviderDelay",
+  );
+  // Must track consecutive session timeouts
+  assert.ok(
+    src.includes("consecutiveSessionTimeouts"),
+    "phases.ts must track consecutive session timeouts for escalating backoff",
+  );
+  // Must cap session timeout auto-resumes
+  assert.ok(
+    /MAX_SESSION_TIMEOUT_AUTO_RESUMES\s*=\s*\d+/.test(src),
+    "phases.ts must cap session timeout auto-resumes",
+  );
+});
+
+test("phases.ts differentiates session creation timeout from unit hard timeout", () => {
+  const src = readFileSync(join(__dirname, "..", "auto", "phases.ts"), "utf-8");
+  assert.ok(
+    src.includes("Session creation timed out"),
+    "phases.ts must check for 'Session creation timed out' message to differentiate from unit hard timeout",
+  );
+});
+
+test("phases.ts resets session timeout counter on successful unit completion", () => {
+  const src = readFileSync(join(__dirname, "..", "auto", "phases.ts"), "utf-8");
+  const resetIdx = src.indexOf("consecutiveSessionTimeouts = 0");
+  const closeoutIdx = src.indexOf("closeoutUnit");
+  assert.ok(
+    resetIdx !== -1 && closeoutIdx !== -1 && resetIdx < closeoutIdx,
+    "consecutiveSessionTimeouts must reset before closeoutUnit (on success path)",
   );
 });
 

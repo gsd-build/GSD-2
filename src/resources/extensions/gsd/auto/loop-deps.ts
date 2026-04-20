@@ -16,11 +16,12 @@ import type {
   VerificationContext,
   VerificationResult,
 } from "../auto-verification.js";
-import type { DispatchAction } from "../auto-dispatch.js";
+import type { DispatchAction, DispatchContext } from "../auto-dispatch.js";
 import type { WorktreeResolver } from "../worktree-resolver.js";
 import type { CmuxLogLevel } from "../../cmux/index.js";
 import type { JournalEntry } from "../journal.js";
 import type { MergeReconcileResult } from "../auto-recovery.js";
+import type { UokTurnObserver } from "../uok/contracts.js";
 
 /**
  * Dependencies injected by the caller (auto.ts startAuto) so autoLoop
@@ -144,14 +145,7 @@ export interface LoopDeps {
   } | null>;
 
   // Dispatch
-  resolveDispatch: (dctx: {
-    basePath: string;
-    mid: string;
-    midTitle: string;
-    state: GSDState;
-    prefs: GSDPreferences | undefined;
-    session?: AutoSession;
-  }) => Promise<DispatchAction>;
+  resolveDispatch: (dctx: DispatchContext) => Promise<DispatchAction>;
   runPreDispatchHooks: (
     unitType: string,
     unitId: string,
@@ -180,6 +174,12 @@ export interface LoopDeps {
     startedAt: number,
     opts?: CloseoutOptions & Record<string, unknown>,
   ) => Promise<void>;
+  autoCommitUnit?: (
+    basePath: string,
+    unitType: string,
+    unitId: string,
+    ctx?: ExtensionContext,
+  ) => Promise<string | null>;
   recordOutcome: (unitType: string, tier: string, success: boolean) => void;
   writeLock: (
     lockBase: string,
@@ -213,6 +213,7 @@ export interface LoopDeps {
     retryContext?: { isRetry: boolean; previousTier?: string },
     isAutoMode?: boolean,
     sessionModelOverride?: { provider: string; id: string } | null,
+    autoModeStartThinkingLevel?: ReturnType<ExtensionAPI["getThinkingLevel"]> | null,
   ) => Promise<{
     routing: { tier: string; modelDowngraded: boolean } | null;
     appliedModel: { provider: string; id: string } | null;
@@ -268,4 +269,7 @@ export interface LoopDeps {
 
   // Journal
   emitJournalEvent: (entry: JournalEntry) => void;
+
+  // UOK (optional, flag-gated)
+  uokObserver?: UokTurnObserver;
 }
