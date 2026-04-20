@@ -1134,6 +1134,7 @@ export async function pauseAuto(
       milestoneId: s.currentMilestoneId,
       worktreePath: isInAutoWorktree(s.basePath) ? s.basePath : null,
       originalBasePath: s.originalBasePath,
+      basePath: s.originalBasePath || s.basePath,
       stepMode: s.stepMode,
       pausedAt: new Date().toISOString(),
       sessionFile: s.pausedSessionFile,
@@ -1455,7 +1456,11 @@ export async function startAuto(
   if (!s.paused) {
     try {
       const meta = freshStartAssessment.pausedSession ?? readPausedSessionMetadata(base);
-      const pausedPath = join(gsdRoot(base), "runtime", "paused-session.json");
+      const pausedMetadataBase =
+        meta?.originalBasePath
+        || meta?.basePath
+        || base;
+      const pausedPath = join(gsdRoot(pausedMetadataBase), "runtime", "paused-session.json");
       if (meta) {
         const restoredAutoModeStartModel =
           meta.autoModeStartModel &&
@@ -1620,16 +1625,6 @@ export async function startAuto(
     );
     pausedMetadataCleanupPath = null;
 
-    // Lock acquired — now safe to delete the captured session transcript path.
-    if (s.pausedSessionFile) {
-      try { unlinkSync(s.pausedSessionFile); } catch (err) {
-        if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-          logWarning("session", `pause file cleanup failed: ${err instanceof Error ? err.message : String(err)}`, { file: "auto.ts" });
-        }
-      }
-      s.pausedSessionFile = null;
-    }
-
     s.paused = false;
     s.active = true;
     s.verbose = verboseMode;
@@ -1752,12 +1747,13 @@ export async function startAuto(
     invalidateAllCaches();
 
     if (s.pausedSessionFile) {
+      const pausedSessionFile = s.pausedSessionFile;
       const activityDir = join(gsdRoot(s.basePath), "activity");
       const recovery = synthesizeCrashRecovery(
         s.basePath,
         s.currentUnit?.type ?? s.pausedUnitType ?? "unknown",
         s.currentUnit?.id ?? s.pausedUnitId ?? "unknown",
-        s.pausedSessionFile ?? undefined,
+        pausedSessionFile,
         activityDir,
       );
       if (recovery && recovery.trace.toolCallCount > 0) {
@@ -1766,6 +1762,11 @@ export async function startAuto(
           `Recovered ${recovery.trace.toolCallCount} tool calls from paused session. Resuming with context.`,
           "info",
         );
+      }
+      try { unlinkSync(pausedSessionFile); } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+          logWarning("session", `pause file cleanup failed: ${err instanceof Error ? err.message : String(err)}`, { file: "auto.ts" });
+        }
       }
       s.pausedSessionFile = null;
     }

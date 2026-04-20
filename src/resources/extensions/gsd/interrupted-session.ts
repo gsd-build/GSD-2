@@ -26,6 +26,9 @@ export interface PausedSessionMetadata {
   milestoneId?: string;
   worktreePath?: string | null;
   originalBasePath?: string;
+  // Legacy paused-session metadata from earlier builds may store basePath
+  // instead of originalBasePath. Keep optional for backward compatibility.
+  basePath?: string;
   stepMode?: boolean;
   pausedAt?: string;
   sessionFile?: string | null;

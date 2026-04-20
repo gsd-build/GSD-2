@@ -75,6 +75,33 @@ test("resume path defers paused-session metadata deletion until lock acquisition
   );
 });
 
+test("resume path derives paused metadata cleanup path from persisted metadata root", () => {
+  assert.ok(
+    /const pausedMetadataBase =\s*[\s\S]*meta\?\.originalBasePath[\s\S]*meta\?\.basePath[\s\S]*\|\| base;/.test(source),
+    "startAuto should derive paused metadata path from persisted metadata roots before falling back to current base",
+  );
+  assert.ok(
+    source.includes('const pausedPath = join(gsdRoot(pausedMetadataBase), "runtime", "paused-session.json");'),
+    "startAuto should resolve paused-session cleanup using the derived metadata base",
+  );
+});
+
+test("resume path keeps paused session transcript until recovery synthesis runs", () => {
+  const synthIdx = source.indexOf("const recovery = synthesizeCrashRecovery(");
+  const unlinkIdx = source.indexOf("unlinkSync(pausedSessionFile)");
+  const nullIdx = source.indexOf("s.pausedSessionFile = null;", synthIdx);
+
+  assert.ok(
+    synthIdx > -1 && unlinkIdx > synthIdx && nullIdx > unlinkIdx,
+    "paused session transcript should be synthesized before unlinking and clearing pausedSessionFile",
+  );
+  assert.equal(
+    source.includes("unlinkSync(s.pausedSessionFile)"),
+    false,
+    "resume path should not unlink pausedSessionFile before recovery synthesis",
+  );
+});
+
 test("user-initiated resume only backfills model snapshots when missing", () => {
   const resumeCtxBlockStart = source.indexOf('if ("newSession" in ctx && typeof (ctx as any).newSession === "function") {');
   const resumeCtxBlockEnd = source.indexOf("} else if (!s.cmdCtx)", resumeCtxBlockStart);
