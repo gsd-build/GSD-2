@@ -39,7 +39,8 @@ export type JournalEventType =
   | "worktree-create-failed"
   | "worktree-skip"
   | "worktree-merge-start"
-  | "worktree-merge-failed";
+  | "worktree-merge-failed"
+  | "artifact-verification-retry";
 
 /** A single structured event in the journal. */
 export interface JournalEntry {

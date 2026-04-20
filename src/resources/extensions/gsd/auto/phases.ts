@@ -1928,6 +1928,20 @@ export async function runFinalize(
       debugLog("autoLoop", { phase: "sidecar-artifact-retry-skipped", iteration: ic.iteration });
     } else {
       // s.pendingVerificationRetry was set by postUnitPreVerification.
+      // Emit a dedicated journal event so forensics can distinguish bounded
+      // verification retries from genuine stuck-loop dispatch repetitions (#4540).
+      const retryInfo = s.pendingVerificationRetry;
+      deps.emitJournalEvent({
+        ts: new Date().toISOString(),
+        flowId: ic.flowId,
+        seq: ic.nextSeq(),
+        eventType: "artifact-verification-retry",
+        data: {
+          unitType: preUnitSnapshot?.type,
+          unitId: retryInfo?.unitId,
+          attempt: retryInfo?.attempt,
+        },
+      });
       // Continue the loop — next iteration will inject the retry context into the prompt.
       debugLog("autoLoop", { phase: "artifact-verification-retry", iteration: ic.iteration });
       return { action: "continue" };
