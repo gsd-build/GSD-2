@@ -247,7 +247,7 @@ export async function dispatchSlashCommand(
 		if (extensionRunner?.getCommand(commandName)) {
 			return false; // handled by extension system
 		}
-				ctx.showError(`Unknown command: /${commandName}. Type /help for available commands.`);
+				ctx.showError(`Unknown command: /${commandName}. Use slash autocomplete to see available commands.`);
 		return true;
 	}
 
