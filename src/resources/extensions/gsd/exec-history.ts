@@ -4,7 +4,7 @@
 // returns lightweight records. Used by the gsd_exec_search tool and
 // any future compaction-snapshot enrichment.
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { closeSync, openSync, readdirSync, readFileSync, readSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 export interface ExecHistoryEntry {
@@ -114,9 +114,19 @@ function matchesFilters(entry: ExecHistoryEntry, opts: ExecSearchOptions): boole
 function readDigestPreview(entry: ExecHistoryEntry, maxChars: number): string | undefined {
   if (!entry.stdout_path || maxChars <= 0) return undefined;
   try {
-    const text = readFileSync(entry.stdout_path, "utf-8");
-    const trimmed = text.trimEnd();
-    return trimmed.length <= maxChars ? trimmed : trimmed.slice(trimmed.length - maxChars);
+    const size = statSync(entry.stdout_path).size;
+    if (size === 0) return undefined;
+    const readBytes = Math.min(size, maxChars * 4); // 4 bytes/char upper bound for UTF-8
+    const buf = Buffer.allocUnsafe(readBytes);
+    const fd = openSync(entry.stdout_path, "r");
+    try {
+      const bytesRead = readSync(fd, buf, 0, readBytes, Math.max(0, size - readBytes));
+      const text = buf.subarray(0, bytesRead).toString("utf-8");
+      const trimmed = text.trimEnd();
+      return trimmed.length <= maxChars ? trimmed : trimmed.slice(trimmed.length - maxChars);
+    } finally {
+      closeSync(fd);
+    }
   } catch {
     return undefined;
   }

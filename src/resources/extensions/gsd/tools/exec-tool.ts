@@ -171,7 +171,7 @@ function formatResult(result: ExecSandboxResult): ToolExecutionResult {
       stderr_path: result.stderr_path,
       meta_path: result.meta_path,
     },
-    isError: result.timed_out || result.signal !== null || (result.exit_code !== 0 && result.exit_code !== null),
+    isError: result.timed_out || result.signal !== null || result.exit_code !== 0,
   };
 }
 

@@ -149,6 +149,7 @@ export function runExecSandbox(
     const timeoutMs = clampTimeout(request, opts);
     const { cmd, args } = resolveCommand(request.runtime);
     const env = buildChildEnv(opts);
+    const useProcessGroup = process.platform !== "win32";
 
     const started = Date.now();
     let child;
@@ -157,6 +158,7 @@ export function runExecSandbox(
         cwd: opts.baseDir,
         env,
         stdio: ["ignore", "pipe", "pipe"],
+        ...(useProcessGroup ? { detached: true } : {}),
       });
     } catch (err) {
       const duration = Date.now() - started;
@@ -225,7 +227,15 @@ export function runExecSandbox(
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill("SIGKILL");
+      if (useProcessGroup && child.pid != null) {
+        try {
+          process.kill(-child.pid, "SIGKILL");
+        } catch {
+          child.kill("SIGKILL");
+        }
+      } else {
+        child.kill("SIGKILL");
+      }
     }, timeoutMs);
     timer.unref?.();
 
