@@ -1443,28 +1443,38 @@ export async function startAuto(
 
   // If resuming from paused state, just re-activate and dispatch next unit.
   // Check persisted paused-session first (#1383) — survives /exit.
+  let pausedMetadataCleanupPath: string | null = null;
   if (!s.paused) {
     try {
       const meta = freshStartAssessment.pausedSession ?? readPausedSessionMetadata(base);
       const pausedPath = join(gsdRoot(base), "runtime", "paused-session.json");
       if (meta) {
-        if (
-          meta.autoModeStartModel
-          && typeof meta.autoModeStartModel.provider === "string"
-          && typeof meta.autoModeStartModel.id === "string"
-        ) {
-          s.autoModeStartModel = {
-            provider: meta.autoModeStartModel.provider,
-            id: meta.autoModeStartModel.id,
-          };
-        }
-        if (
-          typeof meta.originalModelProvider === "string"
-          && typeof meta.originalModelId === "string"
-        ) {
-          s.originalModelProvider = meta.originalModelProvider;
-          s.originalModelId = meta.originalModelId;
-        }
+        const restoredAutoModeStartModel =
+          meta.autoModeStartModel &&
+          typeof meta.autoModeStartModel.provider === "string" &&
+          typeof meta.autoModeStartModel.id === "string"
+            ? {
+                provider: meta.autoModeStartModel.provider,
+                id: meta.autoModeStartModel.id,
+              }
+            : null;
+        const restoredOriginalModel =
+          typeof meta.originalModelProvider === "string" &&
+          typeof meta.originalModelId === "string"
+            ? {
+                provider: meta.originalModelProvider,
+                id: meta.originalModelId,
+              }
+            : null;
+        const applyRestoredModelSnapshot = () => {
+          if (restoredAutoModeStartModel) {
+            s.autoModeStartModel = { ...restoredAutoModeStartModel };
+          }
+          if (restoredOriginalModel) {
+            s.originalModelProvider = restoredOriginalModel.provider;
+            s.originalModelId = restoredOriginalModel.id;
+          }
+        };
 
         if (meta.activeEngineId && meta.activeEngineId !== "dev") {
           // Custom workflow resume — restore engine state
@@ -1478,11 +1488,8 @@ export async function startAuto(
           s.autoStartTime = meta.autoStartTime || Date.now();
           s.sessionMilestoneLock = meta.milestoneLock ?? null;
           s.paused = true;
-          try { unlinkSync(pausedPath); } catch (e) {
-            if ((e as NodeJS.ErrnoException).code !== "ENOENT") {
-              logWarning("session", `pause file cleanup failed: ${e instanceof Error ? e.message : String(e)}`, { file: "auto.ts" });
-            }
-          }
+          applyRestoredModelSnapshot();
+          pausedMetadataCleanupPath = pausedPath;
           ctx.ui.notify(
             `Resuming paused custom workflow${meta.activeRunDir ? ` (${meta.activeRunDir})` : ""}.`,
             "info",
@@ -1527,11 +1534,8 @@ export async function startAuto(
               s.autoStartTime = meta.autoStartTime || Date.now();
               s.sessionMilestoneLock = meta.milestoneLock ?? null;
               s.paused = true;
-              try { unlinkSync(pausedPath); } catch (e) {
-                if ((e as NodeJS.ErrnoException).code !== "ENOENT") {
-                  logWarning("session", `pause file cleanup failed: ${e instanceof Error ? e.message : String(e)}`, { file: "auto.ts" });
-                }
-              }
+              applyRestoredModelSnapshot();
+              pausedMetadataCleanupPath = pausedPath;
               ctx.ui.notify(
                 `Resuming paused session for ${meta.milestoneId}${meta.worktreePath && existsSync(meta.worktreePath) ? ` (worktree)` : ""}.`,
                 "info",
@@ -1599,7 +1603,17 @@ export async function startAuto(
       return;
     }
 
-    // Lock acquired — now safe to delete the pause file
+    // Lock acquired — now safe to delete paused-session metadata.
+    const pausedPath = pausedMetadataCleanupPath
+      ?? join(gsdRoot(s.originalBasePath || base), "runtime", "paused-session.json");
+    if (existsSync(pausedPath)) {
+      try { unlinkSync(pausedPath); } catch (err) {
+        logWarning("session", `pause file cleanup failed: ${err instanceof Error ? err.message : String(err)}`, { file: "auto.ts" });
+      }
+    }
+    pausedMetadataCleanupPath = null;
+
+    // Lock acquired — now safe to delete the captured session transcript path.
     if (s.pausedSessionFile) {
       try { unlinkSync(s.pausedSessionFile); } catch (err) {
         if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
@@ -1621,12 +1635,18 @@ export async function startAuto(
     if ("newSession" in ctx && typeof (ctx as any).newSession === "function") {
       s.cmdCtx = ctx;
       if (ctx.model) {
-        s.autoModeStartModel = {
-          provider: ctx.model.provider,
-          id: ctx.model.id,
-        };
-        s.originalModelProvider = ctx.model.provider;
-        s.originalModelId = ctx.model.id;
+        if (!s.autoModeStartModel) {
+          s.autoModeStartModel = {
+            provider: ctx.model.provider,
+            id: ctx.model.id,
+          };
+        }
+        if (!s.originalModelProvider) {
+          s.originalModelProvider = ctx.model.provider;
+        }
+        if (!s.originalModelId) {
+          s.originalModelId = ctx.model.id;
+        }
       }
     } else if (!s.cmdCtx) {
       // No saved cmdCtx — this shouldn't happen, but handle gracefully

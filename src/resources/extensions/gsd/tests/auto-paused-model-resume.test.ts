@@ -34,24 +34,59 @@ test("pauseAuto restores the user's original model while paused", () => {
   );
 });
 
-test("resume path restores model snapshots from paused-session metadata", () => {
+test("resume path stages metadata snapshots and applies them only on accepted resume", () => {
   assert.ok(
-    source.includes("meta.autoModeStartModel") && source.includes("s.autoModeStartModel = {"),
-    "startAuto resume path must restore autoModeStartModel from paused-session.json",
+    source.includes("const applyRestoredModelSnapshot = () => {"),
+    "startAuto should stage paused model snapshot restoration behind an apply helper",
   );
   assert.ok(
-    source.includes("meta.originalModelProvider") && source.includes("s.originalModelProvider = meta.originalModelProvider"),
-    "startAuto resume path must restore originalModelProvider from paused-session.json",
+    source.includes("applyRestoredModelSnapshot();"),
+    "startAuto should apply staged snapshots only in accepted resume branches",
   );
+
+  const helperIdx = source.indexOf("const applyRestoredModelSnapshot = () => {");
+  const pausedAcceptedIdx = source.indexOf("s.paused = true;", helperIdx);
+  const applyIdx = source.indexOf("applyRestoredModelSnapshot();", pausedAcceptedIdx);
   assert.ok(
-    source.includes("meta.originalModelId") && source.includes("s.originalModelId = meta.originalModelId"),
-    "startAuto resume path must restore originalModelId from paused-session.json",
+    helperIdx > -1 && pausedAcceptedIdx > helperIdx && applyIdx > pausedAcceptedIdx,
+    "paused metadata snapshots should be applied after the resume branch has been accepted",
   );
 });
 
-test("user-initiated resume refreshes the auto model snapshot from the current session model", () => {
+test("resume path defers paused-session metadata deletion until lock acquisition", () => {
   assert.ok(
-    /if \("newSession" in ctx && typeof \(ctx as any\)\.newSession === "function"\)[\s\S]{0,500}s\.autoModeStartModel = \{[\s\S]{0,120}provider: ctx\.model\.provider,[\s\S]{0,120}id: ctx\.model\.id/.test(source),
-    "user-initiated resume must refresh autoModeStartModel from ctx.model so model switches while paused actually stick",
+    source.includes("let pausedMetadataCleanupPath: string | null = null;"),
+    "startAuto should track paused-session metadata cleanup separately",
+  );
+  assert.ok(
+    source.includes("pausedMetadataCleanupPath = pausedPath;"),
+    "accepted resume branches should mark paused metadata for deferred cleanup",
+  );
+
+  const lockIdx = source.indexOf("const resumeLock = acquireSessionLock(base);");
+  const deferredCleanupIdx = source.indexOf("const pausedPath = pausedMetadataCleanupPath", lockIdx);
+  assert.ok(
+    lockIdx > -1 && deferredCleanupIdx > lockIdx,
+    "paused-session metadata should only be unlinked after acquireSessionLock succeeds",
+  );
+});
+
+test("user-initiated resume only backfills model snapshots when missing", () => {
+  const resumeCtxBlockStart = source.indexOf('if ("newSession" in ctx && typeof (ctx as any).newSession === "function") {');
+  const resumeCtxBlockEnd = source.indexOf("} else if (!s.cmdCtx)", resumeCtxBlockStart);
+  assert.ok(resumeCtxBlockStart > -1 && resumeCtxBlockEnd > resumeCtxBlockStart);
+
+  const resumeCtxBlock = source.slice(resumeCtxBlockStart, resumeCtxBlockEnd);
+  assert.ok(
+    resumeCtxBlock.includes("if (!s.autoModeStartModel)"),
+    "resume must not clobber restored autoModeStartModel when it already exists",
+  );
+  assert.ok(
+    resumeCtxBlock.includes("if (!s.originalModelProvider)"),
+    "resume must not clobber restored originalModelProvider when it already exists",
+  );
+  assert.ok(
+    resumeCtxBlock.includes("if (!s.originalModelId)"),
+    "resume must not clobber restored originalModelId when it already exists",
   );
 });
