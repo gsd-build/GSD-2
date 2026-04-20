@@ -268,11 +268,26 @@ export function verifyExpectedArtifact(
   // RESEARCH file. Without this, resolveExpectedArtifactPath returns null and
   // the retry/escalation machinery silently re-dispatches forever.
   //
+  // #4068: Also treat a PARALLEL-BLOCKER placeholder as a terminal completion
+  // so that timeout-recovery can write the blocker, have verifyExpectedArtifact
+  // return true, and let the dispatch loop advance past this unit.  Without
+  // this, the blocker is written but verification still returns false, the unit
+  // is never cleared from unitDispatchCount, and on the next iteration the
+  // dispatch rule (which correctly skips parallel-research when PARALLEL-BLOCKER
+  // exists) returns null — leaving the loop stuck re-deriving indefinitely.
+  //
   // NOTE: this predicate mirrors the dispatch rule at
   // auto-dispatch.ts parallel-research-slices — keep the two in sync.
   if (unitType === "research-slice" && unitId.endsWith("/parallel-research")) {
     const { milestone: mid } = parseUnitId(unitId);
     if (!mid) return false;
+
+    // #4068: PARALLEL-BLOCKER written by timeout-recovery is a terminal state.
+    const blockerPath = resolveExpectedArtifactPath(unitType, unitId, base);
+    if (blockerPath && existsSync(blockerPath)) {
+      return true;
+    }
+
     const roadmapFile = resolveMilestoneFile(base, mid, "ROADMAP");
     if (!roadmapFile || !existsSync(roadmapFile)) {
       logWarning("recovery", `verify-fail ${unitType} ${unitId}: roadmap missing`);

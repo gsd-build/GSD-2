@@ -775,6 +775,55 @@ test("#4414: parallel-research sentinel path does not collide with RESEARCH suff
   }
 });
 
+test("#4068: verifyExpectedArtifact parallel-research treats PARALLEL-BLOCKER as terminal completion", () => {
+  // Regression: when a parallel-research unit times out and the timeout-recovery
+  // machinery writes a PARALLEL-BLOCKER placeholder, verifyExpectedArtifact must
+  // return true so the dispatch loop can advance.  Previously it only returned
+  // true when every slice had a RESEARCH file — meaning a timeout always left
+  // verifyExpectedArtifact returning false, the unit was never cleared from
+  // unitDispatchCount, and the dispatch rule re-fired on the next iteration
+  // (infinite loop, issue #4068 / #4355).
+  const base = makeTmpBase();
+  try {
+    // Write a minimal roadmap
+    writeFileSync(
+      join(base, ".gsd", "milestones", "M001", "M001-ROADMAP.md"),
+      [
+        "# M001: Timeout Test",
+        "",
+        "## Slices",
+        "",
+        "- [ ] **S01: Alpha** `risk:low` `depends:[]`",
+        "- [ ] **S02: Beta** `risk:low` `depends:[]`",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    // No RESEARCH files written — subagents timed out
+    clearParseCache();
+    invalidateAllCaches();
+
+    // Simulate timeout-recovery writing the PARALLEL-BLOCKER placeholder
+    const blockerPath = resolveExpectedArtifactPath("research-slice", "M001/parallel-research", base);
+    assert.ok(blockerPath, "PARALLEL-BLOCKER path must resolve for parallel-research unit");
+    writeFileSync(blockerPath!, "# BLOCKER — timeout recovery\n\n**Reason**: hard timeout.\n", "utf-8");
+
+    clearParseCache();
+    invalidateAllCaches();
+
+    // After blocker is written, verifyExpectedArtifact must return true
+    // so the dispatch loop treats this unit as complete and moves on.
+    assert.equal(
+      verifyExpectedArtifact("research-slice", "M001/parallel-research", base),
+      true,
+      "#4068: PARALLEL-BLOCKER on disk must satisfy verifyExpectedArtifact so the loop does not re-dispatch",
+    );
+  } finally {
+    cleanup(base);
+  }
+});
+
 test("#4414: verifyExpectedArtifact parallel-research succeeds when all research-ready slices have RESEARCH", () => {
   const base = makeTmpBase();
   try {

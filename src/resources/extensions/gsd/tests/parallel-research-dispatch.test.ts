@@ -110,6 +110,25 @@ test("template: parallel-research-slices.md has required variables", () => {
   assert.ok(templateSrc.includes("{{subagentPrompts}}"), "template should use subagentPrompts");
 });
 
+test("#4068: template: parallel-research-slices retry cap prevents infinite subagent loop", () => {
+  // The template must cap retries at 1 ("retry it once") and instruct the
+  // agent to write a BLOCKER note on the second failure rather than looping.
+  // Without this, a timing-out subagent causes the orchestrating agent to
+  // retry indefinitely (issue #4068 / #4355).
+  assert.ok(
+    templateSrc.includes("once") || templateSrc.includes("one retry") || templateSrc.match(/retry.{0,20}once/),
+    "template should cap subagent retries at one",
+  );
+  assert.ok(
+    templateSrc.toLowerCase().includes("blocker"),
+    "template should instruct writing a BLOCKER note instead of infinite retries",
+  );
+  assert.ok(
+    !templateSrc.match(/re-run it individually\s*\n/),
+    "template must not have unbounded re-run instruction without a retry cap",
+  );
+});
+
 // ─── Validate milestone prompt ────────────────────────────────────────────
 
 test("template: validate-milestone uses parallel reviewers", () => {
