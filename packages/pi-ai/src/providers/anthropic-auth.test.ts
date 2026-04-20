@@ -18,7 +18,7 @@ test("usesAnthropicBearerAuth covers Bearer-only Anthropic-compatible providers 
 test("createClient routes Bearer-auth providers through authToken (#3783)", () => {
 	const source = readFileSync(join(__dirname, "..", "..", "src", "providers", "anthropic.ts"), "utf-8");
 	assert.ok(
-		source.includes("const usesBearerAuth = usesAnthropicBearerAuth(model.provider);"),
+		source.includes("const usesBearerAuth = usesAnthropicBearerAuth(model.provider)"),
 		"createClient should derive auth mode from usesAnthropicBearerAuth",
 	);
 	assert.ok(

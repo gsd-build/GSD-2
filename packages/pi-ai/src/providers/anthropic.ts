@@ -110,8 +110,14 @@ async function createClient(
 		return { client, isOAuthToken: false };
 	}
 
-	// Skip beta headers for providers that don't support them (e.g., Alibaba Coding Plan)
-	const skipBetaHeaders = model.provider === "alibaba-coding-plan";
+	// Skip beta headers for providers that don't support fine-grained-tool-streaming.
+	// MiniMax and minimax-cn implement the beta by emitting empty tool names in
+	// content_block_start (name arrives as a delta instead), which corrupts conversation
+	// history and triggers MiniMax error 2013 on the next request (#4538).
+	const skipBetaHeaders =
+		model.provider === "alibaba-coding-plan" ||
+		model.provider === "minimax" ||
+		model.provider === "minimax-cn";
 	const betaFeatures = skipBetaHeaders ? [] : ["fine-grained-tool-streaming-2025-05-14"];
 	if (needsInterleavedBeta && !skipBetaHeaders) {
 		betaFeatures.push("interleaved-thinking-2025-05-14");
@@ -123,7 +129,7 @@ async function createClient(
 	const client = new AnthropicClass({
 		apiKey: usesBearerAuth ? null : apiKey,
 		authToken: usesBearerAuth ? apiKey : undefined,
-		baseURL: model.baseUrl,
+		baseURL: resolveAnthropicBaseUrl(model),
 		dangerouslyAllowBrowser: true,
 		defaultHeaders: mergeHeaders(
 			{
