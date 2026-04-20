@@ -172,12 +172,13 @@ test("double resolveAgentEnd only resolves once (second is dropped)", async () =
   assert.deepEqual(result.event, event1);
 });
 
-test("runUnit returns cancelled with non-transient session-failed context for structural newSession errors", async () => {
+test("runUnit returns cancelled with non-transient session-failed context for synchronous non-callable newSession errors", async () => {
   _resetPendingResolve();
 
   const ctx = makeMockCtx();
   const pi = makeMockPi();
-  const s = makeMockSession({ newSessionThrows: "TypeError: s.cmdCtx.newSession is not a function" });
+  const s = makeMockSession();
+  s.cmdCtx.newSession = undefined as any;
 
   const result = await runUnit(ctx, pi, s, "task", "T01", "prompt");
 
@@ -185,6 +186,11 @@ test("runUnit returns cancelled with non-transient session-failed context for st
   assert.equal(result.event, undefined);
   assert.equal(result.errorContext?.category, "session-failed");
   assert.equal(result.errorContext?.isTransient, false, "structural session errors should not be treated as transient");
+  assert.equal(
+    isSessionSwitchInFlight(),
+    false,
+    "session-switch guard should be cleared after synchronous newSession failure",
+  );
   // sendMessage should NOT have been called
   assert.equal(pi.calls.length, 0);
 });

@@ -123,6 +123,9 @@ export function startUnitSupervision(sctx: SupervisionContext): void {
       phase: "wrapup-warning-sent",
       wrapupWarningSent: true,
     });
+    // Preserve the in-flight guard from #3512 so we don't interrupt active
+    // tool work and drop tool results with a queued-message skip.
+    const softTriggerTurn = getInFlightToolCount() === 0;
     pi.sendMessage(
       {
         customType: "gsd-auto-wrapup",
@@ -137,7 +140,7 @@ export function startUnitSupervision(sctx: SupervisionContext): void {
           "4. leave precise resume notes if anything remains unfinished",
         ].join("\n"),
       },
-      { triggerTurn: true, deliverAs: "followUp" },
+      { triggerTurn: softTriggerTurn, deliverAs: "followUp" },
     );
   }, softTimeoutMs);
 
@@ -294,6 +297,8 @@ export function startUnitSupervision(sctx: SupervisionContext): void {
       );
     }
 
+    // Keep #3512 guard: only trigger a new turn when no tools are in flight.
+    const contextTriggerTurn = getInFlightToolCount() === 0;
     pi.sendMessage(
       {
         customType: "gsd-auto-wrapup",
@@ -309,7 +314,7 @@ export function startUnitSupervision(sctx: SupervisionContext): void {
           "Do NOT start new sub-tasks or investigations.",
         ].join("\n"),
       },
-      { triggerTurn: true, deliverAs: "steer" },
+      { triggerTurn: contextTriggerTurn, deliverAs: "steer" },
     );
 
     if (s.continueHereHandle) {

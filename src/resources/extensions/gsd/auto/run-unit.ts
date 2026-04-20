@@ -78,6 +78,11 @@ export async function runUnit(
     sessionResult = await Promise.race([sessionPromise, timeoutPromise]);
   } catch (sessionErr) {
     if (sessionTimeoutHandle) clearTimeout(sessionTimeoutHandle);
+    // Synchronous newSession() failures bypass sessionPromise.finally(); clear
+    // the switch guard here so later agent_end/cancel paths are not swallowed.
+    if (sessionSwitchGeneration === mySessionSwitchGeneration) {
+      _setSessionSwitchInFlight(false);
+    }
     const msg =
       sessionErr instanceof Error ? sessionErr.message : String(sessionErr);
     const isTransient = isTransientSessionCreationError(msg);
