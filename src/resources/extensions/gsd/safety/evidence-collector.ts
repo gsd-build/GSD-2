@@ -96,8 +96,20 @@ function isEvidenceArray(data: unknown): data is EvidenceEntry[] {
   if (!Array.isArray(data)) return false;
   return data.every((e) => {
     if (e === null || typeof e !== "object") return false;
-    const kind = (e as Record<string, unknown>).kind;
-    return kind === "bash" || kind === "write" || kind === "edit";
+    const rec = e as Record<string, unknown>;
+    if (typeof rec.toolCallId !== "string") return false;
+    if (typeof rec.timestamp !== "number") return false;
+    if (rec.kind === "bash") {
+      return (
+        typeof rec.command === "string" &&
+        typeof rec.exitCode === "number" &&
+        typeof rec.outputSnippet === "string"
+      );
+    }
+    if (rec.kind === "write" || rec.kind === "edit") {
+      return typeof rec.path === "string";
+    }
+    return false;
   });
 }
 
