@@ -559,18 +559,6 @@ function initSchema(db: DbAdapter, fileBacked: boolean): void {
 
     db.exec("CREATE INDEX IF NOT EXISTS idx_memories_active ON memories(superseded_by)");
 
-    // Existing DBs may arrive here before migrateSchema() has added columns
-    // that fresh installs already have. Add only columns needed by bootstrap
-    // indexes so old DBs can open far enough for the normal migration chain.
-    ensureBootstrapIndexColumns(db);
-
-    if (columnExists(db, "memories", "scope")) {
-      db.exec("CREATE INDEX IF NOT EXISTS idx_memories_scope ON memories(scope)");
-    }
-    db.exec("CREATE INDEX IF NOT EXISTS idx_memory_sources_kind ON memory_sources(kind)");
-    db.exec("CREATE INDEX IF NOT EXISTS idx_memory_sources_scope ON memory_sources(scope)");
-    db.exec("CREATE INDEX IF NOT EXISTS idx_memory_relations_from ON memory_relations(from_id)");
-    db.exec("CREATE INDEX IF NOT EXISTS idx_memory_relations_to ON memory_relations(to_id)");
     db.exec("CREATE INDEX IF NOT EXISTS idx_replan_history_milestone ON replan_history(milestone_id, created_at)");
 
     // v13 indexes — hot-path dispatch queries
@@ -588,9 +576,6 @@ function initSchema(db: DbAdapter, fileBacked: boolean): void {
     db.exec("CREATE INDEX IF NOT EXISTS idx_turn_git_tx_turn ON turn_git_transactions(trace_id, turn_id)");
     db.exec("CREATE INDEX IF NOT EXISTS idx_audit_events_trace ON audit_events(trace_id, ts)");
     db.exec("CREATE INDEX IF NOT EXISTS idx_audit_events_turn ON audit_events(trace_id, turn_id, ts)");
-    // ADR-011 Phase 2 — also created by the v17 migration; fresh installs
-    // skip migrations so the index must be created here too.
-    db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_escalation_pending ON tasks(milestone_id, slice_id, escalation_pending)");
 
     db.exec(`CREATE VIEW IF NOT EXISTS active_decisions AS SELECT * FROM decisions WHERE superseded_by IS NULL`);
     db.exec(`CREATE VIEW IF NOT EXISTS active_requirements AS SELECT * FROM requirements WHERE superseded_by IS NULL`);
@@ -598,6 +583,17 @@ function initSchema(db: DbAdapter, fileBacked: boolean): void {
 
     const existing = db.prepare("SELECT count(*) as cnt FROM schema_version").get();
     if (existing && (existing["cnt"] as number) === 0) {
+      // Fresh install — all tables are created above with the full current schema,
+      // so it is safe to create all migration-specific indexes here.  For existing
+      // databases these indexes are created inside the individual migration guards
+      // in migrateSchema() after the corresponding columns have been added.
+      db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_escalation_pending ON tasks(milestone_id, slice_id, escalation_pending)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_memories_scope ON memories(scope)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_memory_sources_kind ON memory_sources(kind)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_memory_sources_scope ON memory_sources(scope)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_memory_relations_from ON memory_relations(from_id)");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_memory_relations_to ON memory_relations(to_id)");
+
       db.prepare(
         "INSERT INTO schema_version (version, applied_at) VALUES (:version, :applied_at)",
       ).run({
@@ -672,14 +668,6 @@ export function isMemoriesFtsAvailable(db: DbAdapter): boolean {
 
 function ensureColumn(db: DbAdapter, table: string, column: string, ddl: string): void {
   if (!columnExists(db, table, column)) db.exec(ddl);
-}
-
-function ensureBootstrapIndexColumns(db: DbAdapter): void {
-  ensureColumn(db, "memories", "scope", `ALTER TABLE memories ADD COLUMN scope TEXT NOT NULL DEFAULT 'project'`);
-  ensureColumn(db, "memories", "tags", `ALTER TABLE memories ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'`);
-  ensureColumn(db, "memory_sources", "scope", `ALTER TABLE memory_sources ADD COLUMN scope TEXT NOT NULL DEFAULT 'project'`);
-  ensureColumn(db, "memory_sources", "tags", `ALTER TABLE memory_sources ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'`);
-  ensureColumn(db, "tasks", "escalation_pending", `ALTER TABLE tasks ADD COLUMN escalation_pending INTEGER NOT NULL DEFAULT 0`);
 }
 
 function migrateSchema(db: DbAdapter): void {
@@ -1119,6 +1107,10 @@ function migrateSchema(db: DbAdapter): void {
           tags TEXT NOT NULL DEFAULT '[]'
         )
       `);
+      // If memory_sources already existed before v18 (created by an earlier
+      // version of initSchema that lacked scope/tags), add the missing columns.
+      ensureColumn(db, "memory_sources", "scope", `ALTER TABLE memory_sources ADD COLUMN scope TEXT NOT NULL DEFAULT 'project'`);
+      ensureColumn(db, "memory_sources", "tags", `ALTER TABLE memory_sources ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'`);
       db.exec("CREATE INDEX IF NOT EXISTS idx_memories_scope ON memories(scope)");
       db.exec("CREATE INDEX IF NOT EXISTS idx_memory_sources_kind ON memory_sources(kind)");
       db.exec("CREATE INDEX IF NOT EXISTS idx_memory_sources_scope ON memory_sources(scope)");
