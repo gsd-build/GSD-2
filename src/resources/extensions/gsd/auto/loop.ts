@@ -36,7 +36,7 @@ import { resolveUokFlags } from "../uok/flags.js";
 import { scheduleSidecarQueue } from "../uok/execution-graph.js";
 import { ExecutionGraphScheduler } from "../uok/execution-graph.js";
 import type { UokGraphNode } from "../uok/contracts.js";
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 // ── Stuck detection persistence (#3704) ──────────────────────────────────
@@ -62,12 +62,8 @@ function loadStuckState(basePath: string): { recentUnits: Array<{ key: string }>
 
 function saveStuckState(basePath: string, state: LoopState): void {
   try {
-    const root = gsdRoot(basePath);
-    // Skip persistence if .gsd doesn't exist yet — prevents creating a real
-    // directory in test environments that use synthetic paths like /tmp/project.
-    if (!existsSync(root)) return;
     const filePath = stuckStatePath(basePath);
-    mkdirSync(join(root, "runtime"), { recursive: true });
+    mkdirSync(join(gsdRoot(basePath), "runtime"), { recursive: true });
     writeFileSync(filePath, JSON.stringify({
       recentUnits: state.recentUnits.slice(-20), // keep last 20 entries
       stuckRecoveryAttempts: state.stuckRecoveryAttempts,
@@ -594,7 +590,6 @@ export async function autoLoop(
       consecutiveCooldowns = 0;
       recentErrorMessages.length = 0;
       deps.emitJournalEvent({ ts: new Date().toISOString(), flowId, seq: nextSeq(), eventType: "iteration-end", data: { iteration } });
-      saveStuckState(s.basePath, loopState); // persist across session restarts (#4382)
       debugLog("autoLoop", { phase: "iteration-complete", iteration });
       finishTurn("completed");
     } catch (loopErr) {
