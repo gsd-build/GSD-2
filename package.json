@@ -18,7 +18,8 @@
   ],
   "bin": {
     "gsd": "dist/loader.js",
-    "gsd-cli": "dist/loader.js"
+    "gsd-cli": "dist/loader.js",
+    "gsd-pi": "scripts/install.js"
   },
   "files": [
     "dist",
@@ -27,6 +28,7 @@
     "pkg",
     "src/resources",
     "scripts/postinstall.js",
+    "scripts/install.js",
     "scripts/link-workspace-packages.cjs",
     "scripts/ensure-workspace-builds.cjs",
     "package.json",
@@ -80,7 +82,7 @@
     "gsd:web": "npm run build:pi && npm run copy-resources && node scripts/build-web-if-stale.cjs && node scripts/dev-cli.js --web",
     "gsd:web:stop": "node scripts/dev-cli.js web stop",
     "gsd:web:stop:all": "node scripts/dev-cli.js web stop all",
-    "postinstall": "node scripts/link-workspace-packages.cjs && node scripts/ensure-workspace-builds.cjs && node scripts/postinstall.js",
+    "postinstall": "node scripts/install.js",
     "pi:install-global": "node scripts/install-pi-global.js",
     "pi:uninstall-global": "node scripts/uninstall-pi-global.js",
     "sync-pkg-version": "node scripts/sync-pkg-version.cjs",
@@ -118,6 +120,7 @@
     "file-type": "^21.1.1",
     "get-east-asian-width": "^1.3.0",
     "glob": "^13.0.1",
+    "gsd-pi": "^2.58.0",
     "hosted-git-info": "^9.0.2",
     "ignore": "^7.0.5",
     "marked": "^15.0.12",
