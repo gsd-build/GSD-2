@@ -389,8 +389,12 @@ export const DISPATCH_RULES: DispatchRule[] = [
       if (!prefs?.phases?.require_slice_discussion) return null;
       if (!state.activeSlice) return null;
       // Only pause if the slice has no context file yet (discussion not done).
+      // resolveSliceFile returns null when the file does not exist on disk,
+      // but cachedReaddir could return a stale hit — verify with existsSync
+      // so the guard is defence-in-depth and the contract is explicit at the
+      // call site.
       const sliceContextFile = resolveSliceFile(basePath, mid, state.activeSlice.id, "CONTEXT");
-      if (sliceContextFile) return null; // discussion already done, proceed
+      if (sliceContextFile && existsSync(sliceContextFile)) return null; // discussion already done, proceed
       return {
         action: "stop" as const,
         reason: `Slice ${state.activeSlice.id} requires discussion before planning (require_slice_discussion is enabled). Run /gsd discuss to discuss this slice, then /gsd auto to resume.`,
