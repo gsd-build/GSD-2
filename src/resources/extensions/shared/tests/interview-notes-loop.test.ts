@@ -138,4 +138,63 @@ describe("interview-ui notes loop regression (#3502)", () => {
 		assert.ok(answer, "answer for q1 should exist");
 		assert.equal(answer.selected, "Web App");
 	});
+
+	// ─── Reviewer-requested regression coverage on #3551 ──────────────────
+	//
+	// Tab→notes→Enter from a NORMAL option (cursor not on "None of the above")
+	// must commit the normal option, not the done-sentinel. The prior fix in
+	// this PR set `st.committedIndex = st.cursorIndex` in the notes-Enter
+	// handler, which is correct ONLY if the invariant "committedIndex is null
+	// only when cursorIndex === noneOrDoneIdx" holds — and Tab-from-normal is
+	// the one reachable path where that invariant does NOT hold, so it must
+	// be exercised here.
+
+	it("Tab→notes→Enter from a normal option commits the normal option (#3449)", async () => {
+		// Cursor starts at 0 (Web App). Press Tab to open notes without
+		// committing, type nothing, press Enter — must commit index 0 (Web App),
+		// not silently jump to "None of the above".
+		const result = await runWithInputs(questions, [
+			TAB,         // open notes from cursor=0, committedIndex still null
+			ENTER,       // commit cursor=0 (Web App) and advance
+			ENTER,       // submit from review screen
+		]);
+
+		assert.ok(result, "should return a result");
+		const answer = result.answers.q1;
+		assert.ok(answer, "answer for q1 should exist");
+		assert.equal(answer.selected, "Web App", "Tab→Enter on Web App must commit Web App, not None of the above");
+	});
+
+	it("Tab→notes→Enter from a normal option preserves typed notes", async () => {
+		// Same path but user types notes before Enter — ensures notes content
+		// is captured even when opened via Tab on a normal option.
+		const result = await runWithInputs(questions, [
+			TAB,         // open notes from cursor=0
+			"w", "h", "y",  // type "why"
+			ENTER,       // commit cursor=0 with notes and advance
+			ENTER,       // submit
+		]);
+
+		assert.ok(result, "should return a result");
+		const answer = result.answers.q1;
+		assert.ok(answer, "answer for q1 should exist");
+		assert.equal(answer.selected, "Web App");
+		assert.equal(answer.notes, "why", "notes typed via Tab on a normal option must be preserved");
+	});
+
+	it("Tab→notes→Enter from CLI Tool commits CLI Tool, not None of the above", async () => {
+		// Move cursor to index 1 (CLI Tool), Tab open notes, Enter → commit 1.
+		const result = await runWithInputs(questions, [
+			DOWN,        // cursor → 1 (CLI Tool)
+			TAB,         // open notes from cursor=1
+			"c", "l", "i",
+			ENTER,       // commit cursor=1 (CLI Tool)
+			ENTER,       // submit
+		]);
+
+		assert.ok(result, "should return a result");
+		const answer = result.answers.q1;
+		assert.equal(answer.selected, "CLI Tool", "Tab→Enter must commit cursor position (CLI Tool), not the done sentinel");
+		assert.equal(answer.notes, "cli");
+	});
 });
