@@ -474,17 +474,22 @@ export async function findInitialModel(options: {
 
 	// 3. Try saved default from settings — use it exactly as configured.
 	// Whatever the user chose is what gets used; no silent substitution.
-	// Skip the saved default if its provider is not request-ready (no auth
-	// available) so we fall through to an actually-usable model instead of
-	// returning a stale selection every selector surface would display.
-	if (defaultProvider && defaultModelId && modelRegistry.isProviderRequestReady(defaultProvider)) {
+	// First find the model, then verify provider readiness — only skip if the
+	// model itself is not found (avoids falling back to first model when auth
+	// is temporarily unavailable during startup).
+	if (defaultProvider && defaultModelId) {
 		const found = modelRegistry.find(defaultProvider, defaultModelId);
 		if (found) {
-			model = found;
-			if (defaultThinkingLevel) {
-				thinkingLevel = defaultThinkingLevel;
+			const providerReady = modelRegistry.isProviderRequestReady(defaultProvider);
+			const authMode = modelRegistry.getProviderAuthMode(defaultProvider);
+			const noAuthRequired = authMode === "externalCli" || authMode === "none";
+			if (providerReady || noAuthRequired) {
+				model = found;
+				if (defaultThinkingLevel) {
+					thinkingLevel = defaultThinkingLevel;
+				}
+				return { model, thinkingLevel, fallbackMessage: undefined };
 			}
-			return { model, thinkingLevel, fallbackMessage: undefined };
 		}
 	}
 

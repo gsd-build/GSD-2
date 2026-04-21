@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { findInitialModel } from "./model-resolver.js";
 
 function fakeRegistry(options: {
-	models: Array<{ provider: string; id: string }>;
+	models: Array<{ provider: string; id: string; authMode?: string }>;
 	readyProviders: Set<string>;
 }) {
 	const fullModels = options.models.map((m) => ({
@@ -34,6 +34,10 @@ function fakeRegistry(options: {
 		},
 		isProviderRequestReady(provider: string) {
 			return options.readyProviders.has(provider);
+		},
+		getProviderAuthMode(provider: string) {
+			const m = fullModels.find((m) => m.provider === provider);
+			return (m as any)?.authMode ?? "apiKey";
 		},
 	};
 }
@@ -82,4 +86,46 @@ test("findInitialModel keeps saved default when provider has auth", async () => 
 
 	assert.equal(result.model?.provider, "openai");
 	assert.equal(result.model?.id, "gpt-5.4");
+});
+
+test("findInitialModel uses saved default for externalCli provider without stored auth", async () => {
+	const registry = fakeRegistry({
+		models: [
+			{ provider: "ollama", id: "llama3", authMode: "externalCli" },
+			{ provider: "anthropic", id: "claude-opus-4-6" },
+		],
+		readyProviders: new Set(["anthropic"]),
+	});
+
+	const result = await findInitialModel({
+		scopedModels: [],
+		isContinuing: false,
+		defaultProvider: "ollama",
+		defaultModelId: "llama3",
+		modelRegistry: registry as any,
+	});
+
+	assert.equal(result.model?.provider, "ollama");
+	assert.equal(result.model?.id, "llama3");
+});
+
+test("findInitialModel uses saved default for none provider without stored auth", async () => {
+	const registry = fakeRegistry({
+		models: [
+			{ provider: "localhost", id: "codellama", authMode: "none" },
+			{ provider: "anthropic", id: "claude-opus-4-6" },
+		],
+		readyProviders: new Set(["anthropic"]),
+	});
+
+	const result = await findInitialModel({
+		scopedModels: [],
+		isContinuing: false,
+		defaultProvider: "localhost",
+		defaultModelId: "codellama",
+		modelRegistry: registry as any,
+	});
+
+	assert.equal(result.model?.provider, "localhost");
+	assert.equal(result.model?.id, "codellama");
 });
