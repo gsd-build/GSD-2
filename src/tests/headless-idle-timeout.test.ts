@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   IDLE_TIMEOUT_MS,
@@ -8,6 +9,8 @@ import {
   shouldArmHeadlessIdleTimeout,
   shouldArmIdleTimeout,
 } from "../headless-events.js";
+
+const headlessSource = readFileSync(new URL("../headless.ts", import.meta.url), "utf8");
 
 test("getHeadlessIdleTimeout disables idle fallback for auto-mode (#3428)", () => {
   assert.equal(getHeadlessIdleTimeout("auto"), 0);
@@ -31,4 +34,24 @@ test("shouldArmHeadlessIdleTimeout stays disabled while interactive tools are pe
   assert.equal(shouldArmHeadlessIdleTimeout(0, 0), false);
   assert.equal(shouldArmHeadlessIdleTimeout(1, 1), false);
   assert.equal(shouldArmHeadlessIdleTimeout(2, 0), true);
+});
+
+test("new-milestone --auto switches the chained auto phase to auto idle policy", () => {
+  assert.match(
+    headlessSource,
+    /let\s+effectiveIdleTimeout\s*=\s*getHeadlessIdleTimeout\(options\.command\)/,
+    "the idle policy must be mutable when a headless command chains into auto-mode",
+  );
+
+  const chainStart = headlessSource.indexOf("if (isNewMilestone && options.auto && milestoneReady");
+  assert.notEqual(chainStart, -1, "expected new-milestone --auto chaining block");
+  const chainBlock = headlessSource.slice(chainStart, headlessSource.indexOf("try {", chainStart));
+
+  assert.match(chainBlock, /clearTimeout\(idleTimer\)/, "chaining into auto-mode should clear any milestone idle timer");
+  assert.match(chainBlock, /idleTimer\s*=\s*null/, "cleared idle timers should not remain addressable");
+  assert.match(
+    chainBlock,
+    /effectiveIdleTimeout\s*=\s*getHeadlessIdleTimeout\(['"]auto['"]\)/,
+    "the chained auto phase should use auto-mode idle timeout semantics",
+  );
 });

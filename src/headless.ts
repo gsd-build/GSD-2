@@ -501,7 +501,7 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
 
   // Idle timeout — fallback completion detection
   let idleTimer: ReturnType<typeof setTimeout> | null = null
-  const effectiveIdleTimeout = getHeadlessIdleTimeout(options.command)
+  let effectiveIdleTimeout = getHeadlessIdleTimeout(options.command)
 
   function resetIdleTimer(): void {
     if (idleTimer) clearTimeout(idleTimer)
@@ -921,6 +921,11 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
     // Reset completion state for the auto-mode phase.
     // Disable the overall timeout — auto-mode has its own internal supervisor.
     if (timeoutTimer) clearTimeout(timeoutTimer)
+    if (idleTimer) {
+      clearTimeout(idleTimer)
+      idleTimer = null
+    }
+    effectiveIdleTimeout = getHeadlessIdleTimeout('auto')
     completed = false
     milestoneReady = false
     blocked = false

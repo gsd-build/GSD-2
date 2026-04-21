@@ -326,5 +326,6 @@ test("#3428: refreshWorkerStatuses preserves stopped workers when disk status is
   const refreshed = getOrchestratorState();
   assert.ok(refreshed, "orchestrator should remain active while M002 is still running");
   assert.equal(refreshed!.workers.get("M001")?.state, "stopped", "missing disk status must not override a stopped worker to error");
+  assert.equal(refreshed!.workers.get("M001")?.process, null, "terminal workers with missing disk status should clear process handles");
   assert.equal(refreshed!.workers.get("M002")?.state, "running", "live worker state should still refresh from disk");
 });
