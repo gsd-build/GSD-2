@@ -39,8 +39,18 @@ test("shouldArmHeadlessIdleTimeout stays disabled while interactive tools are pe
 test("new-milestone --auto switches the chained auto phase to auto idle policy", () => {
   assert.match(
     headlessSource,
-    /let\s+effectiveIdleTimeout\s*=\s*getHeadlessIdleTimeout\(options\.command\)/,
+    /let\s+currentCommand\s*=\s*options\.command/,
+    "headless command state must be mutable when a command chains into another mode",
+  );
+  assert.match(
+    headlessSource,
+    /let\s+effectiveIdleTimeout\s*=\s*getHeadlessIdleTimeout\(currentCommand\)/,
     "the idle policy must be mutable when a headless command chains into auto-mode",
+  );
+  assert.match(
+    headlessSource,
+    /isQuickCommand\(currentCommand,\s*options\.commandArgs\)/,
+    "quick-command completion should use the current chained command, not only the initial command",
   );
 
   const chainStart = headlessSource.indexOf("if (isNewMilestone && options.auto && milestoneReady");
@@ -49,9 +59,11 @@ test("new-milestone --auto switches the chained auto phase to auto idle policy",
 
   assert.match(chainBlock, /clearTimeout\(idleTimer\)/, "chaining into auto-mode should clear any milestone idle timer");
   assert.match(chainBlock, /idleTimer\s*=\s*null/, "cleared idle timers should not remain addressable");
+  assert.match(chainBlock, /currentCommand\s*=\s*['"]auto['"]/, "the chained phase should switch current command state to auto");
+  assert.match(chainBlock, /isMultiTurnCommand\s*=\s*true/, "the chained auto phase should use multi-turn completion semantics");
   assert.match(
     chainBlock,
-    /effectiveIdleTimeout\s*=\s*getHeadlessIdleTimeout\(['"]auto['"]\)/,
+    /effectiveIdleTimeout\s*=\s*getHeadlessIdleTimeout\(currentCommand\)/,
     "the chained auto phase should use auto-mode idle timeout semantics",
   );
 });

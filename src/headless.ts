@@ -268,7 +268,8 @@ export async function runHeadless(options: HeadlessOptions): Promise<void> {
 async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): Promise<{ exitCode: number; interrupted: boolean }> {
   let interrupted = false
   const startTime = Date.now()
-  const isNewMilestone = options.command === 'new-milestone'
+  let currentCommand = options.command
+  const isNewMilestone = currentCommand === 'new-milestone'
 
   // new-milestone involves codebase investigation + artifact writing — needs more time
   if (isNewMilestone && options.timeout === 300_000) {
@@ -278,10 +279,10 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
   // auto-mode sessions are long-running (minutes to hours) with their own internal
   // per-unit timeout via auto-supervisor. Disable the overall timeout unless the
   // user explicitly set --timeout.
-  const isAutoMode = options.command === 'auto'
+  const isAutoMode = currentCommand === 'auto'
   // discuss and plan are multi-turn: they involve multiple question rounds,
   // codebase scanning, and artifact writing before the workflow completes (#3547).
-  const isMultiTurnCommand = isMultiTurnHeadlessCommand(options.command)
+  let isMultiTurnCommand = isMultiTurnHeadlessCommand(options.command)
   if (isAutoMode && options.timeout === 300_000) {
     options.timeout = 0
   }
@@ -501,7 +502,7 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
 
   // Idle timeout — fallback completion detection
   let idleTimer: ReturnType<typeof setTimeout> | null = null
-  let effectiveIdleTimeout = getHeadlessIdleTimeout(options.command)
+  let effectiveIdleTimeout = getHeadlessIdleTimeout(currentCommand)
 
   function resetIdleTimer(): void {
     if (idleTimer) clearTimeout(idleTimer)
@@ -762,7 +763,7 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
     }
 
     // Quick commands: resolve on first agent_end
-    if (eventObj.type === 'agent_end' && isQuickCommand(options.command, options.commandArgs) && !completed) {
+    if (eventObj.type === 'agent_end' && isQuickCommand(currentCommand, options.commandArgs) && !completed) {
       completed = true
       resolveCompletion()
       return
@@ -925,7 +926,9 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
       clearTimeout(idleTimer)
       idleTimer = null
     }
-    effectiveIdleTimeout = getHeadlessIdleTimeout('auto')
+    currentCommand = 'auto'
+    isMultiTurnCommand = true
+    effectiveIdleTimeout = getHeadlessIdleTimeout(currentCommand)
     completed = false
     milestoneReady = false
     blocked = false
