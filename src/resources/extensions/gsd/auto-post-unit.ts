@@ -71,6 +71,7 @@ import { resolveUokFlags } from "./uok/flags.js";
 import { UokGateRunner } from "./uok/gate-runner.js";
 import { writeTurnGitTransaction } from "./uok/gitops.js";
 import { isClosedStatus } from "./status-guards.js";
+import { detectAbandonMilestone } from "./abandon-detect.js";
 
 /** Maximum verification retry attempts before escalating to blocker placeholder (#2653). */
 const MAX_VERIFICATION_RETRIES = 3;
@@ -576,13 +577,15 @@ export async function postUnitPreVerification(pctx: PostUnitContext, opts?: PreV
         try {
           const { loadActiveOverrides } = await import("./files.js");
           const overrides = await loadActiveOverrides(s.basePath);
-          const abandonPattern = /\b(abandon|descope|cancel|shelve|drop|scrap)\b/i;
-          const abandonOverrides = overrides.filter(o => abandonPattern.test(o.change));
-          if (abandonOverrides.length > 0 && s.currentMilestoneId) {
+          const decision = detectAbandonMilestone(overrides, s.currentMilestoneId);
+          if (decision.shouldPark && s.currentMilestoneId) {
             const { parkMilestone } = await import("./milestone-actions.js");
-            const reason = abandonOverrides.map(o => o.change).join("; ");
-            parkMilestone(s.basePath, s.currentMilestoneId, reason);
-            ctx.ui.notify(`Milestone ${s.currentMilestoneId} parked: "${reason}"`, "info");
+            const parked = parkMilestone(s.basePath, s.currentMilestoneId, decision.reason);
+            if (parked) {
+              ctx.ui.notify(`Milestone ${s.currentMilestoneId} parked: "${decision.reason}"`, "info");
+            } else {
+              logWarning("postUnit", `abandon detected for ${s.currentMilestoneId} but parkMilestone returned false (already parked, completed, or not found)`);
+            }
           }
         } catch (err) {
           logWarning("postUnit", `abandon-detect failed: ${(err as Error).message}`);
