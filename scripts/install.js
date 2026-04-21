@@ -23,11 +23,16 @@ import { fileURLToPath } from 'url'
 import { createInterface } from 'readline'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const cwd = resolve(__dirname, '..')
+
+// When running as postinstall, npm sets INIT_CWD to the package root.
+// When running via npx, __dirname is inside a transient cache — use process.cwd() instead.
+const IS_POSTINSTALL = !!process.env.npm_lifecycle_event
+const packageRoot = IS_POSTINSTALL
+  ? (process.env.INIT_CWD || resolve(__dirname, '..'))
+  : resolve(__dirname, '..')
 
 // ── Feature flags ──────────────────────────────────────────────────────────
 
-const IS_POSTINSTALL = !!process.env.npm_lifecycle_event
 const args = process.argv.slice(2)
 const HAS_HELP = args.includes('--help') || args.includes('-h')
 const HAS_VERSION = args.includes('--version') || args.includes('-v')
@@ -43,7 +48,7 @@ const c = supportsColor
 
 let gsdVersion = '0.0.0'
 try {
-  const pkg = JSON.parse(readFileSync(join(cwd, 'package.json'), 'utf-8'))
+  const pkg = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf-8'))
   gsdVersion = pkg.version || '0.0.0'
 } catch { /* ignore */ }
 
@@ -166,7 +171,7 @@ async function installGlobally() {
   try {
     const result = await new Promise((res) => {
       execCb(
-        `npm install -g gsd-pi@${gsdVersion} --ignore-scripts`,
+        `npm install -g gsd-pi@${gsdVersion}`,
         { timeout: 300_000 },
         (error, stdout, stderr) => {
           res({ ok: !error, stdout: stdout || '', stderr: stderr || '', error })
@@ -199,7 +204,7 @@ async function installLocally() {
   try {
     const result = await new Promise((res) => {
       execCb(
-        `npm install gsd-pi@${gsdVersion} --ignore-scripts`,
+        `npm install gsd-pi@${gsdVersion}`,
         { cwd: process.cwd(), timeout: 300_000 },
         (error, stdout, stderr) => {
           res({ ok: !error, stdout: stdout || '', stderr: stderr || '', error })
@@ -405,7 +410,7 @@ async function installRtk() {
 // ── Step: Link workspace packages (postinstall from tarball) ───────────────
 
 function linkWorkspacePackages() {
-  const scriptPath = join(cwd, 'scripts', 'link-workspace-packages.cjs')
+  const scriptPath = join(packageRoot, 'scripts', 'link-workspace-packages.cjs')
   if (!existsSync(scriptPath)) return
 
   try {
@@ -433,8 +438,18 @@ function linkWorkspacePackages() {
 
 // ── Step: Verify installation ──────────────────────────────────────────────
 
-function verifyInstall() {
-  const result = spawnSync('gsd', ['--version'], {
+function verifyInstall(local) {
+  let bin = 'gsd'
+  if (local) {
+    const localBin = resolve(process.cwd(), 'node_modules', '.bin', 'gsd')
+    if (existsSync(localBin)) {
+      bin = localBin
+    } else if (platform() === 'win32' && existsSync(localBin + '.cmd')) {
+      bin = localBin + '.cmd'
+    }
+  }
+
+  const result = spawnSync(bin, ['--version'], {
     encoding: 'utf-8',
     stdio: ['ignore', 'pipe', 'pipe'],
     timeout: 10_000,
@@ -483,13 +498,13 @@ if (IS_POSTINSTALL) {
     if (!ok) process.exit(1)
   }
 
-  // Run postinstall steps that npm --ignore-scripts skipped
+  // Run postinstall steps that npm skipped
   linkWorkspacePackages()
   await installChromium()
   await installRtk()
 
   // Verify
-  const version = verifyInstall()
+  const version = verifyInstall(isLocal)
   if (version) {
     printStep('Verified', `gsd v${version}`)
   }
