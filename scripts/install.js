@@ -414,7 +414,7 @@ function linkWorkspacePackages() {
 
   try {
     const result = spawnSync(process.execPath, [scriptPath], {
-      cwd,
+      cwd: packageRoot,
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout: 30_000,
     })
