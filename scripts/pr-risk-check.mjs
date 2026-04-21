@@ -377,14 +377,20 @@ function renderGitHubSummary(report) {
       const check = SYSTEM_CHECKS[system];
       if (check) lines.push(`> - ${TIER_EMOJI[tier]} **${system}**: ${check}`);
     }
-    const prompt = buildAgentPrompt(systemRisks);
-    if (prompt) {
+    const relevant = flagged.filter(({ system }) => SYSTEM_CHECKS[system]);
+    if (relevant.length > 0) {
+      const systemNames = relevant.map(({ system }) => system).join(', ');
       lines.push('>');
       lines.push('> **Ask your coding agent to verify before submitting:**');
-      lines.push('> ```');
-      lines.push(`> ${prompt}`);
-      lines.push('> ```');
       lines.push('>');
+      lines.push(`> Review this PR for risks in: ${systemNames}. Verify:`);
+      lines.push('>');
+      relevant.forEach(({ system }, i) => {
+        lines.push(`> ${i + 1}. ${SYSTEM_CHECKS[system]}`);
+      });
+      lines.push('>');
+      lines.push('> Report all findings before I merge.');
+      lines.push('> ');
       lines.push('> 💡 **Have a Codex subscription?** Get an independent second opinion: `codex review --adversarial`');
     }
   }
