@@ -33,8 +33,8 @@ export function getAllowedCommandPrefixes(): readonly string[] {
 // the methods when running against an older pi-coding-agent build that still
 // has them, while compiling cleanly against 0.67.2 which removed them.
 interface GSDSettingsManager extends SettingsManager {
-  getAllowedCommandPrefixes?(): string[] | undefined
-  getFetchAllowedUrls?(): string[] | undefined
+  getAllowedCommandPrefixes(): string[] | undefined
+  getFetchAllowedUrls(): string[] | undefined
 }
 
 export function applySecurityOverrides(settingsManager: SettingsManager): void {

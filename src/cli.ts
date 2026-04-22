@@ -35,6 +35,15 @@ import { markStartup, printStartupTimings } from './startup-timings.js'
 import { bootstrapRtk, GSD_RTK_DISABLED_ENV } from './rtk.js'
 import { loadEffectiveGSDPreferences } from './resources/extensions/gsd/preferences.js'
 
+type RegistryModel = {
+  provider: string
+  id: string
+  name: string
+  contextWindow: number
+  maxTokens: number
+  reasoning?: boolean
+}
+
 // ---------------------------------------------------------------------------
 // V8 compile cache — Node 22+ can cache compiled bytecode across runs,
 // eliminating repeated parse/compile overhead for unchanged modules.
@@ -410,7 +419,7 @@ migratePiCredentials(authStorage)
 const { resolveModelsJsonPath } = await import('./models-resolver.js')
 const modelsJsonPath = resolveModelsJsonPath()
 
-const modelRegistry = ModelRegistry.create(authStorage, modelsJsonPath)
+const modelRegistry = new ModelRegistry(authStorage, modelsJsonPath)
 markStartup('ModelRegistry')
 const settingsManager = SettingsManager.create(process.cwd(), agentDir)
 applySecurityOverrides(settingsManager)
@@ -461,7 +470,7 @@ if (cliFlags.listModels !== undefined) {
   }
   listModelsExtensions.runtime.pendingProviderRegistrations = []
 
-  const models = modelRegistry.getAvailable()
+  const models = modelRegistry.getAvailable() as RegistryModel[]
   if (models.length === 0) {
     console.log('No models available. Set API keys in environment variables.')
     process.exit(0)
@@ -471,11 +480,11 @@ if (cliFlags.listModels !== undefined) {
   let filtered = models
   if (searchPattern) {
     const q = searchPattern.toLowerCase()
-    filtered = models.filter((m) => `${m.provider} ${m.id} ${m.name}`.toLowerCase().includes(q))
+    filtered = models.filter((model: RegistryModel) => `${model.provider} ${model.id} ${model.name}`.toLowerCase().includes(q))
   }
 
   // Sort by name descending (newest first), then provider, then id
-  filtered.sort((a, b) => {
+  filtered.sort((a: RegistryModel, b: RegistryModel) => {
     const nameCmp = b.name.localeCompare(a.name)
     if (nameCmp !== 0) return nameCmp
     const provCmp = a.provider.localeCompare(b.provider)
@@ -484,20 +493,20 @@ if (cliFlags.listModels !== undefined) {
   })
 
   const fmt = (n: number): string => n >= 1_000_000 ? `${n / 1_000_000}M` : n >= 1_000 ? `${n / 1_000}K` : `${n}`
-  const rows = filtered.map((m) => [
-    m.provider,
-    m.id,
-    m.name,
-    fmt(m.contextWindow),
-    fmt(m.maxTokens),
-    m.reasoning ? 'yes' : 'no',
+  const rows = filtered.map((model: RegistryModel) => [
+    model.provider,
+    model.id,
+    model.name,
+    fmt(model.contextWindow),
+    fmt(model.maxTokens),
+    model.reasoning ? 'yes' : 'no',
   ])
   const hdrs = ['provider', 'model', 'name', 'context', 'max-out', 'thinking']
-  const widths = hdrs.map((h, i) => Math.max(h.length, ...rows.map((r) => r[i].length)))
+  const widths = hdrs.map((h: string, i: number) => Math.max(h.length, ...rows.map((r: string[]) => r[i].length)))
   const pad = (s: string, w: number): string => s.padEnd(w)
-  console.log(hdrs.map((h, i) => pad(h, widths[i])).join('  '))
+  console.log(hdrs.map((h: string, i: number) => pad(h, widths[i])).join('  '))
   for (const row of rows) {
-    console.log(row.map((c, i) => pad(c, widths[i])).join('  '))
+    console.log(row.map((c: string, i: number) => pad(c, widths[i])).join('  '))
   }
   process.exit(0)
 }
@@ -538,7 +547,7 @@ if (isPrintMode) {
   const resourceLoader = new DefaultResourceLoader({
     agentDir,
     additionalExtensionPaths: cliFlags.extensions.length > 0 ? cliFlags.extensions : undefined,
-    appendSystemPrompt: appendSystemPrompt ? [appendSystemPrompt] : undefined,
+    appendSystemPrompt,
   })
   await resourceLoader.reload()
   markStartup('resourceLoader.reload')
@@ -549,7 +558,7 @@ if (isPrintMode) {
     settingsManager,
     sessionManager,
     resourceLoader,
-    isClaudeCodeReady: () => authStorage.hasAuth('claude-code'),
+    isClaudeCodeReady: () => modelRegistry.isProviderRequestReady('claude-code'),
   })
   markStartup('createAgentSession')
 
@@ -564,8 +573,8 @@ if (isPrintMode) {
   if (cliFlags.model) {
     const available = modelRegistry.getAvailable()
     const match =
-      available.find((m) => m.id === cliFlags.model) ||
-      available.find((m) => `${m.provider}/${m.id}` === cliFlags.model)
+      available.find((m: RegistryModel) => m.id === cliFlags.model) ||
+      available.find((m: RegistryModel) => `${m.provider}/${m.id}` === cliFlags.model)
     if (match) {
       session.setModel(match)
     }
@@ -704,7 +713,7 @@ const { session, extensionsResult, modelFallbackMessage: interactiveFallbackMsg 
   settingsManager,
   sessionManager,
   resourceLoader,
-  isClaudeCodeReady: () => authStorage.hasAuth('claude-code'),
+    isClaudeCodeReady: () => modelRegistry.isProviderRequestReady('claude-code'),
 })
 markStartup('createAgentSession')
 
@@ -731,7 +740,7 @@ if (enabledModelPatterns && enabledModelPatterns.length > 0) {
     if (slashIdx !== -1) {
       const provider = pattern.substring(0, slashIdx)
       const modelId = pattern.substring(slashIdx + 1)
-      const model = availableModels.find((m) => m.provider === provider && m.id === modelId)
+      const model = availableModels.find((m: RegistryModel) => m.provider === provider && m.id === modelId)
       if (model) {
         const key = `${model.provider}/${model.id}`
         if (!seen.has(key)) {
@@ -741,7 +750,7 @@ if (enabledModelPatterns && enabledModelPatterns.length > 0) {
       }
     } else {
       // Fallback: match by model id alone
-      const model = availableModels.find((m) => m.id === pattern)
+      const model = availableModels.find((m: RegistryModel) => m.id === pattern)
       if (model) {
         const key = `${model.provider}/${model.id}`
         if (!seen.has(key)) {
