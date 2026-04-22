@@ -1,16 +1,13 @@
 import {
-	TUI_KEYBINDINGS,
-	type Keybinding,
-	type KeybindingsConfig as EditorKeybindingsConfig,
-	KeybindingsManager as EditorKeybindingsManager,
+	DEFAULT_EDITOR_KEYBINDINGS,
+	type EditorAction,
+	type EditorKeybindingsConfig,
+	EditorKeybindingsManager,
 	type KeyId,
 	matchesKey,
-	setKeybindings as setEditorKeybindings,
+	setEditorKeybindings,
 } from "@gsd/pi-tui";
 
-// EditorAction is the union of all dotted TUI keybinding IDs (e.g. "tui.editor.cursorUp").
-// Phase 09: move to @gsd/agent-types.
-type EditorAction = Keybinding;
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { getAgentDir } from "@gsd/pi-coding-agent";
@@ -81,7 +78,7 @@ const DEFAULT_APP_KEYBINDINGS: Record<AppAction, KeyId | KeyId[]> = {
  * TUI_KEYBINDINGS provides defaults for the editor actions; map to first default key.
  */
 const DEFAULT_EDITOR_KEYBINDING_DEFAULTS: Partial<Record<EditorAction, KeyId | KeyId[]>> = Object.fromEntries(
-	Object.entries(TUI_KEYBINDINGS).map(([k, v]) => [k, v.defaultKeys]),
+	Object.entries(DEFAULT_EDITOR_KEYBINDINGS),
 ) as Partial<Record<EditorAction, KeyId | KeyId[]>>;
 
 const DEFAULT_KEYBINDINGS: Required<KeybindingsConfig> = {

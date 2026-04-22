@@ -2,7 +2,8 @@
  * System prompt construction and project context loading
  */
 
-import { getDocsPath, getExamplesPath, getReadmePath } from "@gsd/pi-coding-agent";
+import { dirname, resolve } from "node:path";
+import { createRequire } from "node:module";
 import { formatSkillsForPrompt } from "@gsd/pi-coding-agent";
 import type { Skill } from "@gsd/agent-types";
 
@@ -10,6 +11,25 @@ import type { Skill } from "@gsd/agent-types";
 // Phase 09: move to @gsd/agent-types.
 function toPosixPath(p: string): string {
 	return p.replace(/\\/g, "/");
+}
+
+const require = createRequire(import.meta.url);
+
+function getPiPackageDir(): string {
+	const piEntryPath = require.resolve("@gsd/pi-coding-agent");
+	return resolve(dirname(piEntryPath), "..");
+}
+
+function getReadmePath(): string {
+	return resolve(getPiPackageDir(), "README.md");
+}
+
+function getDocsPath(): string {
+	return resolve(getPiPackageDir(), "docs");
+}
+
+function getExamplesPath(): string {
+	return resolve(getPiPackageDir(), "examples");
 }
 
 /** Tool descriptions for system prompt */

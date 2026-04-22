@@ -11,7 +11,7 @@ import { createWriteStream, unlinkSync, type WriteStream } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { type ChildProcess, spawn } from "child_process";
+import { type ChildProcess, spawn, spawnSync } from "child_process";
 
 /** Track temp files created by bash execution for cleanup on exit. */
 const bashTempFiles = new Set<string>();
@@ -31,7 +31,28 @@ function registerTempCleanup(): void {
 	});
 }
 import { processStreamChunk, type StreamState } from "@gsd/native";
-import { getShellConfig, getShellEnv, killProcessTree, DEFAULT_MAX_BYTES, truncateTail } from "@gsd/pi-coding-agent";
+import { getShellConfig, DEFAULT_MAX_BYTES, truncateTail } from "@gsd/pi-coding-agent";
+
+function getShellEnv(): NodeJS.ProcessEnv {
+	return { ...process.env };
+}
+
+function killProcessTree(pid: number): void {
+	if (process.platform === "win32") {
+		spawnSync("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore" });
+		return;
+	}
+
+	try {
+		process.kill(-pid, "SIGTERM");
+	} catch {
+		try {
+			process.kill(pid, "SIGTERM");
+		} catch {
+			// best effort
+		}
+	}
+}
 
 // sanitizeCommand was removed from @gsd/pi-coding-agent 0.67.2. The function
 // stripped null bytes and other control characters that could confuse the shell.

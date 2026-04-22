@@ -3,17 +3,55 @@
  */
 
 import type { AgentMessage } from "@gsd/pi-agent-core";
-import type { Message } from "@gsd/pi-ai";
+import type { ImageContent, Message, TextContent } from "@gsd/pi-ai";
 // TOOL_RESULT_MAX_CHARS removed from @gsd/pi-coding-agent 0.67.2 public API.
 // Value matches packages/pi-coding-agent/src/core/compaction/utils.ts:89.
 // Phase 09 moves to @gsd/agent-types.
 const TOOL_RESULT_MAX_CHARS = 2000;
-import {
-	createBranchSummaryMessage,
-	createCompactionSummaryMessage,
-	createCustomMessage,
-} from "@gsd/pi-coding-agent";
 import type { SessionEntry } from "@gsd/agent-types";
+
+function parseEntryTimestamp(timestamp: string | number): number {
+	return typeof timestamp === "number" ? timestamp : new Date(timestamp).getTime();
+}
+
+function createCustomMessage(
+	customType: string,
+	content: string | (TextContent | ImageContent)[],
+	display: boolean,
+	details: unknown | undefined,
+	timestamp: string | number,
+): AgentMessage {
+	return {
+		role: "custom",
+		customType,
+		content,
+		display,
+		details,
+		timestamp: parseEntryTimestamp(timestamp),
+	};
+}
+
+function createBranchSummaryMessage(summary: string, fromId: string, timestamp: string | number): AgentMessage {
+	return {
+		role: "branchSummary",
+		summary,
+		fromId,
+		timestamp: parseEntryTimestamp(timestamp),
+	};
+}
+
+function createCompactionSummaryMessage(
+	summary: string,
+	tokensBefore: number,
+	timestamp: string | number,
+): AgentMessage {
+	return {
+		role: "compactionSummary",
+		summary,
+		tokensBefore,
+		timestamp: parseEntryTimestamp(timestamp),
+	};
+}
 
 // ============================================================================
 // File Operation Tracking

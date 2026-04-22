@@ -1,4 +1,5 @@
-import { join } from "node:path";
+import { createRequire } from "node:module";
+import { dirname, join, resolve } from "node:path";
 
 /**
  * Structured error thrown when all credentials for a provider are in a
@@ -21,21 +22,17 @@ export class CredentialCooldownError extends Error {
 }
 import { Agent, type AgentMessage, type ThinkingLevel } from "@gsd/pi-agent-core";
 import type { Api, Message, Model } from "@gsd/pi-ai";
-import { getAgentDir, getDocsPath } from "@gsd/pi-coding-agent";
+import { getAgentDir } from "@gsd/pi-coding-agent";
 import { AgentSession } from "./agent-session.js";
 import { AuthStorage } from "@gsd/pi-coding-agent";
-import { DEFAULT_THINKING_LEVEL } from "@gsd/pi-coding-agent";
 import type { ExtensionRunner, LoadExtensionsResult, ToolDefinition } from "@gsd/agent-types";
 import { convertToLlm } from "@gsd/pi-coding-agent";
 import { ModelRegistry } from "@gsd/pi-coding-agent";
-import { findInitialModel } from "@gsd/pi-coding-agent";
 import type { ResourceLoader } from "@gsd/agent-types";
 import { DefaultResourceLoader } from "@gsd/pi-coding-agent";
 import { SessionManager } from "@gsd/pi-coding-agent";
 import { SettingsManager } from "@gsd/pi-coding-agent";
-import { time } from "@gsd/pi-coding-agent";
 import {
-	allTools,
 	bashTool,
 	codingTools,
 	createBashTool,
@@ -50,13 +47,88 @@ import {
 	editTool,
 	findTool,
 	grepTool,
+	hashlineEditTool,
+	hashlineReadTool,
 	lsTool,
 	readOnlyTools,
 	readTool,
-	type Tool,
-	type ToolName,
 	writeTool,
 } from "@gsd/pi-coding-agent";
+import type { Tool, ToolName } from "@gsd/agent-types";
+
+const require = createRequire(import.meta.url);
+const DEFAULT_THINKING_LEVEL: ThinkingLevel = "medium";
+
+const allBuiltInTools = {
+	read: readTool,
+	bash: bashTool,
+	edit: editTool,
+	write: writeTool,
+	grep: grepTool,
+	find: findTool,
+	ls: lsTool,
+	hashline_edit: hashlineEditTool,
+	hashline_read: hashlineReadTool,
+} as const;
+
+function getDocsPath(): string {
+	const piEntryPath = require.resolve("@gsd/pi-coding-agent");
+	return resolve(dirname(piEntryPath), "..", "docs");
+}
+
+function time(_label: string): void {
+	if (process.env.PI_TIMING !== "1") return;
+}
+
+async function findInitialModel(options: {
+	scopedModels: Array<{ model: Model<Api>; thinkingLevel?: ThinkingLevel }>;
+	isContinuing: boolean;
+	defaultProvider?: string;
+	defaultModelId?: string;
+	defaultThinkingLevel?: ThinkingLevel;
+	modelRegistry: ModelRegistry;
+}): Promise<{ model: Model<Api> | undefined; thinkingLevel: ThinkingLevel; fallbackMessage: string | undefined }> {
+	const {
+		scopedModels,
+		isContinuing,
+		defaultProvider,
+		defaultModelId,
+		defaultThinkingLevel,
+		modelRegistry,
+	} = options;
+
+	if (scopedModels.length > 0 && !isContinuing) {
+		return {
+			model: scopedModels[0].model,
+			thinkingLevel: scopedModels[0].thinkingLevel ?? defaultThinkingLevel ?? DEFAULT_THINKING_LEVEL,
+			fallbackMessage: undefined,
+		};
+	}
+
+	if (defaultProvider && defaultModelId && modelRegistry.isProviderRequestReady(defaultProvider)) {
+		const found = modelRegistry.find(defaultProvider, defaultModelId);
+		if (found) {
+			return {
+				model: found,
+				thinkingLevel: defaultThinkingLevel ?? DEFAULT_THINKING_LEVEL,
+				fallbackMessage: undefined,
+			};
+		}
+	}
+
+	const availableModels = await modelRegistry.getAvailable();
+	if (availableModels.length > 0) {
+		if (defaultProvider) {
+			const sameProvider = availableModels.find((model) => model.provider === defaultProvider);
+			if (sameProvider) {
+				return { model: sameProvider, thinkingLevel: DEFAULT_THINKING_LEVEL, fallbackMessage: undefined };
+			}
+		}
+		return { model: availableModels[0], thinkingLevel: DEFAULT_THINKING_LEVEL, fallbackMessage: undefined };
+	}
+
+	return { model: undefined, thinkingLevel: DEFAULT_THINKING_LEVEL, fallbackMessage: undefined };
+}
 
 export interface CreateAgentSessionOptions {
 	/** Working directory for project-local discovery. Default: process.cwd() */
@@ -131,7 +203,7 @@ export {
 	lsTool,
 	codingTools,
 	readOnlyTools,
-	allTools as allBuiltInTools,
+	allBuiltInTools,
 	// Tool factories (for custom cwd)
 	createCodingTools,
 	createReadOnlyTools,
@@ -286,7 +358,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	// getEditMode() was removed from SettingsManager in 0.67.2; use the standard tool set.
 	const defaultActiveToolNames: ToolName[] = ["read", "bash", "edit", "write"];
 	const initialActiveToolNames: ToolName[] = options.tools
-		? options.tools.map((t) => t.name).filter((n): n is ToolName => n in allTools)
+		? options.tools.map((t) => t.name).filter((n): n is ToolName => n in allBuiltInTools)
 		: defaultActiveToolNames;
 
 	// Create convertToLlm wrapper that filters images if blockImages is enabled (defense-in-depth)

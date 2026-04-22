@@ -3,7 +3,6 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { parseGitUrl } from "@gsd/pi-coding-agent";
 import type { PackageManager } from "@gsd/agent-types";
 import type {
 	LifecycleHookContext,
@@ -60,6 +59,12 @@ function toScope(local: boolean): LifecycleHookScope {
 	return local ? "project" : "user";
 }
 
+function isGitSource(source: string): boolean {
+	if (!source) return false;
+	// https://host/owner/repo(.git), ssh://..., git://..., git@host:owner/repo.git
+	return /^(?:git@[^:\s]+:[^\s]+|(?:https?|ssh|git):\/\/[^\s]+)$/i.test(source);
+}
+
 export function readManifestRuntimeDeps(dir: string): string[] {
 	const manifestPath = join(dir, "extension-manifest.json");
 	if (!existsSync(manifestPath)) return [];
@@ -101,7 +106,7 @@ export function resolveLocalSourcePath(source: string, cwd: string): string | un
 	const trimmed = source.trim();
 	if (!trimmed) return undefined;
 	if (trimmed.startsWith("npm:")) return undefined;
-	if (parseGitUrl(trimmed)) return undefined;
+	if (isGitSource(trimmed)) return undefined;
 
 	let normalized = trimmed;
 	if (normalized === "~") {

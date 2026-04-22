@@ -14,6 +14,7 @@
  */
 
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { basename, dirname, join } from "node:path";
 import type {
 	Agent,
@@ -26,8 +27,21 @@ import type {
 import type { Api, AssistantMessage, ImageContent, Message, Model, TextContent } from "@gsd/pi-ai";
 import { modelsAreEqual, resetApiProviders, supportsXhigh } from "@gsd/pi-ai";
 import { Type } from "@sinclair/typebox";
-import { getDocsPath, getAgentDir } from "@gsd/pi-coding-agent";
-import { getThemeByName, stripFrontmatter } from "@gsd/pi-coding-agent";
+import {
+	getAgentDir,
+	stripFrontmatter,
+	createReadTool,
+	createBashTool,
+	createEditTool,
+	createWriteTool,
+	createGrepTool,
+	createFindTool,
+	createLsTool,
+	createHashlineEditTool,
+	createHashlineReadTool,
+	type BashToolOptions,
+	type ReadToolOptions,
+} from "@gsd/pi-coding-agent";
 
 /** Extract a human-readable error message from an unknown thrown value. */
 function getErrorMessage(e: unknown): string {
@@ -42,9 +56,7 @@ import {
 	generateBranchSummary,
 } from "./compaction/index.js";
 import { CompactionOrchestrator } from "./compaction-orchestrator.js";
-import { DEFAULT_THINKING_LEVEL } from "@gsd/pi-coding-agent";
 import { exportSessionToHtml } from "./export-html/index.js";
-import { createToolHtmlRenderer } from "./export-html/tool-renderer.js";
 import {
 	type ContextUsage,
 	type ExtensionCommandContextActions,
@@ -65,7 +77,6 @@ import {
 	type ModelRegistryWithFallback,
 } from "./fallback-resolver.js";
 import type { ModelRegistry } from "@gsd/agent-types";
-import { expandPromptTemplate } from "@gsd/pi-coding-agent";
 import type { PromptTemplate } from "@gsd/agent-types";
 import type { ResourceExtensionPaths, ResourceLoader } from "@gsd/agent-types";
 import type { Skill } from "@gsd/agent-types";
@@ -74,11 +85,113 @@ import { isImageDimensionError, downsizeConversationImages } from "./image-overf
 import type { BranchSummaryEntry, SessionManager } from "@gsd/agent-types";
 import { getLatestCompactionEntry } from "@gsd/pi-coding-agent";
 import type { SettingsManager } from "@gsd/agent-types";
-import { BUILTIN_SLASH_COMMANDS } from "@gsd/pi-coding-agent";
 import type { SlashCommandInfo } from "@gsd/agent-types";
 import { buildSystemPrompt } from "./system-prompt.js";
 import type { BashOperations } from "@gsd/agent-types";
-import { createAllTools } from "@gsd/pi-coding-agent";
+
+const require = createRequire(import.meta.url);
+const DEFAULT_THINKING_LEVEL: ThinkingLevel = "medium";
+
+const BUILTIN_SLASH_COMMANDS: ReadonlyArray<{ name: string; description: string }> = [
+	{ name: "settings", description: "Open settings menu" },
+	{ name: "model", description: "Select model (opens selector UI)" },
+	{ name: "scoped-models", description: "Enable/disable models for Ctrl+P cycling" },
+	{ name: "export", description: "Export session to HTML file" },
+	{ name: "share", description: "Share session as a secret GitHub gist" },
+	{ name: "copy", description: "Copy last agent message to clipboard" },
+	{ name: "name", description: "Set session display name" },
+	{ name: "session", description: "Show session info and stats" },
+	{ name: "changelog", description: "Show changelog entries" },
+	{ name: "hotkeys", description: "Show all keyboard shortcuts" },
+	{ name: "fork", description: "Create a new fork from a previous message" },
+	{ name: "tree", description: "Navigate session tree (switch branches)" },
+	{ name: "provider", description: "Manage provider configuration" },
+	{ name: "login", description: "Login with OAuth provider" },
+	{ name: "logout", description: "Logout from OAuth provider" },
+	{ name: "new", description: "Start a new session" },
+	{ name: "compact", description: "Manually compact the session context" },
+	{ name: "resume", description: "Resume a different session" },
+	{ name: "reload", description: "Reload extensions, skills, prompts, and themes" },
+	{ name: "thinking", description: "Set thinking level (off/minimal/low/medium/high/xhigh)" },
+	{ name: "edit-mode", description: "Toggle edit mode (standard/hashline)" },
+	{ name: "terminal", description: "Run a shell command directly (e.g. /terminal ping -c3 1.1.1.1)" },
+	{ name: "quit", description: "Quit pi" },
+];
+
+function getDocsPath(): string {
+	const piEntryPath = require.resolve("@gsd/pi-coding-agent");
+	return join(dirname(piEntryPath), "..", "docs");
+}
+
+function parsePromptArgs(argsString: string): string[] {
+	const args: string[] = [];
+	let current = "";
+	let inQuote: string | null = null;
+
+	for (let i = 0; i < argsString.length; i++) {
+		const char = argsString[i];
+		if (inQuote) {
+			if (char === inQuote) {
+				inQuote = null;
+			} else {
+				current += char;
+			}
+		} else if (char === '"' || char === "'") {
+			inQuote = char;
+		} else if (char === " " || char === "\t") {
+			if (current) {
+				args.push(current);
+				current = "";
+			}
+		} else {
+			current += char;
+		}
+	}
+
+	if (current) {
+		args.push(current);
+	}
+	return args;
+}
+
+function substituteTemplateArgs(content: string, args: string[]): string {
+	let result = content;
+	result = result.replace(/\$(\d+)/g, (_, num: string) => {
+		const index = Number.parseInt(num, 10) - 1;
+		return args[index] ?? "";
+	});
+	result = result.replace(/\$ARGUMENTS/g, args.join(" "));
+	result = result.replace(/\$@/g, args.join(" "));
+	return result;
+}
+
+function expandPromptTemplate(text: string, templates: PromptTemplate[]): string {
+	if (!text.startsWith("/")) return text;
+	const spaceIndex = text.indexOf(" ");
+	const templateName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
+	const argsString = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1);
+	const template = templates.find((candidate) => candidate.name === templateName);
+	if (!template) return text;
+	const args = parsePromptArgs(argsString);
+	return substituteTemplateArgs(template.content, args);
+}
+
+function createAllTools(
+	cwd: string,
+	options?: { read?: ReadToolOptions; bash?: BashToolOptions },
+): Record<string, AgentTool> {
+	return {
+		read: createReadTool(cwd, options?.read) as unknown as AgentTool,
+		bash: createBashTool(cwd, options?.bash) as unknown as AgentTool,
+		edit: createEditTool(cwd) as unknown as AgentTool,
+		write: createWriteTool(cwd) as unknown as AgentTool,
+		grep: createGrepTool(cwd) as unknown as AgentTool,
+		find: createFindTool(cwd) as unknown as AgentTool,
+		ls: createLsTool(cwd) as unknown as AgentTool,
+		hashline_edit: createHashlineEditTool(cwd) as unknown as AgentTool,
+		hashline_read: createHashlineReadTool(cwd, options?.read) as unknown as AgentTool,
+	};
+}
 
 // ============================================================================
 // Local type shims for types absent from @gsd/pi-coding-agent 0.67.2 public API.
@@ -887,7 +1000,7 @@ export class AgentSession {
 		listeners: AgentSessionEventListener[];
 		steering: string[];
 		followUp: string[];
-		pending: import("@gsd/pi-coding-agent").CustomMessage[];
+		pending: CustomMessage[];
 	} {
 		return {
 			listeners: [...this._eventListeners],
@@ -3186,26 +3299,9 @@ export class AgentSession {
 	 */
 	async exportToHtml(outputPath?: string): Promise<string> {
 		const themeName = this.settingsManager.getTheme();
-
-		// Resolve the current theme instance; fall back to "dark" if the named theme is unavailable.
-		// getThemeByName("dark") always resolves since "dark" is a builtin theme.
-		const currentTheme = ((themeName ? getThemeByName(themeName) : undefined) ?? getThemeByName("dark"))!;
-
-		// Create tool renderer for extension and built-in tool HTML rendering
-		// vendor-seam: dual-module-path — Theme resolves to @gsd/pi-coding-agent/dist in
-		// createToolHtmlRenderer but @gsd/pi-coding-agent/src here. Structural mismatch;
-		// no fix without pi-mono changes.
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any -- vendor-seam: dual-module-path Theme mismatch
-		const themedArg = currentTheme as any; /* vendor-seam: dual-module-path */
-		const toolRenderer = createToolHtmlRenderer({
-			getToolDefinition: (name) => this.getRenderableToolDefinition(name),
-			theme: themedArg,
-		});
-
 		return await exportSessionToHtml(this.sessionManager, this.state, {
 			outputPath,
 			themeName,
-			toolRenderer,
 		});
 	}
 

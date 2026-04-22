@@ -1,11 +1,38 @@
 import type { AgentState } from "@gsd/pi-agent-core";
 import { existsSync, readFileSync, writeFileSync } from "fs";
-import { basename, join } from "path";
-import { APP_NAME, getExportTemplateDir } from "@gsd/pi-coding-agent";
-import { getResolvedThemeColors, getThemeExportColors } from "@gsd/pi-coding-agent";
+import { basename, dirname, join } from "path";
+import { fileURLToPath } from "url";
 import type { ToolInfo } from "@gsd/agent-types";
 import type { SessionEntry } from "@gsd/agent-types";
 import { SessionManager } from "@gsd/pi-coding-agent";
+
+const APP_NAME = "gsd";
+
+function getExportTemplateDir(): string {
+	const moduleDir = dirname(fileURLToPath(import.meta.url));
+	if (existsSync(join(moduleDir, "template.html"))) {
+		return moduleDir;
+	}
+	const srcFallback = join(moduleDir, "..", "..", "src", "export-html");
+	return existsSync(join(srcFallback, "template.html")) ? srcFallback : moduleDir;
+}
+
+const DEFAULT_THEME_COLORS: Record<string, string> = {
+	accent: "#62a0ea",
+	border: "#3b4252",
+	borderMuted: "#2e3440",
+	text: "#e5e9f0",
+	muted: "#aeb6c3",
+	userMessageBg: "#343541",
+};
+
+function getResolvedThemeColors(_themeName?: string): Record<string, string> {
+	return DEFAULT_THEME_COLORS;
+}
+
+function getThemeExportColors(_themeName?: string): { pageBg?: string; cardBg?: string; infoBg?: string } {
+	return {};
+}
 
 /**
  * Interface for rendering custom tools to HTML.

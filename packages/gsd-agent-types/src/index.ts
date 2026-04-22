@@ -1,5 +1,7 @@
 // GSD-originated types (no pi-mono counterpart — owned by GSD)
 // Moved from packages/gsd-agent-core/src/lifecycle-hook-types.ts
+import type { ImageContent, TextContent } from "@gsd/pi-ai";
+
 export type LifecycleHookPhase = string;
 export type LifecycleHookScope = "project" | "user";
 export interface LifecycleHookContext {
@@ -18,7 +20,7 @@ export type LifecycleHookMap = Partial<Record<LifecycleHookPhase, LifecycleHookH
 
 // Pi-originated types (re-exported from @gsd/pi-coding-agent public API)
 export type { ToolInfo } from "@gsd/pi-coding-agent";
-export type { SourceInfo } from "@gsd/pi-coding-agent";
+export type { PathMetadata as SourceInfo } from "@gsd/pi-coding-agent";
 export type { PackageManager } from "@gsd/pi-coding-agent";
 export type { AuthStorage } from "@gsd/pi-coding-agent";
 export type { ModelRegistry } from "@gsd/pi-coding-agent";
@@ -32,9 +34,6 @@ export type { ToolDefinition } from "@gsd/pi-coding-agent";
 export type { SessionEntry } from "@gsd/pi-coding-agent";
 export type { LoadExtensionsResult } from "@gsd/pi-coding-agent";
 export type { ResourceLoader } from "@gsd/pi-coding-agent";
-export type { BashExecutionMessage } from "@gsd/pi-coding-agent";
-export type { CustomMessage } from "@gsd/pi-coding-agent";
-export type { ResourceExtensionPaths } from "@gsd/pi-coding-agent";
 export type { BranchSummaryEntry } from "@gsd/pi-coding-agent";
 export type { SlashCommandInfo } from "@gsd/pi-coding-agent";
 export type { ExtensionCommandContextActions } from "@gsd/pi-coding-agent";
@@ -50,27 +49,96 @@ export type { ResolvedPaths } from "@gsd/pi-coding-agent";
 export type { ResolvedResource } from "@gsd/pi-coding-agent";
 export type { PackageSource } from "@gsd/pi-coding-agent";
 export type { MessageRenderer } from "@gsd/pi-coding-agent";
-export type { CompactionSummaryMessage } from "@gsd/pi-coding-agent";
-export type { BranchSummaryMessage } from "@gsd/pi-coding-agent";
 export type { ParsedSkillBlock } from "@gsd/pi-coding-agent";
 export type { SessionStats } from "@gsd/pi-coding-agent";
-export type { BashResult } from "@gsd/pi-coding-agent";
 export type { ExtensionUIContext } from "@gsd/pi-coding-agent";
 export type { ExtensionUIDialogOptions } from "@gsd/pi-coding-agent";
 export type { ExtensionWidgetOptions } from "@gsd/pi-coding-agent";
-export type { ToolName } from "@gsd/pi-coding-agent";
-export type { ContextualTips } from "@gsd/pi-coding-agent";
 export type { PromptTemplate } from "@gsd/pi-coding-agent";
 export type { Skill } from "@gsd/pi-coding-agent";
-export type { Tool } from "@gsd/pi-coding-agent";
 export type { ExtensionAPI } from "@gsd/pi-coding-agent";
 export type { ExtensionCommandContext } from "@gsd/pi-coding-agent";
 export type { ExtensionContext } from "@gsd/pi-coding-agent";
 export type { ExtensionFactory } from "@gsd/pi-coding-agent";
 export type { SlashCommandSource } from "@gsd/pi-coding-agent";
 export type { SessionContext } from "@gsd/pi-coding-agent";
-export type { EditDiffError } from "@gsd/pi-coding-agent";
-export type { EditDiffResult } from "@gsd/pi-coding-agent";
+
+export interface BashExecutionMessage {
+	role: "bashExecution";
+	command: string;
+	output: string;
+	exitCode: number | undefined;
+	cancelled: boolean;
+	truncated: boolean;
+	fullOutputPath?: string;
+	timestamp: number;
+	excludeFromContext?: boolean;
+}
+
+export interface CustomMessage<T = unknown> {
+	role: "custom";
+	customType: string;
+	content: string | (TextContent | ImageContent)[];
+	display: boolean;
+	details?: T;
+	timestamp: number;
+}
+
+export interface BranchSummaryMessage {
+	role: "branchSummary";
+	summary: string;
+	fromId: string;
+	timestamp: number;
+}
+
+export interface CompactionSummaryMessage {
+	role: "compactionSummary";
+	summary: string;
+	tokensBefore: number;
+	timestamp: number;
+}
+
+export interface ResourceExtensionPaths {
+	skillPaths?: Array<{ path: string; metadata: import("@gsd/pi-coding-agent").PathMetadata }>;
+	promptPaths?: Array<{ path: string; metadata: import("@gsd/pi-coding-agent").PathMetadata }>;
+	themePaths?: Array<{ path: string; metadata: import("@gsd/pi-coding-agent").PathMetadata }>;
+}
+
+export interface BashResult {
+	output: string;
+	exitCode: number | undefined;
+	cancelled: boolean;
+	truncated: boolean;
+	fullOutputPath?: string;
+}
+
+export type ToolName =
+	| "read"
+	| "bash"
+	| "edit"
+	| "write"
+	| "grep"
+	| "find"
+	| "ls"
+	| "lsp"
+	| "hashline_edit"
+	| "hashline_read";
+
+export type Tool = import("@gsd/pi-agent-core").AgentTool;
+
+export interface ContextualTips {
+	recordBashIncluded(): void;
+	evaluate(input: { input: string; isStreaming: boolean; thinkingLevel: string; contextPercent?: number }): string | null;
+}
+
+export interface EditDiffResult {
+	diff: string;
+	firstChangedLine: number | undefined;
+}
+
+export interface EditDiffError {
+	error: string;
+}
 
 // ============================================================================
 // GSD utility types and helpers (no pi-mono counterpart)
