@@ -45,7 +45,7 @@ console.log('\n── Tool naming: registration count ──');
 const pi = makeMockPi();
 registerDbTools(pi);
 
-assert.deepStrictEqual(pi.tools.length, 30, 'Should register exactly 30 tools (14 canonical + 14 aliases + 1 gate tool + 1 gsd_skip_slice)');
+assert.deepStrictEqual(pi.tools.length, 31, 'Should register exactly 31 tools (14 canonical + 14 aliases + 1 gate tool + 1 gsd_skip_slice + 1 gsd_register_external_wait)');
 
 // ─── Both names exist for each pair ──────────────────────────────────────────
 
