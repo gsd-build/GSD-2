@@ -257,8 +257,8 @@ Test
 `);
     openTestDb(base);
     insertMilestone({ id: "M001", title: "Test Milestone", status: "active" });
-    insertSlice({ id: "S01", milestoneId: "M001", title: "First slice", status: "complete", depends: [], sequence: 1 });
-    insertSlice({ id: "S02", milestoneId: "M001", title: "Skipped slice", status: "skipped", depends: [], sequence: 2 });
+    insertSlice({ id: "S01", milestoneId: "M001", title: "First slice", status: "complete", depends: [] });
+    insertSlice({ id: "S02", milestoneId: "M001", title: "Skipped slice", status: "skipped", depends: [] });
     writeSliceSummary(base, "M001", "S01", "# S01 Summary\nDelivered.");
 
     const prompt = await buildCompleteMilestonePrompt("M001", "Test Milestone", base);
@@ -296,8 +296,8 @@ Test
 `);
     openTestDb(base);
     insertMilestone({ id: "M001", title: "Test Milestone", status: "active" });
-    insertSlice({ id: "S01", milestoneId: "M001", title: "First slice", status: "complete", depends: [], sequence: 1 });
-    insertSlice({ id: "S02", milestoneId: "M001", title: "Skipped slice", status: "skipped", depends: [], sequence: 2 });
+    insertSlice({ id: "S01", milestoneId: "M001", title: "First slice", status: "complete", depends: [] });
+    insertSlice({ id: "S02", milestoneId: "M001", title: "Skipped slice", status: "skipped", depends: [] });
     writeSliceSummary(base, "M001", "S01", "# S01 Summary\nDelivered.");
     writeSliceAssessment(base, "M001", "S01", "---\nverdict: PASS\n---\n# Assessment\nEvidence captured.");
 
@@ -401,7 +401,7 @@ test("dispatch rule fails closed for failure-path SUMMARY when DB milestone is n
   const base = makeTmpBase();
   try {
     openTestDb(base);
-    insertMilestone({ id: "M001", title: "Test", status: "active", sequence: 1 });
+    insertMilestone({ id: "M001", title: "Test", status: "active" });
     writeMilestoneSummary(base, "M001", "# Milestone Summary\nverification FAILED — not complete.");
 
     const ctx: DispatchContext = {
@@ -438,7 +438,7 @@ test("dispatch rule reconciles DB for successful stale SUMMARY (#4658)", async (
   const base = makeTmpBase();
   try {
     openTestDb(base);
-    insertMilestone({ id: "M001", title: "Test", status: "active", sequence: 1 });
+    insertMilestone({ id: "M001", title: "Test", status: "active" });
     writeMilestoneSummary(
       base,
       "M001",
@@ -486,7 +486,7 @@ test("dispatch rule fails closed for ambiguous stale SUMMARY (#4658)", async () 
   const base = makeTmpBase();
   try {
     openTestDb(base);
-    insertMilestone({ id: "M001", title: "Test", status: "active", sequence: 1 });
+    insertMilestone({ id: "M001", title: "Test", status: "active" });
     writeMilestoneSummary(base, "M001", "# M001 Summary\nSome notes without completion metadata.");
 
     const ctx: DispatchContext = {
