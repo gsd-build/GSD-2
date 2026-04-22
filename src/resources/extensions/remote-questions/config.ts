@@ -55,12 +55,26 @@ function hydrateRemoteTokensFromAuth(): void {
 
   try {
     const auth = AuthStorage.create();
+    const authData = (auth as unknown as {
+      data?: Record<string, { type?: string; key?: string } | Array<{ type?: string; key?: string }>>;
+    }).data ?? {};
 
     for (const [providerId, envVar] of needed) {
       try {
-        const cred = auth.get(providerId) as { type?: string; key?: string } | undefined;
-        if (cred?.type === "api_key" && cred.key) {
-          process.env[envVar] = cred.key;
+        const raw = authData[providerId];
+        const creds = Array.isArray(raw)
+          ? raw
+          : raw
+            ? [raw]
+            : [];
+        if (creds.length === 0) {
+          const fallbackCred = auth.get(providerId) as { type?: string; key?: string } | undefined;
+          if (fallbackCred) creds.push(fallbackCred);
+        }
+
+        const apiKeyCred = creds.find((c) => c.type === "api_key" && !!c.key);
+        if (apiKeyCred?.key) {
+          process.env[envVar] = apiKeyCred.key;
         }
       } catch {
         // Per-provider failure is non-fatal — skip and move on.

@@ -603,10 +603,22 @@ export async function createMcpServer(sessionManager: SessionManager): Promise<{
         const validationError = validateAskUserQuestionsPayload(questions);
         if (validationError) return errorContent(validationError);
 
-        // Delegate to remote-questions manager when a remote channel is configured
-        // (Discord, Slack, Telegram). This path is the only one reachable for
-        // Claude Code-under-gsd sessions, which have no local TUI.
-        if (isRemoteConfigured()) {
+        // Prefer MCP elicitation when the client supports it (desktop/test stdio).
+        // If elicitation is unavailable (e.g. Claude Code headless), fall back
+        // to remote questions when configured.
+        const remoteConfigured = isRemoteConfigured();
+        try {
+          const elicitation = await withElicitTimeout(
+            server.server.elicitInput(buildAskUserQuestionsElicitRequest(questions)),
+            'ask_user_questions',
+          );
+          if (elicitation.action !== 'accept' || !elicitation.content) {
+            return textContent('ask_user_questions was cancelled before receiving a response');
+          }
+
+          return textContent(formatAskUserQuestionsElicitResult(questions, elicitation));
+        } catch (elicitationError) {
+          if (!remoteConfigured) throw elicitationError;
           const remoteResult = await tryRemoteQuestions(questions, extra?.signal);
           if (remoteResult) {
             const details = remoteResult.details as Record<string, unknown> | undefined;
@@ -616,19 +628,8 @@ export async function createMcpServer(sessionManager: SessionManager): Promise<{
             }
             return textContent(remoteResult.content[0]?.text ?? '');
           }
-          // resolveRemoteConfig() returned null between isRemoteConfigured() and
-          // tryRemoteQuestions() (e.g. env var was cleared) — fall through to local.
+          throw elicitationError;
         }
-
-        const elicitation = await withElicitTimeout(
-          server.server.elicitInput(buildAskUserQuestionsElicitRequest(questions)),
-          'ask_user_questions',
-        );
-        if (elicitation.action !== 'accept' || !elicitation.content) {
-          return textContent('ask_user_questions was cancelled before receiving a response');
-        }
-
-        return textContent(formatAskUserQuestionsElicitResult(questions, elicitation));
       } catch (err) {
         return errorContent(err instanceof Error ? err.message : String(err));
       }
