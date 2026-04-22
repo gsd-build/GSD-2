@@ -13,7 +13,7 @@ import { invalidateStateCache } from "../state.js";
 import { saveJsonFile } from "../json-persistence.js";
 import { resolveTasksDir } from "../paths.js";
 import { join } from "node:path";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, unlinkSync } from "node:fs";
 import {
   executeCompleteMilestone,
   executePlanMilestone,
@@ -1144,19 +1144,7 @@ export function registerDbTools(pi: ExtensionAPI): void {
       return { content: [{ type: "text" as const, text: `Error: task not in executing status (current: ${task.status})` }], isError: true, details: { error: `task not in executing status (current: ${task.status})` } as any };
     }
 
-    // Insert external_waits DB row (R213, R214, R223)
-    insertExternalWait(milestoneId, sliceId, taskId, checkCommand, {
-      successCheck,
-      pollIntervalMs,
-      timeoutMs,
-      contextHint,
-      onTimeout,
-    });
-
-    // Update task status to awaiting-external
-    updateTaskStatus(milestoneId, sliceId, taskId, "awaiting-external");
-
-    // Write JSON probe spec (R215)
+    // Write JSON probe spec FIRST (R215) — filesystem before DB to avoid stranded state
     const basePath = process.cwd();
     const resolvedPollInterval = pollIntervalMs ?? 30000;
     const resolvedTimeout = timeoutMs ?? 86400000;
@@ -1170,18 +1158,38 @@ export function registerDbTools(pi: ExtensionAPI): void {
       mkdirSync(tasksDir, { recursive: true });
     }
     const jsonPath = join(tasksDir, `${taskId}-EXTERNAL-WAIT.json`);
-    saveJsonFile(jsonPath, {
-      milestoneId,
-      sliceId,
-      taskId,
-      checkCommand,
-      successCheck: successCheck ?? null,
-      pollIntervalMs: resolvedPollInterval,
-      timeoutMs: resolvedTimeout,
-      contextHint: contextHint ?? null,
-      onTimeout: resolvedOnTimeout,
-      registeredAt,
-    });
+    try {
+      saveJsonFile(jsonPath, {
+        milestoneId,
+        sliceId,
+        taskId,
+        checkCommand,
+        successCheck: successCheck ?? null,
+        pollIntervalMs: resolvedPollInterval,
+        timeoutMs: resolvedTimeout,
+        contextHint: contextHint ?? null,
+        onTimeout: resolvedOnTimeout,
+        registeredAt,
+      });
+    } catch (fileErr) {
+      return { content: [{ type: "text" as const, text: `Error: failed to write probe spec — ${fileErr instanceof Error ? fileErr.message : String(fileErr)}` }], isError: true, details: { error: "probe spec write failed" } as any };
+    }
+
+    // Insert external_waits DB row and update task status (R213, R214, R223)
+    try {
+      insertExternalWait(milestoneId, sliceId, taskId, checkCommand, {
+        successCheck,
+        pollIntervalMs,
+        timeoutMs,
+        contextHint,
+        onTimeout,
+      });
+      updateTaskStatus(milestoneId, sliceId, taskId, "awaiting-external");
+    } catch (dbErr) {
+      // Cleanup the JSON file to avoid partial state
+      try { unlinkSync(jsonPath); } catch { /* best effort */ }
+      return { content: [{ type: "text" as const, text: `Error: DB update failed — ${dbErr instanceof Error ? dbErr.message : String(dbErr)}` }], isError: true, details: { error: "db update failed" } as any };
+    }
 
     // Invalidate state cache
     invalidateStateCache();

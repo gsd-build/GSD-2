@@ -757,14 +757,24 @@ export const DISPATCH_RULES: DispatchRule[] = [
       const timeoutMs = (waitRow.timeout_ms as number) || 86400000;
       if (Date.now() > Date.parse(registeredAt) + timeoutMs) {
         const onTimeout = (waitRow.on_timeout as string) || "manual-attention";
-        updateTaskStatus(mid, sid, tid, "manual-attention");
         updateExternalWaitStatus(mid, sid, tid, "timed-out");
-        invalidateStateCache();
-        try { appendFileSync(logPath, JSON.stringify({ ts: new Date().toISOString(), event: "timeout", registeredAt, timeoutMs }) + "\n"); } catch (logErr) { logWarning("dispatch", `Failed to write external wait log: ${logErr instanceof Error ? logErr.message : String(logErr)}`); }
-        if (onTimeout === "manual-attention") {
-          return { action: "stop" as const, reason: `External wait for ${tid} timed out (registered ${registeredAt}, timeout ${timeoutMs}ms). Escalating to manual attention.`, level: "warning" as const };
+        try { appendFileSync(logPath, JSON.stringify({ ts: new Date().toISOString(), event: "timeout", registeredAt, timeoutMs, onTimeout }) + "\n"); } catch (logErr) { logWarning("dispatch", `Failed to write external wait log: ${logErr instanceof Error ? logErr.message : String(logErr)}`); }
+
+        if (onTimeout === "resume-with-failure") {
+          // Resume execution with failure context so the agent can handle the timeout
+          updateTaskStatus(mid, sid, tid, "executing");
+          invalidateStateCache();
+          const contextHint = (waitRow.context_hint as string) || "";
+          if (ctx.session) {
+            ctx.session.pendingExternalResume = `**EXTERNAL WAIT TIMED OUT — RESUMING WITH FAILURE**\n\nThe external process timed out after ${timeoutMs}ms (registered ${registeredAt}).${contextHint ? `\n\nContext from registration: ${contextHint}` : ""}\n\nThe onTimeout policy is "resume-with-failure" — investigate the timeout, adjust parameters if needed, and either retry or escalate.`;
+          }
+          return { action: "skip" as const };
         }
-        return { action: "stop" as const, reason: `External wait for ${tid} timed out.`, level: "warning" as const };
+
+        // Default: manual-attention
+        updateTaskStatus(mid, sid, tid, "manual-attention");
+        invalidateStateCache();
+        return { action: "stop" as const, reason: `External wait for ${tid} timed out (registered ${registeredAt}, timeout ${timeoutMs}ms). Escalating to manual attention.`, level: "warning" as const };
       }
 
       // ── JSON probe spec existence check (R228) ────────────────────
@@ -779,9 +789,11 @@ export const DISPATCH_RULES: DispatchRule[] = [
       // ── Helper: compute min pollInterval across all waiting waits ──
       const computeMinPoll = (): number => {
         const allWaiting = getAllWaitingExternalWaits(mid);
-        return allWaiting.length > 0
+        const candidate = allWaiting.length > 0
           ? Math.min(...allWaiting.map(w => (w.poll_interval_ms as number) || 60000))
           : pollIntervalMs;
+        // Clamp to at least 1000ms to prevent tight loops from negative/zero DB values
+        return Math.max(1000, candidate);
       };
 
       // Probe timeout: use pollInterval (capped between 30s-120s) so slow external systems have time to respond
