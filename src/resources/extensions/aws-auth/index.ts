@@ -139,7 +139,6 @@ export default function (pi: ExtensionAPI) {
 		const refreshed = await runRefresh(refreshCommand, (m, level) => ctx.ui.notify(m, level));
 		if (!refreshed) return;
 
-		// retryLastTurn removed in pi 0.67.2 — notify user to retry manually
-		ctx.ui.notify("AWS credentials refreshed. Please resend your message to retry.", "info");
+		pi.retryLastTurn();
 	});
 }

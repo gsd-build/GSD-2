@@ -286,7 +286,7 @@ export function checkAutoStartAfterDiscuss(): boolean {
   }
 
   pendingAutoStartMap.delete(basePath);
-  ctx.ui.notify(`Milestone ${milestoneId} ready.`, "info");
+  ctx.ui.notify(`Milestone ${milestoneId} ready.`, "success");
   startAutoDetached(ctx, pi, basePath, false, { step });
   return true;
 }

@@ -479,14 +479,13 @@ test("fresh gsd --web browser onboarding stays locked on failed validation and u
   assert.match(launch.stderr, /status=started/, "expected a started diagnostic line on stderr")
 
   const auth = runtimeAuthHeaders(launch)
-  const requestTimeoutMs = 30_000
   await waitForHttpOk(`${launch.url}/api/boot`, undefined, auth)
 
   // 1. Boot reports locked before any credentials are saved
   const bootBefore = await fetch(`${launch.url}/api/boot`, {
     method: "GET",
     headers: { Accept: "application/json", ...auth },
-    signal: AbortSignal.timeout(requestTimeoutMs),
+    signal: AbortSignal.timeout(10_000),
   })
   assert.equal(bootBefore.ok, true, `expected boot endpoint to respond successfully: ${bootBefore.status}`)
   const bootBeforePayload = await bootBefore.json() as any
@@ -498,7 +497,7 @@ test("fresh gsd --web browser onboarding stays locked on failed validation and u
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json", ...auth },
     body: JSON.stringify({ action: "save_api_key", providerId: "openai", apiKey: "invalid-demo-key" }),
-    signal: AbortSignal.timeout(requestTimeoutMs),
+    signal: AbortSignal.timeout(10_000),
   })
   assert.equal(invalidValidation.status, 422)
   const invalidPayload = await invalidValidation.json() as any
@@ -522,7 +521,7 @@ test("fresh gsd --web browser onboarding stays locked on failed validation and u
   const bootAfter = await fetch(`${launch.url}/api/boot`, {
     method: "GET",
     headers: { Accept: "application/json", ...auth },
-    signal: AbortSignal.timeout(requestTimeoutMs),
+    signal: AbortSignal.timeout(10_000),
   })
   assert.equal(bootAfter.ok, true)
   const bootAfterPayload = await bootAfter.json() as any

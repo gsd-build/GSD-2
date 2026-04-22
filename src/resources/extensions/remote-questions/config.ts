@@ -55,24 +55,13 @@ function hydrateRemoteTokensFromAuth(): void {
 
   try {
     const auth = AuthStorage.create();
-    const authData = (auth as unknown as {
-      data?: Record<string, { type?: string; key?: string } | Array<{ type?: string; key?: string }>>;
-    }).data ?? {};
 
     for (const [providerId, envVar] of needed) {
       try {
-        const raw = authData[providerId];
-        const creds = Array.isArray(raw)
-          ? raw
-          : raw
-            ? [raw]
-            : [];
-        if (creds.length === 0) {
-          const fallbackCred = auth.get(providerId) as { type?: string; key?: string } | undefined;
-          if (fallbackCred) creds.push(fallbackCred);
-        }
-
-        const apiKeyCred = creds.find((c) => c.type === "api_key" && !!c.key);
+        const creds = auth.getCredentialsForProvider(providerId);
+        const apiKeyCred = creds.find((c: { type: string; key?: string }) => c.type === "api_key" && !!c.key) as
+          | { type: "api_key"; key: string }
+          | undefined;
         if (apiKeyCred?.key) {
           process.env[envVar] = apiKeyCred.key;
         }

@@ -5,8 +5,7 @@
  * block on the full background-process stack before the TUI paints.
  */
 
-import { type ExtensionAPI, type ExtensionContext } from "@gsd/pi-coding-agent";
-import { importExtensionModule } from "@gsd/pi-coding-agent";
+import { importExtensionModule, type ExtensionAPI, type ExtensionContext } from "@gsd/pi-coding-agent";
 import { registerBgShellLifecycle } from "./bg-shell-lifecycle.js";
 
 export interface BgShellSharedState {

@@ -3,13 +3,9 @@ import assert from "node:assert/strict"
 import { hasDirectAnthropicApiKey, shouldMigrateAnthropicToClaudeCode } from "../provider-migrations.ts"
 
 function makeAuthStorage(credentials: unknown[]) {
-  // pi 0.67.2: getCredentialsForProvider removed; replaced with get(provider)
-  // which returns a single credential (round-robins if multiple stored).
-  // For test purposes, return the first credential in the list.
   return {
-    get(provider: string) {
-      if (provider !== "anthropic") return undefined
-      return credentials[0] ?? undefined
+    getCredentialsForProvider(provider: string) {
+      return provider === "anthropic" ? credentials : []
     },
   }
 }

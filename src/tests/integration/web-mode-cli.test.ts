@@ -21,7 +21,7 @@ test('package hooks declare a concrete staged web host', () => {
   assert.equal(rootPackage.scripts['stage:web-host'], 'node scripts/stage-web-standalone.cjs')
   assert.equal(rootPackage.scripts['build:web-host'], 'npm --prefix web run build && npm run stage:web-host')
   assert.equal(rootPackage.scripts['gsd'], 'node scripts/dev-cli.js')
-  assert.equal(rootPackage.scripts['gsd:web'], 'npm run build:gsd && npm run copy-resources && node scripts/build-web-if-stale.cjs && node scripts/dev-cli.js --web')
+  assert.equal(rootPackage.scripts['gsd:web'], 'npm run build:pi && npm run copy-resources && node scripts/build-web-if-stale.cjs && node scripts/dev-cli.js --web')
   assert.equal(rootPackage.scripts['gsd:web:stop'], 'node scripts/dev-cli.js web stop')
   assert.ok(rootPackage.files.includes('dist/web'))
 

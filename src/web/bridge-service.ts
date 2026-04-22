@@ -7,14 +7,14 @@ import { pathToFileURL } from "node:url";
 import { resolveTypeStrippingFlag, resolveSubprocessModule, buildSubprocessPrefixArgs } from "./ts-subprocess-flags.ts";
 import { safePackageRootFromImportUrl } from "./safe-import-meta-resolve.ts";
 
-import type { AgentSessionEvent, SessionStateChangeReason } from "@gsd/pi-coding-agent";
+import type { AgentSessionEvent, SessionStateChangeReason } from "../../packages/pi-coding-agent/src/core/agent-session.ts";
 import type {
   RpcCommand,
   RpcExtensionUIRequest,
   RpcExtensionUIResponse,
   RpcResponse,
   RpcSessionState,
-} from "@gsd/pi-coding-agent";
+} from "../../packages/pi-coding-agent/src/modes/rpc/rpc-types.ts";
 import type {
   WorkspaceIndex as GSDWorkspaceIndex,
   WorkspaceMilestoneTarget as GSDWorkspaceMilestoneTarget,

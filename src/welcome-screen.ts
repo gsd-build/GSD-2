@@ -114,24 +114,24 @@ export function printWelcomeScreen(opts: WelcomeScreenOptions): void {
   // Intentionally avoids data already shown in the footer (model, provider,
   // pwd, branch).
   const state = readGsdState()
-  const [sessionLine, projectLine] = state?.milestone
-    ? (() => {
+  let line1 = ''
+  let line2 = ''
+  if (state?.milestone) {
     const statusParts = [state.milestone, state.phase, state.slice].filter(Boolean)
     const activePrefix = '  Active     '
     const maxActiveLen = RIGHT_INNER - activePrefix.length - 1
     let activeText = statusParts.join(' · ')
     if (activeText.length > maxActiveLen) activeText = activeText.slice(0, maxActiveLen - 1) + '…'
-      return [
-        `${activePrefix}${chalk.dim(activeText)}`,
-        state.nextAction
-          ? `  Next       ${chalk.dim(state.nextAction)}`
-          : '',
-      ] as const
-    })()
-    : [
-      `  Status     ${chalk.dim('No active GSD project')}`,
-      `             ${chalk.dim('/gsd to begin')}`,
-    ] as const
+    line1 = `${activePrefix}${chalk.dim(activeText)}`
+    line2 = state.nextAction
+      ? `  Next       ${chalk.dim(state.nextAction)}`
+      : ''
+  } else {
+    line1 = `  Status     ${chalk.dim('No active GSD project')}`
+    line2 = `             ${chalk.dim('/gsd to begin')}`
+  }
+  const sessionLine = line1
+  const projectLine = line2
 
   const DIVIDER = null
   const rightRows: (string | null)[] = [

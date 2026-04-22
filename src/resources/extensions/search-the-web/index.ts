@@ -5,8 +5,7 @@
  * interactive mode so startup is not blocked on the full search tool stack.
  */
 
-import { type ExtensionAPI } from "@gsd/pi-coding-agent";
-import { importExtensionModule } from "@gsd/pi-coding-agent";
+import { importExtensionModule, type ExtensionAPI } from "@gsd/pi-coding-agent";
 import { registerSearchProviderCommand } from "./command-search-provider.js";
 import { registerNativeSearchHooks } from "./native-search.js";
 

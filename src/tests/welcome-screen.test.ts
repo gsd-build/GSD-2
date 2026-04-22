@@ -49,8 +49,8 @@ test('renders GSD project state or fallback hint', () => {
   // should surface the "No active GSD project" fallback instead.
   const out = strip(capture({ version: '1.0.0', modelName: 'claude-opus-4-6', provider: 'Anthropic' }))
   assert.ok(
-    out.includes('No active GSD project') || /Active\s+\S/.test(out),
-    'welcome should show either an active-state line or the no-project fallback',
+    out.includes('No active GSD project') || /Active\s+M\d+/.test(out),
+    'welcome should show GSD state lines or the no-project fallback',
   )
 })
 

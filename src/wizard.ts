@@ -30,8 +30,11 @@ export function loadStoredEnvKeys(authStorage: AuthStorage): void {
   ]
   for (const [provider, envVar] of providers) {
     if (!process.env[envVar]) {
-      const cred = authStorage.get(provider) as ApiKeyCredential | undefined
-      if (cred?.type === 'api_key' && typeof cred.key === 'string' && cred.key.length > 0) {
+      // Use getCredentialsForProvider to skip empty-key entries at index 0
+      // (left by legacy removeProviderToken which used set() with empty key)
+      const creds = authStorage.getCredentialsForProvider(provider)
+      const cred = creds.find((c: ApiKeyCredential) => c.type === 'api_key' && typeof c.key === 'string' && c.key.length > 0)
+      if (cred?.type === 'api_key' && typeof cred.key === 'string') {
         process.env[envVar] = cred.key
       }
     }

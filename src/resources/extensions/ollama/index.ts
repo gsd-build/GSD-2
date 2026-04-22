@@ -16,8 +16,7 @@
  * Respects OLLAMA_HOST env var for non-default endpoints.
  */
 
-import { type ExtensionAPI } from "@gsd/pi-coding-agent";
-import { importExtensionModule } from "@gsd/pi-coding-agent";
+import { importExtensionModule, type ExtensionAPI } from "@gsd/pi-coding-agent";
 import * as client from "./ollama-client.js";
 import { discoverModels } from "./ollama-discovery.js";
 import { registerOllamaCommands } from "./ollama-commands.js";
@@ -74,11 +73,12 @@ async function probeAndRegister(pi: ExtensionAPI): Promise<boolean> {
 	// so the "ollama" fallback is harmless. For cloud endpoints (OLLAMA_HOST pointing
 	// to ollama.com or a remote instance), OLLAMA_API_KEY is picked up here.
 	pi.registerProvider("ollama", {
-		// authMode and isReady removed from ProviderConfig in pi 0.67.2
+		authMode: "apiKey",
 		apiKey: process.env.OLLAMA_API_KEY ?? "ollama",
 		baseUrl,
 		api: "ollama-chat",
 		streamSimple: streamOllamaChat,
+		isReady: () => true,
 		models: models.map((m) => ({
 			id: m.id,
 			name: m.name,

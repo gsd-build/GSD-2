@@ -16,7 +16,7 @@ import {
 	parseBlobRef,
 	externalizeImageData,
 	resolveImageData,
-} from '../../packages/gsd-agent-core/src/blob-store.ts'
+} from '../../packages/pi-coding-agent/src/core/blob-store.ts'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 

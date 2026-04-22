@@ -94,10 +94,13 @@ export function registerBgShellLifecycle(pi: ExtensionAPI, state: BgShellSharedS
 	});
 
 	// Session switch resets the agent's context.
-	pi.on("session_start", async (_event, ctx) => {
+	pi.on("session_switch", async (event, ctx) => {
 		state.latestCtx = ctx;
-		syncLatestCtxCwd();
-		if (state.latestCtx) persistManifest(state.latestCtx.cwd);
+		if (event.reason === "new" && event.previousSessionFile) {
+			await cleanupSessionProcesses(event.previousSessionFile);
+			syncLatestCtxCwd();
+			if (state.latestCtx) persistManifest(state.latestCtx.cwd);
+		}
 		buildProcessStateAlert("Session was switched.");
 	});
 
@@ -390,7 +393,7 @@ export function registerBgShellLifecycle(pi: ExtensionAPI, state: BgShellSharedS
 	pi.on("turn_end", refreshHandler as any);
 	pi.on("agent_end", refreshHandler as any);
 	pi.on("session_start", refreshHandler as any);
-	pi.on("session_before_switch", refreshHandler as any);
+	pi.on("session_switch", refreshHandler as any);
 
 	pi.on("tool_execution_end", async (_event, ctx) => {
 		state.latestCtx = ctx;
