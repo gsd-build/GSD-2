@@ -20,7 +20,7 @@ const esbuild = require(join(ROOT, 'node_modules/esbuild'));
 
 // Recursively collect files by extension (skip node_modules, templates, etc.)
 // Directories to skip during file collection
-const SKIP_DIRS = new Set(['node_modules', 'templates', '__tests__', 'integration']);
+const SKIP_DIRS = new Set(['node_modules', 'templates', 'integration']);
 
 async function collectFiles(dir, exts = ['.ts', '.mjs']) {
   const results = [];
@@ -46,7 +46,7 @@ async function collectFiles(dir, exts = ['.ts', '.mjs']) {
 }
 
 // Dirs to skip when copying assets (node_modules are never useful in dist-test)
-const ASSET_SKIP_DIRS = new Set(['node_modules', '__tests__', 'integration']);
+const ASSET_SKIP_DIRS = new Set(['node_modules', 'integration']);
 
 /**
  * Recursively copy files from srcDir to destDir.
@@ -125,6 +125,10 @@ async function main() {
     const pkgSrc = join(packagesDir, entry.name, 'src');
     const pkgDistSrc = join(ROOT, 'dist-test', 'packages', entry.name, 'src');
     await copyAssets(pkgSrc, pkgDistSrc);
+    const pkgJsonPath = join(packagesDir, entry.name, 'package.json');
+    if (existsSync(pkgJsonPath)) {
+      await cp(pkgJsonPath, join(ROOT, 'dist-test', 'packages', entry.name, 'package.json'), { force: true });
+    }
   }
 
   // Copy web/lib/ assets (tests import from ../../web/lib/ relative to dist-test/src/tests/)
@@ -172,7 +176,6 @@ async function main() {
   // in a non-integration source directory (e.g. test moved to integration/).
   // Only cleans *.test.js and *.test.ts files to avoid touching non-test outputs.
   const { rm } = await import('node:fs/promises');
-  const { existsSync } = await import('node:fs');
   const testDirsToClean = [
     [join(ROOT, 'dist-test', 'src', 'tests'), join(ROOT, 'src', 'tests')],
     [join(ROOT, 'dist-test', 'src', 'resources', 'extensions', 'gsd', 'tests'),

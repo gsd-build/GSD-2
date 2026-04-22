@@ -15,11 +15,11 @@ function createRegistry(hasAuthFn?: (provider: string) => boolean): ModelRegistr
 		getApiKey: async () => undefined,
 	} as unknown as AuthStorage;
 
-	return new ModelRegistry(authStorage, undefined);
+	return new ModelRegistry(authStorage, "");
 }
 
 function createInMemoryRegistry(data: AuthStorageData = {}): ModelRegistry {
-	return new ModelRegistry(AuthStorage.inMemory(data), undefined);
+	return new ModelRegistry(AuthStorage.inMemory(data), "");
 }
 
 function createProviderModel(id: string, api?: string): NonNullable<Parameters<ModelRegistry["registerProvider"]>[1]["models"]>[number] {

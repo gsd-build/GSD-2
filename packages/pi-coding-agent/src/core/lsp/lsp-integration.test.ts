@@ -14,6 +14,7 @@ import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import { spawnSync } from "node:child_process";
 
 // ---------------------------------------------------------------------------
 // Helpers — lightweight JSON-RPC over stdio (no dependency on our LSP code)
@@ -251,11 +252,23 @@ function fileToUri(filePath: string): string {
 	return `file://${path.resolve(filePath)}`;
 }
 
+function hasTypescriptLanguageServer(): boolean {
+	const probe = spawnSync("typescript-language-server", ["--help"], {
+		stdio: "ignore",
+	});
+	return probe.status === 0 || probe.status === 1;
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 test("LSP integration: typescript-language-server", async (t) => {
+	if (!hasTypescriptLanguageServer()) {
+		t.skip("typescript-language-server not installed in this environment");
+		return;
+	}
+
 	const { dir, cleanup } = createTempProject();
 	const mainPath = path.join(dir, "src", "main.ts");
 	const mathPath = path.join(dir, "src", "math.ts");
