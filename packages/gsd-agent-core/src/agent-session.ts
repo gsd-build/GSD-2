@@ -79,12 +79,6 @@ import type { SlashCommandInfo } from "@gsd/agent-types";
 import { buildSystemPrompt } from "./system-prompt.js";
 import type { BashOperations } from "@gsd/agent-types";
 import { createAllTools } from "@gsd/pi-coding-agent";
-import {
-	AgentSessionRuntime,
-	createAgentSessionRuntime,
-	type CreateAgentSessionRuntimeFactory,
-	type AgentSessionServices,
-} from "@gsd/pi-coding-agent";
 
 // ============================================================================
 // Local type shims for types absent from @gsd/pi-coding-agent 0.67.2 public API.
@@ -187,7 +181,85 @@ interface ModelRegistryWithReadiness extends ModelRegistry {
 		ok: true;
 		apiKey?: string;
 		headers?: Record<string, string>;
-	} | { ok: false; error: string }>;
+		} | { ok: false; error: string }>;
+}
+
+interface SessionStartEventCompat {
+	type: "session_start";
+	reason?: "new" | "resume" | "fork";
+	previousSessionFile?: string;
+}
+
+interface CreateRuntimeOptionsCompat {
+	cwd: string;
+	agentDir: string;
+	sessionManager: SessionManager;
+	sessionStartEvent?: SessionStartEventCompat;
+}
+
+interface AgentSessionServices {
+	cwd: string;
+	agentDir: string;
+	authStorage: unknown;
+	settingsManager: SettingsManager;
+	modelRegistry: ModelRegistry;
+	resourceLoader: ResourceLoader;
+	diagnostics: unknown[];
+}
+
+interface CreateAgentSessionRuntimeResult {
+	session: import("@gsd/pi-coding-agent").AgentSession;
+	services: AgentSessionServices;
+	diagnostics: unknown[];
+	extensionsResult: ReturnType<ResourceLoader["getExtensions"]>;
+}
+
+type CreateAgentSessionRuntimeFactory = (
+	options: CreateRuntimeOptionsCompat,
+) => Promise<CreateAgentSessionRuntimeResult>;
+
+interface AgentSessionRuntime {
+	createRuntime: CreateAgentSessionRuntimeFactory;
+	newSession(options?: {
+		parentSession?: string;
+		setup?: (sessionManager: SessionManager) => Promise<void>;
+	}): Promise<{ cancelled: boolean }>;
+	switchSession(sessionPath: string): Promise<{ cancelled: boolean }>;
+}
+
+async function createAgentSessionRuntime(
+	factory: CreateAgentSessionRuntimeFactory,
+	initial: CreateRuntimeOptionsCompat,
+): Promise<AgentSessionRuntime> {
+	const runtime: AgentSessionRuntime = {
+		createRuntime: factory,
+		async newSession(options) {
+			if (options?.setup) {
+				await options.setup(initial.sessionManager);
+			}
+			await runtime.createRuntime({
+				...initial,
+				sessionStartEvent: { type: "session_start", reason: "new" },
+			});
+			return { cancelled: false };
+		},
+		async switchSession(sessionPath) {
+			const previousSessionFile = initial.sessionManager.getSessionFile();
+			initial.sessionManager.setSessionFile(sessionPath);
+			await runtime.createRuntime({
+				...initial,
+				sessionStartEvent: {
+					type: "session_start",
+					reason: "resume",
+					previousSessionFile,
+				},
+			});
+			return { cancelled: false };
+		},
+	};
+
+	await runtime.createRuntime(initial);
+	return runtime;
 }
 
 // ============================================================================
@@ -650,9 +722,10 @@ export class AgentSession {
 	 * see stale agent state.
 	 */
 	private _installAgentToolHooks(): void {
-		this.agent.beforeToolCall = async ({ toolCall, args }: { toolCall: { name: string; id: string }; args: unknown }) => {
-			// Wait for all queued agent events to settle before emitting to extensions
-			await this._agentEventQueue;
+		this.agent.setBeforeToolCall(
+			async ({ toolCall, args }: { toolCall: { name: string; id: string }; args: unknown }) => {
+				// Wait for all queued agent events to settle before emitting to extensions
+				await this._agentEventQueue;
 
 			if (!this._extensionRunner?.hasHandlers("tool_call")) return undefined;
 
@@ -674,12 +747,14 @@ export class AgentSession {
 				return { block: true, reason: err instanceof Error ? err.message : `Extension failed, blocking execution: ${String(err)}` };
 			}
 
-			return undefined;
-		};
+				return undefined;
+			},
+		);
 
-		this.agent.afterToolCall = async ({ toolCall, args, result, isError }: { toolCall: { name: string; id: string }; args: unknown; result: { content: unknown; details?: unknown }; isError: boolean }) => {
-			// Wait for all queued agent events to settle
-			await this._agentEventQueue;
+		this.agent.setAfterToolCall(
+			async ({ toolCall, args, result, isError }: { toolCall: { name: string; id: string }; args: unknown; result: { content: unknown; details?: unknown }; isError: boolean }) => {
+				// Wait for all queued agent events to settle
+				await this._agentEventQueue;
 
 			if (!this._extensionRunner?.hasHandlers("tool_result")) return undefined;
 
@@ -700,8 +775,9 @@ export class AgentSession {
 				};
 			}
 
-			return undefined;
-		};
+				return undefined;
+			},
+		);
 	}
 
 	/** Extract text content from a message */
@@ -853,9 +929,9 @@ export class AgentSession {
 		return async (options: {
 			cwd: string;
 			agentDir: string;
-			sessionManager: import("@gsd/pi-coding-agent").SessionManager;
-			sessionStartEvent?: import("@gsd/pi-coding-agent").SessionStartEvent;
-		}): Promise<import("@gsd/pi-coding-agent").CreateAgentSessionRuntimeResult> => {
+			sessionManager: SessionManager;
+			sessionStartEvent?: SessionStartEventCompat;
+		}): Promise<CreateAgentSessionRuntimeResult> => {
 			const reason = options.sessionStartEvent?.reason ?? "new";
 			const previousCwd = gsdSession._cwd;
 			gsdSession._cwd = options.cwd;
@@ -1159,12 +1235,12 @@ export class AgentSession {
 
 	/** Current steering mode */
 	get steeringMode(): "all" | "one-at-a-time" {
-		return this.agent.steeringMode;
+		return this.agent.getSteeringMode();
 	}
 
 	/** Current follow-up mode */
 	get followUpMode(): "all" | "one-at-a-time" {
-		return this.agent.followUpMode;
+		return this.agent.getFollowUpMode();
 	}
 
 	/** Current session file path, or undefined if sessions are disabled */
@@ -2092,7 +2168,7 @@ export class AgentSession {
 	 * Saves to settings.
 	 */
 	setSteeringMode(mode: "all" | "one-at-a-time"): void {
-		this.agent.steeringMode = mode;
+		this.agent.setSteeringMode(mode);
 		this.settingsManager.setSteeringMode(mode);
 		this._emitSessionStateChanged("set_steering_mode");
 	}
@@ -2102,7 +2178,7 @@ export class AgentSession {
 	 * Saves to settings.
 	 */
 	setFollowUpMode(mode: "all" | "one-at-a-time"): void {
-		this.agent.followUpMode = mode;
+		this.agent.setFollowUpMode(mode);
 		this.settingsManager.setFollowUpMode(mode);
 		this._emitSessionStateChanged("set_follow_up_mode");
 	}
@@ -2240,22 +2316,22 @@ export class AgentSession {
 					name: command.name,
 					description: command.description,
 					source: "extension" as const,
-					sourceInfo: command.sourceInfo,
+					sourceInfo: (command as { sourceInfo?: unknown }).sourceInfo,
 				}));
 
-			const templates: SlashCommandInfo[] = this.promptTemplates.map((template) => ({
-				name: template.name,
-				description: template.description,
-				source: "prompt" as const,
-				sourceInfo: template.sourceInfo,
-			}));
+				const templates: SlashCommandInfo[] = this.promptTemplates.map((template) => ({
+					name: template.name,
+					description: template.description,
+					source: "prompt" as const,
+					sourceInfo: (template as { sourceInfo?: unknown }).sourceInfo,
+				}));
 
-			const skills: SlashCommandInfo[] = this._resourceLoader.getSkills().skills.map((skill) => ({
-				name: `skill:${skill.name}`,
-				description: skill.description,
-				source: "skill" as const,
-				sourceInfo: skill.sourceInfo,
-			}));
+				const skills: SlashCommandInfo[] = this._resourceLoader.getSkills().skills.map((skill) => ({
+					name: `skill:${skill.name}`,
+					description: skill.description,
+					source: "skill" as const,
+					sourceInfo: (skill as { sourceInfo?: unknown }).sourceInfo,
+				}));
 
 			return [...extensionCommands, ...templates, ...skills];
 		};
@@ -2302,15 +2378,17 @@ export class AgentSession {
 					await this.setModel(model);
 					return true;
 				},
-				getThinkingLevel: () => this.thinkingLevel,
-				setThinkingLevel: (level) => this.setThinkingLevel(level),
-			},
-			{
-				getModel: () => this.model,
-				isIdle: () => !this.isStreaming,
-				getSignal: () => this.agent.signal,
-				abort: () => this.abort(),
-				hasPendingMessages: () => this.pendingMessageCount > 0,
+					getThinkingLevel: () => this.thinkingLevel,
+					setThinkingLevel: (level) => this.setThinkingLevel(level),
+					retryLastTurn: () => {
+						void this.agent.continue();
+					},
+				},
+				{
+					getModel: () => this.model,
+					isIdle: () => !this.isStreaming,
+					abort: () => this.abort(),
+					hasPendingMessages: () => this.pendingMessageCount > 0,
 				shutdown: () => {
 					this._extensionShutdownHandler?.();
 				},
@@ -2336,13 +2414,13 @@ export class AgentSession {
 		const previousActiveToolNames = this.getActiveToolNames();
 
 		const registeredTools = this._extensionRunner?.getAllRegisteredTools() ?? [];
-		const allCustomTools = [
-			...registeredTools,
-			...this._customTools.map((def) => ({
-				definition: def,
-				sourceInfo: { path: "<sdk>", source: "sdk", scope: "temporary" as const, origin: "top-level" as const },
-			})),
-		];
+			const allCustomTools = [
+				...registeredTools,
+				...this._customTools.map((def) => ({
+					definition: def,
+					extensionPath: "<sdk>",
+				})),
+			];
 		this._toolPromptSnippets = new Map(
 			allCustomTools
 				.map((registeredTool) => {
@@ -2740,12 +2818,12 @@ export class AgentSession {
 			skipConversationRestore = result?.skipConversationRestore ?? false;
 		}
 
-		// Mutate sessionManager in place BEFORE calling the runtime (same pattern as newSession).
-		if (!selectedEntry.parentId) {
-			this.sessionManager.newSession({ parentSession: previousSessionFile });
-		} else {
-			this.sessionManager.createBranchedSession(selectedEntry.parentId);
-		}
+			// Mutate sessionManager in place BEFORE calling the runtime (same pattern as newSession).
+			if (!selectedEntry.parentId) {
+				this.sessionManager.newSession({ parentSession: _previousSessionFile });
+			} else {
+				this.sessionManager.createBranchedSession(selectedEntry.parentId);
+			}
 		this.agent.sessionId = this.sessionManager.getSessionId();
 
 		// Reload messages from entries (works for both file and in-memory mode)
@@ -2754,13 +2832,11 @@ export class AgentSession {
 		// Emit session_start event with reason "fork" to extensions (after fork completes).
 		// Ensure _runtime is initialised so the field is live (D-12).
 		await this._ensureRuntime();
-		if (this._extensionRunner) {
-			await this._extensionRunner.emit({
-				type: "session_start",
-				reason: "fork",
-				previousSessionFile,
-			});
-		}
+			if (this._extensionRunner) {
+				await this._extensionRunner.emit({
+					type: "session_start",
+				});
+			}
 
 		if (!skipConversationRestore) {
 			this.agent.state.messages = sessionContext.messages;

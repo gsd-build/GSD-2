@@ -235,9 +235,8 @@ export class RetryHandler {
 			// Cross-provider fallback — for rate limits with all creds backed off,
 			// or quota errors (which skip credential backoff entirely).
 			if (isRateLimit || isQuotaError) {
-				// Map RetryErrorType to the FallbackResolver's UsageLimitErrorType.
-				// "quota_exhausted" maps to "quota"; "server_error" doesn't trigger fallback.
-				const fallbackErrorType = isQuotaError ? "quota" : "rate_limit";
+					// Map RetryErrorType to the FallbackResolver's UsageLimitErrorType.
+					const fallbackErrorType = isQuotaError ? "quota_exhausted" : "rate_limit";
 				const fallbackResult = await this._deps.fallbackResolver.findFallback(
 					this._deps.getModel()!,
 					fallbackErrorType,

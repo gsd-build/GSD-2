@@ -194,7 +194,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	const authPath = options.agentDir ? join(agentDir, "auth.json") : undefined;
 	const modelsPath = options.agentDir ? join(agentDir, "models.json") : undefined;
 	const authStorage = options.authStorage ?? AuthStorage.create(authPath);
-	const modelRegistry = options.modelRegistry ?? (modelsPath ? ModelRegistry.create(authStorage, modelsPath) : ModelRegistry.create(authStorage));
+	const modelRegistry = options.modelRegistry ?? new ModelRegistry(authStorage, modelsPath);
 
 	const settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir);
 	const sessionManager = options.sessionManager ?? SessionManager.create(cwd);
@@ -227,8 +227,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	if (!model && hasExistingSession && existingSession.model) {
 		const restoredModel = modelRegistry.find(existingSession.model.provider, existingSession.model.modelId);
 		if (restoredModel) {
-			const authResult = await modelRegistry.getApiKeyAndHeaders(restoredModel);
-			if (authResult.ok) {
+			if (modelRegistry.isProviderRequestReady(restoredModel.provider)) {
 				model = restoredModel;
 			}
 		}
@@ -329,7 +328,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 
 	const extensionRunnerRef: { current?: ExtensionRunner } = {};
 
-	const agent = new Agent({
+	let agent!: Agent;
+	agent = new Agent({
 		initialState: {
 			systemPrompt: "",
 			model,
@@ -355,10 +355,10 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		transport: settingsManager.getTransport(),
 		thinkingBudgets: settingsManager.getThinkingBudgets(),
 		maxRetryDelayMs: settingsManager.getRetrySettings().maxDelayMs,
-		getApiKey: async (provider) => {
+			getApiKey: async (provider): Promise<string> => {
 			// Use the provider argument from the in-flight request;
 			// agent.state.model may already be switched mid-turn.
-			const resolvedProvider = provider || agent.state.model?.provider;
+				const resolvedProvider: string | undefined = provider || agent.state.model?.provider;
 			if (!resolvedProvider) {
 				throw new Error("No model selected");
 			}
@@ -377,7 +377,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			const baseDelayMs = 2000;
 			const maxCooldownWaitMs = 60_000;
 			for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-				const key = await modelRegistry.getApiKeyForProvider(resolvedProvider);
+					const key: string | undefined = await modelRegistry.getApiKeyForProvider(resolvedProvider);
 				if (key) return key;
 
 				if (attempt >= maxAttempts) break;
@@ -446,14 +446,14 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	if (hasExistingSession) {
 		agent.state.messages = existingSession.messages;
 		if (!hasThinkingEntry) {
-			sessionManager.appendThinkingLevelChange(thinkingLevel);
+			sessionManager.appendThinkingLevelChange(thinkingLevel ?? DEFAULT_THINKING_LEVEL);
 		}
 	} else {
 		// Save initial model and thinking level for new sessions so they can be restored on resume
 		if (model) {
 			sessionManager.appendModelChange(model.provider, model.id);
 		}
-		sessionManager.appendThinkingLevelChange(thinkingLevel);
+		sessionManager.appendThinkingLevelChange(thinkingLevel ?? DEFAULT_THINKING_LEVEL);
 	}
 
 	const session = new AgentSession({

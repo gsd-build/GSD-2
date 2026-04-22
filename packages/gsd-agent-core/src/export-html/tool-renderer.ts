@@ -48,23 +48,7 @@ export function createToolHtmlRenderer(deps: ToolHtmlRendererDeps): ToolHtmlRend
 					return undefined;
 				}
 
-				// 0.67.2: renderCall takes (args, theme, context). Provide a minimal stub context
-				// for HTML export since we don't have a live ToolRenderContext here.
-				const stubContext = {
-					args,
-					toolCallId: toolName,
-					invalidate: () => {},
-					lastComponent: undefined,
-					state: undefined,
-					cwd: process.cwd(),
-					executionStarted: true,
-					argsComplete: true,
-					isPartial: false,
-					expanded: false,
-					showImages: false,
-					isError: false,
-				};
-				const component = toolDef.renderCall(args, theme, stubContext);
+					const component = toolDef.renderCall(args, theme);
 				if (!component) {
 					return undefined;
 				}
@@ -96,39 +80,20 @@ export function createToolHtmlRenderer(deps: ToolHtmlRendererDeps): ToolHtmlRend
 					isError,
 				};
 
-				// 0.67.2: renderResult takes (result, options, theme, context). Provide a minimal
-				// stub context for HTML export since we don't have a live ToolRenderContext here.
-				const resultStubContext = {
-					args: {},
-					toolCallId: toolName,
-					invalidate: () => {},
-					lastComponent: undefined,
-					state: undefined,
-					cwd: process.cwd(),
-					executionStarted: true,
-					argsComplete: true,
-					isPartial: false,
-					expanded: false,
-					showImages: false,
-					isError,
-				};
-
-				// Render collapsed
-				const collapsedComponent = toolDef.renderResult(
-					agentToolResult,
-					{ expanded: false, isPartial: false },
-					theme,
-					resultStubContext,
-				);
+					// Render collapsed
+					const collapsedComponent = toolDef.renderResult(
+						agentToolResult,
+						{ expanded: false, isPartial: false },
+						theme,
+					);
 				const collapsed = collapsedComponent ? ansiLinesToHtml(collapsedComponent.render(width)) : undefined;
 
 				// Render expanded
-				const expandedComponent = toolDef.renderResult(
-					agentToolResult,
-					{ expanded: true, isPartial: false },
-					theme,
-					resultStubContext,
-				);
+					const expandedComponent = toolDef.renderResult(
+						agentToolResult,
+						{ expanded: true, isPartial: false },
+						theme,
+					);
 				const expanded = expandedComponent ? ansiLinesToHtml(expandedComponent.render(width)) : undefined;
 
 				// Return collapsed only if it exists and differs from expanded

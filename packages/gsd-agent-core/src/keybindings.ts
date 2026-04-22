@@ -148,7 +148,7 @@ export class KeybindingsManager {
 				editorConfig[action as EditorAction] = keys;
 			}
 		}
-		setEditorKeybindings(new EditorKeybindingsManager(TUI_KEYBINDINGS, editorConfig));
+		setEditorKeybindings(new EditorKeybindingsManager(editorConfig));
 
 		return manager;
 	}

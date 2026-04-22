@@ -18,12 +18,13 @@ import type { SettingsManager } from "@gsd/agent-types";
 // Phase 09 moves these to @gsd/agent-types.
 
 /** Error type that triggered provider exhaustion. */
-export type UsageLimitErrorType = "rate_limit" | "quota" | "context_length" | "unknown";
+export type UsageLimitErrorType = "rate_limit" | "quota_exhausted" | "server_error" | "unknown";
 
 /** Single entry in a provider fallback chain (from GSD settings). */
 export interface FallbackChainEntry {
 	provider: string;
 	model: string;
+	priority: number;
 }
 
 /** Extended SettingsManager with GSD fallback chain support. */
