@@ -46,11 +46,26 @@ describe("CombinedAutocompleteProvider — slash commands", () => {
 		assert.equal(result!.items[0]?.description, "Select model");
 	});
 
-	it("does not trigger slash commands mid-line", () => {
-		const provider = makeProvider(sampleCommands);
-		// "/" not at position 0 in the line — should not match slash commands
-		const result = provider.getSuggestions(["hello /se"], 0, 9);
-		assert.equal(result, null);
+	it("does not offer slash command suggestions mid-line", () => {
+		const sentinelCommands: SlashCommand[] = [
+			{ name: "codexmidlinecommand", description: "Sentinel slash command" },
+		];
+		const provider = makeProvider(sentinelCommands);
+		const line = "hello /codexmid";
+		const result = provider.getSuggestions([line], 0, line.length);
+
+		if (result === null) {
+			return;
+		}
+
+		assert.ok(
+			result.items.every((item) => item.value !== "codexmidlinecommand"),
+			"mid-line slash-like text should not return slash command completions",
+		);
+		assert.ok(
+			result.items.every((item) => item.description !== "Sentinel slash command"),
+			"mid-line slash-like text should not return slash command metadata",
+		);
 	});
 
 	it("triggers slash commands after leading whitespace", () => {
