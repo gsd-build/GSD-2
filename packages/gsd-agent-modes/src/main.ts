@@ -34,6 +34,7 @@ import {
 	stopThemeWatcher,
 	time,
 } from "./pi-coding-agent-compat.js";
+import type { Tool } from "@gsd/agent-types";
 import { KeybindingsManager, createAgentSession, type CreateAgentSessionOptions } from "@gsd/agent-core";
 import { type Args, parseArgs, printHelp } from "./cli/args.js";
 import { selectConfig } from "./cli/config-selector.js";
@@ -293,12 +294,12 @@ function buildSessionOptions(
 		// --no-tools: start with no built-in tools
 		// --tools can still add specific ones back
 		if (parsed.tools && parsed.tools.length > 0) {
-			options.tools = parsed.tools.map((name) => allTools[name]);
+			options.tools = parsed.tools.map((name) => allTools[name] as unknown as Tool);
 		} else {
 			options.tools = [];
 		}
 	} else if (parsed.tools) {
-		options.tools = parsed.tools.map((name) => allTools[name]);
+		options.tools = parsed.tools.map((name) => allTools[name] as unknown as Tool);
 	}
 
 	return { options, cliThinkingFromModel };
