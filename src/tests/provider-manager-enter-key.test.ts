@@ -30,8 +30,8 @@ describe('provider manager Enter key handler (#3579)', () => {
   });
 
   test('selectConfirm key handler exists', () => {
-    assert.match(source, /"tui\.select\.confirm"/,
-      'selectConfirm key binding should be handled via kb.matches(keyData, "tui.select.confirm")');
+    assert.match(source, /"selectConfirm"/,
+      'selectConfirm key binding should be handled via kb.matches(keyData, "selectConfirm")');
   });
 
   test('onSetupAuth is called with provider name', () => {

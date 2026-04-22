@@ -58,6 +58,8 @@ const ALLOWED_FILES: Record<string, string> = {
   // Fallback source is the plain `anthropic` transport (routes to claude-code).
   "packages/pi-coding-agent/src/core/retry-handler.ts":
     "transport-specific fallback source (ADR-012)",
+  "packages/gsd-agent-core/src/retry-handler.ts":
+    "transport-specific fallback source (ADR-012)",
 
   // Claude-Code-specific SDK hooks (OAuth prep, streaming buffer sizing).
   "packages/pi-coding-agent/src/core/sdk.ts":
@@ -65,6 +67,10 @@ const ALLOWED_FILES: Record<string, string> = {
   "packages/pi-coding-agent/src/modes/interactive/controllers/chat-controller.ts":
     "claude-code-specific streaming UI",
   "packages/pi-coding-agent/src/modes/interactive/components/assistant-message.ts":
+    "claude-code-specific message rendering",
+  "packages/gsd-agent-modes/src/modes/interactive/controllers/chat-controller.ts":
+    "claude-code-specific streaming UI",
+  "packages/gsd-agent-modes/src/modes/interactive/components/assistant-message.ts":
     "claude-code-specific message rendering",
 
   // GitHub Copilot transport-specific request/auth transforms.
