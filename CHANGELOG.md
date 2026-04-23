@@ -292,11 +292,6 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - **gsd**: promote `CONTEXT-DRAFT.md` to final `CONTEXT.md` in the `gsd_summary_save` tool path (#4442)
-=======
-### Added
-
-- **pi-ai**: add `stripReasoningFromHistory` compat flag for OpenAI-completions providers — strips `reasoning_content` and `reasoning_details` from replayed assistant messages to prevent 400 errors on providers (TRT-LLM, vLLM) that return reasoning fields in responses but reject them as input
->>>>>>> a2e5dd264 (docs: document stripReasoningFromHistory compat flag across all doc surfaces)
 
 ## [2.75.0] - 2026-04-15
 

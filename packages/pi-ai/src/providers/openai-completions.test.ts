@@ -1,3 +1,13 @@
+/**
+ * Unit tests for openai-completions provider, focusing on stripReasoningFromHistory compat flag.
+ *
+ * Tests verify that thinking blocks are correctly handled when:
+ * - Default behavior (stripReasoningFromHistory: false) replays reasoning fields
+ * - stripReasoningFromHistory: true strips reasoning_content, reasoning, and reasoning_details
+ * - Assistant text content is preserved when stripping
+ * - Flag priority when combined with requiresThinkingAsText
+ */
+
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
@@ -149,29 +159,38 @@ describe("convertMessages — stripReasoningFromHistory", () => {
 	});
 
 	it("strips any reasoning field (reasoning, reasoning_text) not just reasoning_content", () => {
-		const model = makeModel({ stripReasoningFromHistory: true });
-		const compat = makeCompat({ stripReasoningFromHistory: true });
-		const context: Context = {
-			messages: [
-				makeUserMsg("Hi"),
-				makeAssistantMsg({
-					content: [
-						{ type: "thinking", thinking: "Thinking...", thinkingSignature: "reasoning" },
-						{ type: "text", text: "Hi back!" },
-					],
-				}),
-				makeUserMsg("Bye"),
-			],
-		};
+		// Test multiple field names that servers can use for thinking content
+		const fieldNames = ["reasoning", "reasoning_text", "reasoning_content"];
+		for (const fieldName of fieldNames) {
+			const model = makeModel({ stripReasoningFromHistory: true });
+			const compat = makeCompat({ stripReasoningFromHistory: true });
+			const context: Context = {
+				messages: [
+					makeUserMsg("Hi"),
+					makeAssistantMsg({
+						content: [
+							{ type: "thinking", thinking: "Thinking...", thinkingSignature: fieldName },
+							{ type: "text", text: "Hi back!" },
+						],
+					}),
+					makeUserMsg("Bye"),
+				],
+			};
 
-		const params = convertMessages(model, context, compat);
-		const assistantMsg = params.find((p) => p.role === "assistant") as any;
+			const params = convertMessages(model, context, compat);
+			const assistantMsg = params.find((p) => p.role === "assistant") as any;
 
-		assert.equal(assistantMsg.reasoning, undefined, "reasoning field must be stripped");
+			assert.equal(
+				(assistantMsg as any)[fieldName],
+				undefined,
+				`${fieldName} field must be stripped`,
+			);
+		}
 	});
 
-	it("requiresThinkingAsText takes priority over stripReasoningFromHistory", () => {
-		// If both flags are set, requiresThinkingAsText wins (it's checked first in the if/else chain)
+	it("stripReasoningFromHistory takes priority when both flags are set", () => {
+		// If both stripReasoningFromHistory and requiresThinkingAsText are true, stripping wins:
+		// thinking blocks are not converted to text, nor re-injected as fields
 		const model = makeModel({ requiresThinkingAsText: true, stripReasoningFromHistory: true });
 		const compat = makeCompat({ requiresThinkingAsText: true, stripReasoningFromHistory: true });
 		const context: Context = {
@@ -191,10 +210,13 @@ describe("convertMessages — stripReasoningFromHistory", () => {
 		const assistantMsg = params.find((p) => p.role === "assistant") as any;
 
 		assert.equal(assistantMsg.reasoning_content, undefined, "reasoning_content must not be in payload");
-		// With requiresThinkingAsText the thinking is prepended as plain text
+		// With stripReasoningFromHistory: true, thinking is dropped entirely (not converted to text)
 		const textContent = Array.isArray(assistantMsg.content)
 			? assistantMsg.content.map((c: any) => c.text).join(" ")
 			: assistantMsg.content;
-		assert.ok(textContent.includes("My reasoning."), "thinking must be folded into text content");
+		assert.ok(
+			!textContent.includes("My reasoning."),
+			"thinking must NOT be folded into text when stripping is active",
+		);
 	});
 });

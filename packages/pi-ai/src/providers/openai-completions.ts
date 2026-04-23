@@ -575,9 +575,10 @@ export function convertMessages(
 			// Filter out empty thinking blocks to avoid API validation errors
 			const nonEmptyThinkingBlocks = thinkingBlocks.filter((b) => b.thinking && b.thinking.trim().length > 0);
 			if (nonEmptyThinkingBlocks.length > 0) {
-				if (compat.requiresThinkingAsText) {
-					// requiresThinkingAsText takes priority: convert thinking blocks to plain text
-					// (no tags to avoid model mimicking them). This happens before stripReasoningFromHistory check.
+				// If stripReasoningFromHistory is true, skip all thinking serialization (text conversion or re-injection).
+				// This takes priority over requiresThinkingAsText.
+				if (!compat.stripReasoningFromHistory && compat.requiresThinkingAsText) {
+					// Convert thinking blocks to plain text (no tags to avoid model mimicking them).
 					const thinkingText = nonEmptyThinkingBlocks.map((b) => b.thinking).join("\n\n");
 					const textContent = assistantMsg.content as Array<{ type: "text"; text: string }> | null;
 					if (textContent) {
@@ -586,9 +587,9 @@ export function convertMessages(
 						assistantMsg.content = [{ type: "text", text: thinkingText }];
 					}
 				} else if (!compat.stripReasoningFromHistory) {
-					// stripReasoningFromHistory: false (default) — re-inject the thinking via thinkingSignature
-					// field (e.g., reasoning_content, reasoning) so the provider sees it on the next turn.
-					// Use the signature from the first thinking block if available (for llama.cpp server + gpt-oss)
+					// Re-inject thinking via thinkingSignature field (e.g., reasoning_content, reasoning)
+					// so the provider sees it on the next turn. Use the signature from the first thinking block
+					// if available (for llama.cpp server + gpt-oss).
 					const signature = nonEmptyThinkingBlocks[0].thinkingSignature;
 					if (signature && signature.length > 0) {
 						(assistantMsg as any)[signature] = nonEmptyThinkingBlocks.map((b) => b.thinking).join("\n");
