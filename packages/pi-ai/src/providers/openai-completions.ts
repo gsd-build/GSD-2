@@ -615,7 +615,7 @@ export function convertMessages(
 						}
 					})
 					.filter(Boolean);
-				if (reasoningDetails.length > 0) {
+				if (reasoningDetails.length > 0 && !compat.stripReasoningFromHistory) {
 					(assistantMsg as any).reasoning_details = reasoningDetails;
 				}
 			}
