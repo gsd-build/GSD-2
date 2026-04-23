@@ -20,195 +20,47 @@ import {
 } from "@gsd/pi-coding-agent";
 import { Text } from "@gsd/pi-tui";
 import { Type } from "@sinclair/typebox";
-import { Client } from "@modelcontextprotocol/sdk/client";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
-import { buildHttpTransportOpts } from "./auth.js";
-import type { McpHttpAuthConfig } from "./auth.js";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-interface McpServerConfig {
-	name: string;
-	transport: "stdio" | "http" | "unknown";
-	command?: string;
-	args?: string[];
-	env?: Record<string, string>;
-	url?: string;
-	cwd?: string;
-	/** Static headers for HTTP transport (supports ${VAR} env resolution). */
-	headers?: Record<string, string>;
-	/** OAuth config for HTTP transport. */
-	oauth?: McpHttpAuthConfig["oauth"];
-}
-
-interface McpToolSchema {
-	name: string;
-	description: string;
-	inputSchema?: Record<string, unknown>;
-}
-
-interface ManagedConnection {
-	client: Client;
-	transport: StdioClientTransport | StreamableHTTPClientTransport;
-}
-
-// ─── Connection Manager ───────────────────────────────────────────────────────
-
-const connections = new Map<string, ManagedConnection>();
-let configCache: McpServerConfig[] | null = null;
-const toolCache = new Map<string, McpToolSchema[]>();
-
-function readConfigs(): McpServerConfig[] {
-	if (configCache) return configCache;
-
-	const servers: McpServerConfig[] = [];
-	const seen = new Set<string>();
-	const configPaths = [
-		join(process.cwd(), ".mcp.json"),
-		join(process.cwd(), ".gsd", "mcp.json"),
-	];
-
-	for (const configPath of configPaths) {
-		try {
-			if (!existsSync(configPath)) continue;
-			const raw = readFileSync(configPath, "utf-8");
-			const data = JSON.parse(raw) as Record<string, unknown>;
-			const mcpServers = (data.mcpServers ?? data.servers) as
-				| Record<string, Record<string, unknown>>
-				| undefined;
-			if (!mcpServers || typeof mcpServers !== "object") continue;
-
-			for (const [name, config] of Object.entries(mcpServers)) {
-				if (seen.has(name)) continue;
-				seen.add(name);
-
-				const hasCommand = typeof config.command === "string";
-				const hasUrl = typeof config.url === "string";
-				const transport: McpServerConfig["transport"] = hasCommand
-					? "stdio"
-					: hasUrl
-						? "http"
-						: "unknown";
-
-				const hasHeaders = hasUrl && config.headers && typeof config.headers === "object";
-				const hasOAuth = hasUrl && config.oauth && typeof config.oauth === "object";
-
-				servers.push({
-					name,
-					transport,
-					...(hasCommand && {
-						command: config.command as string,
-						args: Array.isArray(config.args) ? (config.args as string[]) : undefined,
-						env: config.env && typeof config.env === "object"
-							? (config.env as Record<string, string>)
-							: undefined,
-						cwd: typeof config.cwd === "string" ? config.cwd : undefined,
-					}),
-					...(hasUrl && { url: config.url as string }),
-					headers: hasHeaders ? config.headers as Record<string, string> : undefined,
-					oauth: hasOAuth ? config.oauth as McpHttpAuthConfig["oauth"] : undefined,
-				});
-			}
-		} catch {
-			// Non-fatal — config file may not exist or be malformed
-		}
-	}
-
-	configCache = servers;
-	return servers;
-}
-
-function getServerConfig(name: string): McpServerConfig | undefined {
-	const trimmed = name.trim();
-	return readConfigs().find((s) =>
-		s.name === trimmed ||
-		s.name.toLowerCase() === trimmed.toLowerCase(),
-	);
-}
-
-/** Resolve ${VAR} references in env values against process.env. */
-function resolveEnv(env: Record<string, string>): Record<string, string> {
-	const resolved: Record<string, string> = {};
-	for (const [key, value] of Object.entries(env)) {
-		if (typeof value === "string") {
-			resolved[key] = value.replace(
-				/\$\{([^}]+)\}/g,
-				(_match, varName) => process.env[varName] ?? "",
-			);
-		} else {
-			resolved[key] = value;
-		}
-	}
-	return resolved;
-}
-
-async function getOrConnect(name: string, signal?: AbortSignal): Promise<Client> {
-	const config = getServerConfig(name);
-	if (!config) throw new Error(`Unknown MCP server: "${name}". Use mcp_servers to list available servers.`);
-
-	// Always use config.name as the canonical cache key so that variant
-	// casing / whitespace still hits the same connection.
-	const existing = connections.get(config.name);
-	if (existing) return existing.client;
-
-	const client = new Client({ name: "gsd", version: "1.0.0" });
-	let transport: StdioClientTransport | StreamableHTTPClientTransport;
-
-	if (config.transport === "stdio" && config.command) {
-		transport = new StdioClientTransport({
-			command: config.command,
-			args: config.args,
-			env: config.env ? { ...process.env, ...resolveEnv(config.env) } as Record<string, string> : undefined,
-			cwd: config.cwd,
-			stderr: "pipe",
-		});
-	} else if (config.transport === "http" && config.url) {
-		const resolvedUrl = config.url.replace(
-			/\$\{([^}]+)\}/g,
-			(_, varName) => process.env[varName] ?? "",
-		);
-		const httpOpts = buildHttpTransportOpts({
-			headers: config.headers,
-			oauth: config.oauth,
-		});
-		transport = new StreamableHTTPClientTransport(new URL(resolvedUrl), httpOpts);
-	} else {
-		throw new Error(`Server "${config.name}" has unsupported transport: ${config.transport}`);
-	}
-
-	await client.connect(transport, { signal, timeout: 30000 });
-	connections.set(config.name, { client, transport });
-	return client;
-}
-
-async function closeAll(): Promise<void> {
-	const closing = Array.from(connections.entries()).map(async ([name, conn]) => {
-		try {
-			await conn.client.close();
-		} catch {
-			// Best-effort cleanup
-		}
-		connections.delete(name);
-	});
-	await Promise.allSettled(closing);
-	toolCache.clear();
-}
+import {
+	closeAllMcpConnections,
+	discoverMcpServerTools,
+	formatMcpSourcePath,
+	formatMcpTarget,
+	getCachedMcpTools,
+	getOrConnectMcpServer,
+	invalidateMcpState,
+	isMcpServerConnected,
+	listConfiguredMcpServers,
+	type McpServerConfig,
+	type McpToolSchema,
+} from "./shared.js";
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
 
 function formatServerList(servers: McpServerConfig[]): string {
 	if (servers.length === 0) return "No MCP servers configured. Add servers to .mcp.json or .gsd/mcp.json.";
 
-	const lines: string[] = [`${servers.length} MCP servers configured:\n`];
+	const rows = servers.map((server) => ({
+		connected: isMcpServerConnected(server.name) ? "✓" : "○",
+		name: server.name,
+		transport: server.transport,
+		source: formatMcpSourcePath(server.sourcePath),
+		target: formatMcpTarget(server),
+		toolCount: getCachedMcpTools(server.name)?.length,
+	}));
+	const widths = {
+		name: Math.max(...rows.map((row) => row.name.length), 4),
+		transport: Math.max(...rows.map((row) => row.transport.length), 4),
+		source: Math.max(...rows.map((row) => row.source.length), 6),
+		target: Math.max(...rows.map((row) => row.target.length), 6),
+	};
 
-	for (const s of servers) {
-		const connected = connections.has(s.name) ? "✓" : "○";
-		const cached = toolCache.get(s.name);
-		const toolCount = cached ? ` — ${cached.length} tools` : "";
-		lines.push(`${connected} ${s.name} (${s.transport})${toolCount}`);
+	const lines: string[] = [`${rows.length} MCP servers configured:\n`];
+	for (const row of rows) {
+		const toolCount = row.toolCount == null ? "" : `  ${row.toolCount} tool${row.toolCount === 1 ? "" : "s"}`;
+		lines.push(
+			`${row.connected} ${row.name.padEnd(widths.name)}  ${row.transport.padEnd(widths.transport)}  ${row.source.padEnd(widths.source)}  ${row.target.padEnd(widths.target)}${toolCount}`,
+		);
 	}
 
 	lines.push("\nUse mcp_discover to see full tool schemas for a specific server.");
@@ -245,10 +97,9 @@ export function getConnectionStatus(name: string): {
 	tools: string[];
 	error?: string;
 } {
-	const conn = connections.get(name);
-	const cached = toolCache.get(name);
+	const cached = getCachedMcpTools(name);
 	return {
-		connected: !!conn,
+		connected: isMcpServerConnected(name),
 		tools: cached ? cached.map((t) => t.name) : [],
 		error: undefined,
 	};
@@ -279,14 +130,16 @@ export default function (pi: ExtensionAPI) {
 		}),
 
 		async execute(_id, params) {
-			if (params.refresh) configCache = null;
+			if (params.refresh) {
+				await invalidateMcpState({ closeConnections: false });
+			}
 
-			const servers = readConfigs();
+			const servers = listConfiguredMcpServers({ refresh: params.refresh });
 			return {
 				content: [{ type: "text", text: formatServerList(servers) }],
 				details: {
 					serverCount: servers.length,
-					cached: !params.refresh && configCache !== null,
+					cached: !params.refresh,
 				},
 			};
 		},
@@ -299,10 +152,9 @@ export default function (pi: ExtensionAPI) {
 
 		renderResult(result, { isPartial }, theme) {
 			if (isPartial) return new Text(theme.fg("warning", "Reading MCP config..."), 0, 0);
-			const d = result.details as { serverCount: number } | undefined;
+			const details = result.details as { serverCount: number } | undefined;
 			return new Text(
-				theme.fg("success", `${d?.serverCount ?? 0} servers configured`),
-				0,
+				theme.fg("success", `${details?.serverCount ?? 0} servers configured`),
 				0,
 			);
 		},
@@ -333,40 +185,16 @@ export default function (pi: ExtensionAPI) {
 
 		async execute(_id, params, signal) {
 			try {
-				// Return cached tools if available
-				const cached = toolCache.get(params.server);
-				if (cached) {
-					const text = formatToolList(params.server, cached);
-					const truncation = truncateHead(text, { maxLines: DEFAULT_MAX_LINES, maxBytes: DEFAULT_MAX_BYTES });
-					let finalText = truncation.content;
-					if (truncation.truncated) {
-						finalText += `\n\n[Truncated: ${truncation.outputLines}/${truncation.totalLines} lines (${formatSize(truncation.outputBytes)} of ${formatSize(truncation.totalBytes)})]`;
-					}
-					return {
-						content: [{ type: "text", text: finalText }],
-						details: { server: params.server, toolCount: cached.length, cached: true },
-					};
-				}
-
-				const client = await getOrConnect(params.server, signal);
-				const result = await client.listTools(undefined, { signal, timeout: 30000 });
-				const tools: McpToolSchema[] = (result.tools ?? []).map((t) => ({
-					name: t.name,
-					description: t.description ?? "",
-					inputSchema: t.inputSchema as Record<string, unknown> | undefined,
-				}));
-				toolCache.set(params.server, tools);
-
+				const { tools, cached } = await discoverMcpServerTools(params.server, { signal, useCache: true });
 				const text = formatToolList(params.server, tools);
 				const truncation = truncateHead(text, { maxLines: DEFAULT_MAX_LINES, maxBytes: DEFAULT_MAX_BYTES });
 				let finalText = truncation.content;
 				if (truncation.truncated) {
 					finalText += `\n\n[Truncated: ${truncation.outputLines}/${truncation.totalLines} lines (${formatSize(truncation.outputBytes)} of ${formatSize(truncation.totalBytes)})]`;
 				}
-
 				return {
 					content: [{ type: "text", text: finalText }],
-					details: { server: params.server, toolCount: tools.length, cached: false },
+					details: { server: params.server, toolCount: tools.length, cached },
 				};
 			} catch (err: unknown) {
 				const msg = err instanceof Error ? err.message : String(err);
@@ -381,13 +209,13 @@ export default function (pi: ExtensionAPI) {
 		},
 
 		renderResult(result, { isPartial }, theme) {
-			if (isPartial)
+			if (isPartial) {
 				return new Text(theme.fg("warning", "Discovering tools..."), 0, 0);
-			const d = result.details as { server: string; toolCount: number } | undefined;
+			}
+			const details = result.details as { server: string; toolCount: number } | undefined;
 			return new Text(
-				theme.fg("success", `${d?.toolCount ?? 0} tools`) +
-					theme.fg("dim", ` · ${d?.server}`),
-				0,
+				theme.fg("success", `${details?.toolCount ?? 0} tools`) +
+					theme.fg("dim", ` · ${details?.server}`),
 				0,
 			);
 		},
@@ -425,17 +253,16 @@ export default function (pi: ExtensionAPI) {
 
 		async execute(_id, params, signal) {
 			try {
-				const client = await getOrConnect(params.server, signal);
+				const client = await getOrConnectMcpServer(params.server, signal);
 				const result = await client.callTool(
 					{ name: params.tool, arguments: params.args ?? {} },
 					undefined,
-					{ signal, timeout: 60000 },
+					{ signal, timeout: 60_000 },
 				);
 
-				// Serialize result content to text
 				const contentItems = result.content as Array<{ type: string; text?: string }>;
 				const raw = contentItems
-					.map((c) => (c.type === "text" ? c.text ?? "" : JSON.stringify(c)))
+					.map((content) => (content.type === "text" ? content.text ?? "" : JSON.stringify(content)))
 					.join("\n");
 
 				const truncation = truncateHead(raw, { maxLines: DEFAULT_MAX_LINES, maxBytes: DEFAULT_MAX_BYTES });
@@ -465,9 +292,9 @@ export default function (pi: ExtensionAPI) {
 			if (args.args && Object.keys(args.args).length > 0) {
 				const preview = Object.entries(args.args)
 					.slice(0, 3)
-					.map(([k, v]) => {
-						const val = typeof v === "string" ? v : JSON.stringify(v);
-						return `${k}:${val.length > 30 ? val.slice(0, 30) + "…" : val}`;
+					.map(([key, value]) => {
+						const stringValue = typeof value === "string" ? value : JSON.stringify(value);
+						return `${key}:${stringValue.length > 30 ? stringValue.slice(0, 30) + "…" : stringValue}`;
 					})
 					.join(" ");
 				text += " " + theme.fg("muted", preview);
@@ -478,16 +305,16 @@ export default function (pi: ExtensionAPI) {
 		renderResult(result, { isPartial, expanded }, theme) {
 			if (isPartial) return new Text(theme.fg("warning", "Calling MCP tool..."), 0, 0);
 
-			const d = result.details as {
+			const details = result.details as {
 				server: string;
 				tool: string;
 				charCount: number;
 				truncated: boolean;
 			} | undefined;
 
-			let text = theme.fg("success", `✓ ${d?.server}.${d?.tool}`);
-			text += theme.fg("dim", ` · ${(d?.charCount ?? 0).toLocaleString()} chars`);
-			if (d?.truncated) text += theme.fg("warning", " · truncated");
+			let text = theme.fg("success", `✓ ${details?.server}.${details?.tool}`);
+			text += theme.fg("dim", ` · ${(details?.charCount ?? 0).toLocaleString()} chars`);
+			if (details?.truncated) text += theme.fg("warning", " · truncated");
 
 			if (expanded) {
 				const content = result.content[0];
@@ -504,18 +331,17 @@ export default function (pi: ExtensionAPI) {
 	// ── Lifecycle ─────────────────────────────────────────────────────────────
 
 	pi.on("session_start", async (_event, ctx) => {
-		const servers = readConfigs();
+		const servers = listConfiguredMcpServers();
 		if (servers.length > 0) {
 			ctx.ui.notify(`MCP client ready — ${servers.length} server(s) configured`, "info");
 		}
 	});
 
 	pi.on("session_shutdown", async () => {
-		await closeAll();
+		await closeAllMcpConnections();
 	});
 
 	pi.on("session_switch", async () => {
-		await closeAll();
-		configCache = null;
+		await invalidateMcpState({ closeConnections: true });
 	});
 }

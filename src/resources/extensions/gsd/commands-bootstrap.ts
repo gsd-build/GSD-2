@@ -14,6 +14,7 @@ const TOP_LEVEL_SUBCOMMANDS = [
   { cmd: "capture", desc: "Fire-and-forget thought capture" },
   { cmd: "changelog", desc: "Show categorized release notes" },
   { cmd: "triage", desc: "Manually trigger triage of pending captures" },
+  { cmd: "mcp", desc: "Diagnose configured MCP servers" },
   { cmd: "dispatch", desc: "Dispatch a specific phase directly" },
   { cmd: "history", desc: "View execution history" },
   { cmd: "undo", desc: "Revert last completed unit" },
@@ -64,7 +65,11 @@ function filterStartsWith(
 }
 
 function getGsdArgumentCompletions(prefix: string) {
+  const hasTrailingSpace = prefix.endsWith(" ");
   const parts = prefix.trim().split(/\s+/);
+  if (hasTrailingSpace && parts.length >= 1) {
+    parts.push("");
+  }
 
   if (parts.length <= 1) {
     return filterStartsWith(parts[0] ?? "", TOP_LEVEL_SUBCOMMANDS);
@@ -84,6 +89,21 @@ function getGsdArgumentCompletions(prefix: string) {
       { cmd: "--verbose", desc: "Show detailed step output" },
       { cmd: "--dry-run", desc: "Preview next step without executing" },
     ], "next");
+  }
+
+  if (parts[0] === "mcp") {
+    const flags = [
+      { cmd: "--verbose", desc: "Show detailed MCP diagnostics" },
+      { cmd: "--refresh", desc: "Reload MCP config from disk" },
+    ];
+
+    if (parts.length <= 2) {
+      return filterStartsWith(partial, flags, "mcp");
+    }
+
+    if (parts.length <= 3) {
+      return filterStartsWith(parts[2] ?? "", flags, `mcp ${parts[1]}`);
+    }
   }
 
   if (parts[0] === "mode" && parts.length <= 2) {

@@ -6,6 +6,7 @@ import { handleCoreCommand } from "./handlers/core.js";
 import { handleOpsCommand } from "./handlers/ops.js";
 import { handleParallelCommand } from "./handlers/parallel.js";
 import { handleWorkflowCommand } from "./handlers/workflow.js";
+import { handleMcp } from "../commands-mcp.js";
 
 export async function handleGSDCommand(
   args: string,
@@ -13,6 +14,11 @@ export async function handleGSDCommand(
   pi: ExtensionAPI,
 ): Promise<void> {
   const trimmed = (typeof args === "string" ? args : "").trim();
+
+  if (trimmed === "mcp" || trimmed.startsWith("mcp ")) {
+    await handleMcp(trimmed.slice(3).trim(), ctx);
+    return;
+  }
 
   const handlers = [
     () => handleCoreCommand(trimmed, ctx, pi),
