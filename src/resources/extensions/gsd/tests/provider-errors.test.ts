@@ -404,6 +404,8 @@ test("resumeAutoAfterProviderDelay restarts paused auto-mode from the recorded b
         stepMode: true,
         basePath: "/tmp/project",
       }),
+      resetTransientRetryState: () => {},
+      resetSessionTimeoutState: () => {},
       startAuto: async (_ctx, _pi, base, verboseMode, options) => {
         startCalls.push({ base, verboseMode, step: options?.step });
       },
@@ -428,6 +430,8 @@ test("resumeAutoAfterProviderDelay does not double-start when auto-mode is alrea
         stepMode: false,
         basePath: "/tmp/project",
       }),
+      resetTransientRetryState: () => {},
+      resetSessionTimeoutState: () => {},
       startAuto: async () => {
         startCalls += 1;
       },
@@ -458,6 +462,8 @@ test("resumeAutoAfterProviderDelay leaves auto paused when no base path is avail
         stepMode: false,
         basePath: "",
       }),
+      resetTransientRetryState: () => {},
+      resetSessionTimeoutState: () => {},
       startAuto: async () => {
         startCalls += 1;
       },
@@ -471,6 +477,39 @@ test("resumeAutoAfterProviderDelay leaves auto paused when no base path is avail
       message: "Provider error recovery delay elapsed, but no paused auto-mode base path was available. Leaving auto-mode paused.",
       level: "warning",
     },
+  ]);
+});
+
+test("resumeAutoAfterProviderDelay resets provider retry state before restarting auto-mode", async () => {
+  const calls: string[] = [];
+
+  const result = await resumeAutoAfterProviderDelay(
+    {} as any,
+    { ui: { notify() {} } } as any,
+    {
+      getSnapshot: () => ({
+        active: false,
+        paused: true,
+        stepMode: false,
+        basePath: "/tmp/project",
+      }),
+      resetTransientRetryState: () => {
+        calls.push("reset-transient");
+      },
+      resetSessionTimeoutState: () => {
+        calls.push("reset-session-timeout");
+      },
+      startAuto: async () => {
+        calls.push("start-auto");
+      },
+    },
+  );
+
+  assert.equal(result, "resumed");
+  assert.deepEqual(calls, [
+    "reset-transient",
+    "reset-session-timeout",
+    "start-auto",
   ]);
 });
 
@@ -564,31 +603,6 @@ test("resetTransientRetryState is exported from agent-end-recovery.ts", () => {
   assert.ok(
     src.includes("export function resetTransientRetryState"),
     "agent-end-recovery.ts must export resetTransientRetryState for provider-error-resume.ts",
-  );
-});
-
-test("provider-error-resume.ts calls resetTransientRetryState before startAuto", () => {
-  const src = readFileSync(join(__dirname, "..", "bootstrap", "provider-error-resume.ts"), "utf-8");
-  assert.ok(
-    src.includes("resetTransientRetryState"),
-    "provider-error-resume.ts must import and call resetTransientRetryState",
-  );
-  // Ensure reset is called BEFORE startAuto — order matters
-  const resetIdx = src.indexOf("resetTransientRetryState()");
-  const startIdx = src.indexOf("await deps.startAuto(");
-  assert.ok(
-    resetIdx !== -1 && startIdx !== -1 && resetIdx < startIdx,
-    "resetTransientRetryState() must be called before deps.startAuto()",
-  );
-  // Session timeout counter must also be reset before startAuto
-  assert.ok(
-    src.includes("resetSessionTimeoutState"),
-    "provider-error-resume.ts must import and call resetSessionTimeoutState",
-  );
-  const sessionResetIdx = src.indexOf("resetSessionTimeoutState()");
-  assert.ok(
-    sessionResetIdx !== -1 && startIdx !== -1 && sessionResetIdx < startIdx,
-    "resetSessionTimeoutState() must be called before deps.startAuto()",
   );
 });
 
