@@ -12,7 +12,7 @@ import { getTask, updateTaskStatus, insertExternalWait } from "../gsd-db.js";
 import { invalidateStateCache } from "../state.js";
 import { saveJsonFile } from "../json-persistence.js";
 import { resolveTasksDir } from "../paths.js";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { mkdirSync, unlinkSync } from "node:fs";
 import {
   executeCompleteMilestone,
@@ -1144,6 +1144,21 @@ export function registerDbTools(pi: ExtensionAPI): void {
       return { content: [{ type: "text" as const, text: `Error: task not in executing status (current: ${task.status})` }], isError: true, details: { error: `task not in executing status (current: ${task.status})` } as any };
     }
 
+    // Runtime validation — reject empty/invalid values before persistence
+    const trimmedCommand = checkCommand.trim();
+    if (!trimmedCommand) {
+      return { content: [{ type: "text" as const, text: "Error: checkCommand must not be empty" }], isError: true, details: { error: "checkCommand empty" } as any };
+    }
+    if (pollIntervalMs !== undefined && (!Number.isInteger(pollIntervalMs) || pollIntervalMs < 1)) {
+      return { content: [{ type: "text" as const, text: "Error: pollIntervalMs must be a positive integer" }], isError: true, details: { error: "invalid pollIntervalMs" } as any };
+    }
+    if (timeoutMs !== undefined && (!Number.isInteger(timeoutMs) || timeoutMs < 1)) {
+      return { content: [{ type: "text" as const, text: "Error: timeoutMs must be a positive integer" }], isError: true, details: { error: "invalid timeoutMs" } as any };
+    }
+    if (pollIntervalMs !== undefined && timeoutMs !== undefined && timeoutMs < pollIntervalMs) {
+      return { content: [{ type: "text" as const, text: "Error: timeoutMs must be >= pollIntervalMs" }], isError: true, details: { error: "timeoutMs < pollIntervalMs" } as any };
+    }
+
     // Write JSON probe spec FIRST (R215) — filesystem before DB to avoid stranded state
     const basePath = process.cwd();
     const resolvedPollInterval = pollIntervalMs ?? 30000;
@@ -1163,7 +1178,7 @@ export function registerDbTools(pi: ExtensionAPI): void {
         milestoneId,
         sliceId,
         taskId,
-        checkCommand,
+        checkCommand: trimmedCommand,
         successCheck: successCheck ?? null,
         pollIntervalMs: resolvedPollInterval,
         timeoutMs: resolvedTimeout,
@@ -1177,7 +1192,7 @@ export function registerDbTools(pi: ExtensionAPI): void {
 
     // Insert external_waits DB row and update task status (R213, R214, R223)
     try {
-      insertExternalWait(milestoneId, sliceId, taskId, checkCommand, {
+      insertExternalWait(milestoneId, sliceId, taskId, trimmedCommand, {
         successCheck,
         pollIntervalMs,
         timeoutMs,
@@ -1194,7 +1209,7 @@ export function registerDbTools(pi: ExtensionAPI): void {
     // Invalidate state cache
     invalidateStateCache();
 
-    const relPath = jsonPath.replace(basePath + "/", "");
+    const relPath = relative(basePath, jsonPath).split("\\").join("/");
     return {
       content: [{ type: "text" as const, text: `External wait registered for ${milestoneId}/${sliceId}/${taskId}. Probe spec: ${relPath}` }],
       isError: false,
@@ -1223,10 +1238,10 @@ export function registerDbTools(pi: ExtensionAPI): void {
       milestoneId: Type.String({ description: "Milestone ID (e.g. M006)" }),
       sliceId: Type.String({ description: "Slice ID (e.g. S02)" }),
       taskId: Type.String({ description: "Task ID (e.g. T01)" }),
-      checkCommand: Type.String({ description: "Shell command to probe external process status" }),
-      successCheck: Type.Optional(Type.String({ description: "Optional second-phase validation command after checkCommand succeeds" })),
-      pollIntervalMs: Type.Optional(Type.Number({ description: "Probe poll interval in milliseconds (default 30000)" })),
-      timeoutMs: Type.Optional(Type.Number({ description: "Overall timeout in milliseconds (default 86400000 = 24h)" })),
+      checkCommand: Type.String({ description: "Shell command to probe external process status", minLength: 1 }),
+      successCheck: Type.Optional(Type.String({ description: "Optional second-phase validation command after checkCommand succeeds", minLength: 1 })),
+      pollIntervalMs: Type.Optional(Type.Number({ description: "Probe poll interval in milliseconds (default 30000)", minimum: 1 })),
+      timeoutMs: Type.Optional(Type.Number({ description: "Overall timeout in milliseconds (default 86400000 = 24h)", minimum: 1 })),
       contextHint: Type.Optional(Type.String({ description: "Human-readable hint about what is being waited on" })),
       onTimeout: Type.Optional(StringEnum(["manual-attention", "resume-with-failure"], { description: "Action on timeout: manual-attention (default) or resume-with-failure" })),
     }),
