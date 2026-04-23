@@ -34,7 +34,7 @@ export class CredentialCooldownError extends Error {
 
 export function canRestoreSessionModel(
 	modelRegistry: Pick<ModelRegistry, "isProviderRequestReady">,
-	model: Model,
+	model: Model<any>,
 ): boolean {
 	return modelRegistry.isProviderRequestReady(model.provider);
 }

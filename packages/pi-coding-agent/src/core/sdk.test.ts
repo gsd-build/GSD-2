@@ -93,7 +93,7 @@ describe("canRestoreSessionModel", () => {
 	const model = {
 		provider: "claude-code",
 		id: "claude-sonnet",
-	} as Model;
+	} as Model<any>;
 
 	it("allows keyless external providers when the provider is request-ready", () => {
 		const registry = {
