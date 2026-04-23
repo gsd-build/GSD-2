@@ -99,6 +99,18 @@ function printExtensionErrors(errors: ReadonlyArray<{ error: string }>): void {
 }
 
 /**
+ * Print extension load warnings (non-fatal, e.g. missing declared deps from
+ * the topological sort). Complements printExtensionErrors — fatal errors go
+ * there, advisory warnings go here.
+ */
+function printExtensionWarnings(warnings: ReadonlyArray<{ message: string }> | undefined): void {
+  if (!warnings) return
+  for (const w of warnings) {
+    process.stderr.write(`[gsd] Extension warning: ${w.message}\n`)
+  }
+}
+
+/**
  * Re-apply the validated model to the session when `createAgentSession()`
  * reports that it had to use a fallback. Prevents silently overriding the
  * persisted model of resumed conversations (#3534).
@@ -568,6 +580,7 @@ if (isPrintMode) {
   validateConfiguredModel(modelRegistry, settingsManager)
   await reapplyValidatedModelOnFallback(session, modelRegistry, settingsManager, modelFallbackMessage)
   printExtensionErrors(extensionsResult.errors)
+  printExtensionWarnings(extensionsResult.warnings)
 
   // Apply --model override if specified
   if (cliFlags.model) {
@@ -723,6 +736,7 @@ markStartup('createAgentSession')
 validateConfiguredModel(modelRegistry, settingsManager)
 await reapplyValidatedModelOnFallback(session, modelRegistry, settingsManager, interactiveFallbackMsg)
 printExtensionErrors(extensionsResult.errors)
+printExtensionWarnings(extensionsResult.warnings)
 
 // Restore scoped models from settings on startup.
 // The upstream InteractiveMode reads enabledModels from settings when /scoped-models is opened,

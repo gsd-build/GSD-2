@@ -192,7 +192,18 @@ import {
 } from "./auto-supervisor.js";
 import { isDbAvailable, getMilestone } from "./gsd-db.js";
 import { countPendingCaptures } from "./captures.js";
-import { clearCmuxSidebar, logCmuxEvent, syncCmuxSidebar } from "../cmux/index.js";
+import { CMUX_CHANNELS, type CmuxLogLevel } from "../shared/cmux-events.js";
+
+function makeCmuxEmitters(pi: ExtensionAPI) {
+  return {
+    syncCmuxSidebar: (preferences: GSDPreferences | undefined, state: GSDState) =>
+      pi.events.emit(CMUX_CHANNELS.SIDEBAR, { action: "sync" as const, preferences, state }),
+    logCmuxEvent: (preferences: GSDPreferences | undefined, message: string, level?: CmuxLogLevel) =>
+      pi.events.emit(CMUX_CHANNELS.LOG, { preferences, message, level: level ?? "info" }),
+    clearCmuxSidebar: (preferences: GSDPreferences | undefined) =>
+      pi.events.emit(CMUX_CHANNELS.SIDEBAR, { action: "clear" as const, preferences }),
+  };
+}
 
 // ── Extracted modules ──────────────────────────────────────────────────────
 import { startUnitSupervision } from "./auto-timers.js";
@@ -701,7 +712,6 @@ function handleLostSessionLock(
   restoreProjectRootEnv();
   restoreMilestoneLockEnv();
   deregisterSigtermHandler();
-  clearCmuxSidebar(loadEffectiveGSDPreferences(s.basePath || undefined)?.preferences);
   const base = lockBase();
   const lockFilePath = base ? join(gsdRoot(base), "auto.lock") : "unknown";
   const recoverySuggestion = "\nTo recover, run: gsd doctor --fix";
@@ -942,12 +952,12 @@ export async function stopAuto(
 
     // ── Step 9: Cmux sidebar / event log ──
     try {
-      clearCmuxSidebar(loadedPreferences);
-      logCmuxEvent(
-        loadedPreferences,
-        `Auto-mode stopped${reasonSuffix || ""}.`,
-        reason?.startsWith("Blocked:") ? "warning" : "info",
-      );
+      pi?.events.emit(CMUX_CHANNELS.SIDEBAR, { action: "clear" as const, preferences: loadedPreferences });
+      pi?.events.emit(CMUX_CHANNELS.LOG, {
+        preferences: loadedPreferences,
+        message: `Auto-mode stopped${reasonSuffix || ""}.`,
+        level: reason?.startsWith("Blocked:") ? "warning" : "info",
+      });
     } catch (e) {
       debugLog("stop-cleanup-cmux", { error: e instanceof Error ? e.message : String(e) });
     }
@@ -1185,11 +1195,13 @@ function buildResolver(): WorktreeResolver {
  * Build the LoopDeps object from auto.ts private scope.
  * This bundles all private functions that autoLoop needs without exporting them.
  */
-function buildLoopDeps(): LoopDeps {
+function buildLoopDeps(pi: ExtensionAPI): LoopDeps {
   // Initialize the unified rule registry with converted dispatch rules.
   // Must happen before LoopDeps is assembled so facade functions
   // (resolveDispatch, runPreDispatchHooks, etc.) delegate to the registry.
   initRegistry(convertDispatchRules(DISPATCH_RULES));
+
+  const cmux = makeCmuxEmitters(pi);
 
   return {
     lockBase,
@@ -1198,8 +1210,11 @@ function buildLoopDeps(): LoopDeps {
     pauseAuto,
     clearUnitTimeout,
     updateProgressWidget,
-    syncCmuxSidebar,
-    logCmuxEvent,
+    ...cmux,
+    handleLostSessionLock: (ctx: ExtensionContext | undefined, lockStatus: SessionLockStatus | undefined) => {
+      cmux.clearCmuxSidebar(loadEffectiveGSDPreferences(s.basePath || undefined)?.preferences);
+      handleLostSessionLock(ctx, lockStatus);
+    },
 
     // State and cache
     invalidateAllCaches,
@@ -1219,7 +1234,6 @@ function buildLoopDeps(): LoopDeps {
     // Session lock
     validateSessionLock: getSessionLockStatus,
     updateSessionLock,
-    handleLostSessionLock,
 
     // Milestone transition
     sendDesktopNotification,
@@ -1576,7 +1590,7 @@ export async function startAuto(
     await openProjectDbIfPresent(s.basePath);
     try {
       await rebuildState(s.basePath);
-      syncCmuxSidebar(loadEffectiveGSDPreferences(s.basePath || undefined)?.preferences, await deriveState(s.basePath));
+      pi.events.emit(CMUX_CHANNELS.SIDEBAR, { action: "sync" as const, preferences: loadEffectiveGSDPreferences(s.basePath || undefined)?.preferences, state: await deriveState(s.basePath) });
     } catch (e) {
       debugLog("resume-rebuild-state-failed", {
         error: e instanceof Error ? e.message : String(e),
@@ -1626,7 +1640,7 @@ export async function startAuto(
       "resuming",
       s.currentMilestoneId ?? "unknown",
     );
-    logCmuxEvent(loadEffectiveGSDPreferences(s.basePath || undefined)?.preferences, s.stepMode ? "Step-mode resumed." : "Auto-mode resumed.", "progress");
+    pi.events.emit(CMUX_CHANNELS.LOG, { preferences: loadEffectiveGSDPreferences(s.basePath || undefined)?.preferences, message: s.stepMode ? "Step-mode resumed." : "Auto-mode resumed.", level: "progress" });
 
     captureProjectRootEnv(s.originalBasePath || s.basePath);
     startAutoCommandPolling(s.basePath);
@@ -1634,7 +1648,7 @@ export async function startAuto(
       ctx,
       pi,
       s,
-      deps: buildLoopDeps(),
+      deps: buildLoopDeps(pi),
       runKernelLoop: runUokKernelLoop,
       runLegacyLoop: runLegacyAutoLoop,
     });
@@ -1664,12 +1678,12 @@ export async function startAuto(
 
   captureProjectRootEnv(s.originalBasePath || s.basePath);
   try {
-    syncCmuxSidebar(loadEffectiveGSDPreferences(s.basePath || undefined)?.preferences, await deriveState(s.basePath));
+    pi.events.emit(CMUX_CHANNELS.SIDEBAR, { action: "sync" as const, preferences: loadEffectiveGSDPreferences(s.basePath || undefined)?.preferences, state: await deriveState(s.basePath) });
   } catch (err) {
     // Best-effort only — sidebar sync must never block auto-mode startup
     logWarning("engine", `cmux sync failed: ${err instanceof Error ? err.message : String(err)}`, { file: "auto.ts" });
   }
-  logCmuxEvent(loadEffectiveGSDPreferences(s.basePath || undefined)?.preferences, requestedStepMode ? "Step-mode started." : "Auto-mode started.", "progress");
+  pi.events.emit(CMUX_CHANNELS.LOG, { preferences: loadEffectiveGSDPreferences(s.basePath || undefined)?.preferences, message: requestedStepMode ? "Step-mode started." : "Auto-mode started.", level: "progress" });
 
   startAutoCommandPolling(s.basePath);
 
@@ -1678,7 +1692,7 @@ export async function startAuto(
     ctx,
     pi,
     s,
-    deps: buildLoopDeps(),
+    deps: buildLoopDeps(pi),
     runKernelLoop: runUokKernelLoop,
     runLegacyLoop: runLegacyAutoLoop,
   });

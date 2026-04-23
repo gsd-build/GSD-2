@@ -39,6 +39,8 @@ import { execCommand } from "../exec.js";
 import { getUntrustedExtensionPaths } from "./project-trust.js";
 export { isProjectTrusted, trustProject, getUntrustedExtensionPaths } from "./project-trust.js";
 import { registerToolCompatibility } from "../tools/tool-compatibility-registry.js";
+import { mergeExtensionEntryPaths } from "./extension-discovery.js";
+import { sortExtensionPaths } from "./extension-sort.js";
 import type {
 	Extension,
 	ExtensionAPI,
@@ -847,24 +849,21 @@ export async function loadExtensionFromFactory(
 /**
  * Load extensions from paths.
  *
- * Extensions are loaded in parallel to reduce wall-clock time (~30-50% faster
- * than sequential loading for I/O-bound jiti compilation).
+ * Paths are expected to be topologically sorted by caller (see sortExtensionPaths).
+ * Factories are awaited sequentially so a dependency's factory fully initializes
+ * (registers tools, commands, hooks on `pi`) before any dependent's factory runs.
  */
 export async function loadExtensions(paths: string[], cwd: string, eventBus?: EventBus): Promise<LoadExtensionsResult> {
 	const resolvedEventBus = eventBus ?? createEventBus();
 	const runtime = createExtensionRuntime();
 
-	const results = await Promise.all(
-		paths.map((extPath) => loadExtension(extPath, cwd, resolvedEventBus, runtime)),
-	);
-
 	const extensions: Extension[] = [];
 	const errors: Array<{ path: string; error: string }> = [];
 
-	for (let i = 0; i < results.length; i++) {
-		const { extension, error } = results[i];
+	for (const extPath of paths) {
+		const { extension, error } = await loadExtension(extPath, cwd, resolvedEventBus, runtime);
 		if (error) {
-			errors.push({ path: paths[i], error });
+			errors.push({ path: extPath, error });
 		} else if (extension) {
 			extensions.push(extension);
 		}
@@ -873,6 +872,7 @@ export async function loadExtensions(paths: string[], cwd: string, eventBus?: Ev
 	return {
 		extensions,
 		errors,
+		warnings: [],
 		runtime,
 	};
 }
@@ -1034,7 +1034,12 @@ export async function discoverAndLoadExtensions(
 
 	// 2. Global extensions: agentDir/extensions/
 	const globalExtDir = path.join(agentDir, "extensions");
-	addPaths(discoverExtensionsInDir(globalExtDir));
+	// 2b. Installed extensions: ~/.gsd/extensions/ merged with bundled (D-14, D-15)
+	// Discovery handles ID-based merge — loader stays dumb.
+	const installedExtDir = path.join(path.dirname(agentDir), "extensions");
+	const globalPaths = discoverExtensionsInDir(globalExtDir);
+	const mergedPaths = mergeExtensionEntryPaths(globalPaths, installedExtDir);
+	addPaths(mergedPaths);
 
 	// 3. Explicitly configured paths
 	for (const p of configuredPaths) {
@@ -1054,5 +1059,13 @@ export async function discoverAndLoadExtensions(
 		addPaths([resolved]);
 	}
 
-	return loadExtensions(allPaths, cwd, eventBus);
+	// Topological sort: ensure declared dependencies load first (D-06, D-07)
+	const { sortedPaths, warnings: sortWarnings } = sortExtensionPaths(allPaths)
+	// Emit warnings to stderr immediately — loader runs before ctx.ui is ready (D-08)
+	for (const w of sortWarnings) {
+		process.stderr.write(`[gsd] ${w.message}\n`)
+	}
+	const result = await loadExtensions(sortedPaths, cwd, eventBus)
+	result.warnings.push(...sortWarnings)
+	return result
 }
