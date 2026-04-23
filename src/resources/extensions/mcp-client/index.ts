@@ -97,10 +97,9 @@ export function getConnectionStatus(name: string): {
 	tools: string[];
 	error?: string;
 } {
-	const conn = connections.get(name);
-	const cached = toolCache.get(name);
+	const cached = getCachedMcpTools(name);
 	return {
-		connected: !!conn,
+		connected: isMcpServerConnected(name),
 		tools: cached ? cached.map((t) => t.name) : [],
 		error: undefined,
 	};
