@@ -70,14 +70,21 @@ describe('register-extension _gsdEpipeGuard (#3696)', () => {
 
 describe('register-hooks session_before_compact (#3696)', () => {
   test('session_before_compact only checks isAutoActive', () => {
-    // Extract the session_before_compact handler
-    const compactIdx = registerHooksSrc.indexOf('session_before_compact');
+    // Anchor on the full registration token rather than the bare event name —
+    // prevents matching unrelated substring occurrences.
+    const compactIdx = registerHooksSrc.indexOf('pi.on("session_before_compact"');
     assert.ok(compactIdx > -1, 'session_before_compact hook should exist');
     // The first check in the handler should be isAutoActive(), not isAutoPaused().
     // Bound the region to this single handler — register-hooks.ts contains
     // multiple pi.on("session_before_compact") handlers and a later handler
     // legitimately references isAutoPaused.
-    const afterCompact = extractSourceRegion(registerHooksSrc, 'session_before_compact', 'pi.on("');
+    const afterCompact = extractSourceRegion(
+      registerHooksSrc,
+      'pi.on("session_before_compact"',
+      'pi.on("',
+      // NB: endAnchor search starts AFTER the startAnchor, so the next
+      // pi.on("... matches the subsequent handler rather than this one.
+    );
     assert.match(afterCompact, /isAutoActive\(\)/,
       'session_before_compact should check isAutoActive()');
     // Should NOT block compaction when paused

@@ -98,7 +98,11 @@ describe("#2527 Bug 2: null guard after async recovery prevents crash", () => {
 
     // The null guard must appear between the recovery call and the next
     // writeUnitRuntimeRecord that accesses s.currentUnit.startedAt
-    const afterRecovery = extractSourceRegion(TIMERS_SRC, 'recoverTimedOutUnit(ctx, pi, unitType, unitId, "idle"');
+    const afterRecovery = extractSourceRegion(
+      TIMERS_SRC,
+      'recoverTimedOutUnit(ctx, pi, unitType, unitId, "idle"',
+      { fromIdx: idleRecovery },
+    );
     assert.ok(
       afterRecovery.includes("if (!s.currentUnit) return"),
       "null guard for s.currentUnit must exist after idle recoverTimedOutUnit",

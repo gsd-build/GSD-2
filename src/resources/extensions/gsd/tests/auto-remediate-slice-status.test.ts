@@ -44,7 +44,9 @@ describe('auto-remediate stale slice status (#3673)', () => {
     assert.match(before, /try\s*\{/,
       'updateSliceStatus should be inside a try block');
 
-    const after = extractSourceRegion(source, 'updateSliceStatus(mid, sid');
+    // Bound the region to stop before the rogue fallback so /catch/ only
+    // matches this try block's catch, not an unrelated later one.
+    const after = extractSourceRegion(source, 'updateSliceStatus(mid, sid', 'rogues.push({');
     assert.match(after, /catch/,
       'try block should have a catch for fallback');
   });

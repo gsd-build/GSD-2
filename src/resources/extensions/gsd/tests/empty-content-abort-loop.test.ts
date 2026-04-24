@@ -31,7 +31,7 @@ test("agent-end-recovery.ts does not pause on aborted messages with empty conten
   assert.ok(abortIdx > -1, "abort handler must exist in agent-end-recovery.ts");
 
   // Extract the region around the abort handler (enough to see the guard logic)
-  const abortRegion = source.slice(Math.max(0, abortIdx - 200), abortIdx + 600);
+  const abortRegion = extractSourceRegion(source, 'stopReason === "aborted"', { fromIdx: abortIdx });
 
   // Must check for empty content before pausing
   assert.ok(

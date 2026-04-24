@@ -108,7 +108,9 @@ describe("register-hooks: skip prepareWorkflowMcpForProject inside auto-worktree
   it("session_start hook is gated on isInAutoWorktree", () => {
     const idx = src.indexOf('pi.on("session_start"');
     assert.ok(idx !== -1, "session_start handler must exist");
-    const block = extractSourceRegion(src, 'pi.on("session_start"');
+    // Bound the extraction at the next pi.on(...) so adjacent handlers
+    // can't bleed into this handler's assertions.
+    const block = extractSourceRegion(src, 'pi.on("session_start"', 'pi.on("session_switch"');
     assert.ok(
       block.includes("isInAutoWorktree"),
       "session_start must consult isInAutoWorktree before preparing MCP",
@@ -122,7 +124,7 @@ describe("register-hooks: skip prepareWorkflowMcpForProject inside auto-worktree
   it("session_switch hook is gated on isInAutoWorktree", () => {
     const idx = src.indexOf('pi.on("session_switch"');
     assert.ok(idx !== -1, "session_switch handler must exist");
-    const block = extractSourceRegion(src, 'pi.on("session_switch"');
+    const block = extractSourceRegion(src, 'pi.on("session_switch"', 'pi.on("tool_call"');
     assert.ok(
       block.includes("isInAutoWorktree"),
       "session_switch must consult isInAutoWorktree before preparing MCP",

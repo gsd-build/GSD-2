@@ -34,14 +34,14 @@ describe('syncWorktreeStateBack skips current milestone (#3641)', () => {
     assert.ok(fnStart !== -1)
 
     // Get a reasonable portion of the function
-    const fnBlock = extractSourceRegion(src, 'function syncWorktreeStateBack(')
+    const fnBlock = extractSourceRegion(src, 'function syncWorktreeStateBack(', { fromIdx: fnStart })
 
     // Find the for loop iterating milestones
     const loopIdx = fnBlock.indexOf('for (const mid of wtMilestones)')
     assert.ok(loopIdx !== -1, 'milestone iteration loop must exist')
 
     // After the loop, there should be the skip guard
-    const loopBody = extractSourceRegion(fnBlock, 'for (const mid of wtMilestones)')
+    const loopBody = extractSourceRegion(fnBlock, 'for (const mid of wtMilestones)', { fromIdx: loopIdx })
     assert.ok(
       loopBody.includes('mid === milestoneId'),
       'mid === milestoneId skip guard must exist inside the milestone loop',
@@ -56,7 +56,7 @@ describe('syncWorktreeStateBack skips current milestone (#3641)', () => {
     const fnStart = src.indexOf('function syncWorktreeStateBack(')
     assert.ok(fnStart !== -1)
 
-    const fnBlock = extractSourceRegion(src, 'function syncWorktreeStateBack(')
+    const fnBlock = extractSourceRegion(src, 'function syncWorktreeStateBack(', { fromIdx: fnStart })
 
     assert.ok(
       fnBlock.includes('syncMilestoneDir('),
