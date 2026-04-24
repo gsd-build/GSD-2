@@ -46,6 +46,7 @@ import { logWarning, logError } from './workflow-logger.js';
 import { extractVerdict } from './verdict-parser.js';
 import { loadEffectiveGSDPreferences } from './preferences.js';
 import { detectPendingEscalation } from './escalation.js';
+import { isTerminalMilestoneSummaryContent } from './milestone-summary-classifier.js';
 
 import {
   isDbAvailable,
@@ -139,23 +140,6 @@ export function isValidationTerminal(validationContent: string): boolean {
   return extractVerdict(validationContent) != null;
 }
 
-function isTerminalMilestoneSummaryContent(content: string): boolean {
-  const summary = parseSummary(content);
-  const rawStatus = typeof summary.frontmatter.status === 'string'
-    ? summary.frontmatter.status.trim().toLowerCase()
-    : '';
-  if (['active', 'pending', 'blocked', 'failed', 'failure', 'incomplete'].includes(rawStatus)) {
-    return false;
-  }
-
-  return !(
-    /(?:^|\n)\s*#\s*BLOCKER\b/i.test(content) ||
-    /auto-mode recovery failed/i.test(content) ||
-    /verification\s+failed/i.test(content) ||
-    /\bnot complete\b/i.test(content)
-  );
-}
-
 async function isTerminalMilestoneSummaryFile(
   path: string,
   loader: (path: string) => Promise<string | null>,
@@ -241,10 +225,10 @@ export async function getActiveMilestoneId(basePath: string): Promise<string | n
       return mid;
     }
     const roadmap = parseRoadmap(content);
-    if (!isMilestoneComplete(roadmap)) {
-      const summaryFile = resolveMilestoneFile(basePath, mid, "SUMMARY");
-      if (!summaryFile || !(await isTerminalMilestoneSummaryFile(summaryFile, loadFile))) return mid;
-    }
+    const summaryFile = resolveMilestoneFile(basePath, mid, "SUMMARY");
+    if (summaryFile && await isTerminalMilestoneSummaryFile(summaryFile, loadFile)) continue;
+    if (!isMilestoneComplete(roadmap)) return mid;
+    return mid;
   }
   return null;
 }

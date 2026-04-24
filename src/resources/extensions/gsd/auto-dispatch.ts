@@ -33,7 +33,8 @@ import { parseRoadmap } from "./parsers-legacy.js";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { logWarning, logError } from "./workflow-logger.js";
 import { join } from "node:path";
-import { hasImplementationArtifacts, classifyMilestoneSummaryContent } from "./auto-recovery.js";
+import { hasImplementationArtifacts } from "./auto-recovery.js";
+import { classifyMilestoneSummaryContent } from "./milestone-summary-classifier.js";
 import {
   buildDiscussMilestonePrompt,
   buildResearchMilestonePrompt,

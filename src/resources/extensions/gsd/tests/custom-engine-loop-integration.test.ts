@@ -542,6 +542,104 @@ describe("Custom engine loop integration", () => {
     assert.equal(finalGraph.steps[0]?.status, "active", "failed verification must not reconcile the step complete");
   });
 
+  it("persists custom verification retry budget across a session restart", async () => {
+    _resetPendingResolve();
+
+    const runDir = makeTmpDir();
+    const graph = makeGraph([makeStep({ id: "retry-step" })], "retry-restart");
+    writeGraph(runDir, graph);
+    writeFileSync(join(runDir, "DEFINITION.yaml"), stringify({
+      version: 1,
+      name: "retry-restart",
+      steps: [{
+        id: "retry-step",
+        name: "retry-step",
+        prompt: "Do retry-step",
+        produces: "retry-step/output.md",
+        verify: { policy: "shell-command", command: "exit 1" },
+      }],
+    }));
+
+    const ctx1 = makeMockCtx();
+    const pi1 = makeMockPi();
+    const s1 = makeLoopSession({
+      activeEngineId: "custom",
+      activeRunDir: runDir,
+      basePath: runDir,
+    });
+    const deps1 = makeMockDeps();
+    const resolver1 = setInterval(() => {
+      resolveAgentEnd({ messages: [{ role: "assistant" }] });
+      if (pi1.calls.length >= 2) {
+        s1.active = false;
+      }
+    }, 25);
+    let timeout1: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        autoLoop(ctx1, pi1, s1, deps1),
+        new Promise((_, reject) =>
+          timeout1 = setTimeout(() => {
+            s1.active = false;
+            resolveAgentEnd({ messages: [{ role: "assistant" }] });
+            reject(new Error(
+              `first autoLoop did not pause after two retry attempts; calls=${pi1.calls.length}; log=${deps1.callLog.join(",")}`,
+            ));
+          }, 3_000),
+        ),
+      ]);
+    } finally {
+      clearInterval(resolver1);
+      if (timeout1) clearTimeout(timeout1);
+    }
+    assert.equal(pi1.calls.length, 2, "first session should consume two retry attempts");
+    assert.equal(
+      deps1.callLog.some((e: string) => e.startsWith("stopAuto:")),
+      false,
+      "first session should stop because the session deactivated, not because retry budget exhausted",
+    );
+
+    _resetPendingResolve();
+    const ctx2 = makeMockCtx();
+    const pi2 = makeMockPi();
+    const s2 = makeLoopSession({
+      activeEngineId: "custom",
+      activeRunDir: runDir,
+      basePath: runDir,
+    });
+    const deps2 = makeMockDeps({
+      stopAuto: async (_ctx, _pi, reason) => {
+        deps2.callLog.push(`stopAuto:${reason ?? "no-reason"}`);
+        s2.active = false;
+      },
+    });
+    const resolver2 = setInterval(() => {
+      resolveAgentEnd({ messages: [{ role: "assistant" }] });
+    }, 25);
+    let timeout2: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        autoLoop(ctx2, pi2, s2, deps2),
+        new Promise((_, reject) =>
+          timeout2 = setTimeout(() => {
+            s2.active = false;
+            resolveAgentEnd({ messages: [{ role: "assistant" }] });
+            reject(new Error(
+              `second autoLoop did not stop after persisted retry exhaustion; calls=${pi2.calls.length}; log=${deps2.callLog.join(",")}`,
+            ));
+          }, 3_000),
+        ),
+      ]);
+    } finally {
+      clearInterval(resolver2);
+      if (timeout2) clearTimeout(timeout2);
+    }
+
+    assert.equal(pi2.calls.length, 2, "second session should exhaust after attempts 3 and 4");
+    const stopEntry = deps2.callLog.find((e: string) => e.startsWith("stopAuto:"));
+    assert.match(stopEntry ?? "", /requested retry 4 times without passing/);
+  });
+
   it("GRAPH.yaml step stays pending when session deactivates before reconcile", async () => {
     _resetPendingResolve();
 

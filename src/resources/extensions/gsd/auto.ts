@@ -169,6 +169,7 @@ import {
   buildLoopRemediationSteps,
   reconcileMergeState,
 } from "./auto-recovery.js";
+import { classifyMilestoneSummaryContent } from "./milestone-summary-classifier.js";
 import { resolveDispatch, DISPATCH_RULES } from "./auto-dispatch.js";
 import { getErrorMessage } from "./error-utils.js";
 import { recoverFailedMigration } from "./migrate-external.js";
@@ -1419,7 +1420,15 @@ export async function startAuto(
           // Validate the milestone still exists and isn't already complete (#1664).
           const mDir = resolveMilestonePath(base, meta.milestoneId);
           const summaryFile = resolveMilestoneFile(base, meta.milestoneId, "SUMMARY");
-          if (!mDir || summaryFile) {
+          let summaryIsTerminal = false;
+          if (summaryFile) {
+            try {
+              summaryIsTerminal = classifyMilestoneSummaryContent(readFileSync(summaryFile, "utf-8")) !== "failure";
+            } catch {
+              summaryIsTerminal = true;
+            }
+          }
+          if (!mDir || summaryIsTerminal) {
             try { unlinkSync(pausedPath); } catch (err) {
               if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
                 logWarning("session", `pause file cleanup failed: ${err instanceof Error ? err.message : String(err)}`, { file: "auto.ts" });

@@ -13,6 +13,7 @@ import {
   isValidationTerminal,
   isGhostMilestone,
   invalidateStateCache,
+  getActiveMilestoneId,
 } from "../state.ts";
 import {
   openDatabase,
@@ -688,6 +689,7 @@ describe("state-machine-full-walkthrough", () => {
 
       assert.equal(state.phase, "completing-milestone");
       assert.equal(state.registry[0]?.status, "active");
+      assert.equal(await getActiveMilestoneId(base), "M001");
     });
   });
 

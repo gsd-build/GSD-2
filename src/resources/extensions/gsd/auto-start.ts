@@ -62,6 +62,7 @@ import { resetProactiveHealing, setLevelChangeCallback } from "./doctor-proactiv
 import { snapshotSkills } from "./skill-discovery.js";
 import { isDbAvailable, getMilestone, openDatabase, getDbStatus } from "./gsd-db.js";
 import { isClosedStatus } from "./status-guards.js";
+import { classifyMilestoneSummaryContent } from "./milestone-summary-classifier.js";
 
 import {
   debugLog,
@@ -75,6 +76,7 @@ import type { AutoSession } from "./auto/session.js";
 import {
   existsSync,
   mkdirSync,
+  readFileSync,
   readdirSync,
   rmSync,
   statSync,
@@ -439,7 +441,13 @@ export async function bootstrapAutoSession(
           const row = getMilestone(mid);
           return !!row && isClosedStatus(row.status);
         }
-        return !!resolveMilestoneFile(base, mid, "SUMMARY");
+        const summaryFile = resolveMilestoneFile(base, mid, "SUMMARY");
+        if (!summaryFile) return false;
+        try {
+          return classifyMilestoneSummaryContent(readFileSync(summaryFile, "utf-8")) !== "failure";
+        } catch {
+          return true;
+        }
       },
     );
 
