@@ -51,19 +51,6 @@ export function shouldBypassProxy(targetUrl: string, noProxy?: string): boolean 
   return false;
 }
 
-/**
- * Create a ProxyAgent for the given proxy URL with optional TLS settings.
- */
-export function createProxyAgent(
-  proxyUrl: string,
-  tlsOptions?: { rejectUnauthorized?: boolean },
-): ProxyAgent {
-  if (tlsOptions?.rejectUnauthorized === false) {
-    return new ProxyAgent({ uri: proxyUrl, proxyTls: { rejectUnauthorized: false } });
-  }
-  return new ProxyAgent(proxyUrl);
-}
-
 export interface ApiRequestOptions {
   /** Authorization header scheme. Omit to skip the Authorization header entirely. */
   authScheme?: "Bearer" | "Bot";
@@ -111,6 +98,10 @@ export async function apiRequest(
     agent,
     proxyTlsRejectUnauthorized,
   } = options;
+
+  if (agent && proxyUrl) {
+    throw new Error(`${errorLabel}: agent and proxyUrl are mutually exclusive; pass one or the other`);
+  }
 
   const headers: Record<string, string> = {};
   if (authScheme && authToken) {
