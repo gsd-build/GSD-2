@@ -7,7 +7,7 @@
 
 import { existsSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { isAbsolute, join, resolve, sep } from 'node:path';
+import { basename, isAbsolute, join, resolve, sep } from 'node:path';
 import {
 	ECOSYSTEM_PROJECT_SKILLS_DIR,
 	ECOSYSTEM_SKILLS_DIR,
@@ -34,19 +34,13 @@ export class ComponentRegistry {
 	private loadDiagnostics: ComponentDiagnostic[] = [];
 	private loaded = false;
 	private readonly cwd: string;
-	private readonly defaultLoadOptions: ComponentRegistryLoadOptions;
 	private readonly realPathSet = new Set<string>();
 
-	constructor(cwd = process.cwd(), options: ComponentRegistryLoadOptions = {}) {
+	constructor(cwd = process.cwd()) {
 		this.cwd = cwd;
-		this.defaultLoadOptions = { includeDefaults: true, skillPaths: [], ...options };
 	}
 
-	getCwd(): string {
-		return this.cwd;
-	}
-
-	load(options: ComponentRegistryLoadOptions = this.defaultLoadOptions): void {
+	load(options: ComponentRegistryLoadOptions = {}): void {
 		const includeDefaults = options.includeDefaults ?? true;
 		const skillPaths = options.skillPaths ?? [];
 		this.components.clear();
@@ -59,14 +53,13 @@ export class ComponentRegistry {
 			this.addSkillDir(resolve(this.cwd, ECOSYSTEM_PROJECT_SKILLS_DIR, 'skills'), 'project');
 
 			const legacyDir = join(homedir(), '.gsd', 'agent', 'skills');
-			const legacyMigrated = existsSync(join(legacyDir, '.migrated-to-agents'));
-			if (legacyDir !== ECOSYSTEM_SKILLS_DIR && existsSync(legacyDir) && !legacyMigrated) {
+			if (shouldLoadLegacySkillsDir(legacyDir, ECOSYSTEM_SKILLS_DIR)) {
 				this.addSkillDir(legacyDir, 'user');
 			}
 		}
 
 		for (const rawPath of skillPaths) {
-			const resolvedPath = this.resolveSkillPath(rawPath);
+			const resolvedPath = resolveComponentSkillPath(rawPath, this.cwd);
 			const source = this.getSkillPathSource(resolvedPath, includeDefaults);
 			this.addSkillDir(resolvedPath, source);
 		}
@@ -230,15 +223,6 @@ export class ComponentRegistry {
 		}
 	}
 
-	private resolveSkillPath(rawPath: string): string {
-		const expanded = rawPath === '~'
-			? homedir()
-			: rawPath.startsWith('~/')
-				? join(homedir(), rawPath.slice(2))
-				: rawPath;
-		return isAbsolute(expanded) ? expanded : resolve(this.cwd, expanded);
-	}
-
 	private getSkillPathSource(resolvedPath: string, includeDefaults: boolean): ComponentSource {
 		if (includeDefaults) return 'path';
 		if (isUnderPath(resolvedPath, ECOSYSTEM_SKILLS_DIR)) return 'user';
@@ -258,7 +242,7 @@ function skillToComponent(skill: Skill): Component {
 			description: skill.description,
 		},
 		spec: {
-			prompt: skill.filePath.split(sep).pop() || 'SKILL.md',
+			prompt: basename(skill.filePath),
 			disableModelInvocation: skill.disableModelInvocation,
 		},
 		dirPath: skill.baseDir,
@@ -276,15 +260,17 @@ function isUnderPath(target: string, root: string): boolean {
 	return target.startsWith(prefix);
 }
 
-let registry: ComponentRegistry | null = null;
-
-export function getComponentRegistry(cwd?: string): ComponentRegistry {
-	if (!registry || (cwd && cwd !== registry.getCwd())) {
-		registry = new ComponentRegistry(cwd);
-	}
-	return registry;
+export function resolveComponentSkillPath(rawPath: string, cwd: string, homeDir = homedir()): string {
+	const expanded = rawPath === '~'
+		? homeDir
+		: rawPath.startsWith('~/')
+			? join(homeDir, rawPath.slice(2))
+			: rawPath;
+	return isAbsolute(expanded) ? expanded : resolve(cwd, expanded);
 }
 
-export function resetComponentRegistry(): void {
-	registry = null;
+export function shouldLoadLegacySkillsDir(legacyDir: string, ecosystemDir: string): boolean {
+	return legacyDir !== ecosystemDir
+		&& existsSync(legacyDir)
+		&& !existsSync(join(legacyDir, '.migrated-to-agents'));
 }

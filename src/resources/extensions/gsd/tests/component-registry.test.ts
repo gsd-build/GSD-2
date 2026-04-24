@@ -10,10 +10,9 @@ import { tmpdir } from 'node:os';
 import { loadSkills } from '@gsd/pi-coding-agent';
 import {
 	ComponentRegistry,
-	getComponentRegistry,
-	resetComponentRegistry,
+	resolveComponentSkillPath,
+	shouldLoadLegacySkillsDir,
 } from '../component-registry.js';
-import type { Component } from '../component-types.js';
 
 let testDir: string;
 
@@ -23,7 +22,7 @@ function setupTestDir(): string {
 	return dir;
 }
 
-function writeSkill(dir: string, name: string, description: string): void {
+function writeSkill(dir: string, name: string, description: string, body = `Use ${name}.`): string {
 	const skillDir = join(dir, name);
 	mkdirSync(skillDir, { recursive: true });
 	writeFileSync(join(skillDir, 'SKILL.md'), `---
@@ -31,39 +30,41 @@ name: ${name}
 description: ${description}
 ---
 
-Use ${name}.
+${body}
 `, 'utf-8');
+	return join(skillDir, 'SKILL.md');
 }
 
-function createComponent(overrides: Partial<Component> = {}): Component {
-	return {
-		id: overrides.id ?? 'review',
-		kind: 'skill',
-		metadata: overrides.metadata ?? { name: 'review', description: 'Reviews code' },
-		spec: overrides.spec ?? { prompt: 'SKILL.md' },
-		dirPath: overrides.dirPath ?? join(testDir, 'review'),
-		filePath: overrides.filePath ?? join(testDir, 'review', 'SKILL.md'),
-		source: overrides.source ?? 'project',
-		format: overrides.format ?? 'skill-md',
-		enabled: overrides.enabled ?? true,
-	};
+function writeComponentSkill(dir: string, name: string, namespace?: string): void {
+	const skillDir = join(dir, name);
+	mkdirSync(skillDir, { recursive: true });
+	writeFileSync(join(skillDir, 'component.yaml'), `
+apiVersion: gsd/v1
+kind: skill
+metadata:
+  name: ${name}
+${namespace ? `  namespace: ${namespace}\n` : ''}  description: "New format skill"
+spec:
+  prompt: SKILL.md
+`, 'utf-8');
+	writeFileSync(join(skillDir, 'SKILL.md'), `Use ${name}.`, 'utf-8');
 }
 
 describe('ComponentRegistry (skills)', () => {
 	beforeEach(() => {
-		resetComponentRegistry();
 		testDir = setupTestDir();
 	});
 
 	afterEach(() => {
 		rmSync(testDir, { recursive: true, force: true });
-		resetComponentRegistry();
 	});
 
-	it('registers, lists, resolves, and disables skill components', () => {
-		const registry = new ComponentRegistry(testDir, { includeDefaults: false });
-		registry.load();
-		registry.register(createComponent());
+	it('loads, lists, resolves, and disables skills from real SKILL.md files', () => {
+		const skillsDir = join(testDir, '.agents', 'skills');
+		writeSkill(skillsDir, 'review', 'Reviews code');
+
+		const registry = new ComponentRegistry(testDir);
+		registry.load({ includeDefaults: false, skillPaths: [skillsDir] });
 
 		assert.strictEqual(registry.size, 1);
 		assert.strictEqual(registry.resolve('review')?.id, 'review');
@@ -73,30 +74,31 @@ describe('ComponentRegistry (skills)', () => {
 		assert.strictEqual(registry.list({ enabledOnly: false }).length, 1);
 	});
 
-	it('keeps first winner and records duplicate-name collisions', () => {
-		const registry = new ComponentRegistry(testDir, { includeDefaults: false });
-		registry.load();
-		registry.register(createComponent({ filePath: join(testDir, 'a', 'SKILL.md') }));
-		registry.register(createComponent({ filePath: join(testDir, 'b', 'SKILL.md') }));
+	it('keeps first loaded skill and records duplicate-name collisions from load()', () => {
+		const firstDir = join(testDir, 'first-skills');
+		const secondDir = join(testDir, 'second-skills');
+		const firstPath = writeSkill(firstDir, 'review', 'First review skill');
+		const secondPath = writeSkill(secondDir, 'review', 'Second review skill');
+
+		const registry = new ComponentRegistry(testDir);
+		registry.load({ includeDefaults: false, skillPaths: [firstDir, secondDir] });
 
 		assert.strictEqual(registry.size, 1);
-		assert.strictEqual(registry.diagnostics().length, 1);
-		assert.strictEqual(registry.diagnostics()[0].type, 'collision');
-		assert.strictEqual(registry.diagnostics()[0].collision?.winnerPath, join(testDir, 'a', 'SKILL.md'));
+		assert.strictEqual(registry.resolve('review')?.filePath, firstPath);
+		const collision = registry.diagnostics().find(diagnostic => diagnostic.type === 'collision');
+		assert.ok(collision);
+		assert.strictEqual(collision.collision?.winnerPath, firstPath);
+		assert.strictEqual(collision.collision?.loserPath, secondPath);
 	});
 
-	it('resolves namespace-qualified skills and rejects ambiguous shorthand', () => {
-		const registry = new ComponentRegistry(testDir, { includeDefaults: false });
-		registry.load();
-		registry.register(createComponent({
-			id: 'alpha:review',
-			metadata: { name: 'review', namespace: 'alpha', description: 'Alpha review' },
-		}));
-		registry.register(createComponent({
-			id: 'beta:review',
-			metadata: { name: 'review', namespace: 'beta', description: 'Beta review' },
-			filePath: join(testDir, 'beta', 'SKILL.md'),
-		}));
+	it('resolves namespace-qualified skills and rejects ambiguous shorthand from loaded components', () => {
+		const alphaDir = join(testDir, 'alpha-skills');
+		const betaDir = join(testDir, 'beta-skills');
+		writeComponentSkill(alphaDir, 'review', 'alpha');
+		writeComponentSkill(betaDir, 'review', 'beta');
+
+		const registry = new ComponentRegistry(testDir);
+		registry.load({ includeDefaults: false, skillPaths: [alphaDir, betaDir] });
 
 		assert.strictEqual(registry.resolve('alpha:review')?.id, 'alpha:review');
 		assert.strictEqual(registry.resolve('review'), undefined);
@@ -104,21 +106,10 @@ describe('ComponentRegistry (skills)', () => {
 
 	it('loads new-format skill components from explicit skill paths', () => {
 		const skillsDir = join(testDir, '.agents', 'skills');
-		const skillDir = join(skillsDir, 'new-review');
-		mkdirSync(skillDir, { recursive: true });
-		writeFileSync(join(skillDir, 'component.yaml'), `
-apiVersion: gsd/v1
-kind: skill
-metadata:
-  name: new-review
-  description: "New format skill"
-spec:
-  prompt: SKILL.md
-`, 'utf-8');
-		writeFileSync(join(skillDir, 'SKILL.md'), 'Use new-review.', 'utf-8');
+		writeComponentSkill(skillsDir, 'new-review');
 
-		const registry = new ComponentRegistry(testDir, { includeDefaults: false, skillPaths: [skillsDir] });
-		registry.load();
+		const registry = new ComponentRegistry(testDir);
+		registry.load({ includeDefaults: false, skillPaths: [skillsDir] });
 
 		assert.strictEqual(registry.skills().length, 1);
 		assert.strictEqual(registry.resolve('new-review')?.format, 'component-yaml');
@@ -134,8 +125,8 @@ spec:
 			includeDefaults: false,
 			skillPaths: [skillsDir],
 		}).skills;
-		const registry = new ComponentRegistry(testDir, { includeDefaults: false, skillPaths: [skillsDir] });
-		registry.load();
+		const registry = new ComponentRegistry(testDir);
+		registry.load({ includeDefaults: false, skillPaths: [skillsDir] });
 
 		assert.deepStrictEqual(
 			registry.getSkillsForPrompt().map(skill => ({
@@ -157,11 +148,27 @@ spec:
 		);
 	});
 
-	it('returns cwd-specific singletons without private-field casts', () => {
-		const first = getComponentRegistry(join(testDir, 'one'));
-		const second = getComponentRegistry(join(testDir, 'two'));
+	it('expands ~ and ~/ skill paths against the supplied home directory helper', () => {
+		const fakeHome = join(testDir, 'home');
 
-		assert.notStrictEqual(first, second);
-		assert.strictEqual(second.getCwd(), join(testDir, 'two'));
+		assert.strictEqual(resolveComponentSkillPath('~', testDir, fakeHome), fakeHome);
+		assert.strictEqual(
+			resolveComponentSkillPath('~/skills', testDir, fakeHome),
+			join(fakeHome, 'skills'),
+		);
+		assert.strictEqual(
+			resolveComponentSkillPath('relative-skills', testDir, fakeHome),
+			join(testDir, 'relative-skills'),
+		);
+	});
+
+	it('skips migrated legacy skill directories', () => {
+		const legacyDir = join(testDir, 'legacy', 'agent', 'skills');
+		mkdirSync(legacyDir, { recursive: true });
+		assert.strictEqual(shouldLoadLegacySkillsDir(legacyDir, join(testDir, '.agents', 'skills')), true);
+
+		writeFileSync(join(legacyDir, '.migrated-to-agents'), '', 'utf-8');
+		assert.strictEqual(shouldLoadLegacySkillsDir(legacyDir, join(testDir, '.agents', 'skills')), false);
+		assert.strictEqual(shouldLoadLegacySkillsDir(legacyDir, legacyDir), false);
 	});
 });
