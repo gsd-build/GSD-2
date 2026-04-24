@@ -249,6 +249,75 @@ export async function inlineFileSmart(
 }
 
 /**
+ * Compact slice-summary excerpt for milestone-level closers (#4780).
+ *
+ * Emits the frontmatter fields + short body section heads rather than the
+ * full SUMMARY.md body, and keeps the source path in the header so the
+ * closer agent can Read the full file on demand when drafting LEARNINGS.
+ *
+ * Scope: designed for `buildCompleteMilestonePrompt`, which previously
+ * inlined the full SUMMARY per slice and routinely paid ~300–500K tokens
+ * per close when the narrative was never synthesized. Not used by
+ * `buildValidateMilestonePrompt` yet — validate needs fuller verification
+ * evidence; follow-up PR can extend or parameterize.
+ *
+ * If parsing fails (unrecognizable frontmatter, missing id, etc.) the
+ * function falls back to `inlineFile` so the closer loses no information.
+ */
+export async function buildSliceSummaryExcerpt(
+  absPath: string | null, relPath: string, sid: string,
+): Promise<string> {
+  const header = `### ${sid} Summary (excerpt)\nSource: \`${relPath}\``;
+  const content = absPath ? await loadFile(absPath) : null;
+  if (!content) {
+    return `${header}\n\n_(not found — file does not exist yet)_`;
+  }
+  try {
+    const s = parseSummary(content);
+    if (!s.frontmatter.id) {
+      // Unrecognizable — fall back to full file so no context is lost.
+      return `### ${sid} Summary\nSource: \`${relPath}\`\n\n${content.trim()}`;
+    }
+    const lines: string[] = [header, ""];
+    if (s.title) lines.push(`**Title:** ${s.title}`);
+    if (s.oneLiner) lines.push(`**One-liner:** ${s.oneLiner}`);
+    if (s.frontmatter.verification_result) {
+      lines.push(`**Verification:** \`${s.frontmatter.verification_result}\``);
+    }
+    lines.push(`**Blockers:** ${s.frontmatter.blocker_discovered ? "⚠️ blocker recorded — Read full summary" : "none"}`);
+    if (s.frontmatter.duration) lines.push(`**Duration:** ${s.frontmatter.duration}`);
+    if (s.frontmatter.provides.length > 0) lines.push(`**Provides:** ${s.frontmatter.provides.join("; ")}`);
+    if (s.frontmatter.affects.length > 0) lines.push(`**Affects:** ${s.frontmatter.affects.join("; ")}`);
+    if (s.frontmatter.key_decisions.length > 0) lines.push(`**Key decisions:** ${s.frontmatter.key_decisions.join("; ")}`);
+    if (s.frontmatter.patterns_established.length > 0) lines.push(`**Patterns established:** ${s.frontmatter.patterns_established.join("; ")}`);
+    if (s.frontmatter.key_files.length > 0) {
+      const files = s.frontmatter.key_files.slice(0, 8);
+      const more = s.frontmatter.key_files.length > files.length ? ` (+${s.frontmatter.key_files.length - files.length} more)` : "";
+      lines.push(`**Key files:** ${files.join(", ")}${more}`);
+    }
+
+    if (s.deviations && s.deviations.trim()) {
+      lines.push("", "#### Deviations", s.deviations.trim());
+    }
+    if (s.knownLimitations && s.knownLimitations.trim()) {
+      lines.push("", "#### Known limitations", s.knownLimitations.trim());
+    }
+    if (s.followUps && s.followUps.trim()) {
+      lines.push("", "#### Follow-ups", s.followUps.trim());
+    }
+
+    lines.push(
+      "",
+      `> **On-demand:** read \`${relPath}\` for the full "What Happened" narrative, integration notes, and detailed file-change list when drafting LEARNINGS, the Decision Re-evaluation table, or cross-slice synthesis.`,
+    );
+    return lines.join("\n");
+  } catch {
+    // Defensive — any parse failure falls back to full inline.
+    return `### ${sid} Summary\nSource: \`${relPath}\`\n\n${content.trim()}`;
+  }
+}
+
+/**
  * Load and inline dependency slice summaries (full content, not just paths).
  */
 export async function inlineDependencySummaries(
@@ -1835,12 +1904,22 @@ export async function buildCompleteMilestonePrompt(
     }
   }
   const seenSlices = new Set<string>();
+  const summaryRelPaths: string[] = [];
   for (const sid of sliceIds) {
     if (seenSlices.has(sid)) continue;
     seenSlices.add(sid);
     const summaryPath = resolveSliceFile(base, mid, sid, "SUMMARY");
     const summaryRel = relSliceFile(base, mid, sid, "SUMMARY");
-    inlined.push(await inlineFile(summaryPath, summaryRel, `${sid} Summary`));
+    summaryRelPaths.push(summaryRel);
+    // Compact excerpt instead of full inline (#4780). Closer Reads the
+    // full file on-demand when synthesizing LEARNINGS narrative.
+    inlined.push(await buildSliceSummaryExcerpt(summaryPath, summaryRel, sid));
+  }
+  if (summaryRelPaths.length > 0) {
+    const pathList = summaryRelPaths.map(p => `- \`${p}\``).join("\n");
+    inlined.push(
+      `### On-demand Slice Summaries\n\nExcerpted above. Read the full file for any slice when the excerpt's section heads don't carry enough narrative for the milestone summary you're drafting:\n\n${pathList}`,
+    );
   }
 
   // Inline root GSD files (skip for minimal — completion can read these if needed)
