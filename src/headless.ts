@@ -753,8 +753,11 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
     }
     process.exit(exitCode)
   }
-  process.on('SIGINT', signalHandler)
-  process.on('SIGTERM', signalHandler)
+  // Use prependListener so our handler runs before pi-coding-agent's
+  // LSP-client module-load SIGINT handler, which calls process.exit(0)
+  // and would otherwise short-circuit our exit-code-11 contract.
+  process.prependListener('SIGINT', signalHandler)
+  process.prependListener('SIGTERM', signalHandler)
   // Emit a deterministic readiness marker so test harnesses can wait for
   // the SIGINT handler to be live before sending a signal. writeSync on
   // fd 2 avoids any pipe-buffering race between the marker and subsequent
