@@ -89,6 +89,18 @@ export interface DispatchContext {
   modelRegistry?: MinimalModelRegistry;
 }
 
+type ReassessmentChecker = typeof checkNeedsReassessment;
+
+let reassessmentChecker: ReassessmentChecker = checkNeedsReassessment;
+
+export function setReassessmentCheckerForTest(checker: ReassessmentChecker): () => void {
+  const previous = reassessmentChecker;
+  reassessmentChecker = checker;
+  return () => {
+    reassessmentChecker = previous;
+  };
+}
+
 export interface DispatchRule {
   /** Human-readable name for debugging and test identification */
   name: string;
@@ -346,7 +358,7 @@ export const DISPATCH_RULES: DispatchRule[] = [
       // burn-max profile) when you want the dedicated reassess session.
       const reassessEnabled = prefs?.phases?.reassess_after_slice ?? false;
       if (!reassessEnabled) return null;
-      const needsReassess = await checkNeedsReassessment(basePath, mid, state);
+      const needsReassess = await reassessmentChecker(basePath, mid, state);
       if (!needsReassess) return null;
       return {
         action: "dispatch",

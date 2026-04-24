@@ -5,12 +5,18 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 
-import { DISPATCH_RULES, type DispatchContext } from "../auto-dispatch.ts";
+import {
+  DISPATCH_RULES,
+  setReassessmentCheckerForTest,
+  type DispatchAction,
+  type DispatchContext,
+} from "../auto-dispatch.ts";
+import { resolveProfileDefaults } from "../preferences-models.ts";
 import type { GSDState } from "../types.ts";
 import type { GSDPreferences } from "../preferences.ts";
 
@@ -42,57 +48,85 @@ function reassessRule() {
   return rule!;
 }
 
-test("ADR-003 §4: reassess-roadmap does NOT dispatch when prefs is undefined (new default)", async (t) => {
+const guardCases: Array<{ name: string; prefs: GSDPreferences | undefined; message?: string }> = [
+  {
+    name: "prefs is undefined (new default)",
+    prefs: undefined,
+    message: "default behavior must be opt-in — no prefs means no reassess dispatch",
+  },
+  {
+    name: "prefs.phases is undefined",
+    prefs: {} as GSDPreferences,
+  },
+  {
+    name: "phases.reassess_after_slice is explicitly false",
+    prefs: { phases: { reassess_after_slice: false } } as unknown as GSDPreferences,
+  },
+  {
+    name: "phases.skip_reassess is true (short-circuit guard preserved)",
+    prefs: { phases: { skip_reassess: true, reassess_after_slice: true } } as unknown as GSDPreferences,
+    message: "skip_reassess must win over reassess_after_slice",
+  },
+];
+
+for (const { name, prefs, message } of guardCases) {
+  test(`ADR-003 §4: reassess-roadmap does NOT dispatch when ${name}`, async (t) => {
+    const base = makeIsolatedBase();
+    t.after(() => { try { rmSync(base, { recursive: true, force: true }); } catch {} });
+
+    let checkerCalls = 0;
+    const restoreChecker = setReassessmentCheckerForTest(async () => {
+      checkerCalls++;
+      return { sliceId: "S01" };
+    });
+    t.after(restoreChecker);
+
+    const result = await reassessRule().match(makeCtx(prefs, base));
+    assert.strictEqual(result, null, message);
+    assert.strictEqual(checkerCalls, 0, "preference guards must short-circuit before reassessment detection");
+  });
+}
+
+test("ADR-003 §4: reassess-roadmap opt-in path dispatches after reassessment detection", async (t) => {
   const base = makeIsolatedBase();
   t.after(() => { try { rmSync(base, { recursive: true, force: true }); } catch {} });
 
-  const result = await reassessRule().match(makeCtx(undefined, base));
-  assert.strictEqual(result, null, "default behavior must be opt-in — no prefs means no reassess dispatch");
-});
+  const checkerCalls: Array<{ basePath: string; mid: string; activeSliceId: string | undefined }> = [];
+  const restoreChecker = setReassessmentCheckerForTest(async (checkerBase, checkerMid, state) => {
+    checkerCalls.push({ basePath: checkerBase, mid: checkerMid, activeSliceId: state.activeSlice?.id });
+    return { sliceId: "S01" };
+  });
+  t.after(restoreChecker);
 
-test("ADR-003 §4: reassess-roadmap does NOT dispatch when prefs.phases is undefined", async (t) => {
-  const base = makeIsolatedBase();
-  t.after(() => { try { rmSync(base, { recursive: true, force: true }); } catch {} });
-
-  const result = await reassessRule().match(makeCtx({} as GSDPreferences, base));
-  assert.strictEqual(result, null);
-});
-
-test("ADR-003 §4: reassess-roadmap does NOT dispatch when phases.reassess_after_slice is explicitly false", async (t) => {
-  const base = makeIsolatedBase();
-  t.after(() => { try { rmSync(base, { recursive: true, force: true }); } catch {} });
-
-  const prefs = { phases: { reassess_after_slice: false } } as unknown as GSDPreferences;
-  const result = await reassessRule().match(makeCtx(prefs, base));
-  assert.strictEqual(result, null);
-});
-
-test("ADR-003 §4: reassess-roadmap does NOT dispatch when phases.skip_reassess is true (short-circuit guard preserved)", async (t) => {
-  const base = makeIsolatedBase();
-  t.after(() => { try { rmSync(base, { recursive: true, force: true }); } catch {} });
-
-  // skip_reassess should short-circuit even if reassess_after_slice is true
-  const prefs = {
-    phases: { skip_reassess: true, reassess_after_slice: true },
-  } as unknown as GSDPreferences;
-  const result = await reassessRule().match(makeCtx(prefs, base));
-  assert.strictEqual(result, null, "skip_reassess must win over reassess_after_slice");
-});
-
-test("ADR-003 §4: reassess-roadmap opt-in path passes the preference guards (reaches checkNeedsReassessment)", async (t) => {
-  const base = makeIsolatedBase();
-  t.after(() => { try { rmSync(base, { recursive: true, force: true }); } catch {} });
-
-  // With reassess_after_slice=true and no completed slices on disk,
-  // checkNeedsReassessment returns null (no last-completed slice found).
-  // The guard-level behavior we want to assert is that the match function
-  // does not short-circuit at the preference gate — it proceeds to the
-  // detection helper, which in this fixture returns null because nothing
-  // has been completed yet. A null result here is equally compatible with
-  // "guard rejected" and "detection found nothing", so we can only
-  // assert the function returns null without crashing. The no-pref test
-  // above proves the default behavior; this test proves opt-in is wired.
   const prefs = { phases: { reassess_after_slice: true } } as unknown as GSDPreferences;
-  const result = await reassessRule().match(makeCtx(prefs, base));
-  assert.strictEqual(result, null);
+  const result: DispatchAction | null = await reassessRule().match(makeCtx(prefs, base));
+
+  assert.deepStrictEqual(checkerCalls, [{ basePath: base, mid: "M001", activeSliceId: "S01" }]);
+  assert.ok(result, "opt-in path should return a dispatch action when reassessment is needed");
+  assert.strictEqual(result.action, "dispatch");
+  if (result.action !== "dispatch") assert.fail("expected dispatch action");
+  assert.strictEqual(result.unitType, "reassess-roadmap");
+  assert.strictEqual(result.unitId, "M001/S01");
+  assert.match(result.prompt, /reassess/i);
+});
+
+test("ADR-003 §4: burn-max profile opts into dedicated reassess-roadmap dispatch", () => {
+  const defaults = resolveProfileDefaults("burn-max");
+  assert.strictEqual(defaults.phases?.reassess_after_slice, true);
+  assert.strictEqual(defaults.phases?.skip_reassess, false);
+});
+
+test("ADR-003 §4: plan-slice prompt and MCP tool agree on reassess sliceChanges shape", () => {
+  const planSlicePrompt = readFileSync(new URL("../prompts/plan-slice.md", import.meta.url), "utf8");
+  assert.match(planSlicePrompt, /gsd_reassess_roadmap/);
+  assert.match(planSlicePrompt, /sliceChanges\.modified/);
+  assert.match(planSlicePrompt, /sliceChanges\.added/);
+  assert.match(planSlicePrompt, /sliceChanges\.removed/);
+
+  const dbToolsSource = readFileSync(new URL("../bootstrap/db-tools.ts", import.meta.url), "utf8");
+  assert.match(dbToolsSource, /name:\s*"gsd_reassess_roadmap"/);
+  assert.match(dbToolsSource, /sliceChanges:\s*Type\.Object/);
+  assert.match(dbToolsSource, /modified:\s*Type\.Array/);
+  assert.match(dbToolsSource, /added:\s*Type\.Array/);
+  assert.match(dbToolsSource, /removed:\s*Type\.Array/);
 });
