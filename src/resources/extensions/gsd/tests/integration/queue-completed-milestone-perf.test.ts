@@ -140,12 +140,16 @@ for (let i = 1; i <= COMPLETED_COUNT; i++) {
 
 // ─── Test: the overall context should be reasonable in size ──────────────
 
-// With 25 completed milestones NOT loading files, the context should be
-// significantly smaller than if all files were loaded
+// Invariant (not absolute budget): the per-completed-milestone line
+// contribution should stay small. With 50 lines of fixture text per
+// completed CONTEXT.md, a naive loader would produce >=50 lines per
+// completed milestone (>1250 lines for 25 milestones). The fix emits
+// a short summary line (<3 lines) per completed milestone.
 const contextLines = context.split("\n").length;
+const avgLinesPerCompletedMilestone = contextLines / COMPLETED_COUNT;
 assertTrue(
-  contextLines < 200,
-  `Context should be concise (got ${contextLines} lines); completed milestones should not inflate it`,
+  avgLinesPerCompletedMilestone < 5,
+  `Completed milestones should not inflate the context: got ${contextLines} lines across ${COMPLETED_COUNT} completed milestones (~${avgLinesPerCompletedMilestone.toFixed(1)}/milestone)`,
 );
 
 // ─── Cleanup ──────────────────────────────────────────────────────────────
