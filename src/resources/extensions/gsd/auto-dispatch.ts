@@ -830,7 +830,7 @@ export const DISPATCH_RULES: DispatchRule[] = [
 
         try { appendFileSync(logPath, JSON.stringify({ ts: new Date().toISOString(), event: "probe", command: pollWhileCommand, exitCode, stdout: stdout.slice(0, 500), killed }) + "\n"); } catch (logErr) { logWarning("dispatch", `Failed to write external wait log: ${logErr instanceof Error ? logErr.message : String(logErr)}`); }
 
-        if (killed) {
+        if (killed || exitCode === null) {
           incrementProbeFailureCount(mid, sid, tid);
           const updated = getExternalWait(mid, sid, tid);
           if (updated && (updated.probe_failure_count as number) >= 3) {
@@ -839,7 +839,9 @@ export const DISPATCH_RULES: DispatchRule[] = [
             invalidateStateCache();
             return {
               action: "stop" as const,
-              reason: `Probe for ${tid} timed out 3 times. Escalating to manual attention.`,
+              reason: killed
+                ? `Probe for ${tid} timed out 3 times. Escalating to manual attention.`
+                : `Probe for ${tid} failed to invoke 3 times. Escalating to manual attention.`,
               level: "warning" as const,
             };
           }
@@ -859,13 +861,40 @@ export const DISPATCH_RULES: DispatchRule[] = [
 
         if (successCheck) {
           try {
-            const scResult = await new Promise<{ exitCode: number | null; stdout: string; stderr: string }>((resolve) => {
+            const scResult = await new Promise<{ exitCode: number | null; killed: boolean; stdout: string; stderr: string; invokeError?: string }>((resolve) => {
               exec(successCheck, { timeout: 30000, shell: probeShell }, (err, scStdout, scStderr) => {
-                if (err) resolve({ exitCode: (err as any).code ?? 1, stdout: scStdout || "", stderr: scStderr || "" });
-                else resolve({ exitCode: 0, stdout: scStdout || "", stderr: scStderr || "" });
+                if (err) {
+                  const errCode = (err as any).code;
+                  const isInvocationFailure = errCode == null || (typeof errCode === "string");
+                  resolve({
+                    exitCode: typeof errCode === "number" ? errCode : null,
+                    killed: !!(err as any).killed,
+                    stdout: scStdout || "",
+                    stderr: scStderr || "",
+                    invokeError: isInvocationFailure ? (err.message || String(err)) : undefined,
+                  });
+                } else {
+                  resolve({ exitCode: 0, killed: false, stdout: scStdout || "", stderr: scStderr || "" });
+                }
               });
             });
-            try { appendFileSync(logPath, JSON.stringify({ ts: new Date().toISOString(), event: "successCheck", exitCode: scResult.exitCode, stdout: scResult.stdout.slice(0, 500) }) + "\n"); } catch (logErr) { logWarning("dispatch", `Failed to write external wait log: ${logErr instanceof Error ? logErr.message : String(logErr)}`); }
+            try { appendFileSync(logPath, JSON.stringify({ ts: new Date().toISOString(), event: "successCheck", exitCode: scResult.exitCode, stdout: scResult.stdout.slice(0, 500), invokeError: scResult.invokeError }) + "\n"); } catch (logErr) { logWarning("dispatch", `Failed to write external wait log: ${logErr instanceof Error ? logErr.message : String(logErr)}`); }
+            if (scResult.invokeError) {
+              // Invocation failure (missing binary, shell error) — treat as probe failure, don't resolve the wait
+              incrementProbeFailureCount(mid, sid, tid);
+              const updated = getExternalWait(mid, sid, tid);
+              if (updated && (updated.probe_failure_count as number) >= 3) {
+                updateTaskStatus(mid, sid, tid, "manual-attention");
+                updateExternalWaitStatus(mid, sid, tid, "timed-out");
+                invalidateStateCache();
+                return {
+                  action: "stop" as const,
+                  reason: `Success check for ${tid} failed to invoke 3 times: ${scResult.invokeError}. Escalating to manual attention.`,
+                  level: "warning" as const,
+                };
+              }
+              return { action: "sleep" as const, durationMs: computeMinPoll(), matchedRule: "awaiting-external → probe" };
+            }
             if (scResult.exitCode !== 0) {
               jobSucceeded = false;
               failureContext = `Exit code: ${scResult.exitCode}\nStderr: ${scResult.stderr.slice(0, 1000)}`;

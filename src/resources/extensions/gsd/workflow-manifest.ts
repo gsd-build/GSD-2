@@ -206,7 +206,11 @@ export function snapshotState(): StateManifest {
       registered_at: r["registered_at"] as string,
       resolved_at: (r["resolved_at"] as string) ?? null,
     }));
-  } catch { /* table doesn't exist in pre-v23 DBs */ }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (!msg.includes("no such table")) throw e;
+    /* table doesn't exist in pre-v23 DBs — safe to ignore */
+  }
 
   const result: StateManifest = {
     version: 1,
