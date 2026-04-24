@@ -14,7 +14,7 @@
     "build": "tsc -p tsconfig.json",
     "build:native": "node ../../native/scripts/build.js",
     "build:native:dev": "node ../../native/scripts/build.js --dev",
-    "test": "npm run build:native:dev && node --test src/__tests__/*.test.mjs"
+    "test": "npm run build && npm run build:native:dev && node --test src/__tests__/*.test.mjs"
   },
   "exports": {
     ".": {
