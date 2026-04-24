@@ -115,18 +115,19 @@ function makeHarness(): Harness {
 /** Capture stderr writes during `fn`. `logWarning` writes to stderr, so
  * this reveals warnings emitted by the worktree-manager. */
 function captureStderr(fn: () => void): string {
-  const original = process.stderr.write.bind(process.stderr);
+  const streamAny = process.stderr as unknown as {
+    write: (chunk: string | Uint8Array, ...rest: unknown[]) => boolean;
+  };
+  const original = streamAny.write.bind(streamAny);
   const chunks: string[] = [];
-  // @ts-expect-error — monkey-patch for test-only stderr capture.
-  process.stderr.write = (chunk: string | Uint8Array): boolean => {
+  streamAny.write = (chunk: string | Uint8Array): boolean => {
     chunks.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf-8"));
     return true;
   };
   try {
     fn();
   } finally {
-    // @ts-expect-error — restore original write.
-    process.stderr.write = original;
+    streamAny.write = original;
   }
   return chunks.join("");
 }
