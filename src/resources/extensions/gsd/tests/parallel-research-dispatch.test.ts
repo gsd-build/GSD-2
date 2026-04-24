@@ -63,6 +63,14 @@ function writeRoadmap(
   );
 }
 
+function assertNotParallelResearchDispatch(
+  action: Awaited<ReturnType<typeof resolveDispatch>>,
+): void {
+  if (action.action === "dispatch") {
+    assert.notEqual(action.unitId, "M001/parallel-research");
+  }
+}
+
 function baseState(activeSliceId = "S01", activeSliceTitle = "Alpha"): DispatchState {
   return {
     phase: "planning",
@@ -117,9 +125,7 @@ describe("parallel-research-slices dispatch rule", () => {
       prefs: undefined,
     });
 
-    if (action.action === "dispatch") {
-      assert.notEqual(action.unitId, "M001/parallel-research");
-    }
+    assertNotParallelResearchDispatch(action);
   });
 
   test("does not dispatch parallel research when skip_research is set", async () => {
@@ -136,9 +142,7 @@ describe("parallel-research-slices dispatch rule", () => {
       prefs: { phases: { skip_research: true } } as never,
     });
 
-    if (action.action === "dispatch") {
-      assert.notEqual(action.unitId, "M001/parallel-research");
-    }
+    assertNotParallelResearchDispatch(action);
   });
 
   test("does not dispatch parallel research when skip_slice_research is set", async () => {
@@ -155,9 +159,7 @@ describe("parallel-research-slices dispatch rule", () => {
       prefs: { phases: { skip_slice_research: true } } as never,
     });
 
-    if (action.action === "dispatch") {
-      assert.notEqual(action.unitId, "M001/parallel-research");
-    }
+    assertNotParallelResearchDispatch(action);
   });
 
   test("does not dispatch when a PARALLEL-BLOCKER placeholder exists (#4414)", async () => {
@@ -180,9 +182,7 @@ describe("parallel-research-slices dispatch rule", () => {
       prefs: undefined,
     });
 
-    if (action.action === "dispatch") {
-      assert.notEqual(action.unitId, "M001/parallel-research");
-    }
+    assertNotParallelResearchDispatch(action);
   });
 
   test("excludes slices that already have a RESEARCH file (falls back to <2)", async () => {
@@ -207,9 +207,7 @@ describe("parallel-research-slices dispatch rule", () => {
       prefs: undefined,
     });
 
-    if (action.action === "dispatch") {
-      assert.notEqual(action.unitId, "M001/parallel-research");
-    }
+    assertNotParallelResearchDispatch(action);
   });
 });
 
@@ -257,11 +255,14 @@ describe("buildParallelResearchSlicesPrompt", () => {
       base,
     );
 
-    // Cap: the rendered prompt must bound retries. The exact phrasing
-    // can drift; the semantic requirement is "retry at most once".
+    // Cap: the rendered prompt must bound retries. "once" alone is too
+    // permissive — the word appears for unrelated reasons across a ~10KB
+    // rendered prompt — so the pattern must require retry-context
+    // pairing: either "retry ... once" within 30 chars, or the phrase
+    // "one retry", or "retry it once".
     assert.match(
       prompt,
-      /\bonce\b|one retry|retry.{0,30}once/i,
+      /\bone retry\b|retry[^.?!]{0,30}\bonce\b|retry it \*{0,2}once/i,
       "rendered prompt should cap retries to one",
     );
 
