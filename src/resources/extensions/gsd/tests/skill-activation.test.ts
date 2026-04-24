@@ -231,3 +231,60 @@ test("buildSkillActivationBlock allows valid skill names and rejects invalid one
     cleanup(base);
   }
 });
+
+// ─── Per-unit-type skill manifest (RFC #4779) ─────────────────────────────────
+
+test("buildSkillActivationBlock filters skills by unit-type manifest", () => {
+  const base = makeTempBase();
+  try {
+    // write-docs is in the research-milestone manifest; swiftui is not.
+    writeSkill(base, "write-docs", "Use when writing docs or RFCs.");
+    writeSkill(base, "swiftui", "Use for SwiftUI views.");
+    loadOnlyTestSkills(base);
+
+    // always_use_skills would normally include both; manifest filter should
+    // drop swiftui for the research-milestone unit type.
+    const result = buildBlock(base, { unitType: "research-milestone" }, {
+      always_use_skills: ["write-docs", "swiftui"],
+    });
+
+    assert.match(result, /Call Skill\(\{ skill: 'write-docs' \}\)/);
+    assert.doesNotMatch(result, /swiftui/);
+  } finally {
+    cleanup(base);
+  }
+});
+
+test("buildSkillActivationBlock falls through to all skills for unknown unit type", () => {
+  const base = makeTempBase();
+  try {
+    writeSkill(base, "swiftui", "Use for SwiftUI views.");
+    loadOnlyTestSkills(base);
+
+    const result = buildBlock(base, { unitType: "unknown-unit-type" }, {
+      always_use_skills: ["swiftui"],
+    });
+
+    // Unknown unit type = wildcard fallback (pre-manifest behavior).
+    assert.match(result, /Call Skill\(\{ skill: 'swiftui' \}\)/);
+  } finally {
+    cleanup(base);
+  }
+});
+
+test("buildSkillActivationBlock without unitType preserves pre-manifest behavior", () => {
+  const base = makeTempBase();
+  try {
+    writeSkill(base, "swiftui", "Use for SwiftUI views.");
+    loadOnlyTestSkills(base);
+
+    // No unitType param — filter should no-op.
+    const result = buildBlock(base, {}, {
+      always_use_skills: ["swiftui"],
+    });
+
+    assert.match(result, /Call Skill\(\{ skill: 'swiftui' \}\)/);
+  } finally {
+    cleanup(base);
+  }
+});

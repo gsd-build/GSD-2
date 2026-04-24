@@ -36,6 +36,7 @@ import { readPhaseAnchor, formatAnchorForPrompt } from "./phase-anchor.js";
 import { logWarning } from "./workflow-logger.js";
 import { inlineGraphSubgraph } from "./graph-context.js";
 import { buildExtractionStepsBlock } from "./commands-extract-learnings.js";
+import { filterSkillsByManifest, warnIfManifestHasMissingSkills } from "./skill-manifest.js";
 
 // ─── Preamble Cap ─────────────────────────────────────────────────────────────
 
@@ -662,6 +663,12 @@ export function buildSkillActivationBlock(params: {
   extraContext?: string[];
   taskPlanContent?: string | null;
   preferences?: GSDPreferences;
+  /**
+   * Unit type dispatching this prompt. When provided, skills are filtered
+   * through the per-unit-type manifest (see `skill-manifest.ts`). Unknown
+   * or omitted values retain the pre-manifest behavior (all skills eligible).
+   */
+  unitType?: string;
 }): string {
   const prefs = params.preferences ?? loadEffectiveGSDPreferences()?.preferences;
   const contextTokens = tokenizeSkillContext(
@@ -673,8 +680,10 @@ export function buildSkillActivationBlock(params: {
     params.taskTitle,
   );
 
-  const visibleSkills = (typeof getLoadedSkills === 'function' ? getLoadedSkills() : []).filter(skill => !skill.disableModelInvocation);
+  const loaded = (typeof getLoadedSkills === 'function' ? getLoadedSkills() : []).filter(skill => !skill.disableModelInvocation);
+  const visibleSkills = filterSkillsByManifest(loaded, params.unitType);
   const installedNames = new Set(visibleSkills.map(skill => normalizeSkillReference(skill.name)));
+  warnIfManifestHasMissingSkills(params.unitType, installedNames);
   const avoided = new Set(resolvePreferenceSkillNames(prefs?.avoid_skills ?? [], params.base));
   const matched = new Set<string>();
 
@@ -1173,6 +1182,7 @@ export async function buildResearchMilestonePrompt(mid: string, midTitle: string
       milestoneId: mid,
       milestoneTitle: midTitle,
       extraContext: [inlinedContext],
+      unitType: "research-milestone",
     }),
     ...buildSkillDiscoveryVars(),
   });
@@ -1250,6 +1260,7 @@ export async function buildPlanMilestonePrompt(mid: string, midTitle: string, ba
       milestoneId: mid,
       milestoneTitle: midTitle,
       extraContext: [inlinedContext],
+      unitType: "plan-milestone",
     }),
     ...buildSkillDiscoveryVars(),
   });
