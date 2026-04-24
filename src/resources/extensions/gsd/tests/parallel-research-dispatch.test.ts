@@ -11,7 +11,7 @@
  * replaced.
  */
 
-import { describe, test, beforeEach, afterEach } from "node:test";
+import { describe, test, beforeEach, afterEach, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -23,9 +23,21 @@ import { tmpdir } from "node:os";
 // ~/.gsd/ copy (which may be a stale cached version from a prior
 // install — see #4784 fallout). Static imports above are hoisted, so
 // `tmpdir` and `join` are already available at this point; the dynamic
-// imports below observe the value we set here.
+// imports below observe the value we set here. The previous value is
+// captured and restored in an after() hook to avoid leaking module-scope
+// env mutation into other suites if the runner ever moves to a shared
+// process model.
+const previousGsdHome = process.env.GSD_HOME;
 process.env.GSD_HOME = process.env.GSD_HOME_TEST_OVERRIDE
   ?? join(tmpdir(), `gsd-test-home-${process.pid}-${Date.now()}`);
+
+after(() => {
+  if (previousGsdHome === undefined) {
+    delete process.env.GSD_HOME;
+  } else {
+    process.env.GSD_HOME = previousGsdHome;
+  }
+});
 
 const { resolveDispatch } = await import("../auto-dispatch.ts");
 const { buildParallelResearchSlicesPrompt } = await import("../auto-prompts.ts");
@@ -65,9 +77,10 @@ function writeRoadmap(
 
 function assertNotParallelResearchDispatch(
   action: Awaited<ReturnType<typeof resolveDispatch>>,
+  mid = "M001",
 ): void {
   if (action.action === "dispatch") {
-    assert.notEqual(action.unitId, "M001/parallel-research");
+    assert.notEqual(action.unitId, `${mid}/parallel-research`);
   }
 }
 
