@@ -152,7 +152,7 @@ describe("parallel-research-slices dispatch rule", () => {
       mid: "M001",
       midTitle: "Parallel Research Milestone",
       state: baseState(),
-      prefs: { phases: { skip_research: true } } as never,
+      prefs: { phases: { skip_research: true } } as Parameters<typeof resolveDispatch>[0]["prefs"],
     });
 
     assertNotParallelResearchDispatch(action);
@@ -169,7 +169,7 @@ describe("parallel-research-slices dispatch rule", () => {
       mid: "M001",
       midTitle: "Parallel Research Milestone",
       state: baseState(),
-      prefs: { phases: { skip_slice_research: true } } as never,
+      prefs: { phases: { skip_slice_research: true } } as Parameters<typeof resolveDispatch>[0]["prefs"],
     });
 
     assertNotParallelResearchDispatch(action);
