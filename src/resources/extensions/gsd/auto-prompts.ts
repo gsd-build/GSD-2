@@ -2211,20 +2211,30 @@ export async function buildReplanSlicePrompt(
 export async function buildRunUatPrompt(
   mid: string, sliceId: string, uatPath: string, uatContent: string, base: string,
 ): Promise<string> {
-  const inlined: string[] = [];
-  inlined.push(await inlineFile(resolveSliceFile(base, mid, sliceId, "UAT"), uatPath, `${sliceId} UAT`));
+  // #4782 phase 3: run-uat migrated to compose its inlined context via
+  // the manifest. Behavior-equivalent — resolver dispatches to the same
+  // inline* helpers as the pre-migration builder.
+  const resolveArtifact: ArtifactResolver = async (key) => {
+    switch (key) {
+      case "slice-uat": {
+        const p = resolveSliceFile(base, mid, sliceId, "UAT");
+        return await inlineFile(p, uatPath, `${sliceId} UAT`);
+      }
+      case "slice-summary": {
+        const p = resolveSliceFile(base, mid, sliceId, "SUMMARY");
+        if (!p) return null;
+        const r = relSliceFile(base, mid, sliceId, "SUMMARY");
+        return await inlineFileOptional(p, r, `${sliceId} Summary`);
+      }
+      case "project":
+        return await inlineProjectFromDb(base);
+      default:
+        return null;
+    }
+  };
 
-  const summaryPath = resolveSliceFile(base, mid, sliceId, "SUMMARY");
-  const summaryRel = relSliceFile(base, mid, sliceId, "SUMMARY");
-  if (summaryPath) {
-    const summaryInline = await inlineFileOptional(summaryPath, summaryRel, `${sliceId} Summary`);
-    if (summaryInline) inlined.push(summaryInline);
-  }
-
-  const projectInline = await inlineProjectFromDb(base);
-  if (projectInline) inlined.push(projectInline);
-
-  const inlinedContext = capPreamble(`## Inlined Context (preloaded — do not re-read these files)\n\n${inlined.join("\n\n---\n\n")}`);
+  const composed = await composeInlinedContext("run-uat", resolveArtifact);
+  const inlinedContext = capPreamble(`## Inlined Context (preloaded — do not re-read these files)\n\n${composed}`);
 
   const uatResultPath = join(base, relSliceFile(base, mid, sliceId, "ASSESSMENT"));
   const uatType = getUatType(uatContent);

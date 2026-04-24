@@ -347,7 +347,11 @@ export const UNIT_MANIFESTS: Record<UnitType, UnitContextManifest> = {
     codebaseMap: false,
     preferences: "active-only",
     artifacts: {
-      inline: ["slice-uat", "slice-plan"],
+      // Phase 3 migration (#4782): manifest matches today's actual
+      // buildRunUatPrompt inlining. Prior phase-1 entry listed
+      // `slice-plan` aspirationally — the real builder inlines the UAT
+      // file, the slice SUMMARY (optional), and the project row.
+      inline: ["slice-uat", "slice-summary", "project"],
       excerpt: [],
       onDemand: [],
     },
