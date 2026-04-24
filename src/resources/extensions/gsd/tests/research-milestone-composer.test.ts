@@ -13,6 +13,7 @@ import {
   closeDatabase,
   insertMilestone,
   upsertMilestonePlanning,
+  insertArtifact,
 } from "../gsd-db.ts";
 
 function makeBase(): string {
@@ -78,20 +79,36 @@ test("#4782 phase 3: buildResearchMilestonePrompt emits milestone-context then r
     `milestone-context (${contextIdx}) must precede research template (${researchIdx})`);
 });
 
-test("#4782 phase 3: buildResearchMilestonePrompt still includes project + requirements + decisions in declared order", async (t) => {
+test("#4782 phase 3: buildResearchMilestonePrompt preserves manifest order across optional artifacts (#4925 review)", async (t) => {
   const base = makeBase();
   t.after(() => cleanup(base));
   invalidateAllCaches();
 
   seed(base, "M001");
   writeFileSync(join(base, ".gsd", "milestones", "M001", "M001-CONTEXT.md"), "# M001 Context\n");
+  // Seed PROJECT.md into the artifacts table so inlineProjectFromDb resolves
+  // to a non-null body. Lets us verify the project block sits between
+  // milestone-context and the templates block per manifest order.
+  insertArtifact({
+    path: "PROJECT.md",
+    artifact_type: "project",
+    milestone_id: null,
+    slice_id: null,
+    task_id: null,
+    full_content: "# Project\n\nResearch composer fixture project.\n",
+  });
 
   const prompt = await buildResearchMilestonePrompt("M001", "Research Test", base);
 
   // Manifest-declared order: milestone-context, project, requirements, decisions, templates.
-  // Any projections that resolve to content must preserve that order.
   const contextIdx = prompt.indexOf("### Milestone Context");
+  const projectIdx = prompt.indexOf("### Project");
   const researchIdx = prompt.indexOf("### Output Template: Research");
-  assert.ok(contextIdx > -1 && researchIdx > contextIdx,
-    "milestone-context must come before research template regardless of which optional artifacts are present");
+  assert.ok(contextIdx > -1, "milestone-context block missing");
+  assert.ok(projectIdx > -1, "project block missing — seed should have populated it");
+  assert.ok(researchIdx > -1, "research template block missing");
+  assert.ok(
+    contextIdx < projectIdx && projectIdx < researchIdx,
+    `manifest order violated: milestone-context (${contextIdx}) < project (${projectIdx}) < research-template (${researchIdx})`,
+  );
 });

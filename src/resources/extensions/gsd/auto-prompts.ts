@@ -1844,53 +1844,97 @@ export async function buildCompleteSlicePrompt(
 ): Promise<string> {
   const inlineLevel = level ?? resolveInlineLevel();
 
-  const roadmapPath = resolveMilestoneFile(base, mid, "ROADMAP");
-  const roadmapRel = relMilestoneFile(base, mid, "ROADMAP");
-  const slicePlanPath = resolveSliceFile(base, mid, sid, "PLAN");
-  const slicePlanRel = relSliceFile(base, mid, sid, "PLAN");
-  const sliceContextPath = resolveSliceFile(base, mid, sid, "CONTEXT");
-  const sliceContextRel = relSliceFile(base, mid, sid, "CONTEXT");
+  // #4782 phase 3: complete-slice migrated through composer. Manifest
+  // declares [roadmap, slice-context, slice-plan, requirements,
+  // prior-task-summaries, templates]. Overrides prepend and knowledge
+  // splice stay imperative — they need the composer v2 contract
+  // (computed + prepend blocks; see RFC #4924).
+  const resolveArtifact: ArtifactResolver = async (key) => {
+    switch (key) {
+      case "roadmap": {
+        const p = resolveMilestoneFile(base, mid, "ROADMAP");
+        const r = relMilestoneFile(base, mid, "ROADMAP");
+        return await inlineFile(p, r, "Milestone Roadmap");
+      }
+      case "slice-context": {
+        const p = resolveSliceFile(base, mid, sid, "CONTEXT");
+        const r = relSliceFile(base, mid, sid, "CONTEXT");
+        return await inlineFileOptional(p, r, "Slice Context (from discussion)");
+      }
+      case "slice-plan": {
+        const p = resolveSliceFile(base, mid, sid, "PLAN");
+        const r = relSliceFile(base, mid, sid, "PLAN");
+        return await inlineFile(p, r, "Slice Plan");
+      }
+      case "requirements":
+        if (inlineLevel === "minimal") return null;
+        return await inlineRequirementsFromDb(base, mid, sid, inlineLevel);
+      case "prior-task-summaries": {
+        const tDir = resolveTasksDir(base, mid, sid);
+        if (!tDir) return null;
+        const summaryFiles = resolveTaskFiles(tDir, "SUMMARY").sort();
+        const sRel = relSlicePath(base, mid, sid);
+        const blocks: string[] = [];
+        for (const file of summaryFiles) {
+          const absPath = join(tDir, file);
+          const content = await loadFile(absPath);
+          if (!content) continue;
+          const relPath = `${sRel}/tasks/${file}`;
+          blocks.push(`### Task Summary: ${file.replace(/-SUMMARY\.md$/i, "")}\nSource: \`${relPath}\`\n\n${content.trim()}`);
+        }
+        return blocks.length > 0 ? blocks.join("\n\n---\n\n") : null;
+      }
+      case "templates": {
+        const parts = [inlineTemplate("slice-summary", "Slice Summary")];
+        if (inlineLevel !== "minimal") {
+          parts.push(inlineTemplate("uat", "UAT"));
+        }
+        return parts.join("\n\n---\n\n");
+      }
+      default:
+        return null;
+    }
+  };
 
-  const inlined: string[] = [];
-  inlined.push(await inlineFile(roadmapPath, roadmapRel, "Milestone Roadmap"));
-  const sliceCtxInline = await inlineFileOptional(sliceContextPath, sliceContextRel, "Slice Context (from discussion)");
-  if (sliceCtxInline) inlined.push(sliceCtxInline);
-  inlined.push(await inlineFile(slicePlanPath, slicePlanRel, "Slice Plan"));
-  if (inlineLevel !== "minimal") {
-    const requirementsInline = await inlineRequirementsFromDb(base, mid, sid, inlineLevel);
-    if (requirementsInline) inlined.push(requirementsInline);
-  }
-  // Scoped + budgeted — see issue #4719. Slice context is richer than
-  // milestone context at complete-slice time, so combine both title sources.
+  const composed = await composeInlinedContext("complete-slice", resolveArtifact);
+
+  // Knowledge splices in between requirements and prior-task-summaries
+  // so overall order matches pre-migration: roadmap → slice-context →
+  // slice-plan → requirements → KNOWLEDGE → task summaries → templates.
   const knowledgeInlineCS = await inlineKnowledgeBudgeted(
     base,
     [...extractKeywords(midTitle), ...extractKeywords(sTitle)],
   );
-  if (knowledgeInlineCS) inlined.push(knowledgeInlineCS);
 
-  // Inline all task summaries for this slice
-  const tDir = resolveTasksDir(base, mid, sid);
-  if (tDir) {
-    const summaryFiles = resolveTaskFiles(tDir, "SUMMARY").sort();
-    for (const file of summaryFiles) {
-      const absPath = join(tDir, file);
-      const content = await loadFile(absPath);
-      const sRel = relSlicePath(base, mid, sid);
-      const relPath = `${sRel}/tasks/${file}`;
-      if (content) {
-        inlined.push(`### Task Summary: ${file.replace(/-SUMMARY\.md$/i, "")}\nSource: \`${relPath}\`\n\n${content.trim()}`);
-      }
+  let body = composed;
+  if (knowledgeInlineCS && body) {
+    // Splice knowledge right before the first "### Task Summary:" block
+    // to preserve pre-migration ordering. If no task summaries exist,
+    // splice before the templates block (which inlineTemplate emits as
+    // "### Output Template: Slice Summary").
+    const taskIdx = body.indexOf("### Task Summary:");
+    const templatesIdx = body.lastIndexOf("### Output Template: Slice Summary");
+    const spliceIdx = taskIdx > -1 ? taskIdx : templatesIdx;
+    if (spliceIdx > 0) {
+      const before = body.slice(0, spliceIdx).replace(/\n\n---\n\n$/, "");
+      const after = body.slice(spliceIdx);
+      body = [before, knowledgeInlineCS, after].join("\n\n---\n\n");
+    } else {
+      body = `${body}\n\n---\n\n${knowledgeInlineCS}`;
     }
   }
-  inlined.push(inlineTemplate("slice-summary", "Slice Summary"));
-  if (inlineLevel !== "minimal") {
-    inlined.push(inlineTemplate("uat", "UAT"));
-  }
+
+  // Overrides section prepends to the top of the inlined context —
+  // standard pattern for slice-level builders (until composer v2 lands
+  // the prepend contract).
   const completeActiveOverrides = await loadActiveOverrides(base);
   const completeOverridesInline = formatOverridesSection(completeActiveOverrides);
-  if (completeOverridesInline) inlined.unshift(completeOverridesInline);
+  const finalBody = completeOverridesInline
+    ? `${completeOverridesInline}\n\n---\n\n${body}`
+    : body;
 
-  const inlinedContext = capPreamble(`## Inlined Context (preloaded — do not re-read these files)\n\n${inlined.join("\n\n---\n\n")}`);
+  const inlinedContext = capPreamble(`## Inlined Context (preloaded — do not re-read these files)\n\n${finalBody}`);
+  const roadmapRel = relMilestoneFile(base, mid, "ROADMAP");
 
   const sliceRel = relSlicePath(base, mid, sid);
   const sliceSummaryPath = join(base, `${sliceRel}/${sid}-SUMMARY.md`);
@@ -2251,8 +2295,15 @@ export async function buildRunUatPrompt(
   const resolveArtifact: ArtifactResolver = async (key) => {
     switch (key) {
       case "slice-uat": {
-        const p = resolveSliceFile(base, mid, sliceId, "UAT");
-        return await inlineFile(p, uatPath, `${sliceId} UAT`);
+        // Use the in-memory snapshot the caller already loaded (#4925 review).
+        // Re-reading from disk via inlineFile(p, uatPath, ...) would risk
+        // drift between the inlined body and uatType (computed from
+        // uatContent below) if the file changes mid-dispatch.
+        const trimmed = uatContent.trim();
+        if (!trimmed) {
+          return `### ${sliceId} UAT\nSource: \`${uatPath}\`\n\n_(not found — file does not exist yet)_`;
+        }
+        return `### ${sliceId} UAT\nSource: \`${uatPath}\`\n\n${trimmed}`;
       }
       case "slice-summary": {
         const p = resolveSliceFile(base, mid, sliceId, "SUMMARY");

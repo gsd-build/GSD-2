@@ -16,6 +16,7 @@ import {
   insertMilestone,
   upsertMilestonePlanning,
   insertSlice,
+  insertArtifact,
 } from "../gsd-db.ts";
 
 function makeBase(): string {
@@ -58,6 +59,16 @@ function seed(base: string, mid: string): void {
     demo: "",
     sequence: 1,
   });
+  // Seed PROJECT.md so inlineProjectFromDb resolves — the run-uat manifest
+  // declares "project" as the third inline artifact (#4925 review).
+  insertArtifact({
+    path: "PROJECT.md",
+    artifact_type: "project",
+    milestone_id: null,
+    slice_id: null,
+    task_id: null,
+    full_content: "# Project\n\nRun-UAT composer fixture project.\n",
+  });
 }
 
 test("#4782 phase 3: buildRunUatPrompt inlines slice UAT, slice summary, project via composer", async (t) => {
@@ -81,14 +92,27 @@ test("#4782 phase 3: buildRunUatPrompt inlines slice UAT, slice summary, project
   // Context wrapper present
   assert.match(prompt, /## Inlined Context \(preloaded — do not re-read these files\)/);
 
-  // Artifacts from the manifest inline list, in declared order
-  assert.match(prompt, /### S01 UAT[\s\S]*### S01 Summary/);
+  // Artifacts from the manifest inline list, in declared order:
+  // slice-uat → slice-summary → project (#4925 review).
+  const uatIdx = prompt.indexOf("### S01 UAT");
+  const summaryIdx = prompt.indexOf("### S01 Summary");
+  const projectIdx = prompt.indexOf("### Project");
+  assert.ok(uatIdx > -1, "slice UAT block missing");
+  assert.ok(summaryIdx > -1, "slice summary block missing");
+  assert.ok(projectIdx > -1, "project block missing — manifest declares project as 3rd inline");
+  assert.ok(
+    uatIdx < summaryIdx && summaryIdx < projectIdx,
+    `manifest order violated: uat (${uatIdx}) < summary (${summaryIdx}) < project (${projectIdx})`,
+  );
 
   // UAT body content inlined
   assert.match(prompt, /Check X[\s\S]*Check Y/);
 
   // Summary body content inlined
   assert.match(prompt, /What Happened[\s\S]*Ship/);
+
+  // Project body content inlined
+  assert.match(prompt, /Run-UAT composer fixture project/);
 });
 
 test("#4782 phase 3: buildRunUatPrompt omits optional slice summary when file is missing", async (t) => {
@@ -108,6 +132,11 @@ test("#4782 phase 3: buildRunUatPrompt omits optional slice summary when file is
   assert.match(prompt, /### S01 UAT/);
   // No empty "S01 Summary" section — section body would be blank without a file
   assert.ok(!prompt.includes("### S01 Summary"));
+  // Project still present (third inline artifact, not optional) and follows
+  // UAT directly with the skipped summary collapsed (#4925 review).
+  const uatIdx = prompt.indexOf("### S01 UAT");
+  const projectIdx = prompt.indexOf("### Project");
+  assert.ok(projectIdx > uatIdx, `project must follow UAT when summary is omitted (uat=${uatIdx}, project=${projectIdx})`);
   // No double separator from a skipped block
   assert.ok(!prompt.includes("---\n\n---"));
 });

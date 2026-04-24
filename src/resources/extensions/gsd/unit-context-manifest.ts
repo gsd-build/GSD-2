@@ -290,7 +290,11 @@ export const UNIT_MANIFESTS: Record<UnitType, UnitContextManifest> = {
     codebaseMap: false,
     preferences: "active-only",
     artifacts: {
-      inline: ["slice-plan", "slice-research", "prior-task-summaries", "requirements", "templates"],
+      // Phase 3 migration (#4782): matches today's actual
+      // buildCompleteSlicePrompt inlining order. Overrides prepend +
+      // knowledge splice stay in the builder imperatively (see RFC
+      // #4924 — computed/prepend blocks are phase-4 composer work).
+      inline: ["roadmap", "slice-context", "slice-plan", "requirements", "prior-task-summaries", "templates"],
       excerpt: [],
       onDemand: [],
     },
