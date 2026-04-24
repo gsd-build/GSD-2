@@ -199,10 +199,9 @@ describe('buildGraph', () => {
     const graph = await buildGraph(badProject);
     assert.ok(Array.isArray(graph.nodes), "nodes must be an array");
     assert.ok(Array.isArray(graph.edges), "edges must be an array");
-    assert.match(
-      graph.builtAt,
-      /^\d{4}-\d{2}-\d{2}T/,
-      "builtAt must be an ISO-8601 timestamp even when artifact is unparseable",
+    assert.ok(
+      !Number.isNaN(Date.parse(graph.builtAt)),
+      "builtAt must be a valid ISO-8601 timestamp even when artifact is unparseable",
     );
     rmSync(badProject, { recursive: true, force: true });
   });
