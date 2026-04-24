@@ -270,6 +270,36 @@ const content = `
 
 Bug fixes must include a regression test that fails before the fix and passes after. Write the test first, confirm it fails, then apply the fix. See the `test-first-bugfix` skill.
 
+### Test behaviour, not source shape
+
+Tests must verify **behaviour**, not source text. Reading a source file with `readFileSync` and asserting on its contents (`.includes("identifier")`, `.slice(idx, idx + N)`, `extractSourceRegion(...)`, `lines[N]` positional indexing) is **forbidden for new tests** with two narrow exceptions:
+
+1. **Contractual content** — the file **is** the user-facing or agent-facing contract. Examples: prompt templates rendered to an LLM, markdown that ships to the user, fixture golden files. Assertions on *rendered output* (the string returned by a builder function) are allowed; assertions on the *raw template file* are allowed only when the template IS the output.
+2. **AST-level structural invariants** — when a structural invariant genuinely cannot be runtime-tested (e.g., "module X imports only modules from an allowlist"), use the TypeScript compiler API to parse and query the AST. String search is not a substitute.
+
+```typescript
+// ❌ WRONG — source-grep test. Passes when the identifier exists, fails when
+// it's renamed. Does not test behaviour.
+const src = readFileSync("../auto-dispatch.ts", "utf-8");
+test("dispatch rule requires 2+ slices", () => {
+  assert.ok(src.includes("researchReadySlices.length < 2"));
+});
+
+// ✅ CORRECT — behaviour test. Invokes the real function against a
+// fixture and asserts on what it returned.
+test("dispatch rule requires 2+ slices", async () => {
+  writeRoadmap(base, "M001", [{ id: "S01", title: "Alpha" }]); // only 1 slice
+  const action = await resolveDispatch({ basePath: base, mid: "M001", /* … */ });
+  if (action.action === "dispatch") {
+    assert.notEqual(action.unitId, "M001/parallel-research");
+  }
+});
+```
+
+**What about renames?** If a rename changes the user-visible behaviour, a behaviour test catches it. If a rename does *not* change behaviour, the test shouldn't care. Source-grep tests invert this: they fail on harmless renames and pass on broken reimplementations.
+
+**`extractSourceRegion`, `createTestContext.assertTrue` on grep results, and raw `<src>.includes(...)` patterns are being removed.** See [#4784](https://github.com/gsd-build/gsd-2/issues/4784). Do not add new ones.
+
 ## Local development
 
 ```bash
