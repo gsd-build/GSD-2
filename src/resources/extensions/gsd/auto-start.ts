@@ -45,6 +45,7 @@ import {
   nativeBranchListMerged,
   nativeBranchDelete,
   nativeWorktreeRemove,
+  nativeCommitCountBetween,
 } from "./native-git-bridge.js";
 import { GitServiceImpl } from "./git-service.js";
 import {
@@ -185,10 +186,38 @@ export function auditOrphanedMilestoneBranches(
     const milestoneId = branch.replace(/^milestone\//, "");
     const milestone = getMilestone(milestoneId);
 
-    // Only audit completed milestones
-    if (!milestone || milestone.status !== "complete") continue;
+    if (!milestone) continue;
 
     const isMerged = mergedBranches.has(branch);
+
+    // #4762 — in-progress milestone branch with unmerged commits ahead of
+    // main. This is the pre-completion orphan case: auto-mode exited without
+    // completing the milestone (pause, stop, crash, merge error, blocker) and
+    // work is stranded on the branch or in the worktree. Data safety first:
+    // we never delete or touch; we just surface a warning so the user knows
+    // where to look.
+    if (milestone.status !== "complete") {
+      if (isMerged) continue; // nothing to recover
+      let commitsAhead = 0;
+      try {
+        commitsAhead = nativeCommitCountBetween(basePath, mainBranch, branch);
+      } catch {
+        // Rev-walk failure — skip rather than noise
+        continue;
+      }
+      if (commitsAhead === 0) continue;
+
+      const wtDir = getWorktreeDir(basePath, milestoneId);
+      const wtSuffix = existsSync(wtDir)
+        ? ` Worktree directory at .gsd/worktrees/${milestoneId}/ holds the live work.`
+        : "";
+      warnings.push(
+        `Branch ${branch} has ${commitsAhead} commit(s) ahead of ${mainBranch} for in-progress milestone ${milestoneId}.` +
+        wtSuffix +
+        ` Run \`/gsd auto\` to resume, or merge manually if abandoning.`,
+      );
+      continue;
+    }
 
     if (isMerged) {
       // Branch is merged — safe to delete branch and clean up worktree dir
