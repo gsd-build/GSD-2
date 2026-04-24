@@ -13,6 +13,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 
 import {
   openDatabase,
@@ -122,5 +123,138 @@ describe("Schema v23: external_waits table", () => {
     assert.equal(row.context_hint, "SLURM job 12345");
     assert.equal(row.on_timeout, "resume-with-failure");
     assert.equal(row.status, "waiting");
+  });
+
+  test("v22 → v23 migration creates external_waits table on reopen", () => {
+    tmpDir = mkdtempSync(join(tmpdir(), "gsd-v23-migrate-"));
+    const dbPath = join(tmpDir, "gsd.db");
+
+    // Step 1: Create a minimal v22 DB using raw sqlite (simulates a pre-v23 DB)
+    const rawDb = new DatabaseSync(dbPath);
+    rawDb.exec("PRAGMA journal_mode=WAL");
+    rawDb.exec("PRAGMA foreign_keys=ON");
+    rawDb.exec(`
+      CREATE TABLE schema_version (
+        version INTEGER PRIMARY KEY,
+        applied_at TEXT NOT NULL
+      )
+    `);
+    // Stamp as v22 — all migrations < 23 are "already applied"
+    for (let v = 1; v <= 22; v++) {
+      rawDb.prepare("INSERT INTO schema_version (version, applied_at) VALUES (?, ?)").run(v, new Date().toISOString());
+    }
+    // Create minimal prerequisite tables needed for FK references
+    rawDb.exec(`
+      CREATE TABLE milestones (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'pre-planning',
+        depends_on TEXT DEFAULT '[]',
+        created_at TEXT DEFAULT (datetime('now')),
+        completed_at TEXT,
+        vision TEXT DEFAULT '',
+        success_criteria TEXT DEFAULT '[]',
+        key_risks TEXT DEFAULT '[]',
+        proof_strategy TEXT DEFAULT '[]',
+        verification_contract TEXT DEFAULT '',
+        verification_integration TEXT DEFAULT '',
+        verification_operational TEXT DEFAULT '',
+        verification_uat TEXT DEFAULT '',
+        definition_of_done TEXT DEFAULT '[]',
+        requirement_coverage TEXT DEFAULT '',
+        boundary_map_markdown TEXT DEFAULT ''
+      )
+    `);
+    rawDb.exec(`
+      CREATE TABLE slices (
+        milestone_id TEXT NOT NULL,
+        id TEXT NOT NULL,
+        title TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'pending',
+        risk TEXT DEFAULT 'medium',
+        depends TEXT DEFAULT '[]',
+        demo TEXT DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now')),
+        completed_at TEXT,
+        full_summary_md TEXT DEFAULT '',
+        full_uat_md TEXT DEFAULT '',
+        goal TEXT DEFAULT '',
+        success_criteria TEXT DEFAULT '',
+        proof_level TEXT DEFAULT '',
+        integration_closure TEXT DEFAULT '',
+        observability_impact TEXT DEFAULT '',
+        sequence INTEGER DEFAULT 0,
+        replan_triggered_at TEXT,
+        is_sketch INTEGER DEFAULT 0,
+        sketch_scope TEXT DEFAULT '',
+        PRIMARY KEY (milestone_id, id)
+      )
+    `);
+    rawDb.exec(`
+      CREATE TABLE tasks (
+        milestone_id TEXT NOT NULL,
+        slice_id TEXT NOT NULL,
+        id TEXT NOT NULL,
+        title TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'pending',
+        one_liner TEXT DEFAULT '',
+        narrative TEXT DEFAULT '',
+        verification_result TEXT DEFAULT '',
+        duration TEXT DEFAULT '',
+        completed_at TEXT,
+        blocker_discovered INTEGER DEFAULT 0,
+        deviations TEXT DEFAULT '',
+        known_issues TEXT DEFAULT '',
+        key_files TEXT DEFAULT '[]',
+        key_decisions TEXT DEFAULT '[]',
+        full_summary_md TEXT DEFAULT '',
+        description TEXT DEFAULT '',
+        estimate TEXT DEFAULT '',
+        files TEXT DEFAULT '[]',
+        verify TEXT DEFAULT '',
+        inputs TEXT DEFAULT '[]',
+        expected_output TEXT DEFAULT '[]',
+        observability_impact TEXT DEFAULT '',
+        full_plan_md TEXT DEFAULT '',
+        sequence INTEGER DEFAULT 0,
+        blocker_source TEXT DEFAULT '',
+        escalation_pending INTEGER DEFAULT 0,
+        escalation_awaiting_review INTEGER DEFAULT 0,
+        escalation_artifact_path TEXT,
+        escalation_override_applied_at TEXT,
+        PRIMARY KEY (milestone_id, slice_id, id)
+      )
+    `);
+    // v22 has no external_waits table — that's the point of this test
+    rawDb.close();
+
+    // Step 2: Reopen through GSD's openDatabase, which should trigger migration
+    openDatabase(dbPath);
+    const db = _getAdapter()!;
+    assert.ok(db, "DB should be open");
+
+    // Step 3: Verify external_waits table was created by migration
+    const tableInfo = db.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='external_waits'"
+    ).get() as { name: string } | undefined;
+    assert.ok(tableInfo, "external_waits table should exist after v22→v23 migration");
+
+    // Verify columns
+    const columns = db.prepare("PRAGMA table_info(external_waits)").all() as Array<{ name: string }>;
+    const colNames = columns.map(c => c.name);
+    assert.ok(colNames.includes("poll_while_command"), "should have poll_while_command column");
+    assert.ok(!colNames.includes("check_command"), "should NOT have old check_command column");
+
+    // Verify schema_version was bumped to 23
+    const vRow = db.prepare(
+      "SELECT version FROM schema_version WHERE version = 23"
+    ).get() as { version: number } | undefined;
+    assert.ok(vRow, "schema_version should contain v23 after migration");
+
+    // Verify index exists
+    const idx = db.prepare(
+      "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_external_waits_milestone_status'"
+    ).get() as { name: string } | undefined;
+    assert.ok(idx, "idx_external_waits_milestone_status should exist after migration");
   });
 });

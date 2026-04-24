@@ -5,6 +5,7 @@ import {
   type MilestoneRow,
   type SliceRow,
   type TaskRow,
+  type ExternalWaitRow,
 } from "./gsd-db.js";
 import type { Decision } from "./types.js";
 import { atomicWriteSync } from "./atomic-write.js";
@@ -12,6 +13,8 @@ import { readFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 // ─── Manifest Types ──────────────────────────────────────────────────────
+
+export { type ExternalWaitRow } from "./gsd-db.js";
 
 export interface VerificationEvidenceRow {
   id: number;
@@ -33,6 +36,7 @@ export interface StateManifest {
   tasks: TaskRow[];
   decisions: Decision[];
   verification_evidence: VerificationEvidenceRow[];
+  external_waits?: ExternalWaitRow[];
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────
@@ -183,6 +187,27 @@ export function snapshotState(): StateManifest {
     created_at: r["created_at"] as string,
   }));
 
+  // Snapshot external_waits — table may not exist in older DBs
+  let external_waits: ExternalWaitRow[] = [];
+  try {
+    const rawWaits = db.prepare("SELECT * FROM external_waits ORDER BY milestone_id, slice_id, task_id").all() as Record<string, unknown>[];
+    external_waits = rawWaits.map((r) => ({
+      milestone_id: r["milestone_id"] as string,
+      slice_id: r["slice_id"] as string,
+      task_id: r["task_id"] as string,
+      status: r["status"] as string,
+      poll_while_command: r["poll_while_command"] as string,
+      success_check: (r["success_check"] as string) ?? null,
+      poll_interval_ms: toNumeric(r["poll_interval_ms"], 30000) as number,
+      timeout_ms: toNumeric(r["timeout_ms"], 86400000) as number,
+      context_hint: (r["context_hint"] as string) ?? null,
+      on_timeout: (r["on_timeout"] as string) ?? "manual-attention",
+      probe_failure_count: toNumeric(r["probe_failure_count"], 0) as number,
+      registered_at: r["registered_at"] as string,
+      resolved_at: (r["resolved_at"] as string) ?? null,
+    }));
+  } catch { /* table doesn't exist in pre-v23 DBs */ }
+
   const result: StateManifest = {
     version: 1,
     exported_at: new Date().toISOString(),
@@ -191,6 +216,7 @@ export function snapshotState(): StateManifest {
     tasks,
     decisions,
     verification_evidence,
+    ...(external_waits.length ? { external_waits } : {}),
   };
 
   return result;

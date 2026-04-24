@@ -430,6 +430,7 @@ export async function autoLoop(
           break;
         }
         if (dispatch.action === "skip") {
+          finishTurn("skipped");
           continue;
         }
         if (dispatch.action === "sleep") {
@@ -439,6 +440,7 @@ export async function autoLoop(
           while (Date.now() - start < sleepMs && s.active) {
             await new Promise(r => setTimeout(r, Math.min(1000, sleepMs - (Date.now() - start))));
           }
+          finishTurn("skipped");
           continue;
         }
 

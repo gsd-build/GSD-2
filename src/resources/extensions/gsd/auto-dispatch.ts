@@ -14,7 +14,9 @@ import type { GSDPreferences } from "./preferences.js";
 import type { UatType } from "./files.js";
 import type { MinimalModelRegistry } from "./context-budget.js";
 import { loadFile, extractUatType, loadActiveOverrides } from "./files.js";
-import { isDbAvailable, getMilestoneSlices, getPendingGates, markAllGatesOmitted, getMilestone, updateMilestoneStatus } from "./gsd-db.js";
+import { isDbAvailable, getMilestoneSlices, getPendingGates, markAllGatesOmitted, getMilestone, updateMilestoneStatus, getExternalWait, incrementProbeFailureCount, updateExternalWaitStatus, resetProbeFailureCount, getAllWaitingExternalWaits, updateTaskStatus } from "./gsd-db.js";
+import { exec } from "node:child_process";
+import { invalidateStateCache } from "./state.js";
 import { isClosedStatus } from "./status-guards.js";
 import { extractVerdict, isAcceptableUatVerdict } from "./verdict-parser.js";
 
@@ -30,7 +32,12 @@ import {
   buildSliceFileName,
 } from "./paths.js";
 import { parseRoadmap } from "./parsers-legacy.js";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from "node:fs";
+
+/** Platform-appropriate shell for probe commands. Unix → /bin/sh, Windows → %COMSPEC% or cmd.exe. */
+const probeShell = process.platform === "win32"
+  ? (process.env.COMSPEC || "cmd.exe")
+  : "/bin/sh";
 import { logWarning, logError } from "./workflow-logger.js";
 import { join } from "node:path";
 import { hasImplementationArtifacts } from "./auto-recovery.js";
@@ -75,7 +82,8 @@ export type DispatchAction =
       matchedRule?: string;
     }
   | { action: "stop"; reason: string; level: "info" | "warning" | "error"; matchedRule?: string }
-  | { action: "skip"; matchedRule?: string };
+  | { action: "skip"; matchedRule?: string }
+  | { action: "sleep"; durationMs: number; matchedRule?: string };
 
 export interface DispatchContext {
   basePath: string;
@@ -732,6 +740,174 @@ export const DISPATCH_RULES: DispatchRule[] = [
           basePath,
         ),
       };
+    },
+  },
+  {
+    name: "awaiting-external → probe",
+    match: async (ctx) => {
+      const { state, mid, basePath } = ctx;
+      if (state.phase !== "awaiting-external") return null;
+      if (!state.activeTask || !state.activeSlice) return null;
+
+      const sid = state.activeSlice.id;
+      const tid = state.activeTask.id;
+      const waitRow = getExternalWait(mid, sid, tid);
+
+      if (!waitRow) {
+        return {
+          action: "stop" as const,
+          reason: `Task ${tid} has status "awaiting-external" but no external_waits record. Run /gsd doctor to diagnose.`,
+          level: "warning" as const,
+        };
+      }
+
+      const pollWhileCommand = waitRow.poll_while_command as string;
+      const pollIntervalMs = (waitRow.poll_interval_ms as number) || 60000;
+      const slicePath = resolveSlicePath(basePath, mid, sid);
+      if (!slicePath) {
+        logWarning("dispatch", `Cannot resolve slice path for ${mid}/${sid} — escalating ${tid} to manual attention.`);
+        updateTaskStatus(mid, sid, tid, "manual-attention");
+        updateExternalWaitStatus(mid, sid, tid, "timed-out");
+        invalidateStateCache();
+        return { action: "stop" as const, reason: `Cannot resolve slice path for ${mid}/${sid}/${tid}. Escalating to manual attention.`, level: "warning" as const };
+      }
+      const tasksDir = join(slicePath, "tasks");
+      const logPath = join(tasksDir, `${tid}-EXTERNAL-WAIT.log`);
+
+      // ── Timeout check (before probe execution) ────────────────────
+      const registeredAt = waitRow.registered_at as string;
+      const timeoutMs = (waitRow.timeout_ms as number) || 86400000;
+      if (Date.now() > Date.parse(registeredAt) + timeoutMs) {
+        const onTimeout = (waitRow.on_timeout as string) || "manual-attention";
+        updateExternalWaitStatus(mid, sid, tid, "timed-out");
+        try { appendFileSync(logPath, JSON.stringify({ ts: new Date().toISOString(), event: "timeout", registeredAt, timeoutMs, onTimeout }) + "\n"); } catch (logErr) { logWarning("dispatch", `Failed to write external wait log: ${logErr instanceof Error ? logErr.message : String(logErr)}`); }
+
+        if (onTimeout === "resume-with-failure") {
+          updateTaskStatus(mid, sid, tid, "executing");
+          invalidateStateCache();
+          const contextHint = (waitRow.context_hint as string) || "";
+          if (ctx.session) {
+            ctx.session.pendingExternalResume = `**EXTERNAL WAIT TIMED OUT — RESUMING WITH FAILURE**\n\nThe external process timed out after ${timeoutMs}ms (registered ${registeredAt}).${contextHint ? `\n\nContext from registration: ${contextHint}` : ""}\n\nThe onTimeout policy is "resume-with-failure" — investigate the timeout, adjust parameters if needed, and either retry or escalate.`;
+          }
+          return { action: "skip" as const };
+        }
+
+        // Default: manual-attention
+        updateTaskStatus(mid, sid, tid, "manual-attention");
+        invalidateStateCache();
+        return { action: "stop" as const, reason: `External wait for ${tid} timed out (registered ${registeredAt}, timeout ${timeoutMs}ms). Escalating to manual attention.`, level: "warning" as const };
+      }
+
+      // ── JSON probe spec existence check (R228) ────────────────────
+      const probeSpecPath = join(tasksDir, `${tid}-EXTERNAL-WAIT.json`);
+      if (!existsSync(probeSpecPath)) {
+        updateTaskStatus(mid, sid, tid, "manual-attention");
+        updateExternalWaitStatus(mid, sid, tid, "timed-out");
+        invalidateStateCache();
+        return { action: "stop" as const, reason: `Task ${tid} has external_waits DB row but no ${tid}-EXTERNAL-WAIT.json probe spec. Escalating to manual attention.`, level: "warning" as const };
+      }
+
+      // ── Helper: compute min pollInterval across all waiting waits ──
+      const computeMinPoll = (): number => {
+        const allWaiting = getAllWaitingExternalWaits(mid);
+        const candidate = allWaiting.length > 0
+          ? Math.min(...allWaiting.map(w => (w.poll_interval_ms as number) || 60000))
+          : pollIntervalMs;
+        return Math.max(1000, candidate);
+      };
+
+      const probeTimeoutMs = Math.max(30000, Math.min(pollIntervalMs, 120000));
+      try {
+        const { exitCode, killed, stdout } = await new Promise<{ exitCode: number | null; killed: boolean; stdout: string }>((resolve) => {
+          exec(pollWhileCommand, { timeout: probeTimeoutMs, shell: probeShell }, (err, stdout, _stderr) => {
+            if (err) {
+              resolve({ exitCode: (err as any).code ?? null, killed: !!(err as any).killed, stdout: stdout || "" });
+            } else {
+              resolve({ exitCode: 0, killed: false, stdout: stdout || "" });
+            }
+          });
+        });
+
+        try { appendFileSync(logPath, JSON.stringify({ ts: new Date().toISOString(), event: "probe", command: pollWhileCommand, exitCode, stdout: stdout.slice(0, 500), killed }) + "\n"); } catch (logErr) { logWarning("dispatch", `Failed to write external wait log: ${logErr instanceof Error ? logErr.message : String(logErr)}`); }
+
+        if (killed) {
+          incrementProbeFailureCount(mid, sid, tid);
+          const updated = getExternalWait(mid, sid, tid);
+          if (updated && (updated.probe_failure_count as number) >= 3) {
+            updateTaskStatus(mid, sid, tid, "manual-attention");
+            updateExternalWaitStatus(mid, sid, tid, "timed-out");
+            invalidateStateCache();
+            return {
+              action: "stop" as const,
+              reason: `Probe for ${tid} timed out 3 times. Escalating to manual attention.`,
+              level: "warning" as const,
+            };
+          }
+          return { action: "sleep" as const, durationMs: computeMinPoll(), matchedRule: "awaiting-external → probe" };
+        }
+
+        if (exitCode === 0) {
+          resetProbeFailureCount(mid, sid, tid);
+          return { action: "sleep" as const, durationMs: computeMinPoll(), matchedRule: "awaiting-external → probe" };
+        }
+
+        // ── Non-zero exit = done — execute successCheck if present ──
+        const successCheck = waitRow.success_check as string | null;
+        const contextHint = (waitRow.context_hint as string) || "";
+        let jobSucceeded = true;
+        let failureContext = "";
+
+        if (successCheck) {
+          try {
+            const scResult = await new Promise<{ exitCode: number | null; stdout: string; stderr: string }>((resolve) => {
+              exec(successCheck, { timeout: 30000, shell: probeShell }, (err, scStdout, scStderr) => {
+                if (err) resolve({ exitCode: (err as any).code ?? 1, stdout: scStdout || "", stderr: scStderr || "" });
+                else resolve({ exitCode: 0, stdout: scStdout || "", stderr: scStderr || "" });
+              });
+            });
+            try { appendFileSync(logPath, JSON.stringify({ ts: new Date().toISOString(), event: "successCheck", exitCode: scResult.exitCode, stdout: scResult.stdout.slice(0, 500) }) + "\n"); } catch (logErr) { logWarning("dispatch", `Failed to write external wait log: ${logErr instanceof Error ? logErr.message : String(logErr)}`); }
+            if (scResult.exitCode !== 0) {
+              jobSucceeded = false;
+              failureContext = `Exit code: ${scResult.exitCode}\nStderr: ${scResult.stderr.slice(0, 1000)}`;
+            }
+          } catch (scErr) {
+            jobSucceeded = false;
+            failureContext = `successCheck exec error: ${scErr instanceof Error ? scErr.message : String(scErr)}`;
+          }
+        }
+
+        // ── State transition: awaiting-external → executing ────────
+        updateTaskStatus(mid, sid, tid, "executing");
+        updateExternalWaitStatus(mid, sid, tid, "resolved");
+        resetProbeFailureCount(mid, sid, tid);
+        invalidateStateCache();
+
+        if (ctx.session) {
+          if (jobSucceeded) {
+            ctx.session.pendingExternalResume = `**EXTERNAL WAIT RESOLVED — TASK RESUMING**\n\nThe external process you submitted has completed successfully.${contextHint ? `\n\nContext from registration: ${contextHint}` : ""}\n\nContinue with the task.`;
+          } else {
+            ctx.session.pendingExternalResume = `**EXTERNAL WAIT RESOLVED — JOB FAILED**\n\nThe external process completed but the success check failed.${contextHint ? `\n\nContext from registration: ${contextHint}` : ""}\n\nFailure details:\n${failureContext}\n\nInvestigate the failure, adjust parameters if needed, and either fix the issue or escalate.`;
+          }
+        }
+
+        return { action: "skip" as const };
+      } catch (execErr) {
+        try { appendFileSync(logPath, JSON.stringify({ ts: new Date().toISOString(), event: "probe-error", error: execErr instanceof Error ? execErr.message : String(execErr) }) + "\n"); } catch (logErr) { logWarning("dispatch", `Failed to write external wait log: ${logErr instanceof Error ? logErr.message : String(logErr)}`); }
+
+        incrementProbeFailureCount(mid, sid, tid);
+        const updated = getExternalWait(mid, sid, tid);
+        if (updated && (updated.probe_failure_count as number) >= 3) {
+          updateTaskStatus(mid, sid, tid, "manual-attention");
+          updateExternalWaitStatus(mid, sid, tid, "timed-out");
+          invalidateStateCache();
+          return {
+            action: "stop" as const,
+            reason: `Probe for ${tid} failed 3 times: ${execErr instanceof Error ? execErr.message : String(execErr)}`,
+            level: "warning" as const,
+          };
+        }
+        return { action: "sleep" as const, durationMs: computeMinPoll(), matchedRule: "awaiting-external → probe" };
+      }
     },
   },
   {
