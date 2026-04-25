@@ -219,7 +219,15 @@ export async function selectAndApplyModel(
   // re-applied here so each unit starts from a clean slate.  Soft adaptation
   // (adjustToolSet at the bottom of this function) still trims for the
   // selected model.
-  restoreToolBaseline(pi);
+  //
+  // Auto-mode only (#4965): `guided-flow.ts:dispatchWorkflow` also calls
+  // `selectAndApplyModel` with `isAutoMode=false`. Guided-flow has its own
+  // narrow/restore via discuss-tool-scoping (guided-flow.ts:587-622) and no
+  // baseline-clear hook of its own, so an unconditional restore here would
+  // resurrect an auto-era baseline on guided-flow dispatches — silently
+  // overwriting any tool changes made interactively between auto sessions.
+  // The baseline is structurally an auto-mode concept; gate it accordingly.
+  if (isAutoMode) restoreToolBaseline(pi);
 
   if (modelConfig) {
     const availableModels = ctx.modelRegistry.getAvailable();
