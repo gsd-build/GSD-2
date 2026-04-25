@@ -87,7 +87,7 @@ import {
 } from "./auto-tool-tracking.js";
 import { closeoutUnit } from "./auto-unit-closeout.js";
 import { recoverTimedOutUnit } from "./auto-timeout-recovery.js";
-import { selectAndApplyModel, resolveModelId } from "./auto-model-selection.js";
+import { selectAndApplyModel, resolveModelId, clearToolBaseline } from "./auto-model-selection.js";
 import { resetRoutingHistory, recordOutcome } from "./routing-history.js";
 import {
   checkPostUnitHooks,
@@ -1088,6 +1088,12 @@ export async function stopAuto(
     restoreProjectRootEnv();
     restoreMilestoneLockEnv();
 
+    // Drop the active-tool baseline so a subsequent /gsd auto run on the
+    // same `pi` instance recaptures from the live tool set rather than
+    // restoring this session's snapshot and silently undoing any tool
+    // changes the user made between sessions (#4959 / CodeRabbit).
+    if (pi) clearToolBaseline(pi);
+
     // Reset all session state in one call
     s.reset();
   }
@@ -1387,6 +1393,12 @@ export async function startAuto(
     debugLog("startAuto", { phase: "already-active", skipping: true });
     return;
   }
+
+  // Drop any stale active-tool baseline left over from a prior auto session
+  // on this `pi` (e.g. a session that ended without stopAuto running cleanly).
+  // The first selectAndApplyModel call for this run will recapture from the
+  // live tool set (#4959 / CodeRabbit).
+  clearToolBaseline(pi);
 
   const requestedStepMode = options?.step ?? false;
   const interruptedAssessment = options?.interrupted ?? null;

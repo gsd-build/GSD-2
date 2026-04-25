@@ -737,6 +737,12 @@ export async function autoLoop(
             reasons: loopErr.reasons,
           },
         });
+        // Carry the blocked unit identity into the turn-result observer:
+        // the throw originated inside dispatch, so observedUnitType/Id were
+        // not assigned by the success path at lines 453/631/647 — but the
+        // typed error already names the unit (#4959 / CodeRabbit).
+        observedUnitType = loopErr.unitType;
+        observedUnitId = loopErr.unitId;
         await deps.pauseAuto(ctx, pi);
         finishTurn("paused", "manual-attention", msg);
         // Do NOT increment consecutiveErrors — the failure is configuration,

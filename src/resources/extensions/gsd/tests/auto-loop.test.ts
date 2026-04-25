@@ -2376,6 +2376,11 @@ test("autoLoop classifies ModelPolicyDispatchBlockedError as blocked, not a retr
   const journalEvents: Array<{ eventType: string; data?: any }> = [];
   let pauseAutoCalls = 0;
   let stopAutoCalls = 0;
+  // Capture onTurnResult to assert blocked-unit identity is propagated to
+  // the uokObserver. Without the fix, observedUnitType/Id are unset because
+  // the throw happens inside dispatch before the success-path assignments
+  // at loop.ts:453/631/647 (#4959 / CodeRabbit Minor).
+  const turnResults: Array<{ unitType?: string; unitId?: string; status: string }> = [];
 
   const deps = makeMockDeps({
     selectAndApplyModel: async () => {
@@ -2388,6 +2393,11 @@ test("autoLoop classifies ModelPolicyDispatchBlockedError as blocked, not a retr
     pauseAuto: async () => { pauseAutoCalls++; },
     stopAuto: async () => { stopAutoCalls++; },
     emitJournalEvent: (entry: any) => { journalEvents.push(entry); },
+    uokObserver: {
+      onTurnStart: () => {},
+      onPhaseResult: () => {},
+      onTurnResult: (res: any) => { turnResults.push({ unitType: res.unitType, unitId: res.unitId, status: res.status }); },
+    } as any,
   });
 
   await autoLoop(ctx, pi, s, deps);
@@ -2409,4 +2419,12 @@ test("autoLoop classifies ModelPolicyDispatchBlockedError as blocked, not a retr
       && n.message.includes("tool policy denied (web_search)"),
   );
   assert.ok(blockedNotice, "user-facing notification should name the policy block + deny reason");
+
+  // Blocked-unit identity must reach uokObserver.onTurnResult — the typed
+  // error already carries it, the loop must thread it into observedUnitType/Id
+  // before finishTurn is called (#4959 / CodeRabbit Minor).
+  const pausedTurn = turnResults.find(r => r.status === "paused");
+  assert.ok(pausedTurn, "uokObserver should observe a paused turn for the blocked unit");
+  assert.equal(pausedTurn!.unitType, "research-slice", "onTurnResult must receive the blocked unitType from the typed error");
+  assert.equal(pausedTurn!.unitId, "M001/S01", "onTurnResult must receive the blocked unitId from the typed error");
 });

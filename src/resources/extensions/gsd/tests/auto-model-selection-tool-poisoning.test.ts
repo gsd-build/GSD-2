@@ -32,7 +32,7 @@ import { tmpdir } from "node:os";
 import {
   selectAndApplyModel,
   ModelPolicyDispatchBlockedError,
-  _resetToolBaselineForTesting,
+  clearToolBaseline,
 } from "../auto-model-selection.js";
 
 function makeTempProject(): { dir: string; cleanup: () => void; restoreEnv: () => void } {
@@ -122,7 +122,7 @@ test("vacuous-truth: empty workflow tool requirement + permitted model → dispa
       { id: "claude-sonnet-4-6", provider: "anthropic", api: "anthropic-messages" },
     ];
     const pi = makeRecordingPi(["gsd_save_gate_result"]);
-    _resetToolBaselineForTesting(pi as unknown as object);
+    clearToolBaseline(pi as unknown as object);
 
     const result = await selectAndApplyModel(
       makeCtx(availableModels),
@@ -164,7 +164,7 @@ test("cross-unit poisoning: prior unit narrowing must not deny next unit's eligi
     // The baseline contains a synthetic "thinking_partner" that openai-completions
     // does not support.
     const pi = makeRecordingPi(["gsd_save_gate_result", "thinking_partner"]);
-    _resetToolBaselineForTesting(pi as unknown as object);
+    clearToolBaseline(pi as unknown as object);
 
     // Unit-N: dispatch on openai/openai-narrow.  Soft adjustToolSet will narrow
     // the active set, simulating production poisoning.
@@ -230,7 +230,7 @@ test("genuinely-impossible: workflow requires a tool no candidate carries → th
       { id: "other-model", provider: "other-provider", api: "anthropic-messages" },
     ];
     const pi = makeRecordingPi([]);
-    _resetToolBaselineForTesting(pi as unknown as object);
+    clearToolBaseline(pi as unknown as object);
 
     const ctx = makeCtx(availableModels);
     // currentProvider mismatches → cross-provider denial when disabled.
@@ -282,7 +282,7 @@ test("restore baseline: setActiveTools(BASELINE) called between units before nex
     ];
     const baselineTools = ["gsd_save_gate_result", "tool_a", "tool_b"];
     const pi = makeRecordingPi(baselineTools);
-    _resetToolBaselineForTesting(pi as unknown as object);
+    clearToolBaseline(pi as unknown as object);
 
     // First call captures the baseline.
     await selectAndApplyModel(
@@ -348,7 +348,7 @@ test("error carries deny reason fragment from applyModelPolicyFilter", async () 
       { id: "other-model", provider: "other-provider", api: "anthropic-messages" },
     ];
     const pi = makeRecordingPi([]);
-    _resetToolBaselineForTesting(pi as unknown as object);
+    clearToolBaseline(pi as unknown as object);
 
     const ctx = makeCtx(availableModels);
     ctx.model = { provider: "anthropic", id: "claude-sonnet-4-6", api: "anthropic-messages" };
@@ -380,6 +380,107 @@ test("error carries deny reason fragment from applyModelPolicyFilter", async () 
       "thrown error message should include the per-model deny reason",
     );
     assert.match(thrown!.message, /other-provider\/other-model/, "should name the rejected model");
+  } finally {
+    env.restoreEnv();
+    env.cleanup();
+  }
+});
+
+// ─── 6. Lifecycle: clearToolBaseline forces recapture (CodeRabbit Major) ─────
+//
+// The WeakMap baseline is keyed per `pi` instance, but auto sessions are NOT
+// 1:1 with `pi` instances — a single `pi` can host multiple `/gsd auto` runs
+// separated by stops, manual tool edits, or extension toggles.  Without
+// `clearToolBaseline(pi)` at session boundaries, the SECOND auto run on the
+// same `pi` would silently restore the FIRST run's snapshot and undo whatever
+// tool changes the user made between sessions.  This test pins the contract
+// that `clearToolBaseline` causes the next dispatch to RECAPTURE from the
+// live active set rather than restoring the prior snapshot.
+test("lifecycle: clearToolBaseline forces recapture; subsequent runs respect intervening tool edits", async () => {
+  const env = makeTempProject();
+  try {
+    const availableModels = [
+      { id: "claude-sonnet-4-6", provider: "anthropic", api: "anthropic-messages" },
+    ];
+    const pi = makeRecordingPi(["A", "B", "C"]);
+    clearToolBaseline(pi as unknown as object);
+
+    // ── Run 1: captures baseline [A, B, C] ──
+    await selectAndApplyModel(
+      makeCtx(availableModels),
+      pi as any,
+      "gate-evaluate",
+      "u1",
+      env.dir,
+      undefined,
+      false,
+      { provider: "anthropic", id: "claude-sonnet-4-6" },
+      undefined,
+      true,
+    );
+
+    // ── Simulate `/gsd auto` stop + intervening user tool edit ──
+    // (auto.ts calls clearToolBaseline in stopAuto; the user then mutates
+    // tools while auto is paused.)
+    clearToolBaseline(pi as unknown as object);
+    pi.setActiveTools(["A", "B"]); // user removed C between sessions
+
+    // ── Run 2: must capture [A, B] as the NEW baseline, not restore [A, B, C] ──
+    const callsBeforeU2 = pi.__calls.length;
+    await selectAndApplyModel(
+      makeCtx(availableModels),
+      pi as any,
+      "gate-evaluate",
+      "u2",
+      env.dir,
+      undefined,
+      false,
+      { provider: "anthropic", id: "claude-sonnet-4-6" },
+      undefined,
+      true,
+    );
+    const u2Calls = pi.__calls.slice(callsBeforeU2);
+    // No setActiveTools(["A", "B", "C"]) call should appear during u2 — that
+    // would be the bug (restoring the run-1 snapshot over the user's edit).
+    const staleRestore = u2Calls.find(
+      c => c.kind === "setActiveTools"
+        && Array.isArray(c.payload)
+        && (c.payload as string[]).includes("C"),
+    );
+    assert.equal(
+      staleRestore,
+      undefined,
+      "after clearToolBaseline, run 2 must NOT restore the run-1 snapshot containing tool C",
+    );
+
+    // ── Run 3 (no clear): mutate to [A], expect restore to [A, B] (run-2 baseline) ──
+    pi.setActiveTools(["A"]);
+    const callsBeforeU3 = pi.__calls.length;
+    await selectAndApplyModel(
+      makeCtx(availableModels),
+      pi as any,
+      "gate-evaluate",
+      "u3",
+      env.dir,
+      undefined,
+      false,
+      { provider: "anthropic", id: "claude-sonnet-4-6" },
+      undefined,
+      true,
+    );
+    const u3Calls = pi.__calls.slice(callsBeforeU3);
+    const restoreToRun2Baseline = u3Calls.find(
+      c => c.kind === "setActiveTools"
+        && Array.isArray(c.payload)
+        && (c.payload as string[]).length === 2
+        && (c.payload as string[]).includes("A")
+        && (c.payload as string[]).includes("B")
+        && !(c.payload as string[]).includes("C"),
+    );
+    assert.ok(
+      restoreToRun2Baseline,
+      "run 3 must restore the run-2 baseline [A, B] — proves the recaptured baseline is in use, not the run-1 snapshot",
+    );
   } finally {
     env.restoreEnv();
     env.cleanup();

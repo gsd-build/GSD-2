@@ -66,15 +66,28 @@ export interface PreferredModelConfig {
 }
 
 // Baseline active-tool set per-`pi` instance, captured the first time
-// `selectAndApplyModel` runs against that instance and re-applied before each
-// subsequent dispatch.  WeakMap so that test fakes / disposed sessions are
-// garbage-collected normally.  See #4959 / #4681 cross-unit poisoning notes
-// at the call site below.
+// `selectAndApplyModel` runs against that instance during an auto session
+// and re-applied before each subsequent dispatch.  WeakMap so that test
+// fakes / disposed sessions are garbage-collected normally.  See
+// #4959 / #4681 cross-unit poisoning notes at the call site below.
+//
+// LIFECYCLE: the baseline is tied to a single auto session, NOT to the
+// lifetime of the `pi` instance (which can outlive many auto runs and have
+// the user mutate tools between them).  `clearToolBaseline` MUST be called
+// at auto start AND auto stop so that a second `/gsd auto` run on the same
+// `pi` does not silently restore a stale snapshot from the prior run and
+// undo any tool changes the user made between sessions.
 const TOOL_BASELINE = new WeakMap<object, string[]>();
 
-/** Visible for tests. */
-export function _resetToolBaselineForTesting(pi: object): void {
-  TOOL_BASELINE.delete(pi);
+/**
+ * Drop the captured tool baseline for `pi` so the next `selectAndApplyModel`
+ * call re-captures from the live active set.  Wired into `startAuto` and
+ * `stopAuto` in `auto.ts` to bound the baseline to a single auto session.
+ *
+ * Safe to call when no baseline is recorded (no-op).
+ */
+export function clearToolBaseline(pi: ExtensionAPI | object): void {
+  TOOL_BASELINE.delete(pi as unknown as object);
 }
 
 function restoreToolBaseline(pi: ExtensionAPI): void {
