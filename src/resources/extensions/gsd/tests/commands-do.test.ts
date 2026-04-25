@@ -7,6 +7,7 @@ import { matchRoute, ROUTES } from "../commands-do.ts";
 
 test("/gsd do: tests use the canonical route table", () => {
   const commands = new Set(ROUTES.map((route) => route.command));
+  const routeByCommand = new Map(ROUTES.map((route) => [route.command, route]));
   for (const command of [
     "export",
     "queue",
@@ -19,6 +20,13 @@ test("/gsd do: tests use the canonical route table", () => {
   ]) {
     assert.ok(commands.has(command), `expected canonical route table to include ${command}`);
   }
+
+  assert.equal(routeByCommand.get("cleanup")?.acceptsArgs, undefined);
+  assert.equal(routeByCommand.get("status")?.acceptsArgs, undefined);
+  assert.equal(routeByCommand.get("ship")?.acceptsArgs, true);
+  assert.equal(routeByCommand.get("debug")?.acceptsArgs, true);
+  assert.equal(routeByCommand.get("export")?.acceptsArgs, true);
+  assert.equal(routeByCommand.get("queue")?.acceptsArgs, undefined);
 });
 
 test("/gsd do: routes exact progress intent to status", () => {
@@ -49,12 +57,14 @@ test("/gsd do: routes 'create pr for milestone' to ship", () => {
   const match = matchRoute("create pr for milestone");
   assert.ok(match);
   assert.equal(match.command, "ship");
+  assert.equal(match.remainingArgs, "for milestone");
 });
 
 test("/gsd do: routes 'add tests for S03' to add-tests", () => {
   const match = matchRoute("add tests for S03");
   assert.ok(match);
   assert.equal(match.command, "add-tests");
+  assert.equal(match.remainingArgs, "for S03");
 });
 
 test("/gsd do: routes 'what is next' to next", () => {
@@ -85,18 +95,21 @@ test("/gsd do: routes debug troubleshooting intent to debug", () => {
   const match = matchRoute("debug this flaky oauth callback");
   assert.ok(match);
   assert.equal(match.command, "debug");
+  assert.equal(match.remainingArgs, "this flaky oauth callback");
 });
 
 test("/gsd do: keeps 'debug logs' routed to logs (longer keyword wins)", () => {
   const match = matchRoute("debug logs for today");
   assert.ok(match);
   assert.equal(match.command, "logs");
+  assert.equal(match.remainingArgs, "for today");
 });
 
 test("/gsd do: routes 'session report' to session-report", () => {
   const match = matchRoute("session report");
   assert.ok(match);
   assert.equal(match.command, "session-report");
+  assert.equal(match.remainingArgs, "");
 });
 
 test("/gsd do: routes 'diagnose issue' to debug (not doctor)", () => {
@@ -105,12 +118,14 @@ test("/gsd do: routes 'diagnose issue' to debug (not doctor)", () => {
   const match = matchRoute("diagnose issue with oauth callback");
   assert.ok(match);
   assert.equal(match.command, "debug");
+  assert.equal(match.remainingArgs, "with oauth callback");
 });
 
 test("/gsd do: routes 'investigate flaky test' to debug", () => {
   const match = matchRoute("investigate flaky test in CI");
   assert.ok(match);
   assert.equal(match.command, "debug");
+  assert.equal(match.remainingArgs, "flaky test in CI");
 });
 
 test("/gsd do: 'debug logs' keyword wins over bare 'debug' (longer keyword precedence)", () => {
@@ -118,12 +133,14 @@ test("/gsd do: 'debug logs' keyword wins over bare 'debug' (longer keyword prece
   const logsMatch = matchRoute("debug logs for the last run");
   assert.ok(logsMatch);
   assert.equal(logsMatch.command, "logs");
+  assert.equal(logsMatch.remainingArgs, "for the last run");
   assert.ok(logsMatch.score >= 10, `expected score >= 10, got ${logsMatch.score}`);
 
   // Bare 'debug' without 'logs' should still route to debug.
   const debugMatch = matchRoute("debug the payment timeout issue");
   assert.ok(debugMatch);
   assert.equal(debugMatch.command, "debug");
+  assert.equal(debugMatch.remainingArgs, "the payment timeout issue");
 });
 
 test("/gsd do: 'diagnose' alone routes to doctor (health check), not debug", () => {
@@ -131,6 +148,7 @@ test("/gsd do: 'diagnose' alone routes to doctor (health check), not debug", () 
   const match = matchRoute("diagnose my project");
   assert.ok(match);
   assert.equal(match.command, "doctor");
+  assert.equal(match.remainingArgs, "my project");
 });
 
 test("/gsd do: full task sentence falls back instead of token-routing to command", () => {
