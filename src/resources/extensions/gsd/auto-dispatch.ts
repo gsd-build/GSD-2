@@ -821,7 +821,8 @@ export const DISPATCH_RULES: DispatchRule[] = [
         const { exitCode, killed, stdout } = await new Promise<{ exitCode: number | null; killed: boolean; stdout: string }>((resolve) => {
           exec(pollWhileCommand, { timeout: probeTimeoutMs, shell: probeShell }, (err, stdout, _stderr) => {
             if (err) {
-              resolve({ exitCode: (err as any).code ?? null, killed: !!(err as any).killed, stdout: stdout || "" });
+              const rawCode = (err as any).code;
+              resolve({ exitCode: typeof rawCode === "number" ? rawCode : null, killed: !!(err as any).killed, stdout: stdout || "" });
             } else {
               resolve({ exitCode: 0, killed: false, stdout: stdout || "" });
             }
