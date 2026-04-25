@@ -2,10 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  DEFAULT_HEADLESS_TIMEOUT_MS,
   IDLE_TIMEOUT_MS,
+  NEW_MILESTONE_HEADLESS_TIMEOUT_MS,
   NEW_MILESTONE_IDLE_TIMEOUT_MS,
   getHeadlessIdleTimeout,
   getHeadlessRuntimeState,
+  resolveHeadlessOverallTimeout,
   shouldArmHeadlessIdleTimer,
 } from "../headless-events.js";
 
@@ -44,4 +47,25 @@ test("new-milestone --auto switches the chained auto phase to auto idle policy",
     false,
     "a chained auto phase must not re-arm the generic idle timer",
   );
+});
+
+test("resolveHeadlessOverallTimeout preserves explicit user timeouts", () => {
+  assert.equal(
+    resolveHeadlessOverallTimeout("auto", DEFAULT_HEADLESS_TIMEOUT_MS, true),
+    DEFAULT_HEADLESS_TIMEOUT_MS,
+  );
+  assert.equal(
+    resolveHeadlessOverallTimeout("new-milestone", DEFAULT_HEADLESS_TIMEOUT_MS, true),
+    DEFAULT_HEADLESS_TIMEOUT_MS,
+  );
+});
+
+test("resolveHeadlessOverallTimeout applies command defaults only when timeout is implicit", () => {
+  assert.equal(resolveHeadlessOverallTimeout("auto", DEFAULT_HEADLESS_TIMEOUT_MS, false), 0);
+  assert.equal(
+    resolveHeadlessOverallTimeout("new-milestone", DEFAULT_HEADLESS_TIMEOUT_MS, false),
+    NEW_MILESTONE_HEADLESS_TIMEOUT_MS,
+  );
+  assert.equal(resolveHeadlessOverallTimeout("next", DEFAULT_HEADLESS_TIMEOUT_MS, false), DEFAULT_HEADLESS_TIMEOUT_MS);
+  assert.equal(resolveHeadlessOverallTimeout("auto", 42_000, false), 42_000);
 });

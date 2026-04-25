@@ -65,11 +65,13 @@ export function mapStatusToExitCode(status: string): number {
  * Blocked detection is separate — checked via isBlockedNotification.
  */
 export const TERMINAL_PREFIXES = ['auto-mode stopped', 'step-mode stopped']
+export const DEFAULT_HEADLESS_TIMEOUT_MS = 300_000
 export const IDLE_TIMEOUT_MS = 15_000
 // new-milestone is a long-running creative task where the LLM may pause
 // between tool calls (e.g. after mkdir, before writing files). Use a
 // longer idle timeout to avoid killing the session prematurely (#808).
 export const NEW_MILESTONE_IDLE_TIMEOUT_MS = 120_000
+export const NEW_MILESTONE_HEADLESS_TIMEOUT_MS = 600_000
 const INTERACTIVE_HEADLESS_TOOLS = new Set(['ask_user_questions', 'secure_env_collect'])
 const MULTI_TURN_HEADLESS_COMMANDS = new Set(['auto', 'next', 'discuss', 'plan'])
 
@@ -98,6 +100,21 @@ export function getHeadlessRuntimeState(command: string): HeadlessRuntimeState {
     isNewMilestone: command === 'new-milestone',
     isMultiTurnCommand: MULTI_TURN_HEADLESS_COMMANDS.has(command),
   }
+}
+
+export function resolveHeadlessOverallTimeout(
+  command: string,
+  timeoutMs: number,
+  timeoutExplicit: boolean,
+): number {
+  if (timeoutExplicit) return timeoutMs
+  if (command === 'new-milestone' && timeoutMs === DEFAULT_HEADLESS_TIMEOUT_MS) {
+    return NEW_MILESTONE_HEADLESS_TIMEOUT_MS
+  }
+  if (command === 'auto' && timeoutMs === DEFAULT_HEADLESS_TIMEOUT_MS) {
+    return 0
+  }
+  return timeoutMs
 }
 
 export function shouldArmHeadlessIdleTimer(
