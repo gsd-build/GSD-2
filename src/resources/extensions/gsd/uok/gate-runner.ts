@@ -115,7 +115,24 @@ export class UokGateRunner {
     while (attempt < maxAttemptsCeiling) {
       attempt += 1;
       const now = new Date().toISOString();
-      const result = await gate.execute(ctx, attempt);
+
+      let result: {
+        outcome: "pass" | "fail" | "retry" | "manual-attention";
+        rationale?: string;
+        findings?: string;
+        failureClass?: FailureClass;
+      };
+
+      try {
+        result = await gate.execute(ctx, attempt);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        result = {
+          outcome: "fail",
+          failureClass: "unknown",
+          rationale: message,
+        };
+      }
       const failureClass = result.failureClass ?? (result.outcome === "pass" ? "none" : "unknown");
       const retryBudget = maxAttemptsByFailureClass[failureClass] ?? 0;
       const retryable = result.outcome !== "pass" && attempt <= retryBudget;
