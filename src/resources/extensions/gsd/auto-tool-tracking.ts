@@ -105,17 +105,6 @@ export function isToolInvocationError(errorMsg: string): boolean {
 }
 
 /**
- * Returns true if the error message indicates a deterministic policy gate
- * blocked the tool call before execution. Retrying the same unit without
- * changing behavior will hit the same gate, so auto-mode should pause instead
- * of re-dispatching.
- */
-export function isDeterministicPolicyError(errorMsg: string): boolean {
-  if (!errorMsg) return false;
-  return DETERMINISTIC_POLICY_ERROR_RE.test(errorMsg);
-}
-
-/**
  * Returns true if the error message indicates the tool was skipped because
  * a queued user message interrupted the turn (#3595).  Retrying will produce
  * the same skip, so the unit should be paused rather than retried.
@@ -154,5 +143,6 @@ export const DETERMINISTIC_POLICY_ERROR_STRINGS = [
  */
 export function isDeterministicPolicyError(errorMsg: string): boolean {
   if (!errorMsg) return false;
-  return DETERMINISTIC_POLICY_ERROR_STRINGS.some(s => errorMsg.includes(s));
+  return DETERMINISTIC_POLICY_ERROR_RE.test(errorMsg)
+    || DETERMINISTIC_POLICY_ERROR_STRINGS.some(s => errorMsg.includes(s));
 }
