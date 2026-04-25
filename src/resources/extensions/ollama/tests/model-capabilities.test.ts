@@ -82,6 +82,48 @@ describe("getModelCapabilities", () => {
 		const caps = getModelCapabilities("Llama3.1:8B");
 		assert.equal(caps.contextWindow, 131072);
 	});
+
+	// ─── New reasoning-model fallback entries (cloud + local) ──────────────────
+	// These exist as a fallback for ollama versions whose /api/show response
+	// does not include the `capabilities` array. When capabilities are present,
+	// detection happens dynamically in ollama-discovery.ts.
+
+	it("flags gpt-oss as reasoning (covers :20b, :120b, :*-cloud)", () => {
+		assert.equal(getModelCapabilities("gpt-oss:20b").reasoning, true);
+		assert.equal(getModelCapabilities("gpt-oss:120b-cloud").reasoning, true);
+	});
+
+	it("flags deepseek-v3.1/v4 family as reasoning", () => {
+		assert.equal(getModelCapabilities("deepseek-v3.1:671b-cloud").reasoning, true);
+		assert.equal(getModelCapabilities("deepseek-v4-flash:cloud").reasoning, true);
+	});
+
+	it("flags glm-4.x/5.x family as reasoning", () => {
+		assert.equal(getModelCapabilities("glm-4.6:cloud").reasoning, true);
+		assert.equal(getModelCapabilities("glm-5.1:cloud").reasoning, true);
+	});
+
+	it("flags kimi-k2 family as reasoning", () => {
+		assert.equal(getModelCapabilities("kimi-k2:1t-cloud").reasoning, true);
+		assert.equal(getModelCapabilities("kimi-k2.6:cloud").reasoning, true);
+	});
+
+	it("flags qwen3 as reasoning (hybrid thinking model)", () => {
+		assert.equal(getModelCapabilities("qwen3:8b").reasoning, true);
+		assert.equal(getModelCapabilities("qwen3-next:cloud").reasoning, true);
+	});
+
+	it("flags minimax-m2 family as reasoning", () => {
+		assert.equal(getModelCapabilities("minimax-m2.7:cloud").reasoning, true);
+	});
+
+	it("flags gemma4 (with thinking) as reasoning", () => {
+		assert.equal(getModelCapabilities("gemma4:31b-cloud").reasoning, true);
+	});
+
+	it("flags gemini-3-flash-preview as reasoning", () => {
+		assert.equal(getModelCapabilities("gemini-3-flash-preview:cloud").reasoning, true);
+	});
 });
 
 // ─── estimateContextFromParams ───────────────────────────────────────────────

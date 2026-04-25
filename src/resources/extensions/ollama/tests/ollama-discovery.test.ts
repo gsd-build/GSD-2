@@ -14,19 +14,19 @@ function tagsStub(name: string, parameterSize = ""): OllamaTagsResponse {
 	return { models: [modelStub(name, parameterSize)] };
 }
 
-function showStub(modelInfo: Record<string, unknown>): OllamaShowResponse {
-	return { modelfile: "", parameters: "", template: "", details: EMPTY_DETAILS, model_info: modelInfo };
+function showStub(modelInfo: Record<string, unknown>, capabilities?: string[]): OllamaShowResponse {
+	return { modelfile: "", parameters: "", template: "", details: EMPTY_DETAILS, model_info: modelInfo, capabilities };
 }
 
 describe("discoverModels — context window resolution", () => {
-	it("uses known table context window without calling /api/show", async () => {
-		let showCalled = false;
+	it("prefers known table context window over /api/show value", async () => {
+		// /api/show is now always called (to read capabilities), but the static
+		// table still wins for context window when both sources have a value.
 		const models = await discoverModels({
 			listModels: async () => tagsStub("llama3.2:latest", "3B"),
-			showModel: async () => { showCalled = true; throw new Error("should not be called"); },
+			showModel: async () => showStub({ "llama.context_length": 4096 }),
 		});
 		assert.equal(models[0].contextWindow, 131072);
-		assert.equal(showCalled, false);
 	});
 
 	it("uses context_length from /api/show model_info for unknown model", async () => {
@@ -51,5 +51,61 @@ describe("discoverModels — context window resolution", () => {
 			showModel: async () => { throw new Error("network error"); },
 		});
 		assert.equal(models[0].contextWindow, 8192);
+	});
+});
+
+describe("discoverModels — reasoning detection from /api/show capabilities", () => {
+	it("flags reasoning=true when capabilities include 'thinking' (cloud model)", async () => {
+		// Real-world: glm-5.1:cloud → /api/show returns capabilities: ['thinking', 'completion', 'tools']
+		const models = await discoverModels({
+			listModels: async () => tagsStub("glm-5.1:cloud"),
+			showModel: async () => showStub({ "glm5.1.context_length": 131072 }, ["thinking", "completion", "tools"]),
+		});
+		assert.equal(models[0].reasoning, true);
+	});
+
+	it("flags reasoning=false when capabilities array is present but excludes 'thinking'", async () => {
+		// A genuinely non-thinking model with capabilities returned should respect the API
+		const models = await discoverModels({
+			listModels: async () => tagsStub("totally-unknown-model:7b", "7B"),
+			showModel: async () => showStub({}, ["completion", "tools"]),
+		});
+		assert.equal(models[0].reasoning, false);
+	});
+
+	it("falls back to KNOWN_MODELS table when /api/show omits capabilities", async () => {
+		// Older ollama versions don't return capabilities field
+		const models = await discoverModels({
+			listModels: async () => tagsStub("deepseek-r1:8b"),
+			showModel: async () => showStub({}),
+		});
+		assert.equal(models[0].reasoning, true);
+	});
+
+	it("falls back to KNOWN_MODELS table when /api/show throws", async () => {
+		const models = await discoverModels({
+			listModels: async () => tagsStub("qwq:32b"),
+			showModel: async () => { throw new Error("network error"); },
+		});
+		assert.equal(models[0].reasoning, true);
+	});
+
+	it("defaults reasoning=false for unknown model with no capabilities and no /api/show", async () => {
+		const models = await discoverModels({
+			listModels: async () => tagsStub("brand-new-model:7b", "7B"),
+			showModel: async () => { throw new Error("network error"); },
+		});
+		assert.equal(models[0].reasoning, false);
+	});
+
+	it("calls /api/show even when context window is known in table (to pick up capabilities)", async () => {
+		// Behavior change: previously skipped /api/show when table had context window.
+		// Now must always call to learn about thinking capability.
+		let showCalled = false;
+		await discoverModels({
+			listModels: async () => tagsStub("llama3.2:latest", "3B"),
+			showModel: async () => { showCalled = true; return showStub({}, ["completion"]); },
+		});
+		assert.equal(showCalled, true);
 	});
 });

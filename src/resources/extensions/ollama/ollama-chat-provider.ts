@@ -21,6 +21,7 @@ import {
 	type StopReason,
 	type TextContent,
 	type ThinkingContent,
+	type ThinkingLevel,
 	type Tool,
 	type ToolCall,
 	type Usage,
@@ -146,6 +147,13 @@ export function streamOllamaChat(
 			}
 
 			for await (const chunk of chat(request, options?.signal)) {
+				// Native thinking field (ollama 0.4+ for reasoning models). Emit before
+				// content so blocks open in the natural reasoning-then-answer order.
+				const thinking = chunk.message?.thinking ?? "";
+				if (thinking) {
+					emitDelta("thinking", thinking);
+				}
+
 				// Handle text content — process independently of tool_calls
 				// (a chunk may contain both content and tool_calls)
 				const content = chunk.message?.content ?? "";
@@ -188,6 +196,30 @@ export function streamOllamaChat(
 }
 
 // ─── Request building ───────────────────────────────────────────────────────
+
+/**
+ * Map a SimpleStreamOptions.reasoning ThinkingLevel to ollama's `think` field.
+ *
+ * - Returns `undefined` when the model doesn't support reasoning, or when no
+ *   level was requested (preserving existing default behaviour: ollama uses
+ *   the model's built-in default).
+ * - `"minimal"` turns thinking off (`think: false`) — universally supported.
+ * - `"low" | "medium" | "high"` are passed through as strings; gpt-oss honors
+ *   them as strength levels, other thinking models treat any present value
+ *   as "thinking enabled".
+ * - `"xhigh"` is collapsed to `"high"` (ollama caps strength at high).
+ */
+export function buildThinkParam(
+	model: Model<Api>,
+	options?: SimpleStreamOptions,
+): boolean | "low" | "medium" | "high" | undefined {
+	if (!model.reasoning) return undefined;
+	const level: ThinkingLevel | undefined = options?.reasoning;
+	if (level === undefined) return undefined;
+	if (level === "minimal") return false;
+	if (level === "xhigh") return "high";
+	return level;
+}
 
 function buildRequest(
 	model: Model<Api>,
@@ -243,6 +275,13 @@ function buildRequest(
 	// Tools
 	if (context.tools?.length) {
 		request.tools = convertTools(context.tools);
+	}
+
+	// Thinking strength (ollama 0.4+). Only set when both the model is reasoning-capable
+	// and the caller explicitly requested a level — otherwise ollama uses its default.
+	const think = buildThinkParam(model, options);
+	if (think !== undefined) {
+		request.think = think;
 	}
 
 	return request;

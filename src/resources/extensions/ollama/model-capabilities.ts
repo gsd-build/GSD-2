@@ -28,9 +28,22 @@ export interface ModelCapability {
 // window is authoritative. For unknown/estimated models, num_ctx is NOT sent
 // to avoid OOM risk — Ollama uses its own safe default instead.
 const KNOWN_MODELS: Array<[pattern: string, caps: ModelCapability]> = [
-	// ─── Reasoning models ───────────────────────────────────────────────
-	["deepseek-r1", { contextWindow: 131072, reasoning: true, ollamaOptions: { num_ctx: 131072 } }],
-	["qwq", { contextWindow: 131072, reasoning: true, ollamaOptions: { num_ctx: 131072 } }],
+	// ─── Reasoning models (fallback when /api/show capabilities is absent) ──
+	// IMPORTANT: matching is `baseName === pattern || baseName.startsWith(pattern)`,
+	// so more specific patterns must appear before more general ones.
+	["deepseek-r1",       { contextWindow: 131072, reasoning: true, ollamaOptions: { num_ctx: 131072 } }],
+	["deepseek-v3.1",     { contextWindow: 131072, reasoning: true, ollamaOptions: { num_ctx: 131072 } }],
+	["deepseek-v4-flash", { contextWindow: 131072, reasoning: true, ollamaOptions: { num_ctx: 131072 } }],
+	["deepseek-v4",       { contextWindow: 131072, reasoning: true, ollamaOptions: { num_ctx: 131072 } }],
+	["qwq",               { contextWindow: 131072, reasoning: true, ollamaOptions: { num_ctx: 131072 } }],
+	["gpt-oss",           { contextWindow: 131072, reasoning: true, ollamaOptions: { num_ctx: 131072 } }],
+	["glm-4",             { contextWindow: 131072, reasoning: true, ollamaOptions: { num_ctx: 131072 } }],
+	["glm-5",             { contextWindow: 131072, reasoning: true, ollamaOptions: { num_ctx: 131072 } }],
+	["kimi-k2",           { contextWindow: 131072, reasoning: true, ollamaOptions: { num_ctx: 131072 } }],
+	["minimax-m2",        { contextWindow: 131072, reasoning: true, ollamaOptions: { num_ctx: 131072 } }],
+	["nemotron-3",        { contextWindow: 131072, reasoning: true, ollamaOptions: { num_ctx: 131072 } }],
+	["gemma4",            { contextWindow: 131072, reasoning: true, ollamaOptions: { num_ctx: 131072 } }],
+	["gemini-3-flash",    { contextWindow: 1048576, reasoning: true, ollamaOptions: { num_ctx: 1048576 } }],
 
 	// ─── Vision models ──────────────────────────────────────────────────
 	["llava", { contextWindow: 4096, input: ["text", "image"], ollamaOptions: { num_ctx: 4096 } }],
@@ -56,7 +69,10 @@ const KNOWN_MODELS: Array<[pattern: string, caps: ModelCapability]> = [
 	["llama2", { contextWindow: 4096, maxTokens: 4096, ollamaOptions: { num_ctx: 4096 } }],
 
 	// ─── Qwen family ────────────────────────────────────────────────────
-	["qwen3", { contextWindow: 131072, maxTokens: 32768, ollamaOptions: { num_ctx: 131072 } }],
+	// qwen3 family (qwen3, qwen3-next, qwen3.5, qwen3-coder) supports hybrid thinking;
+	// /api/show capabilities is authoritative — this table entry is only consulted
+	// when ollama omits the capabilities field.
+	["qwen3", { contextWindow: 131072, maxTokens: 32768, reasoning: true, ollamaOptions: { num_ctx: 131072 } }],
 	["qwen2.5", { contextWindow: 131072, maxTokens: 32768, ollamaOptions: { num_ctx: 131072 } }],
 	["qwen2", { contextWindow: 131072, maxTokens: 32768, ollamaOptions: { num_ctx: 131072 } }],
 

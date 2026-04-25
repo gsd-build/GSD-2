@@ -80,3 +80,70 @@ describe("Ollama stream terminal chunk handling", () => {
     assert.equal(result, "one-shot", "single done chunk with content should work");
   });
 });
+
+// ─── Native thinking field on chunks (ollama 0.4+) ───────────────────────────
+// Reasoning-capable cloud models (e.g. glm-5.1:cloud) emit thinking in a
+// separate `message.thinking` field, not inline as <think> tags. The provider
+// must capture this channel; otherwise the reasoning trace is silently dropped.
+
+interface OllamaChunkWithThink {
+  done: boolean;
+  done_reason?: string;
+  message?: { content?: string; thinking?: string; tool_calls?: unknown[] };
+}
+
+function simulateThinkingStreamLoop(chunks: OllamaChunkWithThink[]): { thinking: string; content: string } {
+  let thinking = "";
+  let content = "";
+
+  for (const chunk of chunks) {
+    // Mirrors the dual-channel logic in ollama-chat-provider.ts:
+    // emit thinking before content so blocks open in reasoning-then-answer order.
+    const t = chunk.message?.thinking ?? "";
+    if (t) thinking += t;
+
+    const c = chunk.message?.content ?? "";
+    if (c) content += c;
+
+    if (chunk.done) break;
+  }
+
+  return { thinking, content };
+}
+
+describe("Ollama stream thinking-field handling", () => {
+  it("captures thinking from a separate message.thinking channel", () => {
+    const chunks: OllamaChunkWithThink[] = [
+      { done: false, message: { thinking: "Let me think... " } },
+      { done: false, message: { thinking: "2+2 = 4." } },
+      { done: false, message: { content: "The answer is " } },
+      { done: true, done_reason: "stop", message: { content: "4." } },
+    ];
+
+    const { thinking, content } = simulateThinkingStreamLoop(chunks);
+    assert.equal(thinking, "Let me think... 2+2 = 4.");
+    assert.equal(content, "The answer is 4.");
+  });
+
+  it("captures thinking from the terminal done:true chunk", () => {
+    // Some models flush all reasoning on the final chunk.
+    const chunks: OllamaChunkWithThink[] = [
+      { done: false, message: { content: "answer" } },
+      { done: true, done_reason: "stop", message: { thinking: "post-hoc trace" } },
+    ];
+
+    const { thinking, content } = simulateThinkingStreamLoop(chunks);
+    assert.equal(thinking, "post-hoc trace");
+    assert.equal(content, "answer");
+  });
+
+  it("handles a chunk with both thinking and content together", () => {
+    const chunks: OllamaChunkWithThink[] = [
+      { done: true, done_reason: "stop", message: { thinking: "T", content: "C" } },
+    ];
+
+    const { thinking, content } = simulateThinkingStreamLoop(chunks);
+    assert.equal(thinking, "T");
+    assert.equal(content, "C");
+  });
+});

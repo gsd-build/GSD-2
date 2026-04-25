@@ -37,6 +37,12 @@ export interface OllamaShowResponse {
 	template: string;
 	details: OllamaModelDetails;
 	model_info: Record<string, unknown>;
+	/**
+	 * Model capability flags exposed by ollama 0.4+. Common values:
+	 * "completion", "tools", "vision", "thinking", "embedding", "insert".
+	 * Older ollama versions and some cloud-routed models may omit this field.
+	 */
+	capabilities?: string[];
 }
 
 // ─── /api/ps ────────────────────────────────────────────────────────────────
@@ -93,6 +99,13 @@ export interface OllamaChatOptions {
 export interface OllamaChatMessage {
 	role: "system" | "user" | "assistant" | "tool";
 	content: string;
+	/**
+	 * Reasoning trace returned by ollama 0.4+ when `think` is enabled on the
+	 * request. This is a separate channel from `content`; older models (and
+	 * some local models without native thinking support) emit thinking inline
+	 * as `<think>...</think>` tags in `content` instead.
+	 */
+	thinking?: string;
 	images?: string[];
 	tool_calls?: OllamaToolCall[];
 	/** Tool name — required for role: "tool" messages to correlate results with calls. */
@@ -136,6 +149,13 @@ export interface OllamaChatRequest {
 		num_gpu?: number;
 	};
 	keep_alive?: string;
+	/**
+	 * Controls thinking on reasoning models (ollama 0.4+).
+	 * - `true`/`false` toggles thinking on/off (universal form)
+	 * - `"low" | "medium" | "high"` sets thinking strength (gpt-oss style)
+	 * Omit to use the model's default behaviour.
+	 */
+	think?: boolean | "low" | "medium" | "high";
 }
 
 export interface OllamaChatResponse {
