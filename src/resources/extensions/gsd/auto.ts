@@ -86,6 +86,7 @@ import {
   isQueuedUserMessageSkip,
   isDeterministicPolicyError,
 } from "./auto-tool-tracking.js";
+import { extractAsyncBashJobId, makeUnitExecutionKey } from "./async-job-hygiene.js";
 import { closeoutUnit } from "./auto-unit-closeout.js";
 import { recoverTimedOutUnit } from "./auto-timeout-recovery.js";
 import { selectAndApplyModel, resolveModelId, clearToolBaseline } from "./auto-model-selection.js";
@@ -547,6 +548,10 @@ export function setCurrentDispatchedModelId(model: { provider: string; id: strin
   s.currentDispatchedModelId = model ? `${model.provider}/${model.id}` : null;
 }
 
+export function setAsyncJobEventBus(eventBus: ExtensionAPI["events"] | null | undefined): void {
+  s.eventBus = eventBus ?? null;
+}
+
 // Tool tracking — delegates to auto-tool-tracking.ts
 export function markToolStart(toolCallId: string, toolName?: string): void {
   _markToolStart(toolCallId, s.active, toolName);
@@ -569,6 +574,72 @@ export function recordToolInvocationError(toolName: string, errorMsg: string): v
   if (isToolInvocationError(errorMsg) || isQueuedUserMessageSkip(errorMsg) || isDeterministicPolicyError(errorMsg)) {
     s.lastToolInvocationError = `${toolName}: ${errorMsg}`;
   }
+}
+
+function pruneIgnoredAsyncJobIds(maxEntries = 256): void {
+  while (s.ignoredAsyncJobIds.size > maxEntries) {
+    const oldest = s.ignoredAsyncJobIds.values().next().value;
+    if (!oldest) break;
+    s.ignoredAsyncJobIds.delete(oldest);
+  }
+}
+
+export function trackAsyncBashJob(toolName: string, resultPayload: unknown): string | null {
+  if (!s.active || toolName !== "async_bash" || !s.currentUnit) return null;
+  const jobId = extractAsyncBashJobId(resultPayload);
+  if (!jobId) return null;
+
+  const executionKey = makeUnitExecutionKey(
+    s.currentUnit.type,
+    s.currentUnit.id,
+    s.currentUnit.startedAt,
+  );
+  if (!executionKey) return null;
+
+  let jobs = s.unitAsyncJobIds.get(executionKey);
+  if (!jobs) {
+    jobs = new Set<string>();
+    s.unitAsyncJobIds.set(executionKey, jobs);
+  }
+  jobs.add(jobId);
+  return jobId;
+}
+
+export function ignoreAsyncJobsForUnitExecution(
+  unitType: string,
+  unitId: string,
+  startedAt: number | undefined,
+): number {
+  const executionKey = makeUnitExecutionKey(unitType, unitId, startedAt);
+  if (!executionKey) return 0;
+
+  const jobs = s.unitAsyncJobIds.get(executionKey);
+  if (!jobs || jobs.size === 0) return 0;
+
+  const jobIds = [...jobs];
+  let ignored = 0;
+  for (const jobId of jobIds) {
+    s.ignoredAsyncJobIds.add(jobId);
+    ignored++;
+  }
+  s.unitAsyncJobIds.delete(executionKey);
+  pruneIgnoredAsyncJobIds();
+
+  try {
+    s.eventBus?.emit?.("gsd:async-jobs-control", {
+      action: "cancel_or_ignore",
+      jobIds,
+    });
+  } catch {
+    // Best-effort bridge into async-jobs extension; local ignore set still
+    // blocks late completions from expanding model context if unavailable.
+  }
+
+  return ignored;
+}
+
+export function getIgnoredAsyncJobIds(): Set<string> {
+  return s.ignoredAsyncJobIds;
 }
 
 export function getOldestInFlightToolAgeMs(): number {
@@ -865,6 +936,9 @@ export async function stopAuto(
     // Late async notifications (async_job_result, gsd-auto-wrapup) can trigger
     // extra LLM turns after stop. Flush them the same way run-unit.ts does.
     try {
+      if (s.currentUnit) {
+        ignoreAsyncJobsForUnitExecution(s.currentUnit.type, s.currentUnit.id, s.currentUnit.startedAt);
+      }
       const cmdCtxAny = s.cmdCtx as Record<string, unknown> | null;
       if (typeof cmdCtxAny?.clearQueue === "function") {
         (cmdCtxAny.clearQueue as () => unknown)();
@@ -1134,6 +1208,9 @@ export async function pauseAuto(
   // Late async notifications (async_job_result, gsd-auto-wrapup) can trigger
   // extra LLM turns after pause. Flush them the same way run-unit.ts does.
   try {
+    if (s.currentUnit) {
+      ignoreAsyncJobsForUnitExecution(s.currentUnit.type, s.currentUnit.id, s.currentUnit.startedAt);
+    }
     const cmdCtxAny = s.cmdCtx as Record<string, unknown> | null;
     if (typeof cmdCtxAny?.clearQueue === "function") {
       (cmdCtxAny.clearQueue as () => unknown)();
