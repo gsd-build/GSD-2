@@ -186,8 +186,10 @@ Use `/worktree` (or `/wt`) for manual worktree operations:
 
 GSD automatically recovers from common git issues:
 
-- **Detached HEAD** — reattaches to the correct branch
-- **Stale lock files** — removes `index.lock` from crashed processes
+- **Detached HEAD** — merge and worktree flows refuse to continue from a detached project root instead of silently switching branches. Check out the intended integration branch, then resume.
+- **Stale lock files** — removes `.git/index.lock` only after it is older than 5 minutes, so active git operations on large repos are not interrupted.
+- **Interrupted git operations** — recovery can abort leftover rebase, cherry-pick, or revert state from a killed worker before reconciling merge state.
+- **Unsafe branch resets** — worktree and branch-mode setup refuses to force-reset a milestone branch if doing so would orphan commits that are not reachable from the start point.
 - **Orphaned worktrees** — detects and cleans up abandoned worktrees
 
 Run `/gsd doctor` to check git health manually.

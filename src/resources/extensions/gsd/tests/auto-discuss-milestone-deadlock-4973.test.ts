@@ -16,6 +16,9 @@
 
 import { describe, test, afterEach, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync, existsSync, unlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import {
   markDepthVerified,
@@ -194,53 +197,68 @@ describe('auto-discuss-milestone-deadlock-4973', () => {
     const rule = DISPATCH_RULES.find(r => r.name === 'needs-discussion → discuss-milestone');
     assert.ok(rule, 'dispatch rule must exist');
 
-    const baseCtx = {
-      basePath: '/tmp/4973-rule-test-nonexistent',
-      mid: 'M005',
-      midTitle: 'Test Milestone',
-      state: { phase: 'needs-discussion' },
-      prefs: undefined,
-      structuredQuestionsAvailable: 'false',
-    } as unknown as DispatchContext;
+    // Use a real temp directory so the snapshot file the rule writes is
+    // readable by the same loadWriteGateSnapshot(basePath) the test reads
+    // from. The rule passes basePath through to markDepthVerified (since
+    // commit 73bb7e085) — without this, the rule writes the snapshot under
+    // basePath but the test would read process.cwd() and never see it.
+    const tempBase = mkdtempSync(join(tmpdir(), '4973-rule-test-'));
+    const snapshotFile = join(tempBase, '.gsd', 'runtime', 'write-gate-state.json');
+    try {
+      const baseCtx = {
+        basePath: tempBase,
+        mid: 'M005',
+        midTitle: 'Test Milestone',
+        state: { phase: 'needs-discussion' },
+        prefs: undefined,
+        structuredQuestionsAvailable: 'false',
+      } as unknown as DispatchContext;
 
-    // ── Auto-mode case: the rule must call markDepthVerified ──
-    _setAutoActiveForTest(true);
-    let snap = loadWriteGateSnapshot();
-    assert.strictEqual(
-      isMilestoneDepthVerifiedInSnapshot(snap, 'M005'),
-      false,
-      'precondition: M005 not yet marked',
-    );
+      // ── Auto-mode case: the rule must call markDepthVerified ──
+      _setAutoActiveForTest(true);
+      let snap = loadWriteGateSnapshot(tempBase);
+      assert.strictEqual(
+        isMilestoneDepthVerifiedInSnapshot(snap, 'M005'),
+        false,
+        'precondition: M005 not yet marked',
+      );
 
-    // The rule's match fn calls markDepthVerified(mid) BEFORE awaiting
-    // buildDiscussMilestonePrompt — so even if the prompt build fails because
-    // basePath doesn't exist, the side effect (mark) has already happened.
-    try { await rule!.match(baseCtx); } catch { /* prompt build may fail; we only care about the mark */ }
+      // The rule's match fn calls markDepthVerified(mid, basePath) BEFORE
+      // awaiting buildDiscussMilestonePrompt — so even if the prompt build
+      // fails (e.g. because basePath does not contain a valid milestone),
+      // the side effect (snapshot write) has already happened.
+      try { await rule!.match(baseCtx); } catch { /* prompt build may fail; we only care about the mark */ }
 
-    snap = loadWriteGateSnapshot();
-    assert.strictEqual(
-      isMilestoneDepthVerifiedInSnapshot(snap, 'M005'),
-      true,
-      'auto-mode: dispatch rule must call markDepthVerified(mid) — this fails on origin/main without the H6 fix',
-    );
+      snap = loadWriteGateSnapshot(tempBase);
+      assert.strictEqual(
+        isMilestoneDepthVerifiedInSnapshot(snap, 'M005'),
+        true,
+        'auto-mode: dispatch rule must call markDepthVerified(mid) — this fails on origin/main without the H6 fix',
+      );
 
-    // ── Interactive case: the rule must NOT call markDepthVerified ──
-    clearDiscussionFlowState();
-    _setAutoActiveForTest(false);
-    snap = loadWriteGateSnapshot();
-    assert.strictEqual(
-      isMilestoneDepthVerifiedInSnapshot(snap, 'M005'),
-      false,
-      'precondition: state cleared',
-    );
+      // ── Interactive case: the rule must NOT call markDepthVerified ──
+      // clearDiscussionFlowState() only deletes the snapshot at process.cwd(),
+      // so we must explicitly remove the snapshot under our tempBase too.
+      clearDiscussionFlowState();
+      if (existsSync(snapshotFile)) unlinkSync(snapshotFile);
+      _setAutoActiveForTest(false);
+      snap = loadWriteGateSnapshot(tempBase);
+      assert.strictEqual(
+        isMilestoneDepthVerifiedInSnapshot(snap, 'M005'),
+        false,
+        'precondition: state cleared',
+      );
 
-    try { await rule!.match(baseCtx); } catch { /* prompt build may fail */ }
+      try { await rule!.match(baseCtx); } catch { /* prompt build may fail */ }
 
-    snap = loadWriteGateSnapshot();
-    assert.strictEqual(
-      isMilestoneDepthVerifiedInSnapshot(snap, 'M005'),
-      false,
-      'interactive mode: dispatch rule must NOT call markDepthVerified — humans still confirm',
-    );
+      snap = loadWriteGateSnapshot(tempBase);
+      assert.strictEqual(
+        isMilestoneDepthVerifiedInSnapshot(snap, 'M005'),
+        false,
+        'interactive mode: dispatch rule must NOT call markDepthVerified — humans still confirm',
+      );
+    } finally {
+      rmSync(tempBase, { recursive: true, force: true });
+    }
   });
 });

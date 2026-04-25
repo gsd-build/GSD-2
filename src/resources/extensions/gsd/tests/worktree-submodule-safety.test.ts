@@ -154,13 +154,13 @@ describe("removeWorktree preserves submodule uncommitted state (#2337)", () => {
     assert.ok(!existsSync(wt.path), "worktree directory should be gone");
     assert.doesNotMatch(
       stderr,
-      /Stashed uncommitted submodule changes/,
-      "clean submodule must not trigger stash-before-teardown",
+      /Saved uncommitted submodule changes to rescue branch/,
+      "clean submodule must not trigger rescue-branch creation",
     );
     assert.doesNotMatch(
       stderr,
-      /stash failed, changes may be lost/,
-      "clean submodule must not trigger stash-failure warning",
+      /Submodule rescue branch creation failed/,
+      "clean submodule must not trigger rescue-branch failure warning",
     );
   });
 
@@ -206,7 +206,7 @@ describe("removeWorktree preserves submodule uncommitted state (#2337)", () => {
     // the tautological `src.includes("submodule") && src.includes("force")`.
     assert.match(
       stderr,
-      /Stashed uncommitted submodule changes|Submodule changes detected/,
+      /Saved uncommitted submodule changes to rescue branch|Submodule rescue branch creation failed|Submodule changes detected/,
       "dirty submodule must trigger detection-and-warning path",
     );
   });
@@ -237,7 +237,7 @@ describe("removeWorktree preserves submodule uncommitted state (#2337)", () => {
 
     assert.doesNotMatch(
       stderr,
-      /Stashed uncommitted submodule changes/,
+      /Saved uncommitted submodule changes to rescue branch/,
       "missing .gitmodules should skip submodule detection entirely",
     );
   });

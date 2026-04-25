@@ -72,6 +72,21 @@ export function rollbackToCheckpoint(
       return false;
     }
 
+    // Preserve any staged or untracked user work before the hard reset.
+    // The user may have a partial fix staged that they wanted to inspect;
+    // reset --hard wipes both staged and unstaged changes (reflog only
+    // covers committed state). Push a labeled stash first so recovery
+    // is possible. (Issue #4980 HIGH-4)
+    try {
+      execFileSync(
+        "git",
+        ["stash", "push", "--include-untracked", "-m", `gsd: pre-rollback-stash ${unitId} ${new Date().toISOString()}`],
+        { cwd: basePath, stdio: ["ignore", "pipe", "pipe"], encoding: "utf-8" },
+      );
+    } catch {
+      /* nothing to stash, or stash refused — proceed with reset */
+    }
+
     // Reset branch pointer and working tree to checkpoint SHA in one step.
     // Using `git reset --hard <sha>` works on the currently checked-out branch
     // (unlike `git branch -f` which is rejected for checked-out branches).

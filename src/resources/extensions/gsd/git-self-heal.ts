@@ -10,6 +10,7 @@
  * user-friendly messages suggesting `/gsd doctor`.
  */
 
+import { execFileSync } from "node:child_process";
 import { existsSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { MergeConflictError } from "./git-service.js";
@@ -22,6 +23,18 @@ export { MergeConflictError };
 export interface AbortAndResetResult {
   /** List of actions taken, e.g. ["aborted merge", "removed SQUASH_MSG", "reset to HEAD"] */
   cleaned: string[];
+}
+
+function hasWorkingTreeChanges(cwd: string): boolean {
+  try {
+    return execFileSync("git", ["status", "--porcelain"], {
+      cwd,
+      stdio: ["ignore", "pipe", "pipe"],
+      encoding: "utf-8",
+    }).trim().length > 0;
+  } catch {
+    return true;
+  }
 }
 
 /**
@@ -67,6 +80,24 @@ export function abortAndReset(cwd: string): AbortAndResetResult {
       cleaned.push("aborted rebase");
     } catch {
       cleaned.push("rebase abort attempted (may have failed)");
+    }
+  }
+
+  // Preserve any staged or untracked user work before the hard reset.
+  // Reset --hard discards staged changes (reflog only covers committed
+  // state), so a labeled stash gives the user a recovery handle if their
+  // in-flight inspection work would otherwise be silently lost.
+  // (Issue #4980 HIGH-5)
+  if (hasWorkingTreeChanges(cwd)) {
+    try {
+      execFileSync(
+        "git",
+        ["stash", "push", "--include-untracked", "-m", `gsd: pre-self-heal-reset ${new Date().toISOString()}`],
+        { cwd, stdio: ["ignore", "pipe", "pipe"], encoding: "utf-8" },
+      );
+      cleaned.push("stashed working tree before reset");
+    } catch {
+      /* nothing to stash, or stash refused (e.g. unresolved conflicts) — proceed */
     }
   }
 

@@ -24,6 +24,7 @@ import {
   nativeCheckoutTheirs,
   nativeAddPaths,
   nativeMergeAbort,
+  nativeRebaseAbort,
   nativeResetHard,
 } from "./native-git-bridge.js";
 import {
@@ -613,6 +614,79 @@ function abortAndResetMerge(
 export type MergeReconcileResult = "clean" | "reconciled" | "blocked";
 
 /**
+ * Detect and abort other in-progress git operations left behind by a SIGKILL'd
+ * worker (rebase, cherry-pick, revert). Without this, a killed worker mid-rebase
+ * leaves `.git/rebase-merge/` or `.git/CHERRY_PICK_HEAD` and the worktree is
+ * wedged until the user manually runs the matching `--abort`.
+ *
+ * Called before merge-state reconciliation because these states block any
+ * subsequent merge/commit operation. (Issue #4980 HIGH-7)
+ */
+function reconcileOtherInProgressGitOps(
+  basePath: string,
+  ctx: ExtensionContext,
+): "clean" | "reconciled" | "blocked" {
+  const gitDir = join(basePath, ".git");
+  const states: Array<{
+    label: string;
+    indicators: string[];
+    abort: () => void;
+  }> = [
+    {
+      label: "rebase",
+      indicators: [join(gitDir, "rebase-merge"), join(gitDir, "rebase-apply")],
+      abort: () => nativeRebaseAbort(basePath),
+    },
+    {
+      label: "cherry-pick",
+      indicators: [join(gitDir, "CHERRY_PICK_HEAD")],
+      abort: () => {
+        // No native helper; fall back to git CLI.
+        try {
+          execFileSync("git", ["cherry-pick", "--abort"], {
+            cwd: basePath, stdio: ["ignore", "pipe", "pipe"], encoding: "utf-8",
+          });
+        } catch (err) { logWarning("recovery", `cherry-pick --abort failed: ${getErrorMessage(err)}`); }
+      },
+    },
+    {
+      label: "revert",
+      indicators: [join(gitDir, "REVERT_HEAD")],
+      abort: () => {
+        try {
+          execFileSync("git", ["revert", "--abort"], {
+            cwd: basePath, stdio: ["ignore", "pipe", "pipe"], encoding: "utf-8",
+          });
+        } catch (err) { logWarning("recovery", `revert --abort failed: ${getErrorMessage(err)}`); }
+      },
+    },
+  ];
+
+  let reconciled = false;
+  for (const s of states) {
+    const present = s.indicators.some((p) => existsSync(p));
+    if (!present) continue;
+    try {
+      s.abort();
+      ctx.ui.notify(
+        `Detected leftover ${s.label} state from prior session — aborted.`,
+        "warning",
+      );
+      reconciled = true;
+    } catch (err) {
+      logError("recovery", `${s.label} abort failed: ${getErrorMessage(err)}`);
+      ctx.ui.notify(
+        `Detected leftover ${s.label} state but auto-abort failed. ` +
+        `Run \`git ${s.label} --abort\` manually before retrying.`,
+        "error",
+      );
+      return "blocked";
+    }
+  }
+  return reconciled ? "reconciled" : "clean";
+}
+
+/**
  * Detect leftover merge state from a prior session and reconcile it.
  * If MERGE_HEAD or SQUASH_MSG exists, check whether conflicts are resolved.
  * If resolved: finalize the commit. If only .gsd conflicts remain: auto-resolve.
@@ -622,11 +696,21 @@ export function reconcileMergeState(
   basePath: string,
   ctx: ExtensionContext,
 ): MergeReconcileResult {
+  // First, abort any rebase/cherry-pick/revert left over from a SIGKILL'd
+  // worker. Doing this before the merge-state check unblocks any merge that
+  // would otherwise refuse with "you have unfinished operation". (HIGH-7)
+  const otherOpsResult = reconcileOtherInProgressGitOps(basePath, ctx);
+  if (otherOpsResult === "blocked") return "blocked";
+
   const mergeHeadPath = join(basePath, ".git", "MERGE_HEAD");
   const squashMsgPath = join(basePath, ".git", "SQUASH_MSG");
   const hasMergeHead = existsSync(mergeHeadPath);
   const hasSquashMsg = existsSync(squashMsgPath);
-  if (!hasMergeHead && !hasSquashMsg) return "clean";
+  if (!hasMergeHead && !hasSquashMsg) {
+    // If we cleaned up another op type, return "reconciled" so the caller
+    // re-derives state from a known-good baseline.
+    return otherOpsResult === "reconciled" ? "reconciled" : "clean";
+  }
 
   const conflictedFiles = nativeConflictFiles(basePath);
   if (conflictedFiles.length === 0) {

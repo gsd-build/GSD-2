@@ -30,6 +30,7 @@ import {
   nativeDiffNameStatus,
   nativeDiffNumstat,
   nativeGetCurrentBranch,
+  nativeIsAncestor,
   nativeLogOneline,
   nativeMergeSquash,
   nativeWorktreeAdd,
@@ -227,6 +228,17 @@ export function createWorktree(basePath: string, name: string, opts: { branch?: 
   // otherwise fall back to the repo's detected main branch.
   const startPoint = opts.startPoint ?? nativeDetectMainBranch(basePath);
 
+  // Reject early if startPoint resolves to an empty/invalid ref. On an
+  // unborn branch (zero-commit repo) nativeDetectMainBranch returns "",
+  // which would flow into `git worktree add ... ""` and crash with
+  // `fatal: not a valid object name`. (Issue #4980 HIGH-9)
+  if (!startPoint || startPoint.length === 0) {
+    throw new GSDError(
+      GSD_GIT_ERROR,
+      "Repository has no commits yet (unborn branch). Make an initial commit before creating worktrees.",
+    );
+  }
+
   // Check if the branch already exists (leftover from a previous worktree)
   const branchAlreadyExists = nativeBranchExists(basePath, branch);
 
@@ -249,6 +261,21 @@ export function createWorktree(basePath: string, name: string, opts: { branch?: 
       // from prior sessions that must not be reset.
       nativeWorktreeAdd(basePath, wtPath, branch);
     } else {
+      // Ancestry guard: refuse to force-reset a branch that has commits not
+      // reachable from startPoint. A crash-then-resume cycle that didn't
+      // write the resume file would silently orphan prior-session commits
+      // (recoverable from reflog for 90d, then gone — branch is also
+      // deleted at teardown). (Issue #4980 HIGH-3)
+      const branchIsAncestor = nativeIsAncestor(basePath, branch, startPoint);
+      if (!branchIsAncestor) {
+        throw new GSDError(
+          GSD_GIT_ERROR,
+          `Branch "${branch}" already exists with commits not reachable from "${startPoint}". ` +
+          `Refusing to force-reset — would orphan prior work. ` +
+          `If you intend to keep those commits, retry with reuseExistingBranch=true. ` +
+          `If you intend to discard, run \`git branch -D ${branch}\` manually first.`,
+        );
+      }
       // Reset the stale branch to the start point, then attach worktree to it
       nativeBranchForceReset(basePath, branch, startPoint);
       nativeWorktreeAdd(basePath, wtPath, branch);
@@ -504,17 +531,38 @@ export function removeWorktree(
         (line: string) => line.startsWith("+") || line.startsWith("-"),
       );
       if (hasSubmoduleChanges) {
-        // Stash submodule changes so they are not lost during force removal.
-        // The stash is created in the worktree before it's torn down.
+        // Save submodule changes to a labeled rescue branch instead of the
+        // shared stash list. Stash is per-repo (not per-worktree), so an
+        // entry created here would appear in the user's main-tree stash
+        // list and reference paths that disappear after worktree removal.
+        // A branch persists in the shared .git refs after worktree removal
+        // and is discoverable via `git branch --list 'gsd/submodule-rescue/*'`.
+        // (Issue #4980 HIGH-11)
+        const rescueBranch = `gsd/submodule-rescue/${name}-${Date.now()}`;
         try {
           execFileSync(
-            "git", ["stash", "push", "-m", "gsd: auto-stash submodule changes before worktree teardown"],
+            "git", ["add", "-A"],
             { cwd: resolvedWtPath, stdio: ["ignore", "pipe", "pipe"], encoding: "utf-8" },
           );
-          logWarning("reconcile", `Stashed uncommitted submodule changes before worktree teardown`, { worktree: name, path: resolvedWtPath });
-        } catch {
-          // Stash failed — warn the user that submodule changes may be lost
-          logWarning("reconcile", `Submodule changes detected — stash failed, changes may be lost during force removal`, { worktree: name, path: resolvedWtPath });
+          execFileSync(
+            "git", ["commit", "-m", `gsd: rescue submodule changes from worktree ${name}`, "--allow-empty"],
+            { cwd: resolvedWtPath, stdio: ["ignore", "pipe", "pipe"], encoding: "utf-8" },
+          );
+          execFileSync(
+            "git", ["branch", rescueBranch, "HEAD"],
+            { cwd: resolvedWtPath, stdio: ["ignore", "pipe", "pipe"], encoding: "utf-8" },
+          );
+          logWarning(
+            "reconcile",
+            `Saved uncommitted submodule changes to rescue branch ${rescueBranch}`,
+            { worktree: name, path: resolvedWtPath, rescueBranch },
+          );
+        } catch (err) {
+          logWarning(
+            "reconcile",
+            `Submodule rescue branch creation failed — changes may be lost during force removal: ${err instanceof Error ? err.message : String(err)}`,
+            { worktree: name, path: resolvedWtPath },
+          );
         }
       }
     } catch (e) {
