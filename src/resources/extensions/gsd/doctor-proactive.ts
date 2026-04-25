@@ -21,8 +21,8 @@ import { readCrashLock, isLockProcessAlive, clearLock } from "./crash-recovery.j
 import { abortAndReset } from "./git-self-heal.js";
 import { rebuildState } from "./doctor.js";
 import { deriveState } from "./state.js";
-import { RUNTIME_EXCLUSION_PATHS, resolveMilestoneIntegrationBranch } from "./git-service.js";
-import { nativeIsRepo, nativeHasChanges, nativeLastCommitEpoch, nativeGetCurrentBranch, nativeAddAllWithExclusions, nativeCommit } from "./native-git-bridge.js";
+import { resolveMilestoneIntegrationBranch } from "./git-service.js";
+import { nativeIsRepo, nativeHasChanges, nativeLastCommitEpoch, nativeGetCurrentBranch, nativeAddTracked, nativeCommit } from "./native-git-bridge.js";
 import { loadEffectiveGSDPreferences } from "./preferences.js";
 import { runEnvironmentChecks } from "./doctor-environment.js";
 
@@ -301,9 +301,12 @@ export async function preDispatchHealthGate(basePath: string): Promise<PreDispat
   try {
     if (nativeIsRepo(basePath)) {
       const prefs = loadEffectiveGSDPreferences()?.preferences ?? {};
+      // `git.snapshots: false` is the canonical toggle that disables WIP
+      // snapshot commits — honour it before touching the threshold path (#4420).
+      const snapshotsEnabled = prefs.git?.snapshots !== false;
       const thresholdMinutes = prefs.stale_commit_threshold_minutes ?? 30;
 
-      if (thresholdMinutes > 0 && nativeHasChanges(basePath)) {
+      if (snapshotsEnabled && thresholdMinutes > 0 && nativeHasChanges(basePath)) {
         const branch = nativeGetCurrentBranch(basePath);
         const lastEpoch = nativeLastCommitEpoch(basePath, branch || "HEAD");
         const nowEpoch = Math.floor(Date.now() / 1000);
@@ -312,7 +315,7 @@ export async function preDispatchHealthGate(basePath: string): Promise<PreDispat
         if (minutesSinceCommit >= thresholdMinutes) {
           const mins = Math.floor(minutesSinceCommit);
           try {
-            nativeAddAllWithExclusions(basePath, RUNTIME_EXCLUSION_PATHS);
+            nativeAddTracked(basePath);
             const commitMsg = `gsd snapshot: pre-dispatch, uncommitted changes after ${mins}m inactivity`;
             const result = nativeCommit(basePath, commitMsg);
             if (result) {

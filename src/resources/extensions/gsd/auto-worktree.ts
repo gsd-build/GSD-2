@@ -26,6 +26,9 @@ import {
   isDbAvailable,
   getMilestone,
   getMilestoneSlices,
+  closeDatabase,
+  openDatabase,
+  getDbPath,
 } from "./gsd-db.js";
 import { atomicWriteSync } from "./atomic-write.js";
 import { execFileSync } from "node:child_process";
@@ -61,6 +64,7 @@ import {
   nativeAddPaths,
   nativeRmForce,
   nativeBranchDelete,
+  nativeBranchForceReset,
   nativeBranchExists,
   nativeDiffNumstat,
   nativeUpdateRef,
@@ -103,6 +107,7 @@ function isSamePath(a: string, b: string): boolean {
   try {
     return realpathSync(a) === realpathSync(b);
   } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return false;
     logWarning("worktree", `isSamePath failed: ${(e as Error).message}`);
     return false;
   }
@@ -921,8 +926,72 @@ export function runWorktreePostCreateHook(
 
 // ─── Auto-Worktree Branch Naming ───────────────────────────────────────────
 
+/** Returns the git branch name for a milestone worktree (`milestone/<MID>`). */
 export function autoWorktreeBranch(milestoneId: string): string {
   return `milestone/${milestoneId}`;
+}
+
+// ─── Branch-mode Entry ─────────────────────────────────────────────────────
+
+/**
+ * Enter branch isolation mode for a milestone.
+ *
+ * Creates `milestone/<MID>` from the integration branch (if it doesn't
+ * exist yet) and checks out to it.  No worktree directory is created — the
+ * project root is the working copy; only HEAD changes.
+ *
+ * Uses the same 3-tier integration-branch fallback as createAutoWorktree:
+ *   1. META.json recorded integration branch
+ *   2. git.main_branch preference
+ *   3. nativeDetectMainBranch (origin/HEAD auto-detection)
+ */
+export function enterBranchModeForMilestone(
+  basePath: string,
+  milestoneId: string,
+): void {
+  const branch = autoWorktreeBranch(milestoneId);
+  const branchExists = nativeBranchExists(basePath, branch);
+
+  if (!branchExists) {
+    // Create the milestone branch from the integration branch start-point.
+    const integrationBranch =
+      readIntegrationBranch(basePath, milestoneId) ?? undefined;
+    const gitPrefs = loadEffectiveGSDPreferences()?.preferences?.git;
+    // Validate main_branch preference exists in the repo before using it —
+    // a stale preference (e.g. "master" when repo uses "main") would cause
+    // nativeBranchForceReset to fail with a bad start-point reference.
+    const validatedPrefBranch =
+      gitPrefs?.main_branch &&
+      typeof gitPrefs.main_branch === "string" &&
+      gitPrefs.main_branch.length > 0 &&
+      nativeBranchExists(basePath, gitPrefs.main_branch)
+        ? gitPrefs.main_branch
+        : undefined;
+    const startPoint =
+      integrationBranch ??
+      validatedPrefBranch ??
+      nativeDetectMainBranch(basePath);
+
+    // nativeBranchForceReset creates (or resets) branch at startPoint,
+    // then checkout switches HEAD to it.
+    nativeBranchForceReset(basePath, branch, startPoint);
+    debugLog("auto-worktree", {
+      action: "enterBranchMode",
+      milestoneId,
+      branch,
+      startPoint,
+      created: true,
+    });
+  } else {
+    debugLog("auto-worktree", {
+      action: "enterBranchMode",
+      milestoneId,
+      branch,
+      reused: true,
+    });
+  }
+
+  nativeCheckoutBranch(basePath, branch);
 }
 
 // ─── Public API ────────────────────────────────────────────────────────────
@@ -1138,6 +1207,7 @@ function copyPlanningArtifacts(srcBase: string, wtPath: string): void {
   const srcGsd = join(srcBase, ".gsd");
   const dstGsd = join(wtPath, ".gsd");
   if (!existsSync(srcGsd)) return;
+  if (isSamePath(srcGsd, dstGsd)) return;
 
   // Copy milestones/ directory (planning files, roadmaps, plans, research)
   safeCopyRecursive(join(srcGsd, "milestones"), join(dstGsd, "milestones"), {
@@ -1562,14 +1632,37 @@ export function mergeMilestoneToMain(
   const worktreeCwd = process.cwd();
   const milestoneBranch = autoWorktreeBranch(milestoneId);
 
-  // 1. Auto-commit dirty state in worktree before leaving (#3141)
-  const committed = autoCommitDirtyState(worktreeCwd);
-  if (!committed) {
-    const wtStatus = nativeWorkingTreeStatus(worktreeCwd);
-    if (wtStatus) {
-      logWarning("reconcile", "autoCommitDirtyState failed but worktree is dirty — changes may be lost on merge", {
-        dirtyLineCount: String(wtStatus.split("\n").length),
-      });
+  // 1. Auto-commit dirty state in worktree before leaving (#3141).
+  //    Guard: when we entered through an auto-worktree (originalBase is set),
+  //    only auto-commit when cwd is on the milestone branch. In parallel mode,
+  //    cwd may be on the integration branch after a prior merge's
+  //    MergeConflictError left cwd unrestored. Auto-committing on the
+  //    integration branch captures dirty files from OTHER milestones under a
+  //    misleading commit message, contaminating the main branch (#2929).
+  //
+  //    When originalBase is null (branch mode, no worktree), autoCommitDirtyState
+  //    runs unconditionally — the caller is responsible for cwd placement.
+  {
+    let shouldAutoCommit = true;
+    if (originalBase !== null) {
+      try {
+        const currentBranch = nativeGetCurrentBranch(worktreeCwd);
+        shouldAutoCommit = currentBranch === milestoneBranch;
+      } catch {
+        // If we can't determine the branch, skip the auto-commit to be safe
+        shouldAutoCommit = false;
+      }
+    }
+    if (shouldAutoCommit) {
+      const committed = autoCommitDirtyState(worktreeCwd);
+      if (!committed) {
+        const wtStatus = nativeWorkingTreeStatus(worktreeCwd);
+        if (wtStatus) {
+          logWarning("reconcile", "autoCommitDirtyState failed but worktree is dirty — changes may be lost on merge", {
+            dirtyLineCount: String(wtStatus.split("\n").length),
+          });
+        }
+      }
     }
   }
 
@@ -1717,8 +1810,15 @@ export function mergeMilestoneToMain(
   }
 
   // 7. Shelter queued milestone directories before cleaning and squash merge (#2505).
-  // Keep the shelter under the Git directory so git stash --include-untracked
-  // cannot sweep the only backup copy into the stash.
+  // The milestone branch may contain copies of queued milestone dirs (via
+  // copyPlanningArtifacts), so `git merge --squash` rejects when those same
+  // files exist as untracked in the working tree. Temporarily move them to
+  // a backup location, then restore after the merge+commit.
+  //
+  // MUST run BEFORE step 7a so `git stash --include-untracked` (invoked inside
+  // ensureCleanWorkingTree) does not sweep the only backup copy of queued
+  // CONTEXT files into the stash. The shelter lives under the Git directory
+  // so git's working-tree walks cannot see it (#2505).
   const milestonesDir = join(gsdRoot(originalBasePath_), "milestones");
   const shelterDir = join(
     resolveGitDir(originalBasePath_),
@@ -1728,6 +1828,10 @@ export function mergeMilestoneToMain(
   const shelteredDirs: string[] = [];
   let shelterRestored = false;
 
+  // Helper: restore sheltered milestone directories (#2505).
+  // Called on both success and error paths to ensure queued CONTEXT files
+  // are never permanently lost. Idempotent via shelterRestored — repeated
+  // calls return early instead of mis-reporting missing sources.
   const restoreShelter = (): void => {
     if (shelterRestored) return;
     shelterRestored = true;
@@ -1751,6 +1855,9 @@ export function mergeMilestoneToMain(
       }
     }
 
+    // Preserve the shelter if any per-entry restore failed — it is the only
+    // surviving copy of the queued milestone dirs (sources were deleted during
+    // shelter). Deleting it here would permanently lose those files (#2505).
     if (restoreFailed) {
       logWarning("worktree", `shelter retained at ${shelterDir} for manual recovery`);
       return;
@@ -1787,16 +1894,46 @@ export function mergeMilestoneToMain(
 
   // 7a. Ensure clean working tree before squash merge (#3141).
   // Replaces the old stash-and-pray pattern with a guaranteed-clean-or-throw approach.
-  // Uses ensureCleanWorkingTree() escalation ladder: discard .gsd/ → stash → abort+reset → throw.
+  // Uses ensureCleanWorkingTree() escalation ladder: discard .gsd/ → stash →
+  // abort+reset → throw. The abort+reset step also clears stale MERGE_HEAD
+  // artifacts that would otherwise block `git merge --squash` (#2912).
+  //
+  // On Windows, SQLite holds mandatory file locks on the gsd.db WAL/SHM
+  // sidecars while the connection is open. `git stash --include-untracked`
+  // walks those files and fails with EBUSY (#4704). Close the DB before
+  // cleaning so Windows releases the handles; reopen after. No-op on POSIX,
+  // where advisory locks don't block git.
+  const needsDbCycle = process.platform === "win32" && isDbAvailable();
+  const dbPathToReopen = needsDbCycle ? getDbPath() : null;
+  if (needsDbCycle) {
+    try {
+      closeDatabase();
+    } catch (err) {
+      logWarning("worktree", `pre-clean db close failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
   let stashed = false;
   let cleanResult: { stashed: boolean; cleaned: string[] };
   try {
     cleanResult = ensureCleanWorkingTree(originalBasePath_);
   } catch (err) {
+    if (needsDbCycle && dbPathToReopen) {
+      try { openDatabase(dbPathToReopen); } catch { /* best-effort */ }
+    }
     restoreShelter();
     process.chdir(previousCwd);
     throw err;
   }
+
+  if (needsDbCycle && dbPathToReopen) {
+    try {
+      openDatabase(dbPathToReopen);
+    } catch (err) {
+      logWarning("worktree", `post-clean db reopen failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
   stashed = cleanResult.stashed;
   if (cleanResult.cleaned.length > 0) {
     debugLog("mergeMilestoneToMain", { phase: "pre-merge-clean", cleaned: cleanResult.cleaned });
@@ -1867,6 +2004,12 @@ export function mergeMilestoneToMain(
           popStashSafely(originalBasePath_);
         }
         restoreShelter();
+        // Restore cwd so the caller is not stranded on the integration branch.
+        // Without this, the next mergeMilestoneToMain call in a parallel merge
+        // sequence uses process.cwd() (now the project root) as worktreeCwd,
+        // causing autoCommitDirtyState to commit unrelated milestone files to
+        // the integration branch (#2929).
+        process.chdir(previousCwd);
         throw new MergeConflictError(
           codeConflicts,
           "squash",
@@ -1938,21 +2081,38 @@ export function mergeMilestoneToMain(
   // When a milestone only produced .gsd/ metadata (summaries, roadmaps) but no
   // real code, the user sees "milestone complete" but nothing changed in their
   // codebase. Surface this so the caller can warn the user.
+  //
+  // Bug #4385 fix: use `git diff-tree --root` instead of `git diff HEAD~1 HEAD`.
+  // `HEAD~1` does not exist on initial commits and is unreliable on shallow clones
+  // and merge commits. `diff-tree --root` handles all three cases correctly.
+  // The empty-tree hash (4b825dc…) is the universal fallback for refs that don't exist.
+  const GIT_EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
   let codeFilesChanged = false;
   if (!nothingToCommit) {
     try {
-      const mergedFiles = nativeDiffNumstat(
-        originalBasePath_,
-        "HEAD~1",
-        "HEAD",
-      );
-      codeFilesChanged = mergedFiles.some(
-        (entry) => !entry.path.startsWith(".gsd/"),
-      );
+      const diffTreeOutput = execFileSync(
+        "git",
+        ["diff-tree", "--root", "--no-commit-id", "-r", "--name-only", "HEAD"],
+        { cwd: originalBasePath_, stdio: ["ignore", "pipe", "pipe"], encoding: "utf-8" },
+      ).trim();
+      const mergedFiles = diffTreeOutput ? diffTreeOutput.split("\n").filter(Boolean) : [];
+      codeFilesChanged = mergedFiles.some((f) => !f.startsWith(".gsd/"));
     } catch (e) {
-      // If HEAD~1 doesn't exist (first commit), assume code was changed
-      logWarning("worktree", `diff numstat failed (assuming code changed): ${(e as Error).message}`);
-      codeFilesChanged = true;
+      // diff-tree failed (e.g. unborn HEAD in a brand-new repo) — fall back to
+      // comparing against the empty tree so initial-commit repos still report changes.
+      try {
+        const fallbackOutput = execFileSync(
+          "git",
+          ["diff", "--name-only", GIT_EMPTY_TREE, "HEAD"],
+          { cwd: originalBasePath_, stdio: ["ignore", "pipe", "pipe"], encoding: "utf-8" },
+        ).trim();
+        const fallbackFiles = fallbackOutput ? fallbackOutput.split("\n").filter(Boolean) : [];
+        codeFilesChanged = fallbackFiles.some((f) => !f.startsWith(".gsd/"));
+      } catch {
+        // Truly unable to determine — assume code was changed to avoid silent data loss
+        logWarning("worktree", `diff-tree and empty-tree fallback both failed (assuming code changed): ${(e as Error).message}`);
+        codeFilesChanged = true;
+      }
     }
   }
 
@@ -2012,30 +2172,45 @@ export function mergeMilestoneToMain(
   // changes (e.g. nativeHasChanges cache returned stale false, or auto-commit
   // silently failed), force one final commit so code is not destroyed by
   // `git worktree remove --force`.
+  //
+  // Guard: only run when worktreeCwd is on the milestone branch (#2929).
+  // In parallel mode or branch-mode merges, worktreeCwd may be the project
+  // root on the integration branch. Committing dirty state there would
+  // capture unrelated files from other milestones.
   if (existsSync(worktreeCwd)) {
+    let preTeardownBranch: string | null = null;
     try {
-      const dirtyCheck = nativeWorkingTreeStatus(worktreeCwd);
-      if (dirtyCheck) {
+      preTeardownBranch = nativeGetCurrentBranch(worktreeCwd);
+    } catch (err) {
+      debugLog("mergeMilestoneToMain", { phase: "pre-teardown-branch-detect-failed", error: String(err) });
+    }
+    const isOnMilestoneBranch = preTeardownBranch === milestoneBranch;
+
+    if (isOnMilestoneBranch) {
+      try {
+        const dirtyCheck = nativeWorkingTreeStatus(worktreeCwd);
+        if (dirtyCheck) {
+          debugLog("mergeMilestoneToMain", {
+            phase: "pre-teardown-dirty",
+            worktreeCwd,
+            status: dirtyCheck.slice(0, 200),
+          });
+          nativeAddAllWithExclusions(worktreeCwd, RUNTIME_EXCLUSION_PATHS);
+          nativeCommit(worktreeCwd, "chore: pre-teardown auto-commit of uncommitted worktree changes");
+        }
+      } catch (e) {
         debugLog("mergeMilestoneToMain", {
-          phase: "pre-teardown-dirty",
-          worktreeCwd,
-          status: dirtyCheck.slice(0, 200),
+          phase: "pre-teardown-commit-error",
+          error: String(e),
         });
-        nativeAddAllWithExclusions(worktreeCwd, RUNTIME_EXCLUSION_PATHS);
-        nativeCommit(worktreeCwd, "chore: pre-teardown auto-commit of uncommitted worktree changes");
       }
-    } catch (e) {
-      debugLog("mergeMilestoneToMain", {
-        phase: "pre-teardown-commit-error",
-        error: String(e),
-      });
     }
   }
 
   // 12. Remove worktree directory first (must happen before branch deletion)
   try {
     removeWorktree(originalBasePath_, milestoneId, {
-      branch: null as unknown as string,
+      branch: milestoneBranch,
       deleteBranch: false,
     });
   } catch (err) {

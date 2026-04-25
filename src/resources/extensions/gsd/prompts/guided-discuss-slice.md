@@ -22,6 +22,8 @@ Do **not** go deep — just enough that your questions reflect what's actually t
 
 ### Question rounds
 
+**Never fabricate or simulate user input.** Never generate fake transcript markers like `[User]`, `[Human]`, or `User:`. Ask one question round, then wait for the user's actual response before continuing.
+
 **If `{{structuredQuestionsAvailable}}` is `true`:** Ask **1–3 questions per round** using `ask_user_questions`. **Call `ask_user_questions` exactly once per turn — never make multiple calls with the same or overlapping questions. Wait for the user's response before asking the next round.**
 **If `{{structuredQuestionsAvailable}}` is `false`:** Ask **1–3 questions per round** in plain text. Number them and wait for the user's response before asking the next round.
 Keep each question focused on one of:

@@ -71,13 +71,23 @@ interface EnumeratedFiles {
 // ─── Defaults ────────────────────────────────────────────────────────────────
 
 const DEFAULT_EXCLUDES = [
+  // ── AI / tooling meta ──
+  ".agents/",
   ".gsd/",
   ".planning/",
   ".plans/",
   ".claude/",
   ".cursor/",
+  ".bg-shell/",
+
+  // ── Editor / IDE ──
   ".vscode/",
+  ".idea/",
+
+  // ── VCS ──
   ".git/",
+
+  // ── Dependencies & build artifacts ──
   "node_modules/",
   "dist/",
   "build/",
@@ -85,7 +95,13 @@ const DEFAULT_EXCLUDES = [
   "coverage/",
   "__pycache__/",
   ".venv/",
+  "venv/",
   "vendor/",
+  "target/",
+
+  // ── Misc ──
+  ".cache/",
+  "tmp/",
 ];
 
 const DEFAULT_MAX_FILES = 500;

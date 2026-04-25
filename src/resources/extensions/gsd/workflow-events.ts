@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { appendFileSync, readFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { atomicWriteSync } from "./atomic-write.js";
+import { withFileLockSync } from "./file-lock.js";
 import { logWarning } from "./workflow-logger.js";
 
 // ─── Session ID ───────────────────────────────────────────────────────────
@@ -127,31 +128,39 @@ export function compactMilestoneEvents(
   const logPath = join(basePath, ".gsd", "event-log.jsonl");
   const archivePath = join(basePath, ".gsd", `event-log-${milestoneId}.jsonl.archived`);
 
-  const allEvents = readEvents(logPath);
-  const toArchive = allEvents.filter(
-    (e) => (e.params as { milestoneId?: string }).milestoneId === milestoneId,
-  );
-  const remaining = allEvents.filter(
-    (e) => (e.params as { milestoneId?: string }).milestoneId !== milestoneId,
-  );
+  return withFileLockSync(logPath, () => {
+    const allEvents = readEvents(logPath);
+    
+    // Single-pass partition to halve the work (per reviewer agent)
+    const toArchive: WorkflowEvent[] = [];
+    const remaining: WorkflowEvent[] = [];
+    
+    for (const e of allEvents) {
+      if ((e.params as { milestoneId?: string }).milestoneId === milestoneId) {
+        toArchive.push(e);
+      } else {
+        remaining.push(e);
+      }
+    }
 
-  if (toArchive.length === 0) {
-    return { archived: 0 };
-  }
+    if (toArchive.length === 0) {
+      return { archived: 0 };
+    }
 
-  // Write archived events to .jsonl.archived file (crash-safe)
-  atomicWriteSync(
-    archivePath,
-    toArchive.map((e) => JSON.stringify(e)).join("\n") + "\n",
-  );
+    // Write archived events to .jsonl.archived file (crash-safe)
+    atomicWriteSync(
+      archivePath,
+      toArchive.map((e) => JSON.stringify(e)).join("\n") + "\n",
+    );
 
-  // Truncate active log to remaining events only
-  atomicWriteSync(
-    logPath,
-    remaining.length > 0
-      ? remaining.map((e) => JSON.stringify(e)).join("\n") + "\n"
-      : "",
-  );
+    // Truncate active log to remaining events only
+    atomicWriteSync(
+      logPath,
+      remaining.length > 0
+        ? remaining.map((e) => JSON.stringify(e)).join("\n") + "\n"
+        : "",
+    );
 
-  return { archived: toArchive.length };
+    return { archived: toArchive.length };
+  });
 }

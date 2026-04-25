@@ -32,6 +32,17 @@ test("isVerificationNotApplicable: 'None planned' is not applicable", () => {
   assert.equal(isVerificationNotApplicable("None planned"), true);
 });
 
+test("isVerificationNotApplicable: 'None — <rationale>' is not applicable (#3897)", () => {
+  assert.equal(
+    isVerificationNotApplicable("None — no new background jobs, workers, or lifecycle changes introduced."),
+    true,
+  );
+});
+
+test("isVerificationNotApplicable: em dash without spaces is not applicable (#3897)", () => {
+  assert.equal(isVerificationNotApplicable("none—inline"), true);
+});
+
 test("isVerificationNotApplicable: 'N/A' is not applicable", () => {
   assert.equal(isVerificationNotApplicable("N/A"), true);
 });

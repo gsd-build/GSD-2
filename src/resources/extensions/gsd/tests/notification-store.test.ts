@@ -16,6 +16,7 @@ import {
   getLineCount,
   suppressPersistence,
   unsuppressPersistence,
+  onNotificationStoreChange,
   _resetNotificationStore,
 } from "../notification-store.js";
 
@@ -187,6 +188,23 @@ describe("notification-store", () => {
     assert.ok(!entries.some((e) => e.message === "suppressed"));
   });
 
+  test("appendNotification suppresses identical messages within the dedup window", (t) => {
+    initNotificationStore(tmp);
+    let now = 1_000;
+    t.mock.method(Date, "now", () => now);
+
+    appendNotification("same", "warning");
+    now += 1_000;
+    appendNotification("same", "warning");
+    now += 31_000;
+    appendNotification("same", "warning");
+
+    const entries = readNotifications();
+    assert.equal(entries.length, 2);
+    assert.equal(entries[0].message, "same");
+    assert.equal(entries[1].message, "same");
+  });
+
   test("suppressPersistence is ref-counted", () => {
     initNotificationStore(tmp);
     suppressPersistence();
@@ -278,5 +296,22 @@ describe("notification-store", () => {
     assert.ok(existsSync(lockPath), "foreign lock file should not be deleted");
 
     rmSync(lockPath, { force: true });
+  });
+
+  test("listeners are notified on append, markAllRead, and clear", () => {
+    initNotificationStore(tmp);
+    let calls = 0;
+    const unsubscribe = onNotificationStoreChange(() => { calls++; });
+
+    appendNotification("msg1", "info");
+    assert.equal(calls, 1, "append should emit one change");
+
+    markAllRead();
+    assert.equal(calls, 2, "markAllRead should emit one change when state changes");
+
+    clearNotifications();
+    assert.equal(calls, 3, "clear should emit one change");
+
+    unsubscribe();
   });
 });

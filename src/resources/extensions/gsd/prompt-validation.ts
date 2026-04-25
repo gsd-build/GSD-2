@@ -1,9 +1,15 @@
 /**
- * GSD Prompt Validation — Validates enhanced context output before writing.
+ * GSD Prompt Validation — Validates enhanced context and turn output
+ * artifacts before writing.
  *
- * Implements R109 validation requirement: CONTEXT.md must have required sections
- * before being written to disk.
+ * Implements R109 validation requirement: CONTEXT.md must have required
+ * sections before being written to disk. Additionally, per-turn validators
+ * check that artifacts produced by gate-owning turns contain the gate
+ * sections declared in gate-registry.ts, so a malformed summary/validation
+ * markdown file cannot silently drop a quality gate.
  */
+
+import { getGatesForTurn, type OwnerTurn } from "./gate-registry.js";
 
 /**
  * Result of validating enhanced context output.
@@ -85,4 +91,67 @@ export function validateEnhancedContext(content: string): ValidationResult {
     valid: missing.length === 0,
     missing,
   };
+}
+
+// ─── Per-Turn Gate Section Validators ─────────────────────────────────────
+//
+// Each validator checks that the artifact written by a turn contains a
+// heading for every gate owned by that turn. The registry is the source
+// of truth for which sections must exist; adding a new gate automatically
+// flows through via `getGatesForTurn(turn)`.
+
+/**
+ * Escape a string so it can be embedded safely inside a regular expression.
+ */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Validate that an artifact contains an `## H2` heading for every gate the
+ * named turn owns. Returns the list of missing gate section headers.
+ *
+ * Soft rule: a section counts as "present" if it is declared (H2 heading
+ * exists) — empty-body sections are allowed and handled by the tool
+ * handler, which will record such gates as `omitted`.
+ */
+export function validateGateSections(
+  content: string,
+  turn: OwnerTurn,
+): ValidationResult {
+  const missing: string[] = [];
+  for (const def of getGatesForTurn(turn)) {
+    const pattern = new RegExp(`^##\\s+${escapeRegExp(def.promptSection)}\\b`, "m");
+    if (!pattern.test(content)) {
+      missing.push(`${def.id} (## ${def.promptSection})`);
+    }
+  }
+  return { valid: missing.length === 0, missing };
+}
+
+/**
+ * Validate a SUMMARY.md produced by the complete-slice turn. Requires
+ * an H2 heading for every gate owned by complete-slice (e.g. Q8 →
+ * "## Operational Readiness"). Intended for use in the tool handler's
+ * pre-write checks or in the post-unit validation sweep.
+ */
+export function validateSliceSummaryOutput(content: string): ValidationResult {
+  return validateGateSections(content, "complete-slice");
+}
+
+/**
+ * Validate a task SUMMARY.md produced by the execute-task turn. Only
+ * flags gates that are still pending for the task; skips the check
+ * when no rows are seeded (simple task).
+ */
+export function validateTaskSummaryOutput(content: string): ValidationResult {
+  return validateGateSections(content, "execute-task");
+}
+
+/**
+ * Validate a VALIDATION.md produced by the validate-milestone turn.
+ * Requires an H2 heading for every MV gate declared in the registry.
+ */
+export function validateMilestoneValidationOutput(content: string): ValidationResult {
+  return validateGateSections(content, "validate-milestone");
 }

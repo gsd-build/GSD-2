@@ -49,6 +49,8 @@ export {
 export { createEventBus, type EventBus, type EventBusController } from "./core/event-bus.js";
 // Extension system
 export type {
+	AdjustToolSetEvent,
+	AdjustToolSetResult,
 	AgentEndEvent,
 	AgentStartEvent,
 	AgentToolResult,
@@ -56,8 +58,24 @@ export type {
 	AppAction,
 	BashToolCallEvent,
 	BeforeAgentStartEvent,
+	BeforeCommitEvent,
+	BeforeCommitEventResult,
+	BeforePrEvent,
+	BeforePrEventResult,
+	BeforePushEvent,
+	BeforePushEventResult,
+	BeforeVerifyEvent,
+	BeforeVerifyEventResult,
+	BudgetThresholdEvent,
+	BudgetThresholdEventResult,
 	BeforeProviderRequestEvent,
 	BeforeProviderRequestEventResult,
+	CommitEvent,
+	NotificationEvent,
+	PrOpenedEvent,
+	PushEvent,
+	VerifyFailure,
+	VerifyResultEvent,
 	CompactOptions,
 	ContextEvent,
 	ContextUsage,
@@ -118,6 +136,7 @@ export type {
 	SlashCommandSource,
 	TerminalInputHandler,
 	ToolCallEvent,
+	ToolCompatibility,
 	ToolDefinition,
 	ToolInfo,
 	SortResult,
@@ -169,10 +188,12 @@ export type { PackageCommand, PackageCommandOptions, PackageCommandRunnerOptions
 export { getPackageCommandUsage, parsePackageCommand, runPackageCommand } from "./core/package-commands.js";
 export type { ResourceCollision, ResourceDiagnostic, ResourceLoader } from "./core/resource-loader.js";
 export { DefaultResourceLoader } from "./core/resource-loader.js";
+export { RETRYABLE_ERROR_RE } from "./core/retryable-error-regex.js";
 // SDK for programmatic usage
 export {
 	type CreateAgentSessionOptions,
 	type CreateAgentSessionResult,
+	CredentialCooldownError,
 	// Factory
 	createAgentSession,
 	createBashTool,
@@ -310,6 +331,12 @@ export {
 	type HashlineReadToolDetails,
 	type HashlineReadToolInput,
 	type HashlineReadToolOptions,
+	// Tool compatibility registry (ADR-005)
+	registerToolCompatibility,
+	getToolCompatibility,
+	getAllToolCompatibility,
+	registerMcpToolCompatibility,
+	resetToolCompatibilityRegistry,
 } from "./core/tools/index.js";
 // Main entry point
 export { main } from "./main.js";

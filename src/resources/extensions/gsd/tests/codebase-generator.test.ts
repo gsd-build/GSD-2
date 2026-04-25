@@ -162,6 +162,34 @@ test("generateCodebaseMap: excludes .claude/ and other tool directories", () => 
   }
 });
 
+test("generateCodebaseMap: excludes .agents/ and other tooling directories", () => {
+  const base = makeTmpRepo();
+  try {
+    addFile(base, "src/main.ts");
+    addFile(base, ".agents/skills/pdf/SKILL.md");
+    addFile(base, ".agents/skills/find-skills/SKILL.md");
+    addFile(base, ".bg-shell/session.json");
+    addFile(base, ".idea/workspace.xml");
+    addFile(base, ".cache/data.bin");
+    addFile(base, "tmp/scratch.ts");
+    addFile(base, "target/debug/build.rs");
+    addFile(base, "venv/lib/site.py");
+
+    const result = generateCodebaseMap(base);
+    assert.ok(result.content.includes("`src/main.ts`"), "should include src/main.ts");
+    assert.ok(!result.content.includes("SKILL.md"), "should exclude .agents/ files");
+    assert.ok(!result.content.includes(".bg-shell"), "should exclude .bg-shell/ files");
+    assert.ok(!result.content.includes(".idea"), "should exclude .idea/ files");
+    assert.ok(!result.content.includes(".cache"), "should exclude .cache/ files");
+    assert.ok(!result.content.includes("tmp/"), "should exclude tmp/ files");
+    assert.ok(!result.content.includes("target"), "should exclude target/ files");
+    assert.ok(!result.content.includes("venv"), "should exclude venv/ files");
+    assert.equal(result.fileCount, 1);
+  } finally {
+    cleanup(base);
+  }
+});
+
 test("generateCodebaseMap: excludes binary and lock files", () => {
   const base = makeTmpRepo();
   try {

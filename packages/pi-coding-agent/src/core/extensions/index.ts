@@ -39,10 +39,29 @@ export type {
 	BashToolResultEvent,
 	BeforeAgentStartEvent,
 	BeforeAgentStartEventResult,
+	BeforeCommitEvent,
+	BeforeCommitEventResult,
+	BeforePrEvent,
+	BeforePrEventResult,
+	BeforePushEvent,
+	BeforePushEventResult,
+	BeforeVerifyEvent,
+	BeforeVerifyEventResult,
+	BudgetThresholdEvent,
+	BudgetThresholdEventResult,
 	BeforeProviderRequestEvent,
 	BeforeProviderRequestEventResult,
+	CommitEvent,
+	NotificationEvent,
+	PrOpenedEvent,
+	PushEvent,
+	VerifyFailure,
+	VerifyResultEvent,
 	// Context
 	CompactOptions,
+	// Events - Adjust Tool Set (ADR-005)
+	AdjustToolSetEvent,
+	AdjustToolSetResult,
 	// Events - Agent
 	ContextEvent,
 	// Event Results
@@ -135,6 +154,7 @@ export type {
 	ToolCallEvent,
 	ToolCallEventResult,
 	// Tools
+	ToolCompatibility,
 	ToolDefinition,
 	// Events - Tool Execution
 	ToolExecutionEndEvent,

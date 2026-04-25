@@ -18,6 +18,8 @@ All relevant context has been preloaded below — the roadmap, all slice summari
 
 {{inlinedContext}}
 
+{{gatesToEvaluate}}
+
 ## Execution Protocol
 
 ### Step 1 — Dispatch Parallel Reviewers
@@ -31,7 +33,7 @@ Prompt: "Review milestone {{milestoneId}} requirements coverage. Working directo
 Prompt: "Review milestone {{milestoneId}} cross-slice integration. Working directory: {{workingDirectory}}. Read `{{roadmapPath}}` and find the boundary map (produces/consumes contracts). For each boundary, check that the producing slice's SUMMARY confirms it produced the artifact, and the consuming slice's SUMMARY confirms it consumed it. Output a markdown table: Boundary | Producer Summary | Consumer Summary | Status. End with a one-line verdict: PASS if all boundaries honored, NEEDS-ATTENTION if any gaps."
 
 **Reviewer C — Assessment & Acceptance Criteria**
-Prompt: "Review milestone {{milestoneId}} assessment evidence and acceptance criteria. Working directory: {{workingDirectory}}. Read `.gsd/{{milestoneId}}/CONTEXT.md` for acceptance criteria. Check for ASSESSMENT files in each slice directory. Verify each acceptance criterion maps to either a passing assessment result or clear SUMMARY evidence. Output a checklist: [ ] Criterion | Evidence. End with a one-line verdict: PASS if all criteria met, NEEDS-ATTENTION if gaps exist."
+Prompt: "Review milestone {{milestoneId}} assessment evidence and acceptance criteria. Working directory: {{workingDirectory}}. Read `.gsd/{{milestoneId}}/CONTEXT.md` for acceptance criteria. Check for ASSESSMENT files in each slice directory. Verify each acceptance criterion maps to either a passing assessment result or clear SUMMARY evidence. Then review the inlined milestone verification classes from planning. For each non-empty planned class, output a markdown table: Class | Planned Check | Evidence | Verdict. Use the exact class names `Contract`, `Integration`, `Operational`, and `UAT` whenever those classes are present. If no verification classes were planned, say that explicitly. Output two sections: `Acceptance Criteria` with a checklist `[ ] Criterion | Evidence`, and `Verification Classes` with the table. End with a one-line verdict: PASS if all criteria and verification classes are covered, NEEDS-ATTENTION if gaps exist."
 
 ### Step 2 — Synthesize Findings
 
@@ -70,6 +72,7 @@ reviewers: 3
 ```
 
 Call `gsd_validate_milestone` with the camelCase fields `milestoneId`, `verdict`, `remediationRound`, `successCriteriaChecklist`, `sliceDeliveryAudit`, `crossSliceIntegration`, `requirementCoverage`, `verdictRationale`, and `remediationPlan` when needed. If you include verification-class analysis, pass it in `verificationClasses`.
+Extract the `Verification Classes` subsection from Reviewer C and pass it verbatim in `verificationClasses` so the persisted validation output uses the canonical class names `Contract`, `Integration`, `Operational`, and `UAT`.
 
 **DB access safety:** Do NOT query `.gsd/gsd.db` directly via `sqlite3` or `node -e require('better-sqlite3')` — the engine owns the WAL connection. Use `gsd_milestone_status` to read milestone and slice state. All data you need is already inlined in the context above or accessible via the `gsd_*` tools. Direct DB access corrupts the WAL and bypasses tool-level validation.
 

@@ -1,12 +1,17 @@
 /**
- * Regression test for #3603 — MCP server subpath imports via createRequire
+ * Regression test for #3603 / #3914 — MCP server subpath imports.
  *
- * The ESM wildcard export map in @modelcontextprotocol/sdk does not resolve
- * subpath imports correctly. The fix uses createRequire from node:module to
- * resolve wildcard subpaths via the CJS resolver which auto-appends .js.
+ * @modelcontextprotocol/sdk's package.json exports map uses a wildcard
+ * `./*` → `./dist/cjs/*` with no `.js` suffix, so bare subpath specifiers
+ * like `@modelcontextprotocol/sdk/server/stdio` resolve to a file that
+ * doesn't exist. Historically the workaround used `createRequire` so the
+ * CJS resolver auto-appended `.js`; that no longer works with current
+ * Node + SDK versions (#3914).
  *
- * Structural verification test — reads source to confirm createRequire import
- * and _require.resolve usage exist.
+ * The reliable convention (used in packages/mcp-server/{server,cli}.ts)
+ * is to write the `.js` suffix explicitly on every subpath import. This
+ * test locks that convention in so regressions can't silently reintroduce
+ * the bare subpath form or the broken createRequire-based resolution.
  */
 
 import { describe, test } from 'node:test';
@@ -20,29 +25,31 @@ const __dirname = dirname(__filename);
 
 const source = readFileSync(join(__dirname, '..', 'mcp-server.ts'), 'utf-8');
 
-describe('MCP server createRequire subpath resolution (#3603)', () => {
-  test('createRequire is imported from node:module', () => {
-    assert.match(source, /import\s*\{\s*createRequire\s*\}\s*from\s*['"]node:module['"]/,
-      'createRequire should be imported from node:module');
+describe('MCP server SDK subpath imports (#3603 / #3914)', () => {
+  test('server/index.js subpath is imported with explicit .js suffix', () => {
+    assert.match(source, /await import\(`\$\{MCP_PKG\}\/server\/index\.js`\)/,
+      'server import must use `${MCP_PKG}/server/index.js` to satisfy the wildcard export map');
   });
 
-  test('_require is created from import.meta.url', () => {
-    assert.match(source, /createRequire\(import\.meta\.url\)/,
-      '_require should be created using createRequire(import.meta.url)');
+  test('server/stdio.js subpath is imported with explicit .js suffix', () => {
+    assert.match(source, /await import\(`\$\{MCP_PKG\}\/server\/stdio\.js`\)/,
+      'stdio import must use `${MCP_PKG}/server/stdio.js`');
   });
 
-  test('_require.resolve is used for subpath imports', () => {
-    assert.match(source, /_require\.resolve\(/,
-      '_require.resolve should be used for subpath resolution');
+  test('types.js subpath is imported with explicit .js suffix', () => {
+    assert.match(source, /await import\(`\$\{MCP_PKG\}\/types\.js`\)/,
+      'types import must use `${MCP_PKG}/types.js`');
   });
 
-  test('server/stdio subpath uses _require.resolve', () => {
-    assert.match(source, /_require\.resolve\(`\$\{MCP_PKG\}\/server\/stdio`\)/,
-      'server/stdio import should use _require.resolve');
-  });
-
-  test('types subpath uses _require.resolve', () => {
-    assert.match(source, /_require\.resolve\(`\$\{MCP_PKG\}\/types`\)/,
-      'types import should use _require.resolve');
+  test('legacy createRequire-based resolution is gone', () => {
+    // Only flag actual code, not the comment that explains the history.
+    // The import statement, variable declaration, and `_require.resolve(` call
+    // sites are the real regression surfaces.
+    assert.doesNotMatch(source, /^\s*import\s*\{\s*createRequire\s*\}\s*from/m,
+      'createRequire should not be imported from node:module');
+    assert.doesNotMatch(source, /^\s*const\s+_require\s*=\s*createRequire/m,
+      '_require helper should not be created');
+    assert.doesNotMatch(source, /_require\.resolve\(/,
+      '_require.resolve should not be used for subpath resolution');
   });
 });

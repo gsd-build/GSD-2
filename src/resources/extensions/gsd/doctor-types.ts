@@ -23,6 +23,7 @@ export type DoctorIssueCode =
   | "state_file_stale"
   | "state_file_missing"
   | "gitignore_missing_patterns"
+  | "symlinked_gsd_unignored"
   | "unresolvable_dependency"
   | "failed_migration"
   | "broken_symlink"
@@ -78,6 +79,7 @@ export type DoctorIssueCode =
   | "db_orphaned_slice"
   | "db_done_task_no_summary"
   | "db_duplicate_id"
+  | "db_unavailable"
   | "projection_drift";
 
 /**

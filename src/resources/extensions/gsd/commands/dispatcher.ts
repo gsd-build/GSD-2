@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@gsd/pi-coding-agent";
 
+import { GSDNoProjectError } from "./context.js";
 import { handleAutoCommand } from "./handlers/auto.js";
 import { handleCoreCommand } from "./handlers/core.js";
 import { handleOpsCommand } from "./handlers/ops.js";
@@ -21,10 +22,21 @@ export async function handleGSDCommand(
     () => handleOpsCommand(trimmed, ctx, pi),
   ];
 
-  for (const handler of handlers) {
-    if (await handler()) {
+  try {
+    for (const handler of handlers) {
+      if (await handler()) {
+        return;
+      }
+    }
+  } catch (err) {
+    if (err instanceof GSDNoProjectError) {
+      ctx.ui.notify(
+        `${err.message} \`cd\` into a project directory first.`,
+        "warning",
+      );
       return;
     }
+    throw err;
   }
 
   ctx.ui.notify(`Unknown: /gsd ${trimmed}. Run /gsd help for available commands.`, "warning");

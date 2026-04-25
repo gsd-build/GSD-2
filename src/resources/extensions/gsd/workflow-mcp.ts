@@ -1,7 +1,7 @@
 import { execSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 export interface WorkflowMcpLaunchConfig {
   name: string;
@@ -21,22 +21,39 @@ export interface WorkflowCapabilityOptions {
 }
 
 const MCP_WORKFLOW_TOOL_SURFACE = new Set([
+  "ask_user_questions",
+  "gsd_decision_save",
+  "gsd_exec",
+  "gsd_exec_search",
+  "gsd_resume",
   "gsd_complete_milestone",
   "gsd_complete_task",
   "gsd_complete_slice",
+  "gsd_generate_milestone_id",
+  "gsd_journal_query",
   "gsd_milestone_complete",
+  "gsd_milestone_generate_id",
+  "gsd_checkpoint_db",
   "gsd_milestone_status",
   "gsd_milestone_validate",
+  "gsd_plan_task",
   "gsd_plan_milestone",
   "gsd_plan_slice",
   "gsd_replan_slice",
   "gsd_reassess_roadmap",
+  "gsd_requirement_save",
+  "gsd_requirement_update",
   "gsd_roadmap_reassess",
+  "gsd_save_decision",
   "gsd_save_gate_result",
+  "gsd_save_requirement",
+  "gsd_skip_slice",
   "gsd_slice_replan",
   "gsd_slice_complete",
   "gsd_summary_save",
+  "gsd_task_plan",
   "gsd_task_complete",
+  "gsd_update_requirement",
   "gsd_validate_milestone",
 ]);
 
@@ -67,10 +84,36 @@ function lookupCommand(command: string, platform: NodeJS.Platform = process.plat
   }
 }
 
+function findWorkflowCliFromAncestorPath(startPath: string): string | null {
+  let current = resolve(startPath);
+
+  while (true) {
+    const candidate = resolve(current, "packages", "mcp-server", "dist", "cli.js");
+    if (existsSync(candidate)) return candidate;
+
+    const parent = dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+
+  return null;
+}
+
 function getBundledWorkflowMcpCliPath(env: NodeJS.ProcessEnv): string | null {
-  if (!env.GSD_BIN_PATH?.trim() && !env.GSD_CLI_PATH?.trim()) return null;
+  const envAnchors = [
+    env.GSD_BIN_PATH?.trim(),
+    env.GSD_CLI_PATH?.trim(),
+    env.GSD_WORKFLOW_PATH?.trim(),
+  ].filter((value): value is string => typeof value === "string" && value.length > 0);
+
+  for (const anchor of envAnchors) {
+    const candidate = findWorkflowCliFromAncestorPath(anchor);
+    if (candidate) return candidate;
+  }
 
   const candidates = [
+    resolve(fileURLToPath(new URL("../../../../packages/mcp-server/src/cli.ts", import.meta.url))),
+    resolve(fileURLToPath(new URL("../../../../../packages/mcp-server/src/cli.ts", import.meta.url))),
     resolve(fileURLToPath(new URL("../../../../packages/mcp-server/dist/cli.js", import.meta.url))),
     resolve(fileURLToPath(new URL("../../../../../packages/mcp-server/dist/cli.js", import.meta.url))),
   ];
@@ -80,6 +123,91 @@ function getBundledWorkflowMcpCliPath(env: NodeJS.ProcessEnv): string | null {
   }
 
   return null;
+}
+
+function getBundledWorkflowExecutorModulePath(): string | null {
+  const candidates = [
+    resolve(fileURLToPath(new URL("./tools/workflow-tool-executors.js", import.meta.url))),
+    resolve(fileURLToPath(new URL("./tools/workflow-tool-executors.ts", import.meta.url))),
+    resolve(fileURLToPath(new URL("../../../../dist/resources/extensions/gsd/tools/workflow-tool-executors.js", import.meta.url))),
+  ];
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+
+  return null;
+}
+
+function getBundledWorkflowWriteGateModulePath(): string | null {
+  const candidates = [
+    resolve(fileURLToPath(new URL("./bootstrap/write-gate.js", import.meta.url))),
+    resolve(fileURLToPath(new URL("./bootstrap/write-gate.ts", import.meta.url))),
+    resolve(fileURLToPath(new URL("../../../../dist/resources/extensions/gsd/bootstrap/write-gate.js", import.meta.url))),
+  ];
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+
+  return null;
+}
+
+function getResolveTsHookPath(): string | null {
+  const candidates = [
+    resolve(fileURLToPath(new URL("./tests/resolve-ts.mjs", import.meta.url))),
+    resolve(fileURLToPath(new URL("../../../../src/resources/extensions/gsd/tests/resolve-ts.mjs", import.meta.url))),
+  ];
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+
+  return null;
+}
+
+function mergeNodeOptions(existing: string | undefined, additions: string[]): string | undefined {
+  const tokens = (existing ?? "").split(/\s+/).map((value) => value.trim()).filter(Boolean);
+  for (const addition of additions) {
+    if (!tokens.includes(addition)) {
+      tokens.push(addition);
+    }
+  }
+  return tokens.length > 0 ? tokens.join(" ") : undefined;
+}
+
+function buildWorkflowLaunchEnv(
+  projectRoot: string,
+  gsdCliPath: string | undefined,
+  explicitEnv?: Record<string, string>,
+  workflowCliPath?: string,
+): Record<string, string> {
+  const executorModulePath = getBundledWorkflowExecutorModulePath();
+  const writeGateModulePath = getBundledWorkflowWriteGateModulePath();
+  const resolveTsHookPath = getResolveTsHookPath();
+  const wantsSourceTs =
+    Boolean(resolveTsHookPath) &&
+    (
+      (workflowCliPath?.endsWith(".ts") ?? false) ||
+      (executorModulePath?.endsWith(".ts") ?? false) ||
+      (writeGateModulePath?.endsWith(".ts") ?? false)
+    );
+  const nodeOptions = wantsSourceTs
+    ? mergeNodeOptions(explicitEnv?.NODE_OPTIONS, [
+        "--experimental-strip-types",
+        `--import=${pathToFileURL(resolveTsHookPath!).href}`,
+      ])
+    : explicitEnv?.NODE_OPTIONS;
+
+  return {
+    ...(explicitEnv ?? {}),
+    ...(gsdCliPath ? { GSD_CLI_PATH: gsdCliPath } : {}),
+    ...(executorModulePath ? { GSD_WORKFLOW_EXECUTORS_MODULE: executorModulePath } : {}),
+    ...(writeGateModulePath ? { GSD_WORKFLOW_WRITE_GATE_MODULE: writeGateModulePath } : {}),
+    ...(nodeOptions ? { NODE_OPTIONS: nodeOptions } : {}),
+    GSD_PERSIST_WRITE_GATE_STATE: "1",
+    GSD_WORKFLOW_PROJECT_ROOT: projectRoot,
+  };
 }
 
 export function detectWorkflowMcpLaunchConfig(
@@ -101,12 +229,7 @@ export function detectWorkflowMcpLaunchConfig(
   const resolvedWorkflowProjectRoot = resolve(workflowProjectRoot);
 
   if (explicitCommand) {
-    const launchEnv = {
-      ...(explicitEnv ?? {}),
-      ...(gsdCliPath ? { GSD_CLI_PATH: gsdCliPath } : {}),
-      GSD_PERSIST_WRITE_GATE_STATE: "1",
-      GSD_WORKFLOW_PROJECT_ROOT: resolve(workflowProjectRoot),
-    };
+    const launchEnv = buildWorkflowLaunchEnv(resolve(workflowProjectRoot), gsdCliPath, explicitEnv);
     return {
       name,
       command: explicitCommand,
@@ -123,11 +246,7 @@ export function detectWorkflowMcpLaunchConfig(
       command: process.execPath,
       args: [distCli],
       cwd: resolvedWorkflowProjectRoot,
-      env: {
-        ...(gsdCliPath ? { GSD_CLI_PATH: gsdCliPath } : {}),
-        GSD_PERSIST_WRITE_GATE_STATE: "1",
-        GSD_WORKFLOW_PROJECT_ROOT: resolvedWorkflowProjectRoot,
-      },
+      env: buildWorkflowLaunchEnv(resolvedWorkflowProjectRoot, gsdCliPath, undefined, distCli),
     };
   }
 
@@ -138,11 +257,7 @@ export function detectWorkflowMcpLaunchConfig(
       command: process.execPath,
       args: [bundledCli],
       cwd: resolvedWorkflowProjectRoot,
-      env: {
-        ...(gsdCliPath ? { GSD_CLI_PATH: gsdCliPath } : {}),
-        GSD_PERSIST_WRITE_GATE_STATE: "1",
-        GSD_WORKFLOW_PROJECT_ROOT: resolvedWorkflowProjectRoot,
-      },
+      env: buildWorkflowLaunchEnv(resolvedWorkflowProjectRoot, gsdCliPath, undefined, bundledCli),
     };
   }
 
@@ -151,11 +266,7 @@ export function detectWorkflowMcpLaunchConfig(
     return {
       name,
       command: binPath,
-      env: {
-        ...(gsdCliPath ? { GSD_CLI_PATH: gsdCliPath } : {}),
-        GSD_PERSIST_WRITE_GATE_STATE: "1",
-        GSD_WORKFLOW_PROJECT_ROOT: resolvedWorkflowProjectRoot,
-      },
+      env: buildWorkflowLaunchEnv(resolvedWorkflowProjectRoot, gsdCliPath),
     };
   }
 
@@ -241,6 +352,15 @@ export function usesWorkflowMcpTransport(
   return authMode === "externalCli" && typeof baseUrl === "string" && baseUrl.startsWith("local://");
 }
 
+export function supportsStructuredQuestions(
+  activeTools: string[],
+  options: Pick<WorkflowCapabilityOptions, "authMode" | "baseUrl"> = {},
+): boolean {
+  if (!activeTools.includes("ask_user_questions")) return false;
+
+  return true;
+}
+
 export function getWorkflowTransportSupportError(
   provider: string | undefined,
   requiredTools: string[],
@@ -257,7 +377,7 @@ export function getWorkflowTransportSupportError(
   const providerLabel = `"${provider}"`;
 
   if (!launch) {
-    return `Provider ${providerLabel} cannot run ${surface}${unitLabel}: the GSD workflow MCP server is not configured or discoverable. Configure GSD_WORKFLOW_MCP_COMMAND, build packages/mcp-server/dist/cli.js, or install gsd-mcp-server on PATH.`;
+    return `Provider ${providerLabel} cannot run ${surface}${unitLabel}: the GSD workflow MCP server is not configured or discoverable. Detected Claude Code model but no workflow MCP. Please run /gsd mcp init . from your project root. You can also configure GSD_WORKFLOW_MCP_COMMAND, build packages/mcp-server/dist/cli.js, or install gsd-mcp-server on PATH.`;
   }
 
   const missing = [...new Set(requiredTools)].filter((tool) => !MCP_WORKFLOW_TOOL_SURFACE.has(tool));

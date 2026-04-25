@@ -275,7 +275,7 @@ Work flows through these phases. Each phase produces a file.
 **How to do it manually:**
 1. Read the roadmap to understand the scope.
 2. Identify 3-5 gray areas — implementation decisions the user cares about.
-3. Use `ask_user_questions` to discuss each area.
+3. Use `ask_user_questions` to discuss each area, one round at a time. Never fabricate user input; wait for the user's actual response before the next round.
 4. Write decisions to the appropriate context file (`M###-CONTEXT.md` or `S##-CONTEXT.md`).
 5. Do NOT discuss how to implement — only what the user wants.
 

@@ -101,3 +101,65 @@ test("#1943 detectStuckLoops ignores watchdog duplicates but flags real re-dispa
   assert.equal(anomalies.length, 1, `expected 1 anomaly (for the 3x dispatched task), got ${anomalies.length}`);
   assert.ok(anomalies[0].summary.includes("3 times"));
 });
+
+test("#3760 detectStuckLoops ignores cross-session recovery re-dispatches", () => {
+  const anomalies: ForensicAnomaly[] = [];
+
+  const units: UnitMetrics[] = [
+    makeUnit({
+      type: "plan-slice",
+      id: "M001/S02",
+      startedAt: 1000,
+      finishedAt: 2000,
+      autoSessionKey: "session-a",
+    }),
+    makeUnit({
+      type: "plan-slice",
+      id: "M001/S02",
+      startedAt: 5000,
+      finishedAt: 6000,
+      autoSessionKey: "session-b",
+    }),
+  ];
+
+  detectStuckLoops(units, anomalies);
+
+  assert.equal(anomalies.length, 0, "cross-session recovery should not be flagged as a stuck loop");
+});
+
+test("#3760 detectStuckLoops still flags repeated dispatches within one auto session", () => {
+  const anomalies: ForensicAnomaly[] = [];
+
+  const units: UnitMetrics[] = [
+    makeUnit({
+      type: "complete-slice",
+      id: "M011/S02",
+      startedAt: 1000,
+      finishedAt: 2000,
+      autoSessionKey: "session-a",
+    }),
+    makeUnit({
+      type: "complete-slice",
+      id: "M011/S02",
+      startedAt: 5000,
+      finishedAt: 6000,
+      autoSessionKey: "session-a",
+    }),
+    makeUnit({
+      type: "complete-slice",
+      id: "M011/S02",
+      startedAt: 9000,
+      finishedAt: 10000,
+      autoSessionKey: "session-b",
+    }),
+  ];
+
+  detectStuckLoops(units, anomalies);
+
+  assert.equal(anomalies.length, 1, "within-session retries should still be flagged");
+  assert.ok(anomalies[0].summary.includes("2 times"), `summary should reflect the worst same-session loop: ${anomalies[0].summary}`);
+  assert.ok(
+    anomalies[0].details.includes("Cross-session recovery runs are ignored"),
+    `details should explain the session-aware rule: ${anomalies[0].details}`,
+  );
+});

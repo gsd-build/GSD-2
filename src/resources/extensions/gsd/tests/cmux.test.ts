@@ -1,7 +1,8 @@
-import test, { describe } from "node:test";
+import test, { describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import {
   buildCmuxProgress,
@@ -12,7 +13,8 @@ import {
   resolveCmuxConfig,
   shouldPromptToEnableCmux,
 } from "../../cmux/index.ts";
-import type { GSDState } from "../types.ts";
+import { autoEnableCmuxPreferences } from "../commands-cmux.ts";
+import type { CmuxStateInput } from "../../shared/cmux-events.ts";
 
 test("detectCmuxEnvironment requires workspace, surface, and socket", () => {
   const detected = detectCmuxEnvironment(
@@ -79,16 +81,76 @@ test("shouldPromptToEnableCmux only prompts once per session", () => {
   resetCmuxPromptState();
 });
 
+describe("autoEnableCmuxPreferences", () => {
+  let tmp: string;
+  let originalCwd: string;
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    tmp = fs.mkdtempSync(path.join(tmpdir(), "cmux-auto-test-"));
+    fs.mkdirSync(path.join(tmp, ".gsd"), { recursive: true });
+    process.chdir(tmp);
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  test("writes cmux.enabled true when preferences file exists with no cmux config", () => {
+    const prefsPath = path.join(tmp, ".gsd", "preferences.md");
+    fs.writeFileSync(prefsPath, [
+      "---",
+      "version: 1",
+      "---",
+      "",
+      "# GSD Skill Preferences",
+    ].join("\n"));
+
+    const result = autoEnableCmuxPreferences();
+    assert.equal(result, true);
+
+    const content = fs.readFileSync(prefsPath, "utf-8");
+    assert.ok(content.includes("enabled: true"), "should write enabled: true");
+    assert.ok(content.includes("notifications: true"), "should default notifications on");
+    assert.ok(content.includes("sidebar: true"), "should default sidebar on");
+    assert.ok(content.includes("splits: false"), "should default splits off");
+  });
+
+  test("returns false when preferences file does not exist", () => {
+    const result = autoEnableCmuxPreferences();
+    assert.equal(result, false);
+  });
+
+  test("preserves existing cmux sub-preferences when auto-enabling", () => {
+    const prefsPath = path.join(tmp, ".gsd", "preferences.md");
+    fs.writeFileSync(prefsPath, [
+      "---",
+      "version: 1",
+      "cmux:",
+      "  splits: true",
+      "  browser: true",
+      "---",
+      "",
+      "# GSD Skill Preferences",
+    ].join("\n"));
+
+    const result = autoEnableCmuxPreferences();
+    assert.equal(result, true);
+
+    const content = fs.readFileSync(prefsPath, "utf-8");
+    assert.ok(content.includes("enabled: true"), "should set enabled: true");
+    assert.ok(content.includes("splits: true"), "should preserve existing splits: true");
+    assert.ok(content.includes("browser: true"), "should preserve existing browser: true");
+  });
+});
+
 test("buildCmuxStatusLabel and progress prefer deepest active unit", () => {
-  const state: GSDState = {
-    activeMilestone: { id: "M001", title: "Milestone" },
-    activeSlice: { id: "S02", title: "Slice" },
-    activeTask: { id: "T03", title: "Task" },
+  const state: CmuxStateInput = {
+    activeMilestone: { id: "M001" },
+    activeSlice: { id: "S02" },
+    activeTask: { id: "T03" },
     phase: "executing",
-    recentDecisions: [],
-    blockers: [],
-    nextAction: "Keep going",
-    registry: [],
     progress: {
       milestones: { done: 0, total: 1 },
       slices: { done: 1, total: 3 },

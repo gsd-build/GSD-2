@@ -11,6 +11,7 @@ import {
   getEligibleModels,
   resolveModelForComplexity,
   MODEL_CAPABILITY_PROFILES,
+  MODEL_CAPABILITY_TIER,
   BASE_REQUIREMENTS,
   defaultRoutingConfig,
 } from "../model-router.js";
@@ -125,13 +126,9 @@ describe("computeTaskRequirements", () => {
 // ─── MODEL_CAPABILITY_PROFILES ───────────────────────────────────────────────
 
 describe("MODEL_CAPABILITY_PROFILES", () => {
-  test("contains all 9 required models", () => {
-    const required = [
-      "claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5",
-      "gpt-4o", "gpt-4o-mini", "gemini-2.5-pro", "gemini-2.0-flash",
-      "deepseek-chat", "o3",
-    ];
-    for (const model of required) {
+  test("contains profiles for all tier-mapped models", () => {
+    const tierModels = Object.keys(MODEL_CAPABILITY_TIER);
+    for (const model of tierModels) {
       assert.ok(MODEL_CAPABILITY_PROFILES[model], `Missing profile for ${model}`);
     }
   });
@@ -343,5 +340,32 @@ describe("RoutingDecision.selectionMethod", () => {
       MODELS,
     );
     assert.equal(result.selectionMethod, "tier-only");
+  });
+});
+
+// ─── ADR-004: Profile Completeness Lint ─────────────────────────────────────
+// Every model in MODEL_CAPABILITY_TIER must have an entry in
+// MODEL_CAPABILITY_PROFILES. This prevents profile staleness as new models
+// are added to the tier map without corresponding capability data.
+
+describe("profile completeness (ADR-004 lint)", () => {
+  test("every model in MODEL_CAPABILITY_TIER has a MODEL_CAPABILITY_PROFILES entry", () => {
+    const tierModels = Object.keys(MODEL_CAPABILITY_TIER);
+    const missing = tierModels.filter(id => !MODEL_CAPABILITY_PROFILES[id]);
+    assert.equal(
+      missing.length,
+      0,
+      `Models in MODEL_CAPABILITY_TIER but missing from MODEL_CAPABILITY_PROFILES:\n  ${missing.join("\n  ")}\n\nAdd capability profiles for these models in model-router.ts.`,
+    );
+  });
+
+  test("MODEL_CAPABILITY_PROFILES does not contain models absent from MODEL_CAPABILITY_TIER", () => {
+    const profileModels = Object.keys(MODEL_CAPABILITY_PROFILES);
+    const orphaned = profileModels.filter(id => !MODEL_CAPABILITY_TIER[id]);
+    assert.equal(
+      orphaned.length,
+      0,
+      `Models in MODEL_CAPABILITY_PROFILES but not in MODEL_CAPABILITY_TIER:\n  ${orphaned.join("\n  ")}\n\nEither add these to MODEL_CAPABILITY_TIER or remove stale profiles.`,
+    );
   });
 });

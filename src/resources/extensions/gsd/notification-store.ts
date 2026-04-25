@@ -26,12 +26,16 @@ export interface NotificationEntry {
 const MAX_ENTRIES = 500;
 const FILENAME = "notifications.jsonl";
 const LOCKFILE = "notifications.lock";
+const DEDUP_WINDOW_MS = 30_000;
+const DEDUP_PRUNE_THRESHOLD = 200;
 
 // ─── Module State ───────────────────────────────────────────────────────
 
 let _basePath: string | null = null;
 let _lineCount = 0;  // Hint for rotation — not authoritative for public API
 let _suppressCount = 0;
+let _recentMessageTimestamps = new Map<string, number>();
+const _changeListeners = new Set<() => void>();
 
 // ─── Public API ─────────────────────────────────────────────────────────
 
@@ -40,6 +44,9 @@ let _suppressCount = 0;
  * project root. Seeds in-memory counters from the existing file on disk.
  */
 export function initNotificationStore(basePath: string): void {
+  if (_basePath !== basePath) {
+    _recentMessageTimestamps.clear();
+  }
   _basePath = basePath;
   // Seed line count hint for rotation — public counters read from disk
   _lineCount = _readEntriesFromDisk(basePath).length;
@@ -56,12 +63,23 @@ export function appendNotification(
 ): void {
   if (!_basePath) return;
   if (_suppressCount > 0) return;
+  const persistedMessage = message.length > 500 ? message.slice(0, 500) + "…" : message;
+  const dedupKey = `${_basePath}:${severity}:${source}:${persistedMessage}`;
+  const now = Date.now();
+  const lastSeen = _recentMessageTimestamps.get(dedupKey);
+  if (lastSeen !== undefined && now - lastSeen < DEDUP_WINDOW_MS) return;
+  _recentMessageTimestamps.set(dedupKey, now);
+  if (_recentMessageTimestamps.size > DEDUP_PRUNE_THRESHOLD) {
+    for (const [key, ts] of _recentMessageTimestamps) {
+      if (now - ts > DEDUP_WINDOW_MS) _recentMessageTimestamps.delete(key);
+    }
+  }
 
   const entry: NotificationEntry = {
     id: randomUUID(),
     ts: new Date().toISOString(),
     severity,
-    message: message.length > 500 ? message.slice(0, 500) + "…" : message,
+    message: persistedMessage,
     source,
     read: false,
   };
@@ -76,6 +94,7 @@ export function appendNotification(
     if (_lineCount > MAX_ENTRIES) {
       _rotate();
     }
+    _emitChange();
   } catch {
     // Non-fatal — never let persistence break the caller
   }
@@ -104,6 +123,7 @@ export function markAllRead(basePath?: string): void {
   const hasUnread = entries.some((e) => !e.read);
   if (!hasUnread) return;
 
+  let changed = false;
   try {
     _withLock(bp, () => {
       // Re-read inside lock to get freshest state
@@ -111,10 +131,12 @@ export function markAllRead(basePath?: string): void {
       if (fresh.length === 0 || !fresh.some((e) => !e.read)) return;
       const lines = fresh.map((e) => JSON.stringify({ ...e, read: true }));
       _atomicWrite(bp, lines.join("\n") + "\n");
+      changed = true;
     });
   } catch {
     // Non-fatal
   }
+  if (changed) _emitChange();
 }
 
 /**
@@ -128,6 +150,8 @@ export function clearNotifications(basePath?: string): void {
     _withLock(bp, () => {
       _atomicWrite(bp, "");
     });
+    _lineCount = 0;
+    _emitChange();
   } catch {
     // Non-fatal
   }
@@ -172,6 +196,17 @@ export function unsuppressPersistence(): void {
   _suppressCount = Math.max(0, _suppressCount - 1);
 }
 
+/**
+ * Subscribe to notification-store mutations (append, mark-read, clear).
+ * Returns an unsubscribe function.
+ */
+export function onNotificationStoreChange(listener: () => void): () => void {
+  _changeListeners.add(listener);
+  return () => {
+    _changeListeners.delete(listener);
+  };
+}
+
 // ─── Test Helpers ───────────────────────────────────────────────────────
 
 /**
@@ -181,6 +216,8 @@ export function _resetNotificationStore(): void {
   _basePath = null;
   _lineCount = 0;
   _suppressCount = 0;
+  _recentMessageTimestamps = new Map();
+  _changeListeners.clear();
 }
 
 // ─── Internal ───────────────────────────────────────────────────────────
@@ -216,9 +253,20 @@ function _rotate(): void {
       const trimmed = entries.slice(entries.length - MAX_ENTRIES);
       const lines = trimmed.map((e) => JSON.stringify(e));
       _atomicWrite(_basePath!, lines.join("\n") + "\n");
+      _lineCount = trimmed.length;
     });
   } catch {
     // Non-fatal
+  }
+}
+
+function _emitChange(): void {
+  for (const listener of _changeListeners) {
+    try {
+      listener();
+    } catch {
+      // Non-fatal
+    }
   }
 }
 
@@ -275,10 +323,11 @@ function _withLock<T>(basePath: string, fn: () => T): T {
     }
   }
 
-  // Only run the mutation if we actually own the lock
-  const ownsLock = fd !== null;
+  // Best-effort: mutation runs regardless of lock status (idempotent overwrites).
+  // createdLock gates cleanup only — never skip fn() on lock failure.
+  const createdLock = fd !== null;
   try {
-    if (ownsLock && fd !== null) {
+    if (createdLock && fd !== null) {
       // Write our PID timestamp into the lock for stale detection
       writeFileSync(lockPath, String(Date.now()), "utf-8");
       closeSync(fd);
@@ -286,7 +335,7 @@ function _withLock<T>(basePath: string, fn: () => T): T {
     return fn();
   } finally {
     // Only delete the lock if we created it — never remove another process's lock
-    if (ownsLock) {
+    if (createdLock) {
       try { unlinkSync(lockPath); } catch { /* best-effort cleanup */ }
     }
   }

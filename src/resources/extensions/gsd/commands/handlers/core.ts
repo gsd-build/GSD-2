@@ -4,15 +4,55 @@ import type { GSDState } from "../../types.js";
 
 import { computeProgressScore, formatProgressLine } from "../../progress-score.js";
 import { loadEffectiveGSDPreferences, getGlobalGSDPreferencesPath, getProjectGSDPreferencesPath } from "../../preferences.js";
-import { ensurePreferencesFile, handlePrefs, handlePrefsMode, handlePrefsWizard } from "../../commands-prefs-wizard.js";
+import { ensurePreferencesFile, handlePrefs, handlePrefsMode, handlePrefsWizard, handleLanguage } from "../../commands-prefs-wizard.js";
 import { runEnvironmentChecks } from "../../doctor-environment.js";
 import { deriveState } from "../../state.js";
 import { handleCmux } from "../../commands-cmux.js";
+import { setSessionModelOverride } from "../../session-model-override.js";
 import { projectRoot } from "../context.js";
-import { formatShortcut } from "../../files.js";
+import { formattedShortcutPair } from "../../shortcut-defs.js";
 
-export function showHelp(ctx: ExtensionCommandContext): void {
-  const lines = [
+export function showHelp(ctx: ExtensionCommandContext, args = ""): void {
+  const summaryLines = [
+    "GSD — Get Shit Done\n",
+    "QUICK START",
+    "  /gsd start <tpl>   Start a workflow template",
+    "  /gsd               Run next unit (same as /gsd next)",
+    "  /gsd auto          Run all queued units continuously",
+    "  /gsd pause         Pause auto-mode",
+    "  /gsd stop          Stop auto-mode gracefully",
+    "",
+    "VISIBILITY",
+    `  /gsd status         Dashboard  (${formattedShortcutPair("dashboard")})`,
+    `  /gsd parallel watch Parallel monitor  (${formattedShortcutPair("parallel")})`,
+    `  /gsd notifications  Notification history  (${formattedShortcutPair("notifications")})`,
+    "  /gsd visualize      Interactive 10-tab TUI",
+    "  /gsd queue          Show queued/dispatched units",
+    "",
+    "COURSE CORRECTION",
+    "  /gsd steer <desc>   Apply user override to active work",
+    "  /gsd capture <text> Quick-capture a thought to CAPTURES.md",
+    "  /gsd triage         Classify and route pending captures",
+    "  /gsd undo           Revert last completed unit  [--force]",
+    "  /gsd rethink        Conversational project reorganization",
+    "",
+    "OBSERVABILITY",
+    "  /gsd logs           Browse activity and debug logs",
+    "  /gsd debug          Create/list/continue persistent debug sessions",
+    "",
+    "SETUP",
+    "  /gsd onboarding     Re-run setup wizard  [--resume|--reset|--step <name>]",
+    "  /gsd setup          Configuration hub  [llm|model|search|remote|keys|prefs|onboarding]",
+    "  /gsd init           Project init wizard",
+    "  /gsd model          Switch active session model",
+    "  /gsd prefs          Manage preferences (alias for /gsd setup prefs)",
+    "  /gsd keys           API key manager (LLM + tool keys)",
+    "  /gsd doctor         Diagnose and repair .gsd/ state",
+    "",
+    "Use /gsd help full for the complete command reference.",
+  ];
+
+  const fullLines = [
     "GSD — Get Shit Done\n",
     "WORKFLOW",
     "  /gsd start <tpl>   Start a workflow template (bugfix, spike, feature, hotfix, etc.)",
@@ -26,12 +66,15 @@ export function showHelp(ctx: ExtensionCommandContext): void {
     "  /gsd new-milestone  Create milestone from headless context (used by gsd headless)",
     "",
     "VISIBILITY",
-    `  /gsd status         Show progress dashboard  (${formatShortcut("Ctrl+Alt+G")})`,
+    `  /gsd status         Show progress dashboard  (${formattedShortcutPair("dashboard")})`,
+    `  /gsd parallel watch Open parallel worker monitor  (${formattedShortcutPair("parallel")})`,
     "  /gsd visualize      Interactive 10-tab TUI (progress, timeline, deps, metrics, health, agent, changes, knowledge, captures, export)",
     "  /gsd queue          Show queued/dispatched units and execution order",
     "  /gsd history        View execution history  [--cost] [--phase] [--model] [N]",
     "  /gsd changelog      Show categorized release notes  [version]",
-    `  /gsd notifications  View persistent notification history  [clear|tail|filter]  (${formatShortcut("Ctrl+Alt+N")})`,
+    `  /gsd notifications  View persistent notification history  [clear|tail|filter]  (${formattedShortcutPair("notifications")})`,
+    "  /gsd logs           Browse activity logs, debug logs, and metrics",
+    "  /gsd debug          Create/list/continue persistent debug sessions",
     "",
     "COURSE CORRECTION",
     "  /gsd steer <desc>   Apply user override to active work",
@@ -48,19 +91,20 @@ export function showHelp(ctx: ExtensionCommandContext): void {
     "  /gsd codebase [generate|update|stats]   Manage the CODEBASE.md cache used in prompt context",
     "",
     "SETUP & CONFIGURATION",
+    "  /gsd onboarding     Re-run setup wizard  [--resume|--reset|--step <name>]",
+    "  /gsd setup          Configuration hub  [llm|model|search|remote|keys|prefs|onboarding]",
     "  /gsd init           Project init wizard — detect, configure, bootstrap .gsd/",
-    "  /gsd setup          Global setup status  [llm|search|remote|keys|prefs]",
     "  /gsd model          Switch active session model  [provider/model|model-id]",
     "  /gsd mode           Set workflow mode (solo/team)  [global|project]",
-    "  /gsd prefs          Manage preferences  [global|project|status|wizard|setup|import-claude]",
+    "  /gsd prefs          Manage preferences  [global|project|status|wizard|setup|import-claude]  (alias for /gsd setup prefs)",
     "  /gsd cmux           Manage cmux integration  [status|on|off|notifications|sidebar|splits|browser]",
-    "  /gsd config         Set API keys for external tools",
-    "  /gsd keys           API key manager  [list|add|remove|test|rotate|doctor]",
+    "  /gsd keys           API key manager (LLM + tool keys)  [list|add|remove|test|rotate|doctor]",
+    "  /gsd config         (deprecated) Set tool API keys — use /gsd keys instead",
     "  /gsd show-config    Show effective configuration (models, routing, toggles)",
     "  /gsd hooks          Show post-unit hook configuration",
     "  /gsd extensions     Manage extensions  [list|enable|disable|info]",
     "  /gsd fast           Toggle OpenAI service tier  [on|off|flex|status]",
-    "  /gsd mcp            MCP server status and connectivity  [status|check <server>]",
+    "  /gsd mcp            MCP server status and connectivity  [status|check <server>|init [dir]]",
     "",
     "MAINTENANCE",
     "  /gsd doctor         Diagnose and repair .gsd/ state  [audit|fix|heal] [scope]",
@@ -71,7 +115,8 @@ export function showHelp(ctx: ExtensionCommandContext): void {
     "  /gsd inspect        Show SQLite DB diagnostics (schema, row counts, recent entries)",
     "  /gsd update         Update GSD to the latest version via npm",
   ];
-  ctx.ui.notify(lines.join("\n"), "info");
+  const full = ["full", "--full", "all"].includes(args.trim().toLowerCase());
+  ctx.ui.notify((full ? fullLines : summaryLines).join("\n"), "info");
 }
 
 export async function handleStatus(ctx: ExtensionCommandContext): Promise<void> {
@@ -92,9 +137,9 @@ export async function handleStatus(ctx: ExtensionCommandContext): Promise<void> 
     {
       overlay: true,
       overlayOptions: {
-        width: "70%",
-        minWidth: 60,
-        maxHeight: "90%",
+        width: "90%",
+        minWidth: 80,
+        maxHeight: "92%",
         anchor: "center",
       },
     },
@@ -134,32 +179,39 @@ export async function handleVisualize(ctx: ExtensionCommandContext): Promise<voi
   }
 }
 
-export async function handleSetup(args: string, ctx: ExtensionCommandContext): Promise<void> {
+export async function handleSetup(args: string, ctx: ExtensionCommandContext, pi?: ExtensionAPI): Promise<void> {
   const { detectProjectState, hasGlobalSetup } = await import("../../detection.js");
+  const { isOnboardingComplete, readOnboardingRecord } = await import("../../onboarding-state.js");
 
-  const globalConfigured = hasGlobalSetup();
-  const detection = detectProjectState(projectRoot());
-
-  const statusLines = ["GSD Setup Status\n"];
-  statusLines.push(`  Global preferences: ${globalConfigured ? "configured" : "not set"}`);
-  statusLines.push(`  Project state: ${detection.state}`);
-  if (detection.projectSignals.primaryLanguage) {
-    statusLines.push(`  Detected: ${detection.projectSignals.primaryLanguage}`);
+  // Sub-route dispatch — keep redirects but route the canonical work to /gsd
+  // onboarding (single source for wizard steps) and /gsd keys (single source
+  // for credentials).
+  if (args === "onboarding" || args === "wizard") {
+    const { handleOnboarding } = await import("./onboarding.js");
+    await handleOnboarding("", ctx);
+    return;
   }
-
   if (args === "llm" || args === "auth") {
-    ctx.ui.notify("Use /login to configure LLM authentication.", "info");
+    const { handleOnboarding } = await import("./onboarding.js");
+    await handleOnboarding("--step llm", ctx);
     return;
   }
   if (args === "search") {
-    ctx.ui.notify("Use /search-provider to configure web search.", "info");
+    const { handleOnboarding } = await import("./onboarding.js");
+    await handleOnboarding("--step search", ctx);
     return;
   }
   if (args === "remote") {
-    ctx.ui.notify("Use /gsd remote to configure remote questions.", "info");
+    const { handleOnboarding } = await import("./onboarding.js");
+    await handleOnboarding("--step remote", ctx);
+    return;
+  }
+  if (args === "model") {
+    await handleModel("", ctx, pi);
     return;
   }
   if (args === "keys") {
+    ctx.ui.notify("Tip: /gsd keys is the canonical command for API key management.", "info");
     const { handleKeys } = await import("../../key-manager.js");
     await handleKeys("", ctx);
     return;
@@ -170,14 +222,35 @@ export async function handleSetup(args: string, ctx: ExtensionCommandContext): P
     return;
   }
 
+  // Bare /gsd setup — render the hub: status + actions
+  const globalConfigured = hasGlobalSetup();
+  const detection = detectProjectState(projectRoot());
+  const onboardingDone = isOnboardingComplete();
+  const record = readOnboardingRecord();
+
+  const statusLines: string[] = ["GSD Setup\n"];
+  statusLines.push(
+    onboardingDone
+      ? `  Onboarding:         ✓ complete${record.completedAt ? ` (${record.completedAt.slice(0, 10)})` : ""}`
+      : `  Onboarding:         ○ not complete  —  /gsd onboarding to start`,
+  );
+  statusLines.push(`  Global preferences: ${globalConfigured ? "configured" : "not set"}`);
+  statusLines.push(`  Project state:      ${detection.state}`);
+  if (detection.projectSignals.primaryLanguage) {
+    statusLines.push(`  Detected:           ${detection.projectSignals.primaryLanguage}`);
+  }
+
   ctx.ui.notify(statusLines.join("\n"), "info");
   ctx.ui.notify(
-    "Available setup commands:\n" +
-    "  /gsd setup llm     — LLM authentication\n" +
-    "  /gsd setup search  — Web search provider\n" +
-    "  /gsd setup remote  — Remote questions (Discord/Slack/Telegram)\n" +
-    "  /gsd setup keys    — Tool API keys\n" +
-    "  /gsd setup prefs   — Global preferences wizard",
+    "Configuration hub:\n" +
+    "  /gsd setup llm        — LLM provider & auth\n" +
+    "  /gsd setup model      — Default model picker\n" +
+    "  /gsd setup search     — Web search provider\n" +
+    "  /gsd setup remote     — Remote questions (Discord/Slack/Telegram)\n" +
+    "  /gsd setup keys       — API keys (alias for /gsd keys)\n" +
+    "  /gsd setup prefs      — Global preferences (alias for /gsd prefs)\n" +
+    "  /gsd setup onboarding — Full wizard (alias for /gsd onboarding)\n\n" +
+    "Tip: /gsd onboarding --resume to continue an incomplete setup.",
     "info",
   );
 }
@@ -301,6 +374,17 @@ async function handleModel(trimmedArgs: string, ctx: ExtensionCommandContext, pi
     return;
   }
 
+  // /gsd model is an explicit per-session pin for GSD dispatches.
+  // This is captured at auto bootstrap so it survives internal session
+  // switches during /gsd auto and /gsd next runs.
+  const sessionId = ctx.sessionManager?.getSessionId?.();
+  if (sessionId) {
+    setSessionModelOverride(sessionId, {
+      provider: targetModel.provider,
+      id: targetModel.id,
+    });
+  }
+
   ctx.ui.notify(`Model: ${targetModel.provider}/${targetModel.id}`, "info");
 }
 
@@ -309,8 +393,8 @@ export async function handleCoreCommand(
   ctx: ExtensionCommandContext,
   pi?: ExtensionAPI,
 ): Promise<boolean> {
-  if (trimmed === "help" || trimmed === "h" || trimmed === "?") {
-    showHelp(ctx);
+  if (trimmed === "help" || trimmed === "h" || trimmed === "?" || trimmed.startsWith("help ")) {
+    showHelp(ctx, trimmed.startsWith("help ") ? trimmed.slice(5).trim() : "");
     return true;
   }
   if (trimmed === "status") {
@@ -348,6 +432,10 @@ export async function handleCoreCommand(
     await handlePrefs(trimmed.replace(/^prefs\s*/, "").trim(), ctx);
     return true;
   }
+  if (trimmed === "language" || trimmed.startsWith("language ")) {
+    await handleLanguage(trimmed.replace(/^language\s*/, "").trim(), ctx);
+    return true;
+  }
   if (trimmed === "cmux" || trimmed.startsWith("cmux ")) {
     await handleCmux(trimmed.replace(/^cmux\s*/, "").trim(), ctx);
     return true;
@@ -372,7 +460,12 @@ export async function handleCoreCommand(
     return true;
   }
   if (trimmed === "setup" || trimmed.startsWith("setup ")) {
-    await handleSetup(trimmed.replace(/^setup\s*/, "").trim(), ctx);
+    await handleSetup(trimmed.replace(/^setup\s*/, "").trim(), ctx, pi);
+    return true;
+  }
+  if (trimmed === "onboarding" || trimmed.startsWith("onboarding ")) {
+    const { handleOnboarding } = await import("./onboarding.js");
+    await handleOnboarding(trimmed.replace(/^onboarding\s*/, "").trim(), ctx);
     return true;
   }
   return false;

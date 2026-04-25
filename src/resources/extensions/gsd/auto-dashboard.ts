@@ -6,18 +6,24 @@
  * or AutoContext dependency. State accessors are passed as callbacks.
  */
 
-import type { ExtensionContext, ExtensionCommandContext, SessionMessageEntry } from "@gsd/pi-coding-agent";
+import type {
+  ExtensionContext,
+  ExtensionCommandContext,
+  SessionMessageEntry,
+  ReadonlyFooterDataProvider,
+  Theme,
+} from "@gsd/pi-coding-agent";
 import type { GSDState } from "./types.js";
 import { getCurrentBranch } from "./worktree.js";
 import { getActiveHook } from "./post-unit-hooks.js";
 import { getLedger, getProjectTotals } from "./metrics.js";
 import { getErrorMessage } from "./error-utils.js";
+import { nativeIsRepo } from "./native-git-bridge.js";
 import {
   resolveMilestoneFile,
   resolveSliceFile,
 } from "./paths.js";
 import { isDbAvailable, getMilestoneSlices, getSliceTasks } from "./gsd-db.js";
-import { formatShortcut } from "./files.js";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { truncateToWidth, visibleWidth } from "@gsd/pi-tui";
@@ -38,6 +44,7 @@ import {
   type RtkSessionSavings,
 } from "../shared/rtk-session-stats.js";
 import { logWarning } from "./workflow-logger.js";
+import { formattedShortcutPair } from "./shortcut-defs.js";
 
 // ─── UAT Slice Extraction ─────────────────────────────────────────────────────
 
@@ -90,6 +97,7 @@ export function unitVerb(unitType: string): string {
     case "research-slice": return "researching";
     case "plan-milestone":
     case "plan-slice": return "planning";
+    case "refine-slice": return "refining";
     case "execute-task": return "executing";
     case "complete-slice": return "completing";
     case "replan-slice": return "replanning";
@@ -110,6 +118,7 @@ export function unitPhaseLabel(unitType: string): string {
     case "research-slice": return "RESEARCH";
     case "plan-milestone": return "PLAN";
     case "plan-slice": return "PLAN";
+    case "refine-slice": return "REFINE";
     case "execute-task": return "EXECUTE";
     case "complete-slice": return "COMPLETE";
     case "replan-slice": return "REPLAN";
@@ -137,6 +146,7 @@ function peekNext(unitType: string, state: GSDState): string {
     case "plan-milestone": return "plan or execute first slice";
     case "research-slice": return `plan ${sid}`;
     case "plan-slice": return "execute first task";
+    case "refine-slice": return "execute first task";
     case "execute-task": return `continue ${sid}`;
     case "complete-slice": return "reassess roadmap";
     case "replan-slice": return `re-execute ${sid}`;
@@ -327,6 +337,10 @@ let lastCommitFetchedAt = 0;
 
 function refreshLastCommit(basePath: string): void {
   try {
+    if (!nativeIsRepo(basePath)) {
+      cachedLastCommit = null;
+      return;
+    }
     const raw = execFileSync("git", ["log", "-1", "--format=%cr|%s"], {
       cwd: basePath,
       encoding: "utf-8",
@@ -340,10 +354,12 @@ function refreshLastCommit(basePath: string): void {
         message: raw.slice(sep + 1),
       };
     }
-    lastCommitFetchedAt = Date.now();
   } catch (err) {
     // Non-fatal — just skip last commit display
+    cachedLastCommit = null;
     logWarning("dashboard", `operation failed: ${err instanceof Error ? err.message : String(err)}`);
+  } finally {
+    lastCommitFetchedAt = Date.now();
   }
 }
 
@@ -355,15 +371,43 @@ function getLastCommit(basePath: string): { timeAgo: string; message: string } |
   return cachedLastCommit;
 }
 
+export function _resetLastCommitCacheForTests(): void {
+  cachedLastCommit = null;
+  lastCommitFetchedAt = 0;
+}
+
+export function _refreshLastCommitForTests(basePath: string): void {
+  refreshLastCommit(basePath);
+}
+
+export function _getLastCommitForTests(basePath: string): { timeAgo: string; message: string } | null {
+  return getLastCommit(basePath);
+}
+
+export function _getLastCommitFetchedAtForTests(): number {
+  return lastCommitFetchedAt;
+}
+
 // ─── Footer Factory ───────────────────────────────────────────────────────────
 
 /**
- * Footer factory that renders zero lines — hides the built-in footer entirely.
- * All footer info (pwd, branch, tokens, cost, model) is shown inside the
- * progress widget instead, so there's no gap or redundancy.
+ * Footer factory used by auto-mode.
+ * Keep footer minimal but preserve extension status context from setStatus().
  */
-export const hideFooter = () => ({
-  render(_width: number): string[] { return []; },
+function sanitizeFooterStatus(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+export const hideFooter = (_tui: unknown, theme: Theme, footerData: ReadonlyFooterDataProvider) => ({
+  render(width: number): string[] {
+    const extensionStatuses = footerData.getExtensionStatuses();
+    if (extensionStatuses.size === 0) return [];
+    const statusLine = Array.from(extensionStatuses.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([, text]) => sanitizeFooterStatus(text))
+      .join(" ");
+    return [truncateToWidth(theme.fg("dim", statusLine), width, theme.fg("dim", "..."))];
+  },
   invalidate() {},
   dispose() {},
 });
@@ -646,14 +690,6 @@ export function updateProgressWidget(
           : "";
         lines.push(rightAlign(headerLeft, headerRight, width));
 
-        // Worktree/branch right-aligned below header
-        const branchLabel = worktreeName && cachedBranch
-          ? `${worktreeName} (${cachedBranch})`
-          : cachedBranch ?? "";
-        if (branchLabel) {
-          lines.push(rightAlign("", theme.fg("dim", branchLabel), width));
-        }
-
         // Show health signal details when degraded (yellow/red)
         if (score.level !== "green" && score.signals.length > 0 && widgetMode !== "min") {
           // Show up to 3 most relevant signals in compact form
@@ -892,10 +928,24 @@ export function updateProgressWidget(
           }
           if (cumulativeCost) sp.push(theme.fg("warning", `$${cumulativeCost.toFixed(2)}`));
 
-          const cxDisplay = `${cxPct}%/${formatWidgetTokens(cxWindow)}`;
-          if (cxPctVal > 90) sp.push(theme.fg("error", cxDisplay));
-          else if (cxPctVal > 70) sp.push(theme.fg("warning", cxDisplay));
-          else sp.push(cxDisplay);
+          const CX_BAR_WIDTH = 8;
+          const cxBarFilled = Math.min(
+            CX_BAR_WIDTH,
+            Math.max(0, Math.round((cxPctVal / 100) * CX_BAR_WIDTH)),
+          );
+          const cxBarColor: "error" | "warning" | "success" =
+            cxPctVal > 90 ? "error" : cxPctVal > 70 ? "warning" : "success";
+          const cxBar =
+            theme.fg(cxBarColor, "━".repeat(cxBarFilled)) +
+            theme.fg("dim", "─".repeat(CX_BAR_WIDTH - cxBarFilled));
+          const cxPctText = `${cxPct}%/${formatWidgetTokens(cxWindow)}`;
+          const cxColorized =
+            cxPctVal > 90
+              ? theme.fg("error", cxPctText)
+              : cxPctVal > 70
+                ? theme.fg("warning", cxPctText)
+                : cxPctText;
+          sp.push(`${cxBar} ${cxColorized}`);
 
           const statsLine = sp.map(p => p.includes("\x1b[") ? p : theme.fg("dim", p))
             .join(theme.fg("dim", "  "));
@@ -917,15 +967,17 @@ export function updateProgressWidget(
         // Hints line
         const hintParts: string[] = [];
         hintParts.push("esc pause");
-        hintParts.push(`${formatShortcut("Ctrl+Alt+G")} dashboard`);
+        hintParts.push(`${formattedShortcutPair("dashboard")} dashboard`);
+        hintParts.push(`${formattedShortcutPair("parallel")} parallel`);
         const hintStr = theme.fg("dim", hintParts.join(" | "));
         const commitStr = lastCommit
           ? theme.fg("dim", `${lastCommit.timeAgo} ago: ${commitMsg}`)
           : "";
+        const locationStr = theme.fg("dim", widgetPwd);
         if (commitStr) {
-          lines.push(rightAlign(`${pad}${commitStr}`, hintStr, width));
+          lines.push(rightAlign(`${pad}${locationStr} · ${commitStr}`, hintStr, width));
         } else {
-          lines.push(rightAlign("", hintStr, width));
+          lines.push(rightAlign(`${pad}${locationStr}`, hintStr, width));
         }
 
         lines.push(...ui.bar());

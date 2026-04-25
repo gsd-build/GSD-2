@@ -126,7 +126,7 @@ async function collectOneSecret(
 ): Promise<string | null> {
 	if (!ctx.hasUI) return null;
 
-	return ctx.ui.custom((tui: any, theme: any, _kb: any, done: (r: string | null) => void) => {
+	const customResult = await ctx.ui.custom((tui: any, theme: any, _kb: any, done: (r: string | null) => void) => {
 		let value = "";
 		let cachedLines: string[] | undefined;
 
@@ -223,6 +223,29 @@ async function collectOneSecret(
 			handleInput,
 		};
 	});
+
+	// RPC/web surfaces may not implement ctx.ui.custom(). Fall back to a
+	// standard input prompt so users can still provide the secret.
+	if (customResult !== undefined) {
+		return customResult;
+	}
+
+	if (typeof ctx.ui?.input !== "function") {
+		return null;
+	}
+
+	const inputTitle = `Secure value for ${keyName} (${pageIndex + 1}/${totalPages})`;
+	const inputPlaceholder = hint || "Enter secret value";
+	const inputResult = await ctx.ui.input(
+		inputTitle,
+		inputPlaceholder,
+		{ secure: true },
+	);
+	if (typeof inputResult !== "string") {
+		return null;
+	}
+	const trimmed = inputResult.trim();
+	return trimmed.length > 0 ? trimmed : null;
 }
 
 /**

@@ -1,5 +1,5 @@
 import { execSync } from 'node:child_process'
-import { compareSemver } from './update-check.js'
+import { compareSemver, fetchLatestVersionFromRegistry, resolveInstallCommand } from './update-check.js'
 
 const NPM_PACKAGE = 'gsd-pi'
 
@@ -14,15 +14,8 @@ export async function runUpdate(): Promise<void> {
   process.stdout.write(`${dim}Current version:${reset} v${current}\n`)
   process.stdout.write(`${dim}Checking npm registry...${reset}\n`)
 
-  // Fetch latest version — bypass npm client cache to avoid stale results (#3445)
-  let latest: string
-  try {
-    latest = execSync(`npm view ${NPM_PACKAGE} version --fetch-retry-mintimeout=3000`, {
-      encoding: 'utf-8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-      env: { ...process.env, npm_config_cache: '' },
-    }).trim()
-  } catch {
+  const latest = await fetchLatestVersionFromRegistry()
+  if (!latest) {
     process.stderr.write(`${yellow}Failed to reach npm registry.${reset}\n`)
     process.exit(1)
   }
@@ -36,13 +29,14 @@ export async function runUpdate(): Promise<void> {
 
   process.stdout.write(`${dim}Updating:${reset} v${current} → ${bold}v${latest}${reset}\n`)
 
+  const installCmd = resolveInstallCommand(`${NPM_PACKAGE}@latest`)
   try {
-    execSync(`npm install -g ${NPM_PACKAGE}@latest`, {
+    execSync(installCmd, {
       stdio: 'inherit',
     })
     process.stdout.write(`\n${green}${bold}Updated to v${latest}${reset}\n`)
   } catch {
-    process.stderr.write(`\n${yellow}Update failed. Try manually: npm install -g ${NPM_PACKAGE}@latest${reset}\n`)
+    process.stderr.write(`\n${yellow}Update failed. Try manually: ${installCmd}${reset}\n`)
     process.exit(1)
   }
 }

@@ -5,7 +5,7 @@
   "logo": {
     "light": "/images/logo.svg",
     "dark": "/images/logo.svg",
-    "href": "https://github.com/gsd-build/gsd-2/tree/main/docs"
+    "href": "https://gsd.build"
   },
   "favicon": "/images/favicon.svg",
   "colors": {
@@ -77,7 +77,9 @@
       {
         "group": "Features",
         "pages": [
+          "guides/change-management",
           "guides/captures-triage",
+          "guides/debug",
           "guides/parallel-orchestration",
           "guides/remote-questions",
           "guides/skills",

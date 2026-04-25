@@ -56,6 +56,7 @@ describe("parallel-monitor-overlay", () => {
     overlay2.handleInput("q");
     assert.ok(closed, "pressing q should trigger onClose");
     overlay2.dispose();
+
   });
 
   it("ParallelMonitorOverlay clamps scrollOffset during render", async () => {

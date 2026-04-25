@@ -12,7 +12,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { normalizeFilePath, checkFilePathConsistency } from '../pre-execution-checks.ts'
-import { readFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const src = readFileSync(
@@ -23,6 +23,25 @@ const src = readFileSync(
 describe('normalizeFilePath backtick stripping (#3649)', () => {
   it('strips backticks from file paths', () => {
     assert.equal(normalizeFilePath('`src/foo.ts`'), 'src/foo.ts')
+  })
+
+  it('strips doubled backticks and trailing notes from file paths', () => {
+    assert.equal(normalizeFilePath('``src/foo.ts`` - current state'), 'src/foo.ts')
+    assert.equal(normalizeFilePath('``src/foo.ts`` (current state)'), 'src/foo.ts')
+  })
+
+  it('strips stray backticks from dash-annotated bare paths (#4550)', () => {
+    assert.equal(
+      normalizeFilePath('.gsd/KNOWLEDGE.md` — append-only S05 lessons section'),
+      '.gsd/KNOWLEDGE.md',
+    )
+  })
+
+  it('prefers a backticked path inside a dash-annotated prefix (#4550)', () => {
+    assert.equal(
+      normalizeFilePath('Input `src/foo.ts` — current state'),
+      'src/foo.ts',
+    )
   })
 
   it('strips backticks even when mixed with other normalization', () => {
@@ -64,5 +83,47 @@ describe('checkFilePathConsistency checks task.inputs not task.files (#3626)', (
       'filesToCheck must NOT reference task.files — files likely touched include ' +
         'files the task will create, so they do not need to pre-exist',
     )
+  })
+})
+
+describe('checkFilePathConsistency handles doubled-backtick annotations (#3892)', () => {
+  it('accepts existing files when task.inputs include doubled-backtick notes', () => {
+    const task = {
+      milestone_id: 'M001',
+      slice_id: 'S01',
+      id: 'T01',
+      title: 'Test Task',
+      status: 'pending',
+      one_liner: '',
+      narrative: '',
+      verification_result: '',
+      duration: '',
+      completed_at: null,
+      blocker_discovered: false,
+      deviations: '',
+      known_issues: '',
+      key_files: [],
+      key_decisions: [],
+      full_summary_md: '',
+      description: '',
+      estimate: '',
+      files: [],
+      verify: '',
+      inputs: ['``src/foo.ts`` (current state)'],
+      expected_output: [],
+      observability_impact: '',
+      full_plan_md: '',
+      sequence: 0,
+    }
+
+    const tmp = resolve(process.cwd(), '.tmp-pre-exec-3892')
+    try {
+      mkdirSync(resolve(tmp, 'src'), { recursive: true })
+      writeFileSync(resolve(tmp, 'src', 'foo.ts'), '// ok')
+      const results = checkFilePathConsistency([task as any], tmp)
+      assert.deepEqual(results, [])
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
   })
 })

@@ -13,6 +13,8 @@ import {
 } from "../../notification-store.js";
 import { GSDNotificationOverlay } from "../../notification-overlay.js";
 
+const MAX_INLINE_ENTRIES = 40;
+
 function severityIcon(severity: NotifySeverity): string {
   switch (severity) {
     case "error": return "✗";
@@ -54,8 +56,9 @@ export async function handleNotificationsCommand(
   if (args === "tail" || args.startsWith("tail ")) {
     const countStr = args.replace(/^tail\s*/, "").trim();
     const count = countStr ? parseInt(countStr, 10) : 20;
-    const n = isNaN(count) || count < 1 ? 20 : Math.min(count, 100);
-    const entries = readNotifications().slice(0, n);
+    const all = readNotifications();
+    const n = isNaN(count) || count < 1 ? 20 : Math.min(count, MAX_INLINE_ENTRIES);
+    const entries = all.slice(0, n);
 
     if (entries.length === 0) {
       ctx.ui.notify("No notifications.", "info");
@@ -65,7 +68,10 @@ export async function handleNotificationsCommand(
     const lines = entries.map((e) =>
       `${severityIcon(e.severity)} [${formatTimestamp(e.ts)}] ${e.message}`,
     );
-    ctx.ui.notify(`Last ${entries.length} notification(s):\n${lines.join("\n")}`, "info");
+    const suffix = all.length > entries.length
+      ? `\n... and ${all.length - entries.length} more (open /gsd notifications to browse all)`
+      : "";
+    ctx.ui.notify(`Last ${entries.length} notification(s):\n${lines.join("\n")}${suffix}`, "info");
     return true;
   }
 
@@ -86,7 +92,9 @@ export async function handleNotificationsCommand(
     const lines = entries.slice(0, 20).map((e) =>
       `${severityIcon(e.severity)} [${formatTimestamp(e.ts)}] ${e.message}`,
     );
-    const suffix = entries.length > 20 ? `\n... and ${entries.length - 20} more` : "";
+    const suffix = entries.length > 20
+      ? `\n... and ${entries.length - 20} more (open /gsd notifications to browse all)`
+      : "";
     ctx.ui.notify(`${severity} notifications (${entries.length}):\n${lines.join("\n")}${suffix}`, "info");
     return true;
   }
@@ -96,8 +104,8 @@ export async function handleNotificationsCommand(
     // Try overlay first (TUI mode)
     if (ctx.hasUI) {
       try {
-        await ctx.ui.custom<void>(
-          (tui, theme, _kb, done) => new GSDNotificationOverlay(tui, theme, () => done()),
+        const result = await ctx.ui.custom<boolean>(
+          (tui, theme, _kb, done) => new GSDNotificationOverlay(tui, theme, () => done(true)),
           {
             overlay: true,
             overlayOptions: {
@@ -109,7 +117,9 @@ export async function handleNotificationsCommand(
             },
           },
         );
-        return true;
+        if (result !== undefined) {
+          return true;
+        }
       } catch {
         // Fall through to text output if overlay fails
       }

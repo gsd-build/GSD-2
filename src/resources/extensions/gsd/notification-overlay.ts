@@ -1,19 +1,20 @@
 // GSD Extension — Notification History Overlay
 // Scrollable panel showing all persisted notifications with severity filtering.
-// Toggled with Ctrl+Alt+N (⌃⌥N on macOS) or opened from /gsd notifications.
+// Toggled with Ctrl+Alt+N (⌃⌥N on macOS), Ctrl+Shift+N fallback, or /gsd notifications.
 
 import type { Theme } from "@gsd/pi-coding-agent";
-import { truncateToWidth, visibleWidth, matchesKey, Key } from "@gsd/pi-tui";
+import { truncateToWidth, visibleWidth, wrapTextWithAnsi, matchesKey, Key } from "@gsd/pi-tui";
 
 import {
   readNotifications,
   markAllRead,
   clearNotifications,
-  getUnreadCount,
+  onNotificationStoreChange,
   type NotificationEntry,
   type NotifySeverity,
 } from "./notification-store.js";
-import { padRight, centerLine, joinColumns, formatDuration } from "../shared/mod.js";
+import { formattedShortcutPair } from "./shortcut-defs.js";
+import { padRight, joinColumns } from "../shared/mod.js";
 
 type FilterMode = "all" | "error" | "warning" | "info";
 const FILTER_CYCLE: FilterMode[] = ["all", "error", "warning", "info"];
@@ -28,25 +29,15 @@ function severityIcon(severity: NotifySeverity): string {
   }
 }
 
-/** Word-wrap plain text to fit within maxWidth columns. */
+/** Column-aware word wrap using pi-tui's native wrapper (handles unicode/ANSI). */
 function wrapText(text: string, maxWidth: number): string[] {
-  if (text.length <= maxWidth) return [text];
-  const words = text.split(/\s+/);
-  const lines: string[] = [];
-  let current = "";
-  for (const word of words) {
-    if (current.length === 0) {
-      current = word;
-    } else if (current.length + 1 + word.length <= maxWidth) {
-      current += " " + word;
-    } else {
-      lines.push(current);
-      current = word;
-    }
-  }
-  if (current.length > 0) lines.push(current);
-  // If a single word exceeds maxWidth, truncate it
-  return lines.map((l) => l.length > maxWidth ? l.slice(0, maxWidth - 1) + "…" : l);
+  if (maxWidth <= 0) return [text];
+  const lines = wrapTextWithAnsi(text, maxWidth);
+  // Safety clamp: if any line still exceeds maxWidth (e.g. unbreakable long token),
+  // truncate it with an ellipsis so it cannot bleed past the box border.
+  return lines.map((l) =>
+    visibleWidth(l) > maxWidth ? truncateToWidth(l, maxWidth, "…") : l,
+  );
 }
 
 function formatTimestamp(ts: string): string {
@@ -63,6 +54,12 @@ function formatTimestamp(ts: string): string {
   }
 }
 
+function notificationSignature(entries: readonly NotificationEntry[]): string {
+  return entries
+    .map((entry) => `${entry.ts}|${entry.severity}|${entry.read ? 1 : 0}|${entry.message}`)
+    .join("\n");
+}
+
 export class GSDNotificationOverlay {
   private tui: { requestRender: () => void };
   private theme: Theme;
@@ -72,9 +69,11 @@ export class GSDNotificationOverlay {
   private scrollOffset = 0;
   private filterIndex = 0;
   private entries: NotificationEntry[] = [];
+  private entriesSignature = "";
   private refreshTimer: ReturnType<typeof setInterval>;
   private disposed = false;
   private resizeHandler: (() => void) | null = null;
+  private unsubscribeStore: (() => void) | null = null;
 
   constructor(
     tui: { requestRender: () => void },
@@ -88,6 +87,7 @@ export class GSDNotificationOverlay {
     // Mark all as read on open
     markAllRead();
     this.entries = readNotifications();
+    this.entriesSignature = notificationSignature(this.entries);
 
     // Resize handler
     this.resizeHandler = () => {
@@ -97,17 +97,17 @@ export class GSDNotificationOverlay {
     };
     process.stdout.on("resize", this.resizeHandler);
 
-    // Refresh every 3s for new notifications
+    // Subscribe to store mutations for immediate updates
+    this.unsubscribeStore = onNotificationStoreChange(() => {
+      if (this.disposed) return;
+      this._refreshFromDisk();
+    });
+
+    // 30s safety-net for cross-process edits (web subprocess, parallel workers)
     this.refreshTimer = setInterval(() => {
       if (this.disposed) return;
-      const fresh = readNotifications();
-      if (fresh.length !== this.entries.length) {
-        this.entries = fresh;
-        markAllRead();
-        this.invalidate();
-        this.tui.requestRender();
-      }
-    }, 3000);
+      this._refreshFromDisk();
+    }, 30_000);
   }
 
   private get filter(): FilterMode {
@@ -120,7 +120,12 @@ export class GSDNotificationOverlay {
   }
 
   handleInput(data: string): void {
-    if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c")) || matchesKey(data, Key.ctrlAlt("n"))) {
+    if (
+      matchesKey(data, Key.escape) ||
+      matchesKey(data, Key.ctrl("c")) ||
+      matchesKey(data, Key.ctrlAlt("n")) ||
+      matchesKey(data, Key.ctrlShift("n"))
+    ) {
       this.dispose();
       this.onClose();
       return;
@@ -165,6 +170,7 @@ export class GSDNotificationOverlay {
     if (data === "c") {
       clearNotifications();
       this.entries = [];
+      this.entriesSignature = notificationSignature(this.entries);
       this.scrollOffset = 0;
       this.invalidate();
       this.tui.requestRender();
@@ -199,9 +205,25 @@ export class GSDNotificationOverlay {
   dispose(): void {
     this.disposed = true;
     clearInterval(this.refreshTimer);
+    if (this.unsubscribeStore) {
+      this.unsubscribeStore();
+      this.unsubscribeStore = null;
+    }
     if (this.resizeHandler) {
       process.stdout.removeListener("resize", this.resizeHandler);
       this.resizeHandler = null;
+    }
+  }
+
+  private _refreshFromDisk(): void {
+    const fresh = readNotifications();
+    const signature = notificationSignature(fresh);
+    if (signature !== this.entriesSignature) {
+      markAllRead();
+      this.entries = readNotifications();
+      this.entriesSignature = notificationSignature(this.entries);
+      this.invalidate();
+      this.tui.requestRender();
     }
   }
 
@@ -250,7 +272,8 @@ export class GSDNotificationOverlay {
     lines.push(hr());
 
     // Controls
-    lines.push(row(th.fg("dim", "↑/↓ scroll  f filter  c clear  Esc close")));
+    const closeShortcut = formattedShortcutPair("notifications");
+    lines.push(row(th.fg("dim", `↑/↓ scroll  f filter  c clear  Esc close  (${closeShortcut})`)));
     lines.push(blank());
 
     // Entries
