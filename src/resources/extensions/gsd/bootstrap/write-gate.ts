@@ -97,8 +97,15 @@ export interface WriteGateSnapshot {
   pendingGateId: string | null;
 }
 
+/**
+ * Persistence is ON by default (opt-out).
+ * Set GSD_PERSIST_WRITE_GATE_STATE="0" or GSD_PERSIST_WRITE_GATE_STATE="false"
+ * to disable. All other values — including unset — persist the snapshot.
+ * (Inverted from the original opt-in guard; see #4950.)
+ */
 function shouldPersistWriteGateSnapshot(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.GSD_PERSIST_WRITE_GATE_STATE === "1";
+  const v = env.GSD_PERSIST_WRITE_GATE_STATE;
+  return v !== "0" && v !== "false";
 }
 
 function writeGateSnapshotPath(basePath: string = process.cwd()): string {
