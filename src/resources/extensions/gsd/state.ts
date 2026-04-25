@@ -139,10 +139,9 @@ export function isGhostMilestone(basePath: string, mid: string): boolean {
  */
 export function isReusableGhostMilestone(basePath: string, mid: string): boolean {
   // Condition 1: no DB row (any status).
-  if (isDbAvailable()) {
-    const dbRow = getMilestone(mid);
-    if (dbRow != null) return false;
-  }
+  if (!isDbAvailable()) return false;
+  const dbRow = getMilestone(mid);
+  if (dbRow != null) return false;
 
   // Condition 2: no worktree.
   const root = gsdRoot(basePath);

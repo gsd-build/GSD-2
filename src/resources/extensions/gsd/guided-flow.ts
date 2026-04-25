@@ -14,7 +14,7 @@ import { isDbAvailable, getMilestoneSlices } from "./gsd-db.js";
 import { parseRoadmapSlices } from "./roadmap-slices.js";
 import { loadPrompt, inlineTemplate } from "./prompt-loader.js";
 import { buildDiscussMilestonePrompt, buildSkillActivationBlock } from "./auto-prompts.js";
-import { deriveState, isReusableGhostMilestone } from "./state.js";
+import { deriveState } from "./state.js";
 import { invalidateAllCaches } from "./cache.js";
 import { startAutoDetached } from "./auto.js";
 import { clearLock } from "./crash-recovery.js";
@@ -44,7 +44,8 @@ import { showProjectInit, offerMigration } from "./init-wizard.js";
 import { validateDirectory } from "./validate-directory.js";
 import { showConfirm } from "../shared/tui.js";
 import { debugLog } from "./debug-logger.js";
-import { findMilestoneIds, milestoneIdSort, nextMilestoneId, reserveMilestoneId, getReservedMilestoneIds, clearReservedMilestoneIds } from "./milestone-ids.js";
+import { findMilestoneIds, clearReservedMilestoneIds } from "./milestone-ids.js";
+import { nextMilestoneIdReserved } from "./milestone-id-reservation.js";
 import { parkMilestone, discardMilestone } from "./milestone-actions.js";
 import { selectAndApplyModel } from "./auto-model-selection.js";
 import { DISCUSS_TOOLS_ALLOWLIST } from "./constants.js";
@@ -71,31 +72,6 @@ export {
   buildExistingMilestonesContext,
 } from "./guided-flow-queue.js";
 import { logWarning } from "./workflow-logger.js";
-
-// ─── ID Generation with Reservation ─────────────────────────────────────────
-
-/**
- * Generate the next milestone ID, accounting for reserved IDs, and reserve it.
- * Ensures any preview ID shown in the UI matches what `gsd_milestone_generate_id`
- * will later return.
- */
-function nextMilestoneIdReserved(existingIds: string[], uniqueEnabled: boolean, basePath?: string): string {
-  const allIds = [...new Set([...existingIds, ...getReservedMilestoneIds()])];
-  // Fix #4996: before falling back to max+1, find the lowest reusable ghost ID.
-  // A reusable ghost is a disk-only stub with no DB row and no content files.
-  if (basePath) {
-    const sorted = [...allIds].sort(milestoneIdSort);
-    for (const candidate of sorted) {
-      if (isReusableGhostMilestone(basePath, candidate)) {
-        reserveMilestoneId(candidate);
-        return candidate;
-      }
-    }
-  }
-  const id = nextMilestoneId(allIds, uniqueEnabled);
-  reserveMilestoneId(id);
-  return id;
-}
 
 function needsPlanV2Gate(state: GSDState): boolean {
   return state.phase === "executing"
@@ -826,6 +802,9 @@ export async function showHeadlessMilestoneCreation(
   // Ensure .gsd/ is bootstrapped
   bootstrapGsdProject(basePath);
 
+  const { ensureDbOpen } = await import("./bootstrap/dynamic-tools.js");
+  await ensureDbOpen(basePath);
+
   // Generate next milestone ID
   const existingIds = findMilestoneIds(basePath);
   const prefs = loadEffectiveGSDPreferences();
@@ -1541,6 +1520,11 @@ export async function showSmartEntry(
   // ── Ensure .gitignore has baseline patterns ──────────────────────────
   ensureGitignore(basePath);
   untrackRuntimeFiles(basePath);
+
+  {
+    const { ensureDbOpen } = await import("./bootstrap/dynamic-tools.js");
+    await ensureDbOpen(basePath);
+  }
 
   // ── Self-heal stale runtime records from crashed auto-mode sessions ──
   selfHealRuntimeRecords(basePath, ctx);

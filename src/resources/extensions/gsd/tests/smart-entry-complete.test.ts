@@ -48,6 +48,10 @@ test("guided-flow complete branch offers a chooser for next milestone or status"
 
   assert.match(branchChunk, /showNextAction\(/, "complete branch should present a chooser");
   assert.match(branchChunk, /findMilestoneIds\(basePath\)/, "complete branch should compute the next milestone id");
-  assert.match(branchChunk, /nextMilestoneId(?:Reserved)?\(milestoneIds, uniqueMilestoneIds(?:,\s*\w+)?\)/, "complete branch should derive the next milestone id");
+  assert.match(
+    branchChunk,
+    /nextMilestoneIdReserved\(milestoneIds,\s*uniqueMilestoneIds,\s*basePath\)/,
+    "complete branch should derive the next milestone id",
+  );
   assert.match(branchChunk, /dispatchWorkflow\(pi, await prepareAndBuildDiscussPrompt\(/, "complete branch should dispatch the prepared discuss prompt");
 });

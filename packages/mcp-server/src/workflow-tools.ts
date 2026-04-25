@@ -847,6 +847,20 @@ async function ensureMilestoneDbRow(milestoneId: string): Promise<void> {
   }
 }
 
+async function findDatabaseMilestoneIds(): Promise<string[]> {
+  try {
+    const { getAllMilestones } = await importLocalModule<any>("../../../src/resources/extensions/gsd/gsd-db.js");
+    return (getAllMilestones?.() ?? [])
+      .map((milestone: unknown) => {
+        const id = (milestone as { id?: unknown })?.id;
+        return typeof id === "string" ? id : null;
+      })
+      .filter((id: string | null): id is string => id !== null);
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Fix #4996: Shared helper for both gsd_milestone_generate_id and
  * gsd_generate_milestone_id. Reuses the lowest reusable ghost milestone ID
@@ -870,7 +884,13 @@ async function generateOrReuseMilestoneId(projectDir: string): Promise<string> {
     return reserved;
   }
 
-  const allIds = [...new Set([...findMilestoneIds(projectDir), ...getReservedMilestoneIds()])];
+  const allIds = [
+    ...new Set([
+      ...findMilestoneIds(projectDir),
+      ...getReservedMilestoneIds(),
+      ...(await findDatabaseMilestoneIds()),
+    ]),
+  ];
 
   // Attempt ghost-ID reuse before falling back to max+1.
   const { isReusableGhostMilestone } = await importLocalModule<any>(
@@ -892,7 +912,7 @@ async function generateOrReuseMilestoneId(projectDir: string): Promise<string> {
   // throws here — matches the pre-fix behavior for missing prefs.
   let uniqueEnabled = false;
   try {
-    uniqueEnabled = !!prefsMod?.loadEffectiveGSDPreferences?.()?.preferences?.unique_milestone_ids;
+    uniqueEnabled = !!prefsMod?.loadEffectiveGSDPreferences?.(projectDir)?.preferences?.unique_milestone_ids;
   } catch {
     uniqueEnabled = false;
   }

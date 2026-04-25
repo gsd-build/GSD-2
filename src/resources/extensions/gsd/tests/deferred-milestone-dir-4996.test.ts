@@ -10,10 +10,10 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { isReusableGhostMilestone } from "../state.ts";
-import { findMilestoneIds } from "../milestone-ids.ts";
-import { clearReservedMilestoneIds } from "../milestone-ids.ts";
+import { nextMilestoneIdReserved } from "../milestone-id-reservation.ts";
+import { clearReservedMilestoneIds, findMilestoneIds } from "../milestone-ids.ts";
 import { invalidateAllCaches } from "../cache.ts";
-import { closeDatabase } from "../gsd-db.ts";
+import { closeDatabase, openDatabase } from "../gsd-db.ts";
 
 function makeBase(prefix = "gsd-deferred-dir-"): string {
   const base = mkdtempSync(join(tmpdir(), prefix));
@@ -37,9 +37,9 @@ describe("deferred milestone dir creation (#4996)", () => {
 
   it("(a) fresh project: milestones dir has no M001 entry before any discuss flow", () => {
     base = makeBase();
-    // Simulate the state after bootstrapGsdProject but before showHeadlessMilestoneCreation
-    // runs dispatchWorkflow. With Fix #3, no milestone dir should be created by
-    // the ID-reservation path alone.
+    const nextId = nextMilestoneIdReserved(findMilestoneIds(base), false, base);
+    assert.equal(nextId, "M001", "reservation should choose M001 for a fresh project");
+
     const ids = findMilestoneIds(base);
     assert.equal(ids.length, 0, "no milestone dirs should exist before any discuss flow");
 
@@ -50,13 +50,12 @@ describe("deferred milestone dir creation (#4996)", () => {
 
   it("(b) abandoned discuss flow leaves no orphan: isReusableGhostMilestone returns false for non-existent dir", () => {
     base = makeBase();
-    // If no dir was ever created (Fix #3 working correctly), the check should
-    // return false because there's nothing to reclaim (the path doesn't exist).
-    // isReusableGhostMilestone operates on dirs that DO exist; if no dir exists,
-    // findMilestoneIds won't surface it, so it won't be evaluated. This test
-    // confirms the absence of a dir means no orphan to report.
+    const nextId = nextMilestoneIdReserved(findMilestoneIds(base), false, base);
+    assert.equal(nextId, "M001", "reservation should not require a pre-created directory");
+
     const m001Dir = join(base, ".gsd", "milestones", "M001");
     assert.ok(!existsSync(m001Dir), "no M001 dir should exist");
+    assert.equal(isReusableGhostMilestone(base, "M001"), false, "non-existent milestone should not be reusable");
     // findMilestoneIds only returns dirs that exist
     const ids = findMilestoneIds(base);
     assert.ok(!ids.includes("M001"), "M001 should not appear in findMilestoneIds when no dir exists");
@@ -64,11 +63,14 @@ describe("deferred milestone dir creation (#4996)", () => {
 
   it("(c) a stub dir left from a previous bug IS reusable but a newly-generated ID with no dir is not in the ghost list", () => {
     base = makeBase();
+    openDatabase(join(base, ".gsd", "gsd.db"));
     // Create a stub to represent a pre-existing phantom
     mkdirSync(join(base, ".gsd", "milestones", "M001", "slices"), { recursive: true });
 
     // isReusableGhostMilestone identifies the orphaned stub
     assert.ok(isReusableGhostMilestone(base, "M001"), "pre-existing stub should be identified as reusable ghost");
+    const nextId = nextMilestoneIdReserved(findMilestoneIds(base), false, base);
+    assert.equal(nextId, "M001", "reservation should reuse the pre-existing ghost");
 
     // The new ID (M002, which would be max+1 in this scenario but ghost reuse returns M001)
     // should not have a dir

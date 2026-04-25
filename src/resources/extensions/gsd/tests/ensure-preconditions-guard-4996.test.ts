@@ -13,7 +13,6 @@ import {
   openDatabase,
   closeDatabase,
   insertMilestone,
-  isDbAvailable,
 } from "../gsd-db.ts";
 
 import type { GSDState } from "../types.ts";
@@ -39,7 +38,6 @@ function makeMinimalState(): GSDState {
 
 describe("ensurePreconditions phantom-dir guard (#4996)", () => {
   let base: string;
-  let dbPath: string;
 
   afterEach(() => {
     try { closeDatabase(); } catch { /* ignore */ }
@@ -58,7 +56,7 @@ describe("ensurePreconditions phantom-dir guard (#4996)", () => {
 
   it("(b) slice unit ID for milestone with DB row DOES create dirs", () => {
     base = makeBase();
-    dbPath = join(base, ".gsd", "gsd.db");
+    const dbPath = join(base, ".gsd", "gsd.db");
     openDatabase(dbPath);
     insertMilestone({ id: "M003", status: "active" });
     const state = makeMinimalState();
@@ -72,20 +70,16 @@ describe("ensurePreconditions phantom-dir guard (#4996)", () => {
   it("(c) slice unit ID for milestone with CONTEXT.md content file DOES create dirs", () => {
     base = makeBase();
     const mid = "M003";
-    // Write content file without a DB row
-    const milestoneDir = join(base, ".gsd", "milestones", mid);
-    mkdirSync(milestoneDir, { recursive: true });
-    writeFileSync(join(milestoneDir, `${mid}-CONTEXT.md`), "# Context\n");
+    const milestonesPath = join(base, ".gsd", "milestones");
+    mkdirSync(milestonesPath, { recursive: true });
+    writeFileSync(join(milestonesPath, `${mid}-CONTEXT.md`), "# Context\n");
     const state = makeMinimalState();
 
     ensurePreconditions("execute-task", "M003/S01", base, state);
 
-    // The milestoneDir already exists; ensurePreconditions should proceed to create slices/
+    const milestoneDir = join(milestonesPath, mid);
     const slicesDir = join(milestoneDir, "slices");
-    // resolveMilestonePath finds the dir — so it goes through the sid branch, not the !mDir branch.
-    // The guard only fires when the dir does NOT exist yet. This test verifies
-    // that when content files exist alongside the dir the guard does not block the normal path.
-    assert.ok(existsSync(milestoneDir), "milestone dir should still exist (was pre-created with content)");
+    assert.ok(existsSync(slicesDir), "content-file fallback should allow slice scaffolding");
   });
 
   it("(d) milestone-only unit ID (no slice) still creates dir even with no DB row", () => {
