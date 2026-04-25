@@ -99,7 +99,7 @@ export async function selectAndApplyModel(
   prefs: GSDPreferences | undefined,
   verbose: boolean,
   autoModeStartModel: { provider: string; id: string; flatRateCtx?: FlatRateContext } | null,
-  retryContext?: { isRetry: boolean; previousTier?: string },
+  retryContext?: { isRetry: boolean; previousTier?: string; isDeterministicError?: boolean },
   /** When false (interactive/guided-flow), skip dynamic routing and use the session model.
    *  Dynamic routing only applies in auto-mode where cost optimization is expected. (#3962) */
   isAutoMode = true,
@@ -235,11 +235,15 @@ export async function selectAndApplyModel(
         );
         const availableModelIds = routingEligibleModels.map(m => `${m.provider}/${m.id}`);
 
-        // Escalate tier on retry when escalate_on_failure is enabled (default: true)
+        // Escalate tier on retry when escalate_on_failure is enabled (default: true).
+        // #4973: Skip escalation entirely for deterministic policy errors — the model
+        // tier is irrelevant because a structural gate (not model quality) caused the
+        // failure. Escalating only wastes money on the same deterministic rejection.
         if (
           retryContext?.isRetry &&
           retryContext.previousTier &&
-          routingConfig.escalate_on_failure !== false
+          routingConfig.escalate_on_failure !== false &&
+          !retryContext.isDeterministicError
         ) {
           const escalated = escalateTier(retryContext.previousTier as ComplexityTier);
           if (escalated) {
@@ -249,6 +253,17 @@ export async function selectAndApplyModel(
               `Tier escalation: ${retryContext.previousTier} → ${escalated} (retry after failure)`,
               "info",
             );
+          } else {
+            // #4973: Already at max tier — keep previousTier rather than letting
+            // fresh classification silently downgrade the model back to a lower tier.
+            // Without this, a light-start unit on retry 3 would revert to the light
+            // model after escalating to heavy on retries 1 and 2.
+            const tierOrder: Record<string, number> = { light: 0, standard: 1, heavy: 2 };
+            const prevOrder = tierOrder[retryContext.previousTier] ?? 0;
+            const freshOrder = tierOrder[classification.tier] ?? 0;
+            if (prevOrder > freshOrder) {
+              classification = { ...classification, tier: retryContext.previousTier as ComplexityTier, reason: "retained escalated tier from retry" };
+            }
           }
         }
 

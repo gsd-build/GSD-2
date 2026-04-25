@@ -72,6 +72,7 @@ import { UokGateRunner } from "./uok/gate-runner.js";
 import { writeTurnGitTransaction } from "./uok/gitops.js";
 import { isClosedStatus } from "./status-guards.js";
 import { detectAbandonMilestone } from "./abandon-detect.js";
+import { isDeterministicPolicyError } from "./auto-tool-tracking.js";
 
 /** Maximum verification retry attempts before escalating to blocker placeholder (#2653). */
 const MAX_VERIFICATION_RETRIES = 3;
@@ -908,10 +909,22 @@ export async function postUnitPreVerification(pctx: PostUnitContext, opts?: PreV
       // After MAX_VERIFICATION_RETRIES, escalate to writeBlockerPlaceholder so the
       // pipeline can advance instead of looping forever (#2653).
       //
-      // HOWEVER, if the DB is unavailable (db_unavailable), the artifact was never
-      // written because the completion tool failed at the infra level. Retrying
-      // can never succeed and produces a costly re-dispatch loop (#2517).
-      if (!triggerArtifactVerified && !isDbAvailable()) {
+      // #4973: Deterministic policy rejections (e.g. context_write_blocked from the
+      // write-gate) are checked FIRST — before the DB-availability check — because
+      // they are structural gates that will fire on every retry regardless of DB or
+      // model tier. Short-circuit immediately by writing a blocker placeholder.
+      if (!triggerArtifactVerified && s.lastToolInvocationError && isDeterministicPolicyError(s.lastToolInvocationError)) {
+        debugLog("postUnit", { phase: "deterministic-policy-error-placeholder", unitType: s.currentUnit.type, unitId: s.currentUnit.id, error: s.lastToolInvocationError });
+        const reason = `Deterministic policy rejection for ${s.currentUnit.type} "${s.currentUnit.id}": ${s.lastToolInvocationError}. Retrying cannot resolve this gate — writing blocker placeholder to advance pipeline.`;
+        s.lastToolInvocationError = null;
+        s.pendingVerificationRetry = null;
+        writeBlockerPlaceholder(s.currentUnit.type, s.currentUnit.id, s.basePath, reason);
+        ctx.ui.notify(
+          `${s.currentUnit.type} ${s.currentUnit.id} — deterministic policy rejection, wrote blocker placeholder (no retries) (#4973)`,
+          "warning",
+        );
+        // Fall through to "continue" — do NOT enter the retry or db-unavailable paths.
+      } else if (!triggerArtifactVerified && !isDbAvailable()) {
         // DB infra failure — do NOT retry; the completion tool returned
         // db_unavailable so the artifact was never written. Retrying would
         // produce an infinite re-dispatch loop (#2517).

@@ -84,6 +84,7 @@ import {
   clearInFlightTools,
   isToolInvocationError,
   isQueuedUserMessageSkip,
+  isDeterministicPolicyError,
 } from "./auto-tool-tracking.js";
 import { closeoutUnit } from "./auto-unit-closeout.js";
 import { recoverTimedOutUnit } from "./auto-timeout-recovery.js";
@@ -544,12 +545,14 @@ export function markToolEnd(toolCallId: string): void {
 /**
  * Record a tool invocation error on the current session (#2883).
  * Called from tool_execution_end when a GSD tool fails with isError.
- * Only stores the error if it matches the tool-invocation-error pattern
- * (malformed/truncated JSON), not normal business-logic errors.
+ * Stores the error if it matches:
+ *   - tool-invocation-error pattern (malformed/truncated JSON)
+ *   - queued-user-message skip pattern
+ *   - deterministic policy rejection (#4973, e.g. context_write_blocked)
  */
 export function recordToolInvocationError(toolName: string, errorMsg: string): void {
   if (!s.active) return;
-  if (isToolInvocationError(errorMsg) || isQueuedUserMessageSkip(errorMsg)) {
+  if (isToolInvocationError(errorMsg) || isQueuedUserMessageSkip(errorMsg) || isDeterministicPolicyError(errorMsg)) {
     s.lastToolInvocationError = `${toolName}: ${errorMsg}`;
   }
 }
