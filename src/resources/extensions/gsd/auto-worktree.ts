@@ -1716,11 +1716,87 @@ export function mergeMilestoneToMain(
     }
   }
 
-  // 7. Ensure clean working tree before squash merge (#3141).
+  // 7. Shelter queued milestone directories before cleaning and squash merge (#2505).
+  // Keep the shelter under the Git directory so git stash --include-untracked
+  // cannot sweep the only backup copy into the stash.
+  const milestonesDir = join(gsdRoot(originalBasePath_), "milestones");
+  const shelterDir = join(
+    resolveGitDir(originalBasePath_),
+    "gsd-milestone-shelter",
+    `${milestoneId}-${process.pid}-${Date.now()}`,
+  );
+  const shelteredDirs: string[] = [];
+  let shelterRestored = false;
+
+  const restoreShelter = (): void => {
+    if (shelterRestored) return;
+    shelterRestored = true;
+    if (shelteredDirs.length === 0) return;
+
+    let restoreFailed = false;
+    for (const dirName of shelteredDirs) {
+      const src = join(shelterDir, dirName);
+      if (!existsSync(src)) {
+        restoreFailed = true;
+        logError("worktree", `shelter source missing for ${dirName}; manual recovery may be required`);
+        continue;
+      }
+
+      try {
+        mkdirSync(milestonesDir, { recursive: true });
+        cpSync(src, join(milestonesDir, dirName), { recursive: true, force: true });
+      } catch (err) {
+        restoreFailed = true;
+        logError("worktree", `shelter restore failed (${dirName}): ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    if (restoreFailed) {
+      logWarning("worktree", `shelter retained at ${shelterDir} for manual recovery`);
+      return;
+    }
+
+    try {
+      rmSync(shelterDir, { recursive: true, force: true });
+    } catch (err) {
+      logWarning("worktree", `shelter cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  try {
+    if (existsSync(milestonesDir)) {
+      const entries = readdirSync(milestonesDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory() || entry.name === milestoneId) continue;
+
+        const srcDir = join(milestonesDir, entry.name);
+        const dstDir = join(shelterDir, entry.name);
+        try {
+          mkdirSync(shelterDir, { recursive: true });
+          cpSync(srcDir, dstDir, { recursive: true, force: true });
+          rmSync(srcDir, { recursive: true, force: true });
+          shelteredDirs.push(entry.name);
+        } catch (err) {
+          logWarning("worktree", `milestone shelter failed (${entry.name}): ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    }
+  } catch (err) {
+    logWarning("worktree", `milestone shelter operation failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  // 7a. Ensure clean working tree before squash merge (#3141).
   // Replaces the old stash-and-pray pattern with a guaranteed-clean-or-throw approach.
   // Uses ensureCleanWorkingTree() escalation ladder: discard .gsd/ → stash → abort+reset → throw.
   let stashed = false;
-  const cleanResult = ensureCleanWorkingTree(originalBasePath_);
+  let cleanResult: { stashed: boolean; cleaned: string[] };
+  try {
+    cleanResult = ensureCleanWorkingTree(originalBasePath_);
+  } catch (err) {
+    restoreShelter();
+    process.chdir(previousCwd);
+    throw err;
+  }
   stashed = cleanResult.stashed;
   if (cleanResult.cleaned.length > 0) {
     debugLog("mergeMilestoneToMain", { phase: "pre-merge-clean", cleaned: cleanResult.cleaned });
@@ -1981,4 +2057,3 @@ export function mergeMilestoneToMain(
 
   return { commitMessage, pushed, prCreated, codeFilesChanged };
 }
-
