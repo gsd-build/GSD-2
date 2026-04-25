@@ -1709,6 +1709,22 @@ export async function runUnitPhase(
       debugLog("autoLoop", { phase: "exit", reason: "provider-pause", isTransient: unitResult.errorContext?.isTransient });
       return { action: "break", reason: "provider-pause" };
     }
+
+    // Any explicit pause path resolves the in-flight unit and flips auto-mode
+    // into paused state before runFinalize sees the cancellation. Break out
+    // cleanly instead of misclassifying the unit as a session-creation failure.
+    if (!s.active && s.paused) {
+      const pauseCategory = errorCategory ?? "paused";
+      await emitCancelledUnitEnd(ic, unitType, unitId, unitStartSeq, unitResult.errorContext);
+      debugLog("autoLoop", {
+        phase: "exit",
+        reason: "paused-unwind",
+        pauseCategory,
+        isTransient: unitResult.errorContext?.isTransient,
+      });
+      return { action: "break", reason: `${pauseCategory}-pause` };
+    }
+
     // Timeout category covers two distinct scenarios:
     //   1. Session creation timeout (120s) — transient, auto-resume with backoff
     //   2. Unit hard timeout (30min+) — stuck agent, pause for manual review
@@ -1781,6 +1797,7 @@ export async function runUnitPhase(
       await emitCancelledUnitEnd(ic, unitType, unitId, unitStartSeq, unitResult.errorContext);
       return { action: "break", reason: "unit-hard-timeout" };
     }
+
     if (
       unitResult.errorContext?.isTransient &&
       errorCategory === "session-failed"
@@ -1795,6 +1812,7 @@ export async function runUnitPhase(
       await emitCancelledUnitEnd(ic, unitType, unitId, unitStartSeq, unitResult.errorContext);
       return { action: "break", reason: "session-timeout" };
     }
+
     // All other cancelled states (structural errors, non-transient failures): hard stop
     if (s.currentUnit) {
       await deps.closeoutUnit(
