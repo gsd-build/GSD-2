@@ -18,6 +18,8 @@ import {
   getActiveDecisions,
   getActiveRequirements,
   transaction,
+  readTransaction,
+  isInTransaction,
   _getAdapter,
   _resetProvider,
   insertMilestone,
@@ -381,6 +383,34 @@ describe('gsd-db', () => {
     assert.ok(d10 !== null, 'D010 should survive the failed transaction');
 
     closeDatabase();
+  });
+
+  test('gsd-db: failed BEGIN does not poison transaction depth', () => {
+    openDatabase(':memory:');
+    const adapter = _getAdapter()!;
+
+    const assertFailedBeginLeavesDepthClear = (label: string, fn: () => void) => {
+      adapter.exec('BEGIN');
+      try {
+        let threw = false;
+        try {
+          fn();
+        } catch {
+          threw = true;
+        }
+        assert.equal(threw, true, `${label} should surface the SQLite BEGIN failure`);
+        assert.equal(isInTransaction(), false, `${label} failed BEGIN must not leave depth active`);
+      } finally {
+        adapter.exec('ROLLBACK');
+      }
+    };
+
+    try {
+      assertFailedBeginLeavesDepthClear('transaction', () => transaction(() => undefined));
+      assertFailedBeginLeavesDepthClear('readTransaction', () => readTransaction(() => undefined));
+    } finally {
+      closeDatabase();
+    }
   });
 
   test('gsd-db: recreates missing verification evidence dedup index after removing duplicate rows', () => {

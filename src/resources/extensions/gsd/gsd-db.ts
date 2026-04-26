@@ -1429,8 +1429,8 @@ export function transaction<T>(fn: () => T): T {
     }
   }
 
-  _txDepth++;
   currentDb.exec("BEGIN");
+  _txDepth++;
   try {
     const result = fn();
     currentDb.exec("COMMIT");
@@ -1462,8 +1462,8 @@ export function readTransaction<T>(fn: () => T): T {
     }
   }
 
-  _txDepth++;
   currentDb.exec("BEGIN DEFERRED");
+  _txDepth++;
   try {
     const result = fn();
     currentDb.exec("COMMIT");

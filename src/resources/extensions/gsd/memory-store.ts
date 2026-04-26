@@ -512,7 +512,7 @@ export function createMemory(fields: {
   if (!adapter) return null;
 
   try {
-    return doCreateMemory(adapter, fields);
+    return transaction(() => doCreateMemory(adapter, fields));
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
 
@@ -522,8 +522,10 @@ export function createMemory(fields: {
     if (message.toLowerCase().includes('malformed') && !isInTransaction()) {
       try {
         adapter.prepare('VACUUM').run();
-        process.stderr.write('memory-store: recovered malformed memory store via VACUUM\n');
-        return doCreateMemory(adapter, fields);
+        const recoveryMessage = 'recovered malformed memory store via VACUUM';
+        process.stderr.write(`memory-store: ${recoveryMessage}\n`);
+        logWarning('memory-store', recoveryMessage);
+        return transaction(() => doCreateMemory(adapter, fields));
       } catch (retryErr) {
         const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
         logWarning('memory-store', `VACUUM recovery for memory store failed: ${retryMsg}`);
