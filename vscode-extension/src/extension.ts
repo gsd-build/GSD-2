@@ -16,12 +16,14 @@ import { GsdDiagnosticBridge } from "./diagnostics.js";
 import { GsdLineDecorationManager } from "./line-decorations.js";
 import { GsdGitIntegration } from "./git-integration.js";
 import { GsdPermissionManager } from "./permissions.js";
+import { GsdPlanViewerProvider } from "./plan-viewer.js";
 
 let client: GsdClient | undefined;
 let sidebarProvider: GsdSidebarProvider | undefined;
 let fileDecorations: GsdFileDecorationProvider | undefined;
 let sessionTreeProvider: GsdSessionTreeProvider | undefined;
 let activityFeedProvider: GsdActivityFeedProvider | undefined;
+let planViewerProvider: GsdPlanViewerProvider | undefined;
 let changeTracker: GsdChangeTracker | undefined;
 let scmProvider: GsdScmProvider | undefined;
 let diagnosticBridge: GsdDiagnosticBridge | undefined;
@@ -152,6 +154,14 @@ export function activate(context: vscode.ExtensionContext): void {
 	context.subscriptions.push(
 		activityFeedProvider,
 		vscode.window.registerTreeDataProvider(GsdActivityFeedProvider.viewId, activityFeedProvider),
+	);
+
+	// -- Plan view ----------------------------------------------------------
+
+	planViewerProvider = new GsdPlanViewerProvider(client);
+	context.subscriptions.push(
+		planViewerProvider,
+		vscode.window.registerTreeDataProvider(GsdPlanViewerProvider.viewId, planViewerProvider),
 	);
 
 	// -- Change tracker & SCM provider -------------------------------------
@@ -935,6 +945,12 @@ export function activate(context: vscode.ExtensionContext): void {
 	context.subscriptions.push(
 		vscode.commands.registerCommand("gsd.clearDiagnostics", () => {
 			diagnosticBridge?.clearFindings();
+		}),
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand("gsd.clearPlan", () => {
+			planViewerProvider?.clear();
 		}),
 	);
 

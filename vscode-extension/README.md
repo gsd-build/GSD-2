@@ -80,6 +80,10 @@ Automatic checkpoints are created at the start of each agent turn. Use **Discard
 
 The **Activity** panel shows a real-time log of every tool the agent executes — Read, Write, Edit, Bash, Grep, Glob — with status icons (running/success/error), duration, and click-to-open for file operations.
 
+### Plan View
+
+The **Plan** panel shows the agent's current plan as a dedicated tree view. Use **GSD: Clear Plan View** from the Command Palette to clear the displayed plan.
+
 ### Sessions
 
 The **Sessions** panel lists all past sessions for the current workspace. Click any session to switch to it. The current session is highlighted green. Sessions persist to disk automatically.
@@ -128,6 +132,7 @@ When the agent needs input (questions, confirmations, selections), VS Code dialo
 - **Conversation History** — full message viewer with tool calls, thinking blocks, search, and fork-from-here
 - **Slash Command Completion** — type `/` for auto-complete of `/gsd` commands
 - **File Decorations** — "G" badge on agent-modified files in the Explorer
+- **Plan View** — dedicated panel for the agent's current plan
 - **Bash Terminal** — dedicated terminal for agent shell output
 - **Context Window Warning** — notification when context exceeds threshold
 - **Progress Notifications** — optional notification with cancel button (off by default)
@@ -160,6 +165,7 @@ When the agent needs input (questions, confirmations, selections), VS Code dialo
 | **GSD: Fork Session** | | Fork from a previous message |
 | **GSD: Fix Problems in File** | | Send file diagnostics to agent |
 | **GSD: Fix All Problems** | | Send workspace errors to agent |
+| **GSD: Clear Plan View** | | Clear the current plan panel |
 | **GSD: Commit Agent Changes** | | Git commit modified files |
 | **GSD: Create Branch** | | Create branch for agent work |
 | **GSD: Show Agent Diff** | | View git diff |

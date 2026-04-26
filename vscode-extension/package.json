@@ -286,6 +286,10 @@
         {
           "id": "gsd-activity",
           "name": "Activity"
+        },
+        {
+          "id": "gsd-plan",
+          "name": "Plan"
         }
       ]
     },
@@ -400,6 +404,7 @@
   "scripts": {
     "build": "tsc",
     "watch": "tsc --watch",
+    "test": "node --experimental-strip-types --test \"test/*.test.ts\"",
     "package": "vsce package",
     "publish": "vsce publish"
   },

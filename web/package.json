@@ -8,7 +8,8 @@
     "build": "next build --webpack",
     "start": "next start",
     "start:standalone": "node .next/standalone/web/server.js",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "node --experimental-strip-types --test \"lib/__tests__/*.test.ts\""
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
