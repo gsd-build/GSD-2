@@ -995,6 +995,13 @@ export function refreshWorkerStatuses(
   for (const [mid, worker] of state.workers) {
     const diskStatus = statusMap.get(mid);
     if (!diskStatus) {
+      if (worker.state === "stopped" || worker.state === "error") {
+        worker.process = null;
+        continue;
+      }
+      // If disk state disappears before we observed a terminal state, a dead
+      // PID means the worker can no longer make progress. Classify that as an
+      // error instead of preserving a forever-running zombie.
       if (!isPidAlive(worker.pid)) {
         worker.cleanup?.();
         worker.cleanup = undefined;

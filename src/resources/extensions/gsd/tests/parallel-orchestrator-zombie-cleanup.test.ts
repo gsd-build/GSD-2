@@ -275,3 +275,111 @@ test("#2736: restoreRuntimeState clears stale state when all workers are stopped
   const stateFile = join(base, ".gsd", "orchestrator.json");
   assert.equal(existsSync(stateFile), false, "orchestrator.json should be removed");
 });
+
+test("#3428: refreshWorkerStatuses preserves stopped workers when disk status is missing", (t) => {
+  const base = makeTmpBase();
+  t.after(() => {
+    resetOrchestrator();
+    cleanup(base);
+  });
+
+  const persisted: PersistedState = {
+    active: true,
+    workers: [
+      {
+        milestoneId: "M001",
+        title: "Milestone 1",
+        pid: process.pid,
+        worktreePath: join(base, "worktrees", "M001"),
+        startedAt: Date.now() - 60_000,
+        state: "running",
+        cost: 0.5,
+      },
+      {
+        milestoneId: "M002",
+        title: "Milestone 2",
+        pid: process.pid,
+        worktreePath: join(base, "worktrees", "M002"),
+        startedAt: Date.now() - 60_000,
+        state: "running",
+        cost: 0.25,
+      },
+    ],
+    totalCost: 0.75,
+    startedAt: Date.now() - 60_000,
+    configSnapshot: { max_workers: 3 },
+  };
+  writePersistedState(base, persisted);
+
+  writeSessionStatusFile(base, "M002", "running", process.pid);
+  getWorkerStatuses(base);
+
+  const orchestrator = getOrchestratorState();
+  assert.ok(orchestrator, "state should be restored");
+  const stoppedWorker = orchestrator!.workers.get("M001");
+  assert.ok(stoppedWorker, "M001 should exist in restored state");
+  stoppedWorker!.state = "stopped";
+  stoppedWorker!.pid = DEAD_PID;
+
+  refreshWorkerStatuses(base);
+
+  const refreshed = getOrchestratorState();
+  assert.ok(refreshed, "orchestrator should remain active while M002 is still running");
+  assert.equal(refreshed!.workers.get("M001")?.state, "stopped", "missing disk status must not override a stopped worker to error");
+  assert.equal(refreshed!.workers.get("M001")?.process, null, "terminal workers with missing disk status should clear process handles");
+  assert.equal(refreshed!.workers.get("M002")?.state, "running", "live worker state should still refresh from disk");
+});
+
+test("#3428: refreshWorkerStatuses marks running workers with missing disk status and dead PID as error", (t) => {
+  const base = makeTmpBase();
+  t.after(() => {
+    resetOrchestrator();
+    cleanup(base);
+  });
+
+  const persisted: PersistedState = {
+    active: true,
+    workers: [
+      {
+        milestoneId: "M001",
+        title: "Milestone 1",
+        pid: process.pid,
+        worktreePath: join(base, "worktrees", "M001"),
+        startedAt: Date.now() - 60_000,
+        state: "running",
+        cost: 0.5,
+      },
+      {
+        milestoneId: "M002",
+        title: "Milestone 2",
+        pid: process.pid,
+        worktreePath: join(base, "worktrees", "M002"),
+        startedAt: Date.now() - 60_000,
+        state: "running",
+        cost: 0.25,
+      },
+    ],
+    totalCost: 0.75,
+    startedAt: Date.now() - 60_000,
+    configSnapshot: { max_workers: 3 },
+  };
+  writePersistedState(base, persisted);
+
+  writeSessionStatusFile(base, "M002", "running", process.pid);
+  getWorkerStatuses(base);
+
+  const orchestrator = getOrchestratorState();
+  assert.ok(orchestrator, "state should be restored");
+  const missingWorker = orchestrator!.workers.get("M001");
+  assert.ok(missingWorker, "M001 should exist in restored state");
+  missingWorker!.state = "running";
+  missingWorker!.pid = DEAD_PID;
+
+  refreshWorkerStatuses(base);
+
+  const refreshed = getOrchestratorState();
+  assert.ok(refreshed, "orchestrator should remain active while M002 is still running");
+  assert.equal(refreshed!.workers.get("M001")?.state, "error", "a missing running worker with a dead PID should be classified as error");
+  assert.equal(refreshed!.workers.get("M001")?.process, null, "dead missing workers should clear process handles");
+  assert.equal(refreshed!.workers.get("M002")?.state, "running", "live worker state should still refresh from disk");
+});
