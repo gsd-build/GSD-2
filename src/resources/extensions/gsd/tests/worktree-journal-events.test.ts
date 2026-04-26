@@ -204,6 +204,38 @@ describe("worktree journal events", () => {
     assert.equal(failed!.data?.error, "conflict in main");
   });
 
+  test("branch mode does not emit worktree-merged when merge postcondition fails (#5024)", () => {
+    const s = makeSession({
+      basePath: tmp,
+      originalBasePath: tmp,
+    });
+    const deps = makeDeps({
+      isInAutoWorktree: () => false,
+      getIsolationMode: () => "branch",
+      getCurrentBranch: () => "milestone/M001",
+      mergeMilestoneToMain: () => {
+        throw new Error("noop merge postcondition failed");
+      },
+    });
+    const resolver = new WorktreeResolver(s, deps);
+
+    assert.throws(
+      () => resolver.mergeAndExit("M001", makeNotifyCtx()),
+      /noop merge postcondition failed/,
+    );
+
+    const entries = readJournalEntries(tmp);
+    assert.ok(
+      entries.some(e => e.eventType === "worktree-merge-start"),
+      "merge start is still recorded",
+    );
+    assert.equal(
+      entries.some(e => e.eventType === "worktree-merged"),
+      false,
+      "worktree-merged must only be emitted after merge postcondition passes",
+    );
+  });
+
   test("journal entries have valid flowId, seq, and ts fields", () => {
     const s = makeSession({ basePath: tmp, originalBasePath: tmp });
     const deps = makeDeps({ shouldUseWorktreeIsolation: () => false });

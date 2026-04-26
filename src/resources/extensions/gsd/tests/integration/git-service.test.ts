@@ -12,6 +12,7 @@ import {
   MergeConflictError,
   RUNTIME_EXCLUSION_PATHS,
   VALID_BRANCH_NAME,
+  isValidIntegrationBranchName,
   runGit,
   readIntegrationBranch,
   resolveMilestoneIntegrationBranch,
@@ -841,6 +842,18 @@ describe('git-service', async () => {
     rmSync(repo, { recursive: true, force: true });
   });
 
+  test('getMainBranch: ignores configured milestone branch', () => {
+    const repo = initBranchTestRepo();
+    run("git checkout -b milestone/M001", repo);
+    run("git checkout main", repo);
+
+    const svc = new GitServiceImpl(repo, { main_branch: "milestone/M001" });
+
+    assert.deepStrictEqual(svc.getMainBranch(), "main", "getMainBranch ignores milestone branches as integration targets");
+
+    rmSync(repo, { recursive: true, force: true });
+  });
+
   // ─── PreMergeCheckResult type export compile check ─────────────────────
 
   test('PreMergeCheckResult type export', () => {
@@ -964,6 +977,23 @@ describe('git-service', async () => {
     rmSync(repo, { recursive: true, force: true });
   });
 
+  test('Integration branch: rejects milestone branches', () => {
+    const repo = initBranchTestRepo();
+
+    writeIntegrationBranch(repo, "M001", "milestone/M001");
+    assert.deepStrictEqual(readIntegrationBranch(repo, "M001"), null, "milestone branches are not recorded as integration branch");
+    assert.deepStrictEqual(isValidIntegrationBranchName("milestone/M001"), false, "milestone branches are not valid integration targets");
+
+    mkdirSync(join(repo, ".gsd", "milestones", "M002"), { recursive: true });
+    writeFileSync(
+      join(repo, ".gsd", "milestones", "M002", "M002-META.json"),
+      JSON.stringify({ integrationBranch: "milestone/M001" }, null, 2) + "\n",
+    );
+    assert.deepStrictEqual(readIntegrationBranch(repo, "M002"), null, "stale milestone metadata is ignored");
+
+    rmSync(repo, { recursive: true, force: true });
+  });
+
   // ─── getMainBranch: uses integration branch when milestone set ────────
 
   test('getMainBranch: integration branch from milestone metadata', () => {
@@ -1070,6 +1100,19 @@ describe('git-service', async () => {
       resolved.reason.includes("deleted-branch") && resolved.reason.includes("trunk"),
       "configured fallback reason mentions stale branch and configured branch",
     );
+
+    rmSync(repo, { recursive: true, force: true });
+  });
+
+  test('Integration branch: resolver rejects configured milestone fallback', () => {
+    const repo = initBranchTestRepo();
+    run("git checkout -b milestone/M001", repo);
+    run("git checkout main", repo);
+    writeIntegrationBranch(repo, "M001", "deleted-branch");
+
+    const resolved = resolveMilestoneIntegrationBranch(repo, "M001", { main_branch: "milestone/M001" });
+    assert.deepStrictEqual(resolved.status, "fallback", "resolver falls back past milestone main_branch");
+    assert.deepStrictEqual(resolved.effectiveBranch, "main", "resolver uses detected default instead of milestone branch");
 
     rmSync(repo, { recursive: true, force: true });
   });

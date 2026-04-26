@@ -12,9 +12,9 @@ test("auto-worktree.ts includes main_branch preference in startPoint fallback (#
     join(import.meta.dirname, "..", "auto-worktree.ts"),
     "utf-8",
   );
-  // The fix adds gitPrefs?.main_branch to the startPoint fallback chain
+  // The start-point resolver must keep git.main_branch in the fallback chain.
   assert.ok(
-    src.includes("gitPrefs?.main_branch") || src.includes("prefs.main_branch"),
+    src.includes("gitPrefs.main_branch") || src.includes("gitPrefs?.main_branch") || src.includes("prefs.main_branch"),
     "createAutoWorktree must check git.main_branch preference before falling back to nativeDetectMainBranch",
   );
 });
