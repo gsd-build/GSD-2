@@ -28,6 +28,12 @@ Plan (with integrated research) → Execute (per task) → Complete → Reassess
 
 每个 task、research 阶段和 planning 步骤都会得到一个干净的上下文窗口。没有历史垃圾堆积，也不会因为上下文膨胀导致质量下降。派发 prompt 中已经包含 task plan、历史 summary、依赖上下文、决策记录等必要信息，因此 LLM 一开始就能对齐，而不必先花工具调用去读文件。
 
+### 运行时工具策略
+
+每个 auto-mode unit 都有一个 `UnitContextManifest` 和对应的 `ToolsPolicy`，GSD 会在工具调用前强制执行。Execution units 使用 `all` 模式，可以编辑项目文件、运行 shell 命令并派发 subagents。大多数 planning / discussion units 使用 `planning` 模式：可以广泛读取、只在 `.gsd/` 下写规划产物、只运行只读 shell 命令，并禁止 subagent 派发。部分 planning 和收尾 units 使用 `planning-dispatch` 模式，在保留源文件写入限制和 bash 限制的同时，允许为了 recon、planning 或 review 派发 `subagent`。
+
+超出允许路径的写入、危险 bash 命令，以及非 dispatch planning unit 中的 subagent 派发，都会被硬性阻断。`planning-dispatch` unit 的 prompt 会引导父 agent 使用偏只读的 specialists，例如 `scout`、`planner`、`researcher`、`reviewer`、`security` 或 `tester`；真正的实现型工作仍应留给 `execute-task`。
+
 ### 预加载上下文
 
 派发 prompt 会精心组装以下内容：
@@ -288,14 +294,25 @@ Token profile 可以通过跳过某些阶段来降低成本：
 
 启用后，自动模式会为简单工作单元（例如 slice completion、UAT）自动选择更便宜的模型，并把昂贵模型保留给复杂工作（例如重规划或架构 task）。详见 [动态模型路由](./dynamic-model-routing.md)。
 
-## 响应式 Task 执行（v2.38）
+## 响应式 Task 执行
 
-当在偏好中设置 `reactive_execution: true` 时，GSD 会从 task plan 中的 IO 注解推导依赖图。互不冲突的 tasks（没有共享文件读写）会通过 subagents 并行派发，而存在依赖的 tasks 则等待前驱完成。
+响应式 task 执行现在默认开启。执行 task 时，GSD 会从 task plan 中的 IO 注解推导依赖图。默认配置下，只有当至少 3 个 ready tasks 可以被安全评估时，互不冲突的 tasks（没有共享文件读写）才会通过 subagents 并行派发；存在依赖的 tasks 会等待前驱完成。
 
 ```yaml
-reactive_execution: true    # 默认关闭
+reactive_execution:
+  enabled: false    # 显式关闭；省略此配置则保持默认开启
 ```
 
-依赖图推导是纯函数且确定性的：它会解析 ready-set、检测冲突和死锁，并做相应防护。并行批次中的 verification 结果会被沿用，因此某些 tasks 如果已经通过验证，后续同一 slice 中其他 tasks 完成时就不需要再次验证。
+依赖图推导是纯函数且确定性的：它会解析 ready-set、检测冲突和死锁，并做相应防护。如果图不明确，或 ready tasks 数量低于阈值，auto-mode 会退回普通顺序执行。显式设置 `reactive_execution.enabled: true` 会使用早期 opt-in 语义下的 2 个 ready tasks 阈值；省略该设置时，会使用默认开启语义下更保守的 3 个 ready tasks 阈值。并行批次中的 verification 结果会被沿用，因此某些 tasks 如果已经通过验证，后续同一 slice 中其他 tasks 完成时就不需要再次验证。
+
+可选调优：
+
+```yaml
+reactive_execution:
+  enabled: true              # 显式启用阈值：2 个 ready tasks
+  max_parallel: 4            # 默认：2，范围：1-8
+  isolation_mode: same-tree  # 当前唯一支持的隔离模式
+  subagent_model: claude-sonnet-4-6
+```
 
 这套实现位于 `reactive-graph.ts`（负责图推导、ready-set 解析、冲突 / 死锁检测），并集成到了 `auto-dispatch.ts` 和 `auto-prompts.ts`。

@@ -273,6 +273,26 @@ These are usually set automatically by `token_profile`, but can be overridden ex
 
 > **Note:** Roadmap reassessment requires `reassess_after_slice: true` to be set explicitly. Without it, reassessment is skipped regardless of `skip_reassess`.
 
+### `reactive_execution`
+
+Controls automatic parallel task dispatch inside a slice. This is enabled by default and only dispatches when task-plan IO annotations produce a non-ambiguous graph with enough ready, non-conflicting tasks.
+
+```yaml
+reactive_execution:
+  enabled: false    # opt out; omit this block to keep default-on behavior
+```
+
+Defaults and tuning:
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | boolean | `true` | Set to `false` to force sequential task execution. Set to `true` explicitly to use the lower two-ready-task threshold. |
+| `max_parallel` | number | `2` | Maximum tasks to dispatch in one reactive batch. Valid range: `1`-`8`. |
+| `isolation_mode` | string | `same-tree` | Execution isolation mode. `same-tree` is currently the only supported value. |
+| `subagent_model` | string | `models.subagent` fallback | Optional model override for reactive task subagents. |
+
+When `enabled` is omitted, reactive execution uses the default-on safety threshold of three ready tasks before it attempts a parallel batch. When `enabled: true` is set explicitly, GSD uses the earlier opt-in threshold of two ready tasks.
+
 ### `skill_discovery`
 
 Controls how GSD finds and applies skills during auto mode.

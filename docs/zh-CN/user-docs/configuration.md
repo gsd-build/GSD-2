@@ -276,6 +276,26 @@ phases:
 
 > **注意：** Roadmap reassessment 需要显式设置 `reassess_after_slice: true`。如果没有它，无论 `skip_reassess` 怎么配，reassessment 都不会运行。
 
+### `reactive_execution`
+
+控制一个 slice 内部的自动并行 task 派发。该功能默认开启；只有当 task plan 的 IO 注解能生成不含歧义的依赖图，并且存在足够的 ready、互不冲突 tasks 时才会真正派发。
+
+```yaml
+reactive_execution:
+  enabled: false    # 显式关闭；省略此配置则保持默认开启
+```
+
+默认值与调优项：
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `enabled` | boolean | `true` | 设为 `false` 可强制顺序执行。显式设为 `true` 时使用较低的 2 个 ready tasks 阈值。 |
+| `max_parallel` | number | `2` | 单个 reactive batch 最多派发的 tasks 数，范围 `1`-`8`。 |
+| `isolation_mode` | string | `same-tree` | 执行隔离模式。当前只支持 `same-tree`。 |
+| `subagent_model` | string | `models.subagent` fallback | reactive task subagents 的可选 model override。 |
+
+省略 `enabled` 时，GSD 使用默认开启语义，只有至少 3 个 ready tasks 时才尝试并行批次。显式设置 `enabled: true` 时，会使用早期 opt-in 语义下的 2 个 ready tasks 阈值。
+
 ### `skill_discovery`
 
 控制 GSD 在自动模式中如何发现并应用 skills。

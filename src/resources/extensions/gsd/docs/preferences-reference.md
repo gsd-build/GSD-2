@@ -163,6 +163,12 @@ Setting `prefer_skills: []` does **not** disable skill discovery — it just mea
   - `skip_reassess`: boolean — force-disable roadmap reassessment even if `reassess_after_slice` is enabled. Default: `false`.
   - `skip_slice_research`: boolean — skip per-slice research. Default: `false`.
 
+- `reactive_execution`: controls automatic parallel task dispatch inside a slice. Reactive execution is enabled by default when omitted; set `enabled: false` to opt out. With default-on behavior, GSD only attempts a reactive batch when at least three ready tasks are available and the task-plan IO graph is non-ambiguous. If you set `enabled: true` explicitly, GSD uses the earlier opt-in threshold of two ready tasks. Keys:
+  - `enabled`: boolean — set `false` to force sequential task execution. Default: `true`.
+  - `max_parallel`: number — maximum tasks to dispatch in one batch, range `1`-`8`. Default: `2`.
+  - `isolation_mode`: `"same-tree"` — currently the only supported value.
+  - `subagent_model`: string — optional model override for reactive task subagents. Falls back to the `models.subagent` routing when omitted.
+
 - `remote_questions`: route interactive questions to Slack/Discord for headless auto-mode. Keys:
   - `channel`: `"slack"` or `"discord"` — channel type.
   - `channel_id`: string or number — channel ID.

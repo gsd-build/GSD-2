@@ -25,6 +25,10 @@ Plan → Execute (per task) → Complete → Reassess Roadmap → Next Slice
 
 Every task, research phase, and planning step gets a clean context window. The dispatch prompt includes everything needed — task plans, prior summaries, dependency context, decisions register — so the LLM starts oriented.
 
+### Runtime tool policy
+
+Each auto-mode unit has a `UnitContextManifest` with an enforced `ToolsPolicy`. Execution units use `all` mode and can edit project files, run shell commands, and dispatch subagents. Most planning units use `planning` mode: they can write `.gsd/` planning artifacts and run read-only shell commands, but cannot dispatch subagents. Selected planning and closeout units use `planning-dispatch` mode, which keeps those source-write and bash restrictions while allowing `subagent` dispatch for isolated recon, planning, or review work.
+
 ### Context pre-loading
 
 | Inlined artifact | Purpose |
@@ -111,11 +115,14 @@ Generate manually with `/gsd export --html`, or for all milestones with `/gsd ex
 
 ### Reactive task execution
 
-When `reactive_execution: true` is set, GSD derives a dependency graph from IO annotations in task plans. Tasks that don't conflict are dispatched in parallel via subagents.
+Reactive task execution is enabled by default. GSD derives a dependency graph from IO annotations in task plans and, when at least three ready tasks are available by default, dispatches non-conflicting tasks in parallel via subagents.
 
 ```yaml
-reactive_execution: true    # disabled by default
+reactive_execution:
+  enabled: false    # opt out
 ```
+
+Set `reactive_execution.enabled: true` explicitly to use the earlier two-ready-task threshold. Optional tuning includes `max_parallel` (default `2`, range `1`-`8`), `isolation_mode: same-tree`, and `subagent_model`.
 
 ## Controlling auto mode
 
