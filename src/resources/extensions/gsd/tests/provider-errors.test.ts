@@ -103,6 +103,13 @@ test("classifyError detects Codex server_error from extracted message", () => {
   assert.ok("retryAfterMs" in result && result.retryAfterMs === 30_000);
 });
 
+test("classifyError detects stream INTERNAL_ERROR received from peer as transient server", () => {
+  const result = classifyError("stream error: stream ID 75; INTERNAL_ERROR; received from peer");
+  assert.ok(isTransient(result));
+  assert.equal(result.kind, "server");
+  assert.ok("retryAfterMs" in result && result.retryAfterMs === 30_000);
+});
+
 test("classifyError detects overloaded error", () => {
   const result = classifyError("overloaded_error: Overloaded");
   assert.ok(isTransient(result));
