@@ -20,6 +20,7 @@ import { deriveState } from "../state.js";
 import { formatOverridesSection, formatShortcut, loadActiveOverrides, loadFile, parseContinue, parseSummary } from "../files.js";
 import { toPosixPath } from "../../shared/mod.js";
 import { autoEnableCmuxPreferences } from "../commands-cmux.js";
+import { EXECUTE_DISPATCH_RE, RESUME_DISPATCH_RE } from "../id-patterns.js";
 
 const gsdHome = process.env.GSD_HOME || join(homedir(), ".gsd");
 
@@ -388,13 +389,13 @@ async function buildGuidedExecuteContextInjection(prompt: string, basePath: stri
     await ensureDbOpen();
   };
 
-  const executeMatch = prompt.match(/Execute the next task:\s+(T\d+)\s+\("([^"]+)"\)\s+in slice\s+(S\d+)\s+of milestone\s+(M\d+(?:-[a-z0-9]{6})?)/i);
+  const executeMatch = prompt.match(EXECUTE_DISPATCH_RE);
   if (executeMatch) {
     const [, taskId, taskTitle, sliceId, milestoneId] = executeMatch;
     return buildTaskExecutionContextInjection(basePath, milestoneId, sliceId, taskId, taskTitle);
   }
 
-  const resumeMatch = prompt.match(/Resume interrupted work\.[\s\S]*?slice\s+(S\d+)\s+of milestone\s+(M\d+(?:-[a-z0-9]{6})?)/i);
+  const resumeMatch = prompt.match(RESUME_DISPATCH_RE);
   if (resumeMatch) {
     const [, sliceId, milestoneId] = resumeMatch;
     await ensureStateDbOpen();
