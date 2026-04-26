@@ -36,15 +36,15 @@ if (firstArg === '--help' || firstArg === '-h') {
 // package.json (already parsed above) and verifies git is available.
 // ---------------------------------------------------------------------------
 {
-  const MIN_NODE_MAJOR = 22
+  const { MIN_NODE_MAJOR, checkNodeVersion, requireGit } = await import('./runtime-checks.js')
   const red = '\x1b[31m'
   const bold = '\x1b[1m'
   const dim = '\x1b[2m'
   const reset = '\x1b[0m'
 
   // -- Node version --
-  const nodeMajor = parseInt(process.versions.node.split('.')[0], 10)
-  if (nodeMajor < MIN_NODE_MAJOR) {
+  const nodeCheck = checkNodeVersion(process.versions.node, MIN_NODE_MAJOR)
+  if (!nodeCheck.ok) {
     process.stderr.write(
       `\n${red}${bold}Error:${reset} GSD requires Node.js >= ${MIN_NODE_MAJOR}.0.0\n` +
       `       You are running Node.js ${process.versions.node}\n\n` +
@@ -57,10 +57,9 @@ if (firstArg === '--help' || firstArg === '-h') {
   }
 
   // -- git --
-  try {
-    const { execFileSync } = await import('child_process')
-    execFileSync('git', ['--version'], { stdio: 'ignore' })
-  } catch {
+  const { execFileSync } = await import('child_process')
+  const gitOk = requireGit((cmd, args) => execFileSync(cmd, args as string[], { stdio: 'ignore' }))
+  if (!gitOk) {
     process.stderr.write(
       `\n${red}${bold}Error:${reset} GSD requires git but it was not found on PATH.\n\n` +
       `${dim}Install git:${reset}\n` +

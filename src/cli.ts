@@ -20,6 +20,7 @@ import { migratePiCredentials } from './pi-migration.js'
 import { shouldRunOnboarding, runOnboarding } from './onboarding.js'
 import chalk from 'chalk'
 import { checkForUpdates } from './update-check.js'
+import { shouldBypassManagedResourceMismatchGate } from './cli-policy.js'
 import { printHelp, printSubcommandHelp } from './help-text.js'
 import { applySecurityOverrides } from './security-overrides.js'
 import { validateConfiguredModel } from './startup-model-validation.js'
@@ -179,8 +180,12 @@ function ensureRtkBootstrap(): Promise<void> {
   return (rtkBootstrapPromise ??= doRtkBootstrap())
 }
 
-// `gsd update` — update to the latest version via npm
-if (cliFlags.messages[0] === 'update') {
+// `gsd update` — update to the latest version via npm.
+// MUST run before exitIfManagedResourcesAreNewer(): when the bundled resource
+// manifest is from a newer version than the running binary, every other
+// command is blocked — only `update` should bypass the gate so the user can
+// actually upgrade out of the broken state. See shouldBypassManagedResourceMismatchGate.
+if (shouldBypassManagedResourceMismatchGate(cliFlags.messages[0])) {
   const { runUpdate } = await import('./update-cmd.js')
   await runUpdate()
   process.exit(0)
