@@ -144,19 +144,10 @@ test("recoverTimedOutUnit: no top-level bumpTurnGeneration — steering branches
   );
 });
 
-test("recoverTimedOutUnit: bumpAndResolveSynthetic appears exactly four times (one per advance branch)", async () => {
-  const fs = await import("node:fs");
-  const path = await import("node:path");
-  const url = await import("node:url");
-  const here = path.dirname(url.fileURLToPath(import.meta.url));
-  const src = fs.readFileSync(
-    path.join(here, "..", "auto-timeout-recovery.ts"),
-    "utf-8",
-  );
-  const matches = src.match(/bumpAndResolveSynthetic\s*\(/g) ?? [];
-  assert.equal(
-    matches.length,
-    4,
-    `expected 4 advance-branch supersede sites (durableComplete, execute-task-exhausted, artifact-already-exists, non-execute-exhausted); found ${matches.length}`,
-  );
-});
+// Removed: source-grep count of `bumpAndResolveSynthetic\s*\(` occurrences.
+// A literal 4 hardcodes the current branch shape, not behaviour. The
+// behavioural invariant — "advance branches supersede atomically; non-advance
+// branches do not bump" — is enforced by the previous test (no direct
+// bumpTurnGeneration calls) plus the per-branch behavioural tests above
+// (`recoverTimedOutUnit: …`). Refactors that split a branch into two would
+// trip a count test without affecting correctness. Refs #4851.

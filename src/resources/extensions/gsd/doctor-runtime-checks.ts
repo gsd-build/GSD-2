@@ -4,7 +4,7 @@ import { basename, dirname, join } from "node:path";
 import type { DoctorIssue, DoctorIssueCode } from "./doctor-types.js";
 import { cleanNumberedGsdVariants } from "./repo-identity.js";
 import { milestonesDir, gsdRoot, resolveGsdRootFile } from "./paths.js";
-import { deriveState } from "./state.js";
+import { deriveState, isGhostMilestone, isReusableGhostMilestone } from "./state.js";
 import { saveFile } from "./files.js";
 import { nativeIsRepo, nativeForEachRef, nativeUpdateRef } from "./native-git-bridge.js";
 import { readCrashLock, isLockProcessAlive, clearLock } from "./crash-recovery.js";
@@ -12,6 +12,7 @@ import { ensureGitignore, isGsdGitignored } from "./gitignore.js";
 import { readAllSessionStatuses, isSessionStale, removeSessionStatus } from "./session-status-io.js";
 import { recoverFailedMigration } from "./migrate-external.js";
 import { splitCompletedKey } from "./forensics.js";
+import { findMilestoneIds } from "./milestone-ids.js";
 
 export async function checkRuntimeHealth(
   basePath: string,
@@ -592,6 +593,43 @@ export async function checkRuntimeHealth(
     }
   } catch {
     // Non-fatal — snapshot ref check failed
+  }
+
+  // ── Orphan milestone directories (#4996) ──────────────────────────────
+  // Walk every milestone ID on disk. Any dir that has no DB row, no worktree,
+  // and no content files is an orphaned stub — it skews nextMilestoneId and
+  // was likely created by ensurePreconditions or showHeadlessMilestoneCreation
+  // for a phantom forward-reference. Surface as a fixable warning.
+  try {
+    const milestoneIds = findMilestoneIds(basePath);
+    const hasDbFile = existsSync(join(root, "gsd.db"));
+    for (const mid of milestoneIds) {
+      const isOrphan = isReusableGhostMilestone(basePath, mid)
+        || (!hasDbFile && isGhostMilestone(basePath, mid));
+      if (isOrphan) {
+        issues.push({
+          severity: "warning",
+          code: "orphan_milestone_dir",
+          scope: "milestone",
+          unitId: mid,
+          message: `Orphan milestone directory: ${mid} — directory exists on disk with no DB row, no worktree, and no content files. This stub skews milestone ID generation and should be removed.`,
+          file: `.gsd/milestones/${mid}`,
+          fixable: true,
+        });
+
+        if (shouldFix("orphan_milestone_dir")) {
+          try {
+            const orphanPath = join(milestonesDir(basePath), mid);
+            rmSync(orphanPath, { recursive: true, force: true });
+            fixesApplied.push(`removed orphan milestone directory: ${mid}`);
+          } catch {
+            // Non-fatal — leave for manual cleanup
+          }
+        }
+      }
+    }
+  } catch {
+    // Non-fatal — orphan milestone directory check failed
   }
 }
 

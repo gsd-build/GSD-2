@@ -1,6 +1,30 @@
 # Single-Writer Engine v3: Agent Control Plane
 # Plan: State machine guards + actor causation + reversibility
 # Created: 2026-03-25
+# Status: CLOSED (2026-04-25) — see Implementation Status section below
+
+---
+
+## Implementation Status (2026-04-25)
+
+**All three streams shipped.** Closure delta:
+
+| Stream | Outcome |
+|---|---|
+| Stream 1 (state-machine guards, S1-T1..T9) | Shipped at handler layer in `src/resources/extensions/gsd/tools/{complete,plan,replan,reassess}-*.ts`. |
+| S1-T10 (idempotent upserts) | `replan_history` is `INSERT OR REPLACE` keyed by schema-v11 unique index `(milestone_id, slice_id, task_id)`. `assessments` is `INSERT OR REPLACE` keyed by `path` (deterministic per `(milestone_id, scope)`). Documented in `gsd-db.ts:insertAssessment`. |
+| Stream 2 (actor identity + audit log) | `WorkflowEvent` has `actor_name`, `trigger_reason`, `session_id` (`workflow-events.ts:22-32`). All 8 handlers thread the params through (`complete-task.ts:462-463`, `complete-slice.ts:458-459`, etc.). MCP schemas now expose them via `bootstrap/db-tools.ts`. Audit log persists error-severity entries to `.gsd/audit-log.jsonl` (intentional divergence — see Divergences below). |
+| Stream 3 (reversibility + ownership) | Handlers in `tools/reopen-{task,slice,milestone}.ts` (reopen-milestone is a bonus beyond the original plan). MCP-registered as `gsd_task_reopen`/`gsd_slice_reopen`/`gsd_milestone_reopen` plus aliases (`bootstrap/db-tools.ts`). Ownership module `unit-ownership.ts` shipped as SQLite-backed `.gsd/unit-claims.db` (divergence — see below); wired into `complete-task.ts:159-166` and `complete-slice.ts:260-267` via `checkOwnership`. |
+
+Tests: `tests/single-writer-invariant.test.ts`, `tests/completion-hierarchy-guards.test.ts`, `tests/reopen-task.test.ts`, `tests/reopen-slice.test.ts`, `tests/unit-ownership.test.ts`, `tests/workflow-events.test.ts`, `tests/workflow-logger-audit.test.ts`, and `tests/single-writer-v3-tool-surface.test.ts` (closes the schema-exposure and reopen-registration gaps).
+
+### Divergences from the original plan (kept as shipped)
+
+1. **DB helper named `getMilestone`, not `getMilestoneById`.** Matches the rest of `gsd-db.ts`. Plan task descriptions below reference `getMilestoneById`; the actual export is `getMilestone(milestoneId)` at `gsd-db.ts:2513`.
+2. **`updateTaskStatus` signature is `(milestoneId, sliceId, taskId, status, completedAt?)`**, not `(taskId, sliceId, status)`. Same convention as every other helper in `gsd-db.ts`.
+3. **Unit ownership uses SQLite (`.gsd/unit-claims.db`), not JSON.** SQLite gives atomic first-writer-wins semantics via `INSERT OR IGNORE`. JSON would require external locking and lose that property. API: `claimUnit`, `releaseUnit`, `getOwner`, `checkOwnership` in `unit-ownership.ts`.
+4. **Audit log persists error-severity entries only**, not every tool invocation. The canonical per-invocation log is `event-log.jsonl`. `audit-log.jsonl` is a low-volume error feed for context-reset survival (`workflow-logger.ts:318-321`). Removing the severity guard is a one-line change if richer auditing is wanted later.
+5. **Bonus handler: `gsd_milestone_reopen`.** Not in the original plan; added for symmetry with task/slice reopen and registered as an MCP tool.
 
 ---
 

@@ -66,16 +66,22 @@ test("detectHealthWidgetProjectState: milestone without metrics returns active",
   assert.equal(detectHealthWidgetProjectState(dir), "active");
 });
 
-test("buildHealthLines: none state shows onboarding copy", (t) => {
-  assert.deepEqual(buildHealthLines(activeData({ projectState: "none" })), [
-    "  GSD  No project loaded — run /gsd to start",
-  ]);
+test("buildHealthLines: none state shows single onboarding line pointing at /gsd", (t) => {
+  const lines = buildHealthLines(activeData({ projectState: "none" }));
+  assert.equal(lines.length, 1, "renders exactly one line");
+  // Should not show System OK / Budget / Last commit chrome when there's no project.
+  assert.ok(!/System OK|Budget|Last commit/.test(lines[0]!), "no active-project chrome");
+  // Should direct user to bootstrap via /gsd.
+  assert.match(lines[0]!, /\/gsd/);
 });
 
-test("buildHealthLines: initialized state shows continue setup copy", (t) => {
-  assert.deepEqual(buildHealthLines(activeData({ projectState: "initialized" })), [
-    "  GSD  Project initialized — run /gsd to continue setup",
-  ]);
+test("buildHealthLines: initialized state shows single setup line pointing at /gsd", (t) => {
+  const lines = buildHealthLines(activeData({ projectState: "initialized" }));
+  assert.equal(lines.length, 1, "renders exactly one line");
+  assert.ok(!/System OK|Budget|Last commit/.test(lines[0]!), "no active-project chrome");
+  // Distinct from "none" — must mention initialized/setup language and /gsd.
+  assert.match(lines[0]!, /\/gsd/);
+  assert.match(lines[0]!, /initiali[sz]ed|setup/i);
 });
 
 test("buildHealthLines: active state with ledger-driven spend shows spent summary", (t) => {
@@ -115,16 +121,20 @@ test("buildHealthLines: shows last commit with relative time and message", (t) =
   assert.match(lines[0]!, /feat\(widget\): add health display/);
 });
 
-test("buildHealthLines: truncates long commit messages", (t) => {
+test("buildHealthLines: truncates long commit messages with ellipsis", (t) => {
   const epoch = Math.floor(Date.now() / 1000) - 60;
-  const longMsg = "a".repeat(80);
+  const longMsg = "a".repeat(200); // far longer than any reasonable widget cap
   const lines = buildHealthLines(activeData({
     lastCommitEpoch: epoch,
     lastCommitMessage: longMsg,
   }));
   assert.equal(lines.length, 1);
-  assert.match(lines[0]!, /a{49}…/);
-  assert.ok(!lines[0]!.includes("a".repeat(51)), "message is truncated");
+  // Behavioural contract: rendered output is shorter than the input message
+  // and ends the message portion with the ellipsis character.
+  const aRun = lines[0]!.match(/a+…/);
+  assert.ok(aRun, "rendered output contains a run of a-chars terminated by an ellipsis");
+  assert.ok(aRun![0].length - 1 < longMsg.length, "truncated message is shorter than input");
+  assert.ok(!lines[0]!.includes("a".repeat(longMsg.length)), "untruncated message must not appear in output");
 });
 
 test("buildHealthLines: no last commit section when epoch is null", (t) => {

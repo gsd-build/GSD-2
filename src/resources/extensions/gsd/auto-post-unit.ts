@@ -65,16 +65,28 @@ import { resolveExpectedArtifactPath as resolveArtifactForContent } from "./auto
 import { loadEffectiveGSDPreferences } from "./preferences.js";
 import { getSliceTasks } from "./gsd-db.js";
 import { runPreExecutionChecks, type PreExecutionResult } from "./pre-execution-checks.js";
-import { writePreExecutionEvidence } from "./verification-evidence.js";
+import { writePreExecutionEvidence, type PreExecutionCheckJSON } from "./verification-evidence.js";
 import { ensureCodebaseMapFresh } from "./codebase-generator.js";
 import { resolveUokFlags } from "./uok/flags.js";
 import { UokGateRunner } from "./uok/gate-runner.js";
 import { writeTurnGitTransaction } from "./uok/gitops.js";
 import { isClosedStatus } from "./status-guards.js";
 import { detectAbandonMilestone } from "./abandon-detect.js";
+import { isDeterministicPolicyError } from "./auto-tool-tracking.js";
 
 /** Maximum verification retry attempts before escalating to blocker placeholder (#2653). */
 const MAX_VERIFICATION_RETRIES = 3;
+/** Keep failure toasts short while still showing concrete examples. */
+const MAX_NOTIFICATION_DETAILS = 3;
+const NOTIFICATION_BULLET = "•";
+
+function formatPreExecutionCheckDetail(check: PreExecutionCheckJSON): string {
+  const category = check.category?.trim() || "unknown category";
+  const target = check.target?.trim() || "unknown target";
+  const message = check.message.split(/\r?\n/, 1)[0]?.trim() || "No details provided";
+  return `  ${NOTIFICATION_BULLET} [${category}] ${target}: ${message}`;
+}
+
 const COMPLETE_MILESTONE_DB_SETTLE_MS = 1500;
 const COMPLETE_MILESTONE_DB_SETTLE_POLL_MS = 100;
 
@@ -125,7 +137,7 @@ import {
   describeNextUnit,
 } from "./auto-dashboard.js";
 import { existsSync, unlinkSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { _resetHasChangesCache } from "./native-git-bridge.js";
 import { autoCommitCurrentBranch } from "./worktree.js";
 
@@ -252,6 +264,14 @@ export function detectRogueFileWrites(
 
   return rogues;
 }
+
+/**
+ * Maximum number of times to retry a unit whose expected artifact is missing
+ * after execution. Matches the bounded pattern used by runPostUnitVerification
+ * in auto-verification.ts. Exceeding this limit pauses auto-mode instead of
+ * looping indefinitely (#2007).
+ */
+const MAX_ARTIFACT_VERIFICATION_RETRIES = 3;
 
 export const STEP_COMPLETE_FALLBACK_MESSAGE =
   "Step complete. Run /clear, then /gsd to continue (or /gsd auto to run continuously).";
@@ -905,16 +925,35 @@ export async function postUnitPreVerification(pctx: PostUnitContext, opts?: PreV
       // When artifact verification fails for a unit type that has a known expected
       // artifact, return "retry" so the caller re-dispatches with failure context
       // instead of blindly re-dispatching the same unit (#1571).
-      // After MAX_VERIFICATION_RETRIES, escalate to writeBlockerPlaceholder so the
-      // pipeline can advance instead of looping forever (#2653).
+      // Retries are capped at MAX_ARTIFACT_VERIFICATION_RETRIES to prevent
+      // unbounded loops (#2007).
       //
-      // HOWEVER, if the DB is unavailable (db_unavailable), the artifact was never
-      // written because the completion tool failed at the infra level. Retrying
-      // can never succeed and produces a costly re-dispatch loop (#2517).
-      if (!triggerArtifactVerified && !isDbAvailable()) {
-        // DB infra failure — do NOT retry; the completion tool returned
-        // db_unavailable so the artifact was never written. Retrying would
-        // produce an infinite re-dispatch loop (#2517).
+      // Pre-checks short-circuit retry for known-unrecoverable failures:
+      // - Deterministic policy rejection (#4973): structural write-gate failure
+      //   that will recur on every retry, so write a blocker placeholder.
+      // - DB infra failure (#2517): completion tool returned db_unavailable, so
+      //   the artifact was never written. Retrying can never succeed.
+      // - Tool invocation error (#2883/#3595): malformed JSON args or queued
+      //   user message — retry will produce the same failure.
+      //
+      // #4973: Deterministic policy rejections (e.g. context_write_blocked from the
+      // write-gate) are checked FIRST — before the DB-availability check — because
+      // they are structural gates that will fire on every retry regardless of DB or
+      // model tier. Short-circuit immediately by writing a blocker placeholder.
+      if (!triggerArtifactVerified && s.lastToolInvocationError && isDeterministicPolicyError(s.lastToolInvocationError)) {
+        const retryKey = `${s.currentUnit.type}:${s.currentUnit.id}`;
+        debugLog("postUnit", { phase: "deterministic-policy-error-placeholder", unitType: s.currentUnit.type, unitId: s.currentUnit.id, error: s.lastToolInvocationError });
+        const reason = `Deterministic policy rejection for ${s.currentUnit.type} "${s.currentUnit.id}": ${s.lastToolInvocationError}. Retrying cannot resolve this gate — writing blocker placeholder to advance pipeline.`;
+        s.lastToolInvocationError = null;
+        s.pendingVerificationRetry = null;
+        s.verificationRetryCount.delete(retryKey);
+        writeBlockerPlaceholder(s.currentUnit.type, s.currentUnit.id, s.basePath, reason);
+        ctx.ui.notify(
+          `${s.currentUnit.type} ${s.currentUnit.id} — deterministic policy rejection, wrote blocker placeholder (no retries) (#4973)`,
+          "warning",
+        );
+        // Fall through to "continue" — do NOT enter the retry or db-unavailable paths.
+      } else if (!triggerArtifactVerified && !isDbAvailable()) {
         debugLog("postUnit", { phase: "artifact-verify-skip-db-unavailable", unitType: s.currentUnit.type, unitId: s.currentUnit.id });
         const dbSkipDiag = diagnoseExpectedArtifact(s.currentUnit.type, s.currentUnit.id, s.basePath);
         ctx.ui.notify(
@@ -922,9 +961,6 @@ export async function postUnitPreVerification(pctx: PostUnitContext, opts?: PreV
           "error",
         );
       } else if (!triggerArtifactVerified) {
-        // #2883/#3595: If the artifact is missing because the tool invocation
-        // failed (malformed JSON) or was skipped (queued user message), retrying
-        // will produce the same failure. Pause auto-mode instead of looping.
         if (s.lastToolInvocationError) {
           const isUserSkip = /queued user message/i.test(s.lastToolInvocationError);
           const errMsg = isUserSkip
@@ -941,67 +977,35 @@ export async function postUnitPreVerification(pctx: PostUnitContext, opts?: PreV
         if (hasExpectedArtifact) {
           const retryKey = `${s.currentUnit.type}:${s.currentUnit.id}`;
           const attempt = (s.verificationRetryCount.get(retryKey) ?? 0) + 1;
-          s.verificationRetryCount.set(retryKey, attempt);
-
-          if (attempt > MAX_VERIFICATION_RETRIES) {
-            // #4175: For complete-milestone, a blocker placeholder is harmful —
-            // the stub SUMMARY has no recovery value (milestone is terminal),
-            // it does not update DB status (so deriveState never advances),
-            // and it fools stopAuto's presence check into merging a milestone
-            // that was never legitimately completed. Pause auto-mode with a
-            // clear single failure signal and preserve the worktree branch.
-            if (s.currentUnit.type === "complete-milestone") {
-              debugLog("postUnit", {
-                phase: "artifact-verify-pause-complete-milestone",
-                unitType: s.currentUnit.type,
-                unitId: s.currentUnit.id,
-                attempt,
-                maxRetries: MAX_VERIFICATION_RETRIES,
-              });
-              s.verificationRetryCount.delete(retryKey);
-              s.pendingVerificationRetry = null;
-              ctx.ui.notify(
-                `Milestone ${s.currentUnit.id} verification failed after ${MAX_VERIFICATION_RETRIES} retries — worktree branch preserved. Re-run /gsd auto once blockers are resolved.`,
-                "error",
-              );
-              await pauseAuto(ctx, pi);
-              return "dispatched";
-            }
-
-            // Retries exhausted — write a blocker placeholder so the pipeline
-            // can advance past this stuck unit (#2653).
-            debugLog("postUnit", {
-              phase: "artifact-verify-escalate",
-              unitType: s.currentUnit.type,
-              unitId: s.currentUnit.id,
-              attempt,
-              maxRetries: MAX_VERIFICATION_RETRIES,
-            });
-            const reason = `Artifact verification failed after ${MAX_VERIFICATION_RETRIES} retries for ${s.currentUnit.type} "${s.currentUnit.id}".`;
-            writeBlockerPlaceholder(s.currentUnit.type, s.currentUnit.id, s.basePath, reason);
-            ctx.ui.notify(
-              `${s.currentUnit.type} ${s.currentUnit.id} — verification retries exhausted (${MAX_VERIFICATION_RETRIES}), wrote blocker placeholder to advance pipeline`,
-              "warning",
-            );
-            // Reset retry count and fall through to "continue" so the loop
-            // re-derives state with the placeholder in place.
+          if (attempt > MAX_ARTIFACT_VERIFICATION_RETRIES) {
             s.verificationRetryCount.delete(retryKey);
-            s.pendingVerificationRetry = null;
-            // Do NOT return "retry" — fall through to "continue" below.
-          } else {
-            s.pendingVerificationRetry = {
-              unitId: s.currentUnit.id,
-              failureContext: `Artifact verification failed: expected artifact for ${s.currentUnit.type} "${s.currentUnit.id}" was not found on disk after unit execution (attempt ${attempt}).`,
-              attempt,
-            };
-            debugLog("postUnit", { phase: "artifact-verify-retry", unitType: s.currentUnit.type, unitId: s.currentUnit.id, attempt });
+            debugLog("postUnit", { phase: "artifact-verify-exhausted", unitType: s.currentUnit.type, unitId: s.currentUnit.id, attempt });
             ctx.ui.notify(
-              `Artifact missing for ${s.currentUnit.type} ${s.currentUnit.id} — retrying (attempt ${attempt})`,
-              "warning",
+              `Artifact still missing for ${s.currentUnit.type} ${s.currentUnit.id} after ${MAX_ARTIFACT_VERIFICATION_RETRIES} retries — pausing auto-mode`,
+              "error",
             );
-            return "retry";
+            await pauseAuto(ctx, pi);
+            return "dispatched";
           }
+          s.verificationRetryCount.set(retryKey, attempt);
+          s.pendingVerificationRetry = {
+            unitId: s.currentUnit.id,
+            failureContext: `Artifact verification failed: expected artifact for ${s.currentUnit.type} "${s.currentUnit.id}" was not found on disk after unit execution (attempt ${attempt}/${MAX_ARTIFACT_VERIFICATION_RETRIES}).`,
+            attempt,
+          };
+          debugLog("postUnit", { phase: "artifact-verify-retry", unitType: s.currentUnit.type, unitId: s.currentUnit.id, attempt });
+          ctx.ui.notify(
+            `Artifact missing for ${s.currentUnit.type} ${s.currentUnit.id} — retrying (attempt ${attempt}/${MAX_ARTIFACT_VERIFICATION_RETRIES})`,
+            "warning",
+          );
+          return "retry";
         }
+      }
+
+      // Verification succeeded — clear the retry counter so a future failure
+      // of the same unit gets a full retry budget instead of the stale count.
+      if (triggerArtifactVerified) {
+        s.verificationRetryCount.delete(`${s.currentUnit.type}:${s.currentUnit.id}`);
       }
     } else {
       // Hook unit completed — no additional processing needed
@@ -1242,8 +1246,11 @@ export async function postUnitPostVerification(pctx: PostUnitContext): Promise<"
 
         // Write evidence JSON to slice artifacts directory
         const slicePath = resolveSlicePath(s.basePath, mid, sid);
+        const evidenceFileName = `${sid}-PRE-EXEC-VERIFY.json`;
+        let evidencePath = join(".gsd", "milestones", mid, "slices", sid, evidenceFileName);
         if (slicePath) {
           writePreExecutionEvidence(result, slicePath, mid, sid);
+          evidencePath = relative(s.basePath, join(slicePath, evidenceFileName)) || evidenceFileName;
         }
 
         if (uokFlags.gates) {
@@ -1280,9 +1287,11 @@ export async function postUnitPostVerification(pctx: PostUnitContext): Promise<"
         if (result.status === "fail") {
           const blockingChecks = result.checks.filter(c => !c.passed && c.blocking);
           const blockingCount = blockingChecks.length;
-          const details = blockingChecks.slice(0, 3).map(c => `  \u2022 ${c.message}`).join("\n");
-          const suffix = blockingChecks.length > 3 ? `\n  \u2022 ...and ${blockingChecks.length - 3} more` : "";
-          const evidenceNote = `\nSee ${sid}-PRE-EXEC-VERIFY.json for full details.`;
+          const details = blockingChecks.slice(0, MAX_NOTIFICATION_DETAILS).map(formatPreExecutionCheckDetail).join("\n");
+          const suffix = blockingChecks.length > MAX_NOTIFICATION_DETAILS
+            ? `\n  ${NOTIFICATION_BULLET} ...and ${blockingChecks.length - MAX_NOTIFICATION_DETAILS} more`
+            : "";
+          const evidenceNote = `\nSee ${evidencePath} for full details.`;
           ctx.ui.notify(
             `Pre-execution checks failed: ${blockingCount} blocking issue${blockingCount === 1 ? "" : "s"} found\n${details}${suffix}${evidenceNote}`,
             "error",

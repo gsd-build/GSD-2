@@ -76,13 +76,11 @@ describe("#3615 — structural: fallback exists with correct guards", () => {
     );
   });
 
-  test("only one return null at the end", () => {
-    const returnNulls = fnBody.match(/return null;/g);
-    assert.ok(
-      returnNulls && returnNulls.length === 1,
-      `expected exactly 1 'return null' (at end after fallback), got ${returnNulls?.length ?? 0}`,
-    );
-  });
+  // Removed: source-grep count of `return null;` occurrences. The behaviour
+  // we care about ("function returns null only when no auto-dispatch /
+  // guided-resume / fallback path matches") is exercised by the behavioural
+  // tests below — counting literal `return null;` tokens encodes statement
+  // shape, not contract. Refs #4851.
 });
 
 // ── Behavioral tests: RESUME_INTENT_PATTERNS ────────────────────────

@@ -347,6 +347,15 @@ describe("applyCapabilityPatches", () => {
 		assert.equal(patched.capabilities?.supportsServiceTier, true);
 	});
 
+	it("patches a GPT-5.5 custom model that has no capabilities", () => {
+		const model = syntheticModel({ id: "gpt-5.5-custom" });
+		assert.equal(model.capabilities, undefined);
+
+		const [patched] = applyCapabilityPatches([model]);
+		assert.equal(patched.capabilities?.supportsXhigh, true);
+		assert.equal(patched.capabilities?.supportsServiceTier, undefined);
+	});
+
 	it("patches a GPT-5.2 model", () => {
 		const model = syntheticModel({ id: "gpt-5.2" });
 		const [patched] = applyCapabilityPatches([model]);

@@ -60,9 +60,9 @@ export const GATE_REGISTRY = {
     id: "Q4",
     scope: "slice",
     ownerTurn: "gate-evaluate",
-    question: "What existing promises does this break?",
+    question: "Which existing requirements (R-IDs) does this slice touch, and which must be re-tested?",
     guidance: [
-      "List which existing requirements (R001, R003, etc.) are touched by this slice.",
+      "List the R-IDs (e.g. R001, R003) touched by this slice; see the milestone requirements artifact at .gsd/milestones/<id>/REQUIREMENTS.md.",
       "Identify what must be re-tested after shipping.",
       "Flag decisions that should be revisited given the new scope.",
       "If no existing requirements are affected, return verdict 'omitted'.",

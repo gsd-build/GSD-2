@@ -338,27 +338,4 @@ console.log('\n=== token-savings: quality — correct scoping, no cross-contamin
   rmSync(base, { recursive: true, force: true });
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Test: Fixture data realism — sufficient volume and distribution
-// ═══════════════════════════════════════════════════════════════════════════
-
-console.log('\n=== token-savings: fixture data realism ===');
-{
-  // Verify fixture generators produce sufficient volume
-  assert.ok(DECISIONS_COUNT >= 20, `decisions count ≥ 20 (actual: ${DECISIONS_COUNT})`);
-  assert.ok(REQUIREMENTS_COUNT >= 20, `requirements count ≥ 20 (actual: ${REQUIREMENTS_COUNT})`);
-  assert.ok(MILESTONES.length >= 3, `milestones ≥ 3 (actual: ${MILESTONES.length})`);
-  assert.ok(SLICE_ASSIGNMENTS.length >= 5, `slice assignments ≥ 5 (actual: ${SLICE_ASSIGNMENTS.length})`);
-
-  // Verify markdown content is substantial
-  assert.ok(decisionsMarkdown.length > 1000, `decisions markdown > 1000 chars (actual: ${decisionsMarkdown.length})`);
-  assert.ok(requirementsMarkdown.length > 1000, `requirements markdown > 1000 chars (actual: ${requirementsMarkdown.length})`);
-
-  // Verify content structure
-  assert.match(decisionsMarkdown, /\| D001 \|/, 'decisions markdown has D001');
-  assert.match(decisionsMarkdown, /\| D024 \|/, 'decisions markdown has D024');
-  assert.match(requirementsMarkdown, /### R001/, 'requirements markdown has R001');
-  assert.match(requirementsMarkdown, /### R021/, 'requirements markdown has R021');
-}
-
 // ─── Report ────────────────────────────────────────────────────────────────

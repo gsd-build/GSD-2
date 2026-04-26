@@ -1,6 +1,6 @@
 {
   "name": "@gsd/pi-agent-core",
-  "version": "2.77.0",
+  "version": "2.78.1",
   "description": "General-purpose agent core (vendored from pi-mono)",
   "type": "module",
   "gsd": {

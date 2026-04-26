@@ -3,10 +3,18 @@ import type { Api, Model, ModelCapabilities } from "../types.js";
 type CapabilityPatch = { match: (m: Model<Api>) => boolean; caps: ModelCapabilities };
 
 export const CAPABILITY_PATCHES: CapabilityPatch[] = [
-	// GPT-5.x supports xhigh thinking and OpenAI service tiers
+	// GPT-5.2-5.4 support xhigh thinking and OpenAI service tiers
 	{
-		match: (m) => m.id.includes("gpt-5.2") || m.id.includes("gpt-5.3") || m.id.includes("gpt-5.4"),
+		match: (m) =>
+			m.id.includes("gpt-5.2") ||
+			m.id.includes("gpt-5.3") ||
+			m.id.includes("gpt-5.4"),
 		caps: { supportsXhigh: true, supportsServiceTier: true },
+	},
+	// GPT-5.5 supports xhigh thinking; service-tier support is gated separately.
+	{
+		match: (m) => m.id.includes("gpt-5.5"),
+		caps: { supportsXhigh: true },
 	},
 	// Anthropic Opus 4.6+ supports xhigh thinking
 	{

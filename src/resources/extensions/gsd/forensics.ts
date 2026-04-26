@@ -804,7 +804,7 @@ function detectMissingArtifacts(completedKeys: string[], basePath: string, activ
  * the forensics memory-bloat guard in forensics-journal.test.ts — per-event
  * detail stays in the journal itself where the LLM can query it on demand.
  */
-function detectWorktreeOrphans(
+export function detectWorktreeOrphans(
   summary: WorktreeTelemetrySummary,
   anomalies: ForensicAnomaly[],
 ): void {
@@ -822,7 +822,7 @@ function detectWorktreeOrphans(
         reason === "in-progress-unmerged"
           ? "Auto-mode exited without completing a milestone; live work sits on an unmerged milestone branch. Run `/gsd auto` to resume, or merge manually."
           : reason === "complete-unmerged"
-            ? "A completed milestone's branch was never merged back to main. Run `/gsd health --fix` to resolve."
+            ? "A completed milestone's branch was never merged back to main. Run `/gsd doctor fix` to resolve."
             : `Reason: ${reason}.`,
     });
   }

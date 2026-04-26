@@ -44,7 +44,9 @@ import { showProjectInit, offerMigration } from "./init-wizard.js";
 import { validateDirectory } from "./validate-directory.js";
 import { showConfirm } from "../shared/tui.js";
 import { debugLog } from "./debug-logger.js";
-import { findMilestoneIds, nextMilestoneId, reserveMilestoneId, getReservedMilestoneIds, clearReservedMilestoneIds } from "./milestone-ids.js";
+import { findMilestoneIds, clearReservedMilestoneIds } from "./milestone-ids.js";
+import { nextMilestoneIdReserved } from "./milestone-id-reservation.js";
+export { nextMilestoneIdReserved } from "./milestone-id-reservation.js";
 import { parkMilestone, discardMilestone } from "./milestone-actions.js";
 import { selectAndApplyModel } from "./auto-model-selection.js";
 import { DISCUSS_TOOLS_ALLOWLIST } from "./constants.js";
@@ -71,20 +73,6 @@ export {
   buildExistingMilestonesContext,
 } from "./guided-flow-queue.js";
 import { logWarning } from "./workflow-logger.js";
-
-// ─── ID Generation with Reservation ─────────────────────────────────────────
-
-/**
- * Generate the next milestone ID, accounting for reserved IDs, and reserve it.
- * Ensures any preview ID shown in the UI matches what `gsd_milestone_generate_id`
- * will later return.
- */
-function nextMilestoneIdReserved(existingIds: string[], uniqueEnabled: boolean): string {
-  const allIds = [...new Set([...existingIds, ...getReservedMilestoneIds()])];
-  const id = nextMilestoneId(allIds, uniqueEnabled);
-  reserveMilestoneId(id);
-  return id;
-}
 
 function needsPlanV2Gate(state: GSDState): boolean {
   return state.phase === "executing"
@@ -315,12 +303,29 @@ function extractAssistantText(msg: any): string {
 
 /**
  * Return true if the assistant message contains any tool-use block.
+ *
+ * The canonical pi-ai `AssistantMessage.content` (see packages/pi-ai/src/types.ts)
+ * uses `type: "toolCall"` and `type: "serverToolUse"` for tool invocations —
+ * every provider (anthropic-direct, claude-code-cli, openai, etc.) normalizes
+ * incoming tool blocks into these two shapes before they reach guided-flow.
+ *
+ * The Anthropic API wire shape `"tool_use"` / `"server_tool_use"` does NOT appear
+ * in the internal AssistantMessage — those literals are only used when sending
+ * messages back out to the Anthropic API. Matching them here was a latent bug:
+ * `hasToolUse` returned `false` for every real tool call, which let the
+ * empty-turn nudge fire and pre-empt MCP tools that block on the user
+ * (e.g. `ask_user_questions`). See investigation in PR for #4658.
  */
 function hasToolUse(msg: any): boolean {
   if (!msg) return false;
   const content = msg.content;
   if (!Array.isArray(content)) return false;
-  return content.some((b: any) => b && typeof b === "object" && (b.type === "tool_use" || b.type === "tool-use"));
+  return content.some(
+    (b: any) =>
+      b &&
+      typeof b === "object" &&
+      (b.type === "toolCall" || b.type === "serverToolUse"),
+  );
 }
 
 /**
@@ -815,14 +820,19 @@ export async function showHeadlessMilestoneCreation(
   // Ensure .gsd/ is bootstrapped
   bootstrapGsdProject(basePath);
 
+  const { ensureDbOpen } = await import("./bootstrap/dynamic-tools.js");
+  await ensureDbOpen(basePath);
+
   // Generate next milestone ID
   const existingIds = findMilestoneIds(basePath);
   const prefs = loadEffectiveGSDPreferences();
-  const nextId = nextMilestoneIdReserved(existingIds, prefs?.preferences?.unique_milestone_ids ?? false);
+  const nextId = nextMilestoneIdReserved(existingIds, prefs?.preferences?.unique_milestone_ids ?? false, basePath);
 
-  // Create milestone directory
-  const milestoneDir = join(gsdRoot(basePath), "milestones", nextId, "slices");
-  mkdirSync(milestoneDir, { recursive: true });
+  // Fix #4996: Do NOT pre-create the milestone directory here.
+  // atomicWriteAsync (used by all artifact writers) calls mkdir lazily before
+  // each write, so every path through saveArtifactToDb / saveFile is already
+  // lazy-mkdir-safe. Pre-creating the dir before the discuss flow runs leaves
+  // an orphan stub if discuss is abandoned — that stub later skews nextMilestoneId.
 
   // Build and dispatch the headless discuss prompt
   const prompt = buildHeadlessDiscussPrompt(nextId, seedContext, basePath);
@@ -1037,9 +1047,11 @@ export async function showDiscuss(
         fastPathInstruction: "",
       }), "gsd-discuss", ctx, "discuss-milestone");
     } else if (choice === "skip_milestone") {
+      const { ensureDbOpen } = await import("./bootstrap/dynamic-tools.js");
+      await ensureDbOpen(basePath);
       const milestoneIds = findMilestoneIds(basePath);
       const uniqueMilestoneIds = !!loadEffectiveGSDPreferences()?.preferences?.unique_milestone_ids;
-      const nextId = nextMilestoneIdReserved(milestoneIds, uniqueMilestoneIds);
+      const nextId = nextMilestoneIdReserved(milestoneIds, uniqueMilestoneIds, basePath);
       pendingAutoStartMap.set(basePath, { ctx, pi, basePath, milestoneId: nextId, step: false, createdAt: Date.now() });
       await dispatchWorkflow(pi, await prepareAndBuildDiscussPrompt(ctx, pi, nextId, `New milestone ${nextId}.`, basePath), "gsd-run", ctx, "discuss-milestone");
     }
@@ -1444,7 +1456,7 @@ async function handleMilestoneActions(
   if (choice === "skip") {
     const milestoneIds = findMilestoneIds(basePath);
     const uniqueMilestoneIds = !!loadEffectiveGSDPreferences()?.preferences?.unique_milestone_ids;
-    const nextId = nextMilestoneIdReserved(milestoneIds, uniqueMilestoneIds);
+    const nextId = nextMilestoneIdReserved(milestoneIds, uniqueMilestoneIds, basePath);
     pendingAutoStartMap.set(basePath, { ctx, pi, basePath, milestoneId: nextId, step: stepMode, createdAt: Date.now() });
     await dispatchWorkflow(pi, await prepareAndBuildDiscussPrompt(ctx, pi, nextId,
       `New milestone ${nextId}.`,
@@ -1528,6 +1540,11 @@ export async function showSmartEntry(
   // ── Ensure .gitignore has baseline patterns ──────────────────────────
   ensureGitignore(basePath);
   untrackRuntimeFiles(basePath);
+
+  {
+    const { ensureDbOpen } = await import("./bootstrap/dynamic-tools.js");
+    await ensureDbOpen(basePath);
+  }
 
   // ── Self-heal stale runtime records from crashed auto-mode sessions ──
   selfHealRuntimeRecords(basePath, ctx);
@@ -1631,7 +1648,7 @@ export async function showSmartEntry(
     }
 
     const uniqueMilestoneIds = !!loadEffectiveGSDPreferences()?.preferences?.unique_milestone_ids;
-    const nextId = nextMilestoneIdReserved(milestoneIds, uniqueMilestoneIds);
+    const nextId = nextMilestoneIdReserved(milestoneIds, uniqueMilestoneIds, basePath);
     const isFirst = milestoneIds.length === 0;
 
     if (isFirst) {
@@ -1711,7 +1728,7 @@ export async function showSmartEntry(
     if (choice === "new_milestone") {
       const milestoneIds = findMilestoneIds(basePath);
       const uniqueMilestoneIds = !!loadEffectiveGSDPreferences()?.preferences?.unique_milestone_ids;
-      const nextId = nextMilestoneIdReserved(milestoneIds, uniqueMilestoneIds);
+      const nextId = nextMilestoneIdReserved(milestoneIds, uniqueMilestoneIds, basePath);
 
       pendingAutoStartMap.set(basePath, { ctx, pi, basePath, milestoneId: nextId, step: stepMode, createdAt: Date.now() });
       await dispatchWorkflow(pi, await prepareAndBuildDiscussPrompt(ctx, pi, nextId,
@@ -1779,7 +1796,7 @@ export async function showSmartEntry(
     } else if (choice === "skip_milestone") {
       const milestoneIds = findMilestoneIds(basePath);
       const uniqueMilestoneIds = !!loadEffectiveGSDPreferences()?.preferences?.unique_milestone_ids;
-      const nextId = nextMilestoneIdReserved(milestoneIds, uniqueMilestoneIds);
+      const nextId = nextMilestoneIdReserved(milestoneIds, uniqueMilestoneIds, basePath);
       pendingAutoStartMap.set(basePath, { ctx, pi, basePath, milestoneId: nextId, step: stepMode, createdAt: Date.now() });
       await dispatchWorkflow(pi, await prepareAndBuildDiscussPrompt(ctx, pi, nextId,
         `New milestone ${nextId}.`,
@@ -1876,7 +1893,7 @@ export async function showSmartEntry(
       } else if (choice === "skip_milestone") {
         const milestoneIds = findMilestoneIds(basePath);
         const uniqueMilestoneIds = !!loadEffectiveGSDPreferences()?.preferences?.unique_milestone_ids;
-        const nextId = nextMilestoneIdReserved(milestoneIds, uniqueMilestoneIds);
+        const nextId = nextMilestoneIdReserved(milestoneIds, uniqueMilestoneIds, basePath);
         pendingAutoStartMap.set(basePath, { ctx, pi, basePath, milestoneId: nextId, step: stepMode, createdAt: Date.now() });
         await dispatchWorkflow(pi, await prepareAndBuildDiscussPrompt(ctx, pi, nextId,
           `New milestone ${nextId}.`,

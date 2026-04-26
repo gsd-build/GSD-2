@@ -277,6 +277,14 @@ function buildDispatchCtx(
   };
 }
 
+function getUatVerdictGate(): import("../../auto-dispatch.ts").DispatchRule {
+  const rule = DISPATCH_RULES.find(
+    r => r.name === "uat-verdict-gate (non-PASS blocks progression)",
+  );
+  assert.ok(rule, "uat-verdict-gate rule should be registered");
+  return rule;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Test Suite
 // ═══════════════════════════════════════════════════════════════════════════
@@ -355,10 +363,13 @@ describe("state derivation failures", () => {
     const state2 = await deriveState(base);
     assert.equal(state2.phase, "executing", "cached result should still show executing");
 
-    // After explicit invalidation, should reflect the DB mutation
+    // After explicit invalidation, should reflect the DB mutation and reconcile
+    // missing plan tasks instead of prematurely summarizing a partial DB row set.
     invalidateStateCache();
     const state3 = await deriveState(base);
-    assert.equal(state3.phase, "summarizing", "after cache invalidation should show summarizing");
+    assert.equal(state3.phase, "executing", "after cache invalidation should continue with the missing plan task");
+    assert.equal(state3.activeTask?.id, "T02", "missing plan task T02 should be imported and selected");
+    assert.deepEqual(state3.progress?.tasks, { done: 1, total: 2 });
   });
 
   test("corrupt ROADMAP: binary content does not crash deriveState", async () => {
@@ -691,7 +702,7 @@ describe("transition boundary failures", () => {
     );
   });
 
-  test("blocked state: all slices have unmet deps → fallback picks slice", async () => {
+  test("blocked state: all slices have unmet deps → blocks", async () => {
     base = makeTempDir();
     const mDir = join(base, ".gsd", "milestones", "M001");
     mkdirSync(join(mDir, "slices", "S01", "tasks"), { recursive: true });
@@ -736,9 +747,9 @@ describe("transition boundary failures", () => {
 
     invalidateAllCaches();
     const state = await deriveStateFromDb(base);
-    // With partial-dep fallback, circular deps no longer block — fallback picks first eligible slice
-    assert.equal(state.phase, "planning", "circular deps: fallback picks a slice instead of blocking");
-    assert.ok(state.activeSlice !== null, "activeSlice set via fallback");
+    assert.equal(state.phase, "blocked", "circular deps: no slice should be selected through unmet deps");
+    assert.equal(state.activeSlice, null, "activeSlice should remain null when all deps are blocked");
+    assert.ok(state.blockers.some(b => b.includes("No slice eligible")));
   });
 });
 
@@ -868,6 +879,132 @@ describe("dispatch failure modes", () => {
     // run-uat should come before uat-verdict-gate
     assert.ok(runUatIdx < uatGateIdx, "run-uat should precede uat-verdict-gate");
   });
+
+  test("UAT verdict gate: ASSESSMENT FAIL blocks closed slice progression", async () => {
+    base = createFullFixture();
+    openDatabase(join(base, ".gsd", "gsd.db"));
+    insertMilestone({ id: "M001", title: "Active", status: "active" });
+    insertSlice({ id: "S01", milestoneId: "M001", title: "First", status: "complete" });
+    insertSlice({ id: "S02", milestoneId: "M001", title: "Second", status: "pending" });
+
+    const s01Dir = join(base, ".gsd", "milestones", "M001", "slices", "S01");
+    writeFileSync(
+      join(s01Dir, "S01-UAT.md"),
+      "# UAT File\n\n## UAT Type\n\n- UAT mode: artifact-driven\n",
+    );
+    writeFileSync(
+      join(s01Dir, "S01-ASSESSMENT.md"),
+      "---\nverdict: FAIL\n---\n# UAT Assessment\n",
+    );
+
+    const ctx = buildDispatchCtx(base, "M001", {
+      phase: "planning",
+      activeSlice: { id: "S02", title: "Second" },
+      activeTask: null,
+    });
+    ctx.prefs = { uat_dispatch: true } as any;
+
+    const result = await getUatVerdictGate().match(ctx);
+    assert.equal(result?.action, "stop", "ASSESSMENT FAIL should block progression");
+    assert.ok(
+      (result as any).reason?.includes('UAT verdict for S01 is "fail"'),
+      "stop reason should report normalized ASSESSMENT verdict",
+    );
+  });
+
+  test("UAT verdict gate: ROADMAP fallback gates done slices when DB is unavailable", async () => {
+    base = createFullFixture();
+    const mDir = join(base, ".gsd", "milestones", "M001");
+    writeFileSync(
+      join(mDir, "M001-ROADMAP.md"),
+      [
+        "# M001: Edge Case Milestone",
+        "",
+        "## Vision",
+        "Prove edge case correctness.",
+        "",
+        "## Success Criteria",
+        "- All edge cases handled",
+        "",
+        "## Slices",
+        "",
+        "- [x] **S01: First Feature** `risk:low` `depends:[]`",
+        "  - After this: First feature proven.",
+        "",
+        "- [ ] **S02: Second Feature** `risk:low` `depends:[]`",
+        "  - After this: Second feature proven.",
+        "",
+        "## Boundary Map",
+        "",
+        "| From | To | Produces | Consumes |",
+        "|------|----|----------|----------|",
+        "| S01 | terminal | feature-a | nothing |",
+        "| S02 | terminal | feature-b | nothing |",
+      ].join("\n"),
+    );
+
+    const s01Dir = join(base, ".gsd", "milestones", "M001", "slices", "S01");
+    writeFileSync(
+      join(s01Dir, "S01-UAT.md"),
+      "# UAT File\n\n## UAT Type\n\n- UAT mode: artifact-driven\n",
+    );
+    writeFileSync(
+      join(s01Dir, "S01-ASSESSMENT.md"),
+      "---\nverdict: needs-remediation\n---\n# UAT Assessment\n",
+    );
+
+    const ctx = buildDispatchCtx(base, "M001", {
+      phase: "planning",
+      activeSlice: { id: "S02", title: "Second" },
+      activeTask: null,
+    });
+    ctx.prefs = { uat_dispatch: true } as any;
+
+    const result = await getUatVerdictGate().match(ctx);
+    assert.equal(result?.action, "stop", "ROADMAP done slices should be gated without DB");
+    assert.ok(
+      (result as any).reason?.includes('UAT verdict for S01 is "needs-remediation"'),
+      "stop reason should report normalized ASSESSMENT verdict from disk fallback",
+    );
+  });
+
+  for (const status of ["done", "skipped"]) {
+    test(`UAT verdict gate: legacy closed status "${status}" is gated`, async () => {
+      base = createFullFixture();
+      openDatabase(join(base, ".gsd", "gsd.db"));
+      insertMilestone({ id: "M001", title: "Active", status: "active" });
+      insertSlice({ id: "S01", milestoneId: "M001", title: "First", status });
+      insertSlice({ id: "S02", milestoneId: "M001", title: "Second", status: "pending" });
+
+      const s01Dir = join(base, ".gsd", "milestones", "M001", "slices", "S01");
+      writeFileSync(
+        join(s01Dir, "S01-UAT.md"),
+        "# UAT File\n\n## UAT Type\n\n- UAT mode: artifact-driven\n",
+      );
+      writeFileSync(
+        join(s01Dir, "S01-ASSESSMENT.md"),
+        "---\nverdict: needs-remediation\n---\n# UAT Assessment\n",
+      );
+
+      const ctx = buildDispatchCtx(base, "M001", {
+        phase: "planning",
+        activeSlice: { id: "S02", title: "Second" },
+        activeTask: null,
+      });
+      ctx.prefs = { uat_dispatch: true } as any;
+
+      const result = await getUatVerdictGate().match(ctx);
+      assert.equal(
+        result?.action,
+        "stop",
+        `${status} slices should be treated as closed for UAT verdict gating`,
+      );
+      assert.ok(
+        (result as any).reason?.includes('UAT verdict for S01 is "needs-remediation"'),
+        "stop reason should report normalized ASSESSMENT verdict",
+      );
+    });
+  }
 });
 
 // ─────────────────────────────────────────────────────────────────────────

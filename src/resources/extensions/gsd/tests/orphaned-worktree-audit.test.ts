@@ -101,6 +101,14 @@ describe("auditOrphanedMilestoneBranches", () => {
       result.warnings.some(w => w.includes("NOT merged")),
       "should warn about unmerged branch",
     );
+    assert.ok(
+      result.warnings.some(w => w.includes("/gsd doctor fix")),
+      `warning should suggest the real remediation command; got: ${JSON.stringify(result.warnings)}`,
+    );
+    assert.ok(
+      result.warnings.every(w => !w.includes("/gsd health --fix")),
+      `warning must not suggest the removed health --fix command; got: ${JSON.stringify(result.warnings)}`,
+    );
 
     // Branch should still exist (data safety)
     const branches = run("git branch --list milestone/M001", dir);

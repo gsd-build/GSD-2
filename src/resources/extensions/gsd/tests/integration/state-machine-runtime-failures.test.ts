@@ -48,9 +48,7 @@ import type { WindowEntry } from "../../auto/types.ts";
 import {
   AutoSession,
   NEW_SESSION_TIMEOUT_MS,
-  MAX_UNIT_DISPATCHES,
   STUB_RECOVERY_THRESHOLD,
-  MAX_LIFETIME_DISPATCHES,
 } from "../../auto/session.ts";
 
 // ── Auto-loop types ──────────────────────────────────────────────────────
@@ -364,14 +362,6 @@ describe("session management", () => {
     assert.equal(NEW_SESSION_TIMEOUT_MS, 120_000, "session timeout should be 120s");
   });
 
-  test("MAX_UNIT_DISPATCHES limits retries for a single unit", () => {
-    assert.equal(MAX_UNIT_DISPATCHES, 3, "max unit dispatches should be 3");
-  });
-
-  test("MAX_LIFETIME_DISPATCHES is the absolute limit per unit", () => {
-    assert.equal(MAX_LIFETIME_DISPATCHES, 6, "max lifetime dispatches should be 6");
-  });
-
   test("STUB_RECOVERY_THRESHOLD triggers recovery after N stub completions", () => {
     assert.equal(STUB_RECOVERY_THRESHOLD, 2, "stub recovery threshold should be 2");
   });
@@ -392,12 +382,8 @@ describe("session management", () => {
     s.unitDispatchCount.set(unitId, 2);
     assert.equal(s.unitDispatchCount.get(unitId), 2);
 
-    // Exceeding MAX_UNIT_DISPATCHES
-    s.unitDispatchCount.set(unitId, MAX_UNIT_DISPATCHES + 1);
-    assert.ok(
-      s.unitDispatchCount.get(unitId)! > MAX_UNIT_DISPATCHES,
-      "should track count beyond max for detection",
-    );
+    s.unitDispatchCount.set(unitId, 4);
+    assert.equal(s.unitDispatchCount.get(unitId), 4);
   });
 
   test("AutoSession toJSON() provides diagnostic snapshot", () => {

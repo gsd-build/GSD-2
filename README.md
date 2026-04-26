@@ -27,33 +27,69 @@ One command. Walk away. Come back to a built project with clean git history.
 
 ---
 
-## What's New in v2.77
+## What's New in v2.78
 
-### Context Mode & Execution
+### Worktree Lifecycle & Forensics
 
-- **Context Mode** — a dispatch behavior that builds task-ready context automatically: it pulls in the most relevant project artifacts, prior session state, milestone/slice signals, and execution metadata before the model runs. This reduces manual prompt assembly, improves continuity across turns, and helps tasks start with the right files and constraints from the first dispatch. Enabled by default for new projects (opt out with `enabled: false`).
-- **Sandboxed execution tools** — added `gsd_exec_search`, `gsd_resume`, and sandboxed tool-output execution paths for context-mode flows, so search/resume and follow-up execution can run with tighter boundaries and more predictable runtime behavior.
-- **Preflight hardening** — milestone completion now performs stricter clean-root preflight checks and can auto-stash when needed, reducing accidental dirty-tree transitions and helping completion flows fail fast with clearer remediation.
+- **Slice-cadence worktree collapse (#4765)** — new `git.collapse_cadence: "milestone" | "slice"` preference. With `slice`, each validated slice squash-merges to main immediately, shrinking the orphan window from milestone-size to slice-size. Pair with `git.milestone_resquash: true` to collapse per-slice commits into one milestone commit at completion.
+- **Worktree telemetry (#4764)** — new journal events (`worktree-created`, `worktree-merged`, `worktree-orphaned`, `auto-exit`, `canonical-root-redirect`, `slice-merged`, `milestone-resquash`) and a `summarizeWorktreeTelemetry` aggregator that reports orphan breakdowns, merge durations, conflict counts, exit reasons, and unmerged-exit metrics.
+- **`/gsd forensics` worktree section** — surfaces the telemetry above with two new anomalies: `worktree-orphan` and `worktree-unmerged-exit`.
+- **Worktree-aware canonical milestone root (#4761)** — `resolveCanonicalMilestoneRoot` routes validators and cross-session readers through the live worktree, so milestone validation no longer silently reads stale project-root state.
+- **Bootstrap orphan audit (#4762)** — in-progress milestones with commits ahead of main no longer get skipped; the audit emits a warning with commit count and worktree location so interrupted auto-runs are visible.
 
-### Memory Architecture (ADR-013)
+### Auto Pipeline & Component System
 
-- **Memories table is now authoritative** — all memory reads and writes now flow through the `memories` table as the single source of truth. By removing split legacy paths, memory state stays consistent across agents, tools, and UI surfaces, with fewer reconciliation edge cases and less sync drift.
-- **Structured memory fields** — `structured_fields` adds typed metadata (instead of only free-form text), so memories can carry machine-usable attributes for more accurate retrieval, stronger filtering, and more dependable downstream automation and tooling.
-- **Dual-write migration completed** — the staged migration that wrote to both old and new paths is now fully landed, including decisions backfill and parity wiring across agents, MCP tools, and extract-learnings flows. That gives a safer upgrade path while preserving historical data and reducing cutover risk.
+- **Unified component system** — skills, agents, pipelines, and marketplace are now one component model wired through runtime, dispatch, and telemetry, replacing per-surface plumbing.
+- **UnitContextManifest v2 (#4924, #4934)** — auto dispatch runs through a typed manifest with declarative tools-policy and typed computed artifacts. CI guards the schema so drift fails fast.
+- **Composer migration phase 3 (#4782)** — `complete-slice`, `research-milestone`, `run-uat`, and `reassess-roadmap` now build context through the manifest composer for a consistent shape across units.
+- **Milestone scope classifier + pipeline variants (#4781)** — auto picks a pipeline variant from milestone shape, so research-heavy and execution-heavy milestones no longer share a one-size dispatch path.
+- **Per-unit-type skill manifest resolver (#4779)** — skills wire into specific unit types instead of being globally on, with manifests expanded across the remaining types.
+- **Single-writer-v3 control plane** — closes outstanding gaps in the durable-state writer model so concurrent writers can't desync workflow state.
+- **Opt-in `reassess-roadmap` (#4778)** — gated behind the `skip_clean_reassess` preference per ADR-003 §4; auto no longer triggers reassessment unprompted.
 
-### Skills, Tooling, and UX
+### Extensions Framework
 
-- **Skill coverage expanded** — 9 gap-closing skills landed and 6 planning/design skills were surfaced, improving end-to-end workflow coverage and making specialized guidance easier to discover at the point of use.
-- **Hook stack upgrades** — Layer 0 shell hooks and additional Layer 2 events were added to widen extension integration points: hooks can act earlier in command execution, and lifecycle consumers now receive richer event signals for orchestration, policy checks, and observability.
-- **TUI polish** — skill invocations now render in a dedicated chat-frame style for clearer scanability, and active-row overflow handling was fixed to prevent terminal layout breakage during long outputs.
+- **Extension lifecycle commands** — `gsd extensions install / update / uninstall / list / info / validate` for npm, git, and local sources, with dependency warnings and user-metadata tracking.
+- **Topological extension load order** — Kahn's-algorithm sort with surfaced `ExtensionLoadWarning`s, so dependent extensions resolve deterministically and misconfigurations are visible instead of silent.
+- **cmux ↔ gsd decoupling** — static cross-imports replaced with a shared `cmux-events` contract and dynamic imports, isolating extension boundaries.
+- **Extracted `@gsd-extensions/google-search` workspace** — first reference extension carved out of core; legacy in-tree source replaced with a deprecation stub.
+
+### Models, Agent, and UX
+
+- **GPT-5.5 Codex support** — added across `gsd` and `pi-ai`, including `xhigh` thinking level for custom GPT-5.5 models.
+- **Auth mode in `/model`** — providers display alongside auth mode for clearer routing.
+- **Permission granularity picker** — Claude Code "Always Allow" prompts let you scope the grant instead of approving the broad case.
+- **Headless auto default → `bypassPermissions` (#4657)** — Claude Code CLI headless auto-mode runs without permission prompts by default.
+- **`skillFilter` for system prompts** — `pi-coding-agent` filters which skills are surfaced in `buildSystemPrompt`, with consumer exceptions guarded.
+- **Visual postinstall (#4641)** — install shows a spinner/banner UX so first-run state is legible.
+- **PR-risk verification** — risk prompt emits a copy-pasteable code block to make follow-up commands one step.
 
 ### Reliability & Safety
 
-- **Worktree and dispatch resilience** — crash-recovery dispatch is more robust, path derivation is safer, and worktree context fallback is improved, reducing stuck states and misrouted artifact operations after interruptions.
-- **DB/schema guardrails** — migration/index ordering and schema version stamping were tightened so upgrades apply deterministically and avoid index/version drift across mixed or legacy states.
-- **Security and validation fixes** — multiple hardening fixes landed across redaction paths, file/path checks, and pre-execution validation, closing false-positive/false-negative gaps while improving safety boundaries.
+- **Major git-safety pass** — clarified TOCTOU ancestry guard, atomic sync-lock acquire with PID-verified stale override, `.git/index.lock` force-removal gated by 5-min age, `GIT_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE` stripped from env overlays, rebase/cherry-pick/revert state detected and aborted in recovery, working tree stashed before `reset --hard` in self-heal/rollback, worktree create guarded against unborn branches, and user hooks + `commit.gpgsign` honored on auto-commits.
+- **Atomic `.gsd/` state writes** — file-locks now actually lock and throw on contention; appends are lock-wrapped to prevent interleaved writes.
+- **Compaction correctness (#4665)** — fixed chunker/truncation mismatch and silent chunk-drops that produced degenerate or empty summaries.
+- **Write-gate (#4950)** — fail-closed depth confirmation, EXDEV-safe snapshot rename, opt-out persistence default, off-by-one max-attempts fix, exception capture in `gate.execute`, and audit/DB rows for unknown gate ids.
+- **Auto state machine** — deterministic policy errors classified non-retriable (#4973), depth-verification bypass for non-interactive sessions, baseline restored between units (#4961), `restoreToolBaseline` gated by `isAutoMode` (#4966).
+- **Slice + crash recovery** — slice orchestrator state persists across crashes; ancestry-guarded force-reset, detached-HEAD refusal, and stash-by-ref recovery.
+- **Empty-turn recovery** — Claude Code CLI tool-block shape canonicalized so empty-turn recovery matches real provider output.
 
 See the full [Changelog](./CHANGELOG.md) for details on every release.
+
+<details>
+<summary>v2.77 highlights</summary>
+
+- **Context Mode** — dispatch builds task-ready context automatically (artifacts, prior session, milestone/slice signals, execution metadata); enabled by default for new projects
+- **Sandboxed execution tools** — `gsd_exec_search`, `gsd_resume`, and sandboxed tool-output paths for context-mode flows
+- **Memory architecture (ADR-013)** — `memories` table is now authoritative; `structured_fields` adds typed metadata; dual-write migration landed with decisions backfill
+- **Skill coverage** — 9 gap-closing skills landed plus 6 planning/design skills surfaced
+- **Hook stack** — Layer 0 shell hooks and additional Layer 2 lifecycle events
+- **TUI polish** — dedicated chat-frame style for skill invocations; active-row overflow fixes
+- **Worktree + dispatch resilience** — crash-recovery dispatch hardened, safer path derivation, improved worktree context fallback
+- **DB/schema guardrails** — migration/index ordering and schema version stamping tightened
+- **Preflight hardening** — milestone completion enforces stricter clean-root checks with auto-stash
+
+</details>
 
 <details>
 <summary>v2.75 highlights</summary>
@@ -288,7 +324,7 @@ Auto mode is a state machine driven by files on disk. It reads `.gsd/STATE.md`, 
 
 5. **Provider error recovery** — Transient provider errors (rate limits, 500/503 server errors, overloaded) auto-resume after a delay. Permanent errors (auth, billing) pause for manual review. The model fallback chain retries transient network errors before switching models.
 
-6. **Stuck detection** — A sliding-window detector identifies repeated dispatch patterns (including multi-unit cycles). On detection, it retries once with a deep diagnostic. If it fails again, auto mode stops with the exact file it expected.
+6. **Stuck and artifact detection** — A sliding-window detector identifies repeated dispatch patterns (including multi-unit cycles). Missing expected artifacts use a separate bounded path: GSD retries artifact verification up to 3 times with failure context, then pauses auto mode with the missing artifact error instead of looping indefinitely.
 
 7. **Timeout supervision** — Soft timeout warns the LLM to wrap up. Idle watchdog detects stalls. Hard timeout pauses auto mode. Recovery steering nudges the LLM to finish durable output before giving up.
 
@@ -589,19 +625,19 @@ Start GSD with `gsd --debug` to enable structured JSONL diagnostic logging. Debu
 
 ### Token Optimization
 
-GSD includes a coordinated token optimization system that reduces usage by 40-60% on cost-sensitive workloads. Set a single preference to coordinate model selection, phase skipping, and context compression:
+GSD includes a coordinated token optimization system that reduces usage by 40-60% on cost-sensitive workloads. Set a single preference to coordinate model tier selection, phase skipping, and context compression:
 
 ```yaml
 token_profile: budget # or balanced (default), quality
 ```
 
-| Profile    | Savings | What It Does                                                   |
-| ---------- | ------- | -------------------------------------------------------------- |
-| `budget`   | 40-60%  | Cheap models, skip research/reassess, minimal context inlining |
-| `balanced` | 10-20%  | Default models, skip slice research, standard context          |
-| `quality`  | 0%      | All phases, all context, full model power                      |
+| Profile    | Savings | What It Does                                                                     |
+| ---------- | ------- | -------------------------------------------------------------------------------- |
+| `budget`   | 40-60%  | Light/standard tier defaults, skip research/reassess, minimal context inlining   |
+| `balanced` | 10-20%  | Standard tier for core work, light tier for simple work, standard context        |
+| `quality`  | 0%      | Heavy tier for planning, standard tier for core work, full context               |
 
-**Complexity-based routing** automatically classifies tasks as simple/standard/complex and routes to appropriate models. Simple docs tasks get Haiku; complex architectural work gets Opus. The classification is heuristic (sub-millisecond, no LLM calls) and learns from outcomes via a persistent routing history.
+**Complexity-based routing** automatically classifies tasks as simple/standard/complex and routes to appropriate available models. Token profiles define provider-agnostic tier intentions, so simple docs tasks use a light-tier configured model and complex architectural work can use a heavy-tier configured model. The classification is heuristic (sub-millisecond, no LLM calls) and learns from outcomes via a persistent routing history.
 
 **Budget pressure** graduates model downgrading as you approach your budget ceiling — 50%, 75%, and 90% thresholds progressively shift work to cheaper tiers.
 

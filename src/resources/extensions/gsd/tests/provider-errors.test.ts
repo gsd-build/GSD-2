@@ -410,7 +410,6 @@ test("resumeAutoAfterProviderDelay restarts paused auto-mode from the recorded b
         basePath: "/tmp/project",
       }),
       resetTransientRetryState: () => {},
-      resetSessionTimeoutState: () => {},
       startAuto: async (_ctx, _pi, base, verboseMode, options) => {
         startCalls.push({ base, verboseMode, step: options?.step });
       },
@@ -436,7 +435,6 @@ test("resumeAutoAfterProviderDelay does not double-start when auto-mode is alrea
         basePath: "/tmp/project",
       }),
       resetTransientRetryState: () => {},
-      resetSessionTimeoutState: () => {},
       startAuto: async () => {
         startCalls += 1;
       },
@@ -468,7 +466,6 @@ test("resumeAutoAfterProviderDelay leaves auto paused when no base path is avail
         basePath: "",
       }),
       resetTransientRetryState: () => {},
-      resetSessionTimeoutState: () => {},
       startAuto: async () => {
         startCalls += 1;
       },
@@ -485,7 +482,7 @@ test("resumeAutoAfterProviderDelay leaves auto paused when no base path is avail
   ]);
 });
 
-test("resumeAutoAfterProviderDelay resets provider retry state before restarting auto-mode", async () => {
+test("resumeAutoAfterProviderDelay resets provider retry state without clearing session-timeout attempts", async () => {
   const calls: string[] = [];
 
   const result = await resumeAutoAfterProviderDelay(
@@ -501,9 +498,6 @@ test("resumeAutoAfterProviderDelay resets provider retry state before restarting
       resetTransientRetryState: () => {
         calls.push("reset-transient");
       },
-      resetSessionTimeoutState: () => {
-        calls.push("reset-session-timeout");
-      },
       startAuto: async () => {
         calls.push("start-auto");
       },
@@ -513,7 +507,6 @@ test("resumeAutoAfterProviderDelay resets provider retry state before restarting
   assert.equal(result, "resumed");
   assert.deepEqual(calls, [
     "reset-transient",
-    "reset-session-timeout",
     "start-auto",
   ]);
 });

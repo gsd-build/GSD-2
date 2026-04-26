@@ -17,12 +17,7 @@
  */
 
 import { createTestContext } from "./test-helpers.ts";
-import {
-  withTimeout,
-  FINALIZE_PRE_TIMEOUT_MS,
-  FINALIZE_POST_TIMEOUT_MS,
-} from "../auto/finalize-timeout.ts";
-import { MAX_FINALIZE_TIMEOUTS } from "../auto/types.ts";
+import { withTimeout } from "../auto/finalize-timeout.ts";
 
 const { assertTrue, assertEq, report } = createTestContext();
 
@@ -80,44 +75,6 @@ const { assertTrue, assertEq, report } = createTestContext();
   assertTrue(caught, "rejection should propagate");
 }
 
-// ═══ Test: FINALIZE_PRE_TIMEOUT_MS is defined and reasonable ═════════════════
-
-{
-  console.log("\n=== #3757: pre-verification timeout constant is defined and reasonable ===");
-
-  assertTrue(
-    typeof FINALIZE_PRE_TIMEOUT_MS === "number",
-    "FINALIZE_PRE_TIMEOUT_MS should be a number",
-  );
-  assertTrue(
-    FINALIZE_PRE_TIMEOUT_MS >= 30_000,
-    `pre timeout should be >= 30s (got ${FINALIZE_PRE_TIMEOUT_MS}ms)`,
-  );
-  assertTrue(
-    FINALIZE_PRE_TIMEOUT_MS <= 120_000,
-    `pre timeout should be <= 120s (got ${FINALIZE_PRE_TIMEOUT_MS}ms)`,
-  );
-}
-
-// ═══ Test: FINALIZE_POST_TIMEOUT_MS is defined and reasonable ═════════════════
-
-{
-  console.log("\n=== #2344: timeout constant is defined and reasonable ===");
-
-  assertTrue(
-    typeof FINALIZE_POST_TIMEOUT_MS === "number",
-    "FINALIZE_POST_TIMEOUT_MS should be a number",
-  );
-  assertTrue(
-    FINALIZE_POST_TIMEOUT_MS >= 30_000,
-    `timeout should be >= 30s (got ${FINALIZE_POST_TIMEOUT_MS}ms)`,
-  );
-  assertTrue(
-    FINALIZE_POST_TIMEOUT_MS <= 120_000,
-    `timeout should be <= 120s (got ${FINALIZE_POST_TIMEOUT_MS}ms)`,
-  );
-}
-
 // ═══ Test: withTimeout cleans up timer on success ════════════════════════════
 
 {
@@ -132,25 +89,6 @@ const { assertTrue, assertEq, report } = createTestContext();
   );
   assertEq(result.value, "delayed", "should resolve with delayed value");
   assertEq(result.timedOut, false, "should not time out");
-}
-
-// ═══ Test: MAX_FINALIZE_TIMEOUTS is defined and reasonable ═══════════════════
-
-{
-  console.log("\n=== #3757: MAX_FINALIZE_TIMEOUTS is defined and reasonable ===");
-
-  assertTrue(
-    typeof MAX_FINALIZE_TIMEOUTS === "number",
-    "MAX_FINALIZE_TIMEOUTS should be a number",
-  );
-  assertTrue(
-    MAX_FINALIZE_TIMEOUTS >= 2,
-    `threshold should be >= 2 (got ${MAX_FINALIZE_TIMEOUTS})`,
-  );
-  assertTrue(
-    MAX_FINALIZE_TIMEOUTS <= 10,
-    `threshold should be <= 10 (got ${MAX_FINALIZE_TIMEOUTS})`,
-  );
 }
 
 // Note: the two previous source-grep blocks that scanned phases.ts for

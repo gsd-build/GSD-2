@@ -5,6 +5,7 @@ import {
   resolveModelForComplexity,
   escalateTier,
   defaultRoutingConfig,
+  resolveModelForTier,
   scoreModel,
   computeTaskRequirements,
   scoreEligibleModels,
@@ -248,6 +249,172 @@ test("#2192: known model is still downgraded normally", () => {
   assert.notEqual(result.modelId, "claude-opus-4-6");
 });
 
+// ─── Cross-provider fallback ──────────────────────────────────────────────────
+
+test("uses cross-provider equivalent when configured primary is unavailable", () => {
+  const config = { ...defaultRoutingConfig(), enabled: true };
+  // Profile default says claude-opus-4-6 for planning, but user is on GPT only
+  const result = resolveModelForComplexity(
+    makeClassification("heavy"),
+    { primary: "claude-opus-4-6", fallbacks: [] },
+    config,
+    ["gpt-4o", "gpt-4o-mini", "o1"],
+  );
+  // o1 is the heavy-tier GPT model — should be selected as cross-provider equivalent
+  assert.equal(result.modelId, "o1");
+  assert.equal(result.wasDowngraded, false);
+  assert.match(result.reason, /cross-provider/);
+});
+
+test("cross-provider: selects standard-tier equivalent when primary unavailable", () => {
+  const config = { ...defaultRoutingConfig(), enabled: true };
+  // Planning configured with Opus, but only GPT standard models available
+  const result = resolveModelForComplexity(
+    makeClassification("heavy"),
+    { primary: "claude-opus-4-6", fallbacks: [] },
+    config,
+    ["gpt-4o", "gpt-4o-mini"],
+  );
+  // gpt-4o is standard tier, not heavy — no heavy-tier model available
+  // Should fall back to gpt-4o (best available)
+  assert.ok(result.modelId === "gpt-4o" || result.modelId === "claude-opus-4-6");
+  assert.equal(result.wasDowngraded, false);
+});
+
+test("cross-provider: configured primary available by bare ID wins over equivalent", () => {
+  const config = { ...defaultRoutingConfig(), enabled: true };
+  // Provider-prefixed ID — bare match should find it
+  const result = resolveModelForComplexity(
+    makeClassification("heavy"),
+    { primary: "claude-opus-4-6", fallbacks: [] },
+    config,
+    ["anthropic/claude-opus-4-6", "o1"],
+  );
+  assert.equal(result.modelId, "claude-opus-4-6");
+  assert.equal(result.wasDowngraded, false);
+});
+
+// ─── resolveModelForTier (provider-agnostic tier resolution) ────────────────
+
+test("resolveModelForTier: returns canonical Anthropic model when no available models", () => {
+  assert.equal(resolveModelForTier("heavy", []), "claude-opus-4-6");
+  assert.equal(resolveModelForTier("standard", []), "claude-sonnet-4-6");
+  assert.equal(resolveModelForTier("light", []), "claude-haiku-4-5");
+});
+
+test("resolveModelForTier: returns canonical model when it is available", () => {
+  assert.equal(
+    resolveModelForTier("heavy", ["claude-opus-4-6", "claude-sonnet-4-6"]),
+    "claude-opus-4-6",
+  );
+});
+
+test("resolveModelForTier: does not prefer canonical over cheaper same-tier model", () => {
+  const result = resolveModelForTier("light", ["claude-haiku-4-5", "gpt-4o-mini"]);
+  assert.equal(result, "gpt-4o-mini");
+});
+
+test("resolveModelForTier: honors configured tier_models pins", () => {
+  const config: DynamicRoutingConfig = {
+    ...defaultRoutingConfig(),
+    tier_models: { light: "claude-haiku-4-5" },
+  };
+  const result = resolveModelForTier("light", ["claude-haiku-4-5", "gpt-4o-mini"], config);
+  assert.equal(result, "claude-haiku-4-5");
+});
+
+test("resolveModelForTier: picks cross-provider equivalent when Anthropic unavailable", () => {
+  // Only OpenAI models available
+  const result = resolveModelForTier("heavy", ["gpt-4o", "gpt-4o-mini", "o1"]);
+  // o1 is the heavy-tier model in the OpenAI lineup
+  assert.equal(result, "o1");
+});
+
+test("resolveModelForTier: picks standard-tier cross-provider model", () => {
+  const result = resolveModelForTier("standard", ["gpt-4o", "gpt-4o-mini"]);
+  assert.equal(result, "gpt-4o");
+});
+
+test("resolveModelForTier: picks light-tier cross-provider model", () => {
+  const result = resolveModelForTier("light", ["gpt-4o", "gpt-4o-mini"]);
+  assert.equal(result, "gpt-4o-mini");
+});
+
+test("resolveModelForTier: falls back to canonical when no tier match available", () => {
+  // Only unknown models available — getModelTier classifies unknowns as
+  // "standard", so a request for "heavy" finds no match and the canonical
+  // Anthropic ID is returned as a documented fallback.
+  const result = resolveModelForTier("heavy", ["some-custom-model"]);
+  assert.equal(result, "claude-opus-4-6");
+});
+
+test("resolveModelForTier: handles provider-prefixed available models", () => {
+  const result = resolveModelForTier("heavy", ["anthropic/claude-opus-4-6"]);
+  assert.equal(result, "claude-opus-4-6");
+});
+
+test("resolveModelForTier: picks Gemini models when only Google available", () => {
+  const result = resolveModelForTier("light", ["gemini-2.5-pro", "gemini-2.0-flash"]);
+  assert.equal(result, "gemini-2.0-flash");
+});
+
+// ─── Behavioral: profile defaults are provider-agnostic at runtime ──────────
+
+test("resolveProfileDefaults: balanced with only OpenAI models returns OpenAI IDs", async () => {
+  const { resolveProfileDefaults } = await import("../preferences-models.js");
+  const defaults = resolveProfileDefaults("balanced", ["gpt-4o", "gpt-4o-mini"]);
+  assert.ok(defaults.models, "balanced should populate models");
+  // All slots must resolve to an available OpenAI ID — not a claude- canonical.
+  for (const [phase, modelId] of Object.entries(defaults.models!)) {
+    assert.ok(typeof modelId === "string" && modelId.length > 0, `${phase} should resolve to a model ID`);
+    assert.ok(
+      !String(modelId).startsWith("claude-"),
+      `${phase} resolved to ${modelId} but no claude-* model is available — should be OpenAI`,
+    );
+  }
+});
+
+test("resolveProfileDefaults: budget with only OpenAI models picks gpt-4o-mini for light slots", async () => {
+  const { resolveProfileDefaults } = await import("../preferences-models.js");
+  const defaults = resolveProfileDefaults("budget", ["gpt-4o", "gpt-4o-mini"]);
+  // light-tier slots in budget: research, execution_simple, completion, subagent
+  assert.equal(defaults.models?.research, "gpt-4o-mini");
+  assert.equal(defaults.models?.execution_simple, "gpt-4o-mini");
+  assert.equal(defaults.models?.completion, "gpt-4o-mini");
+  assert.equal(defaults.models?.subagent, "gpt-4o-mini");
+  // standard-tier slots: planning, execution
+  assert.equal(defaults.models?.planning, "gpt-4o");
+  assert.equal(defaults.models?.execution, "gpt-4o");
+});
+
+test("resolveProfileDefaults: honors dynamic routing tier_models pins", async () => {
+  const { resolveProfileDefaults } = await import("../preferences-models.js");
+  const defaults = resolveProfileDefaults(
+    "budget",
+    ["claude-haiku-4-5", "gpt-4o-mini", "gpt-4o"],
+    { ...defaultRoutingConfig(), tier_models: { light: "claude-haiku-4-5" } },
+  );
+  assert.equal(defaults.models?.research, "claude-haiku-4-5");
+  assert.equal(defaults.models?.execution_simple, "claude-haiku-4-5");
+  assert.equal(defaults.models?.completion, "claude-haiku-4-5");
+  assert.equal(defaults.models?.subagent, "claude-haiku-4-5");
+});
+
+test("resolveProfileDefaults: empty availableModelIds falls back to canonical Anthropic IDs", async () => {
+  const { resolveProfileDefaults } = await import("../preferences-models.js");
+  const defaults = resolveProfileDefaults("balanced", []);
+  // Documented fallback only — when registry is unavailable at bootstrap.
+  const planningModel = defaults.models?.planning;
+  assert.ok(typeof planningModel === "string" && planningModel.startsWith("claude-"));
+});
+
+test("resolveProfileDefaults: burn-max omits models so user choice is preserved", async () => {
+  const { resolveProfileDefaults } = await import("../preferences-models.js");
+  const defaults = resolveProfileDefaults("burn-max", ["gpt-4o"]);
+  assert.equal(defaults.models, undefined, "burn-max must not write model defaults");
+  assert.equal(defaults.dynamic_routing?.enabled, false);
+});
+
 // ─── Capability Scoring (ADR-004 Phase 2) ───────────────────────────────────
 
 test("defaultRoutingConfig includes capability_routing: true", () => {
@@ -279,14 +446,8 @@ test("scoreModel computes weighted average of capability × requirement", () => 
   assert.ok(Math.abs(score - 88.21) < 0.1, `score ${score} should be ~88.21`);
 });
 
-test("scoreModel returns 50 for empty requirements", () => {
-  const caps: ModelCapabilities = {
-    coding: 90, debugging: 80, research: 70,
-    reasoning: 85, speed: 50, longContext: 60, instruction: 75,
-  };
-  const score = scoreModel(caps, {});
-  assert.equal(score, 50);
-});
+// (Removed duplicate "scoreModel returns 50 for empty requirements" — the
+// `describe("scoreModel")` block below has the same scenario.)
 
 test("computeTaskRequirements returns base vector for known unit type", () => {
   const reqs = computeTaskRequirements("execute-task");

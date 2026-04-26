@@ -9,7 +9,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { UnitMetrics } from "../metrics.js";
-import { detectStuckLoops, type ForensicAnomaly } from "../forensics.js";
+import type { WorktreeTelemetrySummary } from "../worktree-telemetry.js";
+import { detectStuckLoops, detectWorktreeOrphans, type ForensicAnomaly } from "../forensics.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -162,4 +163,28 @@ test("#3760 detectStuckLoops still flags repeated dispatches within one auto ses
     anomalies[0].details.includes("Cross-session recovery runs are ignored"),
     `details should explain the session-aware rule: ${anomalies[0].details}`,
   );
+});
+
+test("#4711 detectWorktreeOrphans suggests doctor fix for completed unmerged branches", () => {
+  const anomalies: ForensicAnomaly[] = [];
+  const summary: WorktreeTelemetrySummary = {
+    worktreesCreated: 0,
+    worktreesMerged: 0,
+    orphansDetected: 1,
+    orphansByReason: { "complete-unmerged": 1 },
+    mergeDurationsMs: [],
+    mergeConflicts: 0,
+    exitsByReason: {},
+    exitsWithUnmergedWork: 0,
+    canonicalRedirects: 0,
+    slicesMerged: 0,
+    sliceMergeConflicts: 0,
+    milestoneResquashes: 0,
+  };
+
+  detectWorktreeOrphans(summary, anomalies);
+
+  assert.equal(anomalies.length, 1);
+  assert.match(anomalies[0]!.details, /\/gsd doctor fix/);
+  assert.doesNotMatch(anomalies[0]!.details, /\/gsd health --fix/);
 });

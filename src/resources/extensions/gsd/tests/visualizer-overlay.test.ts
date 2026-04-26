@@ -13,7 +13,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { GSDVisualizerOverlay } from "../visualizer-overlay.ts";
+import { GSDVisualizerOverlay, TAB_COUNT } from "../visualizer-overlay.ts";
 
 function makeTui() {
   const renders: number[] = [];
@@ -93,16 +93,16 @@ test("overlay switches tabs via 1–9,0 digit keys", (t) => {
 
 test("overlay Tab key cycles forward and wraps around at TAB_COUNT", (t) => {
   const { overlay } = makeOverlay(t);
-  overlay.activeTab = 9;
+  overlay.activeTab = TAB_COUNT - 1;
   overlay.handleInput("\t");
-  assert.equal(overlay.activeTab, 0, "Tab wraps from 9 back to 0");
+  assert.equal(overlay.activeTab, 0, `Tab wraps from ${TAB_COUNT - 1} back to 0`);
 });
 
 test("overlay Shift+Tab cycles backward and wraps", (t) => {
   const { overlay } = makeOverlay(t);
   overlay.activeTab = 0;
   overlay.handleInput("\u001b[Z");
-  assert.equal(overlay.activeTab, 9, "Shift+Tab wraps from 0 to 9");
+  assert.equal(overlay.activeTab, TAB_COUNT - 1, `Shift+Tab wraps from 0 to ${TAB_COUNT - 1}`);
 });
 
 // ─── Filter mode ─────────────────────────────────────────────────────────
@@ -331,9 +331,9 @@ test("overlay footer hint mentions tab navigation, filter, scroll, and help", (t
 
 // ─── Scroll offsets array is sized to TAB_COUNT ──────────────────────────
 
-test("overlay scrollOffsets array has one slot per tab (10 tabs total)", (t) => {
+test("overlay scrollOffsets array has one slot per tab", (t) => {
   const { overlay } = makeOverlay(t);
-  assert.equal(overlay.scrollOffsets.length, 10, "scrollOffsets sized to TAB_COUNT=10");
+  assert.equal(overlay.scrollOffsets.length, TAB_COUNT, "scrollOffsets sized to TAB_COUNT");
   assert.ok(overlay.scrollOffsets.every((n: number) => n === 0), "initialized to zero");
 });
 

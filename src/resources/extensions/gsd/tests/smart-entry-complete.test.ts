@@ -48,6 +48,28 @@ test("guided-flow complete branch offers a chooser for next milestone or status"
 
   assert.match(branchChunk, /showNextAction\(/, "complete branch should present a chooser");
   assert.match(branchChunk, /findMilestoneIds\(basePath\)/, "complete branch should compute the next milestone id");
-  assert.match(branchChunk, /nextMilestoneId(?:Reserved)?\(milestoneIds, uniqueMilestoneIds\)/, "complete branch should derive the next milestone id");
+  assert.match(
+    branchChunk,
+    /nextMilestoneIdReserved\(milestoneIds,\s*uniqueMilestoneIds,\s*basePath\)/,
+    "complete branch should derive the next milestone id",
+  );
   assert.match(branchChunk, /dispatchWorkflow\(pi, await prepareAndBuildDiscussPrompt\(/, "complete branch should dispatch the prepared discuss prompt");
+});
+
+test("guided-flow needs-discussion skip branch opens the project DB before reserving a new milestone", () => {
+  const guidedFlowSource = readFileSync(join(import.meta.dirname, "..", "guided-flow.ts"), "utf-8");
+  const laterDbOpenIdx = guidedFlowSource.indexOf("// Ensure DB is open before querying slices (#2560).");
+  assert.ok(laterDbOpenIdx > -1, "guided-flow.ts should contain the post-draft DB-open guard");
+
+  const branchPrefix = guidedFlowSource.slice(0, laterDbOpenIdx);
+  const skipBranchIdx = branchPrefix.lastIndexOf('choice === "skip_milestone"');
+  assert.ok(skipBranchIdx > -1, "needs-discussion skip branch should be present");
+
+  const branchChunk = branchPrefix.slice(skipBranchIdx);
+  const ensureIdx = branchChunk.indexOf("ensureDbOpen(basePath)");
+  const reserveIdx = branchChunk.indexOf("nextMilestoneIdReserved");
+
+  assert.ok(ensureIdx > -1, "skip branch should open the project DB");
+  assert.ok(reserveIdx > -1, "skip branch should reserve the next milestone ID");
+  assert.ok(ensureIdx < reserveIdx, "project DB must be opened before milestone ID reservation");
 });

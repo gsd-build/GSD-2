@@ -657,6 +657,80 @@ test("hasImplementationArtifacts returns true when implementation files committe
   }
 });
 
+test("hasImplementationArtifacts finds milestone implementation commits after retry resumes on main (#4699)", () => {
+  const base = makeGitBase();
+  try {
+    mkdirSync(join(base, ".gsd", "milestones", "M001"), { recursive: true });
+    writeFileSync(join(base, ".gsd", "milestones", "M001", "M001-ROADMAP.md"), "# Roadmap");
+    execFileSync("git", ["add", "."], { cwd: base, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "chore: auto-commit after plan-milestone\n\nGSD-Unit: M001"], { cwd: base, stdio: "ignore" });
+
+    mkdirSync(join(base, "src"), { recursive: true });
+    mkdirSync(join(base, ".gsd", "milestones", "M001", "slices", "S01", "tasks"), { recursive: true });
+    writeFileSync(join(base, "src", "feature.ts"), "export function feature() {}");
+    writeFileSync(join(base, ".gsd", "milestones", "M001", "slices", "S01", "tasks", "T01-SUMMARY.md"), "# Summary");
+    execFileSync("git", ["add", "."], { cwd: base, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "feat: add milestone feature\n\nGSD-Task: S01/T01"], { cwd: base, stdio: "ignore" });
+
+    const result = hasImplementationArtifacts(base, "M001");
+    assert.equal(result, "present", "main self-diff retry should find production execute-task commits");
+  } finally {
+    cleanup(base);
+  }
+});
+
+test("hasImplementationArtifacts rejects milestone-scoped main history with only .gsd commits (#4699)", () => {
+  const base = makeGitBase();
+  try {
+    mkdirSync(join(base, ".gsd", "milestones", "M001"), { recursive: true });
+    writeFileSync(join(base, ".gsd", "milestones", "M001", "M001-ROADMAP.md"), "# Roadmap");
+    writeFileSync(join(base, ".gsd", "milestones", "M001", "M001-SUMMARY.md"), "# Summary");
+    execFileSync("git", ["add", "."], { cwd: base, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "chore: auto-commit after complete-milestone\n\nGSD-Unit: M001"], { cwd: base, stdio: "ignore" });
+
+    const result = hasImplementationArtifacts(base, "M001");
+    assert.equal(result, "absent", "milestone-scoped fallback must not treat .gsd-only commits as implementation");
+  } finally {
+    cleanup(base);
+  }
+});
+
+test("hasImplementationArtifacts treats empty non-integration branch diff as absent (#4699)", () => {
+  const base = makeGitBase();
+  try {
+    execFileSync("git", ["checkout", "-b", "feat/empty-milestone"], { cwd: base, stdio: "ignore" });
+
+    const result = hasImplementationArtifacts(base, "M001");
+    assert.equal(result, "absent", "empty milestone branch diffs should not use main retry fallback");
+  } finally {
+    cleanup(base);
+  }
+});
+
+test("hasImplementationArtifacts uses milestone path history instead of rolling depth (#4699)", () => {
+  const base = makeGitBase();
+  try {
+    mkdirSync(join(base, ".gsd", "milestones", "M001", "slices", "S01", "tasks"), { recursive: true });
+    mkdirSync(join(base, "src"), { recursive: true });
+    writeFileSync(join(base, "src", "feature.ts"), "export function feature() {}");
+    writeFileSync(join(base, ".gsd", "milestones", "M001", "slices", "S01", "tasks", "T01-SUMMARY.md"), "# Summary");
+    execFileSync("git", ["add", "."], { cwd: base, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "feat: old milestone implementation\n\nGSD-Task: S01/T01"], { cwd: base, stdio: "ignore" });
+
+    mkdirSync(join(base, "docs"), { recursive: true });
+    for (let i = 0; i < 205; i++) {
+      writeFileSync(join(base, "docs", `note-${i}.md`), `# Note ${i}\n`);
+      execFileSync("git", ["add", "."], { cwd: base, stdio: "ignore" });
+      execFileSync("git", ["commit", "-m", `docs: filler ${i}`], { cwd: base, stdio: "ignore" });
+    }
+
+    const result = hasImplementationArtifacts(base, "M001");
+    assert.equal(result, "present", "milestone evidence should not age out after 200 unrelated commits");
+  } finally {
+    cleanup(base);
+  }
+});
+
 test("hasImplementationArtifacts returns true on non-git directory (fail-open)", () => {
   const base = join(tmpdir(), `gsd-test-nogit-${randomUUID()}`);
   mkdirSync(base, { recursive: true });
@@ -701,6 +775,25 @@ test("verifyExpectedArtifact complete-milestone passes with impl files (#1703)",
 
     const result = verifyExpectedArtifact("complete-milestone", "M001", base);
     assert.equal(result, true, "complete-milestone should pass verification with implementation files");
+  } finally {
+    cleanup(base);
+  }
+});
+
+test("verifyExpectedArtifact complete-milestone passes on main retry with milestone implementation commits (#4699)", () => {
+  const base = makeGitBase();
+  try {
+    mkdirSync(join(base, ".gsd", "milestones", "M001"), { recursive: true });
+    writeFileSync(join(base, ".gsd", "milestones", "M001", "M001-SUMMARY.md"), "# Milestone Summary\nDone.");
+    mkdirSync(join(base, "src"), { recursive: true });
+    mkdirSync(join(base, ".gsd", "milestones", "M001", "slices", "S01", "tasks"), { recursive: true });
+    writeFileSync(join(base, "src", "app.ts"), "console.log('hello');");
+    writeFileSync(join(base, ".gsd", "milestones", "M001", "slices", "S01", "tasks", "T01-SUMMARY.md"), "# Summary");
+    execFileSync("git", ["add", "."], { cwd: base, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "feat: implementation already on main\n\nGSD-Task: S01/T01"], { cwd: base, stdio: "ignore" });
+
+    const result = verifyExpectedArtifact("complete-milestone", "M001", base);
+    assert.equal(result, true, "complete-milestone should not fail solely because HEAD vs main is a self-diff");
   } finally {
     cleanup(base);
   }

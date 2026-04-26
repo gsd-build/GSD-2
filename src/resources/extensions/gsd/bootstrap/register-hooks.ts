@@ -10,7 +10,8 @@ import { getEcosystemReadyPromise } from "../ecosystem/loader.js";
 import { buildMilestoneFileName, resolveMilestonePath, resolveSliceFile, resolveSlicePath } from "../paths.js";
 import { buildBeforeAgentStartResult } from "./system-context.js";
 import { handleAgentEnd } from "./agent-end-recovery.js";
-import { clearDiscussionFlowState, isDepthConfirmationAnswer, isQueuePhaseActive, markDepthVerified, resetWriteGateState, shouldBlockContextWrite, shouldBlockQueueExecution, isGateQuestionId, setPendingGate, clearPendingGate, getPendingGate, shouldBlockPendingGate, shouldBlockPendingGateBash, extractDepthVerificationMilestoneId } from "./write-gate.js";
+import { clearDiscussionFlowState, isDepthConfirmationAnswer, isQueuePhaseActive, markDepthVerified, resetWriteGateState, shouldBlockContextWrite, shouldBlockPlanningUnit, shouldBlockQueueExecution, isGateQuestionId, setPendingGate, clearPendingGate, getPendingGate, shouldBlockPendingGate, shouldBlockPendingGateBash, extractDepthVerificationMilestoneId } from "./write-gate.js";
+import { resolveManifest } from "../unit-context-manifest.js";
 import { isBlockedStateFile, isBashWriteToStateFile, BLOCKED_WRITE_ERROR } from "../write-intercept.js";
 import { cleanupQuickBranch } from "../quick.js";
 import { getDiscussionMilestoneId } from "../guided-flow.js";
@@ -350,6 +351,36 @@ export function registerHooks(
       }
     }
 
+    // ── Planning-unit tools-policy enforcement (#4934): runtime half ─────
+    // The active auto-mode unit's manifest declares a ToolsPolicy. For
+    // planning/docs/read-only modes, deny writes outside .gsd/ (or the
+    // manifest's allowedPathGlobs), bash that isn't read-only, and
+    // subagent dispatch. Closes the b23 bug class where a discuss-milestone
+    // turn used the host Edit tool to modify user source files.
+    const dash = getAutoDashboardData();
+    const activeUnitType = dash.currentUnit?.type;
+    if (activeUnitType) {
+      const manifest = resolveManifest(activeUnitType);
+      if (manifest) {
+        let planningInput = "";
+        if (isToolCallEventType("write", event)) {
+          planningInput = event.input.path;
+        } else if (isToolCallEventType("edit", event)) {
+          planningInput = event.input.path;
+        } else if (isToolCallEventType("bash", event)) {
+          planningInput = event.input.command;
+        }
+        const planningGuard = shouldBlockPlanningUnit(
+          event.toolName,
+          planningInput,
+          dash.basePath || discussionBasePath,
+          activeUnitType,
+          manifest.tools,
+        );
+        if (planningGuard.block) return planningGuard;
+      }
+    }
+
     // ── Single-writer engine: block direct writes to STATE.md ──────────
     // Covers write, edit, and bash tools to prevent bypass vectors.
     if (isToolCallEventType("write", event)) {
@@ -429,7 +460,7 @@ export function registerHooks(
     if (isAutoActive() && typeof event.toolCallId === "string") {
       markToolEnd(event.toolCallId);
     }
-    if (isAutoActive() && event.isError && event.toolName.startsWith("gsd_")) {
+    if (isAutoActive() && event.isError) {
       const resultPayload = ("result" in event ? event.result : undefined) as any;
       const errorText = typeof resultPayload === "string"
         ? resultPayload
@@ -438,6 +469,8 @@ export function registerHooks(
             : (typeof (event as any).content === "string"
                 ? (event as any).content
                 : String(resultPayload ?? "")));
+      // Let recordToolInvocationError classify the failure so non-gsd_ harness
+      // errors and deterministic policy rejections are handled consistently.
       recordToolInvocationError(event.toolName, errorText);
     }
     if (event.toolName !== "ask_user_questions") return;
@@ -525,12 +558,14 @@ export function registerHooks(
 
   pi.on("tool_execution_end", async (event) => {
     markToolEnd(event.toolCallId);
-    // #2883: Capture tool invocation errors (malformed/truncated JSON arguments)
+    // #2883/#4974: Capture deterministic invocation/policy errors
     // so postUnitPreVerification can break the retry loop instead of re-dispatching.
-    if (event.isError && event.toolName.startsWith("gsd_")) {
+    if (event.isError) {
       const errorText = typeof event.result === "string"
         ? event.result
         : (typeof event.result?.content?.[0]?.text === "string" ? event.result.content[0].text : String(event.result));
+      // Let recordToolInvocationError classify the failure so non-gsd_ harness
+      // errors and deterministic policy rejections are handled consistently.
       recordToolInvocationError(event.toolName, errorText);
     }
     // Safety harness: record tool execution results for evidence cross-referencing

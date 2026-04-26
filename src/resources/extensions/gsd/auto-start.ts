@@ -315,7 +315,7 @@ export function auditOrphanedMilestoneBranches(
       // Branch is NOT merged — preserve for safety, warn the user
       warnings.push(
         `Branch ${branch} exists for completed milestone ${milestoneId} but is NOT merged into ${mainBranch}. ` +
-        `This may contain unmerged work. Merge manually or run \`/gsd health --fix\` to resolve.`,
+        `This may contain unmerged work. Merge manually or run \`/gsd doctor fix\` to resolve.`,
       );
 
       // #4764 telemetry
@@ -1002,17 +1002,34 @@ export async function bootstrapAutoSession(
       );
     }
 
-    // Self-heal: remove stale .git/index.lock
+    // Self-heal: remove stale .git/index.lock.
+    //
+    // Threshold raised from 60s → 5min because a 60s-old lock is not
+    // definitively stale: `git gc --auto` triggered by a heavy commit, NFS
+    // delays, or concurrent worktree writes can hold .git/index.lock for
+    // minutes on large repos. Force-removing a live lock causes the holder
+    // to encounter `fatal: Unable to create '.git/index.lock'` on its next
+    // write, or worse, operate on a partially-written index → corruption
+    // requiring `git fsck`/`git reset` to recover.
+    // (Issue #4980 CRIT-3)
     try {
       const gitLockFile = join(base, ".git", "index.lock");
       if (existsSync(gitLockFile)) {
         const lockAge = Date.now() - statSync(gitLockFile).mtimeMs;
-        if (lockAge > 60_000) {
+        const STALE_GIT_LOCK_THRESHOLD_MS = 5 * 60_000;
+        if (lockAge > STALE_GIT_LOCK_THRESHOLD_MS) {
           unlinkSync(gitLockFile);
           ctx.ui.notify(
-            "Removed stale .git/index.lock from prior crash.",
-            "info",
+            `Removed stale .git/index.lock (age ${Math.round(lockAge / 1000)}s, > 5min threshold).`,
+            "warning",
           );
+        } else {
+          // Lock present but not yet stale — surface so the user knows why
+          // git ops may be queueing instead of silently waiting.
+          debugLog("git-lock-present-not-stale", {
+            ageMs: lockAge,
+            thresholdMs: STALE_GIT_LOCK_THRESHOLD_MS,
+          });
         }
       }
     } catch (e) {

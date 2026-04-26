@@ -201,6 +201,7 @@ async function closeoutAndStop(
       s.currentUnit.startedAt,
       deps.buildSnapshotOpts(s.currentUnit.type, s.currentUnit.id),
     );
+    s.currentUnit = null;
   }
   await deps.stopAuto(ctx, pi, reason);
 }
@@ -961,10 +962,14 @@ export async function runDispatch(
   // ── Sliding-window stuck detection with graduated recovery ──
   const derivedKey = `${unitType}/${unitId}`;
 
-  if (!s.pendingVerificationRetry) {
-    loopState.recentUnits.push({ key: derivedKey });
-    if (loopState.recentUnits.length > STUCK_WINDOW_SIZE) loopState.recentUnits.shift();
+  // Always record this dispatch in the sliding window so detectStuck() has
+  // accurate history. Skipping the push when pendingVerificationRetry is set
+  // caused infinite artifact-retry loops to be invisible to stuck detection
+  // (#2007). Only the *response* to a stuck signal is suppressed during retries.
+  loopState.recentUnits.push({ key: derivedKey });
+  if (loopState.recentUnits.length > STUCK_WINDOW_SIZE) loopState.recentUnits.shift();
 
+  if (!s.pendingVerificationRetry) {
     const stuckSignal = detectStuck(loopState.recentUnits);
     if (stuckSignal) {
       debugLog("autoLoop", {
@@ -2101,6 +2106,8 @@ export async function runFinalize(
 
   // Both pre and post verification completed without timeout — reset counter
   loopState.consecutiveFinalizeTimeouts = 0;
+  s.currentUnit = null;
+  clearCurrentPhase();
 
   // Surface accumulated workflow-logger issues for this unit to the user.
   // Warnings/errors logged during the unit are buffered in the logger and

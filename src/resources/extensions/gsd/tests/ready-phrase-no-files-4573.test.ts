@@ -60,10 +60,24 @@ function mkBase(): string {
   return base;
 }
 
-function assistantMsg(text: string, opts: { toolUse?: boolean } = {}): any {
+function assistantMsg(
+  text: string,
+  opts: { toolUse?: boolean | "toolCall" | "serverToolUse" } = {},
+): any {
   const content: any[] = [];
   if (text) content.push({ type: "text", text });
-  if (opts.toolUse) content.push({ type: "tool_use", name: "whatever", input: {} });
+  if (opts.toolUse) {
+    // The canonical pi-ai AssistantMessage uses "toolCall" / "serverToolUse"
+    // (see packages/pi-ai/src/types.ts). Every provider — anthropic-direct,
+    // claude-code-cli, openai — normalizes incoming tool blocks into these
+    // shapes before they reach guided-flow. The Anthropic-wire literal
+    // "tool_use" never appears here.
+    if (opts.toolUse === "serverToolUse") {
+      content.push({ type: "serverToolUse", id: "test-id", name: "web_search", input: {} });
+    } else {
+      content.push({ type: "toolCall", id: "test-id", name: "whatever", arguments: {} });
+    }
+  }
   return { role: "assistant", content };
 }
 
@@ -305,6 +319,65 @@ describe("#4573 maybeHandleEmptyIntentTurn", () => {
       });
       const handled = maybeHandleEmptyIntentTurn(
         { messages: [assistantMsg("I'll write the file now.", { toolUse: true })] },
+        false,
+      );
+      assert.equal(handled, false);
+      assert.equal(cap.messages.length, 0);
+    } finally {
+      clearPendingAutoStart();
+    }
+  });
+
+  // Regression for #4658 — under claude-code-cli, MCP tool calls (e.g.
+  // ask_user_questions) reach guided-flow as canonical "toolCall" / "serverToolUse"
+  // blocks. Pre-fix, hasToolUse only matched the Anthropic-wire literal "tool_use",
+  // so the empty-turn nudge fired during pre-question narration and pre-empted the
+  // user's chance to answer.
+  test("cc-cli MCP tool call surfaced as canonical toolCall → not flagged", () => {
+    const base = mkBase();
+    try {
+      const cap = mkCapture();
+      setPendingAutoStart(base, {
+        basePath: base,
+        milestoneId: "M001",
+        ctx: mkCtx(cap),
+        pi: mkPi(cap),
+      });
+      const handled = maybeHandleEmptyIntentTurn(
+        {
+          messages: [
+            assistantMsg("Let me call ask_user_questions to gather your preferences.", {
+              toolUse: "toolCall",
+            }),
+          ],
+        },
+        false,
+      );
+      assert.equal(handled, false);
+      assert.equal(cap.messages.length, 0);
+    } finally {
+      clearPendingAutoStart();
+    }
+  });
+
+  test("serverToolUse block (cc-cli web search etc.) → not flagged", () => {
+    const base = mkBase();
+    try {
+      const cap = mkCapture();
+      setPendingAutoStart(base, {
+        basePath: base,
+        milestoneId: "M001",
+        ctx: mkCtx(cap),
+        pi: mkPi(cap),
+      });
+      const handled = maybeHandleEmptyIntentTurn(
+        {
+          messages: [
+            assistantMsg("Let me invoke the search tool now.", {
+              toolUse: "serverToolUse",
+            }),
+          ],
+        },
         false,
       );
       assert.equal(handled, false);

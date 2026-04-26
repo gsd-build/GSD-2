@@ -44,7 +44,19 @@ describe("#2883: tool invocation error tracking on AutoSession", () => {
 
 // ─── isToolInvocationError classifier ────────────────────────────────────
 
-import { isToolInvocationError, isQueuedUserMessageSkip } from "../auto-tool-tracking.ts";
+import {
+  isDeterministicPolicyError,
+  isToolInvocationError,
+  isQueuedUserMessageSkip,
+} from "../auto-tool-tracking.ts";
+import {
+  shouldBlockContextWrite,
+  shouldBlockPendingGateInSnapshot,
+  shouldBlockQueueExecutionInSnapshot,
+  resetWriteGateState,
+  type WriteGateSnapshot,
+} from "../bootstrap/write-gate.ts";
+import { BLOCKED_WRITE_ERROR } from "../write-intercept.ts";
 
 describe("#2883: isToolInvocationError classification", () => {
   test("detects JSON validation failure pattern", () => {
@@ -89,11 +101,59 @@ describe("#2883: isToolInvocationError classification", () => {
     );
   });
 
+  test("detects raw write-gate CONTEXT failures for non-GSD write tools", () => {
+    resetWriteGateState();
+    const result = shouldBlockContextWrite(
+      "write",
+      "/tmp/project/.gsd/milestones/M001/M001-CONTEXT.md",
+      "M001",
+      false,
+    );
+
+    assert.equal(result.block, true);
+    assert.equal(isDeterministicPolicyError(result.reason ?? ""), true);
+    assert.equal(isToolInvocationError(result.reason ?? ""), true);
+  });
+
+  test("detects raw pending-gate failures for non-GSD write tools", () => {
+    const snapshot: WriteGateSnapshot = {
+      verifiedDepthMilestones: [],
+      activeQueuePhase: false,
+      pendingGateId: "depth_verification_M001",
+    };
+    const result = shouldBlockPendingGateInSnapshot(snapshot, "write", "M001", false);
+
+    assert.equal(result.block, true);
+    assert.equal(isDeterministicPolicyError(result.reason ?? ""), true);
+    assert.equal(isToolInvocationError(result.reason ?? ""), true);
+  });
+
+  test("detects queue-mode policy blocks for raw write/edit/bash tools", () => {
+    const snapshot: WriteGateSnapshot = {
+      verifiedDepthMilestones: [],
+      activeQueuePhase: true,
+      pendingGateId: null,
+    };
+    const writeResult = shouldBlockQueueExecutionInSnapshot(snapshot, "write", "src/app.ts", true);
+    const bashResult = shouldBlockQueueExecutionInSnapshot(snapshot, "bash", "npm run build", true);
+
+    assert.equal(writeResult.block, true);
+    assert.equal(bashResult.block, true);
+    assert.equal(isDeterministicPolicyError(writeResult.reason ?? ""), true);
+    assert.equal(isToolInvocationError(bashResult.reason ?? ""), true);
+  });
+
+  test("detects direct STATE.md/gsd.db write-intercept policy blocks", () => {
+    assert.equal(isDeterministicPolicyError(BLOCKED_WRITE_ERROR), true);
+    assert.equal(isToolInvocationError(BLOCKED_WRITE_ERROR), true);
+  });
+
   test("returns false for normal tool errors (business logic)", () => {
     assert.equal(
       isToolInvocationError("Slice S01 is already complete"),
       false,
     );
+    assert.equal(isDeterministicPolicyError("Slice S01 is already complete"), false);
   });
 
   test("returns false for empty string", () => {

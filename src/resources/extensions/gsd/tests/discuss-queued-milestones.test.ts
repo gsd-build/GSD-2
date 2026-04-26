@@ -16,11 +16,9 @@
 
 import { describe, test, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
-import { dirname } from "node:path";
 
 import { deriveState } from "../state.ts";
 import { invalidateAllCaches } from "../cache.ts";
@@ -55,12 +53,6 @@ function writeContextDraft(base: string, mid: string, content: string): void {
 function writeRoadmap(base: string, mid: string, content: string): void {
   writeMilestoneDir(base, mid);
   writeFileSync(join(base, ".gsd", "milestones", mid, `${mid}-ROADMAP.md`), content);
-}
-
-function readGuidedFlowSource(): string {
-  const thisFile = fileURLToPath(import.meta.url);
-  const thisDir = dirname(thisFile);
-  return readFileSync(join(thisDir, "..", "guided-flow.ts"), "utf-8");
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -169,113 +161,10 @@ describe("discuss-queued-milestones (#2307)", () => {
     }
   });
 
-  test("6. guided-flow no longer hard-exits when no active milestone but pending exist", () => {
-    const source = readGuidedFlowSource();
-
-    // The old guard was a simple early-exit:
-    //   if (!state.activeMilestone) {
-    //     ctx.ui.notify("No active milestone. Run /gsd to create one first.", "warning");
-    //     return;
-    //   }
-    //
-    // The new guard should check for pending milestones and route instead.
-    const oldGuardPattern = /if\s*\(!state\.activeMilestone\)\s*\{\s*ctx\.ui\.notify\("No active milestone/;
-    assert.ok(
-      !oldGuardPattern.test(source),
-      "guided-flow must not unconditionally exit when activeMilestone is null",
-    );
-  });
-
-  test("7. showDiscussQueuedMilestone helper exists in guided-flow", () => {
-    const source = readGuidedFlowSource();
-    assert.ok(
-      source.includes("showDiscussQueuedMilestone"),
-      "guided-flow must export showDiscussQueuedMilestone helper",
-    );
-  });
-
-  test("8. dispatchDiscussForMilestone helper exists in guided-flow", () => {
-    const source = readGuidedFlowSource();
-    assert.ok(
-      source.includes("dispatchDiscussForMilestone"),
-      "guided-flow must export dispatchDiscussForMilestone helper",
-    );
-  });
-
-  test("9. dispatchDiscussForMilestone does not set pendingAutoStart", () => {
-    const source = readGuidedFlowSource();
-
-    // Extract the dispatchDiscussForMilestone function body
-    const fnMatch = source.match(
-      /async function dispatchDiscussForMilestone\s*\([^)]*\)[^{]*\{([\s\S]*?)\n\}/,
-    );
-    assert.ok(!!fnMatch, "dispatchDiscussForMilestone function body must be present");
-
-    if (fnMatch) {
-      assert.ok(
-        !fnMatch[1].includes("pendingAutoStart"),
-        "dispatchDiscussForMilestone must NOT set pendingAutoStart — discussing a queued milestone must not activate it",
-      );
-    }
-  });
-
-  test("10. slice picker includes queued milestone option when pending milestones exist", () => {
-    const source = readGuidedFlowSource();
-    assert.ok(
-      source.includes("discuss_queued_milestone"),
-      "slice picker must include a 'discuss_queued_milestone' action id for queued milestones",
-    );
-    assert.ok(
-      source.includes("Discuss a queued milestone"),
-      "slice picker must label the queued milestone action clearly",
-    );
-  });
-
-  test("11. queued milestone picker labels entries with [queued]", () => {
-    const source = readGuidedFlowSource();
-    assert.ok(
-      source.includes("[queued]"),
-      "queued milestone picker must label entries with [queued] to distinguish from active",
-    );
-  });
-
-  // ─── #3150: allDiscussed early-return must not block queued milestone discussion ──
-
-  test("12. allDiscussed path checks for pending milestones before returning (#3150)", () => {
-    const source = readGuidedFlowSource();
-
-    // Extract the allDiscussed block — the if (allDiscussed) { ... } body
-    const allDiscussedMatch = source.match(
-      /const allDiscussed = pendingSlices\.every\([\s\S]*?\n    if \(allDiscussed\) \{([\s\S]*?)\n    \}/,
-    );
-    assert.ok(!!allDiscussedMatch, "allDiscussed guard block must exist in showDiscuss()");
-
-    if (allDiscussedMatch) {
-      const body = allDiscussedMatch[1];
-      // The fix must check for pending milestones and route to showDiscussQueuedMilestone
-      assert.ok(
-        body.includes("pending") && body.includes("showDiscussQueuedMilestone"),
-        "allDiscussed block must check for pending milestones and call showDiscussQueuedMilestone before returning (#3150)",
-      );
-    }
-  });
-
-  test("13. pendingSlices.length===0 path checks for pending milestones before returning (#3150)", () => {
-    const source = readGuidedFlowSource();
-
-    // Find the pendingSlices.length === 0 guard block
-    const zeroSlicesMatch = source.match(
-      /if \(pendingSlices\.length === 0\) \{([\s\S]*?)\n  \}/,
-    );
-    assert.ok(!!zeroSlicesMatch, "pendingSlices.length === 0 guard block must exist in showDiscuss()");
-
-    if (zeroSlicesMatch) {
-      const body = zeroSlicesMatch[1];
-      // The fix must check for pending milestones and route to showDiscussQueuedMilestone
-      assert.ok(
-        body.includes("pending") && body.includes("showDiscussQueuedMilestone"),
-        "pendingSlices.length===0 block must check for pending milestones and call showDiscussQueuedMilestone before returning (#3150)",
-      );
-    }
-  });
+  // The earlier tests 6-13 source-grepped guided-flow.ts for identifier
+  // names (showDiscussQueuedMilestone, dispatchDiscussForMilestone),
+  // UI-copy strings ("[queued]", "Discuss a queued milestone"), and
+  // regex-on-function-body assertions for the #3150 routing — all
+  // structural rather than behavioural (Refs #4826). They were dropped
+  // when this file was tightened against handler-level assertions.
 });

@@ -13,6 +13,7 @@ import {
   getSlice,
   updateSliceStatus,
   getSliceTasks,
+  SCHEMA_VERSION,
 } from '../gsd-db.ts';
 import { handleCompleteSlice } from '../tools/complete-slice.ts';
 import type { CompleteSliceParams } from '../types.ts';
@@ -115,19 +116,21 @@ Run the test suite and verify all assertions pass.
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// complete-slice: Schema v6 migration
+// complete-slice: fresh DB migrates to current schema version
 // ═══════════════════════════════════════════════════════════════════════════
 
-console.log('\n=== complete-slice: schema v6 migration ===');
+console.log('\n=== complete-slice: fresh DB migrates to current schema version ===');
 {
   const dbPath = tempDbPath();
   openDatabase(dbPath);
 
   const adapter = _getAdapter()!;
 
-  // Verify schema version is current (v22 — quality_gates DDL fix)
+  // Pin schema version against the source-of-truth constant so this test
+  // survives migration bumps but still catches a "fresh DB was not migrated"
+  // regression.
   const versionRow = adapter.prepare('SELECT MAX(version) as v FROM schema_version').get();
-  assertEq(versionRow?.['v'], 22, 'schema version should be 22');
+  assertEq(versionRow?.['v'], SCHEMA_VERSION, 'fresh DB should be migrated to current SCHEMA_VERSION');
 
   // Verify slices table has full_summary_md and full_uat_md columns
   const cols = adapter.prepare("PRAGMA table_info(slices)").all();

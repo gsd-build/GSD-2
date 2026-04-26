@@ -351,9 +351,9 @@ skills_used: []
       const dbState = await deriveStateFromDb(base);
 
       assertStatesEqual(dbState, fileState, 'E-blocked');
-      // With partial-dep fallback, circular deps no longer block — fallback picks first eligible slice
-      assert.deepStrictEqual(dbState.phase, 'planning', 'E-blocked: phase is planning (fallback picks a slice)');
-      assert.ok(dbState.activeSlice !== null, 'E-blocked: activeSlice is set via fallback');
+      assert.deepStrictEqual(dbState.phase, 'blocked', 'E-blocked: phase is blocked when no slice deps are satisfied');
+      assert.deepStrictEqual(dbState.activeSlice, null, 'E-blocked: no activeSlice is selected through unmet deps');
+      assert.ok(dbState.blockers.some(b => b.includes('No slice eligible')), 'E-blocked: blocker explains no eligible slice');
 
       closeDatabase();
     } finally {

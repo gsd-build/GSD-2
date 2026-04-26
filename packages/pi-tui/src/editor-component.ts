@@ -32,6 +32,9 @@ export interface EditorComponent extends Component {
 	/** Called when text changes */
 	onChange?: (text: string) => void;
 
+	/** Called when an image file path is pasted via terminal emulator */
+	onPasteImagePath?: (filePath: string) => void;
+
 	// =========================================================================
 	// History support (optional)
 	// =========================================================================

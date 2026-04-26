@@ -7,6 +7,7 @@ import {
   isDbAvailable,
   _getAdapter,
   transaction,
+  isInTransaction,
   insertMemoryRow,
   rewriteMemoryId,
   updateMemoryContentRow,
@@ -19,6 +20,7 @@ import {
   deleteMemoryRelationsFor,
 } from './gsd-db.js';
 import { createMemoryRelation, isValidRelation } from './memory-relations.js';
+import { logWarning } from './workflow-logger.js';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -487,7 +489,13 @@ export function nextMemoryId(): string {
  * Insert a new memory with a race-safe auto-assigned ID.
  * Uses AUTOINCREMENT seq to derive the ID after insert, avoiding
  * the read-then-write race in concurrent scenarios (e.g. worktrees).
- * Returns the assigned ID, or null on failure.
+ * Returns the assigned ID, or null when the DB is unavailable.
+ *
+ * Throws on genuine SQL errors (corruption, missing tables, constraint
+ * violations) so callers can surface the underlying message instead of
+ * collapsing the failure to a generic "create_failed". See issue #4967 —
+ * the previous bare-catch swallowed "database disk image is malformed"
+ * errors, leaving the memory subsystem broken without any signal.
  */
 export function createMemory(fields: {
   category: string;
@@ -504,32 +512,68 @@ export function createMemory(fields: {
   if (!adapter) return null;
 
   try {
-    const now = new Date().toISOString();
-    // Insert with a temporary placeholder ID — seq is auto-assigned
-    const placeholder = `_TMP_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    insertMemoryRow({
-      id: placeholder,
-      category: fields.category,
-      content: fields.content,
-      confidence: fields.confidence ?? 0.8,
-      sourceUnitType: fields.source_unit_type ?? null,
-      sourceUnitId: fields.source_unit_id ?? null,
-      createdAt: now,
-      updatedAt: now,
-      scope: fields.scope ?? 'project',
-      tags: fields.tags ?? [],
-      structuredFields: fields.structuredFields ?? null,
-    });
-    // Derive the real ID from the assigned seq (SELECT is still fine via adapter)
-    const row = adapter.prepare('SELECT seq FROM memories WHERE id = :id').get({ ':id': placeholder });
-    if (!row) return placeholder; // fallback — should not happen
-    const seq = row['seq'] as number;
-    const realId = `MEM${String(seq).padStart(3, '0')}`;
-    rewriteMemoryId(placeholder, realId);
-    return realId;
-  } catch {
-    return null;
+    return transaction(() => doCreateMemory(adapter, fields));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+
+    // Targeted recovery: a malformed memory store can sometimes be rebuilt
+    // by VACUUM. Skip when inside a transaction — SQLite refuses VACUUM
+    // there and a secondary throw would mask the real fault.
+    if (message.toLowerCase().includes('malformed') && !isInTransaction()) {
+      try {
+        adapter.prepare('VACUUM').run();
+        const recoveryMessage = 'recovered malformed memory store via VACUUM';
+        process.stderr.write(`memory-store: ${recoveryMessage}\n`);
+        logWarning('memory-store', recoveryMessage);
+        return transaction(() => doCreateMemory(adapter, fields));
+      } catch (retryErr) {
+        const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
+        logWarning('memory-store', `VACUUM recovery for memory store failed: ${retryMsg}`);
+        // Surface the *original* malformed error — it's the actionable signal.
+        throw err;
+      }
+    }
+
+    throw err;
   }
+}
+
+function doCreateMemory(
+  adapter: NonNullable<ReturnType<typeof _getAdapter>>,
+  fields: {
+    category: string;
+    content: string;
+    confidence?: number;
+    source_unit_type?: string;
+    source_unit_id?: string;
+    scope?: string;
+    tags?: string[];
+    structuredFields?: Record<string, unknown> | null;
+  },
+): string {
+  const now = new Date().toISOString();
+  // Insert with a temporary placeholder ID — seq is auto-assigned
+  const placeholder = `_TMP_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  insertMemoryRow({
+    id: placeholder,
+    category: fields.category,
+    content: fields.content,
+    confidence: fields.confidence ?? 0.8,
+    sourceUnitType: fields.source_unit_type ?? null,
+    sourceUnitId: fields.source_unit_id ?? null,
+    createdAt: now,
+    updatedAt: now,
+    scope: fields.scope ?? 'project',
+    tags: fields.tags ?? [],
+    structuredFields: fields.structuredFields ?? null,
+  });
+  // Derive the real ID from the assigned seq (SELECT is still fine via adapter)
+  const row = adapter.prepare('SELECT seq FROM memories WHERE id = :id').get({ ':id': placeholder });
+  if (!row) return placeholder; // fallback — should not happen
+  const seq = row['seq'] as number;
+  const realId = `MEM${String(seq).padStart(3, '0')}`;
+  rewriteMemoryId(placeholder, realId);
+  return realId;
 }
 
 /**
@@ -728,8 +772,17 @@ export function applyMemoryActions(
       }
       enforceMemoryCap();
     });
-  } catch {
-    // non-fatal — transaction will have rolled back
+  } catch (err) {
+    // Non-fatal — the transaction has rolled back. We log a warning so a
+    // degraded memory subsystem (e.g. malformed store, missing tables) is
+    // visible to forensics instead of silently dropping every CREATE — see
+    // issue #4967, where this swallow combined with createMemory's bare
+    // catch hid SQLite corruption from the auto-mode flow entirely.
+    const message = err instanceof Error ? err.message : String(err);
+    logWarning(
+      'memory-store',
+      `applyMemoryActions failed (memory subsystem degraded): ${message}`,
+    );
   }
 }
 

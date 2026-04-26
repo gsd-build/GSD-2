@@ -5,6 +5,11 @@ import {
   _getAdapter,
 } from '../gsd-db.ts';
 import {
+  _resetLogs,
+  peekLogs,
+  setStderrLoggingEnabled,
+} from '../workflow-logger.ts';
+import {
   getActiveMemories,
   getActiveMemoriesRanked,
   nextMemoryId,
@@ -326,6 +331,129 @@ test('memory-store: schema includes memories table', () => {
   // Verify schema version is 22 (v22 quality_gates DDL fix included)
   const version = adapter.prepare('SELECT MAX(version) as v FROM schema_version').get();
   assert.deepStrictEqual(version?.["v"], 22, 'schema version should be 22');
+
+  closeDatabase();
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// regression #4967 — createMemory must not silently swallow SQL errors
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('memory-store: createMemory throws on memory-table SQL errors (regression #4967)', () => {
+  openDatabase(':memory:');
+
+  const adapter = _getAdapter()!;
+  // Drop FTS + dependents first to satisfy SQLite's trigger ordering, then
+  // the base memories table. IF EXISTS makes setup robust against schema
+  // versions that may not have created every dependent (e.g. embeddings).
+  adapter.prepare('DROP TABLE IF EXISTS memory_embeddings').run();
+  adapter.prepare('DROP TABLE IF EXISTS memories_fts').run();
+  adapter.prepare('DROP TABLE IF EXISTS memories').run();
+
+  // Pre-fix behaviour: returns null and the caller has no idea why.
+  // Post-fix behaviour: throws so the caller can surface the real SQL message.
+  assert.throws(
+    () => createMemory({ category: 'gotcha', content: 'broken store' }),
+    /memories|no such table/i,
+    'createMemory must surface SQL errors instead of returning null',
+  );
+
+  closeDatabase();
+});
+
+test('memory-store: VACUUM retry rolls back partial memory and logs recovery', () => {
+  openDatabase(':memory:');
+
+  const adapter = _getAdapter()!;
+  const originalPrepareMethod = adapter.prepare;
+  const originalPrepare = adapter.prepare.bind(adapter);
+  const previousStderrLogging = setStderrLoggingEnabled(false);
+  const streamAny = process.stderr as unknown as {
+    write: (chunk: string | Uint8Array, ...rest: unknown[]) => boolean;
+  };
+  const originalStderrWrite = streamAny.write.bind(streamAny);
+  let selectFailures = 0;
+  let vacuumRuns = 0;
+  _resetLogs();
+
+  adapter.prepare = ((sql: string) => {
+    if (sql === 'SELECT seq FROM memories WHERE id = :id' && selectFailures === 0) {
+      const stmt = originalPrepare(sql);
+      return {
+        run: (...params: unknown[]) => stmt.run(...params),
+        get: (..._params: unknown[]) => {
+          selectFailures++;
+          throw new Error('database disk image is malformed');
+        },
+        all: (...params: unknown[]) => stmt.all(...params),
+      };
+    }
+
+    if (sql === 'VACUUM') {
+      const stmt = originalPrepare(sql);
+      return {
+        run: (...params: unknown[]) => {
+          vacuumRuns++;
+          return stmt.run(...params);
+        },
+        get: (...params: unknown[]) => stmt.get(...params),
+        all: (...params: unknown[]) => stmt.all(...params),
+      };
+    }
+
+    return originalPrepare(sql);
+  }) as typeof adapter.prepare;
+  streamAny.write = (): boolean => true;
+
+  try {
+    const id = createMemory({ category: 'gotcha', content: 'recover without duplicate' });
+    assert.equal(id, 'MEM001', 'retry should create a single first memory');
+
+    const rows = adapter.prepare('SELECT id FROM memories ORDER BY seq').all();
+    assert.deepStrictEqual(
+      rows.map((row) => row['id']),
+      ['MEM001'],
+      'failed first attempt should not leave a live _TMP_ memory behind',
+    );
+    assert.equal(selectFailures, 1, 'test should simulate one malformed SELECT after INSERT');
+    assert.equal(vacuumRuns, 1, 'malformed recovery should run VACUUM once');
+    assert.ok(
+      peekLogs().some((entry) =>
+        entry.component === 'memory-store' &&
+        entry.message === 'recovered malformed memory store via VACUUM'
+      ),
+      'successful VACUUM recovery should be emitted to the workflow logger',
+    );
+  } finally {
+    adapter.prepare = originalPrepareMethod;
+    streamAny.write = originalStderrWrite;
+    setStderrLoggingEnabled(previousStderrLogging);
+    _resetLogs();
+    closeDatabase();
+  }
+});
+
+test('memory-store: applyMemoryActions stays non-fatal when memory store is broken (regression #4967)', () => {
+  openDatabase(':memory:');
+
+  const adapter = _getAdapter()!;
+  // Drop FTS + dependents first to satisfy SQLite's trigger ordering, then
+  // the base memories table. IF EXISTS makes setup robust against schema
+  // versions that may not have created every dependent (e.g. embeddings).
+  adapter.prepare('DROP TABLE IF EXISTS memory_embeddings').run();
+  adapter.prepare('DROP TABLE IF EXISTS memories_fts').run();
+  adapter.prepare('DROP TABLE IF EXISTS memories').run();
+
+  // applyMemoryActions wraps createMemory in a transaction with an outer
+  // catch. Even with createMemory now throwing, applyMemoryActions must not
+  // crash the auto-mode flow that calls it (memory extraction is best-effort).
+  const actions: MemoryAction[] = [
+    { action: 'CREATE', category: 'gotcha', content: 'inside-transaction call' },
+  ];
+  assert.doesNotThrow(
+    () => applyMemoryActions(actions),
+    'applyMemoryActions must absorb thrown errors so callers continue',
+  );
 
   closeDatabase();
 });

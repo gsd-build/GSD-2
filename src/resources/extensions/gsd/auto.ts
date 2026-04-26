@@ -84,6 +84,7 @@ import {
   clearInFlightTools,
   isToolInvocationError,
   isQueuedUserMessageSkip,
+  isDeterministicPolicyError,
 } from "./auto-tool-tracking.js";
 import { closeoutUnit } from "./auto-unit-closeout.js";
 import { recoverTimedOutUnit } from "./auto-timeout-recovery.js";
@@ -232,9 +233,7 @@ import { reorderForCaching } from "./prompt-ordering.js";
 
 import {
   AutoSession,
-  MAX_UNIT_DISPATCHES,
   STUB_RECOVERY_THRESHOLD,
-  MAX_LIFETIME_DISPATCHES,
   NEW_SESSION_TIMEOUT_MS,
 } from "./auto/session.js";
 import type {
@@ -243,9 +242,7 @@ import type {
   StartModel,
 } from "./auto/session.js";
 export {
-  MAX_UNIT_DISPATCHES,
   STUB_RECOVERY_THRESHOLD,
-  MAX_LIFETIME_DISPATCHES,
   NEW_SESSION_TIMEOUT_MS,
 } from "./auto/session.js";
 export type {
@@ -335,6 +332,25 @@ function normalizeSessionFilePath(raw: unknown): string | null {
   if (!isAbsolute(candidate)) return null;
   if (!candidate.toLowerCase().endsWith(".jsonl")) return null;
   return candidate;
+}
+
+function synthesizePausedSessionRecovery(
+  basePath: string,
+  unitType: string,
+  unitId: string,
+  sessionFile: string,
+): ReturnType<typeof synthesizeCrashRecovery> {
+  const activityDir = join(gsdRoot(basePath), "activity");
+  return synthesizeCrashRecovery(basePath, unitType, unitId, sessionFile, activityDir);
+}
+
+export function _synthesizePausedSessionRecoveryForTest(
+  basePath: string,
+  unitType: string,
+  unitId: string,
+  sessionFile: string,
+): ReturnType<typeof synthesizeCrashRecovery> {
+  return synthesizePausedSessionRecovery(basePath, unitType, unitId, sessionFile);
 }
 
 export function startAutoDetached(
@@ -544,12 +560,14 @@ export function markToolEnd(toolCallId: string): void {
 /**
  * Record a tool invocation error on the current session (#2883).
  * Called from tool_execution_end when a GSD tool fails with isError.
- * Only stores the error if it matches the tool-invocation-error pattern
- * (malformed/truncated JSON), not normal business-logic errors.
+ * Stores the error if it matches:
+ *   - tool-invocation-error pattern (malformed/truncated JSON)
+ *   - queued-user-message skip pattern
+ *   - deterministic policy rejection (#4973, e.g. context_write_blocked)
  */
 export function recordToolInvocationError(toolName: string, errorMsg: string): void {
   if (!s.active) return;
-  if (isToolInvocationError(errorMsg) || isQueuedUserMessageSkip(errorMsg)) {
+  if (isToolInvocationError(errorMsg) || isQueuedUserMessageSkip(errorMsg) || isDeterministicPolicyError(errorMsg)) {
     s.lastToolInvocationError = `${toolName}: ${errorMsg}`;
   }
 }
@@ -1571,16 +1589,6 @@ export async function startAuto(
       return;
     }
 
-    // Lock acquired — now safe to delete the pause file
-    if (s.pausedSessionFile) {
-      try { unlinkSync(s.pausedSessionFile); } catch (err) {
-        if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-          logWarning("session", `pause file cleanup failed: ${err instanceof Error ? err.message : String(err)}`, { file: "auto.ts" });
-        }
-      }
-      s.pausedSessionFile = null;
-    }
-
     s.paused = false;
     s.active = true;
     s.verbose = verboseMode;
@@ -1678,13 +1686,11 @@ export async function startAuto(
     invalidateAllCaches();
 
     if (s.pausedSessionFile) {
-      const activityDir = join(gsdRoot(s.basePath), "activity");
-      const recovery = synthesizeCrashRecovery(
+      const recovery = synthesizePausedSessionRecovery(
         s.basePath,
         s.currentUnit?.type ?? s.pausedUnitType ?? "unknown",
         s.currentUnit?.id ?? s.pausedUnitId ?? "unknown",
-        s.pausedSessionFile ?? undefined,
-        activityDir,
+        s.pausedSessionFile,
       );
       if (recovery && recovery.trace.toolCallCount > 0) {
         s.pendingCrashRecovery = recovery.prompt;
@@ -1806,7 +1812,7 @@ const widgetStateAccessors: WidgetStateAccessors = {
  * Ensure directories, branches, and other prerequisites exist before
  * dispatching a unit. The LLM should never need to mkdir or git checkout.
  */
-function ensurePreconditions(
+export function ensurePreconditions(
   unitType: string,
   unitId: string,
   base: string,
@@ -1816,6 +1822,17 @@ function ensurePreconditions(
 
   const mDir = resolveMilestonePath(base, mid);
   if (!mDir) {
+    // Fix #4996: When dispatching a slice unit against an unrecognised milestone,
+    // only create the directory if the milestone has a DB row.
+    // Without this guard, forward-referenced unit IDs (e.g. from REQUIREMENTS.md)
+    // silently scaffold empty stub directories that later skew nextMilestoneId.
+    if (sid !== undefined) {
+      const hasDbRow = isDbAvailable() && getMilestone(mid) != null;
+      if (!hasDbRow) {
+        logWarning("engine", `ensurePreconditions: skipping mkdir for unrecognised milestone ${mid} referenced by slice unit ${unitId} — no DB row exists`, { file: "auto.ts" });
+        return;
+      }
+    }
     const newDir = join(milestonesDir(base), mid);
     mkdirSync(join(newDir, "slices"), { recursive: true });
   }

@@ -8,7 +8,7 @@ The built-in diagnostic tool validates `.gsd/` integrity:
 /gsd doctor
 ```
 
-It checks file structure, roadmap ↔ slice ↔ task consistency, completion state, git health, stale locks, and orphaned records.
+It checks file structure, roadmap ↔ slice ↔ task consistency, completion state, git health, stale locks, orphaned records, and disk-only milestone stubs.
 
 ## Common Issues
 
@@ -93,6 +93,12 @@ Auto mode was paused, stopped, or crashed mid-milestone, and the work is still o
 - `Unmerged exits > 0` on the producer side confirms which exit type caused it
 
 **Prevent recurrence:** If your milestones are large or sessions are frequently interrupted, consider setting `git.collapse_cadence: "slice"` in preferences — validated slices merge to main immediately, shrinking the orphan window from milestone-size to slice-size. See [Git & Worktrees](../configuration/git-settings.md#collapse-cadence).
+
+### `orphan_milestone_dir` doctor warning
+
+`/gsd doctor` can report `orphan_milestone_dir` when `.gsd/milestones/<MID>/` exists on disk but has no DB row, no matching `.gsd/worktrees/<MID>/` worktree, and no milestone content files. This is a disk-only stub, not stranded work, and it can skew future milestone ID generation.
+
+**Fix:** Run `/gsd doctor fix` to remove the orphan stub directory automatically. The fix only removes these empty disk-only milestone stubs; populated milestone directories and in-flight worktree-only milestones are preserved.
 
 ### Notifications not appearing on macOS
 

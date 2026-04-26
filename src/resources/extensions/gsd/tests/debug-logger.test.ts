@@ -167,9 +167,11 @@ test('auto-prunes old debug logs', () => {
   enableDebug(tmp);
 
   const files = readdirSync(debugDir).filter(f => f.startsWith('debug-') && f.endsWith('.log'));
-  // Should have at most MAX_DEBUG_LOGS (5) = 5 old + 1 new, but pruned to 5 total
-  // Actually: prunes to < 5 old, then creates 1 new = at most 5
-  assert.ok(files.length <= 6, `should have pruned old logs, got ${files.length}`);
+  // MAX_DEBUG_LOGS is 5 — enableDebug prunes to < 5 old and then creates 1 new,
+  // so the directory must hold at most 5 files in total. The previous
+  // assertion (<= 6) would have passed even with one stale log left behind
+  // (Refs #4831).
+  assert.ok(files.length <= 5, `should have pruned old logs to <= 5, got ${files.length}`);
 
   disableDebug();
 });

@@ -96,8 +96,24 @@ export function executeMemoryCapture(params: MemoryCaptureParams): ToolExecution
   const tags = normalizeTags(params.tags);
 
   const structuredFields = normalizeStructuredFields(params.structuredFields);
-  const id = createMemory({ category, content, confidence, scope, tags, structuredFields });
+  let id: string | null;
+  try {
+    id = createMemory({ category, content, confidence, scope, tags, structuredFields });
+  } catch (err) {
+    // Surface the underlying SQL message (e.g. "database disk image is
+    // malformed", "no such table: memories") so the operator gets the
+    // actionable signal instead of an opaque "create_failed". See #4967.
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      content: [{ type: "text", text: `Error: failed to create memory: ${message}` }],
+      details: { operation: "memory_capture", error: message },
+      isError: true,
+    };
+  }
   if (!id) {
+    // DB unavailable or adapter missing — distinct from the SQL-error path
+    // above. Keep the legacy create_failed token here so any consumers that
+    // explicitly key on the unavailable case continue to work.
     return {
       content: [{ type: "text", text: "Error: failed to create memory." }],
       details: { operation: "memory_capture", error: "create_failed" },

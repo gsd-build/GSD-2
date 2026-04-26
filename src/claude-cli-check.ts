@@ -1,6 +1,9 @@
 // GSD2 — Claude CLI binary detection for onboarding
 // Lightweight check used at onboarding time (before extensions load).
 // The full readiness check with caching lives in the claude-code-cli extension.
+//
+// Set GSD_CLAUDE_DEBUG=1 to log probe output to stderr. Useful when
+// diagnosing platform-specific detection failures (Issue #4997).
 
 import { execFileSync } from 'node:child_process'
 
@@ -25,58 +28,118 @@ export const CLAUDE_COMMAND = process.platform === 'win32' ? 'claude.cmd' : 'cla
 const CLAUDE_COMMAND_CANDIDATES: string[] =
   process.platform === 'win32' ? [CLAUDE_COMMAND, 'claude.exe', 'claude'] : [CLAUDE_COMMAND]
 
+const VERSION_TIMEOUT_MS = 5_000
+// Auth probe needs more headroom on Windows because the spawn goes through
+// cmd.exe → claude.cmd → node → Claude CLI.
+const AUTH_TIMEOUT_MS = 15_000
+
+function debugLog(...parts: unknown[]): void {
+  if (process.env.GSD_CLAUDE_DEBUG) {
+    process.stderr.write(`[claude-cli-check] ${parts.map(p => (typeof p === 'string' ? p : JSON.stringify(p))).join(' ')}\n`)
+  }
+}
+
 /**
- * Try to run `args` against each candidate binary.
- * Returns the output buffer on first success, throws the last error if all fail.
+ * Find the first candidate that responds to `--version`. Returns the
+ * candidate name on success, null if none worked.
+ *
+ * On Windows with `shell: true`, a missing candidate surfaces as a
+ * non-zero exit from cmd.exe rather than ENOENT — so we cannot rely on
+ * the error code to decide "try next". Treat any failure as "try next"
+ * for the version probe.
  */
-function execClaudeCheck(args: string[]): Buffer {
-  let lastError: unknown
+function findWorkingCommand(): string | null {
   for (const command of CLAUDE_COMMAND_CANDIDATES) {
     try {
-      return execFileSync(command, args, {
-        timeout: 5_000,
+      execFileSync(command, ['--version'], {
+        timeout: VERSION_TIMEOUT_MS,
         stdio: 'pipe',
         shell: process.platform === 'win32',
       })
+      debugLog('version probe ok via', command)
+      return command
     } catch (error) {
-      lastError = error
-      const code = (error as NodeJS.ErrnoException | undefined)?.code
-      // EINVAL can surface on Windows Git Bash for .cmd spawn failures.
-      if (code === 'ENOENT' || code === 'EINVAL') continue
-      throw error
+      debugLog('version probe failed for', command, 'code=', (error as NodeJS.ErrnoException | undefined)?.code)
+      continue
     }
   }
-  throw lastError ?? new Error(`Claude CLI not found (tried: ${CLAUDE_COMMAND_CANDIDATES.join(', ')})`)
+  return null
+}
+
+/**
+ * Decide auth state from `claude auth status` output.
+ *
+ * Newer Claude CLI builds emit JSON with a `loggedIn` boolean. Older builds
+ * emit free-form text. Prefer the structured signal; fall back to a text
+ * heuristic. The text heuristic only covers English phrasing.
+ */
+function parseAuthStatus(output: string): boolean | null {
+  const trimmed = output.trim()
+  if (!trimmed) return null
+
+  if (trimmed.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(trimmed) as { loggedIn?: unknown }
+      if (typeof parsed.loggedIn === 'boolean') {
+        return parsed.loggedIn
+      }
+    } catch {
+      // Fall through to text heuristic.
+    }
+  }
+
+  const lower = trimmed.toLowerCase()
+  if (/not logged in|no credentials|unauthenticated|not authenticated/.test(lower)) {
+    return false
+  }
+  if (/logged in|authenticated|signed in|email|subscription/.test(lower)) {
+    return true
+  }
+  return null
+}
+
+function probeAuth(command: string): boolean | null {
+  // Try --json first (newer CLIs).
+  try {
+    const out = execFileSync(command, ['auth', 'status', '--json'], {
+      timeout: AUTH_TIMEOUT_MS,
+      stdio: 'pipe',
+      shell: process.platform === 'win32',
+    }).toString()
+    debugLog('auth status --json output:', out.slice(0, 200))
+    const parsed = parseAuthStatus(out)
+    if (parsed !== null) return parsed
+  } catch (error) {
+    debugLog('auth status --json threw:', (error as Error).message?.slice(0, 200))
+  }
+
+  // Fallback: plain `auth status` (older CLIs that don't accept --json).
+  try {
+    const out = execFileSync(command, ['auth', 'status'], {
+      timeout: AUTH_TIMEOUT_MS,
+      stdio: 'pipe',
+      shell: process.platform === 'win32',
+    }).toString()
+    debugLog('auth status output:', out.slice(0, 200))
+    return parseAuthStatus(out)
+  } catch (error) {
+    debugLog('auth status threw:', (error as Error).message?.slice(0, 200))
+    return null
+  }
 }
 
 /**
  * Check if the `claude` binary is installed (regardless of auth state).
  */
 export function isClaudeBinaryInstalled(): boolean {
-  try {
-    execClaudeCheck(['--version'])
-    return true
-  } catch {
-    return false
-  }
+  return findWorkingCommand() !== null
 }
 
 /**
  * Check if the `claude` CLI is installed AND authenticated.
  */
 export function isClaudeCliReady(): boolean {
-  try {
-    execClaudeCheck(['--version'])
-  } catch {
-    return false
-  }
-
-  try {
-    const output = execClaudeCheck(['auth', 'status'])
-      .toString()
-      .toLowerCase()
-    return !(/not logged in|no credentials|unauthenticated|not authenticated/i.test(output))
-  } catch {
-    return false
-  }
+  const command = findWorkingCommand()
+  if (!command) return false
+  return probeAuth(command) === true
 }

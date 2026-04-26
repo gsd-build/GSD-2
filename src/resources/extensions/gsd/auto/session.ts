@@ -75,9 +75,7 @@ export interface PreExecFailure {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-export const MAX_UNIT_DISPATCHES = 3;
 export const STUB_RECOVERY_THRESHOLD = 2;
-export const MAX_LIFETIME_DISPATCHES = 6;
 export const NEW_SESSION_TIMEOUT_MS = 120_000;
 
 // ─── AutoSession ─────────────────────────────────────────────────────────────

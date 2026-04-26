@@ -18,9 +18,9 @@ The key rule: **downgrade-only semantics**. The user's configured model is alway
 
 | Tier | Typical Work | Default Model Level |
 |------|-------------|-------------------|
-| **Light** | Slice completion, UAT, hooks | Haiku-class |
-| **Standard** | Research, planning, execution, milestone completion | Sonnet-class |
-| **Heavy** | Replanning, roadmap reassessment, complex execution | Opus-class |
+| **Light** | Slice completion, UAT, hooks | Cheapest capable light-tier model |
+| **Standard** | Research, planning, execution, milestone completion | Balanced standard-tier model |
+| **Heavy** | Replanning, roadmap reassessment, complex execution | Highest capability tier model |
 
 ## Enabling
 
@@ -70,9 +70,11 @@ Keep `cross_provider: false` when enabling this flag unless every flat-rate prov
 
 Override which model is used for each tier. When omitted, the router uses a built-in capability mapping that knows common model families:
 
-- **Light:** `claude-haiku-4-5`, `gpt-4o-mini`, `gemini-2.0-flash`
-- **Standard:** `claude-sonnet-4-6`, `gpt-4o`, `gemini-2.5-pro`
-- **Heavy:** `claude-opus-4-6`, `gpt-4.5-preview`, `gemini-2.5-pro`
+- **Light:** `claude-haiku-4-5`, `gpt-4o-mini`, `gpt-4.1-mini`, `gpt-4.1-nano`, `gpt-5-mini`, `gpt-5-nano`, `gpt-5.1-codex-mini`, `gpt-5.3-codex-spark`, `gpt-5.4-mini`, `gemini-2.0-flash`
+- **Standard:** `claude-sonnet-4-6`, `gpt-4o`, `gpt-4.1`, `gpt-5.1-codex-max`, `gemini-2.5-pro`, `deepseek-chat`
+- **Heavy:** `claude-opus-4-6`, `claude-opus-4-7`, `gpt-5`, `gpt-5-pro`, `gpt-5.1`, `gpt-5.2`, `gpt-5.2-codex`, `gpt-5.3-codex`, `gpt-5.4`, `gpt-5.5`, `o1`, `o3`, `o4-mini`
+
+Token profiles use the same tier mapping. `budget`, `balanced`, and `quality` declare per-phase tier intentions, then GSD resolves those tiers against the models currently available from your configured providers. This means a profile can resolve to OpenAI, Gemini, Anthropic, or another provider-specific model instead of hardcoding Claude-family defaults.
 
 ### `escalate_on_failure`
 
@@ -117,7 +119,7 @@ Each model has a built-in **capability profile** — a 7-dimension score (0–10
 | `longContext` | Handling large codebases and long documents |
 | `instruction` | Following structured instructions precisely |
 
-**Built-in profiles** exist for 9 models: `claude-opus-4-6`, `claude-sonnet-4-6`, `claude-haiku-4-5`, `gpt-4o`, `gpt-4o-mini`, `gemini-2.5-pro`, `gemini-2.0-flash`, `deepseek-chat`, `o3`.
+**Built-in profiles** ship for the Claude 4.6/4.7 family, the OpenAI GPT-4.x and GPT-5.x lines (including GPT-5.5, added v2.78), the o-series reasoning models (`o1`, `o3`, `o4-mini`, `o4-mini-deep-research`), Gemini 2.0/2.5, and `deepseek-chat`. The full table lives in `src/resources/extensions/gsd/model-router.ts` (`MODEL_CAPABILITY_PROFILES`).
 
 Models without a built-in profile receive **uniform scores of 50** across all dimensions. This is a cold-start policy — unknown models compete but don't have an advantage. From the user's perspective, routing behaves the same as before capability scoring was introduced for those models.
 

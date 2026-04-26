@@ -223,6 +223,84 @@ test("selectAndApplyModel honors explicit phase models without downgrading (#361
   }
 });
 
+test("selectAndApplyModel escalates dynamic routing tier when retry metadata is provided", async (t) => {
+  const originalCwd = process.cwd();
+  const originalGsdHome = process.env.GSD_HOME;
+  const tempProject = makeTempDir("gsd-routing-retry-project-");
+  const tempGsdHome = makeTempDir("gsd-routing-retry-home-");
+  const setModelCalls: string[] = [];
+  const notifications: Array<{ message: string; level: string }> = [];
+
+  t.after(() => {
+    process.chdir(originalCwd);
+    if (originalGsdHome === undefined) delete process.env.GSD_HOME;
+    else process.env.GSD_HOME = originalGsdHome;
+    rmSync(tempProject, { recursive: true, force: true });
+    rmSync(tempGsdHome, { recursive: true, force: true });
+  });
+
+  mkdirSync(join(tempProject, ".gsd"), { recursive: true });
+  writeFileSync(
+    join(tempProject, ".gsd", "PREFERENCES.md"),
+    [
+      "---",
+      "dynamic_routing:",
+      "  enabled: true",
+      "  hooks: false",
+      "  budget_pressure: false",
+      "  tier_models:",
+      "    light: claude-haiku-4-5",
+      "    standard: claude-sonnet-4-6",
+      "    heavy: claude-opus-4-6",
+      "---",
+    ].join("\n"),
+    "utf-8",
+  );
+  process.env.GSD_HOME = tempGsdHome;
+  process.chdir(tempProject);
+
+  const availableModels = [
+    { id: "claude-haiku-4-5", provider: "anthropic", api: "anthropic-messages" },
+    { id: "claude-sonnet-4-6", provider: "anthropic", api: "anthropic-messages" },
+    { id: "claude-opus-4-6", provider: "anthropic", api: "anthropic-messages" },
+  ];
+
+  const result = await selectAndApplyModel(
+    {
+      modelRegistry: { getAvailable: () => availableModels },
+      sessionManager: { getSessionId: () => "test-session" },
+      ui: { notify: (message: string, level: string) => notifications.push({ message, level }) },
+      model: { provider: "anthropic", id: "claude-opus-4-6", api: "anthropic-messages" },
+    } as any,
+    {
+      setModel: async (model: { provider: string; id: string }) => {
+        setModelCalls.push(`${model.provider}/${model.id}`);
+        return true;
+      },
+      emitBeforeModelSelect: async () => undefined,
+      getActiveTools: () => [],
+      emitAdjustToolSet: async () => undefined,
+      setActiveTools: () => {},
+    } as any,
+    "execute-task",
+    "M001/S01/T01",
+    tempProject,
+    undefined,
+    false,
+    { provider: "anthropic", id: "claude-opus-4-6" },
+    { isRetry: true, previousTier: "light" },
+    true,
+  );
+
+  assert.deepEqual(setModelCalls, ["anthropic/claude-sonnet-4-6"]);
+  assert.deepEqual(result.routing, { tier: "standard", modelDowngraded: true });
+  assert.equal(result.appliedModel?.id, "claude-sonnet-4-6");
+  assert.ok(
+    notifications.some(n => n.message.includes("Tier escalation: light") && n.message.includes("standard")),
+    "retry metadata should produce a visible tier escalation notification",
+  );
+});
+
 // ─── resolveModelId tests ─────────────────────────────────────────────────
 
 test("resolveModelId: bare ID resolves to claude-code when session is claude-code (#3772)", () => {

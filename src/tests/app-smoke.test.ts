@@ -95,25 +95,6 @@ test("loader sets all 4 GSD_ env vars and PI_PACKAGE_DIR", async (t) => {
   const { agentDir: ad } = await import("../app-paths.ts");
   assert.ok(ad.endsWith(join(".gsd", "agent")), "agentDir ends with .gsd/agent");
 
-  // Verify the env var names are in loader.ts source
-  const loaderSrc = readFileSync(join(projectRoot, "src", "loader.ts"), "utf-8");
-  assert.ok(loaderSrc.includes("PI_PACKAGE_DIR"), "loader sets PI_PACKAGE_DIR");
-  assert.ok(loaderSrc.includes("GSD_CODING_AGENT_DIR"), "loader sets GSD_CODING_AGENT_DIR");
-  assert.ok(loaderSrc.includes("GSD_BIN_PATH"), "loader sets GSD_BIN_PATH");
-  assert.ok(loaderSrc.includes("GSD_WORKFLOW_PATH"), "loader sets GSD_WORKFLOW_PATH");
-  assert.ok(loaderSrc.includes("GSD_BUNDLED_EXTENSION_PATHS"), "loader sets GSD_BUNDLED_EXTENSION_PATHS");
-  assert.ok(loaderSrc.includes("applyRtkProcessEnv"), "loader applies RTK environment bootstrap");
-  const rtkSrc = readFileSync(join(projectRoot, "src", "rtk.ts"), "utf-8");
-  assert.ok(rtkSrc.includes("RTK_TELEMETRY_DISABLED"), "RTK helper disables telemetry for managed sessions");
-  assert.ok(loaderSrc.includes("serializeBundledExtensionPaths"), "loader uses shared bundled path serializer");
-  assert.ok(loaderSrc.includes("join(delimiter)"), "loader uses platform delimiter for NODE_PATH");
-
-  // Verify extension discovery mechanism is in place
-  // loader.ts uses shared discoverExtensionEntryPaths() from extension-discovery.ts
-  assert.ok(loaderSrc.includes("discoverExtensionEntryPaths"), "loader uses discoverExtensionEntryPaths for extension discovery");
-  assert.ok(loaderSrc.includes("bundledExtDir"), "loader defines bundledExtDir for scanning");
-  assert.ok(loaderSrc.includes("discoveredExtensionPaths"), "loader collects discovered paths");
-
   // Verify that the env var is populated at runtime by checking the actual
   // extensions directory has discoverable entry points
   const { discoverExtensionEntryPaths } = await import("../extension-discovery.ts");
@@ -138,66 +119,119 @@ test("loader sets all 4 GSD_ env vars and PI_PACKAGE_DIR", async (t) => {
 // 2b. loader runtime dependency checks
 // ═══════════════════════════════════════════════════════════════════════════
 
-test("loader source contains Node version check with MIN_NODE_MAJOR", () => {
-  const loaderSrc = readFileSync(join(projectRoot, "src", "loader.ts"), "utf-8");
-  assert.ok(loaderSrc.includes("MIN_NODE_MAJOR"), "loader defines MIN_NODE_MAJOR constant");
-  assert.ok(loaderSrc.includes("process.versions.node"), "loader checks process.versions.node");
-});
+test("checkNodeVersion rejects below-minimum versions and accepts at-or-above", async () => {
+  // Calls the actual pure function the loader invokes. If loader.ts ever
+  // weakens the minimum (e.g. drops the < check), this test fails because
+  // an old Node version would be incorrectly accepted.
+  const { checkNodeVersion, MIN_NODE_MAJOR } = await import("../runtime-checks.ts");
 
-test("loader source contains git availability check", () => {
-  const loaderSrc = readFileSync(join(projectRoot, "src", "loader.ts"), "utf-8");
-  assert.ok(loaderSrc.includes("git"), "loader checks for git");
-  assert.ok(loaderSrc.includes("execFileSync"), "loader uses execFileSync for git check");
-});
-
-test("loader exits with error on unsupported Node version", () => {
-  // Spawn a subprocess that simulates the loader's version check logic
-  // with a deliberately high minimum to force the failure path
-  const script = [
-    "const major = parseInt(process.versions.node.split('.')[0], 10);",
-    "const MIN = 99;",
-    "if (major < MIN) { process.stderr.write('WOULD_EXIT'); process.exit(1); }",
-    "process.stdout.write('OK');",
-  ].join(" ");
-  try {
-    execSync(`node -e "${script}"`, { encoding: "utf-8", stdio: "pipe" });
-    // Node >= 99 would reach here — acceptable no-op
-  } catch (err: unknown) {
-    const e = err as { status?: number; stderr?: string };
-    assert.strictEqual(e.status, 1, "exits with code 1 for unsupported Node");
-    assert.ok((e.stderr || "").includes("WOULD_EXIT"), "stderr contains version error");
+  // Below minimum → not ok, surfaces the actual major
+  const tooOld = checkNodeVersion("18.19.0", MIN_NODE_MAJOR);
+  assert.strictEqual(tooOld.ok, false, "Node 18 must be rejected when min is 22+");
+  if (tooOld.ok === false) {
+    assert.strictEqual(tooOld.actualMajor, 18, "reports actual major from input");
   }
+
+  // Exactly minimum → ok
+  const exactlyMin = checkNodeVersion(`${MIN_NODE_MAJOR}.0.0`, MIN_NODE_MAJOR);
+  assert.strictEqual(exactlyMin.ok, true, "version equal to minimum must be accepted");
+
+  // Above minimum → ok
+  const above = checkNodeVersion(`${MIN_NODE_MAJOR + 5}.10.2`, MIN_NODE_MAJOR);
+  assert.strictEqual(above.ok, true, "version above minimum must be accepted");
+
+  // Malformed version string is a precondition violation — must throw
+  assert.throws(() => checkNodeVersion("not-a-version", MIN_NODE_MAJOR), /cannot parse major/);
 });
 
-test("loader MIN_NODE_MAJOR matches package.json engines field", () => {
-  const loaderSrc = readFileSync(join(projectRoot, "src", "loader.ts"), "utf-8");
+test("requireGit returns false when exec throws and true when it succeeds", async () => {
+  // Calls the actual pure function the loader uses. Stubs the exec function
+  // so we test the loader's real behavior with no subprocess flakiness.
+  const { requireGit } = await import("../runtime-checks.ts");
+
+  // Failure path: exec throws → loader treats git as missing
+  let calls: Array<{ cmd: string; args: ReadonlyArray<string> }> = [];
+  const throwingExec = (cmd: string, args: ReadonlyArray<string>) => {
+    calls.push({ cmd, args });
+    throw new Error("ENOENT: git not found");
+  };
+  assert.strictEqual(requireGit(throwingExec), false, "must return false when exec throws");
+  assert.strictEqual(calls.length, 1, "exec invoked exactly once");
+  assert.strictEqual(calls[0].cmd, "git", "invokes 'git' specifically");
+  assert.deepStrictEqual([...calls[0].args], ["--version"], "passes ['--version']");
+
+  // Success path: exec returns → loader treats git as available
+  calls = [];
+  const okExec = (cmd: string, args: ReadonlyArray<string>) => {
+    calls.push({ cmd, args });
+    return Buffer.from("git version 2.40.0\n");
+  };
+  assert.strictEqual(requireGit(okExec), true, "must return true when exec succeeds");
+  assert.strictEqual(calls.length, 1, "success path also invokes exec exactly once");
+});
+
+test("loader MIN_NODE_MAJOR matches package.json engines field exactly", async () => {
+  // Imports the actual exported constant from runtime-checks.ts (the same
+  // module loader.ts consumes) and asserts STRICT equality with the major
+  // version parsed from package.json's engines.node range.
+  const { MIN_NODE_MAJOR } = await import("../runtime-checks.ts");
+
   const pkg = JSON.parse(readFileSync(join(projectRoot, "package.json"), "utf-8"));
+  const engineRange: string = pkg.engines?.node ?? "";
+  const match = engineRange.match(/(\d+)/);
+  assert.ok(match, `package.json engines.node must declare a major version, got: ${JSON.stringify(engineRange)}`);
+  const engineMajor = parseInt(match[1], 10);
 
-  // Extract MIN_NODE_MAJOR value from loader source
-  const match = loaderSrc.match(/MIN_NODE_MAJOR\s*=\s*(\d+)/);
-  assert.ok(match, "MIN_NODE_MAJOR is defined with a numeric value");
-  const loaderMin = parseInt(match![1], 10);
-
-  // Extract major version from engines.node (e.g. ">=22.0.0" → 22)
-  const engineMatch = (pkg.engines?.node || "").match(/(\d+)/);
-  assert.ok(engineMatch, "package.json engines.node is defined");
-  const engineMin = parseInt(engineMatch![1], 10);
-
-  assert.strictEqual(loaderMin, engineMin,
-    `loader MIN_NODE_MAJOR (${loaderMin}) must match package.json engines.node (>=${engineMin}.0.0)`);
+  assert.strictEqual(
+    MIN_NODE_MAJOR,
+    engineMajor,
+    `runtime-checks MIN_NODE_MAJOR (${MIN_NODE_MAJOR}) must equal package.json engines.node major (${engineMajor})`,
+  );
 });
 
-test("cli.ts lets gsd update bypass the managed-resource mismatch gate", () => {
-  const cliSrc = readFileSync(join(projectRoot, "src", "cli.ts"), "utf-8");
-  const updateBranchIndex = cliSrc.indexOf("if (cliFlags.messages[0] === 'update')")
-  const mismatchGateIndex = cliSrc.indexOf("exitIfManagedResourcesAreNewer(agentDir)")
+test("gsd update bypasses the managed-resource-mismatch gate; non-update commands trigger it", async (t) => {
+  // Real fixture: write an agentDir whose managed-resources.json claims a
+  // version newer than the running binary. The mismatch gate
+  // (getNewerManagedResourceVersion) must fire — proving the gate is "armed".
+  // shouldBypassManagedResourceMismatchGate('update') must return true,
+  // proving 'update' bypasses it. cli.ts wires the predicate before the gate
+  // call, so update escapes the gate.
+  const { getNewerManagedResourceVersion } = await import("../resource-loader.ts");
+  const { shouldBypassManagedResourceMismatchGate } = await import("../cli-policy.ts");
 
-  assert.ok(updateBranchIndex !== -1, "cli.ts contains an update branch")
-  assert.ok(mismatchGateIndex !== -1, "cli.ts contains the managed-resource mismatch gate")
-  assert.ok(
-    updateBranchIndex < mismatchGateIndex,
-    "gsd update must run before the managed-resource mismatch gate",
-  )
+  const tmp = mkdtempSync(join(tmpdir(), "gsd-update-bypass-"));
+  const fakeAgentDir = join(tmp, "agent");
+  mkdirSync(fakeAgentDir, { recursive: true });
+
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+
+  // Fixture: manifest claims a far-future version → gate must fire for everyone
+  const futureVersion = "999.0.0";
+  const currentVersion = "1.0.0";
+  writeFileSync(
+    join(fakeAgentDir, "managed-resources.json"),
+    JSON.stringify({ gsdVersion: futureVersion, syncedAt: Date.now() }),
+  );
+
+  // Gate is armed: returns the newer version (cli.ts would print mismatch + exit 1)
+  const newer = getNewerManagedResourceVersion(fakeAgentDir, currentVersion);
+  assert.strictEqual(newer, futureVersion, "gate must surface a newer version when manifest is ahead");
+
+  // For non-update commands the predicate is false → cli.ts falls through to the gate.
+  for (const nonUpdate of [undefined, "auto", "config", "doctor", "web", "headless", "updates" /* near-miss */]) {
+    assert.strictEqual(
+      shouldBypassManagedResourceMismatchGate(nonUpdate),
+      false,
+      `non-update command ${JSON.stringify(nonUpdate)} must NOT bypass the gate`,
+    );
+  }
+
+  // For 'update' the predicate is true → cli.ts dispatches runUpdate() before the gate.
+  assert.strictEqual(
+    shouldBypassManagedResourceMismatchGate("update"),
+    true,
+    "'update' must bypass the gate so the user can escape a version-mismatched install",
+  );
 });
 
 // ═══════════════════════════════════════════════════════════════════════════

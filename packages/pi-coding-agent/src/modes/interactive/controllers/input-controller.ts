@@ -1,6 +1,18 @@
+import type { ImageContent } from "@gsd/pi-ai";
 import { dispatchSlashCommand } from "../slash-command-handlers.js";
 import type { InteractiveModeStateHost } from "../interactive-mode-state.js";
 import type { ContextualTips } from "../../../core/contextual-tips.js";
+
+/**
+ * Consume and clear any pending pasted images from the host.
+ * Returns undefined if there are no pending images.
+ */
+function consumePendingImages(host: InteractiveModeStateHost): ImageContent[] | undefined {
+	if (host.pendingImages.length === 0) return undefined;
+	const images = [...host.pendingImages];
+	host.pendingImages.length = 0;
+	return images;
+}
 
 export function setupEditorSubmitHandler(host: InteractiveModeStateHost & {
 	getSlashCommandContext: () => any;
@@ -26,6 +38,7 @@ export function setupEditorSubmitHandler(host: InteractiveModeStateHost & {
 			const handled = await dispatchSlashCommand(text, host.getSlashCommandContext());
 			if (handled) {
 				host.editor.setText("");
+				consumePendingImages(host); // discard images on slash command
 				return;
 			}
 			if (!host.isKnownSlashCommand(text)) {
@@ -53,9 +66,13 @@ export function setupEditorSubmitHandler(host: InteractiveModeStateHost & {
 				await host.handleBashCommand(command, isExcluded);
 				host.isBashMode = false;
 				host.updateEditorBorderColor();
+				consumePendingImages(host); // discard images on bash command
 				return;
 			}
 		}
+
+		// Consume pending images for prompt submissions
+		const images = consumePendingImages(host);
 
 		// Evaluate contextual tips before sending to agent
 		const tip = host.contextualTips.evaluate({
@@ -73,7 +90,7 @@ export function setupEditorSubmitHandler(host: InteractiveModeStateHost & {
 				host.editor.addToHistory?.(text);
 				host.editor.setText("");
 				try {
-					await host.session.prompt(text);
+					await host.session.prompt(text, { images });
 				} catch (error: unknown) {
 					const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
 					host.showError(errorMessage);
@@ -87,7 +104,7 @@ export function setupEditorSubmitHandler(host: InteractiveModeStateHost & {
 		if (host.session.isStreaming) {
 			host.editor.addToHistory?.(text);
 			host.editor.setText("");
-			await host.session.prompt(text, { streamingBehavior: "steer" });
+			await host.session.prompt(text, { streamingBehavior: "steer", images });
 			host.updatePendingMessagesDisplay();
 			host.ui.requestRender();
 			return;
@@ -104,7 +121,7 @@ export function setupEditorSubmitHandler(host: InteractiveModeStateHost & {
 		if (host.options?.submitPromptsDirectly) {
 			host.editor.addToHistory?.(text);
 			try {
-				await host.session.prompt(text);
+				await host.session.prompt(text, { images });
 			} catch (error: unknown) {
 				const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
 				host.showError(errorMessage);

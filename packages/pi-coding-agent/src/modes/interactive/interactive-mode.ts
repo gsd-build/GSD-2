@@ -3,7 +3,6 @@
  * Handles TUI rendering and user interaction, delegating business logic to AgentSession.
  */
 
-import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -62,7 +61,7 @@ import { type SessionContext, SessionManager } from "../../core/session-manager.
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
 import { getChangelogPath, getNewEntries, parseChangelog } from "../../utils/changelog.js";
-import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
+import { readClipboardImage } from "../../utils/clipboard-image.js";
 import { ensureTool } from "../../utils/tools-manager.js";
 import { AssistantMessageComponent } from "./components/assistant-message.js";
 import { BashExecutionComponent } from "./components/bash-execution.js";
@@ -239,6 +238,9 @@ export class InteractiveMode {
 
 	// Tool output expansion state
 	private toolOutputExpanded = false;
+
+	// Pasted image tracking
+	private pendingImages: ImageContent[] = [];
 
 	// Thinking block visibility state
 	private hideThinkingBlock = false;
@@ -648,8 +650,10 @@ export class InteractiveMode {
 		// Main interactive loop
 		while (true) {
 			const userInput = await this.getUserInput();
+			const images = this.pendingImages.length > 0 ? [...this.pendingImages] : undefined;
+			this.pendingImages.length = 0;
 			try {
-				await this.session.prompt(userInput);
+				await this.session.prompt(userInput, { images });
 			} catch (error: unknown) {
 				const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
 				this.showError(errorMessage);
@@ -1814,6 +1818,13 @@ export class InteractiveMode {
 			this.editor = this.defaultEditor;
 		}
 
+		// Ensure pasted image path handler is set on the active editor
+		if (!this.editor.onPasteImagePath) {
+			this.editor.onPasteImagePath = (filePath: string) => {
+				this.handlePastedImagePath(filePath);
+			};
+		}
+
 		this.editorContainer.addChild(this.editor as Component);
 		this.ui.setFocus(this.editor as Component);
 		this.ui.requestRender();
@@ -1948,6 +1959,7 @@ export class InteractiveMode {
 				this.session.abortBash();
 			} else if (this.isBashMode) {
 				this.editor.setText("");
+				this.pendingImages.length = 0;
 				this.isBashMode = false;
 				this.updateEditorBorderColor();
 			} else if (!this.editor.getText().trim()) {
@@ -2002,6 +2014,12 @@ export class InteractiveMode {
 		this.defaultEditor.onPasteImage = () => {
 			this.handleClipboardImagePaste();
 		};
+
+		// Handle image file paths pasted via terminal emulator (e.g. iTerm2).
+		// Set on defaultEditor here; setCustomEditorComponent guards re-assignment for custom editors.
+		this.defaultEditor.onPasteImagePath = (filePath: string) => {
+			this.handlePastedImagePath(filePath);
+		};
 	}
 
 	private async handleClipboardImagePaste(): Promise<void> {
@@ -2011,18 +2029,101 @@ export class InteractiveMode {
 				return;
 			}
 
-			// Write to temp file
-			const tmpDir = os.tmpdir();
-			const ext = extensionForImageMimeType(image.mimeType) ?? "png";
-			const fileName = `pi-clipboard-${crypto.randomUUID()}.${ext}`;
-			const filePath = path.join(tmpDir, fileName);
-			fs.writeFileSync(filePath, Buffer.from(image.bytes));
+			// Store image as base64 ImageContent for sending with the prompt
+			const imageContent: ImageContent = {
+				type: "image",
+				data: Buffer.from(image.bytes).toString("base64"),
+				mimeType: image.mimeType,
+			};
+			this.pendingImages.push(imageContent);
 
-			// Insert file path directly
-			this.editor.insertTextAtCursor?.(filePath);
+			// Insert friendly placeholder instead of file path
+			const imageNum = this.pendingImages.length;
+			this.editor.insertTextAtCursor?.(`[Image #${imageNum}]`);
 			this.ui.requestRender();
 		} catch {
 			// Silently ignore clipboard errors (may not have permission, etc.)
+		}
+	}
+
+	// MIME types restricted to formats commonly accepted by AI vision APIs.
+	// SVG is excluded — it is XML/JS-bearing and not safe to forward as image content.
+	// TIFF/HEIC/HEIF/AVIF are excluded for compatibility; users can convert before pasting.
+	private static readonly MIME_BY_EXT: Record<string, string> = {
+		png: "image/png",
+		jpg: "image/jpeg",
+		jpeg: "image/jpeg",
+		gif: "image/gif",
+		webp: "image/webp",
+	};
+
+	// Magic-byte signatures used to verify file content matches its extension,
+	// preventing arbitrary-file-read via crafted paste of e.g. "/etc/passwd.png".
+	private static matchesImageSignature(buf: Buffer, mimeType: string): boolean {
+		if (buf.length < 12) return false;
+		switch (mimeType) {
+			case "image/png":
+				return buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47;
+			case "image/jpeg":
+				return buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
+			case "image/gif":
+				return (
+					buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38 &&
+					(buf[4] === 0x37 || buf[4] === 0x39) && buf[5] === 0x61
+				);
+			case "image/webp":
+				return (
+					buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 &&
+					buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50
+				);
+			default:
+				return false;
+		}
+	}
+
+	private handlePastedImagePath(filePath: string): void {
+		try {
+			const ext = path.extname(filePath).slice(1).toLowerCase();
+			const mimeType = InteractiveMode.MIME_BY_EXT[ext];
+			if (!mimeType) {
+				// Unsupported / unsafe extension — fall back to inserting raw path.
+				this.editor.insertTextAtCursor?.(filePath);
+				this.ui.requestRender();
+				return;
+			}
+
+			// Reject symlinks to prevent reading sensitive files via a symlinked
+			// `.png` that points at e.g. ~/.ssh/id_rsa.
+			const lst = fs.lstatSync(filePath);
+			if (!lst.isFile()) {
+				this.editor.insertTextAtCursor?.(filePath);
+				this.ui.requestRender();
+				return;
+			}
+
+			const data = fs.readFileSync(filePath);
+
+			// Magic-byte check — confirms file content actually matches the
+			// extension before we forward bytes to a model.
+			if (!InteractiveMode.matchesImageSignature(data, mimeType)) {
+				this.editor.insertTextAtCursor?.(filePath);
+				this.ui.requestRender();
+				return;
+			}
+
+			this.pendingImages.push({
+				type: "image",
+				data: data.toString("base64"),
+				mimeType,
+			});
+
+			const imageNum = this.pendingImages.length;
+			this.editor.insertTextAtCursor?.(`[Image #${imageNum}]`);
+			this.ui.requestRender();
+		} catch {
+			// Fall back to inserting the raw path if file can't be read
+			this.editor.insertTextAtCursor?.(filePath);
+			this.ui.requestRender();
 		}
 	}
 
@@ -2562,12 +2663,16 @@ export class InteractiveMode {
 			return;
 		}
 
+		// Consume pending images
+		const images = this.pendingImages.length > 0 ? [...this.pendingImages] : undefined;
+		this.pendingImages.length = 0;
+
 		// Queue input during compaction (extension commands execute immediately)
 		if (this.session.isCompacting) {
 			if (this.isExtensionCommand(text)) {
 				this.editor.addToHistory?.(text);
 				this.editor.setText("");
-				await this.session.prompt(text);
+				await this.session.prompt(text, { images });
 			} else {
 				this.queueCompactionMessage(text, "followUp");
 			}
@@ -2579,7 +2684,7 @@ export class InteractiveMode {
 		if (this.session.isStreaming) {
 			this.editor.addToHistory?.(text);
 			this.editor.setText("");
-			await this.session.prompt(text, { streamingBehavior: "followUp" });
+			await this.session.prompt(text, { streamingBehavior: "followUp", images });
 			this.updatePendingMessagesDisplay();
 			this.ui.requestRender();
 		}
@@ -3863,6 +3968,7 @@ export class InteractiveMode {
 		this.streamingComponent = undefined;
 		this.streamingMessage = undefined;
 		this.pendingTools.clear();
+		this.pendingImages.length = 0;
 
 		// Reset contextual tips for the new session
 		this.contextualTips.reset();

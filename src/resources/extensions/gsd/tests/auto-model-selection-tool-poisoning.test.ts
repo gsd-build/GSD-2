@@ -609,3 +609,134 @@ test("lifecycle: clearToolBaseline forces recapture; subsequent runs respect int
     env.cleanup();
   }
 });
+
+// ─── 7. Cross-mode isolation (#4965) ─────────────────────────────────────────
+//
+// `selectAndApplyModel` is called from two places: auto-mode (`isAutoMode=true`,
+// from auto/phases.ts) and guided-flow (`isAutoMode=false`, from guided-flow.ts).
+// The baseline lifecycle (clearToolBaseline) is owned by startAuto/stopAuto —
+// guided-flow has no equivalent clear hook. If `restoreToolBaseline` ran
+// unconditionally, an interactive guided-flow dispatch on a `pi` that previously
+// hosted an auto session would resurrect the auto-era baseline and silently
+// overwrite any user tool edits made between the auto and guided dispatches.
+// Therefore the restore is gated by `isAutoMode`. Guided-flow has its own
+// narrow/restore discipline via discuss-tool-scoping at guided-flow.ts:587-622.
+
+test("cross-mode (#4965): isAutoMode=false does NOT restore baseline even when one is recorded", async () => {
+  const env = makeTempProject();
+  try {
+    const availableModels = [
+      { id: "claude-sonnet-4-6", provider: "anthropic", api: "anthropic-messages" },
+    ];
+    const baselineTools = ["gsd_save_gate_result", "tool_a", "tool_b"];
+    const pi = makeRecordingPi(baselineTools);
+    clearToolBaseline(pi as unknown as object);
+
+    // ── Step 1: auto-mode call captures baseline [A, B, C] ──
+    await selectAndApplyModel(
+      makeCtx(availableModels),
+      pi as any,
+      "gate-evaluate",
+      "u-auto",
+      env.dir,
+      undefined,
+      false,
+      { provider: "anthropic", id: "claude-sonnet-4-6" },
+      undefined,
+      /* isAutoMode */ true,
+    );
+
+    // ── Step 2: simulate user tool edit between auto and guided dispatches ──
+    pi.setActiveTools(["only_user_kept_tool"]);
+    const callsBeforeGuided = pi.__calls.length;
+
+    // ── Step 3: guided-flow dispatch (isAutoMode=false) ──
+    await selectAndApplyModel(
+      makeCtx(availableModels),
+      pi as any,
+      "gate-evaluate",
+      "u-guided",
+      env.dir,
+      undefined,
+      false,
+      { provider: "anthropic", id: "claude-sonnet-4-6" },
+      undefined,
+      /* isAutoMode */ false,
+    );
+
+    const guidedCalls = pi.__calls.slice(callsBeforeGuided);
+    // The bug we're guarding against: a setActiveTools call during the guided
+    // dispatch that contains the auto-era baseline tools (which would mean the
+    // auto-captured baseline resurrected and overwrote the user's edit).
+    const baselineRestore = guidedCalls.find(
+      c => c.kind === "setActiveTools"
+        && Array.isArray(c.payload)
+        && baselineTools.every(t => (c.payload as string[]).includes(t)),
+    );
+    assert.equal(
+      baselineRestore,
+      undefined,
+      "guided-flow dispatch (isAutoMode=false) must NOT restore the auto-mode baseline",
+    );
+  } finally {
+    env.restoreEnv();
+    env.cleanup();
+  }
+});
+
+test("cross-mode (#4965): auto → guided → auto preserves the original auto-era baseline for the second auto run", async () => {
+  const env = makeTempProject();
+  try {
+    const availableModels = [
+      { id: "claude-sonnet-4-6", provider: "anthropic", api: "anthropic-messages" },
+    ];
+    const baselineTools = ["gsd_save_gate_result", "tool_a", "tool_b"];
+    const pi = makeRecordingPi(baselineTools);
+    clearToolBaseline(pi as unknown as object);
+
+    // Auto run 1 — captures baseline.
+    await selectAndApplyModel(
+      makeCtx(availableModels), pi as any, "gate-evaluate", "u1",
+      env.dir, undefined, false,
+      { provider: "anthropic", id: "claude-sonnet-4-6" },
+      undefined, /* isAutoMode */ true,
+    );
+
+    // Guided dispatch in between — must not corrupt the baseline.
+    pi.setActiveTools(["narrow_for_guided"]);
+    await selectAndApplyModel(
+      makeCtx(availableModels), pi as any, "gate-evaluate", "u-guided",
+      env.dir, undefined, false,
+      { provider: "anthropic", id: "claude-sonnet-4-6" },
+      undefined, /* isAutoMode */ false,
+    );
+
+    // Now narrow further (simulating any post-guided state) and run auto u2.
+    pi.setActiveTools(["something_completely_different"]);
+    const callsBeforeU2 = pi.__calls.length;
+
+    // Auto run 2 — must restore the ORIGINAL auto-era baseline, not the
+    // intervening narrow-for-guided state.
+    await selectAndApplyModel(
+      makeCtx(availableModels), pi as any, "gate-evaluate", "u2",
+      env.dir, undefined, false,
+      { provider: "anthropic", id: "claude-sonnet-4-6" },
+      undefined, /* isAutoMode */ true,
+    );
+
+    const u2Calls = pi.__calls.slice(callsBeforeU2);
+    const restoreCall = u2Calls.find(
+      c => c.kind === "setActiveTools"
+        && Array.isArray(c.payload)
+        && (c.payload as string[]).length === baselineTools.length
+        && baselineTools.every(t => (c.payload as string[]).includes(t)),
+    );
+    assert.ok(
+      restoreCall,
+      "auto run 2 must restore the auto-era baseline [A, B, C] — proves guided-flow didn't corrupt it",
+    );
+  } finally {
+    env.restoreEnv();
+    env.cleanup();
+  }
+});

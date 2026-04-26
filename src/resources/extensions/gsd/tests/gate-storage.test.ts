@@ -109,7 +109,7 @@ describe("quality_gates CRUD", () => {
     const all = getGateResults("M001", "S01");
     assert.equal(all.length, 3);
     for (const g of all) {
-      assert.equal(g.status, "omitted");
+      assert.equal(g.status, "complete");
       assert.equal(g.verdict, "omitted");
     }
   });

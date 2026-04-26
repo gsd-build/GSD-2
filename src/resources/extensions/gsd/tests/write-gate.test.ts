@@ -480,18 +480,20 @@ test('write-gate: isDepthConfirmationAnswer works with different label text', ()
   );
 });
 
-// ─── Scenario 18: fallback when options not available ──
+// ─── Scenario 18: fail-closed when options not available (#4950) ──
 
-test('write-gate: isDepthConfirmationAnswer falls back to (Recommended) match without options', () => {
+test('write-gate: isDepthConfirmationAnswer fails closed when options are missing (#4950)', () => {
+  // After #4950 the substring fallback was removed. Without options the gate
+  // can never be unlocked — every input must return false.
   assert.strictEqual(
     isDepthConfirmationAnswer('Yes, you got it (Recommended)'),
-    true,
-    'should accept via fallback when no options provided',
+    false,
+    'no-options + Recommended substring must NOT unlock the gate',
   );
   assert.strictEqual(
     isDepthConfirmationAnswer('Not quite — let me clarify'),
     false,
-    'should reject non-Recommended via fallback',
+    'no-options + non-Recommended must NOT unlock the gate',
   );
 });
 

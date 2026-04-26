@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
@@ -21,6 +21,7 @@ import {
 } from "../interrupted-session.ts";
 import { gsdRoot } from "../paths.ts";
 import type { GSDState } from "../types.ts";
+import { _synthesizePausedSessionRecoveryForTest } from "../auto.ts";
 
 function makeTmpBase(): string {
   const base = join(tmpdir(), `gsd-test-${randomUUID()}`);
@@ -165,6 +166,54 @@ test("readPausedSessionMetadata reads paused-session metadata when present", () 
   } finally {
     cleanup(base);
   }
+});
+
+test("paused session recovery consumes JSONL without deleting the evidence file", (t) => {
+  const base = makeTmpBase();
+  t.after(() => cleanup(base));
+
+  const sessionFile = join(base, "paused-session.jsonl");
+  writeFileSync(
+    sessionFile,
+    [
+      JSON.stringify({ type: "session", id: "session-1" }),
+      JSON.stringify({
+        type: "message",
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "toolCall",
+              name: "bash",
+              id: "tool-1",
+              arguments: { command: "echo paused" },
+            },
+          ],
+        },
+      }),
+      JSON.stringify({
+        type: "message",
+        message: {
+          role: "toolResult",
+          toolCallId: "tool-1",
+          toolName: "bash",
+          isError: false,
+          content: "paused\n",
+        },
+      }),
+    ].join("\n"),
+    "utf-8",
+  );
+
+  const recovery = _synthesizePausedSessionRecoveryForTest(
+    base,
+    "execute-task",
+    "M001/S01/T01",
+    sessionFile,
+  );
+
+  assert.equal(recovery?.trace.toolCallCount, 1);
+  assert.equal(existsSync(sessionFile), true, "paused JSONL must remain available after synthesis");
 });
 
 test("readPausedSessionMetadata preserves unitType and unitId through round-trip", () => {

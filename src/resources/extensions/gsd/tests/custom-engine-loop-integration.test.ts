@@ -640,7 +640,12 @@ describe("Custom engine loop integration", () => {
     assert.match(stopEntry ?? "", /requested retry 4 times without passing/);
   });
 
-  it("GRAPH.yaml step stays pending when session deactivates before reconcile", async () => {
+  it("two-step workflow drives both steps to complete and stops when isComplete fires", async () => {
+    // Note (#4831): renamed from "GRAPH.yaml step stays pending when session
+    // deactivates before reconcile" — the assertion body never proved the
+    // pending-on-deactivate claim and even comments that "the reconcile
+    // will still run for step-b". The behaviour this test actually pins is:
+    // both steps reconcile complete and stopAuto fires once isComplete.
     _resetPendingResolve();
 
     // Two-step workflow: a → b. We will complete step-a, then force a break
@@ -688,12 +693,16 @@ describe("Custom engine loop integration", () => {
     // After both steps complete, the engine detects isComplete and stops.
     await loopPromise;
 
-    // Verify step-a is complete
+    // Both steps reconcile complete; the renamed expectation pins that the
+    // engine drives the workflow through isComplete rather than leaving any
+    // step pending.
     const finalGraph = readGraph(runDir);
     const stepA = finalGraph.steps.find(s => s.id === "step-a");
+    const stepB = finalGraph.steps.find(s => s.id === "step-b");
     assert.equal(stepA?.status, "complete", "Step-a should be complete");
+    assert.equal(stepB?.status, "complete", "Step-b should be complete");
 
-    // Verify the loop stopped appropriately
+    // The loop must stop once isComplete fires.
     assert.ok(
       deps.callLog.some((e: string) => e.startsWith("stopAuto:")),
       "stopAuto should have been called",

@@ -68,3 +68,78 @@ test("uok gate runner returns manual-attention for unknown gate id", async () =>
   assert.equal(result.outcome, "manual-attention");
   assert.equal(result.failureClass, "unknown");
 });
+
+// Regression tests for #4950
+
+test("uok gate runner: gate.execute throws — outcome is fail, audit emitted, DB row written, no exception escapes", async () => {
+  const runner = new UokGateRunner();
+
+  runner.register({
+    id: "throwing-gate",
+    type: "verification",
+    execute: async () => {
+      throw new Error("unexpected runtime failure");
+    },
+  });
+
+  let threw = false;
+  let result;
+  try {
+    result = await runner.run("throwing-gate", {
+      basePath: process.cwd(),
+      traceId: "trace-throw",
+      turnId: "turn-throw",
+    });
+  } catch {
+    threw = true;
+  }
+
+  assert.equal(threw, false, "run() must not throw when gate.execute throws");
+  assert.equal(result?.outcome, "fail");
+  assert.equal(result?.failureClass, "unknown");
+  assert.equal(result?.rationale, "unexpected runtime failure");
+
+  const adapter = _getAdapter();
+  const rows = adapter?.prepare("SELECT gate_id, outcome, failure_class FROM gate_runs WHERE gate_id = 'throwing-gate'").all() ?? [];
+  assert.ok(rows.length >= 1, "at least one DB row must be written for a thrown gate");
+  assert.equal(rows[0]?.["outcome"], "fail");
+});
+
+test("uok gate runner: unknown gate id emits audit + DB row with manual-attention", async () => {
+  const runner = new UokGateRunner();
+
+  await runner.run("ghost-gate", {
+    basePath: process.cwd(),
+    traceId: "trace-ghost",
+    turnId: "turn-ghost",
+  });
+
+  const adapter = _getAdapter();
+  const rows = adapter?.prepare("SELECT gate_id, outcome, failure_class FROM gate_runs WHERE gate_id = 'ghost-gate'").all() ?? [];
+  assert.equal(rows.length, 1, "unknown gate must write exactly one DB row");
+  assert.equal(rows[0]?.["outcome"], "manual-attention");
+});
+
+test("uok gate runner: maxAttempts reported equals retryBudget + 1", async () => {
+  const runner = new UokGateRunner();
+
+  // timeout has retryBudget=2, so maxAttempts should be 3
+  runner.register({
+    id: "budget-gate",
+    type: "verification",
+    execute: async () => ({
+      outcome: "fail",
+      failureClass: "timeout",
+      rationale: "always fails",
+    }),
+  });
+
+  const result = await runner.run("budget-gate", {
+    basePath: process.cwd(),
+    traceId: "trace-budget",
+    turnId: "turn-budget",
+  });
+
+  // retryBudget for "timeout" is 2, so maxAttempts must be 3
+  assert.equal(result.maxAttempts, 3, "maxAttempts must equal retryBudget + 1");
+});

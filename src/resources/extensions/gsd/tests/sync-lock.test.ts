@@ -120,3 +120,34 @@ test('sync-lock: overrides stale lock file (mtime backdated)', (t) => {
     cleanupDir(base);
   }
 });
+
+test('sync-lock: EPERM from live owner PID prevents stale lock stealing', () => {
+  const base = tempDir();
+  fs.mkdirSync(path.join(base, '.gsd'), { recursive: true });
+  const lockPath = path.join(base, '.gsd', 'sync.lock');
+  const fakePid = process.pid + 100_000;
+  const originalKill = process.kill;
+
+  try {
+    fs.writeFileSync(lockPath, JSON.stringify({ pid: fakePid, acquired_at: new Date(0).toISOString() }));
+    const staleTime = new Date(Date.now() - 120_000);
+    fs.utimesSync(lockPath, staleTime, staleTime);
+
+    process.kill = ((pid: number, signal?: NodeJS.Signals | number) => {
+      if (pid === fakePid && signal === 0) {
+        const err = new Error('operation not permitted') as NodeJS.ErrnoException;
+        err.code = 'EPERM';
+        throw err;
+      }
+      return originalKill(pid, signal);
+    }) as typeof process.kill;
+
+    const result = acquireSyncLock(base, 100);
+    assert.strictEqual(result.acquired, false, 'EPERM owner should be treated as live');
+    const content = JSON.parse(fs.readFileSync(lockPath, 'utf-8'));
+    assert.strictEqual(content.pid, fakePid, 'lock file should not be overwritten');
+  } finally {
+    process.kill = originalKill;
+    cleanupDir(base);
+  }
+});

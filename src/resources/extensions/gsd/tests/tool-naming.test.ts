@@ -36,6 +36,9 @@ const RENAME_MAP: Array<{ canonical: string; alias: string }> = [
   { canonical: "gsd_reassess_roadmap", alias: "gsd_roadmap_reassess" },
   { canonical: "gsd_complete_milestone", alias: "gsd_milestone_complete" },
   { canonical: "gsd_validate_milestone", alias: "gsd_milestone_validate" },
+  { canonical: "gsd_task_reopen", alias: "gsd_reopen_task" },
+  { canonical: "gsd_slice_reopen", alias: "gsd_reopen_slice" },
+  { canonical: "gsd_milestone_reopen", alias: "gsd_reopen_milestone" },
 ];
 
 // ─── Registration count ──────────────────────────────────────────────────────
@@ -45,7 +48,11 @@ console.log('\n── Tool naming: registration count ──');
 const pi = makeMockPi();
 registerDbTools(pi);
 
-assert.deepStrictEqual(pi.tools.length, 30, 'Should register exactly 30 tools (14 canonical + 14 aliases + 1 gate tool + 1 gsd_skip_slice)');
+assert.deepStrictEqual(
+  pi.tools.length,
+  RENAME_MAP.length * 2 + 2,
+  'Should register canonical/alias tool pairs plus 1 gate tool and 1 gsd_skip_slice',
+);
 
 // ─── Both names exist for each pair ──────────────────────────────────────────
 

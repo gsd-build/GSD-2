@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { closeDatabase, openDatabase } from '../gsd-db.ts';
+import { _getAdapter, closeDatabase, openDatabase } from '../gsd-db.ts';
 import { createMemory, supersedeMemory } from '../memory-store.ts';
 import {
   executeGsdGraph,
@@ -292,4 +292,36 @@ test('memory-tools: gsd_graph errors when DB is closed', () => {
   const result = executeGsdGraph({ mode: 'query', memoryId: 'MEM001' });
   assert.ok(result.isError);
   assert.equal(result.details.error, 'db_unavailable');
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// regression #4967 — capture_thought must surface real SQL errors
+// ═══════════════════════════════════════════════════════════════════════════
+
+test('memory-tools: capture_thought surfaces underlying SQL error (regression #4967)', () => {
+  openDatabase(':memory:');
+
+  // Simulate the real-world failure mode where the memories table is gone.
+  // The original bug was a "database disk image is malformed" on the memory
+  // store; dropping the table produces a deterministic statement-time SQL
+  // error of the same shape — a thrown sqlite error during INSERT.
+  const adapter = _getAdapter()!;
+  adapter.prepare('DROP TABLE IF EXISTS memory_embeddings').run();
+  adapter.prepare('DROP TABLE IF EXISTS memories_fts').run();
+  adapter.prepare('DROP TABLE IF EXISTS memories').run();
+
+  const result = executeMemoryCapture({
+    category: 'gotcha',
+    content: 'should reveal the real reason',
+  });
+
+  assert.ok(result.isError, 'broken store should produce an error result');
+  assert.equal(result.details.operation, 'memory_capture');
+
+  const err = String(result.details.error ?? '');
+  assert.notEqual(err, 'create_failed', 'must not collapse to opaque create_failed');
+  assert.ok(err.length > 0, 'error detail must be populated');
+  assert.match(err, /memories|no such table/i, 'error must reference the underlying SQL fault');
+
+  closeDatabase();
 });

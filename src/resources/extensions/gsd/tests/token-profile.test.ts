@@ -107,6 +107,50 @@ test("profile: resolveProfileDefaults exists and handles all 4 tiers", () => {
   );
 });
 
+test("profile: PROFILE_TIER_MAP defines tier intentions for all profiles", async () => {
+  const { getProfileTierMap } = await import("../preferences-models.ts");
+  const profileMaps = {
+    budget: getProfileTierMap("budget"),
+    balanced: getProfileTierMap("balanced"),
+    quality: getProfileTierMap("quality"),
+  };
+
+  assert.deepEqual(
+    Object.keys(profileMaps).sort(),
+    ["balanced", "budget", "quality"],
+    "PROFILE_TIER_MAP should include the profile default tiers",
+  );
+
+  const expectedPhaseKeys = ["completion", "execution", "execution_simple", "planning", "research", "subagent"];
+  const validTiers = new Set(["light", "standard", "heavy"]);
+  for (const [profile, tierMap] of Object.entries(profileMaps)) {
+    assert.deepEqual(
+      Object.keys(tierMap).sort(),
+      expectedPhaseKeys,
+      `${profile} should define all model-bearing phases`,
+    );
+    for (const [phase, tier] of Object.entries(tierMap)) {
+      assert.ok(validTiers.has(tier), `${profile}.${phase} should be a tier name`);
+      assert.ok(!tier.includes("claude-"), `${profile}.${phase} should not be a model ID`);
+    }
+  }
+});
+
+test("profile: resolveProfileDefaults is provider-agnostic — picks OpenAI when only OpenAI is available", async () => {
+  // Behavioral check: with only OpenAI models in the available list, no slot
+  // should resolve to a claude-* model. Source-grep cannot prove this — only
+  // exercising the function with a controlled available-model list can.
+  const { resolveProfileDefaults } = await import("../preferences-models.ts");
+  const defaults = resolveProfileDefaults("balanced", ["gpt-4o", "gpt-4o-mini"]);
+  assert.ok(defaults.models, "balanced profile should populate models");
+  for (const [phase, modelId] of Object.entries(defaults.models!)) {
+    assert.ok(
+      typeof modelId === "string" && !String(modelId).startsWith("claude-"),
+      `${phase} resolved to ${modelId} but only OpenAI is available`,
+    );
+  }
+});
+
 test("profile: budget profile sets phase skips to true", () => {
   // Extract the budget case block
   const budgetIdx = preferencesSrc.indexOf('case "budget":');
@@ -222,11 +266,14 @@ test("merge: mergePreferences handles phases with spread", () => {
 // Subagent Model Routing
 // ═══════════════════════════════════════════════════════════════════════════
 
-test("subagent: budget profile sets subagent model", () => {
-  const budgetIdx = preferencesSrc.indexOf('case "budget":');
-  const balancedIdx = preferencesSrc.indexOf('case "balanced":');
+test("subagent: budget profile assigns light tier for subagent", () => {
+  // PROFILE_TIER_MAP.budget.subagent should be "light"
+  const tierMapIdx = preferencesSrc.indexOf("PROFILE_TIER_MAP");
+  const budgetIdx = preferencesSrc.indexOf("budget:", tierMapIdx);
+  const balancedIdx = preferencesSrc.indexOf("balanced:", tierMapIdx);
   const budgetBlock = preferencesSrc.slice(budgetIdx, balancedIdx);
-  assert.ok(budgetBlock.includes("subagent:"), "budget profile should set subagent model");
+  assert.ok(budgetBlock.includes("subagent:"), "budget profile should define subagent tier");
+  assert.ok(budgetBlock.includes('"light"'), "budget subagent should use light tier");
 });
 
 test("subagent: resolveModelWithFallbacksForUnit handles subagent unit types", () => {

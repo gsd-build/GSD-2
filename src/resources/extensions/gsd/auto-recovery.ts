@@ -17,6 +17,7 @@ import { isDbAvailable, getTask, getSlice, getSliceTasks, getPendingGates, updat
 import { isValidationTerminal } from "./state.js";
 import { getErrorMessage } from "./error-utils.js";
 import { logWarning, logError } from "./workflow-logger.js";
+import { readIntegrationBranch } from "./git-service.js";
 import { isClosedStatus } from "./status-guards.js";
 import {
   nativeConflictFiles,
@@ -24,6 +25,7 @@ import {
   nativeCheckoutTheirs,
   nativeAddPaths,
   nativeMergeAbort,
+  nativeRebaseAbort,
   nativeResetHard,
 } from "./native-git-bridge.js";
 import {
@@ -63,14 +65,16 @@ export {
 // ─── Artifact Resolution & Verification ───────────────────────────────────────
 
 /**
- * Check whether a milestone produced implementation artifacts (non-`.gsd/` files)
- * in the git history. Uses `git log --name-only` to inspect all commits on the
- * current branch that touch files outside `.gsd/`.
+ * Check whether a milestone produced implementation artifacts (non-`.gsd/`
+ * files) in git history. The primary signal is the branch diff against the
+ * integration branch. When a retry is already on the integration branch, that
+ * diff is a self-diff; if a milestone ID is available, fall back to recent
+ * GSD-tagged commits for that milestone.
  *
  * Returns "present" if implementation files found, "absent" if only .gsd/ files,
  * "unknown" if git is unavailable or check failed (callers decide how to handle).
  */
-export function hasImplementationArtifacts(basePath: string): "present" | "absent" | "unknown" {
+export function hasImplementationArtifacts(basePath: string, milestoneId?: string): "present" | "absent" | "unknown" {
   try {
     // Verify we're in a git repo
     try {
@@ -86,25 +90,56 @@ export function hasImplementationArtifacts(basePath: string): "present" | "absen
 
     // Strategy: check `git diff --name-only` against the merge-base with the
     // main branch. This captures ALL files changed during the milestone's
-    // lifetime. If no merge-base exists (e.g., single-branch workflow), fall
-    // back to checking the last N commits.
-    const mainBranch = detectMainBranch(basePath);
-    const changedFiles = getChangedFilesSinceBranch(basePath, mainBranch);
+    // lifetime while running on a milestone branch.
+    const integrationBranch = milestoneId
+      ? readIntegrationBranch(basePath, milestoneId) ?? detectMainBranch(basePath)
+      : detectMainBranch(basePath);
+    const currentBranch = getCurrentBranch(basePath);
+    const branchDiff = getChangedFilesSinceBranch(basePath, integrationBranch);
+    if (!branchDiff.ok) return "unknown";
+    const changedFiles = branchDiff.files;
 
-    // No files changed at all — unknown (could be detached HEAD, single-
-    // commit repo, or other edge case where git diff returns nothing).
-    if (changedFiles.length === 0) return "unknown";
+    // No branch-diff files can mean the unit retried on main after milestone
+    // commits already landed there. In that topology, inspect GSD-tagged
+    // milestone commits instead of treating the self-diff as proof of no work.
+    if (changedFiles.length === 0) {
+      if (milestoneId && currentBranch === integrationBranch) {
+        const tagged = getChangedFilesFromMilestoneTaggedCommits(basePath, milestoneId);
+        if (!tagged.ok) return "unknown";
+        if (tagged.matched) return classifyImplementationFiles(tagged.files);
+      }
+      if (currentBranch && currentBranch !== "HEAD") return "absent";
+      return "unknown";
+    }
 
-    // Filter out .gsd/ files — only implementation files count.
-    // If every changed file is under .gsd/, the milestone produced no
-    // implementation code (#1703).
-    const implFiles = changedFiles.filter(f => !f.startsWith(".gsd/") && !f.startsWith(".gsd\\"));
-    return implFiles.length > 0 ? "present" : "absent";
+    return classifyImplementationFiles(changedFiles);
   } catch (e) {
     // Non-fatal — if git operations fail, return unknown so callers can decide
     logWarning("recovery", `implementation artifact check failed: ${(e as Error).message}`);
     return "unknown";
   }
+}
+
+function getCurrentBranch(basePath: string): string | null {
+  try {
+    const branch = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+      cwd: basePath,
+      stdio: ["ignore", "pipe", "pipe"],
+      encoding: "utf-8",
+    }).trim();
+    return branch || null;
+  } catch {
+    return null;
+  }
+}
+
+function classifyImplementationFiles(files: readonly string[]): "present" | "absent" {
+  const implFiles = files.filter(isImplementationPath);
+  return implFiles.length > 0 ? "present" : "absent";
+}
+
+function isImplementationPath(file: string): boolean {
+  return !file.startsWith(".gsd/") && !file.startsWith(".gsd\\");
 }
 
 /**
@@ -142,7 +177,7 @@ function detectMainBranch(basePath: string): string {
  * Get files changed since the branch diverged from the target branch.
  * Falls back to checking HEAD~20 if merge-base detection fails.
  */
-function getChangedFilesSinceBranch(basePath: string, targetBranch: string): string[] {
+function getChangedFilesSinceBranch(basePath: string, targetBranch: string): { ok: boolean; files: string[] } {
   try {
     // Try merge-base approach first
     const mergeBase = execFileSync(
@@ -155,7 +190,7 @@ function getChangedFilesSinceBranch(basePath: string, targetBranch: string): str
         "git", ["diff", "--name-only", mergeBase, "HEAD"],
         { cwd: basePath, stdio: ["ignore", "pipe", "pipe"], encoding: "utf-8" },
       ).trim();
-      return result ? result.split("\n").filter(Boolean) : [];
+      return { ok: true, files: result ? result.split("\n").filter(Boolean) : [] };
     }
   } catch (err) {
     // merge-base failed — fall back
@@ -168,11 +203,94 @@ function getChangedFilesSinceBranch(basePath: string, targetBranch: string): str
       "git", ["log", "--name-only", "--pretty=format:", "-20", "HEAD"],
       { cwd: basePath, stdio: ["ignore", "pipe", "pipe"], encoding: "utf-8" },
     ).trim();
-    return result ? [...new Set(result.split("\n").filter(Boolean))] : [];
+    return { ok: true, files: result ? [...new Set(result.split("\n").filter(Boolean))] : [] };
   } catch (e) {
     logWarning("recovery", `git log fallback failed: ${(e as Error).message}`);
-    return [];
+    return { ok: false, files: [] };
   }
+}
+
+function getChangedFilesFromMilestoneTaggedCommits(
+  basePath: string,
+  milestoneId: string,
+): { ok: boolean; matched: boolean; files: string[] } {
+  try {
+    const logOutput = execFileSync(
+      "git",
+      ["log", "--format=%H%x1f%B%x1e", "HEAD", "--", `.gsd/milestones/${milestoneId}`],
+      { cwd: basePath, stdio: ["ignore", "pipe", "pipe"], encoding: "utf-8" },
+    );
+    const records = logOutput
+      .split("\x1e")
+      .map((record) => record.trim())
+      .filter(Boolean)
+      .flatMap((record) => {
+        const sep = record.indexOf("\x1f");
+        if (sep === -1) return [];
+        const hash = record.slice(0, sep).trim();
+        const message = record.slice(sep + 1);
+        return [{ hash, message }];
+      });
+
+    const files = new Set<string>();
+    let matched = false;
+    for (const { hash, message } of records) {
+      if (!commitMessageHasGsdTrailer(message)) continue;
+
+      const commitFiles = getChangedFilesForCommit(basePath, hash);
+      if (!commitMatchesMilestone(message, milestoneId, commitFiles)) continue;
+
+      matched = true;
+      for (const file of commitFiles) {
+        files.add(file);
+      }
+    }
+
+    return { ok: true, matched, files: [...files] };
+  } catch (e) {
+    logWarning("recovery", `milestone-tagged commit scan failed: ${(e as Error).message}`);
+    return { ok: false, matched: false, files: [] };
+  }
+}
+
+function getChangedFilesForCommit(basePath: string, hash: string): string[] {
+  const fileOutput = execFileSync(
+    "git",
+    ["diff-tree", "--root", "--no-commit-id", "-r", "--name-only", hash],
+    { cwd: basePath, stdio: ["ignore", "pipe", "pipe"], encoding: "utf-8" },
+  ).trim();
+  return fileOutput.split("\n").map((f) => f.trim()).filter(Boolean);
+}
+
+function commitMessageHasGsdTrailer(message: string): boolean {
+  return /^GSD-(?:Task|Unit):\s*\S+/m.test(message);
+}
+
+function commitMatchesMilestone(message: string, milestoneId: string, files: readonly string[]): boolean {
+  if (commitTrailerStartsWithMilestone(message, milestoneId)) return true;
+
+  // Meaningful execute-task commits currently store task scope as Sxx/Tyy
+  // rather than Mxx/Sxx/Tyy. Bind those commits back to the milestone only
+  // when the commit also touched this milestone's artifacts.
+  if (/^GSD-Task:\s*S[^/\s]+\/T\S+/m.test(message)) {
+    return files.some((file) => isMilestoneArtifactPath(file, milestoneId));
+  }
+
+  return false;
+}
+
+function commitTrailerStartsWithMilestone(message: string, milestoneId: string): boolean {
+  const escapedMilestone = milestoneId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const trailerPattern = new RegExp(
+    `^GSD-(?:Task|Unit):\\s*${escapedMilestone}(?:$|[\\s/])`,
+    "m",
+  );
+  return trailerPattern.test(message);
+}
+
+function isMilestoneArtifactPath(file: string, milestoneId: string): boolean {
+  return file.startsWith(`.gsd/milestones/${milestoneId}/`)
+    || file.startsWith(`.gsd\\milestones\\${milestoneId}\\`);
 }
 
 /**
@@ -491,7 +609,7 @@ export function verifyExpectedArtifact(
       if (!dbMilestone) return false;
       if (!isClosedStatus(dbMilestone.status) && summaryOutcome !== "success") return false;
     }
-    if (hasImplementationArtifacts(base) === "absent") return false;
+    if (hasImplementationArtifacts(base, mid) === "absent") return false;
   }
 
   return true;
@@ -613,6 +731,79 @@ function abortAndResetMerge(
 export type MergeReconcileResult = "clean" | "reconciled" | "blocked";
 
 /**
+ * Detect and abort other in-progress git operations left behind by a SIGKILL'd
+ * worker (rebase, cherry-pick, revert). Without this, a killed worker mid-rebase
+ * leaves `.git/rebase-merge/` or `.git/CHERRY_PICK_HEAD` and the worktree is
+ * wedged until the user manually runs the matching `--abort`.
+ *
+ * Called before merge-state reconciliation because these states block any
+ * subsequent merge/commit operation. (Issue #4980 HIGH-7)
+ */
+function reconcileOtherInProgressGitOps(
+  basePath: string,
+  ctx: ExtensionContext,
+): "clean" | "reconciled" | "blocked" {
+  const gitDir = join(basePath, ".git");
+  const states: Array<{
+    label: string;
+    indicators: string[];
+    abort: () => void;
+  }> = [
+    {
+      label: "rebase",
+      indicators: [join(gitDir, "rebase-merge"), join(gitDir, "rebase-apply")],
+      abort: () => nativeRebaseAbort(basePath),
+    },
+    {
+      label: "cherry-pick",
+      indicators: [join(gitDir, "CHERRY_PICK_HEAD")],
+      abort: () => {
+        // No native helper; fall back to git CLI.
+        try {
+          execFileSync("git", ["cherry-pick", "--abort"], {
+            cwd: basePath, stdio: ["ignore", "pipe", "pipe"], encoding: "utf-8",
+          });
+        } catch (err) { logWarning("recovery", `cherry-pick --abort failed: ${getErrorMessage(err)}`); }
+      },
+    },
+    {
+      label: "revert",
+      indicators: [join(gitDir, "REVERT_HEAD")],
+      abort: () => {
+        try {
+          execFileSync("git", ["revert", "--abort"], {
+            cwd: basePath, stdio: ["ignore", "pipe", "pipe"], encoding: "utf-8",
+          });
+        } catch (err) { logWarning("recovery", `revert --abort failed: ${getErrorMessage(err)}`); }
+      },
+    },
+  ];
+
+  let reconciled = false;
+  for (const s of states) {
+    const present = s.indicators.some((p) => existsSync(p));
+    if (!present) continue;
+    try {
+      s.abort();
+      ctx.ui.notify(
+        `Detected leftover ${s.label} state from prior session — aborted.`,
+        "warning",
+      );
+      reconciled = true;
+    } catch (err) {
+      logError("recovery", `${s.label} abort failed: ${getErrorMessage(err)}`);
+      ctx.ui.notify(
+        `Detected leftover ${s.label} state but auto-abort failed. ` +
+        `Run \`git ${s.label} --abort\` manually before retrying.`,
+        "error",
+      );
+      return "blocked";
+    }
+  }
+  return reconciled ? "reconciled" : "clean";
+}
+
+/**
  * Detect leftover merge state from a prior session and reconcile it.
  * If MERGE_HEAD or SQUASH_MSG exists, check whether conflicts are resolved.
  * If resolved: finalize the commit. If only .gsd conflicts remain: auto-resolve.
@@ -622,11 +813,21 @@ export function reconcileMergeState(
   basePath: string,
   ctx: ExtensionContext,
 ): MergeReconcileResult {
+  // First, abort any rebase/cherry-pick/revert left over from a SIGKILL'd
+  // worker. Doing this before the merge-state check unblocks any merge that
+  // would otherwise refuse with "you have unfinished operation". (HIGH-7)
+  const otherOpsResult = reconcileOtherInProgressGitOps(basePath, ctx);
+  if (otherOpsResult === "blocked") return "blocked";
+
   const mergeHeadPath = join(basePath, ".git", "MERGE_HEAD");
   const squashMsgPath = join(basePath, ".git", "SQUASH_MSG");
   const hasMergeHead = existsSync(mergeHeadPath);
   const hasSquashMsg = existsSync(squashMsgPath);
-  if (!hasMergeHead && !hasSquashMsg) return "clean";
+  if (!hasMergeHead && !hasSquashMsg) {
+    // If we cleaned up another op type, return "reconciled" so the caller
+    // re-derives state from a known-good baseline.
+    return otherOpsResult === "reconciled" ? "reconciled" : "clean";
+  }
 
   const conflictedFiles = nativeConflictFiles(basePath);
   if (conflictedFiles.length === 0) {

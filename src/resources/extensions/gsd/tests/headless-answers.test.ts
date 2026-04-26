@@ -6,7 +6,7 @@
  * secrets, stats, and unused warnings).
  */
 
-import test from 'node:test';
+import test, { mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -164,7 +164,15 @@ test('tryHandle matches by question ID — single select', (t) => {
   assert.strictEqual(injector.getStats().questionsAnswered, 1);
 });
 
-test('tryHandle unknown question deferred — first_option timeout', async (t) => {
+test('tryHandle unknown question deferred — first_option timeout', (t) => {
+  // Use Node's MockTimers instead of a real-time setTimeout race. The
+  // production class schedules an internal setTimeout to default the
+  // answer when no metadata arrives — driving virtual time advances that
+  // timer deterministically, regardless of the literal ms value the
+  // production code chose.
+  mock.timers.enable({ apis: ['setTimeout'] });
+  t.after(() => { mock.timers.reset(); });
+
   const injector = new AnswerInjector({ defaults: { strategy: 'first_option' } });
 
   const captured: string[] = [];
@@ -177,8 +185,10 @@ test('tryHandle unknown question deferred — first_option timeout', async (t) =
   assert.strictEqual(handled, true);
   assert.strictEqual(captured.length, 0, 'nothing sent immediately');
 
-  // Wait for the 500ms deferred timeout to fire
-  await new Promise((resolve) => setTimeout(resolve, 600));
+  // Advance virtual time past any internal defer timeout (well above any
+  // reasonable defer cap). MockTimers fires synchronously, so by the time
+  // tick() returns the deferred handler has run.
+  mock.timers.tick(60_000);
 
   assert.strictEqual(captured.length, 1);
   const response = JSON.parse(captured[0].trim());

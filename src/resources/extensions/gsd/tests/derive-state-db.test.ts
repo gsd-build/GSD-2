@@ -14,6 +14,7 @@ import {
   getAllMilestones,
   insertSlice,
   insertTask,
+  getSliceTasks,
   updateTaskStatus,
 } from '../gsd-db.ts';
 // ─── Fixture Helpers ───────────────────────────────────────────────────────
@@ -268,6 +269,93 @@ describe('derive-state-db', async () => {
       closeDatabase();
       cleanup(base);
     }
+  });
+
+  test('derive-state-db: partial task rows reconcile missing plan tasks before summarizing', async (t) => {
+    const base = createFixtureBase();
+    t.after(() => {
+      closeDatabase();
+      cleanup(base);
+    });
+
+    const partialTaskPlan = `# S01: First Slice
+
+**Goal:** Test partial task DB reconciliation.
+**Demo:** Tests pass.
+
+## Tasks
+
+- [x] **T01: Existing Complete** \`est:10m\`
+  Already complete in DB.
+
+- [ ] **T02: Missing Pending** \`est:10m\`
+  Missing from DB but present in the plan.
+`;
+    writeFile(base, 'milestones/M001/M001-ROADMAP.md', ROADMAP_CONTENT);
+    writeFile(base, 'milestones/M001/slices/S01/S01-PLAN.md', partialTaskPlan);
+    writeFile(base, 'milestones/M001/slices/S01/tasks/.gitkeep', '');
+    writeFile(base, 'milestones/M001/slices/S01/tasks/T01-PLAN.md', '# T01 Plan');
+    writeFile(base, 'milestones/M001/slices/S01/tasks/T02-PLAN.md', '# T02 Plan');
+
+    openDatabase(':memory:');
+    insertMilestone({ id: 'M001', title: 'Test Milestone', status: 'active' });
+    insertSlice({ id: 'S01', milestoneId: 'M001', title: 'First Slice', status: 'active', risk: 'low', depends: [] });
+    insertTask({ id: 'T01', sliceId: 'S01', milestoneId: 'M001', title: 'Existing Complete', status: 'complete' });
+
+    invalidateStateCache();
+    const state = await deriveState(base);
+
+    const dbTasks = getSliceTasks('M001', 'S01');
+    assert.deepStrictEqual(dbTasks.length, 2, 'partial-task-db: missing T02 imported from plan');
+    assert.deepStrictEqual(dbTasks.find(t => t.id === 'T01')?.status, 'complete', 'partial-task-db: existing complete T01 preserved');
+    assert.deepStrictEqual(dbTasks.find(t => t.id === 'T02')?.status, 'pending', 'partial-task-db: missing T02 inserted pending');
+    assert.deepStrictEqual(state.phase, 'executing', 'partial-task-db: phase remains executing, not summarizing');
+    assert.deepStrictEqual(state.activeTask?.id, 'T02', 'partial-task-db: activeTask is missing plan task T02');
+    assert.deepStrictEqual(state.progress?.tasks, { done: 1, total: 2 }, 'partial-task-db: task progress includes reconciled plan task');
+  });
+
+  test('derive-state-db: empty DB disk import preserves milestone completion and dependencies', async (t) => {
+    const base = createFixtureBase();
+    t.after(() => {
+      closeDatabase();
+      cleanup(base);
+    });
+
+    writeFile(base, 'milestones/M001/M001-ROADMAP.md', `# M001: Foundation
+
+**Vision:** Foundation.
+
+## Slices
+
+- [x] **S01: Done** \`risk:low\` \`depends:[]\`
+  > After this: Done.
+`);
+    writeFile(base, 'milestones/M001/M001-VALIDATION.md', '---\nverdict: pass\nremediation_round: 0\n---\n\nPassed.');
+    writeFile(base, 'milestones/M001/M001-SUMMARY.md', '# M001 Summary\n\nDone.');
+    writeFile(base, 'milestones/M002/M002-CONTEXT.md', '---\ndepends_on:\n  - M001\n---\n\n# M002: Dependent\n');
+    writeFile(base, 'milestones/M002/M002-ROADMAP.md', `# M002: Dependent
+
+**Vision:** Active work.
+
+## Slices
+
+- [ ] **S01: Work** \`risk:low\` \`depends:[]\`
+  > After this: Done.
+`);
+    writeFile(base, 'milestones/M003/M003-CONTEXT.md', '---\ndepends_on:\n  - M002\n---\n\n# M003: Blocked\n');
+
+    openDatabase(':memory:');
+
+    invalidateStateCache();
+    const state = await deriveState(base);
+
+    const milestones = getAllMilestones();
+    assert.deepStrictEqual(milestones.find(m => m.id === 'M001')?.status, 'complete', 'disk-import: terminal summary imports M001 as complete');
+    assert.deepStrictEqual(milestones.find(m => m.id === 'M002')?.depends_on, ['M001'], 'disk-import: M002 depends_on imported from CONTEXT');
+    assert.deepStrictEqual(milestones.find(m => m.id === 'M003')?.depends_on, ['M002'], 'disk-import: M003 depends_on imported from CONTEXT');
+    assert.deepStrictEqual(state.activeMilestone?.id, 'M002', 'disk-import: M002 is active because M001 completion satisfies dependency');
+    assert.deepStrictEqual(state.registry.find(e => e.id === 'M001')?.status, 'complete', 'disk-import: M001 registry status is complete');
+    assert.deepStrictEqual(state.registry.find(e => e.id === 'M003')?.status, 'pending', 'disk-import: M003 stays pending on unmet M002 dependency');
   });
 
   // ─── Test 5: Requirements counting from disk (DB no longer used for content) ─
@@ -616,10 +704,10 @@ describe('derive-state-db', async () => {
       invalidateStateCache();
       const dbState = await deriveStateFromDb(base);
 
-      // With partial-dep fallback, circular deps no longer block — fallback picks first eligible slice
-      assert.deepStrictEqual(dbState.phase, 'planning', 'blocked-db: phase is planning (fallback picks a slice)');
+      assert.deepStrictEqual(dbState.phase, 'blocked', 'blocked-db: phase is blocked when no slice deps are satisfied');
       assert.deepStrictEqual(dbState.phase, fileState.phase, 'blocked-db: phase matches filesystem');
-      assert.ok(dbState.activeSlice !== null, 'blocked-db: activeSlice is set via fallback');
+      assert.deepStrictEqual(dbState.activeSlice, null, 'blocked-db: no activeSlice is selected through unmet deps');
+      assert.ok(dbState.blockers.some(b => b.includes('No slice eligible')), 'blocked-db: blocker explains no eligible slice');
 
       closeDatabase();
     } finally {

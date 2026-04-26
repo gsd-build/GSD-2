@@ -105,7 +105,17 @@ async function main() {
     extensionFiles.push(...await collectFiles(join(extensionsDir, entry.name)));
   }
 
-  const entryPoints = [...srcFiles, ...packageFiles, ...webLibFiles, ...extensionFiles];
+  // Compile vscode-extension/src/ — the security regression test imports
+  // ../../vscode-extension/src/trusted-config.ts (a vscode-API-free helper)
+  // so the trust predicate can be exercised outside the VS Code host.
+  // esbuild with bundle:false + packages:external just transpiles syntax,
+  // so files that import the `vscode` module compile fine without running.
+  const vscodeExtensionSrc = join(ROOT, 'vscode-extension', 'src');
+  const vscodeExtensionFiles = existsSync(vscodeExtensionSrc)
+    ? await collectFiles(vscodeExtensionSrc)
+    : [];
+
+  const entryPoints = [...srcFiles, ...packageFiles, ...webLibFiles, ...extensionFiles, ...vscodeExtensionFiles];
   console.log(`Compiling ${entryPoints.length} files to dist-test/...`);
 
   // bundle:false transforms TypeScript but keeps import specifiers verbatim.

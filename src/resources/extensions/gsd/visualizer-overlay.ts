@@ -20,7 +20,7 @@ import { writeExportFile } from "./export.js";
 import { gsdRoot } from "./paths.js";
 import { stripAnsi } from "../shared/mod.js";
 
-const TAB_COUNT = 10;
+export const TAB_COUNT = 10;
 const TAB_LABELS = [
   "1 Progress",
   "2 Timeline",

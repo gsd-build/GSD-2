@@ -153,6 +153,31 @@ describe("complete-milestone", () => {
     );
   });
 
+  test("prompt does not hard-fail main self-diff as missing implementation (#4699)", () => {
+    const prompt = loadPromptFromWorktree("complete-milestone", {
+      workingDirectory: "/tmp/test-project",
+      milestoneId: "M001",
+      milestoneTitle: "Main Retry Test",
+      roadmapPath: ".gsd/milestones/M001/M001-ROADMAP.md",
+      inlinedContext: "context",
+    });
+
+    assert.ok(
+      !prompt.includes("git diff --stat HEAD $(git merge-base HEAD main) -- ':!.gsd/'"),
+      "prompt must not require the known self-diff command from #4699",
+    );
+    assert.match(
+      prompt,
+      /self-diff/i,
+      "prompt should explicitly guard retries where HEAD and the integration branch are the same commit",
+    );
+    assert.match(
+      prompt,
+      /GSD-(?:Task|Unit)/,
+      "prompt should direct main-branch retries toward milestone-scoped GSD commit evidence",
+    );
+  });
+
   test("handleCompleteMilestone rejects when verificationPassed is false", async () => {
     const { handleCompleteMilestone } = await import("../tools/complete-milestone.ts");
     const base = createFixtureBase();

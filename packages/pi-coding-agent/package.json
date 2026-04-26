@@ -1,6 +1,6 @@
 {
   "name": "@gsd/pi-coding-agent",
-  "version": "2.77.0",
+  "version": "2.78.1",
   "description": "Coding agent CLI (vendored from pi-mono)",
   "type": "module",
   "gsd": {

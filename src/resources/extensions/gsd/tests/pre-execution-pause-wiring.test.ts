@@ -191,7 +191,12 @@ function createFailingTasks(): void {
       estimate: "1h",
       files: [],
       verify: "npm test",
-      inputs: ["nonexistent-file-that-does-not-exist.ts"],
+      inputs: [
+        "nonexistent-file-that-does-not-exist.ts",
+        "missing-second-file.ts",
+        "missing-third-file.ts",
+        "missing-fourth-file.ts",
+      ],
       expectedOutput: [],
       observabilityImpact: "",
     },
@@ -308,6 +313,32 @@ describe("Pre-execution checks → pauseAuto wiring", () => {
         String(call.arguments[0]).includes("Pre-execution checks failed")
     );
     assert.ok(errorNotify, "Should show error notification about pre-execution check failure");
+    const errorMessage = String(errorNotify.arguments[0]);
+    assert.match(
+      errorMessage,
+      /Pre-execution checks failed: \d+ blocking issue/,
+      "failure notification should include the blocking issue count",
+    );
+    assert.ok(
+      errorMessage.includes("[file] nonexistent-file-that-does-not-exist.ts: Task T01 references"),
+      "failure notification should include category, target, and message details",
+    );
+    assert.ok(
+      errorMessage.includes("[file] missing-third-file.ts: Task T01 references"),
+      "failure notification should include up to three actionable check details",
+    );
+    assert.ok(
+      !errorMessage.includes("missing-fourth-file.ts"),
+      "failure notification should truncate details beyond the display limit",
+    );
+    assert.ok(
+      errorMessage.includes("...and 1 more"),
+      "failure notification should summarize truncated blocking checks",
+    );
+    assert.ok(
+      errorMessage.includes(join(".gsd", "milestones", "M001", "slices", "S01", "S01-PRE-EXEC-VERIFY.json")),
+      "failure notification should point to the relative pre-exec evidence file path",
+    );
   });
 
   test("pauseAuto is called when enhanced_verification_strict: true and pre-execution returns warn", async () => {

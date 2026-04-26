@@ -89,6 +89,7 @@ export {
   resolveDynamicRoutingConfig,
   resolveAutoSupervisorConfig,
   resolveProfileDefaults,
+  getProfileTierMap,
   resolveEffectiveProfile,
   resolveInlineLevel,
   resolveContextSelection,
@@ -146,7 +147,10 @@ export function loadProjectGSDPreferences(basePath?: string): LoadedGSDPreferenc
     ?? loadPreferencesFile(legacyProjectPreferencesPathLowercase(basePath), "project");
 }
 
-export function loadEffectiveGSDPreferences(basePath?: string): LoadedGSDPreferences | null {
+export function loadEffectiveGSDPreferences(
+  basePath?: string,
+  opts?: { availableModelIds?: string[] },
+): LoadedGSDPreferences | null {
   const globalPreferences = loadGlobalGSDPreferences();
   const projectPreferences = loadProjectGSDPreferences(basePath);
 
@@ -175,7 +179,11 @@ export function loadEffectiveGSDPreferences(basePath?: string): LoadedGSDPrefere
   // Explicit user preferences always override profile defaults.
   const profile = result.preferences.token_profile as TokenProfile | undefined;
   if (profile) {
-    const profileDefaults = _resolveProfileDefaults(profile);
+    const profileDefaults = _resolveProfileDefaults(
+      profile,
+      opts?.availableModelIds,
+      result.preferences.dynamic_routing,
+    );
     result = {
       ...result,
       preferences: mergePreferences(profileDefaults as GSDPreferences, result.preferences),

@@ -4,7 +4,7 @@
  * Verify that state.ts contains the disk-to-DB task reconciliation logic
  * that prevents the dispatcher from getting stuck in an infinite planning
  * loop when the planner writes a PLAN.md but never calls the persistence
- * tool, leaving the DB with zero task rows.
+ * tool, leaving the DB with zero or partial task rows.
  */
 
 import { describe, test } from "node:test";
@@ -24,7 +24,8 @@ describe("dispatcher stuck-planning reconciliation (#3656)", () => {
   });
 
   test("contains plan-file task reconciliation block", () => {
-    assert.match(source, /tasks\.length\s*===\s*0\s*&&\s*planFile/);
+    assert.match(source, /if\s*\(\s*planFile\s*\)/);
+    assert.match(source, /dbTaskIds\.has\(t\.id\)/);
   });
 
   test("calls insertTask for each disk plan task", () => {

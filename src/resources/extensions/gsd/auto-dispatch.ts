@@ -61,6 +61,8 @@ import { resolveUokFlags } from "./uok/flags.js";
 import { selectReactiveDispatchBatch } from "./uok/execution-graph.js";
 import { getMilestonePipelineVariant } from "./milestone-scope-classifier.js";
 import { EXECUTION_ENTRY_PHASES, hasFinalizedMilestoneContext } from "./uok/plan-v2.js";
+import { isAutoActive } from "./auto.js";
+import { markDepthVerified } from "./bootstrap/write-gate.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -108,6 +110,38 @@ export interface DispatchRule {
   name: string;
   /** Return a DispatchAction if this rule matches, null to fall through */
   match: (ctx: DispatchContext) => Promise<DispatchAction | null>;
+}
+
+async function readUatGateVerdict(
+  basePath: string,
+  mid: string,
+  sliceId: string,
+): Promise<{ verdict: string; uatType: UatType | undefined } | null> {
+  const uatFile = resolveSliceFile(basePath, mid, sliceId, "UAT");
+  const assessmentFile = resolveSliceFile(basePath, mid, sliceId, "ASSESSMENT");
+
+  const uatContent = uatFile ? await loadFile(uatFile) : null;
+  const uatType = uatContent ? extractUatType(uatContent) : undefined;
+
+  const assessmentContent = assessmentFile ? await loadFile(assessmentFile) : null;
+  if (assessmentContent) {
+    const assessmentVerdict = extractVerdict(assessmentContent);
+    if (assessmentVerdict) {
+      return {
+        verdict: assessmentVerdict,
+        uatType: uatType ?? extractUatType(assessmentContent),
+      };
+    }
+  }
+
+  if (uatContent) {
+    const legacyUatVerdict = extractVerdict(uatContent);
+    if (legacyUatVerdict) {
+      return { verdict: legacyUatVerdict, uatType };
+    }
+  }
+
+  return null;
 }
 
 function missingSliceStop(mid: string, phase: string): DispatchAction {
@@ -276,6 +310,16 @@ export const DISPATCH_RULES: DispatchRule[] = [
       // Align with the plan-v2 gate's lookup semantics: whitespace-only counts
       // as missing, and an auto worktree may fall back to GSD_PROJECT_ROOT.
       if (hasFinalizedMilestoneContext(basePath, mid)) return null;
+      // H6 fix (#4973): In auto-mode there is no human to answer the
+      // depth-verification ask_user_questions, so the write-gate deadlocks.
+      // Pre-mark the milestone as depth-verified so gsd_summary_save({artifact_type:"CONTEXT"})
+      // is not blocked. Safe ordering: session_switch fires clearDiscussionFlowState()
+      // (register-hooks.ts:106) before before_agent_start, which fires before resolveDispatch
+      // reaches this match fn — so this call always happens after any session-switch reset.
+      // Interactive sessions (isAutoActive()===false) are unaffected.
+      if (isAutoActive()) {
+        markDepthVerified(mid, basePath);
+      }
       return {
         action: "dispatch",
         unitType: "discuss-milestone",
@@ -349,27 +393,28 @@ export const DISPATCH_RULES: DispatchRule[] = [
       // Only applies when UAT dispatch is enabled
       if (!prefs?.uat_dispatch) return null;
 
-      const roadmapFile = resolveMilestoneFile(basePath, mid, "ROADMAP");
-
-      // DB-first: get completed slices from DB
-      let completedSliceIds: string[];
+      // DB-first: prefer closed slices from DB; fall back to ROADMAP on disk.
+      let closedSliceIds: string[];
       if (isDbAvailable()) {
-        completedSliceIds = getMilestoneSlices(mid)
-          .filter(s => s.status === "complete")
+        closedSliceIds = getMilestoneSlices(mid)
+          .filter(s => isClosedStatus(s.status))
           .map(s => s.id);
       } else {
-        return null;
+        // Filesystem fallback for degraded / unmigrated projects.
+        // `slice.done` in the parsed ROADMAP is the disk-level closed signal.
+        const roadmapFile = resolveMilestoneFile(basePath, mid, "ROADMAP");
+        const roadmapContent = roadmapFile ? await loadFile(roadmapFile) : null;
+        if (!roadmapContent) return null;
+        const roadmap = parseRoadmap(roadmapContent);
+        closedSliceIds = roadmap.slices.filter(s => s.done).map(s => s.id);
       }
 
-      for (const sliceId of completedSliceIds) {
-        const resultFile = resolveSliceFile(basePath, mid, sliceId, "UAT");
-        if (!resultFile) continue;
-        const content = await loadFile(resultFile);
-        if (!content) continue;
-        const verdict = extractVerdict(content);
-        const uatType = extractUatType(content);
+      for (const sliceId of closedSliceIds) {
+        const result = await readUatGateVerdict(basePath, mid, sliceId);
+        if (!result) continue;
+        const { verdict, uatType } = result;
 
-        if (verdict && !isAcceptableUatVerdict(verdict, uatType)) {
+        if (!isAcceptableUatVerdict(verdict, uatType)) {
           return {
             action: "stop" as const,
             reason: `UAT verdict for ${sliceId} is "${verdict}" — blocking progression until resolved.\nReview the UAT result and update the verdict to PASS, or re-run /gsd auto after fixing.`,
@@ -411,6 +456,12 @@ export const DISPATCH_RULES: DispatchRule[] = [
     name: "needs-discussion → discuss-milestone",
     match: async ({ state, mid, midTitle, basePath, structuredQuestionsAvailable }) => {
       if (state.phase !== "needs-discussion") return null;
+      // H6 fix (#4973): auto-mark depth-verified so the write-gate does not
+      // deadlock in non-interactive (auto-mode) runs. See ordering note at
+      // "execution-entry phase (no context) → discuss-milestone" above.
+      if (isAutoActive()) {
+        markDepthVerified(mid, basePath);
+      }
       return {
         action: "dispatch",
         unitType: "discuss-milestone",
@@ -431,6 +482,12 @@ export const DISPATCH_RULES: DispatchRule[] = [
       const contextFile = resolveMilestoneFile(basePath, mid, "CONTEXT");
       const hasContext = !!(contextFile && (await loadFile(contextFile)));
       if (hasContext) return null; // fall through to next rule
+      // H6 fix (#4973): auto-mark depth-verified so the write-gate does not
+      // deadlock in non-interactive (auto-mode) runs. See ordering note at
+      // "execution-entry phase (no context) → discuss-milestone" above.
+      if (isAutoActive()) {
+        markDepthVerified(mid, basePath);
+      }
       return {
         action: "dispatch",
         unitType: "discuss-milestone",
@@ -1010,7 +1067,7 @@ export const DISPATCH_RULES: DispatchRule[] = [
       // Safety guard (#1703): verify the milestone produced implementation
       // artifacts (non-.gsd/ files). A milestone with only plan files and
       // zero implementation code should not be marked complete.
-      const artifactCheck = hasImplementationArtifacts(basePath);
+      const artifactCheck = hasImplementationArtifacts(basePath, mid);
       if (artifactCheck === "absent") {
         return {
           action: "stop",

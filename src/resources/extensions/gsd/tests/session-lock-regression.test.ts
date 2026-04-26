@@ -243,6 +243,35 @@ describe('session-lock-regression', async () => {
     }
   }
 
+  // ─── 7d. Releasing after ownership loss preserves newer owner ─────────
+  test('releaseSessionLock preserves newer owner after PID mismatch', (t) => {
+    const base = mkdtempSync(join(tmpdir(), 'gsd-session-lock-'));
+    mkdirSync(join(base, '.gsd'), { recursive: true });
+    t.after(() => {
+      rmSync(base, { recursive: true, force: true });
+    });
+
+    const acquired = acquireSessionLock(base);
+    assert.ok(acquired.acquired, 'initial lock acquired');
+
+    const lockFile = join(gsdRoot(base), 'auto.lock');
+    const newerOwner = {
+      pid: process.pid + 1000,
+      startedAt: new Date().toISOString(),
+      unitType: 'execute-task',
+      unitId: 'M001/S01/T02',
+      unitStartedAt: new Date().toISOString(),
+    };
+    writeFileSync(lockFile, JSON.stringify(newerOwner, null, 2));
+
+    releaseSessionLock(base);
+
+    assert.ok(existsSync(lockFile), 'foreign lock file must not be deleted by stale owner release');
+    const after = JSON.parse(readFileSync(lockFile, 'utf-8'));
+    assert.deepStrictEqual(after.pid, newerOwner.pid, 'newer owner PID is preserved');
+    assert.deepStrictEqual(after.unitId, newerOwner.unitId, 'newer owner metadata is preserved');
+  });
+
   // ─── 8. Acquire after release is possible ─────────────────────────────
   console.log('\n=== 8. acquire after release → re-acquirable ===');
   {

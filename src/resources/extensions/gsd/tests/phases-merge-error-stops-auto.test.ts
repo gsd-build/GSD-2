@@ -18,20 +18,14 @@ const phasesSrc = readFileSync(phasesPath, "utf-8");
 
 console.log("\n=== #2766: Non-MergeConflictError stops auto mode ===");
 
-// ── Test 1: phases.ts calls logError for non-conflict merge errors ──────
-
-assertTrue(
-  phasesPath.length > 0 && phasesPath.endsWith("phases.ts"),
-  "phases.ts file exists and is readable",
-);
+// ── Test 1: every mergeAndExit call site has a catch (mergeErr) block ──
 
 // Count all mergeAndExit catch blocks by finding "} catch (mergeErr)" patterns
-const mergeErrCatches = [...phasesPath.matchAll(/\} catch \(mergeErr\)/g)];
-// Use the source itself for matching
+const mergeAndExitCallCount = [...phasesSrc.matchAll(/\.mergeAndExit\(/g)].length;
 const mergeErrCatchCount = [...phasesSrc.matchAll(/\} catch \(mergeErr\)/g)].length;
 assertTrue(
-  mergeErrCatchCount >= 3,
-  `all mergeAndExit call sites have catch (mergeErr) blocks (found ${mergeErrCatchCount}, expected >= 3)`,
+  mergeErrCatchCount === mergeAndExitCallCount && mergeAndExitCallCount > 0,
+  `every mergeAndExit call site has a catch (mergeErr) block (calls=${mergeAndExitCallCount}, catches=${mergeErrCatchCount})`,
 );
 
 // ── Test 2: Every mergeErr catch block handles non-MergeConflictError ───

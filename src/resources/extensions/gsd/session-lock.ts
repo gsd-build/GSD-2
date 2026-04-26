@@ -188,13 +188,14 @@ function ensureExitHandler(_gsdDir: string): void {
     // Lock files accumulate across main project .gsd/, worktree .gsd/,
     // and projects registry paths — cleanup must cover all of them.
     for (const dir of _lockDirRegistry) {
+      const lockFile = join(dir, LOCK_FILE);
+      const ownsRegisteredLock = isLockFileOwnedByCurrentProcess(lockFile);
       try {
-        const lockFile = join(dir, LOCK_FILE);
-        if (existsSync(lockFile)) unlinkSync(lockFile);
+        if (ownsRegisteredLock && existsSync(lockFile)) unlinkSync(lockFile);
       } catch { /* best-effort */ }
       try {
         const lockDir = join(dir + ".lock");
-        if (existsSync(lockDir)) rmSync(lockDir, { recursive: true, force: true });
+        if (ownsRegisteredLock && existsSync(lockDir)) rmSync(lockDir, { recursive: true, force: true });
       } catch { /* best-effort */ }
     }
   });
@@ -526,10 +527,13 @@ export function releaseSessionLock(basePath: string): void {
     _releaseFunction = null;
   }
 
-  // Remove the lock file at the current path
+  // Remove the lock file at the current path only if it still belongs to us.
+  // Lost-lock cleanup can run after another process has taken ownership; in
+  // that case deleting auto.lock would erase the newer owner's evidence.
   const lp = lockPath(basePath);
+  const ownsPrimaryLock = isLockFileOwnedByCurrentProcess(lp);
   try {
-    if (existsSync(lp)) unlinkSync(lp);
+    if (ownsPrimaryLock && existsSync(lp)) unlinkSync(lp);
   } catch {
     // Non-fatal
   }
@@ -540,12 +544,12 @@ export function releaseSessionLock(basePath: string): void {
   const lockTarget = effectiveLockTarget(gsdDir);
   try {
     const lockDir = join(lockTarget + ".lock");
-    if (existsSync(lockDir)) rmSync(lockDir, { recursive: true, force: true });
+    if (ownsPrimaryLock && existsSync(lockDir)) rmSync(lockDir, { recursive: true, force: true });
   } catch {
     // Non-fatal
   }
   // Also clean the per-milestone parallel directory itself if it exists
-  if (lockTarget !== gsdDir) {
+  if (ownsPrimaryLock && lockTarget !== gsdDir) {
     try {
       if (existsSync(lockTarget)) rmSync(lockTarget, { recursive: true, force: true });
     } catch {
@@ -556,13 +560,14 @@ export function releaseSessionLock(basePath: string): void {
   // Clean ALL registered lock paths (#1578) — lock files accumulate across
   // main project .gsd/, worktree .gsd/, and projects registry paths.
   for (const dir of _lockDirRegistry) {
+    const lockFile = join(dir, LOCK_FILE);
+    const ownsRegisteredLock = isLockFileOwnedByCurrentProcess(lockFile);
     try {
-      const lockFile = join(dir, LOCK_FILE);
-      if (existsSync(lockFile)) unlinkSync(lockFile);
+      if (ownsRegisteredLock && existsSync(lockFile)) unlinkSync(lockFile);
     } catch { /* best-effort */ }
     try {
       const lockDir = join(dir + ".lock");
-      if (existsSync(lockDir)) rmSync(lockDir, { recursive: true, force: true });
+      if (ownsRegisteredLock && existsSync(lockDir)) rmSync(lockDir, { recursive: true, force: true });
     } catch { /* best-effort */ }
   }
   _lockDirRegistry.clear();
@@ -617,6 +622,11 @@ function readExistingLockData(lp: string): SessionLockData | null {
   } catch {
     return null;
   }
+}
+
+function isLockFileOwnedByCurrentProcess(lp: string): boolean {
+  const existing = readExistingLockData(lp);
+  return existing?.pid === process.pid;
 }
 
 /**

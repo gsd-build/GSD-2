@@ -320,11 +320,8 @@ export function getEligibleModels(
     // Exact match
     if (availableModelIds.includes(explicitModel)) return [explicitModel];
     // Provider-prefix-stripped match
-    const match = availableModelIds.find(id => {
-      const bareAvail = id.includes("/") ? id.split("/").pop()! : id;
-      const bareExplicit = explicitModel.includes("/") ? explicitModel.split("/").pop()! : explicitModel;
-      return bareAvail === bareExplicit;
-    });
+    const bareExplicit = bareModelId(explicitModel);
+    const match = availableModelIds.find(id => bareModelId(id) === bareExplicit);
     if (match) return [match];
   }
 
@@ -430,12 +427,38 @@ export function resolveModelForComplexity(
 
   // Downgrade-only: if requested tier >= configured tier, no change
   if (tierOrdinal(requestedTier) >= tierOrdinal(configuredTier)) {
+    // If the configured primary is directly available, use it
+    if (isModelAvailable(configuredPrimary, availableModelIds)) {
+      return {
+        modelId: configuredPrimary,
+        fallbacks: phaseConfig.fallbacks,
+        tier: requestedTier,
+        wasDowngraded: false,
+        reason: `tier ${requestedTier} >= configured ${configuredTier}`,
+        selectionMethod: "tier-only",
+      };
+    }
+
+    // Configured primary is unavailable (e.g. Anthropic model configured but
+    // running on a non-Anthropic provider). Find the best available model at
+    // the same capability tier so routing still works cross-provider.
+    const crossProviderEquivalent = findModelForTier(
+      configuredTier,
+      routingConfig,
+      availableModelIds,
+      routingConfig.cross_provider !== false,
+    );
+
     return {
-      modelId: configuredPrimary,
-      fallbacks: phaseConfig.fallbacks,
+      modelId: crossProviderEquivalent ?? configuredPrimary,
+      fallbacks: crossProviderEquivalent
+        ? [...phaseConfig.fallbacks.filter(f => f !== crossProviderEquivalent), configuredPrimary]
+        : phaseConfig.fallbacks,
       tier: requestedTier,
       wasDowngraded: false,
-      reason: `tier ${requestedTier} >= configured ${configuredTier}`,
+      reason: crossProviderEquivalent
+        ? `cross-provider ${configuredTier}-tier equivalent`
+        : `tier ${requestedTier} >= configured ${configuredTier}`,
       selectionMethod: "tier-only",
     };
   }
@@ -519,7 +542,130 @@ export function defaultRoutingConfig(): DynamicRoutingConfig {
   };
 }
 
+// ─── Tier-Based Model Resolution (for profile defaults) ─────────────────────
+
+/**
+ * Fallback-only canonical model IDs per tier. Returned when the
+ * available-model list is empty (e.g., preferences are loaded before the
+ * model registry is populated at bootstrap), or when a non-empty registry has
+ * no model at the requested tier.
+ *
+ * Precedence (resolveModelForTier):
+ *   1. configured `tier_models[tier]` (via getEligibleModels) — exact/bare match
+ *   2. cheapest available model whose tier matches `tier`
+ *   3. CANONICAL_TIER_MODELS[tier] as last-resort fallback
+ */
+const CANONICAL_TIER_MODELS: Record<ComplexityTier, string> = {
+  light: "claude-haiku-4-5",
+  standard: "claude-sonnet-4-6",
+  heavy: "claude-opus-4-6",
+};
+
+export function canonicalModelForTier(tier: ComplexityTier): string {
+  return CANONICAL_TIER_MODELS[tier];
+}
+
+/**
+ * Single source of truth for tier-based model selection.
+ * Returns the cheapest available model whose capability tier matches `tier`,
+ * honoring `routingConfig.tier_models[tier]` when set. Returns undefined when
+ * no available model matches the tier.
+ *
+ * `crossProvider`: when false, restricts the search to models that share the
+ * canonical (Anthropic) provider for the tier. When true, any provider is
+ * eligible.
+ */
+function findModelForTier(
+  tier: ComplexityTier,
+  routingConfig: DynamicRoutingConfig,
+  availableModelIds: string[],
+  crossProvider: boolean,
+): string | undefined {
+  const eligible = getEligibleModels(tier, availableModelIds, routingConfig);
+  if (eligible.length === 0) return undefined;
+
+  if (crossProvider) {
+    return eligible[0];
+  }
+
+  // Same-provider only: keep models whose bare ID matches a canonical
+  // Anthropic ID at this tier (i.e., a claude-* model in the tier map).
+  const sameProvider = eligible.filter(id => {
+    const bare = bareModelId(id);
+    return MODEL_CAPABILITY_TIER[bare] === tier && bare.startsWith("claude-");
+  });
+  return sameProvider[0];
+}
+
+/**
+ * Resolve a concrete model ID for a given capability tier using the
+ * available model list. Provider-agnostic: picks the best available
+ * model at the requested tier.
+ *
+ * Precedence:
+ *   1. configured `tier_models[tier]`, if provided and available
+ *   2. tier-matching model from any provider in `availableModelIds`
+ *   3. canonical Anthropic ID as a fallback only when nothing else matches
+ *      (or `availableModelIds` is empty, e.g., during early bootstrap)
+ *
+ * @param tier              The capability tier to resolve
+ * @param availableModelIds List of available model IDs (REQUIRED for
+ *                          provider-agnostic resolution; pass [] only when
+ *                          the model registry is genuinely unavailable)
+ * @param routingConfig     Optional routing config, or legacy crossProvider boolean
+ * @param crossProvider     Whether to consider models from other providers
+ */
+export function resolveModelForTier(
+  tier: ComplexityTier,
+  availableModelIds: string[],
+  crossProvider?: boolean,
+): string;
+export function resolveModelForTier(
+  tier: ComplexityTier,
+  availableModelIds: string[],
+  routingConfig?: DynamicRoutingConfig,
+  crossProvider?: boolean,
+): string;
+export function resolveModelForTier(
+  tier: ComplexityTier,
+  availableModelIds: string[],
+  routingConfigOrCrossProvider: DynamicRoutingConfig | boolean = defaultRoutingConfig(),
+  crossProvider?: boolean,
+): string {
+  const routingConfig = typeof routingConfigOrCrossProvider === "boolean"
+    ? defaultRoutingConfig()
+    : { ...defaultRoutingConfig(), ...routingConfigOrCrossProvider };
+  const allowCrossProvider = typeof routingConfigOrCrossProvider === "boolean"
+    ? routingConfigOrCrossProvider
+    : crossProvider ?? routingConfig.cross_provider !== false;
+
+  // No available models known — return canonical fallback
+  if (availableModelIds.length === 0) {
+    return canonicalModelForTier(tier);
+  }
+
+  // Cross-provider tier search
+  const resolved = findModelForTier(tier, routingConfig, availableModelIds, allowCrossProvider);
+  return resolved
+    ? normalizeResolvedTierModelId(resolved, tier, routingConfig)
+    : canonicalModelForTier(tier);
+}
+
 // ─── Internal ────────────────────────────────────────────────────────────────
+
+/**
+ * Check whether a model ID is present in the available models list.
+ * Handles bare IDs ("claude-opus-4-6") and provider-prefixed IDs ("anthropic/claude-opus-4-6").
+ */
+function isModelAvailable(modelId: string, availableModelIds: string[]): boolean {
+  if (availableModelIds.includes(modelId)) return true;
+  // Strip provider prefix for comparison. Treat trailing-slash IDs ("provider/")
+  // as no-bare-ID rather than empty-string match (which would erroneously match
+  // any other "provider/" ID).
+  const bare = bareModelId(modelId);
+  if (!bare) return false;
+  return availableModelIds.some(id => bareModelId(id) === bare);
+}
 
 function getModelTier(modelId: string): ComplexityTier {
   // Strip provider prefix if present
@@ -563,8 +709,25 @@ function getModelCost(modelId: string): number {
   return 999;
 }
 
+function normalizeResolvedTierModelId(
+  modelId: string,
+  tier: ComplexityTier,
+  routingConfig: DynamicRoutingConfig,
+): string {
+  const explicitModel = routingConfig.tier_models?.[tier];
+  if (explicitModel?.includes("/")) {
+    return modelId;
+  }
+
+  const bareId = bareModelId(modelId);
+  return MODEL_CAPABILITY_TIER[bareId] ? bareId : modelId;
+}
+
 function bareModelId(modelId: string): string {
-  return modelId.includes("/") ? modelId.split("/").pop()! : modelId;
+  if (!modelId.includes("/")) return modelId;
+  // .pop() never returns undefined on a non-empty string but ?? guards future
+  // refactors and avoids the misleading non-null assertion.
+  return modelId.split("/").pop() ?? modelId;
 }
 
 // ─── Provider-specific Tool Limits ─────────────────────────────────────────

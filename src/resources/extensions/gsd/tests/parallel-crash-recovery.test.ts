@@ -19,13 +19,15 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import {
-  persistState,
   restoreState,
   resetOrchestrator,
-  getOrchestratorState,
   type PersistedState,
 } from "../parallel-orchestrator.ts";
-import { writeSessionStatus, readAllSessionStatuses, removeSessionStatus } from "../session-status-io.ts";
+import {
+  writeSessionStatus,
+  readAllSessionStatuses,
+  cleanupStaleSessions,
+} from "../session-status-io.ts";
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function makeTempDir(): string {
@@ -57,17 +59,20 @@ function makePersistedState(overrides: Partial<PersistedState> = {}): PersistedS
 
 
 describe('parallel-crash-recovery', () => {
-test('Test 1: persistState writes valid JSON', () => {
+test('Test 1: orchestrator.json round-trips through restoreState (preserves worker fields)', () => {
   const basePath = makeTempDir();
   try {
-    // We can't call persistState directly without internal state set up,
-    // so we test the round-trip by writing a state file and reading it back
+    // Write a full state file to disk and then exercise the real production
+    // restoreState() reader against it. This verifies the persisted file
+    // schema (the contract between persistState's writer and the reader)
+    // — earlier this test inlined a test-only writer and re-parsed JSON,
+    // bypassing production code entirely.
     const state = makePersistedState({
       workers: [
         {
           milestoneId: "M001",
           title: "M001",
-          pid: process.pid,
+          pid: process.pid, // alive — survives restoreState's PID filter
           worktreePath: "/tmp/wt-M001",
           startedAt: Date.now(),
           state: "running",
@@ -78,13 +83,13 @@ test('Test 1: persistState writes valid JSON', () => {
     });
     writeStateFile(basePath, state);
 
-    const raw = readFileSync(stateFilePath(basePath), "utf-8");
-    const parsed = JSON.parse(raw) as PersistedState;
-    assert.deepStrictEqual(parsed.active, true, "persistState: active field preserved");
-    assert.deepStrictEqual(parsed.workers.length, 1, "persistState: worker count preserved");
-    assert.deepStrictEqual(parsed.workers[0].milestoneId, "M001", "persistState: milestoneId preserved");
-    assert.deepStrictEqual(parsed.workers[0].cost, 0.15, "persistState: cost preserved");
-    assert.deepStrictEqual(parsed.totalCost, 0.15, "persistState: totalCost preserved");
+    const restored = restoreState(basePath);
+    assert.ok(restored !== null, "restoreState: returns state for live worker");
+    assert.deepStrictEqual(restored!.active, true, "active field preserved through round-trip");
+    assert.deepStrictEqual(restored!.workers.length, 1, "worker count preserved");
+    assert.deepStrictEqual(restored!.workers[0].milestoneId, "M001", "milestoneId preserved");
+    assert.deepStrictEqual(restored!.workers[0].cost, 0.15, "cost preserved");
+    assert.deepStrictEqual(restored!.totalCost, 0.15, "totalCost preserved");
   } finally {
     rmSync(basePath, { recursive: true, force: true });
   }
@@ -201,11 +206,12 @@ test('Test 5: restoreState skips stopped/error workers even with alive PIDs', ()
   }
 });
 
-test('Test 6: orphan detection finds stale sessions', () => {
+test('Test 6: cleanupStaleSessions removes dead-PID sessions and keeps live ones', () => {
   const basePath = makeTempDir();
   try {
-    // Write a session status with a dead PID
     mkdirSync(join(basePath, ".gsd", "parallel"), { recursive: true });
+
+    // Dead PID
     writeSessionStatus(basePath, {
       milestoneId: "M001",
       pid: 99999999,
@@ -218,7 +224,7 @@ test('Test 6: orphan detection finds stale sessions', () => {
       worktreePath: "/tmp/wt-M001",
     });
 
-    // Write a session status with alive PID
+    // Live PID (this process)
     writeSessionStatus(basePath, {
       milestoneId: "M002",
       pid: process.pid,
@@ -231,37 +237,20 @@ test('Test 6: orphan detection finds stale sessions', () => {
       worktreePath: "/tmp/wt-M002",
     });
 
-    // Read all sessions — both should exist initially
     const before = readAllSessionStatuses(basePath);
-    assert.deepStrictEqual(before.length, 2, "orphan: both sessions exist before detection");
+    assert.deepStrictEqual(before.length, 2, "both sessions exist before cleanup");
 
-    // Now simulate orphan detection logic (same as prepareParallelStart)
-    const sessions = readAllSessionStatuses(basePath);
-    const orphans: Array<{ milestoneId: string; pid: number; alive: boolean }> = [];
-    for (const session of sessions) {
-      let alive: boolean;
-      try {
-        process.kill(session.pid, 0);
-        alive = true;
-      } catch {
-        alive = false;
-      }
-      orphans.push({ milestoneId: session.milestoneId, pid: session.pid, alive });
-      if (!alive) {
-        removeSessionStatus(basePath, session.milestoneId);
-      }
-    }
+    // Drive the real production cleanup function. Earlier this test
+    // re-implemented the cleanup loop inline (process.kill + remove*) and
+    // never exercised cleanupStaleSessions itself — so changes to the
+    // production sweep would not have been caught.
+    const removed = cleanupStaleSessions(basePath);
 
-    assert.ok(orphans.length === 2, "orphan: detected both sessions");
-    const deadOrphan = orphans.find(o => o.milestoneId === "M001");
-    assert.ok(deadOrphan !== undefined && !deadOrphan.alive, "orphan: M001 detected as dead");
-    const aliveOrphan = orphans.find(o => o.milestoneId === "M002");
-    assert.ok(aliveOrphan !== undefined && aliveOrphan.alive, "orphan: M002 detected as alive");
+    assert.deepStrictEqual(removed, ["M001"], "dead-PID session id is reported as removed");
 
-    // Dead session should be cleaned up
     const after = readAllSessionStatuses(basePath);
-    assert.deepStrictEqual(after.length, 1, "orphan: dead session cleaned up");
-    assert.deepStrictEqual(after[0].milestoneId, "M002", "orphan: alive session remains");
+    assert.deepStrictEqual(after.length, 1, "dead session cleaned up");
+    assert.deepStrictEqual(after[0].milestoneId, "M002", "alive session remains");
   } finally {
     rmSync(basePath, { recursive: true, force: true });
   }

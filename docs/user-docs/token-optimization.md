@@ -6,7 +6,7 @@ GSD 2.17 introduces a coordinated token optimization system that can reduce toke
 
 ## Token Profiles
 
-A token profile is a single preference that coordinates model selection, phase skipping, and context compression level. Set it in your preferences:
+A token profile is a single preference that coordinates model tier selection, phase skipping, and context compression level. Set it in your preferences:
 
 ```yaml
 ---
@@ -19,15 +19,16 @@ Three profiles are available:
 
 ### `budget` — Maximum Savings (40-60% reduction)
 
-Optimized for cost-sensitive workflows. Uses cheaper models, skips optional phases, and compresses dispatch context to the minimum needed.
+Optimized for cost-sensitive workflows. Uses cheaper model tiers, skips optional phases, and compresses dispatch context to the minimum needed.
 
 | Dimension | Setting |
 |-----------|---------|
-| Planning model | Sonnet |
-| Execution model | Sonnet |
-| Simple task model | Haiku |
-| Completion model | Haiku |
-| Subagent model | Haiku |
+| Planning model tier | Standard |
+| Research model tier | Light |
+| Execution model tier | Standard |
+| Simple task model tier | Light |
+| Completion model tier | Light |
+| Subagent model tier | Light |
 | Milestone research | **Skipped** |
 | Slice research | **Skipped** |
 | Roadmap reassessment | **Skipped** |
@@ -37,33 +38,43 @@ Best for: prototyping, small projects, well-understood codebases, cost-conscious
 
 ### `balanced` — Smart Defaults (default)
 
-The default profile. Keeps the important phases, skips the ones with diminishing returns for most projects, and uses standard context compression.
+The default profile. Uses standard-tier defaults for core work, skips lower-value orchestration phases, and uses standard context compression.
 
 | Dimension | Setting |
 |-----------|---------|
-| Planning model | User's default |
-| Execution model | User's default |
-| Simple task model | User's default |
-| Completion model | User's default |
-| Subagent model | Sonnet |
-| Milestone research | Runs |
+| Planning model tier | Standard |
+| Research model tier | Standard |
+| Execution model tier | Standard |
+| Simple task model tier | Light |
+| Completion model tier | Light |
+| Subagent model tier | Light |
+| Milestone research | **Skipped** |
 | Slice research | **Skipped** |
-| Roadmap reassessment | Runs |
+| Roadmap reassessment | **Skipped** |
 | Context inline level | **Standard** — includes key context, drops low-signal extras |
 
 Best for: most projects, day-to-day development.
 
 ### `quality` — Full Context (no compression)
 
-Every phase runs. Every context artifact is inlined. No shortcuts.
+Uses stronger tier defaults for planning and full context inlining for dispatched prompts.
 
 | Dimension | Setting |
 |-----------|---------|
-| All models | User's configured defaults |
-| All phases | Run |
+| Planning model tier | Heavy |
+| Research model tier | Standard |
+| Execution model tier | Standard |
+| Simple task model tier | Light |
+| Completion model tier | Light |
+| Subagent model tier | Standard |
+| Milestone research | **Skipped** |
+| Slice research | **Skipped** |
+| Roadmap reassessment | **Skipped** |
 | Context inline level | **Full** — everything inlined |
 
-Best for: complex architectures, greenfield projects requiring deep research, critical production work.
+Best for: complex architectures, critical production work, and workflows where you want full prompt context while retaining the simplified phase pipeline. Override `phases` if you want to force skipped research or reassessment phases back on.
+
+Profile model settings are provider-agnostic. Each profile declares the intended capability tier for each phase, then GSD resolves that tier to an available model from your configured providers at runtime. For example, a light tier may resolve to Haiku, `gpt-4o-mini`, Gemini Flash, or another configured light model depending on what is available. If the model registry is unavailable during early startup, GSD falls back to canonical Anthropic IDs until concrete providers can be resolved.
 
 ## Context Compression
 
@@ -142,13 +153,13 @@ Non-task units have built-in tier assignments:
 
 Each tier maps to a model configuration:
 
-| Tier | Model Phase Key | Typical Model |
-|------|----------------|---------------|
-| Light | `completion` | Haiku (budget) / user default |
-| Standard | `execution` | Sonnet / user default |
-| Heavy | `execution` | Opus / user default |
+| Tier | Model Phase Key | Typical Resolution |
+|------|----------------|--------------------|
+| Light | `completion` / `execution_simple` | Cheapest available light-tier model |
+| Standard | `execution` / `planning` | Available standard-tier model |
+| Heavy | `planning` / escalation paths | Available heavy-tier model |
 
-Simple tasks use the `execution_simple` model key when configured. This is set automatically by the `budget` profile to Haiku.
+Simple tasks use the `execution_simple` model key when configured. Token profiles set this automatically to a light-tier model that is resolved from your available providers.
 
 ### Budget Pressure
 

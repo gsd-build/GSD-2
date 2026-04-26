@@ -112,6 +112,46 @@ async function main(): Promise<void> {
     cleanup(base);
   }
 
+  console.log("\n=== #4974: summary-only disk milestones keep parsed title ===");
+
+  {
+    const summaryOnlyBase = createFixtureBase();
+    const summaryOnlyDbPath = join(summaryOnlyBase, ".gsd", "gsd.db");
+
+    try {
+      openDatabase(summaryOnlyDbPath);
+      insertMilestone({ id: "M001", title: "M001: Existing DB Milestone", status: "complete", depends_on: [] });
+
+      writeFile(
+        summaryOnlyBase,
+        "milestones/M002/SUMMARY.md",
+        `---\nid: M002\nstatus: complete\n---\n\n# M002: Summary-Only Milestone\n\nComplete.`,
+      );
+
+      invalidateStateCache();
+      const state = await deriveStateFromDb(summaryOnlyBase);
+      const m002Entry = state.registry.find((m) => m.id === "M002");
+
+      assertTrue(
+        m002Entry !== undefined,
+        "M002 summary-only disk milestone should appear in state.registry (#4974)",
+      );
+      assertEq(
+        m002Entry?.title,
+        "Summary-Only Milestone",
+        "M002 summary-only disk milestone should use parsed SUMMARY title (#4974)",
+      );
+      assertEq(
+        m002Entry?.status,
+        "complete",
+        "M002 summary-only disk milestone should reconcile as complete (#4974)",
+      );
+    } finally {
+      closeDatabase();
+      cleanup(summaryOnlyBase);
+    }
+  }
+
   report();
 }
 

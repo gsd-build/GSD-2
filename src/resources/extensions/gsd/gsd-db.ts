@@ -1405,6 +1405,16 @@ export function checkpointDatabase(): void {
 
 let _txDepth = 0;
 
+/**
+ * Whether the current call is running inside an active SQLite transaction.
+ * Statement-time recovery paths (e.g. VACUUM retry on a malformed memory
+ * store) MUST gate on this — SQLite refuses VACUUM inside a transaction
+ * and would mask the original error with a secondary "cannot VACUUM" throw.
+ */
+export function isInTransaction(): boolean {
+  return _txDepth > 0;
+}
+
 export function transaction<T>(fn: () => T): T {
   if (!currentDb) throw new GSDError(GSD_STALE_STATE, "gsd-db: No database open");
 
@@ -1419,8 +1429,8 @@ export function transaction<T>(fn: () => T): T {
     }
   }
 
-  _txDepth++;
   currentDb.exec("BEGIN");
+  _txDepth++;
   try {
     const result = fn();
     currentDb.exec("COMMIT");
@@ -1452,8 +1462,8 @@ export function readTransaction<T>(fn: () => T): T {
     }
   }
 
-  _txDepth++;
   currentDb.exec("BEGIN DEFERRED");
+  _txDepth++;
   try {
     const result = fn();
     currentDb.exec("COMMIT");
@@ -2946,6 +2956,9 @@ export function insertAssessment(entry: {
   fullContent: string;
 }): void {
   if (!currentDb) throw new GSDError(GSD_STALE_STATE, "gsd-db: No database open");
+  // Idempotent: PRIMARY KEY is `path`, which is deterministic given (milestone_id, scope) per
+  // the artifact-path resolver. Retrying the same reassess-roadmap silently overwrites the row
+  // instead of accumulating duplicates.
   currentDb.prepare(
     `INSERT OR REPLACE INTO assessments (path, milestone_id, slice_id, task_id, status, scope, full_content, created_at)
      VALUES (:path, :milestone_id, :slice_id, :task_id, :status, :scope, :full_content, :created_at)`,
@@ -3100,7 +3113,7 @@ function rowToGate(row: Record<string, unknown>): GateRow {
     scope: row["scope"] as GateScope,
     task_id: (row["task_id"] as string) ?? "",
     status: row["status"] as GateStatus,
-    verdict: (row["verdict"] as GateVerdict) || "",
+    verdict: row["status"] === "pending" ? null : (row["verdict"] as GateVerdict),
     rationale: (row["rationale"] as string) || "",
     findings: (row["findings"] as string) || "",
     evaluated_at: (row["evaluated_at"] as string) ?? null,
@@ -3204,7 +3217,7 @@ export function getGateResults(milestoneId: string, sliceId: string, scope?: Gat
 export function markAllGatesOmitted(milestoneId: string, sliceId: string): void {
   if (!currentDb) return;
   currentDb.prepare(
-    `UPDATE quality_gates SET status = 'omitted', verdict = 'omitted', evaluated_at = :now
+    `UPDATE quality_gates SET status = 'complete', verdict = 'omitted', evaluated_at = :now
      WHERE milestone_id = :mid AND slice_id = :sid AND status = 'pending'`,
   ).run({
     ":mid": milestoneId,

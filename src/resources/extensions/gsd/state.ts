@@ -114,6 +114,48 @@ export function isGhostMilestone(basePath: string, mid: string): boolean {
   return !context && !draft && !roadmap && !summary;
 }
 
+/**
+ * A "reusable ghost" milestone is an orphaned filesystem stub that is safe
+ * to reclaim as the next milestone ID.
+ *
+ * Stricter than `isGhostMilestone`: returns true ONLY when ALL of the
+ * following hold:
+ *   1. No DB row exists for `mid` (any status, including "queued") — a DB row
+ *      means the milestone was intentionally registered by
+ *      `gsd_milestone_generate_id` and may have an in-flight discuss flow.
+ *      Reusing it would collide with that flow. (#4996 race window)
+ *   2. No worktree directory exists at `gsdRoot/worktrees/{mid}` — a worktree
+ *      means the milestone is legitimately in-flight.
+ *   3. No content files exist (CONTEXT, CONTEXT-DRAFT, ROADMAP, SUMMARY) —
+ *      any content means the discuss flow already ran.
+ *
+ * The looser `isGhostMilestone` also classifies queued-row-without-content as
+ * a ghost to help state queries filter phantoms. `isReusableGhostMilestone`
+ * intentionally does NOT reclaim those — a queued row is sufficient proof of
+ * a live in-flight ID reservation.
+ *
+ * Used by `nextMilestoneIdReserved` and both MCP ID-generator tools to fill
+ * gaps left by phantom directories before resorting to max+1.
+ */
+export function isReusableGhostMilestone(basePath: string, mid: string): boolean {
+  // Condition 1: no DB row (any status).
+  if (!isDbAvailable()) return false;
+  const dbRow = getMilestone(mid);
+  if (dbRow != null) return false;
+
+  // Condition 2: no worktree.
+  const root = gsdRoot(basePath);
+  const wtPath = join(root, 'worktrees', mid);
+  if (existsSync(wtPath)) return false;
+
+  // Condition 3: no content files.
+  const context = resolveMilestoneFile(basePath, mid, "CONTEXT");
+  const draft   = resolveMilestoneFile(basePath, mid, "CONTEXT-DRAFT");
+  const roadmap = resolveMilestoneFile(basePath, mid, "ROADMAP");
+  const summary = resolveMilestoneFile(basePath, mid, "SUMMARY");
+  return !context && !draft && !roadmap && !summary;
+}
+
 // ─── Query Functions ───────────────────────────────────────────────────────
 
 /**
@@ -267,7 +309,7 @@ export async function deriveState(basePath: string): Promise<GSDState> {
       let synced = false;
       for (const diskId of diskIds) {
         if (!isGhostMilestone(basePath, diskId)) {
-          insertMilestone({ id: diskId, status: 'active' });
+          insertMilestone(diskMilestoneInsert(basePath, diskId));
           synced = true;
         }
       }
@@ -327,6 +369,42 @@ function extractContextTitle(content: string | null, fallback: string): string {
 // Alias kept for backward compatibility within this file.
 const isStatusDone = isClosedStatus;
 
+function loadSync(path: string | null): string | null {
+  if (!path) return null;
+  try {
+    return readFileSync(path, "utf-8");
+  } catch {
+    return null;
+  }
+}
+
+function diskMilestoneInsert(basePath: string, mid: string): {
+  id: string;
+  title?: string;
+  status: string;
+  depends_on: string[];
+} {
+  const contextContent = loadSync(resolveMilestoneFile(basePath, mid, "CONTEXT"));
+  const draftContent = !contextContent ? loadSync(resolveMilestoneFile(basePath, mid, "CONTEXT-DRAFT")) : null;
+  const roadmapContent = loadSync(resolveMilestoneFile(basePath, mid, "ROADMAP"));
+  const summaryContent = loadSync(resolveMilestoneFile(basePath, mid, "SUMMARY"));
+  const roadmap = roadmapContent ? parseRoadmap(roadmapContent) : null;
+  const summary = summaryContent ? parseSummary(summaryContent) : null;
+  const summaryTerminal = summaryContent != null && isTerminalMilestoneSummaryContent(summaryContent);
+  const parked = resolveMilestoneFile(basePath, mid, "PARKED") !== null;
+
+  return {
+    id: mid,
+    title: roadmap
+      ? stripMilestonePrefix(roadmap.title)
+      : (contextContent || draftContent)
+        ? extractContextTitle(contextContent || draftContent, mid)
+        : (summary?.title || mid),
+    status: parked ? "parked" : summaryTerminal ? "complete" : "active",
+    depends_on: parseContextDependsOn(contextContent ?? draftContent),
+  };
+}
+
 /**
  * Derive GSD state from the milestones/slices/tasks DB tables.
  * Flag files (PARKED, VALIDATION, CONTINUE, REPLAN, REPLAN-TRIGGER, CONTEXT-DRAFT)
@@ -342,7 +420,7 @@ function reconcileDiskToDb(basePath: string): MilestoneRow[] {
   let synced = false;
   for (const diskId of diskIds) {
     if (!dbIdSet.has(diskId) && !isGhostMilestone(basePath, diskId)) {
-      insertMilestone({ id: diskId, status: 'active' });
+      insertMilestone(diskMilestoneInsert(basePath, diskId));
       synced = true;
     }
   }
@@ -677,32 +755,12 @@ function resolveSliceDependencies(activeMilestoneSlices: SliceRow[]): { activeSl
     }
   }
 
-  let bestFallback: SliceRow | null = null;
-  let bestFallbackSatisfied = -1;
-
   for (const s of activeMilestoneSlices) {
     if (isStatusDone(s.status)) continue;
     if (isDeferredStatus(s.status)) continue;
     if (s.depends.every(dep => doneSliceIds.has(dep))) {
       return { activeSlice: { id: s.id, title: s.title }, activeSliceRow: s };
     }
-    const satisfied = s.depends.filter(dep => doneSliceIds.has(dep)).length;
-    if (satisfied > bestFallbackSatisfied || (satisfied === bestFallbackSatisfied && !bestFallback)) {
-      bestFallback = s;
-      bestFallbackSatisfied = satisfied;
-    }
-  }
-
-  if (bestFallback) {
-    const unmet = bestFallback.depends.filter(dep => !doneSliceIds.has(dep));
-    logWarning(
-      "state",
-      `No slice has all deps satisfied — falling back to ${bestFallback.id} ` +
-        `(${bestFallbackSatisfied}/${bestFallback.depends.length} deps met, ` +
-        `unmet: ${unmet.join(", ")})`,
-      { mid: activeMilestoneSlices[0]?.milestone_id, sid: bestFallback.id },
-    );
-    return { activeSlice: { id: bestFallback.id, title: bestFallback.title }, activeSliceRow: bestFallback };
   }
 
   return { activeSlice: null, activeSliceRow: null };
@@ -716,14 +774,19 @@ async function reconcileSliceTasks(
 ): Promise<TaskRow[]> {
   let tasks = getSliceTasks(milestoneId, sliceId);
 
-  if (tasks.length === 0 && planFile) {
+  // #3600/#4974: import missing plan-file tasks even when the DB already has
+  // a partial task set. Existing DB task statuses stay authoritative.
+  if (planFile) {
     try {
       const planContent = await loadFile(planFile);
       if (planContent) {
         const diskPlan = parsePlan(planContent);
         if (diskPlan.tasks.length > 0) {
+          const dbTaskIds = new Set(tasks.map(t => t.id));
+          let inserted = 0;
           for (let i = 0; i < diskPlan.tasks.length; i++) {
             const t = diskPlan.tasks[i];
+            if (dbTaskIds.has(t.id)) continue;
             try {
               insertTask({
                 id: t.id,
@@ -733,12 +796,15 @@ async function reconcileSliceTasks(
                 status: t.done ? 'complete' : 'pending',
                 sequence: i + 1,
               });
+              inserted++;
             } catch (insertErr) {
               logWarning("reconcile", `failed to insert task ${t.id} from plan file: ${insertErr instanceof Error ? insertErr.message : String(insertErr)}`);
             }
           }
-          tasks = getSliceTasks(milestoneId, sliceId);
-          logWarning("reconcile", `imported ${tasks.length} tasks from plan file for ${milestoneId}/${sliceId} — DB was empty (#3600)`, { mid: milestoneId, sid: sliceId });
+          if (inserted > 0) {
+            tasks = getSliceTasks(milestoneId, sliceId);
+            logWarning("reconcile", `imported ${inserted} missing task(s) from plan file for ${milestoneId}/${sliceId}`, { mid: milestoneId, sid: sliceId });
+          }
         }
       }
     } catch (err) {
@@ -1569,31 +1635,12 @@ export async function _deriveStateImpl(basePath: string): Promise<GSDState> {
       };
     }
   } else {
-    let bestFallbackLegacy: { id: string; title: string; depends: string[] } | null = null;
-    let bestFallbackLegacySatisfied = -1;
-
     for (const s of activeRoadmap.slices) {
       if (s.done) continue;
       if (s.depends.every(dep => doneSliceIds.has(dep))) {
         activeSlice = { id: s.id, title: s.title };
         break;
       }
-      const satisfied = s.depends.filter(dep => doneSliceIds.has(dep)).length;
-      if (satisfied > bestFallbackLegacySatisfied) {
-        bestFallbackLegacy = s;
-        bestFallbackLegacySatisfied = satisfied;
-      }
-    }
-
-    if (!activeSlice && bestFallbackLegacy) {
-      const unmet = bestFallbackLegacy.depends.filter(dep => !doneSliceIds.has(dep));
-      logWarning(
-        "state",
-        `No slice has all deps satisfied — falling back to ${bestFallbackLegacy.id} ` +
-          `(${bestFallbackLegacySatisfied}/${bestFallbackLegacy.depends.length} deps met, ` +
-          `unmet: ${unmet.join(", ")})`,
-      );
-      activeSlice = { id: bestFallbackLegacy.id, title: bestFallbackLegacy.title };
     }
   }
 
