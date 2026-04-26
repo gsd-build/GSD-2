@@ -98,13 +98,15 @@ export function readGitBranch(projectRoot: string): string {
 }
 
 /**
- * Read MCP server names from .mcp.json or .gsd/mcp.json.
+ * Read MCP server names from .mcp.json, .gsd/mcp.json, and the global
+ * ~/.gsd/mcp.json (or $GSD_HOME/mcp.json).
  * Returns array of server name strings.
  */
 export function readMcpServerNames(projectRoot: string): string[] {
   const configPaths = [
     join(projectRoot, ".mcp.json"),
     join(projectRoot, ".gsd", "mcp.json"),
+    join(process.env.GSD_HOME || join(homedir(), ".gsd"), "mcp.json"),
   ];
   const names: string[] = [];
   const seen = new Set<string>();

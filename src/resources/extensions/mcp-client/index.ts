@@ -2,7 +2,8 @@
  * MCP Client Extension — Native MCP server integration for pi
  *
  * Provides on-demand access to MCP servers configured in project files
- * (.mcp.json, .gsd/mcp.json) using the @modelcontextprotocol/sdk Client
+ * (.mcp.json, .gsd/mcp.json) and the global ~/.gsd/mcp.json (or
+ * $GSD_HOME/mcp.json) using the @modelcontextprotocol/sdk Client
  * directly — no external CLI dependency required.
  *
  * Three tools:
@@ -24,6 +25,7 @@ import { Client } from "@modelcontextprotocol/sdk/client";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { readFileSync, existsSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { buildHttpTransportOpts } from "./auth.js";
 import type { McpHttpAuthConfig } from "./auth.js";
@@ -102,6 +104,7 @@ function readConfigs(): McpServerConfig[] {
 	const configPaths = [
 		join(process.cwd(), ".mcp.json"),
 		join(process.cwd(), ".gsd", "mcp.json"),
+		join(process.env.GSD_HOME || join(homedir(), ".gsd"), "mcp.json"),
 	];
 
 	for (const configPath of configPaths) {
@@ -321,7 +324,7 @@ async function closeAll(): Promise<void> {
 // ─── Formatters ───────────────────────────────────────────────────────────────
 
 function formatServerList(servers: McpServerConfig[]): string {
-	if (servers.length === 0) return "No MCP servers configured. Add servers to .mcp.json or .gsd/mcp.json.";
+	if (servers.length === 0) return "No MCP servers configured. Add servers to .mcp.json, .gsd/mcp.json, or $GSD_HOME/mcp.json (default: ~/.gsd/mcp.json).";
 
 	const lines: string[] = [`${servers.length} MCP servers configured:\n`];
 
@@ -384,7 +387,7 @@ export default function (pi: ExtensionAPI) {
 		name: "mcp_servers",
 		label: "MCP Servers",
 		description:
-			"List all available MCP servers configured in project files (.mcp.json, .gsd/mcp.json). " +
+			"List all available MCP servers configured in project files (.mcp.json, .gsd/mcp.json) or globally ($GSD_HOME/mcp.json, default: ~/.gsd/mcp.json). " +
 			"Shows server names, transport type, and connection status. Use mcp_discover to get full tool schemas for a server.",
 		promptSnippet:
 			"List available MCP servers from project configuration",
