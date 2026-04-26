@@ -55,6 +55,19 @@ export interface BuildSystemPromptOptions {
 	 * exception and the session stays consistent.
 	 */
 	skillFilter?: (skill: Skill) => boolean;
+	/**
+	 * Append a `Current date and time: <toLocaleString>` line to the system
+	 * prompt. Default: `false`.
+	 *
+	 * Anthropic prompt caching matches on byte-for-byte prefix equality.
+	 * Embedding a per-call timestamp in the system prompt invalidates the
+	 * cache on every request, forcing a full re-write that costs *more*
+	 * than an uncached call (cache-write premium). Most agentic flows do
+	 * not need wall-clock awareness in the system prompt — opt in only
+	 * when the consumer genuinely needs it (e.g. a clock-sensitive agent),
+	 * and inject it via a non-cached channel (user message) when possible.
+	 */
+	includeDateTime?: boolean;
 }
 
 /** Build the system prompt with tools, guidelines, and context */
@@ -69,20 +82,25 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 		contextFiles: providedContextFiles,
 		skills: providedSkills,
 		skillFilter,
+		includeDateTime = false,
 	} = options;
 	const resolvedCwd = toPosixPath(cwd ?? process.cwd());
 
-	const now = new Date();
-	const dateTime = now.toLocaleString("en-US", {
-		weekday: "long",
-		year: "numeric",
-		month: "long",
-		day: "numeric",
-		hour: "2-digit",
-		minute: "2-digit",
-		second: "2-digit",
-		timeZoneName: "short",
-	});
+	// Per-call timestamps invalidate Anthropic prompt caching (the cache
+	// matches on byte-for-byte prefix equality). Compute lazily and only
+	// when explicitly opted in via `includeDateTime`.
+	const dateTimeLine = includeDateTime
+		? `\nCurrent date and time: ${new Date().toLocaleString("en-US", {
+			weekday: "long",
+			year: "numeric",
+			month: "long",
+			day: "numeric",
+			hour: "2-digit",
+			minute: "2-digit",
+			second: "2-digit",
+			timeZoneName: "short",
+		})}`
+		: "";
 
 	const appendSection = appendSystemPrompt ? `\n\n${appendSystemPrompt}` : "";
 
@@ -124,8 +142,8 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 			prompt += formatSkillsForPrompt(skills);
 		}
 
-		// Add date/time and working directory last
-		prompt += `\nCurrent date and time: ${dateTime}`;
+		// Add date/time (only when opted in — see includeDateTime docs) and working directory last
+		prompt += dateTimeLine;
 		prompt += `\nCurrent working directory: ${resolvedCwd}`;
 
 		// Append promptGuidelines from extension-registered tools.
@@ -272,8 +290,8 @@ Pi documentation (read only when the user asks about pi itself, its SDK, extensi
 		prompt += formatSkillsForPrompt(skills);
 	}
 
-	// Add date/time and working directory last
-	prompt += `\nCurrent date and time: ${dateTime}`;
+	// Add date/time (only when opted in — see includeDateTime docs) and working directory last
+	prompt += dateTimeLine;
 	prompt += `\nCurrent working directory: ${resolvedCwd}`;
 
 	return prompt;

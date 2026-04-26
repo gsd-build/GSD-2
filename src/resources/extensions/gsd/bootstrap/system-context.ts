@@ -207,7 +207,14 @@ export async function buildBeforeAgentStartResult(
     ? `\n\n## Subagent Model\n\nWhen spawning subagents via the \`subagent\` tool, always pass \`model: "${subagentModelConfig.primary}"\` in the tool call parameters. Never omit this — always specify it explicitly.`
     : "";
 
-  const fullSystem = `${event.systemPrompt}\n\n[SYSTEM CONTEXT — GSD]\n\n${systemContent}${preferenceBlock}${knowledgeBlock}${codebaseBlock}${memoryBlock}${newSkillsBlock}${worktreeBlock}${subagentModelBlock}`;
+  // memoryBlock is FTS-queried against the user prompt and changes per call.
+  // Removing it from `fullSystem` keeps the system-prompt cache breakpoint
+  // stable across calls — the only scoped goal of this fix. The pi-ai
+  // Anthropic adapter additionally cache-marks the last user turn, so the
+  // memoryBlock injected via the context message may itself be cached up to
+  // that boundary; that's orthogonal and unchanged from prior behavior. The
+  // load-bearing win here is preserving the system+tools cache hit. (#5019)
+  const fullSystem = `${event.systemPrompt}\n\n[SYSTEM CONTEXT — GSD]\n\n${systemContent}${preferenceBlock}${knowledgeBlock}${codebaseBlock}${newSkillsBlock}${worktreeBlock}${subagentModelBlock}`;
 
   stopContextTimer({
     systemPromptSize: fullSystem.length,
@@ -216,17 +223,41 @@ export async function buildBeforeAgentStartResult(
     hasNewSkills: newSkillsBlock.length > 0,
   });
 
-  // Determine which context message to inject (guided execute takes priority)
-  const contextMessage = injection
-    ? { customType: "gsd-guided-context", content: injection, display: false as const }
-    : forensicsInjection
-      ? { customType: "gsd-forensics", content: forensicsInjection, display: false as const }
-      : null;
+  const contextMessage = buildContextMessage({ memoryBlock, injection, forensicsInjection });
 
   return {
     systemPrompt: fullSystem,
     ...(contextMessage ? { message: contextMessage } : {}),
   };
+}
+
+/**
+ * Route the per-call dynamic blocks (memory, guided-execute, forensics) into a
+ * single user-message context payload so they ride the volatile suffix instead
+ * of the cached system prefix. Priority when both memory and an injection are
+ * present: guided > forensics > memory-only. (#5019)
+ *
+ * Exported for direct unit testing — the surrounding bootstrap has too many
+ * filesystem and DB dependencies to exercise this routing logic in-place.
+ */
+export function buildContextMessage(opts: {
+  memoryBlock: string;
+  injection: string | null;
+  forensicsInjection: string | null;
+}): { customType: string; content: string; display: false } | null {
+  const memoryContent = opts.memoryBlock.trim();
+  if (opts.injection) {
+    const content = memoryContent ? `${memoryContent}\n\n${opts.injection}` : opts.injection;
+    return { customType: "gsd-guided-context", content, display: false as const };
+  }
+  if (opts.forensicsInjection) {
+    const content = memoryContent ? `${memoryContent}\n\n${opts.forensicsInjection}` : opts.forensicsInjection;
+    return { customType: "gsd-forensics", content, display: false as const };
+  }
+  if (memoryContent) {
+    return { customType: "gsd-memory", content: memoryContent, display: false as const };
+  }
+  return null;
 }
 
 /**
