@@ -105,6 +105,21 @@ export interface GitPreferences {
 
 export const VALID_BRANCH_NAME = /^[a-zA-Z0-9_\-\/.]+$/;
 
+export function isMilestoneBranchName(branch: string): boolean {
+  return branch.startsWith("milestone/");
+}
+
+export function isValidIntegrationBranchName(branch: string): boolean {
+  const trimmed = branch.trim();
+  if (trimmed === "") return false;
+  if (!VALID_BRANCH_NAME.test(trimmed)) return false;
+  if (SLICE_BRANCH_RE.test(trimmed)) return false;
+  if (QUICK_BRANCH_RE.test(trimmed)) return false;
+  if (WORKFLOW_BRANCH_RE.test(trimmed)) return false;
+  if (isMilestoneBranchName(trimmed)) return false;
+  return true;
+}
+
 export interface CommitOptions {
   message: string;
   allowEmpty?: boolean;
@@ -263,7 +278,7 @@ export function readIntegrationBranch(basePath: string, milestoneId: string): st
     if (!existsSync(metaFile)) return null;
     const data = JSON.parse(readFileSync(metaFile, "utf-8"));
     const branch = data?.integrationBranch;
-    if (typeof branch === "string" && branch.trim() !== "" && VALID_BRANCH_NAME.test(branch)) {
+    if (typeof branch === "string" && isValidIntegrationBranchName(branch)) {
       return branch;
     }
     return null;
@@ -290,18 +305,9 @@ export function writeIntegrationBranch(
   milestoneId: string,
   branch: string,
 ): void {
-  // Don't record slice branches as the integration target
-  if (SLICE_BRANCH_RE.test(branch)) return;
-  // Don't record quick-task branches — they are ephemeral and merge back
-  // to their origin branch on completion. Recording one as the integration
-  // target causes milestone merges to land on the wrong branch (#1293).
-  if (QUICK_BRANCH_RE.test(branch)) return;
-  // Don't record workflow-template branches (hotfix, bugfix, spike, etc.) —
-  // same root cause as quick-task branches (#2498). All templates create
-  // gsd/<templateId>/<slug> branches that are ephemeral.
-  if (WORKFLOW_BRANCH_RE.test(branch)) return;
-  // Validate
-  if (!VALID_BRANCH_NAME.test(branch)) return;
+  // Don't record ephemeral GSD branches or milestone branches as integration
+  // targets. Milestone branches are outputs of auto-mode, not safe merge bases.
+  if (!isValidIntegrationBranchName(branch)) return;
   // Skip if already recorded with the same branch (idempotent across restarts).
   // If recorded with a different branch, update it — the user started auto-mode
   // from a new branch and expects slices to merge back there (#300).
@@ -365,7 +371,7 @@ export function resolveMilestoneIntegrationBranch(
     };
   }
 
-  const configuredBranch = prefs.main_branch && VALID_BRANCH_NAME.test(prefs.main_branch)
+  const configuredBranch = prefs.main_branch && isValidIntegrationBranchName(prefs.main_branch)
     ? prefs.main_branch
     : null;
 
@@ -389,7 +395,7 @@ export function resolveMilestoneIntegrationBranch(
 
   try {
     const detectedBranch = nativeDetectMainBranch(basePath);
-    if (detectedBranch && VALID_BRANCH_NAME.test(detectedBranch) && nativeBranchExists(basePath, detectedBranch)) {
+    if (detectedBranch && isValidIntegrationBranchName(detectedBranch) && nativeBranchExists(basePath, detectedBranch)) {
       return {
         recordedBranch,
         effectiveBranch: detectedBranch,
@@ -816,7 +822,7 @@ export class GitServiceImpl {
    */
   getMainBranch(): string {
     // Explicit preference takes priority (double-check validity as defense-in-depth)
-    if (this.prefs.main_branch && VALID_BRANCH_NAME.test(this.prefs.main_branch)) {
+    if (this.prefs.main_branch && isValidIntegrationBranchName(this.prefs.main_branch)) {
       return this.prefs.main_branch;
     }
 

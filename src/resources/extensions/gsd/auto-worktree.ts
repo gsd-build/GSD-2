@@ -46,7 +46,12 @@ import {
   resolveGitHeadPath,
   nudgeGitBranchCache,
 } from "./worktree.js";
-import { MergeConflictError, readIntegrationBranch, RUNTIME_EXCLUSION_PATHS } from "./git-service.js";
+import {
+  MergeConflictError,
+  isValidIntegrationBranchName,
+  resolveMilestoneIntegrationBranch,
+  RUNTIME_EXCLUSION_PATHS,
+} from "./git-service.js";
 import { debugLog } from "./debug-logger.js";
 import { logWarning, logError } from "./workflow-logger.js";
 import { loadEffectiveGSDPreferences } from "./preferences.js";
@@ -990,6 +995,39 @@ export function autoWorktreeBranch(milestoneId: string): string {
   return `milestone/${milestoneId}`;
 }
 
+function resolveSafeIntegrationStartPoint(
+  basePath: string,
+  milestoneId: string,
+  gitPrefs = loadEffectiveGSDPreferences()?.preferences?.git ?? {},
+): string {
+  const resolved = resolveMilestoneIntegrationBranch(basePath, milestoneId, gitPrefs);
+  if (resolved.effectiveBranch) return resolved.effectiveBranch;
+
+  const prefBranch = gitPrefs.main_branch;
+  if (
+    prefBranch &&
+    isValidIntegrationBranchName(prefBranch) &&
+    nativeBranchExists(basePath, prefBranch)
+  ) {
+    return prefBranch;
+  }
+
+  const detectedBranch = nativeDetectMainBranch(basePath);
+  if (
+    detectedBranch &&
+    isValidIntegrationBranchName(detectedBranch) &&
+    nativeBranchExists(basePath, detectedBranch)
+  ) {
+    return detectedBranch;
+  }
+
+  throw new GSDError(
+    GSD_GIT_ERROR,
+    `Cannot resolve a safe integration branch for milestone ${milestoneId}. ` +
+      `Milestone branches cannot be used as integration targets; set git.main_branch to a real branch and retry.`,
+  );
+}
+
 // ─── Branch-mode Entry ─────────────────────────────────────────────────────
 
 /**
@@ -1013,23 +1051,7 @@ export function enterBranchModeForMilestone(
 
   if (!branchExists) {
     // Create the milestone branch from the integration branch start-point.
-    const integrationBranch =
-      readIntegrationBranch(basePath, milestoneId) ?? undefined;
-    const gitPrefs = loadEffectiveGSDPreferences()?.preferences?.git;
-    // Validate main_branch preference exists in the repo before using it —
-    // a stale preference (e.g. "master" when repo uses "main") would cause
-    // nativeBranchForceReset to fail with a bad start-point reference.
-    const validatedPrefBranch =
-      gitPrefs?.main_branch &&
-      typeof gitPrefs.main_branch === "string" &&
-      gitPrefs.main_branch.length > 0 &&
-      nativeBranchExists(basePath, gitPrefs.main_branch)
-        ? gitPrefs.main_branch
-        : undefined;
-    const startPoint =
-      integrationBranch ??
-      validatedPrefBranch ??
-      nativeDetectMainBranch(basePath);
+    const startPoint = resolveSafeIntegrationStartPoint(basePath, milestoneId);
 
     // TOCTOU ancestry guard (Issue #4980 HIGH-3).
     //
@@ -1229,10 +1251,7 @@ export function createAutoWorktree(
     //   3. nativeDetectMainBranch (origin/HEAD auto-detection)
     // Without tier 2, projects with main_branch=dev but origin/HEAD→master
     // would fork worktrees from the wrong (stale) branch.
-    const integrationBranch =
-      readIntegrationBranch(basePath, milestoneId) ?? undefined;
-    const gitPrefs = loadEffectiveGSDPreferences()?.preferences?.git;
-    const startPoint = integrationBranch ?? gitPrefs?.main_branch ?? undefined;
+    const startPoint = resolveSafeIntegrationStartPoint(basePath, milestoneId);
     info = createWorktree(basePath, milestoneId, {
       branch,
       startPoint,
@@ -1559,6 +1578,25 @@ function autoCommitDirtyState(cwd: string): boolean {
   }
 }
 
+function verifyNoopMergePostcondition(
+  basePath: string,
+  mainBranch: string,
+  milestoneBranch: string,
+): void {
+  const numstat = nativeDiffNumstat(basePath, mainBranch, milestoneBranch);
+  const codeChanges = numstat.filter(
+    (entry) => !entry.path.startsWith(".gsd/"),
+  );
+  if (codeChanges.length > 0) {
+    throw new GSDError(
+      GSD_GIT_ERROR,
+      `Squash merge produced nothing to commit but milestone branch "${milestoneBranch}" ` +
+        `has ${codeChanges.length} code file(s) not on "${mainBranch}". ` +
+        `Aborting worktree teardown to prevent data loss.`,
+    );
+  }
+}
+
 /**
  * Squash-merge the milestone branch into main with a rich commit message
  * listing all completed slices, then tear down the worktree.
@@ -1654,17 +1692,16 @@ export function mergeMilestoneToMain(
   //    "main": repos using "master" or a custom default branch would fail at
   //    checkout and leave the user with a broken merge state (#1668).
   const prefs = loadEffectiveGSDPreferences()?.preferences?.git ?? {};
-  const integrationBranch = readIntegrationBranch(
-    originalBasePath_,
-    milestoneId,
-  );
-  // Validate prefs.main_branch exists before using it — a stale preference
-  // (e.g. "master" when repo uses "main") causes merge failure (#3589).
-  const validatedPrefBranch = prefs.main_branch && nativeBranchExists(originalBasePath_, prefs.main_branch)
-    ? prefs.main_branch
-    : undefined;
-  const mainBranch =
-    integrationBranch ?? validatedPrefBranch ?? nativeDetectMainBranch(originalBasePath_);
+  const mainBranch = resolveSafeIntegrationStartPoint(originalBasePath_, milestoneId, prefs);
+
+  if (mainBranch === milestoneBranch) {
+    process.chdir(previousCwd);
+    throw new GSDError(
+      GSD_GIT_ERROR,
+      `Resolved integration branch "${mainBranch}" is the same as milestone branch "${milestoneBranch}". ` +
+        `Refusing to merge a milestone branch into itself. Repair the milestone integration branch metadata or git.main_branch before retrying.`,
+    );
+  }
 
   // Remove transient project-root state files before any branch or merge
   // operation. Untracked milestone metadata can otherwise block squash merges.
@@ -2139,23 +2176,11 @@ export function mergeMilestoneToMain(
   // Compare only non-.gsd/ paths — .gsd/ state files diverge normally and
   // are auto-resolved during the squash merge.
   if (nothingToCommit) {
-    const numstat = nativeDiffNumstat(
-      originalBasePath_,
-      mainBranch,
-      milestoneBranch,
-    );
-    const codeChanges = numstat.filter(
-      (entry) => !entry.path.startsWith(".gsd/"),
-    );
-    if (codeChanges.length > 0) {
-      // Milestone has unanchored code changes — abort teardown.
+    try {
+      verifyNoopMergePostcondition(originalBasePath_, mainBranch, milestoneBranch);
+    } catch (err) {
       process.chdir(previousCwd);
-      throw new GSDError(
-        GSD_GIT_ERROR,
-        `Squash merge produced nothing to commit but milestone branch "${milestoneBranch}" ` +
-          `has ${codeChanges.length} code file(s) not on "${mainBranch}". ` +
-          `Aborting worktree teardown to prevent data loss.`,
-      );
+      throw err;
     }
   }
 

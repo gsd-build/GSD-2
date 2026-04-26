@@ -42,12 +42,12 @@ describe('projectRoot cwd crash guard (#3598)', () => {
 
 describe('main_branch nativeBranchExists validation (#3589)', () => {
   test('prefs.main_branch is validated with nativeBranchExists', () => {
-    assert.match(worktreeSource, /nativeBranchExists\(.*prefs\.main_branch\)/,
+    assert.match(worktreeSource, /isValidIntegrationBranchName\(prefBranch\)[\s\S]*nativeBranchExists\(basePath,\s*prefBranch\)/,
       'nativeBranchExists should validate prefs.main_branch');
   });
 
-  test('validatedPrefBranch falls back to undefined when branch missing', () => {
-    assert.match(worktreeSource, /validatedPrefBranch[\s\S]*?:\s*undefined/,
-      'validatedPrefBranch should fall back to undefined');
+  test('missing or unsafe main_branch falls through to detected branch', () => {
+    assert.match(worktreeSource, /const detectedBranch = nativeDetectMainBranch\(basePath\)/,
+      'unsafe main_branch should fall through to detected branch');
   });
 });

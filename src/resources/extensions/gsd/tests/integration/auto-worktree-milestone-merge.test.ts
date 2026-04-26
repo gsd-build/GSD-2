@@ -220,6 +220,32 @@ describe("auto-worktree-milestone-merge", { timeout: 300_000 }, () => {
     assert.strictEqual(mainLog.split("\n").length, 1, "main still has only init commit");
   });
 
+  test("refuses when integration branch resolves to milestone branch (#5024)", () => {
+    const repo = freshRepo();
+    run("git branch -M milestone/M502", repo);
+    writeFileSync(join(repo, "self-merge.ts"), "export const guarded = true;\n");
+    run("git add .", repo);
+    run('git commit -m "add self merge guard fixture"', repo);
+    process.chdir(repo);
+
+    const roadmap = makeRoadmap("M502", "Self merge guard", [
+      { id: "S01", title: "Self merge guard" },
+    ]);
+
+    let threw = false;
+    let errMsg = "";
+    try {
+      mergeMilestoneToMain(repo, "M502", roadmap);
+    } catch (err) {
+      threw = true;
+      errMsg = err instanceof Error ? err.message : String(err);
+    }
+
+    assert.ok(threw, "throws when integration branch is the milestone branch");
+    assert.match(errMsg, /safe integration branch|same as milestone branch/, "error explains invalid self-merge target");
+    assert.ok(run("git branch", repo).includes("milestone/M502"), "milestone branch is preserved");
+  });
+
   test("auto-push with bare remote", () => {
     const repo = freshRepo();
 
