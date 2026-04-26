@@ -203,7 +203,7 @@ interface StateCache {
   timestamp: number;
 }
 
-const CACHE_TTL_MS = 100;
+const CACHE_TTL_MS = 5000;
 let _stateCache: StateCache | null = null;
 
 // ── Telemetry counters for derive-path observability ────────────────────────
