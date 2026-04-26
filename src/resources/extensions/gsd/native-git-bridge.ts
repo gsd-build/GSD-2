@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { GSDError, GSD_GIT_ERROR } from "./errors.js";
 import { GIT_NO_PROMPT_ENV } from "./git-constants.js";
 import { getErrorMessage } from "./error-utils.js";
+import { isInfrastructureError } from "./auto/infra-errors.js";
 
 // Issue #453: keep auto-mode bookkeeping on the stable git CLI path unless a
 // caller explicitly opts into the native helper.
@@ -846,6 +847,10 @@ export function nativeAddAllWithExclusions(basePath: string, exclusions: readonl
     });
   } catch (err: unknown) {
     const stderr = (err as { stderr?: string })?.stderr ?? "";
+    const infraCode = isInfrastructureError(err) ?? isInfrastructureError(stderr);
+    if (infraCode) {
+      throw err;
+    }
     // git exits 1 when pathspec exclusions reference paths already covered
     // by .gitignore. The staging itself succeeds — only suppress that case.
     if (stderr.includes("ignored by one of your .gitignore files")) {
@@ -860,7 +865,8 @@ export function nativeAddAllWithExclusions(basePath: string, exclusions: readonl
       fallbackStageWithSymlinkedDotGsd(basePath);
       return;
     }
-    throw new GSDError(GSD_GIT_ERROR, `git add -A with exclusions failed in ${basePath}: ${getErrorMessage(err)}`);
+    const stderrDetail = stderr.trim() ? `; stderr: ${stderr.trim()}` : "";
+    throw new GSDError(GSD_GIT_ERROR, `git add -A with exclusions failed in ${basePath}: ${getErrorMessage(err)}${stderrDetail}`);
   }
 }
 

@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execSync } from "node:child_process";
-import { runTurnGitAction } from "../git-service.ts";
+import { handleTurnGitActionError, runTurnGitAction } from "../git-service.ts";
 
 function run(cmd: string, cwd: string): string {
   return execSync(cmd, { cwd, stdio: "pipe", encoding: "utf-8" }).trim();
@@ -82,4 +82,18 @@ test("uok gitops turn action commit creates commit with unit trailer", () => {
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }
+});
+
+test("uok gitops turn action rethrows infrastructure failures", () => {
+  const err = Object.assign(new Error("ENFILE: file table overflow"), { code: "ENFILE" });
+
+  assert.throws(() => handleTurnGitActionError("commit", err), (thrown) => thrown === err);
+});
+
+test("uok gitops turn action keeps non-infrastructure git failures recoverable", () => {
+  const result = handleTurnGitActionError("commit", new Error("nothing to commit"));
+
+  assert.equal(result.action, "commit");
+  assert.equal(result.status, "failed");
+  assert.equal(result.error, "nothing to commit");
 });

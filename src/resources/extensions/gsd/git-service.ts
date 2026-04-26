@@ -38,6 +38,7 @@ import {
 } from "./native-git-bridge.js";
 import { GSDError, GSD_MERGE_CONFLICT, GSD_GIT_ERROR } from "./errors.js";
 import { getErrorMessage } from "./error-utils.js";
+import { isInfrastructureError } from "./auto/infra-errors.js";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -991,6 +992,17 @@ function buildTurnSnapshotLabel(unitType: string, unitId: string): string {
     .replace(/^[-/]+|[-/]+$/g, "") || "turn";
 }
 
+export function handleTurnGitActionError(action: TurnGitActionMode, err: unknown): TurnGitActionResult {
+  if (isInfrastructureError(err)) {
+    throw err;
+  }
+  return {
+    action,
+    status: "failed",
+    error: getErrorMessage(err),
+  };
+}
+
 export function runTurnGitAction(args: {
   basePath: string;
   action: TurnGitActionMode;
@@ -1029,11 +1041,7 @@ export function runTurnGitAction(args: {
       dirty: nativeHasChanges(args.basePath),
     };
   } catch (err) {
-    return {
-      action: args.action,
-      status: "failed",
-      error: getErrorMessage(err),
-    };
+    return handleTurnGitActionError(args.action, err);
   }
 }
 
