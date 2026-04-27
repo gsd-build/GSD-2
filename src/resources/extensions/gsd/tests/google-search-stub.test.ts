@@ -11,26 +11,23 @@ test("google-search stub: default export is a function", async (_t) => {
   assert.equal(typeof stubFn, "function");
 });
 
-test("google-search stub: registers session_start handler", async (_t) => {
-  // STUB-01: stub calls pi.on("session_start", ...)
+test("google-search stub: registers no event handlers", async (_t) => {
+  // STUB-01: deprecation notice is suppressed — stub must not call pi.on() at all
   const mod = await import("../../google-search/index.ts");
   const stubFn = mod.default;
 
-  let capturedEvent: string | undefined;
-  let capturedHandler: unknown;
+  let onCallCount = 0;
 
   const mockPi = {
-    on(event: string, handler: unknown) {
-      capturedEvent = event;
-      capturedHandler = handler;
+    on(_event: string, _handler: unknown) {
+      onCallCount++;
     },
     registerTool: () => {},
   };
 
   stubFn(mockPi as never);
 
-  assert.equal(capturedEvent, "session_start");
-  assert.equal(typeof capturedHandler, "function");
+  assert.equal(onCallCount, 0, "stub should not register any event handlers");
 });
 
 test("google-search stub: does NOT call registerTool", async (_t) => {
@@ -50,82 +47,45 @@ test("google-search stub: does NOT call registerTool", async (_t) => {
   assert.equal(registerToolCalled, false);
 });
 
-test("google-search stub: session_start warning contains package name", async (_t) => {
-  // STUB-01: warning includes @gsd-extensions/google-search
+test("google-search stub: does not emit any notifications", async (_t) => {
+  // STUB-01: deprecation notice is suppressed — stub must not call ctx.ui.notify()
   const mod = await import("../../google-search/index.ts");
   const stubFn = mod.default;
 
-  let capturedHandler: ((event: unknown, ctx: unknown) => Promise<void>) | undefined;
+  let notifyCallCount = 0;
 
   const mockPi = {
-    on(_event: string, handler: (event: unknown, ctx: unknown) => Promise<void>) {
-      capturedHandler = handler;
-    },
+    on(_event: string, _handler: unknown) {},
     registerTool: () => {},
   };
 
+  // Verify no notify is emitted by the stub itself (it registers no handlers,
+  // so there is nothing to invoke — this simply confirms no top-level notify call).
   stubFn(mockPi as never);
 
-  assert.ok(capturedHandler, "session_start handler should have been registered");
-
-  let capturedMessage: string | undefined;
-  const mockCtx = {
-    ui: {
-      notify(message: string, _level: string) {
-        capturedMessage = message;
-      },
-    },
-  };
-
-  await capturedHandler!({}, mockCtx);
-
-  assert.ok(
-    capturedMessage?.includes("@gsd-extensions/google-search"),
-    `Expected message to include "@gsd-extensions/google-search", got: "${capturedMessage}"`,
-  );
+  assert.equal(notifyCallCount, 0, "stub should not emit any notifications");
 });
 
-test("google-search stub: session_start warning explains package is not yet published", async (_t) => {
-  // STUB-01: stub must NOT advise `gsd extensions install` — the replacement
-  // package is not yet on npm, so that command would 404. The message must
-  // explain the extraction is in progress and no user action is required.
+test("google-search stub: is a complete no-op (no handlers, no tools, no notifications)", async (_t) => {
+  // STUB-01: the deprecation notice is suppressed until @gsd-extensions/google-search
+  // ships. The stub must call nothing on the ExtensionAPI.
   const mod = await import("../../google-search/index.ts");
   const stubFn = mod.default;
 
-  let capturedHandler: ((event: unknown, ctx: unknown) => Promise<void>) | undefined;
+  let onCallCount = 0;
+  let registerToolCallCount = 0;
 
   const mockPi = {
-    on(_event: string, handler: (event: unknown, ctx: unknown) => Promise<void>) {
-      capturedHandler = handler;
+    on(_event: string, _handler: unknown) {
+      onCallCount++;
     },
-    registerTool: () => {},
+    registerTool: () => {
+      registerToolCallCount++;
+    },
   };
 
   stubFn(mockPi as never);
 
-  assert.ok(capturedHandler, "session_start handler should have been registered");
-
-  let capturedMessage: string | undefined;
-  const mockCtx = {
-    ui: {
-      notify(message: string, _level: string) {
-        capturedMessage = message;
-      },
-    },
-  };
-
-  await capturedHandler!({}, mockCtx);
-
-  assert.ok(
-    !capturedMessage?.includes("gsd extensions install"),
-    `Expected message NOT to include unpublished install command, got: "${capturedMessage}"`,
-  );
-  assert.ok(
-    capturedMessage?.includes("not yet published"),
-    `Expected message to include "not yet published", got: "${capturedMessage}"`,
-  );
-  assert.ok(
-    capturedMessage?.includes("No action needed"),
-    `Expected message to include "No action needed", got: "${capturedMessage}"`,
-  );
+  assert.equal(onCallCount, 0, "stub should not register any event handlers");
+  assert.equal(registerToolCallCount, 0, "stub should not register any tools");
 });

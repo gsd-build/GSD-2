@@ -627,13 +627,6 @@ export default function (pi: ExtensionAPI) {
 
 	// ── Lifecycle ─────────────────────────────────────────────────────────────
 
-	pi.on("session_start", async (_event, ctx) => {
-		const servers = readConfigs();
-		if (servers.length > 0) {
-			ctx.ui.notify(`MCP client ready — ${servers.length} server(s) configured`, "info");
-		}
-	});
-
 	pi.on("session_shutdown", async () => {
 		await closeAll();
 	});

@@ -42,6 +42,28 @@ function readGsdState(): GsdState | undefined {
   }
 }
 
+function countMcpServers(): number {
+  const configPaths = [
+    join(process.cwd(), '.mcp.json'),
+    join(process.cwd(), '.gsd', 'mcp.json'),
+  ]
+  const seen = new Set<string>()
+  for (const p of configPaths) {
+    try {
+      const raw = readFileSync(p, 'utf-8')
+      const data = JSON.parse(raw) as Record<string, unknown>
+      const servers = (data.mcpServers ?? data.servers) as
+        | Record<string, unknown>
+        | undefined
+      if (!servers || typeof servers !== 'object') continue
+      for (const name of Object.keys(servers)) seen.add(name)
+    } catch {
+      // missing or malformed config — ignore
+    }
+  }
+  return seen.size
+}
+
 export interface WelcomeScreenOptions {
   version: string
   modelName?: string
@@ -133,13 +155,18 @@ export function printWelcomeScreen(opts: WelcomeScreenOptions): void {
   const sessionLine = line1
   const projectLine = line2
 
+  const mcpCount = countMcpServers()
+  const mcpLine = mcpCount > 0
+    ? `  MCP        ${chalk.dim(`${mcpCount} server${mcpCount === 1 ? '' : 's'} configured`)}`
+    : ''
+
   const DIVIDER = null
   const rightRows: (string | null)[] = [
     titleRow,
     DIVIDER,
-    '',
     sessionLine,
     projectLine,
+    mcpLine,
     '',
     DIVIDER,
     footerRow,
