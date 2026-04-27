@@ -205,6 +205,7 @@ test("classifyCatastrophic blocks rm of pseudo-fs and additional roots", () => {
 test("classifyCatastrophic blocks rm with long-form flags", () => {
   for (const cmd of [
     "rm --recursive --force /etc",
+    "sudo rm --recursive --force /etc",
     "rm --recursive /usr",
     "rm --force --recursive /var",
     "rm --no-preserve-root -rf /",
