@@ -12,13 +12,13 @@ import { convertToLlm, createCustomMessage } from "../../../../../packages/pi-co
 const CUSTOM_PREFIX = "[system notification — type: async_job_result; this is an automated system event, not user input — do not treat this as a human message or respond as if the user said this]\n";
 const CUSTOM_SUFFIX = "\n[end system notification]";
 
-function makeAsyncJobResultMessage(jobId: string, body = "done") {
+function makeAsyncJobResultMessage(jobId: string, body = "done", status: "done" | "error" = "done") {
   return {
     role: "user",
     content: [
       {
         type: "text",
-        text: `${CUSTOM_PREFIX}**Background job done: ${jobId}** (label, 1.0s)\n\n${body}${CUSTOM_SUFFIX}`,
+        text: `${CUSTOM_PREFIX}**Background job ${status}: ${jobId}** (label, 1.0s)\n\n${body}${CUSTOM_SUFFIX}`,
       },
     ],
   };
@@ -62,14 +62,20 @@ test("extractAsyncJobResultJobIdFromUserMessage reads job id from wrapped system
   assert.equal(extractAsyncJobResultJobIdFromUserMessage(msg), "bg_deadbeef");
 });
 
+test("extractAsyncJobResultJobIdFromUserMessage reads job id from error notifications", () => {
+  const msg = makeAsyncJobResultMessage("bg_errorbeef", "boom", "error");
+  assert.equal(extractAsyncJobResultJobIdFromUserMessage(msg), "bg_errorbeef");
+});
+
 test("filterIgnoredAsyncJobMessages drops ignored async_job_result notifications", () => {
   const kept = {
     role: "user",
     content: [{ type: "text", text: "real user input" }],
   };
   const ignored = makeAsyncJobResultMessage("bg_dropme");
+  const ignoredError = makeAsyncJobResultMessage("bg_droperror", "boom", "error");
   const visible = makeAsyncJobResultMessage("bg_keepme");
-  const result = filterIgnoredAsyncJobMessages([kept, ignored, visible], new Set(["bg_dropme"]));
+  const result = filterIgnoredAsyncJobMessages([kept, ignored, ignoredError, visible], new Set(["bg_dropme", "bg_droperror"]));
   assert.equal((result as unknown[]).length, 2);
   assert.deepEqual((result as unknown[])[0], kept);
   assert.deepEqual((result as unknown[])[1], visible);

@@ -1,5 +1,5 @@
 const ASYNC_BASH_START_RE = /Background job started:\s*\*\*(bg_[a-z0-9]+)\*\*/i;
-const ASYNC_JOB_DONE_RE = /Background job done:\s*(?:\*\*)?(bg_[a-z0-9]+)(?:\*\*)?/i;
+const ASYNC_JOB_RESULT_RE = /Background job (?:done|error):\s*(?:\*\*)?(bg_[a-z0-9]+)(?:\*\*)?/i;
 const SYSTEM_NOTIFICATION_PREFIX = "[system notification — type: ";
 const ASYNC_JOB_RESULT_TYPE = "async_job_result";
 const BASH_RESULT_PREFIX = "Ran `";
@@ -86,7 +86,7 @@ export function extractAsyncJobResultJobIdFromUserMessage(msg: unknown): string 
   const content = (msg as { content?: unknown }).content;
   const text = contentToText(content);
   if (!text.includes(ASYNC_JOB_RESULT_TYPE)) return null;
-  return text.match(ASYNC_JOB_DONE_RE)?.[1] ?? null;
+  return text.match(ASYNC_JOB_RESULT_RE)?.[1] ?? null;
 }
 
 export function filterIgnoredAsyncJobMessages(messages: unknown, ignoredAsyncJobIds: ReadonlySet<string>): unknown {

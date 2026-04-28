@@ -632,9 +632,8 @@ export function ignoreAsyncJobsForUnitExecution(
       action: "cancel_or_ignore",
       jobIds,
     });
-  } catch {
-    // Best-effort bridge into async-jobs extension; local ignore set still
-    // blocks late completions from expanding model context if unavailable.
+  } catch (err) {
+    logWarning("engine", `async job cleanup bridge emit failed: ${err instanceof Error ? err.message : String(err)}`, { file: "auto.ts" });
   }
 
   return ignored;
