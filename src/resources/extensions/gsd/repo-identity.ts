@@ -11,6 +11,8 @@ import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
+import { findNearestGsdProjectRoot, gitRelativeProjectPath } from "./project-boundary.js";
+import { canonicalizeExistingPath } from "./path-utils.js";
 
 const gsdHome = process.env.GSD_HOME || join(homedir(), ".gsd");
 
@@ -123,6 +125,11 @@ export function isInheritedRepo(basePath: string): boolean {
     const normalizedRoot = canonicalizeExistingPath(root);
     if (normalizedBase === normalizedRoot) return false; // basePath IS the root
 
+    // A real project-local .gsd directory at basePath is an explicit project
+    // boundary inside a larger repository. Bootstrap-created .gsd symlinks do
+    // not suppress inherited detection; existing startup flows rely on that.
+    if (isRealProjectGsdDirectory(join(normalizedBase, ".gsd"))) return false;
+
     // The git root is a proper ancestor. Check whether it already has .gsd
     // (i.e. the parent project was initialised with GSD).
     if (isProjectGsd(join(root, ".gsd"))) return false;
@@ -181,6 +188,29 @@ function isProjectGsd(gsdPath: string): boolean {
   return false;
 }
 
+/**
+ * Return true when `gsdPath` is a durable local project boundary directory.
+ *
+ * Unlike `isProjectGsd()`, this deliberately excludes symlinks because a
+ * temporary or external `.gsd` symlink at `basePath` does not prove the Git
+ * repository itself is project-local.
+ */
+function isRealProjectGsdDirectory(gsdPath: string): boolean {
+  if (!existsSync(gsdPath)) return false;
+
+  try {
+    const stat = lstatSync(gsdPath);
+    if (!stat.isDirectory()) return false;
+
+    const currentGsdHome = process.env.GSD_HOME || join(homedir(), ".gsd");
+    const normalizedGsdPath = canonicalizeExistingPath(gsdPath);
+    const normalizedGsdHome = canonicalizeExistingPath(currentGsdHome);
+    return normalizedGsdPath !== normalizedGsdHome;
+  } catch {
+    return false;
+  }
+}
+
 // ─── Repo Identity ──────────────────────────────────────────────────────────
 
 /**
@@ -197,19 +227,6 @@ function getRemoteUrl(basePath: string): string {
     }).trim();
   } catch {
     return "";
-  }
-}
-
-/**
- * Resolve the git toplevel (real root) for the given path.
- * For worktrees this returns the main repo root, not the worktree path.
- */
-function canonicalizeExistingPath(path: string): string {
-  try {
-    // Use native realpath on Windows to resolve 8.3 short paths (e.g. RUNNER~1)
-    return process.platform === "win32" ? realpathSync.native(path) : realpathSync(path);
-  } catch {
-    return resolve(path);
   }
 }
 
@@ -291,13 +308,27 @@ export function repoIdentity(basePath: string): string {
     return projectId;
   }
   const remoteUrl = getRemoteUrl(basePath);
+  const root = resolveGitRoot(basePath);
+  if (!isInsideWorktree(basePath)) {
+    const explicitProjectRoot = findNearestGsdProjectRoot(basePath);
+    if (explicitProjectRoot) {
+      const normalizedProject = canonicalizeExistingPath(explicitProjectRoot);
+      const normalizedRoot = canonicalizeExistingPath(root);
+      if (normalizedProject !== normalizedRoot) {
+        const projectPath = gitRelativeProjectPath(normalizedProject, normalizedRoot);
+        const input = remoteUrl
+          ? `${remoteUrl}\n${projectPath}`
+          : `${normalizedRoot}\n${projectPath}`;
+        return createHash("sha256").update(input).digest("hex").slice(0, 12);
+      }
+    }
+  }
   if (remoteUrl) {
     // Remote URL alone uniquely identifies the repo — path is redundant.
     // This makes moves transparent for repos with remotes (#2750).
     return createHash("sha256").update(remoteUrl).digest("hex").slice(0, 12);
   }
   // Local-only repo: include git root since there's no remote to anchor identity.
-  const root = resolveGitRoot(basePath);
   const input = `\n${root}`;
   return createHash("sha256").update(input).digest("hex").slice(0, 12);
 }
@@ -506,6 +537,7 @@ function ensureGsdSymlinkCore(projectPath: string): string {
   const externalPath = resolveExternalPathWithRecovery(projectPath);
   const localGsd = join(projectPath, ".gsd");
   const inWorktree = isInsideWorktree(projectPath);
+  const hasLocalProjectGsd = isProjectGsd(localGsd);
 
   // Guard: Never create a symlink at ~/.gsd — that's the user-level GSD home,
   // not a project .gsd. This can happen if resolveProjectRoot() or
@@ -521,7 +553,7 @@ function ensureGsdSymlinkCore(projectPath: string): string {
   // symlink in the subdirectory — that causes `.gsd 2` collision variants on
   // macOS (#2380). Worktrees are excluded because they legitimately need their
   // own .gsd symlink pointing at the shared external state dir.
-  if (!inWorktree) {
+  if (!inWorktree && !hasLocalProjectGsd) {
     try {
       const gitRoot = resolveGitRoot(projectPath);
       const normalizedProject = canonicalizeExistingPath(projectPath);

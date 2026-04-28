@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { findNearestGsdProjectRoot } from "./project-boundary.js";
 
 export interface WorktreeSegment {
   gsdIdx: number;
@@ -69,7 +70,9 @@ export function resolveWorktreeProjectRoot(
 function resolveProjectRootFromPath(path: string): string {
   const normalizedPath = path.replaceAll("\\", "/");
   const segment = findWorktreeSegment(normalizedPath);
-  if (!segment) return resolveGitWorkingTreeRoot(path) ?? path;
+  if (!segment) {
+    return findNearestGsdProjectRoot(path) ?? resolveGitWorkingTreeRoot(path) ?? path;
+  }
 
   const sepChar = path.includes("\\") ? "\\" : "/";
   const gsdMarker = `${sepChar}.gsd${sepChar}`;

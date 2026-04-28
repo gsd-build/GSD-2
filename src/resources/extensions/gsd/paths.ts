@@ -14,6 +14,7 @@ import { join, dirname, normalize } from "node:path";
 import { spawnSync } from "node:child_process";
 import { nativeScanGsdTree, type GsdTreeEntry } from "./native-parser-bridge.js";
 import { DIR_CACHE_MAX } from "./constants.js";
+import { findNearestGsdProjectRoot, isProjectGsdBoundary } from "./project-boundary.js";
 
 // ─── Directory Listing Cache ──────────────────────────────────────────────────
 
@@ -293,10 +294,11 @@ export function _clearGsdRootCache(): void {
  * Resolve the `.gsd` directory for a given project base path.
  *
  * Probe order:
- *   1. basePath/.gsd         — fast path (common case)
- *   2. git rev-parse root    — handles cwd-is-a-subdirectory
- *   3. Walk up from basePath — handles moved .gsd in an ancestor (bounded by git root)
- *   4. basePath/.gsd         — creation fallback (init scenario)
+ *   1. basePath/.gsd              — fast path (common case)
+ *   2. nearest ancestor .gsd      — explicit monorepo subproject boundary
+ *   3. git rev-parse root         — handles cwd-is-a-subdirectory
+ *   4. Walk up from basePath      — handles moved .gsd in an ancestor (bounded by git root)
+ *   5. basePath/.gsd              — creation fallback (init scenario)
  *
  * Result is cached per basePath for the process lifetime.
  */
@@ -361,7 +363,12 @@ function probeGsdRoot(rawBasePath: string): string {
   // Also check the resolved path for the worktree pattern (macOS /tmp → /private/tmp)
   if (basePath !== rawBasePath && isInsideGsdWorktree(basePath)) return local;
 
-  // 2. Git root anchor — used as both probe target and walk-up boundary
+  // 2. Explicit project boundary — monorepo subprojects can own their own
+  //    `.gsd/` directory without requiring a nested Git repository.
+  const projectRoot = findNearestGsdProjectRoot(basePath);
+  if (projectRoot) return join(projectRoot, ".gsd");
+
+  // 3. Git root anchor — used as both probe target and walk-up boundary
   //    Only walk if we're inside a git project — prevents escaping into
   //    unrelated filesystem territory when running outside any repo.
   let gitRoot: string | null = null;
@@ -378,22 +385,22 @@ function probeGsdRoot(rawBasePath: string): string {
 
   if (gitRoot) {
     const candidate = join(gitRoot, ".gsd");
-    if (existsSync(candidate)) return candidate;
+    if (isProjectGsdBoundary(candidate)) return candidate;
   }
 
-  // 3. Walk up from basePath to the git root (only if we are in a subdirectory)
+  // 4. Walk up from basePath to the git root (only if we are in a subdirectory)
   if (gitRoot && basePath !== gitRoot) {
     let cur = dirname(basePath);
     while (cur !== basePath) {
       const candidate = join(cur, ".gsd");
-      if (existsSync(candidate)) return candidate;
+      if (isProjectGsdBoundary(candidate)) return candidate;
       if (cur === gitRoot) break;
       basePath = cur;
       cur = dirname(cur);
     }
   }
 
-  // 4. Fallback for init/creation
+  // 5. Fallback for init/creation
   return local;
 }
 export function milestonesDir(basePath: string): string {

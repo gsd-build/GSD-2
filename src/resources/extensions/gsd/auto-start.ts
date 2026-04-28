@@ -435,7 +435,8 @@ export async function bootstrapAutoSession(
     // where isInheritedRepo() returns a false negative, e.g. stale .gsd at
     // the parent git root). See #2393 and related issue.
     const hasLocalGit = existsSync(join(base, ".git"));
-    if (!hasLocalGit || isInheritedRepo(base)) {
+    const hasLocalProjectGsd = existsSync(join(base, ".gsd"));
+    if ((!hasLocalGit && !hasLocalProjectGsd) || isInheritedRepo(base)) {
       const mainBranch =
         loadEffectiveGSDPreferences(base)?.preferences?.git?.main_branch || "main";
       nativeInit(base, mainBranch);
