@@ -150,7 +150,8 @@ export async function handleAutoCommand(trimmed: string, ctx: ExtensionCommandCo
 
   if (trimmed === "") {
     if (!(await guardRemoteSession(ctx, pi))) return true;
-    startAutoDetached(ctx, pi, projectRoot(), false, { step: true });
+    const { showSmartLauncher } = await import("../../smart-launcher.js");
+    await showSmartLauncher(ctx, pi, projectRoot());
     return true;
   }
 
