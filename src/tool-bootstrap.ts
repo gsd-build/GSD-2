@@ -118,28 +118,6 @@ function provisionTool(targetDir: string, tool: ManagedTool, sourcePath: string)
   return targetPath;
 }
 
-/**
- * Check whether a file path looks like a pixi/conda trampoline shim.
- * These are small PE32+ executables (~436KB) that delegate to a real binary
- * via a sibling `trampoline_configuration/<name>.json` file. Copying the
- * shim alone breaks it because the configuration directory is left behind.
- */
-function isPixiTrampolineShim(filePath: string): boolean {
-  if (process.platform !== "win32") return false;
-  try {
-    const stat = lstatSync(filePath);
-    // Pixi trampoline shims are ~436KB. Real ripgrep/fd binaries are >2MB.
-    // Use a generous upper bound to catch variations without false positives.
-    if (stat.size > 100 && stat.size < 1_500_000) {
-      const dir = join(filePath, "..", "trampoline_configuration");
-      return existsSync(dir);
-    }
-  } catch {
-    // Ignore stat errors
-  }
-  return false;
-}
-
 export function ensureManagedTools(targetDir: string, pathValue: string | undefined = process.env.PATH): string[] {
   const provisioned: string[] = [];
 
@@ -149,12 +127,12 @@ export function ensureManagedTools(targetDir: string, pathValue: string | undefi
     const sourcePath = resolveToolFromPath(tool, pathValue);
     if (!sourcePath) continue;
 
-    // On Windows, pixi/conda package managers use trampoline shims that
-    // require a sibling trampoline_configuration/ directory. Copying or
-    // symlinking just the shim breaks it. Since resolveToolFromPath()
-    // already proved the tool works on PATH, skip provisioning — the
-    // managed bin dir's PATH entry (from getShellEnv) will find it anyway.
-    if (isPixiTrampolineShim(sourcePath)) continue;
+    // On Windows, symlinks require elevated privileges and many package
+    // managers (pixi, conda) use proxy shims that break when copied alone.
+    // Since resolveToolFromPath() already proved the tool is on PATH and
+    // getShellEnv() preserves the full PATH, provisioning is unnecessary —
+    // child processes will find the tool via the system PATH entries.
+    if (process.platform === "win32") continue;
 
     provisioned.push(provisionTool(targetDir, tool, sourcePath));
   }
