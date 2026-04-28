@@ -8,9 +8,15 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { resolveThinkingLevel } from "../thinking-policy.ts";
 import type { ThinkingPolicyConfig } from "../preferences-types.ts";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const gsdDir = join(__dirname, "..");
 
 test("resolveThinkingLevel: exact unitType match wins over prefix", () => {
   const policy: ThinkingPolicyConfig = {
@@ -125,6 +131,45 @@ test("validatePreferences: rejects invalid level value", async () => {
   assert.ok(
     errors.some((e) => e.includes("thinking_policy.default")),
     `expected default-level error, got: ${JSON.stringify(errors)}`,
+  );
+});
+
+// ─── Auto-mode wiring (source-level checks) ───────────────────────────
+// These assert the policy is actually invoked from the dispatch path
+// without requiring the full dependency graph at test runtime.
+
+test("auto-model-selection resolves thinking_policy and prefers user start-level as fallback", () => {
+  const src = readFileSync(join(gsdDir, "auto-model-selection.ts"), "utf-8");
+  assert.ok(
+    src.includes('from "./thinking-policy.js"'),
+    "auto-model-selection.ts should import the policy resolver",
+  );
+  assert.ok(
+    src.includes("resolveThinkingLevel(unitType, policy"),
+    "auto-model-selection.ts should call resolveThinkingLevel(unitType, policy, fallback)",
+  );
+  assert.ok(
+    src.includes("autoModeStartThinkingLevel ?? \"medium\""),
+    "fallback for resolveThinkingLevel should be the user's start snapshot",
+  );
+  assert.ok(
+    !src.includes("reapplyThinkingLevel(pi, autoModeStartThinkingLevel)"),
+    "auto-model-selection.ts should no longer pass autoModeStartThinkingLevel directly to reapply (it now passes effectiveThinkingLevel)",
+  );
+  assert.ok(
+    src.includes("reapplyThinkingLevel(pi, effectiveThinkingLevel)"),
+    "reapplyThinkingLevel should be called with the policy-resolved level",
+  );
+});
+
+test("auto-model-selection skips policy resolution in interactive (non-auto) mode", () => {
+  const src = readFileSync(join(gsdDir, "auto-model-selection.ts"), "utf-8");
+  // Interactive/guided dispatches must use the user's session level as-is —
+  // dynamic routing is already gated this way (#3962); thinking_policy follows
+  // the same convention.
+  assert.ok(
+    src.includes("if (!isAutoMode) return autoModeStartThinkingLevel"),
+    "thinking_policy should be a no-op in interactive mode",
   );
 });
 
