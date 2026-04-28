@@ -1,13 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 import type { GSDState } from "../types.ts";
 import {
   buildSmartLauncherModel,
   type SmartLauncherFacts,
 } from "../smart-launcher.ts";
+import { handleAutoCommand } from "../commands/handlers/auto.ts";
 
 function state(overrides: Partial<GSDState>): GSDState {
   return {
@@ -120,20 +122,31 @@ test("smart launcher suppresses quick and mutation-heavy choices while auto-mode
   assert.deepEqual(actionIds(model), ["status", "stop"]);
 });
 
-test("bare /gsd routes through the smart launcher while /gsd next keeps direct step mode", () => {
-  const autoHandlerSource = readFileSync(
-    join(import.meta.dirname, "..", "commands", "handlers", "auto.ts"),
-    "utf-8",
-  );
+test("bare /gsd opens the smart launcher wizard", async (t) => {
+  const previousCwd = process.cwd();
+  const base = mkdtempSync(join(tmpdir(), "gsd-smart-launcher-route-"));
+  t.after(() => {
+    process.chdir(previousCwd);
+    rmSync(base, { recursive: true, force: true });
+  });
 
-  assert.match(
-    autoHandlerSource,
-    /if\s*\(\s*trimmed\s*===\s*""\s*\)\s*\{[\s\S]*showSmartLauncher\(/,
-    "bare /gsd should call showSmartLauncher",
-  );
-  assert.match(
-    autoHandlerSource,
-    /trimmed\s*===\s*"next"[\s\S]*startAutoDetached\(ctx,\s*pi,\s*projectRoot\(\),\s*verboseMode,\s*\{[\s\S]*step:\s*true/s,
-    "/gsd next should still start step mode directly",
-  );
+  process.chdir(base);
+  const prompts: string[] = [];
+  const notifications: string[] = [];
+  const ctx = {
+    ui: {
+      custom: async () => undefined,
+      select: async (title: string, labels: string[]) => {
+        prompts.push(title);
+        return labels[labels.length - 1];
+      },
+      notify: (message: string) => notifications.push(message),
+    },
+  };
+
+  const handled = await handleAutoCommand("", ctx as any, {} as any);
+
+  assert.equal(handled, true);
+  assert.deepEqual(prompts, ["GSD — Start Here"]);
+  assert.deepEqual(notifications, []);
 });
