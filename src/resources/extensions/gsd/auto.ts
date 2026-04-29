@@ -373,10 +373,7 @@ export function startAutoDetached(
 
 /** Returns true if the project is configured for `isolation:worktree` mode. */
 export function shouldUseWorktreeIsolation(basePath?: string): boolean {
-  const prefs = loadEffectiveGSDPreferences(basePath)?.preferences?.git;
-  if (prefs?.isolation === "worktree") return true;
-  // Default is false — worktree isolation requires explicit opt-in
-  return false;
+  return getIsolationMode(basePath) === "worktree";
 }
 
 /** Crash recovery prompt — set by startAuto, consumed by the main loop */
