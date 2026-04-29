@@ -62,7 +62,7 @@ import { validateFileChanges } from "./safety/file-change-validator.js";
 import { validateContent } from "./safety/content-validator.js";
 import { resolveSafetyHarnessConfig } from "./safety/safety-harness.js";
 import { resolveExpectedArtifactPath as resolveArtifactForContent } from "./auto-artifact-paths.js";
-import { loadEffectiveGSDPreferences } from "./preferences.js";
+import { getIsolationMode, loadEffectiveGSDPreferences } from "./preferences.js";
 import { getSliceTasks } from "./gsd-db.js";
 import { runPreExecutionChecks, type PreExecutionResult } from "./pre-execution-checks.js";
 import { writePreExecutionEvidence, type PreExecutionCheckJSON } from "./verification-evidence.js";
@@ -650,7 +650,7 @@ export async function postUnitPreVerification(pctx: PostUnitContext, opts?: PreV
         const prefs = prefsResult?.preferences;
         const { getCollapseCadence, mergeSliceToMain } = await import("./slice-cadence.js");
         if (getCollapseCadence(prefs) !== "slice") return;
-        if (prefs?.git?.isolation !== "worktree") return;
+        if (getIsolationMode(s.basePath) !== "worktree") return;
         if (s.isolationDegraded) return;
 
         const projectRoot = s.originalBasePath || s.basePath;

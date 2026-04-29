@@ -112,6 +112,11 @@ test('worktree isolation is disabled for an unborn repo until the first commit',
     "worktree",
     "worktree isolation should re-enable once the repo has a committed HEAD",
   );
+  assert.deepStrictEqual(
+    shouldUseWorktreeIsolation(repo),
+    true,
+    "worktree-specific gates should re-enable once the repo has a committed HEAD",
+  );
 });
 
 // Test 4: shouldUseWorktreeIsolation returns false for no prefs (default: none)
