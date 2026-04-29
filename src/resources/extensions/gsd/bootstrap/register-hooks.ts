@@ -344,7 +344,12 @@ export function registerHooks(
       `${unitType}${unitId ? ` ${unitId}` : ""} is waiting for your approval - pausing before more tool calls run.`,
       "info",
     );
-    ctx.abort();
+    // The pending gate set above blocks subsequent non-read-only tool calls
+    // via the tool_call hook below, so we do not abort the in-flight stream.
+    // Aborting mid-stream eats the model's question text on external CLI
+    // providers (Claude Code SDK) because lastTextContent isn't populated
+    // from in-flight builder state — the user only ever sees "Claude Code
+    // stream aborted by caller" instead of the question.
   });
 
   pi.on("session_shutdown", async (_event, ctx: ExtensionContext) => {
