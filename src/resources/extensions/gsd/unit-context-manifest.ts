@@ -381,7 +381,11 @@ export const UNIT_MANIFESTS: Record<UnitType, UnitContextManifest> = {
     memory: "prompt-relevant",
     codebaseMap: false,
     preferences: "active-only",
-    tools: TOOLS_PLANNING,
+    // planning-dispatch: validation is a verification-fan-out unit. It reads
+    // the milestone surface and dispatches reviewer/security/tester subagents
+    // to report findings without touching user source. Mirrors
+    // complete-milestone's policy. Write isolation to .gsd/ is preserved.
+    tools: TOOLS_PLANNING_DISPATCH_REVIEW,
     artifacts: {
       inline: ["roadmap", "slice-summary", "slice-uat", "requirements", "decisions", "templates"],
       excerpt: [],

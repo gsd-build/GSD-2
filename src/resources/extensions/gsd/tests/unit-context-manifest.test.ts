@@ -231,6 +231,7 @@ test('planning-dispatch mode is reserved for slice-level decomposition and compl
     "refine-slice",
     "complete-slice",
     "complete-milestone",
+    "validate-milestone",
   ]);
   for (const [unitType, manifest] of Object.entries(UNIT_MANIFESTS)) {
     const mode = (manifest as { tools: { mode: string } }).tools.mode;
