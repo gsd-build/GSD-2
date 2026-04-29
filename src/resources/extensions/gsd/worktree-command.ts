@@ -16,6 +16,7 @@ import { autoCommitCurrentBranch, getMainBranch, resolveGitHeadPath, nudgeGitBra
 import { runWorktreePostCreateHook } from "./auto-worktree.js";
 import { showConfirm } from "../shared/tui.js";
 import { gsdRoot, milestonesDir } from "./paths.js";
+import { MILESTONE_ID_PREFIX_RE } from "./id-patterns.js";
 import {
   createWorktree,
   listWorktrees,
@@ -265,7 +266,7 @@ function hasExistingMilestones(wtPath: string): boolean {
   if (!existsSync(mDir)) return false;
   try {
     const entries = readdirSync(mDir, { withFileTypes: true })
-      .filter(d => d.isDirectory() && /^M\d+(?:-[a-z0-9]{6})?/.test(d.name));
+      .filter(d => d.isDirectory() && MILESTONE_ID_PREFIX_RE.test(d.name));
     return entries.length > 0;
   } catch {
     return false;

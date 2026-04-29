@@ -35,6 +35,7 @@ import {
 } from './paths.js';
 
 import { findMilestoneIds } from './milestone-ids.js';
+import { MILESTONE_TITLE_STRIP_RE } from './id-patterns.js';
 import { loadQueueOrder, sortByQueueOrder } from './queue-order.js';
 import { isClosedStatus, isDeferredStatus } from './status-guards.js';
 import { nativeBatchParseGsdFiles, type BatchParsedFile } from './native-parser-bridge.js';
@@ -352,7 +353,7 @@ export async function deriveState(basePath: string): Promise<GSDState> {
  * Used by both DB and filesystem paths for consistency.
  */
 function stripMilestonePrefix(title: string): string {
-  return title.replace(/^M\d+(?:-[a-z0-9]{6})?[^:]*:\s*/, '') || title;
+  return title.replace(MILESTONE_TITLE_STRIP_RE, '') || title;
 }
 
 function extractContextTitle(content: string | null, fallback: string): string {

@@ -11,6 +11,7 @@ import { readdirSync, existsSync } from "node:fs";
 import { milestonesDir } from "./paths.js";
 import { loadQueueOrder, sortByQueueOrder } from "./queue-order.js";
 import { getErrorMessage } from "./error-utils.js";
+import { MILESTONE_ID_DIR_RE } from "./id-patterns.js";
 
 // ─── Regex ──────────────────────────────────────────────────────────────────
 
@@ -118,7 +119,7 @@ export function findMilestoneIds(basePath: string): string[] {
     const ids = readdirSync(dir, { withFileTypes: true })
       .filter((d) => d.isDirectory())
       .map((d) => {
-        const match = d.name.match(/^(M\d+(?:-[a-z0-9]{6})?)/);
+        const match = d.name.match(MILESTONE_ID_DIR_RE);
         return match ? match[1] : null;
       })
       .filter((id): id is string => id !== null);

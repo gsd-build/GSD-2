@@ -9,14 +9,9 @@
  * copies — a bug in the real regex would not fail those tests. See
  * #4835.
  *
- * This rewrite imports every production pattern it exercises. Four
- * call sites whose regexes are inline at the use site (state.ts:313
- * title-strip, workspace-index.ts:80 title extraction, worktree-
- * command.ts hasExistingMilestones, and the prompt dispatch regexes
- * in index.ts) are intentionally NOT reimplemented here — they should
- * be covered by behaviour tests of their parent functions, not by
- * regex-copy assertions. A follow-up issue tracks extracting those
- * regexes to a shared patterns module so they can be tested directly.
+ * Per #4864, the previously-inline regexes are now centralised in
+ * `id-patterns.ts` and re-tested here against the real production
+ * exports.
  */
 
 import test from "node:test";
@@ -29,6 +24,13 @@ import {
 } from "../guided-flow.ts";
 import { SLICE_BRANCH_RE } from "../worktree.ts";
 import { MILESTONE_CONTEXT_RE } from "../bootstrap/write-gate.ts";
+import {
+  MILESTONE_ID_DIR_RE,
+  MILESTONE_ID_PREFIX_RE,
+  MILESTONE_TITLE_STRIP_RE,
+  EXECUTE_DISPATCH_RE,
+  RESUME_DISPATCH_RE,
+} from "../id-patterns.ts";
 
 // ─── MILESTONE_ID_RE ──────────────────────────────────────────────────────
 
@@ -158,4 +160,100 @@ test("milestoneIdSort preserves input order for same-sequence ids", () => {
   const sorted = [...sameSeq].sort(milestoneIdSort);
   assert.equal(sorted[0], "M001-abc123");
   assert.equal(sorted[1], "M001");
+});
+
+// ─── MILESTONE_ID_DIR_RE ──────────────────────────────────────────────────
+
+test("MILESTONE_ID_DIR_RE captures the milestone ID prefix from a directory entry", () => {
+  for (const { input, expect } of [
+    { input: "M001", expect: "M001" },
+    { input: "M001-abc123", expect: "M001-abc123" },
+    { input: "M042-extra-tokens", expect: "M042" },
+  ]) {
+    const m = input.match(MILESTONE_ID_DIR_RE);
+    assert.ok(m, `should match ${input}`);
+    assert.equal(m?.[1], expect);
+  }
+});
+
+test("MILESTONE_ID_DIR_RE rejects entries that do not start with a milestone ID", () => {
+  assert.equal("notes".match(MILESTONE_ID_DIR_RE), null);
+  assert.equal(".DS_Store".match(MILESTONE_ID_DIR_RE), null);
+  assert.equal("S01".match(MILESTONE_ID_DIR_RE), null);
+});
+
+// ─── MILESTONE_ID_PREFIX_RE ───────────────────────────────────────────────
+
+test("MILESTONE_ID_PREFIX_RE matches both legacy and unique formats", () => {
+  assert.ok(MILESTONE_ID_PREFIX_RE.test("M001"));
+  assert.ok(MILESTONE_ID_PREFIX_RE.test("M001-abc123"));
+  assert.ok(MILESTONE_ID_PREFIX_RE.test("M042-extra"));
+});
+
+test("MILESTONE_ID_PREFIX_RE rejects non-milestone names", () => {
+  assert.ok(!MILESTONE_ID_PREFIX_RE.test("notes"));
+  assert.ok(!MILESTONE_ID_PREFIX_RE.test(".gsd"));
+  assert.ok(!MILESTONE_ID_PREFIX_RE.test("S01"));
+});
+
+// ─── MILESTONE_TITLE_STRIP_RE ─────────────────────────────────────────────
+
+test("MILESTONE_TITLE_STRIP_RE removes legacy and unique ID prefixes", () => {
+  assert.equal(
+    "M001: Foundation".replace(MILESTONE_TITLE_STRIP_RE, ""),
+    "Foundation",
+  );
+  assert.equal(
+    "M001-abc123: Foundation".replace(MILESTONE_TITLE_STRIP_RE, ""),
+    "Foundation",
+  );
+  assert.equal(
+    "M042 - extra: Title".replace(MILESTONE_TITLE_STRIP_RE, ""),
+    "Title",
+  );
+});
+
+test("MILESTONE_TITLE_STRIP_RE leaves untagged titles intact", () => {
+  assert.equal(
+    "Just a title".replace(MILESTONE_TITLE_STRIP_RE, ""),
+    "Just a title",
+  );
+});
+
+// ─── EXECUTE_DISPATCH_RE ──────────────────────────────────────────────────
+
+test("EXECUTE_DISPATCH_RE captures task/slice/milestone for both ID formats", () => {
+  for (const { milestone } of [{ milestone: "M001" }, { milestone: "M001-abc123" }]) {
+    const prompt = `Execute the next task: T01 ("Set up DB") in slice S01 of milestone ${milestone}. Read the task plan...`;
+    const m = prompt.match(EXECUTE_DISPATCH_RE);
+    assert.ok(m, `should match for ${milestone}`);
+    assert.equal(m?.[1], "T01");
+    assert.equal(m?.[2], "Set up DB");
+    assert.equal(m?.[3], "S01");
+    assert.equal(m?.[4], milestone);
+  }
+});
+
+test("EXECUTE_DISPATCH_RE returns null for unrelated prompts", () => {
+  assert.equal("Resume interrupted work...".match(EXECUTE_DISPATCH_RE), null);
+  assert.equal("hello".match(EXECUTE_DISPATCH_RE), null);
+});
+
+// ─── RESUME_DISPATCH_RE ───────────────────────────────────────────────────
+
+test("RESUME_DISPATCH_RE captures slice/milestone for both ID formats", () => {
+  for (const { milestone } of [{ milestone: "M001" }, { milestone: "M001-abc123" }]) {
+    const prompt = `Resume interrupted work. Find the continue file in slice S01 of milestone ${milestone}, read it...`;
+    const m = prompt.match(RESUME_DISPATCH_RE);
+    assert.ok(m, `should match for ${milestone}`);
+    assert.equal(m?.[1], "S01");
+    assert.equal(m?.[2], milestone);
+  }
+});
+
+test("RESUME_DISPATCH_RE returns null for execute-style prompts", () => {
+  assert.equal(
+    "Execute the next task: T01".match(RESUME_DISPATCH_RE),
+    null,
+  );
 });

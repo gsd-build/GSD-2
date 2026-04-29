@@ -338,7 +338,7 @@ test("handles null input", () => {
 });
 ```
 
-PRs containing source-grep tests will be sent back. CI enforces this via `scripts/check-source-grep-tests.sh` (wired into the `lint` job) — it scans changed test files for `readFileSync` / `readFile` calls whose path argument points into `src/` or `packages/`. If the code under test is genuinely hard to invoke (e.g., a build script, a CLI entry point), invoke it as a subprocess and assert on its real output — not on its source text.
+PRs containing source-grep tests will be sent back. CI enforces this via `scripts/check-source-grep-tests.sh` (wired into the `lint` job) — it scans changed test files for `readFileSync` / `readFile` calls whose path argument points into `src/` or `packages/`. This applies equally to `src/tests/`, `src/tests/integration/`, `src/resources/extensions/*/tests/`, and any other test directory in the repo (#4817, #4784). If the code under test is genuinely hard to invoke (e.g., a build script, a CLI entry point), invoke it as a subprocess and assert on its real output — not on its source text. "The TUI runtime stack isn't easily instantiable in unit tests" is not a licence to source-grep — extract the behaviour-bearing logic into a pure function (see `src/runtime-checks.ts`) or add a Playwright/browser-level integration test.
 
 The narrow exception: tests that legitimately verify *file structure* as the actual product (e.g., a code generator's output, a config-file linter, a script that produces a manifest). In those cases the file contents *are* the behavior. Opt out with a same-line or preceding-line marker:
 
@@ -396,6 +396,27 @@ await done;
 ```
 
 **Opt-out marker**: `// allow-coderabbit-theme: <reason>` on the same or preceding line, same convention as `allow-source-grep:`. The reason appears in the diff.
+
+### Recurring testing antipatterns
+
+Behaviour-test umbrella issues #4789 (gsd extension) and #4784 (`src/tests/`) catalogue real bugs that slipped past tests written in one of the patterns below. Each rule below has a one-line "do this instead" — and a real working example to copy.
+
+**1. No `readFileSync(<source-file>) + .includes(...) / .match(...)` to assert code structure.** Already covered in detail above ("No source-grep tests"). Listed again here so it sits next to its siblings.
+   *Do this instead:* import the symbol and exercise it. If the code lives behind a runtime you can't instantiate, extract the pure logic — see `src/runtime-checks.ts` for the pattern.
+
+**2. No hardcoded counts that aren't part of the contract.** Asserting `assert.equal(handlers.length, 7)` couples the test to an implementation detail; the next handler addition fails the test for no behavioural reason.
+   *Do this instead:* assert the *property* you care about (e.g., `assert.ok(handlers.some(h => h.name === "auto"))` or `assert.ok(handlers.length > 0)`).
+
+**3. No magic-sleep `setTimeout(resolve, NNN)` synchronization.** Tests that wait a fixed duration are flaky on slow CI and slow on fast machines, and the number is meaningless to readers.
+   *Do this instead:* await the actual signal — a promise, an event, a poll loop with a deadline. If you genuinely need a fake clock, use `node:test`'s `t.mock.timers` or an injectable clock.
+
+**4. No pass-always `try { … } catch {}` swallow patterns in tests.** A bare catch around the assertions makes the test pass on any failure mode — including the bug you were trying to catch.
+   *Do this instead:* let assertions throw. If you expect an error, use `assert.throws` / `assert.rejects` with a specific error matcher.
+
+**5. No inline regex / constant duplication that drifts from production.** Re-declaring a production regex inside a test means a bug in the real regex never fails the test (it asserts against its own copy). See #4835 / #4864 / #4865 for the bugs this caused.
+   *Do this instead:* extract the regex (or constant) to a shared module and import it from both production and test. See `packages/pi-coding-agent/src/core/retryable-error-regex.ts` for an extracted regex with a dedicated test, and `src/resources/extensions/gsd/id-patterns.ts` for the milestone-ID pattern module added in #4864.
+
+**Opt-out marker**: `// allow-test-rule: <reason>` on the same or preceding line, same convention as `allow-source-grep:` and `allow-coderabbit-theme:`. The reason appears in the diff and is visible at review.
 
 ## Local development
 

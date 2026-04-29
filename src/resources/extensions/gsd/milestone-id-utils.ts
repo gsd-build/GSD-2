@@ -1,6 +1,7 @@
 import { readdirSync } from "node:fs";
 
 import { milestonesDir } from "./paths.js";
+import { MILESTONE_ID_DIR_RE } from "./id-patterns.js";
 
 /** Matches both classic `M001` and unique `M001-abc123` formats (anchored). */
 export const MILESTONE_ID_RE = /^M\d{3}(?:-[a-z0-9]{6})?$/;
@@ -22,7 +23,7 @@ export function findMilestoneIds(basePath: string): string[] {
     return readdirSync(dir, { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
       .map((entry) => {
-        const match = entry.name.match(/^(M\d+(?:-[a-z0-9]{6})?)/);
+        const match = entry.name.match(MILESTONE_ID_DIR_RE);
         return match ? match[1] : entry.name;
       })
       .sort(milestoneIdSort);
