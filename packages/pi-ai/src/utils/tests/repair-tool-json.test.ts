@@ -179,6 +179,22 @@ describe("repairToolJson — XML parameter tag stripping (#3403)", () => {
 		assert.equal(parsed.oneLiner, "done");
 		assert.ok(!parsed.narrative.includes("<parameter"), "narrative should not retain leaked XML");
 	});
+
+	test("promotes XML parameters with field-name closers and an unclosed trailing block", () => {
+		const malformed =
+			'{"oneLiner":"summary text.</oneLiner>\\n' +
+			'<parameter name=\\"narrative\\">long body.</narrative>\\n' +
+			'<parameter name=\\"verification\\">tests pass",' +
+			'"uatContent":"# UAT"}';
+		const repaired = repairToolJson(malformed);
+		const parsed = JSON.parse(repaired);
+
+		assert.equal(parsed.oneLiner, "summary text.");
+		assert.equal(parsed.narrative, "long body.");
+		assert.equal(parsed.verification, "tests pass");
+		assert.equal(parsed.uatContent, "# UAT");
+		assert.ok(!parsed.oneLiner.includes("<parameter"), "oneLiner should not retain leaked XML");
+	});
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
