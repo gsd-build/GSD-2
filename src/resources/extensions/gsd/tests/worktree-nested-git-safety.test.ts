@@ -19,6 +19,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { findNestedGitDirs } from "../worktree-manager.ts";
+import { _resetLogs, drainLogs, setStderrLoggingEnabled } from "../workflow-logger.ts";
 
 function makeRoot(t: { after: (fn: () => void) => void }): string {
   const dir = mkdtempSync(join(tmpdir(), "gsd-nested-git-"));
@@ -38,6 +39,29 @@ test("#2616: findNestedGitDirs detects a nested repo at the top level", (t) => {
   assert.ok(
     found.includes(scaffolded),
     `expected ${scaffolded} in findNestedGitDirs output, got ${JSON.stringify(found)}`,
+  );
+});
+
+test("#5065: findNestedGitDirs does not warn for ordinary directories without .git children", (t) => {
+  const root = makeRoot(t);
+  const previousStderrLogging = setStderrLoggingEnabled(false);
+  t.after(() => {
+    setStderrLoggingEnabled(previousStderrLogging);
+    _resetLogs();
+  });
+  _resetLogs();
+
+  mkdirSync(join(root, "app", "components"), { recursive: true });
+  mkdirSync(join(root, "packages", "api", "src"), { recursive: true });
+
+  const found = findNestedGitDirs(root);
+  const logs = drainLogs();
+
+  assert.deepEqual(found, []);
+  assert.equal(
+    logs.filter((entry) => entry.component === "worktree").length,
+    0,
+    `ordinary missing .git probes must not emit worktree warnings; got ${JSON.stringify(logs)}`,
   );
 });
 

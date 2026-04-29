@@ -462,7 +462,9 @@ export function findNestedGitDirs(rootPath: string): string[] {
           continue;
         }
       } catch (e) {
-        logWarning("worktree", `existsSync/.git check failed for ${fullPath}: ${(e as Error).message}`);
+        if ((e as NodeJS.ErrnoException).code !== "ENOENT") {
+          logWarning("worktree", `.git check failed for ${fullPath}: ${(e as Error).message}`);
+        }
       }
 
       walk(fullPath, depth + 1);
