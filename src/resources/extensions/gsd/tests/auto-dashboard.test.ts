@@ -239,6 +239,26 @@ test("last commit refresh backs off cleanly when base path is not a git repo", (
   );
 });
 
+test("last commit refresh backs off cleanly when git repo has no commits", (t) => {
+  const dir = makeTempDir("empty-git");
+  mkdirSync(dir, { recursive: true });
+  execFileSync("git", ["init", "-b", "main"], { cwd: dir, stdio: "pipe" });
+
+  t.after(() => {
+    cleanup(dir);
+    _resetLastCommitCacheForTests();
+  });
+
+  _resetLastCommitCacheForTests();
+  _refreshLastCommitForTests(dir);
+
+  assert.equal(_getLastCommitForTests(dir), null);
+  assert.ok(
+    _getLastCommitFetchedAtForTests() > 0,
+    "empty git refresh should still advance fetchedAt to avoid render-loop retries",
+  );
+});
+
 test("last commit refresh still returns commit info for a valid git repo", (t) => {
   const dir = makeTempDir("git");
   mkdirSync(dir, { recursive: true });

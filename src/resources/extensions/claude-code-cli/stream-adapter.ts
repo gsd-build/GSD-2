@@ -1289,13 +1289,13 @@ export function buildSdkOptions(
 	const { reasoning, ...sdkExtraOptions } = extraOptions;
 	const mcpServers = buildWorkflowMcpServers();
 	const permissionMode = overrides?.permissionMode ?? "bypassPermissions";
-	// Globally unblock all tools. Users reported that the `acceptEdits` default
-	// plus a narrow allowlist silently declined most Bash/Agent/WebFetch calls
-	// when `extensionUIContext` wasn't threaded through. Default to
-	// bypassPermissions and an empty disallow list so every tool — including
-	// `AskUserQuestion` and every `mcp__*` workflow tool — is auto-approved.
+	// Globally unblock the tools GSD expects Claude Code to run. When the
+	// workflow MCP server is available, prefer its `ask_user_questions` tool over
+	// Claude Code's native `AskUserQuestion`; the MCP path carries stable IDs and
+	// routes responses through the GSD elicitation bridge.
 	// Opt back into gated mode with GSD_CLAUDE_CODE_PERMISSION_MODE=acceptEdits.
-	const disallowedTools: string[] = [];
+	const workflowMcpTools = mcpServers ? Object.keys(mcpServers).map((serverName) => `mcp__${serverName}__*`) : [];
+	const disallowedTools: string[] = workflowMcpTools.length > 0 ? ["AskUserQuestion"] : [];
 	const allowedTools = [
 		"Read",
 		"Write",
@@ -1306,8 +1306,7 @@ export function buildSdkOptions(
 		"Agent",
 		"WebFetch",
 		"WebSearch",
-		"AskUserQuestion",
-		...(mcpServers ? Object.keys(mcpServers).map((serverName) => `mcp__${serverName}__*`) : []),
+		...(workflowMcpTools.length > 0 ? workflowMcpTools : ["AskUserQuestion"]),
 	];
 	const supportsAdaptive = modelSupportsAdaptiveThinking(modelId);
 	const effort =

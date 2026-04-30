@@ -20,6 +20,10 @@ describe("token-counter: getCharsPerToken", () => {
     assert.equal(getCharsPerToken("anthropic"), 3.5);
   });
 
+  it("returns 3.5 for claude-code", () => {
+    assert.equal(getCharsPerToken("claude-code"), 3.5);
+  });
+
   it("returns 4.0 for openai", () => {
     assert.equal(getCharsPerToken("openai"), 4.0);
   });
@@ -48,6 +52,11 @@ describe("token-counter: estimateTokensForProvider", () => {
 
   it("estimates tokens for anthropic using 3.5 chars/token ratio", () => {
     const tokens = estimateTokensForProvider(sampleText, "anthropic");
+    assert.equal(tokens, Math.ceil(1000 / 3.5));
+  });
+
+  it("estimates tokens for claude-code using 3.5 chars/token ratio", () => {
+    const tokens = estimateTokensForProvider(sampleText, "claude-code");
     assert.equal(tokens, Math.ceil(1000 / 3.5));
   });
 

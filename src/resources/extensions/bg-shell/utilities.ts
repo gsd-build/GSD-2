@@ -35,6 +35,7 @@ export function restoreWindowsVTInput(): void {
 // ── Time Formatting ────────────────────────────────────────────────────────
 
 import { formatDuration } from "../shared/mod.js";
+import { homedir } from "node:os";
 
 export const formatUptime = formatDuration;
 
@@ -58,7 +59,7 @@ export function getBgShellLiveCwd(
 		return getCwd();
 	} catch {
 		const projectRoot = deriveProjectRootFromAutoWorktree(cachedCwd);
-		const home = process.env.HOME || process.env.USERPROFILE;
+		const home = homedir();
 		const fallbacks = [projectRoot, cachedCwd, home, "/"].filter(
 			(candidate): candidate is string => Boolean(candidate),
 		);

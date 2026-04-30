@@ -33,16 +33,21 @@ describe("_buildImportCandidates", () => {
     );
   });
 
-  it("returns original path first", () => {
+  it("returns source TypeScript before stale JavaScript fallbacks", () => {
     const input = "../../../src/resources/extensions/gsd/db-writer.js";
     const candidates = _buildImportCandidates(input);
-    assert.equal(candidates[0], input, "first candidate should be the original path");
+    assert.deepEqual(candidates, [
+      "../../../src/resources/extensions/gsd/db-writer.ts",
+      "../../../src/resources/extensions/gsd/db-writer.js",
+      "../../../dist/resources/extensions/gsd/db-writer.ts",
+      "../../../dist/resources/extensions/gsd/db-writer.js",
+    ]);
   });
 
   it("handles paths without src/ or dist/ gracefully", () => {
     const candidates = _buildImportCandidates("./local-module.js");
     assert.equal(candidates.length, 2, "should have original + .ts variant only");
-    assert.equal(candidates[0], "./local-module.js");
-    assert.equal(candidates[1], "./local-module.ts");
+    assert.equal(candidates[0], "./local-module.ts");
+    assert.equal(candidates[1], "./local-module.js");
   });
 });

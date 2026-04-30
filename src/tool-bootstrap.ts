@@ -126,6 +126,14 @@ export function ensureManagedTools(targetDir: string, pathValue: string | undefi
     if (pathExistsIncludingBrokenSymlink(targetPath) && !isBrokenSymlink(targetPath)) continue;
     const sourcePath = resolveToolFromPath(tool, pathValue);
     if (!sourcePath) continue;
+
+    // On Windows, symlinks require elevated privileges and many package
+    // managers (pixi, conda) use proxy shims that break when copied alone.
+    // Since resolveToolFromPath() already proved the tool is on PATH and
+    // getShellEnv() preserves the full PATH, provisioning is unnecessary —
+    // child processes will find the tool via the system PATH entries.
+    if (process.platform === "win32") continue;
+
     provisioned.push(provisionTool(targetDir, tool, sourcePath));
   }
 

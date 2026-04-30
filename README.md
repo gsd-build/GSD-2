@@ -318,7 +318,7 @@ Auto mode is a state machine driven by files on disk. It reads `.gsd/STATE.md`, 
 
 2. **Context pre-loading** — The dispatch prompt includes inlined task plans, slice plans, prior task summaries, dependency summaries, roadmap excerpts, and decisions register. The LLM starts with everything it needs instead of spending tool calls reading files.
 
-3. **Git isolation** — When `git.isolation` is set to `worktree` or `branch`, each milestone runs on its own `milestone/<MID>` branch (in a worktree or in-place). All slice work commits sequentially — no branch switching, no merge conflicts. When the milestone completes, it's squash-merged to main as one clean commit. The default is `none` (work on the current branch), configurable via preferences.
+3. **Git isolation** — When `git.isolation` is set to `worktree` or `branch`, each milestone runs on its own `milestone/<MID>` branch (in a worktree or in-place). All slice work commits sequentially — no branch switching, no merge conflicts. When the milestone completes, it's squash-merged to main as one clean commit. The default is `none` (work on the current branch), configurable via preferences. If `worktree` is configured in a repo with no committed `HEAD`, GSD temporarily behaves as `none` until the first commit exists because git worktrees need a committed start point.
 
 4. **Crash recovery** — A lock file tracks the current unit. If the session dies, the next `/gsd auto` reads the surviving session file, synthesizes a recovery briefing from every tool call that made it to disk, and resumes with full context. Parallel orchestrator state is persisted to disk with PID liveness detection, so multi-worker sessions survive crashes too. In headless mode, crashes trigger automatic restart with exponential backoff (default 3 attempts).
 
@@ -450,6 +450,7 @@ On first run, GSD launches a branded setup wizard that walks you through LLM pro
 | `/gsd`                  | Step mode — executes one unit at a time, pauses between each                  |
 | `/gsd next`             | Explicit step mode (same as bare `/gsd`)                                      |
 | `/gsd auto`             | Autonomous mode — researches, plans, executes, commits, repeats               |
+| `/gsd new-project [--deep]` | Bootstrap a project with staged project-level discovery                  |
 | `/gsd quick`            | Execute a quick task with GSD guarantees, skip planning overhead              |
 | `/gsd stop`             | Stop auto mode gracefully                                                     |
 | `/gsd steer`            | Hard-steer plan documents during execution                                    |
@@ -499,9 +500,12 @@ Every dispatch is carefully constructed. The LLM never wastes tool calls on orie
 | Artifact           | Purpose                                                         |
 | ------------------ | --------------------------------------------------------------- |
 | `PROJECT.md`       | Living doc — what the project is right now                      |
+| `REQUIREMENTS.md`  | Project-level capability contract and out-of-scope list         |
 | `DECISIONS.md`     | Append-only register of architectural decisions                 |
 | `KNOWLEDGE.md`     | Cross-session rules, patterns, and lessons learned              |
 | `RUNTIME.md`       | Runtime context — API endpoints, env vars, services (v2.39)     |
+| `runtime/research-decision.json` | Deep-mode marker for project research vs skip       |
+| `research/*.md`    | Optional deep-mode project research: stack, features, architecture, pitfalls |
 | `STATE.md`         | Quick-glance dashboard — always read first                      |
 | `M001-ROADMAP.md`  | Milestone plan with slice checkboxes, risk levels, dependencies |
 | `M001-CONTEXT.md`  | User decisions from the discuss phase                           |
@@ -598,6 +602,7 @@ auto_report: true
 | Setting                           | What it controls                                                                                      |
 | --------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | `models.*`                        | Per-phase model selection — string for a single model, or `{model, fallbacks}` for automatic failover |
+| `planning_depth`                  | `light` / `deep` — opt into staged project discovery before milestone planning                         |
 | `skill_discovery`                 | `auto` / `suggest` / `off` — how GSD finds and applies skills                                         |
 | `auto_supervisor.*`               | Timeout thresholds for auto mode supervision                                                          |
 | `budget_ceiling`                  | USD ceiling — auto mode pauses when reached                                                           |
@@ -606,7 +611,7 @@ auto_report: true
 | `skill_rules`                     | Situational rules for skill routing                                                                   |
 | `skill_staleness_days`            | Skills unused for N days get deprioritized (default: 60, 0 = disabled)                                |
 | `unique_milestone_ids`            | Uses unique milestone names to avoid clashes when working in teams of people                          |
-| `git.isolation`                   | `none` (default), `worktree`, or `branch` — enable worktree or branch isolation for milestone work    |
+| `git.isolation`                   | `none` (default), `worktree`, or `branch` — enable worktree or branch isolation for milestone work. `worktree` requires a committed `HEAD`; zero-commit repos temporarily run as `none`    |
 | `git.manage_gitignore`            | Set `false` to prevent GSD from modifying `.gitignore`                                                |
 | `verification_commands`           | Array of shell commands to run after task execution (e.g., `["npm run lint", "npm run test"]`)        |
 | `verification_auto_fix`           | Auto-retry on verification failures (default: true)                                                   |

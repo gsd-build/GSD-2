@@ -163,6 +163,8 @@ export class AutoSession {
   /** Set when a GSD tool execution ends with isError due to malformed/truncated
    *  JSON arguments. Checked by postUnitPreVerification to break retry loops. */
   lastToolInvocationError: string | null = null;
+  /** Agent-end messages from the just-finished unit, consumed during finalize. */
+  lastUnitAgentEndMessages: unknown[] | null = null;
   /** Set when turn-level git action fails during closeout. */
   lastGitActionFailure: string | null = null;
   /** Last turn-level git action status captured during finalize. */
@@ -298,6 +300,7 @@ export class AutoSession {
     this.consecutiveCompleteBootstraps = 0;
     this.lastPreExecFailure = null;
     this.lastToolInvocationError = null;
+    this.lastUnitAgentEndMessages = null;
     this.lastGitActionFailure = null;
     this.lastGitActionStatus = null;
     this.isolationDegraded = false;

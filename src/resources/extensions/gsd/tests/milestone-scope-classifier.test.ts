@@ -98,6 +98,25 @@ test("#4781 classifier: backend API mention → standard (not trivial)", () => {
   assert.strictEqual(r.variant, "standard");
 });
 
+test("#4781 classifier: negated backend/auth anti-goals do not override trivial static app", () => {
+  const r = classifyMilestoneScope({
+    title: "Local todo",
+    vision: "Single file static HTML app. No backend. No authentication. No API calls. Uses localStorage only.",
+    successCriteria: ["Add a task", "Mark complete", "Reload and keep tasks"],
+  });
+  assert.strictEqual(r.variant, "trivial", `reasons: ${r.reasons.join("; ")}`);
+});
+
+test("#4781 classifier: positive auth/backend requirements still route to standard", () => {
+  const r = classifyMilestoneScope({
+    title: "Todo accounts",
+    vision: "Add authentication and a backend API for syncing tasks.",
+    successCriteria: ["Users can log in", "Tasks sync through the API"],
+  });
+  assert.strictEqual(r.variant, "standard");
+  assert.ok(r.signals.triggeredOverride);
+});
+
 test("#4781 classifier: tests mentioned → standard (not trivial)", () => {
   const r = classifyMilestoneScope({
     title: "Landing page",

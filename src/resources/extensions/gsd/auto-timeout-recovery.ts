@@ -19,6 +19,7 @@ import {
 import { existsSync } from "node:fs";
 
 import { bumpAndResolveSynthetic } from "./auto/resolve.js";
+import { finalizeProjectResearchTimeout } from "./project-research-policy.js";
 
 export interface RecoveryContext {
   basePath: string;
@@ -171,6 +172,27 @@ export async function recoverTimedOutUnit(
   }
 
   const expected = diagnoseExpectedArtifact(unitType, unitId, basePath) ?? "required durable artifact";
+
+  if (unitType === "research-project") {
+    const outcome = finalizeProjectResearchTimeout(
+      basePath,
+      `${reason} timeout recovery finalized project research before all dimensions completed.`,
+    );
+    writeUnitRuntimeRecord(basePath, unitType, unitId, currentUnitStartedAt, {
+      phase: outcome.kind === "global-blocker" ? "skipped" : "finalized",
+      recoveryAttempts: recoveryAttempts + 1,
+      lastRecoveryReason: reason,
+    });
+    const message = outcome.kind === "completed"
+      ? `Project research ${reason} timeout: research artifacts are already terminal; advancing.`
+      : outcome.kind === "partial-blockers"
+        ? `Project research ${reason} timeout: wrote blocker files for missing dimensions and advancing with partial research.`
+        : `Project research ${reason} timeout: wrote PROJECT-RESEARCH-BLOCKER.md and stopping fail-closed.`;
+    ctx.ui.notify(message, outcome.kind === "global-blocker" ? "error" : "warning");
+    unitRecoveryCount.delete(recoveryKey);
+    bumpAndResolveSynthetic(`timeout-recovery:${reason}:${unitType}/${unitId}`);
+    return "recovered";
+  }
 
   // Check if the artifact already exists on disk — agent may have written it
   // without signaling completion.

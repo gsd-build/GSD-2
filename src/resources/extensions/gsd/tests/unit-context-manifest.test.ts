@@ -15,6 +15,7 @@ import {
   type SkillsPolicy,
   type UnitContextManifest,
 } from "../unit-context-manifest.ts";
+import { ALLOWED_PLANNING_DISPATCH_AGENTS } from "../bootstrap/write-gate.ts";
 
 // ─── Coverage: every known unit type has a manifest ──────────────────────
 
@@ -231,6 +232,10 @@ test('planning-dispatch mode is reserved for slice-level decomposition and compl
     "refine-slice",
     "complete-slice",
     "complete-milestone",
+    // Deep planning mode: research-project orchestrates 4 parallel research
+    // subagents (stack/features/architecture/pitfalls). Subagent dispatch is
+    // the unit's core mechanism — without it, the unit cannot do its job.
+    "research-project",
     "validate-milestone",
   ]);
   for (const [unitType, manifest] of Object.entries(UNIT_MANIFESTS)) {
@@ -256,6 +261,10 @@ test('planning-dispatch manifests declare non-empty allowedSubagents lists', () 
       assert.ok(
         typeof agent === "string" && agent.length > 0,
         `manifest "${unitType}" has empty/invalid allowedSubagents entry: ${JSON.stringify(agent)}`,
+      );
+      assert.ok(
+        ALLOWED_PLANNING_DISPATCH_AGENTS.has(agent),
+        `manifest "${unitType}" allows "${agent}", but the runtime planning-dispatch registry will hard-block it`,
       );
     }
   }

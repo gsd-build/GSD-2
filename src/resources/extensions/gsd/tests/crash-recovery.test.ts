@@ -248,6 +248,56 @@ test("readPausedSessionMetadata handles legacy metadata without unitType/unitId"
   }
 });
 
+test("readPausedSessionMetadata drops stale discuss-milestone pseudo PROJECT metadata", () => {
+  const base = makeTmpBase();
+  try {
+    const runtimeDir = join(base, ".gsd", "runtime");
+    const pausedPath = join(runtimeDir, "paused-session.json");
+    mkdirSync(runtimeDir, { recursive: true });
+    writeFileSync(
+      pausedPath,
+      JSON.stringify({
+        milestoneId: null,
+        originalBasePath: base,
+        unitType: "discuss-milestone",
+        unitId: "PROJECT",
+      }, null, 2),
+      "utf-8",
+    );
+
+    const meta = readPausedSessionMetadata(base);
+    assert.equal(meta, null);
+    assert.equal(existsSync(pausedPath), false);
+  } finally {
+    cleanup(base);
+  }
+});
+
+test("readPausedSessionMetadata drops stale deep setup pseudo-unit metadata", () => {
+  const base = makeTmpBase();
+  try {
+    const runtimeDir = join(base, ".gsd", "runtime");
+    const pausedPath = join(runtimeDir, "paused-session.json");
+    mkdirSync(runtimeDir, { recursive: true });
+    writeFileSync(
+      pausedPath,
+      JSON.stringify({
+        milestoneId: "WORKFLOW-PREFS",
+        originalBasePath: base,
+        unitType: "workflow-preferences",
+        unitId: "WORKFLOW-PREFS",
+      }, null, 2),
+      "utf-8",
+    );
+
+    const meta = readPausedSessionMetadata(base);
+    assert.equal(meta, null);
+    assert.equal(existsSync(pausedPath), false);
+  } finally {
+    cleanup(base);
+  }
+});
+
 test("assessInterruptedSession returns none when no lock and no paused session exist", async () => {
   const base = makeTmpBase();
   try {

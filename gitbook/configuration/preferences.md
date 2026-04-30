@@ -38,6 +38,9 @@ models:
 # Token optimization
 token_profile: balanced
 
+# Project discovery
+planning_depth: deep
+
 # Budget
 budget_ceiling: 25.00
 budget_enforcement: pause
@@ -51,7 +54,7 @@ auto_supervisor:
 git:
   auto_push: true
   merge_strategy: squash
-  isolation: worktree
+  isolation: none
   collapse_cadence: milestone   # or "slice" — see Git & Worktrees docs
   # milestone_resquash applies only when collapse_cadence: "slice"
   # milestone_resquash: true    # collapse slice commits into one at milestone end
@@ -90,6 +93,21 @@ models:
 ### `token_profile`
 
 Coordinates model selection, phase skipping, and context compression. Values: `budget`, `balanced` (default), `quality`. See [Token Optimization](../features/token-optimization.md).
+
+### `planning_depth`
+
+Controls how much discovery runs before milestone-level planning.
+
+```yaml
+planning_depth: deep
+```
+
+| Value | Behavior |
+|-------|----------|
+| `light` | Default. Uses the normal milestone discussion flow. |
+| `deep` | Runs workflow preferences, `.gsd/PROJECT.md`, `.gsd/REQUIREMENTS.md`, a research decision, and optional project research before milestone planning. |
+
+Enable deep mode with `/gsd new-project --deep`, `/gsd new-milestone --deep`, or by adding the setting to `.gsd/PREFERENCES.md`. The research decision is recorded in `.gsd/runtime/research-decision.json`; choosing research writes `.gsd/research/STACK.md`, `FEATURES.md`, `ARCHITECTURE.md`, and `PITFALLS.md`.
 
 ### `budget_ceiling`
 
@@ -193,10 +211,12 @@ Git behavior. See [Git & Worktrees](git-settings.md).
 git:
   auto_push: false
   merge_strategy: squash
-  isolation: worktree
+  isolation: none
   commit_docs: true
   auto_pr: false
 ```
+
+Set `isolation: worktree` when you need milestone file isolation. Worktree mode requires a committed `HEAD`; in a zero-commit repo, GSD temporarily behaves as `none` until the first commit exists.
 
 ### `notifications`
 

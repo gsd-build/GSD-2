@@ -61,5 +61,7 @@ After adding config, verify from a GSD session:
 
 - Use **absolute paths** for executables and scripts
 - Set required **environment variables** directly in the MCP config's `env` block
+- Configure MCP server runtime variables such as `GSD_WORKFLOW_EXECUTORS_MODULE`, `GSD_WORKFLOW_WRITE_GATE_MODULE`, `GSD_WORKFLOW_PROJECT_ROOT`, `GSD_CLI_PATH`, `NODE_OPTIONS`, `NODE_PATH`, `PATH`, `LD_PRELOAD`, and `DYLD_INSERT_LIBRARIES` in the operator environment or MCP config; `secure_env_collect` refuses to set them from a tool call
+- `secure_env_collect` hydrates accepted local dotenv writes into the current MCP server process, but Vercel and Convex pushes are remote-only and are not added to `process.env`
 - Use `.mcp.json` for team-shared servers; `.gsd/mcp.json` for machine-local ones
 - If a server depends on local paths or personal secrets, keep it in `.gsd/mcp.json`

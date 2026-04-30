@@ -186,8 +186,9 @@ describe('auto-discuss-milestone-deadlock-4973', () => {
   // The actual fix lives inside the discuss-milestone dispatch rules at
   // auto-dispatch.ts:280-291, :423-432, :449-458. This test invokes the
   // "needs-discussion → discuss-milestone" rule directly and asserts that
-  // (a) the rule auto-marks depth-verified when isAutoActive() is true, and
-  // (b) it does NOT mark when isAutoActive() is false.
+  // (a) the rule auto-marks depth-verified when non-deep auto-mode is active,
+  // (b) it does NOT mark when deep planning is active, and
+  // (c) it does NOT mark when isAutoActive() is false.
   //
   // This is the test codex flagged as missing: Tests 1-4 above only exercise
   // the markDepthVerified primitive — they pass on origin/main. This Test 5
@@ -214,7 +215,7 @@ describe('auto-discuss-milestone-deadlock-4973', () => {
         structuredQuestionsAvailable: 'false',
       } as unknown as DispatchContext;
 
-      // ── Auto-mode case: the rule must call markDepthVerified ──
+      // ── Non-deep auto-mode case: the rule must call markDepthVerified ──
       _setAutoActiveForTest(true);
       let snap = loadWriteGateSnapshot(tempBase);
       assert.strictEqual(
@@ -233,7 +234,31 @@ describe('auto-discuss-milestone-deadlock-4973', () => {
       assert.strictEqual(
         isMilestoneDepthVerifiedInSnapshot(snap, 'M005'),
         true,
-        'auto-mode: dispatch rule must call markDepthVerified(mid) — this fails on origin/main without the H6 fix',
+        'non-deep auto-mode: dispatch rule must call markDepthVerified(mid) — this fails on origin/main without the H6 fix',
+      );
+
+      // ── Deep auto-mode case: the user-facing approval gate must stay closed ──
+      clearDiscussionFlowState();
+      if (existsSync(snapshotFile)) unlinkSync(snapshotFile);
+      _setAutoActiveForTest(true);
+      const deepCtx = {
+        ...baseCtx,
+        prefs: { planning_depth: 'deep' },
+      } as unknown as DispatchContext;
+      snap = loadWriteGateSnapshot(tempBase);
+      assert.strictEqual(
+        isMilestoneDepthVerifiedInSnapshot(snap, 'M005'),
+        false,
+        'precondition: state cleared before deep-mode dispatch',
+      );
+
+      try { await rule!.match(deepCtx); } catch { /* prompt build may fail */ }
+
+      snap = loadWriteGateSnapshot(tempBase);
+      assert.strictEqual(
+        isMilestoneDepthVerifiedInSnapshot(snap, 'M005'),
+        false,
+        'deep auto-mode: dispatch rule must not pre-verify a user-facing milestone gate',
       );
 
       // ── Interactive case: the rule must NOT call markDepthVerified ──

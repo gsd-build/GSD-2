@@ -55,6 +55,8 @@ import {
   diagnoseExpectedArtifact,
 } from "./auto-artifact-paths.js";
 import { classifyMilestoneSummaryContent } from "./milestone-summary-classifier.js";
+import { validateArtifact } from "./schemas/validate.js";
+import { getProjectResearchStatus } from "./project-research-policy.js";
 
 // Re-export so existing consumers of auto-recovery.ts keep working.
 export { resolveExpectedArtifactPath, diagnoseExpectedArtifact };
@@ -64,6 +66,29 @@ export {
 } from "./milestone-summary-classifier.js";
 
 // ─── Artifact Resolution & Verification ───────────────────────────────────────
+
+function hasCapturedWorkflowPrefs(base: string): boolean {
+  const prefsPath = resolveExpectedArtifactPath("workflow-preferences", "WORKFLOW-PREFS", base);
+  if (!prefsPath || !existsSync(prefsPath)) return false;
+  const content = readFileSync(prefsPath, "utf-8");
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  return !!match && /^workflow_prefs_captured:\s*true\s*$/m.test(match[1]);
+}
+
+function hasValidResearchDecision(base: string): boolean {
+  const decisionPath = resolveExpectedArtifactPath("research-decision", "RESEARCH-DECISION", base);
+  if (!decisionPath || !existsSync(decisionPath)) return false;
+  try {
+    const cfg = JSON.parse(readFileSync(decisionPath, "utf-8")) as Record<string, unknown>;
+    return cfg.decision === "research" || cfg.decision === "skip";
+  } catch {
+    return false;
+  }
+}
+
+function hasCompleteProjectResearch(base: string): boolean {
+  return getProjectResearchStatus(base).complete;
+}
 
 /**
  * Check whether a milestone produced implementation artifacts (non-`.gsd/`
@@ -362,6 +387,28 @@ export function verifyExpectedArtifact(
     if (!existsSync(overridesPath)) return true;
     const content = readFileSync(overridesPath, "utf-8");
     return !content.includes("**Scope:** active");
+  }
+
+  if (unitType === "workflow-preferences") {
+    return hasCapturedWorkflowPrefs(base);
+  }
+
+  if (unitType === "discuss-project") {
+    const projectPath = resolveExpectedArtifactPath(unitType, unitId, base);
+    return !!projectPath && existsSync(projectPath) && validateArtifact(projectPath, "project").ok;
+  }
+
+  if (unitType === "discuss-requirements") {
+    const requirementsPath = resolveExpectedArtifactPath(unitType, unitId, base);
+    return !!requirementsPath && existsSync(requirementsPath) && validateArtifact(requirementsPath, "requirements").ok;
+  }
+
+  if (unitType === "research-decision") {
+    return hasValidResearchDecision(base);
+  }
+
+  if (unitType === "research-project") {
+    return hasCompleteProjectResearch(base);
   }
 
   // Reactive-execute: verify that each dispatched task's summary exists.
@@ -667,6 +714,9 @@ export function writeBlockerPlaceholder(
   if (!absPath) return null;
   const dir = dirname(absPath);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  const recoveryLine = unitType === "research-project"
+    ? "This placeholder was written by auto-mode so the project research gate can stop fail-closed."
+    : "This placeholder was written by auto-mode so the pipeline can advance.";
   const content = [
     `# BLOCKER — auto-mode recovery failed`,
     ``,
@@ -674,7 +724,7 @@ export function writeBlockerPlaceholder(
     ``,
     `**Reason**: ${reason}`,
     ``,
-    `This placeholder was written by auto-mode so the pipeline can advance.`,
+    recoveryLine,
     `Review and replace this file before relying on downstream artifacts.`,
   ].join("\n");
   writeFileSync(absPath, content, "utf-8");

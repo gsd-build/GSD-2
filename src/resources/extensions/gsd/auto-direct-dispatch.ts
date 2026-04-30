@@ -120,6 +120,7 @@ export async function dispatchDirectPhase(
           {
             sessionContextWindow: ctx.model?.contextWindow,
             modelRegistry: ctx.modelRegistry as MinimalModelRegistry | undefined,
+            sessionProvider: ctx.model?.provider,
           },
         );
       } else {
@@ -151,6 +152,7 @@ export async function dispatchDirectPhase(
         {
           sessionContextWindow: ctx.model?.contextWindow,
           modelRegistry: ctx.modelRegistry as MinimalModelRegistry | undefined,
+          sessionProvider: ctx.model?.provider,
         },
       );
       break;

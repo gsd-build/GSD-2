@@ -26,6 +26,30 @@ Plan → Execute (per task) → Complete → Reassess Roadmap → Next Slice
 - **Reassess** — checks if the roadmap still makes sense after what was learned
 - **Validate** — after all slices, verifies success criteria were actually met
 
+## Deep Planning Mode
+
+Enable project-level deep planning with `/gsd new-project --deep`, `/gsd new-milestone --deep`, or this project preference:
+
+```yaml
+planning_depth: deep
+```
+
+Deep mode runs one-time discovery gates before normal milestone planning:
+
+```text
+Workflow Preferences -> Project Context -> Requirements -> Research Decision -> Optional Project Research -> Milestone Context/Roadmap
+```
+
+| Artifact | Stage | Purpose |
+|----------|-------|---------|
+| `.gsd/PREFERENCES.md` | `--deep` / `workflow-preferences` | Holds `planning_depth: deep` and captured workflow settings |
+| `.gsd/PROJECT.md` | `discuss-project` | Project vision, users, anti-goals, constraints, milestone sequence |
+| `.gsd/REQUIREMENTS.md` | `discuss-requirements` | Capability contract with Active, Validated, Deferred, and Out of Scope requirements |
+| `.gsd/runtime/research-decision.json` | `research-decision` | Records whether to run project research or skip it |
+| `.gsd/research/STACK.md`, `FEATURES.md`, `ARCHITECTURE.md`, `PITFALLS.md` | `research-project` | Optional four-way project research when the decision is `research` |
+
+The research-decision unit only records the choice. If the decision is `research`, the next gate fans out four project research passes. Those outputs inform planning and requirement review; they do not silently create binding requirements.
+
 ## Controlling Auto Mode
 
 ### Pause
@@ -91,11 +115,11 @@ GSD isolates milestone work using one of three modes:
 
 | Mode | How It Works | Best For |
 |------|-------------|----------|
-| `worktree` (default) | Each milestone gets its own directory and branch | Most projects |
+| `none` (default) | Work happens directly on your current branch | Most projects |
+| `worktree` | Each milestone gets its own directory and branch | Projects that need file isolation |
 | `branch` | Work happens in the project root on a milestone branch | Submodule-heavy repos |
-| `none` | Work happens directly on your current branch | Hot-reload workflows |
 
-In worktree mode, all commits are squash-merged to main as one clean commit when the milestone completes. See [Git & Worktrees](../configuration/git-settings.md).
+In worktree mode, all commits are squash-merged to main as one clean commit when the milestone completes. Worktree mode requires at least one commit; zero-commit repos temporarily run as `none` until `HEAD` exists. See [Git & Worktrees](../configuration/git-settings.md).
 
 ## Crash Recovery
 

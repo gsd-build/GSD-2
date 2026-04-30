@@ -2,6 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from "@gsd/pi-coding-agent";
 
 import { logWarning } from "../workflow-logger.js";
 import {
+  checkDeepProjectSetupAfterTurn,
   checkAutoStartAfterDiscuss,
   maybeHandleReadyPhraseWithoutFiles,
   maybeHandleEmptyIntentTurn,
@@ -13,6 +14,7 @@ import { getNextFallbackModel, resolveModelWithFallbacksForUnit } from "../prefe
 import { pauseAutoForProviderError } from "../provider-error-pause.js";
 import { isSessionSwitchInFlight, resolveAgentEnd } from "../auto-loop.js";
 import { resolveModelId } from "../auto-model-selection.js";
+import { resolveProjectRoot } from "../worktree.js";
 import { clearDiscussionFlowState } from "./write-gate.js";
 import { resumeAutoAfterProviderDelay } from "./provider-error-resume.js";
 import {
@@ -44,6 +46,14 @@ export const MAX_TRANSIENT_AUTO_RESUMES = 8;
  */
 export function resetTransientRetryState(): void {
   resetRetryState(retryState);
+}
+
+function resolveAgentEndBasePath(): string | undefined {
+  try {
+    return resolveProjectRoot(process.cwd());
+  } catch {
+    return undefined;
+  }
 }
 
 async function pauseTransientWithBackoff(
@@ -94,6 +104,15 @@ export async function handleAgentEnd(
   // falsely report files as missing — producing a spurious "ready signal
   // rejected" loop even though the files are on disk.
   clearPathCache();
+
+  try {
+    if (await checkDeepProjectSetupAfterTurn(event, ctx, resolveAgentEndBasePath())) {
+      return;
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    logWarning("bootstrap", `checkDeepProjectSetupAfterTurn failed: ${message}`);
+  }
 
   if (checkAutoStartAfterDiscuss()) {
     clearDiscussionFlowState();

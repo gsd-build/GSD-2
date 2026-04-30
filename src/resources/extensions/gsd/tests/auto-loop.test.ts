@@ -629,7 +629,11 @@ function makeMockDeps(
         blockers: [],
       } as any;
     },
-    loadEffectiveGSDPreferences: () => ({ preferences: {} }),
+    loadEffectiveGSDPreferences: () => ({
+      // These loop-mechanics tests mock executing state without plan-v2 artifacts.
+      // Plan-v2 default-on coverage lives in uok-plan-v2-wiring.test.ts.
+      preferences: { uok: { plan_v2: { enabled: false } } },
+    }),
     preDispatchHealthGate: async () => ({ proceed: true, fixesApplied: [] }),
     syncProjectRootToWorktree: () => {},
     checkResourcesStale: () => null,
@@ -2179,6 +2183,87 @@ test("autoLoop rejects execute-task with 0 tool calls as hallucinated (#1833)", 
   );
 });
 
+test("autoLoop pauses user-driven deep question instead of flagging 0 tool calls", async () => {
+  _resetPendingResolve();
+
+  const ctx = makeMockCtx();
+  ctx.ui.setStatus = () => {};
+  ctx.sessionManager = { getSessionFile: () => "/tmp/session.json" };
+  const pi = makeMockPi();
+
+  const notifications: string[] = [];
+  ctx.ui.notify = (msg: string) => { notifications.push(msg); };
+
+  const s = makeLoopSession();
+  const mockLedger = {
+    version: 1,
+    projectStartedAt: Date.now(),
+    units: [] as any[],
+  };
+
+  const deps = makeMockDeps({
+    deriveState: async () => {
+      deps.callLog.push("deriveState");
+      return {
+        phase: "executing",
+        activeMilestone: { id: "M001", title: "Bootstrap", status: "active" },
+        activeSlice: null,
+        activeTask: null,
+        registry: [{ id: "M001", status: "active" }],
+        blockers: [],
+      } as any;
+    },
+    resolveDispatch: async () => {
+      deps.callLog.push("resolveDispatch");
+      return {
+        action: "dispatch" as const,
+        unitType: "discuss-project",
+        unitId: "PROJECT",
+        prompt: "ask what to build",
+      };
+    },
+    closeoutUnit: async () => {
+      mockLedger.units.push({
+        type: "discuss-project",
+        id: "PROJECT",
+        startedAt: s.currentUnit?.startedAt ?? Date.now(),
+        toolCalls: 0,
+        assistantMessages: 1,
+        tokens: { input: 100, output: 20, total: 120, cacheRead: 0, cacheWrite: 0 },
+        cost: 0.01,
+      });
+    },
+    getLedger: () => mockLedger,
+    postUnitPreVerification: async () => {
+      deps.callLog.push("postUnitPreVerification");
+      return "dispatched" as const;
+    },
+  });
+
+  const loopPromise = autoLoop(ctx, pi, s, deps);
+
+  await new Promise((r) => setTimeout(r, 50));
+  resolveAgentEnd(makeEvent([
+    {
+      role: "assistant",
+      content: [
+        { type: "text", text: "What do you want to build?" },
+      ],
+    },
+  ]));
+
+  await loopPromise;
+
+  assert.ok(
+    deps.callLog.includes("postUnitPreVerification"),
+    "questioning units should reach post-unit verification so the pause path can run",
+  );
+  assert.ok(
+    !notifications.some((n) => n.includes("context exhaustion")),
+    "questioning units should not show the context-exhaustion warning",
+  );
+});
+
 test("autoLoop rejects complete-slice with 0 tool calls as context-exhausted (#2653)", async () => {
   _resetPendingResolve();
 
@@ -2408,7 +2493,10 @@ test("autoLoop enforces min_request_interval_ms delay between LLM dispatches (#2
 
     const deps = makeMockDeps({
       loadEffectiveGSDPreferences: () => ({
-        preferences: { min_request_interval_ms: 300 },
+        preferences: {
+          min_request_interval_ms: 300,
+          uok: { plan_v2: { enabled: false } },
+        },
       }),
       deriveState: async () => {
         iterCount++;
@@ -2493,7 +2581,7 @@ test("autoLoop skips rate-limit delay when min_request_interval_ms is 0 (default
 
     const deps = makeMockDeps({
       loadEffectiveGSDPreferences: () => ({
-        preferences: {},
+        preferences: { uok: { plan_v2: { enabled: false } } },
       }),
       deriveState: async () => {
         iterCount++;

@@ -23,6 +23,8 @@ Work happens directly on your current branch. No worktree, no milestone branch. 
 
 Each milestone gets its own git worktree on a `milestone/<MID>` branch. All execution happens inside the worktree. On completion, the worktree is squash-merged to main as one clean commit. The worktree and branch are cleaned up.
 
+Worktree mode requires the repository to have at least one commit. If `git.isolation: worktree` is configured in a zero-commit repo with no committed `HEAD`, GSD temporarily runs as `none` so startup can continue; worktree isolation takes effect after the first commit exists.
+
 ### `branch` mode
 
 Work happens in the project root on a `milestone/<MID>` branch. No worktree is created. On completion, the branch is merged to main.

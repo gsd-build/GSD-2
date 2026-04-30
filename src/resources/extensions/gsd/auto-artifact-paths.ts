@@ -5,6 +5,7 @@
 // function was removed entirely — callers now query WorkflowEngine directly.
 
 import {
+  gsdRoot,
   resolveMilestonePath,
   resolveSlicePath,
   relMilestoneFile,
@@ -26,6 +27,16 @@ export function resolveExpectedArtifactPath(
 ): string | null {
   const { milestone: mid, slice: sid, task: tid } = parseUnitId(unitId);
   switch (unitType) {
+    case "workflow-preferences":
+      return join(gsdRoot(base), "PREFERENCES.md");
+    case "discuss-project":
+      return join(gsdRoot(base), "PROJECT.md");
+    case "discuss-requirements":
+      return join(gsdRoot(base), "REQUIREMENTS.md");
+    case "research-decision":
+      return join(gsdRoot(base), "runtime", "research-decision.json");
+    case "research-project":
+      return join(gsdRoot(base), "research", "PROJECT-RESEARCH-BLOCKER.md");
     case "discuss-milestone": {
       const dir = resolveMilestonePath(base, mid);
       return dir ? join(dir, buildMilestoneFileName(mid, "CONTEXT")) : null;
@@ -115,6 +126,16 @@ export function diagnoseExpectedArtifact(
 ): string | null {
   const { milestone: mid, slice: sid, task: tid } = parseUnitId(unitId);
   switch (unitType) {
+    case "workflow-preferences":
+      return ".gsd/PREFERENCES.md with workflow_prefs_captured: true";
+    case "discuss-project":
+      return ".gsd/PROJECT.md (valid project context)";
+    case "discuss-requirements":
+      return ".gsd/REQUIREMENTS.md (valid requirements registry)";
+    case "research-decision":
+      return ".gsd/runtime/research-decision.json with decision research|skip";
+    case "research-project":
+      return ".gsd/research/{STACK,FEATURES,ARCHITECTURE,PITFALLS}.md with at least one real research file; blocker-only outputs stop";
     case "discuss-milestone":
       return `${relMilestoneFile(base, mid, "CONTEXT")} (milestone context from discussion)`;
     case "discuss-slice":

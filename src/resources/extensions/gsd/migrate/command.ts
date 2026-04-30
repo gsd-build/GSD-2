@@ -15,7 +15,6 @@ import { resolve, join, dirname } from "node:path";
 import { gsdRoot } from "../paths.js";
 import { fileURLToPath } from "node:url";
 import { showNextAction } from "../../shared/tui.js";
-import { getHomeDir } from "../home-dir.js";
 import {
   validatePlanningDirectory,
   parsePlanningDirectory,
@@ -25,6 +24,7 @@ import {
 } from "./index.js";
 
 import type { MigrationPreview } from "./writer.js";
+import { homedir } from "node:os";
 
 /** Format preview stats for embedding in the review prompt. */
 function formatPreviewStats(preview: MigrationPreview): string {
@@ -86,9 +86,9 @@ export async function handleMigrate(
   // Default to cwd when no args given; expand ~ to HOME
   let rawPath = args.trim() || ".";
   if (rawPath.startsWith("~/")) {
-    rawPath = join(getHomeDir(), rawPath.slice(2));
+    rawPath = join(homedir(), rawPath.slice(2));
   } else if (rawPath === "~") {
-    rawPath = getHomeDir();
+    rawPath = homedir();
   }
 
   let sourcePath = resolve(process.cwd(), rawPath);

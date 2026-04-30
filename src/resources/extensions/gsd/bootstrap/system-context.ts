@@ -1,5 +1,4 @@
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 
 import type { ExtensionContext } from "@gsd/pi-coding-agent";
@@ -20,8 +19,8 @@ import { deriveState } from "../state.js";
 import { formatOverridesSection, formatShortcut, loadActiveOverrides, loadFile, parseContinue, parseSummary } from "../files.js";
 import { toPosixPath } from "../../shared/mod.js";
 import { autoEnableCmuxPreferences } from "../commands-cmux.js";
+import { gsdHome } from "../gsd-home.js";
 
-const gsdHome = process.env.GSD_HOME || join(homedir(), ".gsd");
 
 /**
  * Bundled skill triggers — resolved dynamically at runtime instead of
@@ -81,7 +80,7 @@ function buildBundledSkillsTable(): string {
 
 function warnDeprecatedAgentInstructions(): void {
   const paths = [
-    join(gsdHome, "agent-instructions.md"),
+    join(gsdHome(), "agent-instructions.md"),
     join(process.cwd(), ".gsd", "agent-instructions.md"),
   ];
   for (const path of paths) {
@@ -138,7 +137,7 @@ export async function buildBeforeAgentStartResult(
     }
   }
 
-  const { block: knowledgeBlock, globalSizeKb } = loadKnowledgeBlock(gsdHome, process.cwd());
+  const { block: knowledgeBlock, globalSizeKb } = loadKnowledgeBlock(gsdHome(), process.cwd());
   if (globalSizeKb > 4) {
     ctx.ui.notify(
       `GSD: ~/.gsd/agent/KNOWLEDGE.md is ${globalSizeKb.toFixed(1)}KB — consider trimming to keep system prompt lean.`,

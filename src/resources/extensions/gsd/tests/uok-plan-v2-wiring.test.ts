@@ -16,6 +16,7 @@ import type { GSDState, Phase } from "../types.ts";
 import {
   ensurePlanV2Graph,
   hasFinalizedMilestoneContext,
+  isEmptyPlanV2GraphResult,
   isMissingFinalizedContextResult,
 } from "../uok/plan-v2.ts";
 
@@ -113,6 +114,30 @@ test("guided flow routes recoverable missing finalized context to discuss-milest
   );
 });
 
+test("guided flow checks pending deep setup before plan-v2 gate", () => {
+  const source = readFileSync(join(gsdDir, "guided-flow.ts"), "utf-8");
+  const showSmartEntryIdx = source.indexOf("export async function showSmartEntry");
+  assert.notEqual(showSmartEntryIdx, -1);
+  const deepIdx = source.indexOf("hasPendingDeepStage(prefs, basePath)", showSmartEntryIdx);
+  const planIdx = source.indexOf("runPlanV2Gate(ctx, basePath, state)", showSmartEntryIdx);
+  assert.ok(
+    deepIdx > -1 && planIdx > -1 && deepIdx < planIdx,
+    "foreground deep setup must run before plan-v2 can fail-close guided /gsd",
+  );
+  assert.ok(
+    source.includes("loadEffectiveGSDPreferences(basePath)?.preferences"),
+    "guided plan-v2 gate must load preferences from the target project root",
+  );
+});
+
+test("auto pre-dispatch uses resolved plan-v2 defaults", () => {
+  const source = readFileSync(join(gsdDir, "auto", "phases.ts"), "utf-8");
+  assert.ok(
+    source.includes("uokFlags.planV2 && shouldRunPlanV2Gate(state.phase)"),
+    "auto-mode should honor resolveUokFlags defaults, not only explicit uok.plan_v2.enabled",
+  );
+});
+
 test("plan-v2 gate fails closed for execution phase when finalized context is missing", () => {
   const basePath = createBasePath();
   seedGraphRows();
@@ -204,4 +229,27 @@ test("plan-v2 ensure rejects empty executable graph", () => {
   const compiled = ensurePlanV2Graph(basePath, buildState("executing"));
   assert.equal(compiled.ok, false);
   assert.match(compiled.reason ?? "", /compiled graph is empty/i);
+  assert.equal(isEmptyPlanV2GraphResult(compiled), true);
+});
+
+test("plan-v2 allows empty graph for milestone terminal phases", () => {
+  const basePath = createBasePath();
+  writeMilestoneFile(basePath, "CONTEXT", "Finalized context.");
+
+  insertMilestone({ id: MILESTONE_ID, title: "Milestone", status: "active" });
+  insertSlice({
+    id: SLICE_ID,
+    milestoneId: MILESTONE_ID,
+    title: "Slice",
+    status: "complete",
+    sequence: 1,
+  });
+
+  const validating = ensurePlanV2Graph(basePath, buildState("validating-milestone"));
+  assert.equal(validating.ok, true);
+  assert.equal(validating.nodeCount, 0);
+
+  const completing = ensurePlanV2Graph(basePath, buildState("completing-milestone"));
+  assert.equal(completing.ok, true);
+  assert.equal(completing.nodeCount, 0);
 });

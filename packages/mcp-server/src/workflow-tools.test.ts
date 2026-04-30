@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto";
 import { symlinkSync, realpathSync } from "node:fs";
 
 import { _getAdapter, closeDatabase } from "../../../src/resources/extensions/gsd/gsd-db.ts";
-import { registerWorkflowTools, WORKFLOW_TOOL_NAMES, validateProjectDir } from "./workflow-tools.ts";
+import { _buildImportCandidates, registerWorkflowTools, WORKFLOW_TOOL_NAMES, validateProjectDir } from "./workflow-tools.ts";
 
 function makeTmpBase(): string {
   const base = join(tmpdir(), `gsd-mcp-workflow-${randomUUID()}`);
@@ -69,6 +69,19 @@ function makeMockServer() {
   };
 }
 
+function assertToolError(result: unknown, expected: RegExp | string): string {
+  const record = result as { isError?: boolean; content?: Array<{ text?: unknown }> };
+  assert.equal(record.isError, true, "tool result should be marked as an MCP error");
+  const text = record.content?.[0]?.text;
+  assert.equal(typeof text, "string", "tool error result should contain text");
+  if (expected instanceof RegExp) {
+    assert.match(text, expected);
+  } else {
+    assert.ok(text.includes(expected), `error should mention ${expected}, got: ${text}`);
+  }
+  return text;
+}
+
 describe("workflow MCP tools", () => {
   it("registers the full headless-safe workflow tool surface", () => {
     const server = makeMockServer();
@@ -76,6 +89,18 @@ describe("workflow MCP tools", () => {
 
     assert.equal(server.tools.length, WORKFLOW_TOOL_NAMES.length);
     assert.deepEqual(server.tools.map((t) => t.name), [...WORKFLOW_TOOL_NAMES]);
+  });
+
+  it("prefers source TypeScript before compiled dist fallbacks", () => {
+    assert.deepEqual(
+      _buildImportCandidates("../../../src/resources/extensions/gsd/tools/workflow-tool-executors.js"),
+      [
+        "../../../src/resources/extensions/gsd/tools/workflow-tool-executors.ts",
+        "../../../src/resources/extensions/gsd/tools/workflow-tool-executors.js",
+        "../../../dist/resources/extensions/gsd/tools/workflow-tool-executors.ts",
+        "../../../dist/resources/extensions/gsd/tools/workflow-tool-executors.js",
+      ],
+    );
   });
 
   it("gsd_summary_save writes artifact through the shared executor", async () => {
@@ -107,6 +132,116 @@ describe("workflow MCP tools", () => {
     }
   });
 
+  it("gsd_summary_save supports root-level PROJECT artifacts without milestone_id", async () => {
+    const base = makeTmpBase();
+    try {
+      const server = makeMockServer();
+      registerWorkflowTools(server as any);
+      const tool = server.tools.find((t) => t.name === "gsd_summary_save");
+      assert.ok(tool, "summary tool should be registered");
+
+      const milestoneParam = tool!.params.milestone_id as { isOptional?: () => boolean };
+      assert.equal(
+        milestoneParam.isOptional?.(),
+        true,
+        "workflow MCP schema must advertise milestone_id as optional for root artifacts",
+      );
+
+      const result = await tool!.handler({
+        projectDir: base,
+        artifact_type: "PROJECT",
+        content: "# Project\n\nRoot artifact",
+      });
+
+      const text = (result as any).content[0].text as string;
+      assert.match(text, /Saved PROJECT artifact/);
+      assert.ok(
+        existsSync(join(base, ".gsd", "PROJECT.md")),
+        "root project artifact should exist on disk",
+      );
+      assert.equal(
+        readFileSync(join(base, ".gsd", "PROJECT.md"), "utf-8"),
+        "# Project\n\nRoot artifact",
+      );
+    } finally {
+      cleanup(base);
+    }
+  });
+
+  it("gsd_summary_save rejects milestone-scoped artifacts without milestone_id", async () => {
+    const base = makeTmpBase();
+    try {
+      const server = makeMockServer();
+      registerWorkflowTools(server as any);
+      const tool = server.tools.find((t) => t.name === "gsd_summary_save");
+      assert.ok(tool, "summary tool should be registered");
+
+      const result = await tool!.handler({
+        projectDir: base,
+        artifact_type: "SUMMARY",
+        content: "# Summary\n",
+      });
+
+      const text = (result as any).content?.[0]?.text as string;
+      assert.match(
+        text,
+        /milestone_id is required for milestone-scoped artifact types/,
+      );
+    } finally {
+      cleanup(base);
+    }
+  });
+
+  it("gsd_summary_save renders root REQUIREMENTS from DB rows, not provided markdown", async () => {
+    const base = makeTmpBase();
+    try {
+      const server = makeMockServer();
+      registerWorkflowTools(server as any);
+      const requirementTool = server.tools.find((t) => t.name === "gsd_requirement_save");
+      const summaryTool = server.tools.find((t) => t.name === "gsd_summary_save");
+      assert.ok(requirementTool, "requirement tool should be registered");
+      assert.ok(summaryTool, "summary tool should be registered");
+
+      await requirementTool!.handler({
+        projectDir: base,
+        class: "primary-user-loop",
+        description: "MCP user can add a task",
+        why: "Core loop",
+        source: "user",
+        status: "active",
+        primary_owner: "M001/none yet",
+        supporting_slices: "none",
+        validation: "unmapped",
+      });
+
+      const result = await summaryTool!.handler({
+        projectDir: base,
+        artifact_type: "REQUIREMENTS",
+        content: "# Requirements\n\n## Active\n\n### R999 — Wrong markdown source\n\n- Description: This content must not become canonical.\n",
+      });
+
+      const text = (result as any).content[0].text as string;
+      assert.match(text, /Saved REQUIREMENTS artifact/);
+
+      const requirementsPath = join(base, ".gsd", "REQUIREMENTS.md");
+      const markdown = readFileSync(requirementsPath, "utf-8");
+      assert.match(markdown, /MCP user can add a task/);
+      assert.doesNotMatch(markdown, /R999|Wrong markdown source|This content must not become canonical/);
+
+      const row = _getAdapter()!
+        .prepare("SELECT id, description FROM requirements WHERE description = ?")
+        .get("MCP user can add a task") as Record<string, unknown> | undefined;
+      assert.ok(row, "requirement row should remain the canonical source");
+
+      const artifact = _getAdapter()!
+        .prepare("SELECT full_content FROM artifacts WHERE path = ?")
+        .get("REQUIREMENTS.md") as Record<string, unknown> | undefined;
+      assert.equal(artifact?.full_content, markdown);
+    } finally {
+      cleanup(base);
+    }
+  });
+
   it("rejects workflow tool calls outside the configured project root", async () => {
     const base = makeTmpBase();
     const otherBase = makeTmpBase();
@@ -118,16 +253,13 @@ describe("workflow MCP tools", () => {
       const tool = server.tools.find((t) => t.name === "gsd_summary_save");
       assert.ok(tool, "summary tool should be registered");
 
-      await assert.rejects(
-        () =>
-          tool!.handler({
-            projectDir: otherBase,
-            milestone_id: "M001",
-            artifact_type: "SUMMARY",
-            content: "# Summary",
-          }),
-        /configured workflow project root/,
-      );
+      const result = await tool!.handler({
+        projectDir: otherBase,
+        milestone_id: "M001",
+        artifact_type: "SUMMARY",
+        content: "# Summary",
+      });
+      assertToolError(result, /configured workflow project root/);
     } finally {
       if (prevRoot === undefined) {
         delete process.env.GSD_WORKFLOW_PROJECT_ROOT;
@@ -152,16 +284,13 @@ describe("workflow MCP tools", () => {
       const tool = server.tools.find((t) => t.name === "gsd_summary_save");
       assert.ok(tool, "summary tool should be registered");
 
-      await assert.rejects(
-        () =>
-          tool!.handler({
-            projectDir: base,
-            milestone_id: "M001",
-            artifact_type: "SUMMARY",
-            content: "# Summary",
-          }),
-        /only supports file: URLs or filesystem paths/,
-      );
+      const result = await tool!.handler({
+        projectDir: base,
+        milestone_id: "M001",
+        artifact_type: "SUMMARY",
+        content: "# Summary",
+      });
+      assertToolError(result, /only supports file: URLs or filesystem paths/);
     } finally {
       if (prevModule === undefined) {
         delete process.env.GSD_WORKFLOW_EXECUTORS_MODULE;
@@ -192,19 +321,16 @@ describe("workflow MCP tools", () => {
       const taskTool = server.tools.find((t) => t.name === "gsd_task_complete");
       assert.ok(taskTool, "task tool should be registered");
 
-      await assert.rejects(
-        () =>
-          taskTool!.handler({
-            projectDir: base,
-            taskId: "T01",
-            sliceId: "S01",
-            milestoneId: "M001",
-            oneLiner: "Completed task",
-            narrative: "Did the work",
-            verification: "npm test",
-          }),
-        /Discussion gate .* has not been confirmed/,
-      );
+      const result = await taskTool!.handler({
+        projectDir: base,
+        taskId: "T01",
+        sliceId: "S01",
+        milestoneId: "M001",
+        oneLiner: "Completed task",
+        narrative: "Did the work",
+        verification: "npm test",
+      });
+      assertToolError(result, /Discussion gate .* has not been confirmed/);
     } finally {
       cleanup(base);
     }
@@ -225,19 +351,16 @@ describe("workflow MCP tools", () => {
       const taskTool = server.tools.find((t) => t.name === "gsd_task_complete");
       assert.ok(taskTool, "task tool should be registered");
 
-      await assert.rejects(
-        () =>
-          taskTool!.handler({
-            projectDir: base,
-            taskId: "T01",
-            sliceId: "S01",
-            milestoneId: "M001",
-            oneLiner: "Completed task",
-            narrative: "Did the work",
-            verification: "npm test",
-          }),
-        /planning tool .* not executes work|Cannot gsd_task_complete|Unknown tools are not permitted during queue mode/,
-      );
+      const result = await taskTool!.handler({
+        projectDir: base,
+        taskId: "T01",
+        sliceId: "S01",
+        milestoneId: "M001",
+        oneLiner: "Completed task",
+        narrative: "Did the work",
+        verification: "npm test",
+      });
+      assertToolError(result, /planning tool .* not executes work|Cannot gsd_task_complete|Unknown tools are not permitted during queue mode/);
     } finally {
       cleanup(base);
     }
@@ -525,18 +648,8 @@ export const executeTaskComplete = async (params, projectDir) => {
       const expectRejection = async (toolName: string, args: Record<string, unknown>, expectedField: string) => {
         const tool = server.tools.find((t) => t.name === toolName);
         assert.ok(tool, `${toolName} should be registered`);
-        let caught: unknown;
-        try {
-          await tool!.handler(args);
-        } catch (err) {
-          caught = err;
-        }
-        assert.ok(caught, `${toolName} should reject empty ${expectedField}`);
-        const message = caught instanceof Error ? caught.message : String(caught);
-        assert.ok(
-          message.includes(expectedField),
-          `${toolName} error should mention ${expectedField}, got: ${message}`,
-        );
+        const result = await tool!.handler(args);
+        assertToolError(result, expectedField);
       };
 
       // Empty sliceId top-level
@@ -674,33 +787,27 @@ export const executeTaskComplete = async (params, projectDir) => {
       const milestoneTool = server.tools.find((t) => t.name === "gsd_plan_milestone");
       assert.ok(milestoneTool, "milestone planning tool should be registered");
 
-      let caught: unknown;
-      try {
-        await milestoneTool!.handler({
-          projectDir: base,
-          milestoneId: "M001",
-          title: "Workflow MCP planning",
-          vision: "Plan milestone over MCP.",
-          slices: [
-            {
-              sliceId: "S01",
-              title: "Bridge planning",
-              risk: "medium",
-              depends: [],
-              demo: "Milestone plan persists through MCP.",
-              goal: "Persist roadmap state.",
-              successCriteria: "",
-              proofLevel: "",
-              integrationClosure: "   ",
-              observabilityImpact: "",
-            },
-          ],
-        });
-      } catch (err) {
-        caught = err;
-      }
-      assert.ok(caught, "empty slice fields should be rejected");
-      const message = caught instanceof Error ? caught.message : String(caught);
+      const result = await milestoneTool!.handler({
+        projectDir: base,
+        milestoneId: "M001",
+        title: "Workflow MCP planning",
+        vision: "Plan milestone over MCP.",
+        slices: [
+          {
+            sliceId: "S01",
+            title: "Bridge planning",
+            risk: "medium",
+            depends: [],
+            demo: "Milestone plan persists through MCP.",
+            goal: "Persist roadmap state.",
+            successCriteria: "",
+            proofLevel: "",
+            integrationClosure: "   ",
+            observabilityImpact: "",
+          },
+        ],
+      });
+      const message = assertToolError(result, "successCriteria");
       for (const field of ["successCriteria", "proofLevel", "integrationClosure", "observabilityImpact"]) {
         assert.ok(
           message.includes(field),
@@ -733,30 +840,24 @@ export const executeTaskComplete = async (params, projectDir) => {
 
       // Arm 1: full slice (isSketch omitted) with the heavy fields missing
       // must reject and name ALL four fields so the agent can self-correct.
-      let fullError: unknown;
-      try {
-        await milestoneTool!.handler({
-          projectDir: base,
-          milestoneId: "M001",
-          title: "Full slice path",
-          vision: "Behavioral test for isSketch conditional.",
-          slices: [
-            {
-              sliceId: "S01",
-              title: "Heavy slice",
-              risk: "medium",
-              depends: [],
-              demo: "Demo.",
-              goal: "Goal.",
-              // heavy fields intentionally omitted
-            },
-          ],
-        });
-      } catch (err) {
-        fullError = err;
-      }
-      assert.ok(fullError, "a non-sketch slice without heavy fields must reject");
-      const fullMsg = fullError instanceof Error ? fullError.message : String(fullError);
+      const fullResult = await milestoneTool!.handler({
+        projectDir: base,
+        milestoneId: "M001",
+        title: "Full slice path",
+        vision: "Behavioral test for isSketch conditional.",
+        slices: [
+          {
+            sliceId: "S01",
+            title: "Heavy slice",
+            risk: "medium",
+            depends: [],
+            demo: "Demo.",
+            goal: "Goal.",
+            // heavy fields intentionally omitted
+          },
+        ],
+      });
+      const fullMsg = assertToolError(fullResult, "successCriteria");
       for (const field of ["successCriteria", "proofLevel", "integrationClosure", "observabilityImpact"]) {
         assert.ok(
           fullMsg.includes(field),
@@ -805,32 +906,25 @@ export const executeTaskComplete = async (params, projectDir) => {
       const milestoneTool = server.tools.find((t) => t.name === "gsd_plan_milestone");
       assert.ok(milestoneTool, "milestone planning tool should be registered");
 
-      let caught: unknown;
-      try {
-        await milestoneTool!.handler({
-          projectDir: base,
-          milestoneId: "M001",
-          title: "Sketch milestone",
-          vision: "Sketch first, refine later.",
-          slices: [
-            {
-              sliceId: "S01",
-              title: "Sketch slice",
-              risk: "low",
-              depends: [],
-              demo: "Stub demo.",
-              goal: "Stub goal.",
-              isSketch: true,
-              sketchScope: "",
-            },
-          ],
-        });
-      } catch (err) {
-        caught = err;
-      }
-      assert.ok(caught, "empty sketchScope should be rejected when isSketch=true");
-      const message = caught instanceof Error ? caught.message : String(caught);
-      assert.ok(message.includes("sketchScope"), `expected sketchScope error, got: ${message}`);
+      const emptySketchResult = await milestoneTool!.handler({
+        projectDir: base,
+        milestoneId: "M001",
+        title: "Sketch milestone",
+        vision: "Sketch first, refine later.",
+        slices: [
+          {
+            sliceId: "S01",
+            title: "Sketch slice",
+            risk: "low",
+            depends: [],
+            demo: "Stub demo.",
+            goal: "Stub goal.",
+            isSketch: true,
+            sketchScope: "",
+          },
+        ],
+      });
+      assertToolError(emptySketchResult, "sketchScope");
 
       const sketchResult = await milestoneTool!.handler({
         projectDir: base,

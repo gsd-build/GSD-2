@@ -9,10 +9,9 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
+import { gsdHome } from "./gsd-home.js";
 
-const gsdHome = process.env.GSD_HOME || join(homedir(), ".gsd");
 
 // ─── Repo Metadata ───────────────────────────────────────────────────────────
 
@@ -168,7 +167,7 @@ function isProjectGsd(gsdPath: string): boolean {
     // Recompute gsdHome dynamically so env overrides (GSD_HOME) are
     // picked up at call time, not just at module load time.
     if (stat.isDirectory()) {
-      const currentGsdHome = process.env.GSD_HOME || join(homedir(), ".gsd");
+      const currentGsdHome = gsdHome();
       const normalizedGsdPath = canonicalizeExistingPath(gsdPath);
       const normalizedGsdHome = canonicalizeExistingPath(currentGsdHome);
       if (normalizedGsdPath === normalizedGsdHome) return false;
@@ -311,7 +310,7 @@ export function repoIdentity(basePath: string): string {
  * otherwise `~/.gsd/projects/<hash>`.
  */
 export function externalGsdRoot(basePath: string): string {
-  const base = process.env.GSD_STATE_DIR || gsdHome;
+  const base = process.env.GSD_STATE_DIR || gsdHome();
   return join(base, "projects", repoIdentity(basePath));
 }
 
@@ -320,7 +319,7 @@ export function externalGsdRoot(basePath: string): string {
  * Honors GSD_STATE_DIR override before falling back to GSD_HOME.
  */
 export function externalProjectsRoot(): string {
-  const base = process.env.GSD_STATE_DIR || gsdHome;
+  const base = process.env.GSD_STATE_DIR || gsdHome();
   return join(base, "projects");
 }
 
@@ -441,7 +440,7 @@ function resolveExternalPathWithRecovery(projectPath: string): string {
   const markerId = readGsdIdMarker(projectPath);
   if (markerId && markerId !== computedId) {
     // The marker points to a different identity — the repo was likely moved.
-    const base = process.env.GSD_STATE_DIR || gsdHome;
+    const base = process.env.GSD_STATE_DIR || gsdHome();
     const markerPath = join(base, "projects", markerId);
     if (hasProjectState(markerPath)) {
       // Recover: use the old state directory and update the marker to the new identity.
@@ -510,9 +509,16 @@ function ensureGsdSymlinkCore(projectPath: string): string {
   // Guard: Never create a symlink at ~/.gsd — that's the user-level GSD home,
   // not a project .gsd. This can happen if resolveProjectRoot() or
   // escapeStaleWorktree() returned ~ as the project root (#1676).
-  const localGsdNormalized = localGsd.replaceAll("\\", "/");
-  const gsdHomePath = gsdHome.replaceAll("\\", "/");
-  if (localGsdNormalized === gsdHomePath) {
+  // Canonical normalization: resolve symlinks, trim trailing slashes, case-fold on Windows.
+  const normalizeForGuard = (p: string): string => {
+    let resolved: string;
+    try { resolved = realpathSync(p); } catch { resolved = resolve(p); }
+    const s = resolved.replaceAll("\\", "/").replace(/\/+$/, "");
+    return process.platform === "win32" ? s.toLowerCase() : s;
+  };
+  const localGsdNormalized = normalizeForGuard(localGsd);
+  const gsdHomeNorm = normalizeForGuard(gsdHome());
+  if (localGsdNormalized === gsdHomeNorm) {
     return localGsd;
   }
 

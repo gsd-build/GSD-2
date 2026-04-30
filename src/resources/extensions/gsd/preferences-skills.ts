@@ -8,6 +8,7 @@
 import { existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
+import { gsdHome } from "./gsd-home.js";
 import { statSync } from "node:fs";
 
 import type {
@@ -37,7 +38,7 @@ export function getSkillSearchDirs(cwd: string): Array<{ dir: string; method: Sk
     { dir: join(cwd, ".claude", "skills"), method: "project-skill" },
   ];
   // Legacy fallback — read skills from old GSD directory only if migration hasn't completed
-  const legacyDir = join(homedir(), ".gsd", "agent", "skills");
+  const legacyDir = join(gsdHome(), "agent", "skills");
   if (existsSync(legacyDir) && !existsSync(join(legacyDir, ".migrated-to-agents"))) {
     dirs.push({ dir: legacyDir, method: "user-skill" });
   }

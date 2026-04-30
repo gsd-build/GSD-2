@@ -274,6 +274,24 @@ test("enterMilestone is no-op when isolation mode is none", () => {
   assert.equal(findCalls(deps.calls, "enterBranchModeForMilestone").length, 0);
 });
 
+test("enterMilestone passes project root to isolation mode guard", () => {
+  const s = makeSession({ basePath: "/project", originalBasePath: "/project" });
+  let checkedBasePath: string | undefined;
+  const deps = makeDeps({
+    getIsolationMode: (basePath?: string) => {
+      checkedBasePath = basePath;
+      return "none";
+    },
+  });
+  const ctx = makeNotifyCtx();
+  const resolver = new WorktreeResolver(s, deps);
+
+  resolver.enterMilestone("M001", ctx);
+
+  assert.equal(checkedBasePath, "/project");
+  assert.equal(findCalls(deps.calls, "createAutoWorktree").length, 0);
+});
+
 test("enterMilestone does NOT update basePath on creation failure", () => {
   const s = makeSession();
   const deps = makeDeps({

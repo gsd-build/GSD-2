@@ -12,6 +12,7 @@ import { dirname, join, resolve } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { lockSync, unlockSync } from "proper-lockfile";
+import { gsdHome } from "./gsd-home.js";
 
 /**
  * Strict numeric comparison of two npm-style version strings.
@@ -54,7 +55,6 @@ export function isVersionGreater(a: string, b: string): boolean {
   return false;
 }
 
-const gsdHome = process.env.GSD_HOME || join(homedir(), ".gsd");
 
 // ─── Types (mirrored from extension-registry.ts) ────────────────────────────
 
@@ -96,11 +96,11 @@ interface ExtensionRegistry {
 // ─── Registry I/O ───────────────────────────────────────────────────────────
 
 function getRegistryPath(): string {
-  return join(gsdHome, "extensions", "registry.json");
+  return join(gsdHome(), "extensions", "registry.json");
 }
 
 function getAgentExtensionsDir(): string {
-  return join(gsdHome, "agent", "extensions");
+  return join(gsdHome(), "agent", "extensions");
 }
 
 function loadRegistry(): ExtensionRegistry {
@@ -251,7 +251,7 @@ function discoverManifests(): Map<string, ExtensionManifest> {
 }
 
 function getInstalledExtDir(): string {
-  return join(gsdHome, "extensions");
+  return join(gsdHome(), "extensions");
 }
 
 // Source: derived from npm/git URL conventions (from RESEARCH.md)

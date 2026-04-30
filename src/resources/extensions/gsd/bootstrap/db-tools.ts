@@ -4,6 +4,7 @@ import { Text } from "@gsd/pi-tui";
 
 import { loadEffectiveGSDPreferences } from "../preferences.js";
 import { ensureDbOpen } from "./dynamic-tools.js";
+import { loadWriteGateSnapshot, shouldBlockRootArtifactSaveInSnapshot } from "./write-gate.js";
 import { StringEnum } from "@gsd/pi-ai";
 import { logError } from "../workflow-logger.js";
 import { getErrorMessage } from "../error-utils.js";
@@ -24,6 +25,16 @@ function registerAlias(pi: ExtensionAPI, toolDef: any, aliasName: string, canoni
     description: toolDef.description + ` (alias for ${canonicalName} — prefer the canonical name)`,
     promptGuidelines: [`Alias for ${canonicalName} — prefer the canonical name.`],
   });
+}
+
+function requirementRootWriteGuard(operation: string): { content: Array<{ type: "text"; text: string }>; details: Record<string, unknown>; isError: true } | null {
+  const guard = shouldBlockRootArtifactSaveInSnapshot(loadWriteGateSnapshot(process.cwd()), "REQUIREMENTS");
+  if (!guard.block) return null;
+  return {
+    content: [{ type: "text", text: `Error ${operation} requirement: ${guard.reason ?? "requirements write blocked"}` }],
+    details: { operation, error: "root_artifact_write_blocked" },
+    isError: true,
+  };
 }
 
 /**
@@ -130,6 +141,8 @@ export function registerDbTools(pi: ExtensionAPI): void {
   // ─── gsd_requirement_update (formerly gsd_update_requirement) ───────────
 
   const requirementUpdateExecute = async (_toolCallId: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) => {
+    const gateBlock = requirementRootWriteGuard("update_requirement");
+    if (gateBlock) return gateBlock;
     const dbAvailable = await ensureDbOpen();
     if (!dbAvailable) {
       return {
@@ -208,6 +221,8 @@ export function registerDbTools(pi: ExtensionAPI): void {
   // ─── gsd_requirement_save ─────────────────────────────────────────────
 
   const requirementSaveExecute = async (_toolCallId: string, params: any, _signal: AbortSignal | undefined, _onUpdate: unknown, _ctx: unknown) => {
+    const gateBlock = requirementRootWriteGuard("save_requirement");
+    if (gateBlock) return gateBlock;
     const dbAvailable = await ensureDbOpen();
     if (!dbAvailable) {
       return {
@@ -253,13 +268,28 @@ export function registerDbTools(pi: ExtensionAPI): void {
       "Requirement IDs are auto-assigned — never provide an ID manually.",
     promptSnippet: "Record a new GSD requirement to the database (auto-assigns ID, regenerates REQUIREMENTS.md)",
     promptGuidelines: [
-      "Use gsd_requirement_save when recording a new functional, non-functional, or operational requirement.",
+      "Use gsd_requirement_save when recording a new capability, quality attribute, constraint, or anti-feature requirement.",
+      "Use one of these classes: core-capability, primary-user-loop, launchability, continuity, failure-visibility, integration, quality-attribute, operability, admin/support, compliance/security, differentiator, constraint, anti-feature.",
       "Requirement IDs are auto-assigned (R001, R002, ...) — never guess or provide an ID.",
       "class, description, why, and source are required. All other fields are optional.",
       "The tool writes to the DB and regenerates .gsd/REQUIREMENTS.md automatically.",
     ],
     parameters: Type.Object({
-      class: Type.String({ description: "Requirement class (e.g. 'functional', 'non-functional', 'operational')" }),
+      class: StringEnum([
+        "core-capability",
+        "primary-user-loop",
+        "launchability",
+        "continuity",
+        "failure-visibility",
+        "integration",
+        "quality-attribute",
+        "operability",
+        "admin/support",
+        "compliance/security",
+        "differentiator",
+        "constraint",
+        "anti-feature",
+      ], { description: "Requirement class" }),
       description: Type.String({ description: "Short description of the requirement" }),
       why: Type.String({ description: "Why this requirement matters" }),
       source: Type.String({ description: "Origin of the requirement (e.g. 'user-research', 'design', 'M001')" }),
@@ -305,19 +335,29 @@ export function registerDbTools(pi: ExtensionAPI): void {
       "Computes the file path from milestone/slice/task IDs automatically.",
     promptSnippet: "Save a GSD artifact (summary/research/context/assessment) to DB and disk",
     promptGuidelines: [
-      "Use gsd_summary_save to persist structured artifacts (SUMMARY, RESEARCH, CONTEXT, ASSESSMENT, CONTEXT-DRAFT).",
-      "milestone_id is required. slice_id and task_id are optional — they determine the file path.",
+      "Use gsd_summary_save to persist structured artifacts (SUMMARY, RESEARCH, CONTEXT, ASSESSMENT, CONTEXT-DRAFT, PROJECT, PROJECT-DRAFT, REQUIREMENTS, REQUIREMENTS-DRAFT).",
+      "milestone_id is required for milestone/slice/task artifacts. Omit milestone_id only for root-level PROJECT/PROJECT-DRAFT/REQUIREMENTS/REQUIREMENTS-DRAFT.",
       "The tool computes the relative path automatically: milestones/M001/M001-SUMMARY.md, milestones/M001/slices/S01/S01-SUMMARY.md, etc.",
-      "artifact_type must be one of: SUMMARY, RESEARCH, CONTEXT, ASSESSMENT, CONTEXT-DRAFT.",
+      "Root-level artifact paths are PROJECT.md, PROJECT-DRAFT.md, REQUIREMENTS.md, and REQUIREMENTS-DRAFT.md.",
+      "artifact_type must be one of: SUMMARY, RESEARCH, CONTEXT, ASSESSMENT, CONTEXT-DRAFT, PROJECT, PROJECT-DRAFT, REQUIREMENTS, REQUIREMENTS-DRAFT.",
       "Use CONTEXT-DRAFT for incremental draft persistence; use CONTEXT for the final milestone context after depth verification.",
     ],
-    parameters: Type.Object({
-      milestone_id: Type.String({ description: "Milestone ID (e.g. M001)" }),
-      slice_id: Type.Optional(Type.String({ description: "Slice ID (e.g. S01)" })),
-      task_id: Type.Optional(Type.String({ description: "Task ID (e.g. T01)" })),
-      artifact_type: Type.String({ description: "One of: SUMMARY, RESEARCH, CONTEXT, ASSESSMENT, CONTEXT-DRAFT" }),
-      content: Type.String({ description: "The full markdown content of the artifact" }),
-    }),
+    parameters: Type.Union([
+      Type.Object({
+        milestone_id: Type.String({ description: "Milestone ID (e.g. M001)" }),
+        slice_id: Type.Optional(Type.String({ description: "Slice ID (e.g. S01)" })),
+        task_id: Type.Optional(Type.String({ description: "Task ID (e.g. T01)" })),
+        artifact_type: StringEnum(["SUMMARY", "RESEARCH", "CONTEXT", "ASSESSMENT", "CONTEXT-DRAFT"], { description: "Milestone-scoped artifact type" }),
+        content: Type.String({ description: "The full markdown content of the artifact" }),
+      }),
+      Type.Object({
+        milestone_id: Type.Optional(Type.String({ description: "Omit for root artifacts" })),
+        slice_id: Type.Optional(Type.String({ description: "Slice ID (e.g. S01)" })),
+        task_id: Type.Optional(Type.String({ description: "Task ID (e.g. T01)" })),
+        artifact_type: StringEnum(["PROJECT", "PROJECT-DRAFT", "REQUIREMENTS", "REQUIREMENTS-DRAFT"], { description: "Root artifact type" }),
+        content: Type.String({ description: "The full markdown content of the artifact" }),
+      }),
+    ]),
     execute: summarySaveExecute,
     renderCall(args: any, theme: any) {
       let text = theme.fg("toolTitle", theme.bold("summary_save "));

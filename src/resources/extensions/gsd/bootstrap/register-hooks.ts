@@ -7,7 +7,7 @@ import type { GSDEcosystemBeforeAgentStartHandler } from "../ecosystem/gsd-exten
 import { updateSnapshot } from "../ecosystem/gsd-extension-api.js";
 
 import { buildMilestoneFileName, resolveMilestonePath, resolveSliceFile, resolveSlicePath } from "../paths.js";
-import { clearDiscussionFlowState, isDepthConfirmationAnswer, isQueuePhaseActive, markDepthVerified, resetWriteGateState, shouldBlockContextWrite, shouldBlockPlanningUnit, shouldBlockQueueExecution, isGateQuestionId, setPendingGate, clearPendingGate, getPendingGate, shouldBlockPendingGate, shouldBlockPendingGateBash, extractDepthVerificationMilestoneId } from "./write-gate.js";
+import { canonicalToolName, clearDiscussionFlowState, isDepthConfirmationAnswer, isQueuePhaseActive, markApprovalGateVerified, markDepthVerified, resetWriteGateState, shouldBlockContextWrite, shouldBlockPlanningUnit, shouldBlockQueueExecution, isGateQuestionId, setPendingGate, clearPendingGate, getPendingGate, shouldBlockPendingGate, shouldBlockPendingGateBash, extractDepthVerificationMilestoneId } from "./write-gate.js";
 import { resolveManifest } from "../unit-context-manifest.js";
 import { isBlockedStateFile, isBashWriteToStateFile, BLOCKED_WRITE_ERROR } from "../write-intercept.js";
 import { loadFile, saveFile, formatContinue } from "../files.js";
@@ -23,10 +23,12 @@ import { installNotifyInterceptor } from "./notify-interceptor.js";
 import { initNotificationStore } from "../notification-store.js";
 import { initNotificationWidget } from "../notification-widget.js";
 import { extractSubagentAgentClasses } from "./subagent-input.js";
+import { approvalGateIdForUnit, isExplicitApprovalResponse, shouldPauseForUserApprovalQuestion } from "../user-input-boundary.js";
 
 // Skip the welcome screen on the very first session_start — cli.ts already
 // printed it before the TUI launched. Only re-print on /clear (subsequent sessions).
 let isFirstSession = true;
+let approvalQuestionAbortInFlight = false;
 
 async function deriveGsdState(basePath: string) {
   const { deriveState } = await import("../state.js");
@@ -76,6 +78,7 @@ export function registerHooks(
     }
     resetWriteGateState();
     resetToolCallLoopGuard();
+    approvalQuestionAbortInFlight = false;
     await resetAskUserQuestionsTurnCache();
     await syncServiceTierStatus(ctx);
     await applyDisabledModelProviderPolicy(ctx);
@@ -152,6 +155,14 @@ export function registerHooks(
     const { getEcosystemReadyPromise } = await import("../ecosystem/loader.js");
     await getEcosystemReadyPromise();
 
+    const pendingApprovalGate = getPendingGate();
+    if (pendingApprovalGate && isExplicitApprovalResponse(event.prompt, pendingApprovalGate)) {
+      markApprovalGateVerified(pendingApprovalGate);
+      const milestoneId = extractDepthVerificationMilestoneId(pendingApprovalGate);
+      if (milestoneId) markDepthVerified(milestoneId);
+      clearPendingGate();
+    }
+
     // GSD's own context injection (existing behavior — unchanged).
     const { buildBeforeAgentStartResult } = await import("./system-context.js");
     const gsdResult = await buildBeforeAgentStartResult(event, ctx);
@@ -197,6 +208,7 @@ export function registerHooks(
   });
 
   pi.on("agent_end", async (event, ctx: ExtensionContext) => {
+    approvalQuestionAbortInFlight = false;
     resetToolCallLoopGuard();
     await resetAskUserQuestionsTurnCache();
     const { handleAgentEnd } = await import("./agent-end-recovery.js");
@@ -305,6 +317,50 @@ export function registerHooks(
     }
   });
 
+  pi.on("message_update", async (event, ctx: ExtensionContext) => {
+    if (approvalQuestionAbortInFlight) return;
+
+    const dash = getAutoRuntimeSnapshot();
+    let unitType = dash.currentUnit?.type;
+    let unitId = dash.currentUnit?.id;
+
+    if (!unitType) {
+      try {
+        const { getPendingDeepProjectSetupUnitForContext } = await import("../guided-flow.js");
+        const pending = getPendingDeepProjectSetupUnitForContext(ctx, process.cwd());
+        unitType = pending?.unitType;
+        unitId = pending?.unitId;
+      } catch {
+        // Best-effort foreground detection only.
+      }
+    }
+
+    if (!unitType) {
+      const milestoneId = await getDiscussionMilestoneIdFor(process.cwd());
+      if (milestoneId) {
+        unitType = "discuss-milestone";
+        unitId = milestoneId;
+      }
+    }
+
+    if (!shouldPauseForUserApprovalQuestion(unitType, [event.message])) return;
+
+    const gateId = approvalGateIdForUnit(unitType, unitId);
+    if (gateId) setPendingGate(gateId);
+
+    approvalQuestionAbortInFlight = true;
+    ctx.ui.notify(
+      `${unitType}${unitId ? ` ${unitId}` : ""} is waiting for your approval - pausing before more tool calls run.`,
+      "info",
+    );
+    // The pending gate set above blocks subsequent non-read-only tool calls
+    // via the tool_call hook below, so we do not abort the in-flight stream.
+    // Aborting mid-stream eats the model's question text on external CLI
+    // providers (Claude Code SDK) because lastTextContent isn't populated
+    // from in-flight builder state — the user only ever sees "Claude Code
+    // stream aborted by caller" instead of the question.
+  });
+
   pi.on("session_shutdown", async (_event, ctx: ExtensionContext) => {
     const { isParallelActive, shutdownParallel } = await import("../parallel-orchestrator.js");
     if (isParallelActive()) {
@@ -323,8 +379,9 @@ export function registerHooks(
 
   pi.on("tool_call", async (event) => {
     const discussionBasePath = process.cwd();
+    const toolName = canonicalToolName(event.toolName);
     // ── Loop guard: block repeated identical tool calls ──
-    const loopCheck = checkToolCallLoop(event.toolName, event.input as Record<string, unknown>);
+    const loopCheck = checkToolCallLoop(toolName, event.input as Record<string, unknown>);
     if (loopCheck.block) {
       return { block: true, reason: loopCheck.reason };
     }
@@ -332,7 +389,7 @@ export function registerHooks(
     // ── Discussion gate enforcement: track pending gate questions ─────────
     // Only gate-shaped ask_user_questions calls should block execution.
     // The gate stays pending until the user selects the approval option.
-    if (event.toolName === "ask_user_questions") {
+    if (toolName === "ask_user_questions") {
       const questions: any[] = (event.input as any)?.questions ?? [];
       const questionId = questions.find((question) => typeof question?.id === "string" && isGateQuestionId(question.id))?.id;
       if (typeof questionId === "string") {
@@ -354,7 +411,7 @@ export function registerHooks(
         if (bashGuard.block) return bashGuard;
       } else {
         const gateGuard = shouldBlockPendingGate(
-          event.toolName,
+          toolName,
           milestoneId,
           isQueuePhaseActive(),
         );
@@ -375,7 +432,7 @@ export function registerHooks(
       } else if (isToolCallEventType("bash", event)) {
         queueInput = event.input.command;
       }
-      const queueGuard = shouldBlockQueueExecution(event.toolName, queueInput, true);
+      const queueGuard = shouldBlockQueueExecution(toolName, queueInput, true);
       if (queueGuard.block) return queueGuard;
     }
 
@@ -496,7 +553,8 @@ export function registerHooks(
       // errors and deterministic policy rejections are handled consistently.
       recordToolInvocationError(event.toolName, errorText);
     }
-    if (event.toolName !== "ask_user_questions") return;
+    const toolName = canonicalToolName(event.toolName);
+    if (toolName !== "ask_user_questions") return;
     const milestoneId = await getDiscussionMilestoneIdFor(process.cwd());
     const queueActive = isQueuePhaseActive();
 
@@ -511,13 +569,28 @@ export function registerHooks(
     const currentPendingGate = getPendingGate();
     if (currentPendingGate) {
       if (details?.cancelled || !details?.response) {
-        // Gate stays pending — model will be blocked from non-read-only tools
-        // until it re-asks and gets a valid response
+        // Gate stays pending. Return a hard instruction as the tool result so
+        // the model cannot reinterpret a cancelled prompt as prior approval.
+        return {
+          content: [{
+            type: "text" as const,
+            text: [
+              `HARD BLOCK: approval gate "${currentPendingGate}" is still pending.`,
+              "No user response was received for the confirmation question.",
+              "Do not infer approval from earlier or prior messages.",
+              "Do not proceed, write files, save artifacts, or call more tools.",
+              "Ask the user to confirm in plain chat, then stop and wait for their next message.",
+            ].join(" "),
+          }],
+        };
       } else {
         const pendingQuestion = questions.find((question) => question?.id === currentPendingGate);
         if (pendingQuestion) {
           const answer = details.response?.answers?.[currentPendingGate];
           if (isDepthConfirmationAnswer(answer?.selected, pendingQuestion.options)) {
+            markApprovalGateVerified(currentPendingGate);
+            const milestoneIdFromGate = extractDepthVerificationMilestoneId(currentPendingGate);
+            if (milestoneIdFromGate) markDepthVerified(milestoneIdFromGate);
             clearPendingGate();
           }
         }
@@ -533,6 +606,8 @@ export function registerHooks(
         const answer = details.response?.answers?.[question.id];
         const inferredMilestoneId = extractDepthVerificationMilestoneId(question.id) ?? milestoneId;
         if (isDepthConfirmationAnswer(answer?.selected, question.options)) {
+          if (currentPendingGate && question.id !== currentPendingGate) break;
+          markApprovalGateVerified(question.id);
           markDepthVerified(inferredMilestoneId);
           clearPendingGate();
         }

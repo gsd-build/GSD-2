@@ -9,12 +9,31 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const autoTsPath = join(__dirname, "..", "resources", "extensions", "gsd", "auto.ts");
 const loaderTsPath = join(__dirname, "..", "loader.ts");
+const devCliJsPath = join(__dirname, "..", "..", "scripts", "dev-cli.js");
 
 test("loader.ts sets GSD_PKG_ROOT env var", () => {
   const loaderSrc = readFileSync(loaderTsPath, "utf-8");
   assert.ok(
     loaderSrc.includes("process.env.GSD_PKG_ROOT"),
     "loader.ts must set GSD_PKG_ROOT so deployed extensions can locate package-root modules",
+  );
+});
+
+test("source dev CLI remains the child-process GSD_BIN_PATH", () => {
+  const loaderSrc = readFileSync(loaderTsPath, "utf-8");
+  const devCliSrc = readFileSync(devCliJsPath, "utf-8");
+
+  assert.ok(
+    devCliSrc.includes("GSD_DEV_CLI_PATH: devCliPath") &&
+    devCliSrc.includes("GSD_CLI_PATH: devCliPath") &&
+    devCliSrc.includes("GSD_BIN_PATH: devCliPath"),
+    "scripts/dev-cli.js must pass itself as the CLI entrypoint for child GSD processes",
+  );
+  assert.ok(
+    loaderSrc.includes("GSD_DEV_CLI_PATH") &&
+    /const\s+explicitCliPath\s*=\s*process\.env\.GSD_CLI_PATH\?\.trim\(\)\s*\|\|\s*process\.env\.GSD_BIN_PATH\?\.trim\(\)/.test(loaderSrc) &&
+    /isSourceLoader\s*&&\s*existsSync\(devCliPath\)\s*\?\s*devCliPath\s*:\s*invokedBinPath/.test(loaderSrc),
+    "loader.ts must preserve the dev CLI wrapper instead of exposing src/loader.ts to subagents",
   );
 });
 

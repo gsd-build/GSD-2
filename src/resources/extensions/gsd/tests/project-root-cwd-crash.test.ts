@@ -3,7 +3,7 @@
  *
  * When the working directory is deleted (e.g. worktree teardown), process.cwd()
  * throws ENOENT. The fix wraps process.cwd() in a try/catch and falls back to
- * process.env.HOME.
+ * os.homedir().
  *
  * Also verifies #3589 — nativeBranchExists validation for prefs.main_branch
  * in auto-worktree.ts to prevent merge failures with stale preferences.
@@ -29,9 +29,9 @@ describe('projectRoot cwd crash guard (#3598)', () => {
       'process.cwd() should be inside a try block');
   });
 
-  test('catch block falls back to process.env.HOME', () => {
-    assert.match(contextSource, /catch[\s\S]*?process\.env\.HOME/,
-      'catch block should fall back to process.env.HOME');
+  test('catch block falls back to homedir()', () => {
+    assert.match(contextSource, /catch[\s\S]*?homedir\(\)/,
+      'catch block should fall back to homedir()');
   });
 
   test('projectRoot function is exported', () => {

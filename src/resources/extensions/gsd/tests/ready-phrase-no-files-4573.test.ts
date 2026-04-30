@@ -285,6 +285,67 @@ describe("#4573 maybeHandleEmptyIntentTurn", () => {
     }
   });
 
+  test("multi-line message with mid-message question → treated as user-handoff (regression: discuss flow)", () => {
+    // Regression for the deep-mode discuss-project case where the LLM asked
+    // a clarifying question mid-message and ended on a closing remark. The
+    // previous heuristic only checked the LAST line for `?` and missed the
+    // earlier question, causing the empty-turn nudge to auto-reply on
+    // behalf of the user.
+    const base = mkBase();
+    try {
+      const cap = mkCapture();
+      setPendingAutoStart(base, {
+        basePath: base,
+        milestoneId: "M001",
+        ctx: mkCtx(cap),
+        pi: mkPi(cap),
+      });
+      const text = [
+        "Let me make sure I understand what you're testing here.",
+        "",
+        "We need something to plan. A few lightweight options:",
+        "- A simple CLI tool",
+        "- A static API",
+        "",
+        "What should the fictional project be?",
+        "",
+        "If you have a preference, say the word and I'll pick one.",
+      ].join("\n");
+      const handled = maybeHandleEmptyIntentTurn(
+        { messages: [assistantMsg(text)] },
+        false,
+      );
+      assert.equal(handled, false, "any line ending in ? must defer to the user");
+      assert.equal(cap.messages.length, 0);
+    } finally {
+      clearPendingAutoStart();
+    }
+  });
+
+  test('"Let me make sure" meta phrase → not flagged as commit intent (regression)', () => {
+    const base = mkBase();
+    try {
+      const cap = mkCapture();
+      setPendingAutoStart(base, {
+        basePath: base,
+        milestoneId: "M001",
+        ctx: mkCtx(cap),
+        pi: mkPi(cap),
+      });
+      // No question mark anywhere — so the only thing keeping this from
+      // firing the nudge should be the refined commit-intent regex
+      // (dropping "make" from the verb list).
+      const handled = maybeHandleEmptyIntentTurn(
+        { messages: [assistantMsg("Let me make sure I have this right.")] },
+        false,
+      );
+      assert.equal(handled, false, "meta acknowledgments are not action announcements");
+      assert.equal(cap.messages.length, 0);
+    } finally {
+      clearPendingAutoStart();
+    }
+  });
+
   test("commit-intent phrase WITHOUT tool call → nudge fires", () => {
     const base = mkBase();
     try {

@@ -20,8 +20,8 @@ import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { GSDError, GSD_PARSE_ERROR } from "./errors.js";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { homedir } from "node:os";
 import { logWarning } from "./workflow-logger.js";
+import { gsdHome } from "./gsd-home.js";
 
 type ExistsFn = (path: string) => boolean;
 
@@ -64,8 +64,7 @@ export function resolveExtensionDirFromCandidates(
  */
 function resolveExtensionDir(): string {
   const moduleDir = dirname(fileURLToPath(import.meta.url));
-  const gsdHome = process.env.GSD_HOME || join(homedir(), ".gsd");
-  const agentGsdDir = join(gsdHome, "agent", "extensions", "gsd");
+  const agentGsdDir = join(gsdHome(), "agent", "extensions", "gsd");
   return resolveExtensionDirFromCandidates(moduleDir, agentGsdDir);
 }
 

@@ -25,10 +25,10 @@ import { Client } from "@modelcontextprotocol/sdk/client";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { readFileSync, existsSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { buildHttpTransportOpts } from "./auth.js";
 import type { McpHttpAuthConfig } from "./auth.js";
+import { gsdHome } from "../gsd/gsd-home.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -104,7 +104,7 @@ function readConfigs(): McpServerConfig[] {
 	const configPaths = [
 		join(process.cwd(), ".mcp.json"),
 		join(process.cwd(), ".gsd", "mcp.json"),
-		join(process.env.GSD_HOME || join(homedir(), ".gsd"), "mcp.json"),
+		join(gsdHome(), "mcp.json"),
 	];
 
 	for (const configPath of configPaths) {

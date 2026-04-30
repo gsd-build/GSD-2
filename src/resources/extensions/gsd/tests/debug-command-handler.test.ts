@@ -136,6 +136,43 @@ describe("handleDebug lifecycle", () => {
     }
   });
 
+  test("issue-start dispatches a find_and_fix debug runner after creating the session", async () => {
+    const base = makeBase();
+    const ctx = createMockCtx();
+    const dispatched: Array<{
+      msg: { customType: string; content: string; display: boolean };
+      options: { triggerTurn: boolean };
+    }> = [];
+    const mockPi = {
+      sendMessage(
+        msg: { customType: string; content: string; display: boolean },
+        options: { triggerTurn: boolean },
+      ) {
+        dispatched.push({ msg, options });
+      },
+    };
+    const saved = process.cwd();
+    process.chdir(base);
+
+    try {
+      await handleDebug("Login fails on Safari", ctx as any, mockPi as any);
+
+      assert.equal(ctx.notifications[0].level, "info");
+      assert.match(ctx.notifications[0].message, /Debug session started: login-fails-on-safari/);
+      assert.match(ctx.notifications[0].message, /dispatchMode=find_and_fix/);
+      assert.equal(dispatched.length, 1);
+      assert.equal(dispatched[0].msg.customType, "gsd-debug-start");
+      assert.equal(dispatched[0].msg.display, false);
+      assert.equal(dispatched[0].options.triggerTurn, true);
+      assert.match(dispatched[0].msg.content, /`find_and_fix`/);
+      assert.match(dispatched[0].msg.content, /login-fails-on-safari/);
+      assert.match(dispatched[0].msg.content, /Login fails on Safari/);
+    } finally {
+      process.chdir(saved);
+      rmSync(base, { recursive: true, force: true });
+    }
+  });
+
   test("list shows persisted session summaries with lifecycle metadata", async () => {
     const base = makeBase();
     const ctx = createMockCtx();

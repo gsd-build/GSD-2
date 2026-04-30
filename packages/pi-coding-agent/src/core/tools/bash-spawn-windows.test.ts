@@ -23,16 +23,36 @@ import { spawn } from "node:child_process";
 // Verify the spawn option pattern used across the codebase.
 // This is a static/structural test — it reads the source files and asserts
 // they use the platform-guarded detached flag.
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+function findRepoRoot(): string {
+	const requiredFiles = [
+		"packages/pi-coding-agent/src/core/tools/bash.ts",
+		"packages/pi-coding-agent/src/core/bash-executor.ts",
+		"packages/pi-coding-agent/src/utils/shell.ts",
+	];
+	const candidates = [
+		resolve(__dirname, "../../../../../"),
+		resolve(__dirname, "../../../../../../"),
+	];
+	for (const candidate of candidates) {
+		if (requiredFiles.every((file) => existsSync(join(candidate, file)))) {
+			return candidate;
+		}
+	}
+	throw new Error(`Unable to resolve repository root from ${__dirname}`);
+}
+
+const REPO_ROOT = findRepoRoot();
+
 const SPAWN_FILES = [
-	join(__dirname, "bash.ts"),
-	join(__dirname, "..", "bash-executor.ts"),
-	join(__dirname, "..", "..", "utils", "shell.ts"),
+	join(REPO_ROOT, "packages/pi-coding-agent/src/core/tools/bash.ts"),
+	join(REPO_ROOT, "packages/pi-coding-agent/src/core/bash-executor.ts"),
+	join(REPO_ROOT, "packages/pi-coding-agent/src/utils/shell.ts"),
 ];
 
 test("spawn calls use platform-guarded detached flag (no unconditional detached: true)", () => {
@@ -57,7 +77,7 @@ test("spawn calls use platform-guarded detached flag (no unconditional detached:
 });
 
 test("killProcessTree does not use detached: true for taskkill on Windows", () => {
-	const shellFile = join(__dirname, "..", "..", "utils", "shell.ts");
+	const shellFile = join(REPO_ROOT, "packages/pi-coding-agent/src/utils/shell.ts");
 	const content = readFileSync(shellFile, "utf-8");
 
 	// Find the taskkill spawn call and ensure it doesn't have detached: true

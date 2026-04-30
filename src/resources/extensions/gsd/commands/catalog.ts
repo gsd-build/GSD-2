@@ -1,10 +1,9 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { loadRegistry } from "../workflow-templates.js";
+import { gsdHome } from "../gsd-home.js";
 
-const gsdHome = process.env.GSD_HOME || join(homedir(), ".gsd");
 
 export interface GsdCommandDefinition {
   cmd: string;
@@ -15,6 +14,7 @@ type CompletionMap = Record<string, readonly GsdCommandDefinition[]>;
 
 export const GSD_COMMAND_DESCRIPTION =
   "GSD — Get Shit Done: /gsd help|start|templates|next|auto|stop|pause|status|widget|visualize|queue|quick|discuss|capture|triage|dispatch|history|undo|undo-task|reset-slice|rate|skip|export|cleanup|model|mode|prefs|config|keys|hooks|run-hook|skill-health|doctor|debug|logs|forensics|changelog|migrate|remote|steer|knowledge|new-milestone|parallel|cmux|park|unpark|init|setup|onboarding|inspect|extensions|update|fast|mcp|rethink|workflow|codebase|notifications|ship|do|session-report|backlog|pr-branch|add-tests|scan|language|worktree|eval-review|eval-fix";
+  "GSD — Get Shit Done: /gsd help|start|templates|next|auto|stop|pause|status|widget|visualize|queue|quick|discuss|capture|triage|dispatch|history|undo|undo-task|reset-slice|rate|skip|export|cleanup|model|mode|prefs|config|keys|hooks|run-hook|skill-health|doctor|debug|logs|forensics|changelog|migrate|remote|steer|knowledge|new-milestone|new-project|parallel|cmux|park|unpark|init|setup|onboarding|inspect|extensions|update|fast|mcp|rethink|workflow|codebase|notifications|ship|do|session-report|backlog|pr-branch|add-tests|scan|language|worktree|eval-review";
 
 export const TOP_LEVEL_SUBCOMMANDS: readonly GsdCommandDefinition[] = [
   { cmd: "help", desc: "Categorized command reference with descriptions" },
@@ -62,6 +62,7 @@ export const TOP_LEVEL_SUBCOMMANDS: readonly GsdCommandDefinition[] = [
   { cmd: "inspect", desc: "Show SQLite DB diagnostics" },
   { cmd: "knowledge", desc: "Add persistent project knowledge (rule, pattern, or lesson)" },
   { cmd: "new-milestone", desc: "Create a milestone from a specification document (headless)" },
+  { cmd: "new-project", desc: "Bootstrap a new project (use --deep for staged project-level discovery)" },
   { cmd: "parallel", desc: "Parallel milestone orchestration (start, status, stop, merge, watch)" },
   { cmd: "cmux", desc: "Manage cmux integration (status, sidebar, notifications, splits)" },
   { cmd: "park", desc: "Park a milestone — skip without deleting" },
@@ -335,7 +336,7 @@ function filterOptions(
 
 function getExtensionCompletions(prefix: string, action: string) {
   try {
-    const extDir = join(gsdHome, "agent", "extensions");
+    const extDir = join(gsdHome(), "agent", "extensions");
     const ids: Array<{ id: string; name: string }> = [];
     for (const entry of readdirSync(extDir, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
@@ -424,7 +425,7 @@ function resolveProjectRootForCompletion(basePath: string): string {
   const gsdIdx = basePath.indexOf(gsdMarker);
   const candidate = gsdIdx !== -1 ? basePath.slice(0, gsdIdx) : basePath.slice(0, segment.gsdIdx);
 
-  const normalizedGsdHome = normalizePathForCompare(gsdHome);
+  const normalizedGsdHome = normalizePathForCompare(gsdHome());
   const candidateGsdPath = normalizePathForCompare(join(candidate, ".gsd"));
   if (candidateGsdPath === normalizedGsdHome || candidateGsdPath.startsWith(`${normalizedGsdHome}/`)) {
     return resolveProjectRootFromGitFile(basePath) ?? basePath;
@@ -533,7 +534,7 @@ export function getGsdArgumentCompletions(prefix: string) {
       const base = resolveProjectRootForCompletion(process.cwd());
       scanDir(join(base, ".gsd", "workflows"), "project");
       scanDir(join(base, ".gsd", "workflow-defs"), "project-legacy");
-      scanDir(join(gsdHome, "workflows"), "global");
+      scanDir(join(gsdHome(), "workflows"), "global");
     } catch { /* ignore */ }
     // Also include bundled template names.
     try {

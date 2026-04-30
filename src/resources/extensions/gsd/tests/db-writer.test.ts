@@ -22,6 +22,7 @@ import {
   generateRequirementsMd,
   nextDecisionId,
   saveDecisionToDb,
+  saveRequirementToDb,
   updateRequirementInDb,
   saveArtifactToDb,
   extractDeferredSliceRef,
@@ -244,20 +245,24 @@ describe('db-writer', () => {
     assert.ok(md.includes('## Coverage Summary'), 'has Coverage Summary section');
   });
 
-  test('generateRequirementsMd only populated sections', () => {
-    // Only active requirements — should only have Active section
+  test('generateRequirementsMd emits empty required sections', () => {
+    // Only active requirements, but deep-mode validation requires all sections.
     const activeOnly = SAMPLE_REQUIREMENTS.filter(r => r.status === 'active');
     const md = generateRequirementsMd(activeOnly);
     assert.ok(md.includes('## Active'), 'has Active section');
-    assert.ok(!md.includes('## Validated'), 'no Validated section when no validated reqs');
-    assert.ok(!md.includes('## Deferred'), 'no Deferred section when no deferred reqs');
-    assert.ok(!md.includes('## Out of Scope'), 'no Out of Scope section when no out-of-scope reqs');
+    assert.ok(md.includes('## Validated'), 'has empty Validated section');
+    assert.ok(md.includes('## Deferred'), 'has empty Deferred section');
+    assert.ok(md.includes('## Out of Scope'), 'has empty Out of Scope section');
   });
 
   test('generateRequirementsMd empty input', () => {
     const md = generateRequirementsMd([]);
     const parsed = parseRequirementsSections(md);
     assert.deepStrictEqual(parsed.length, 0, 'empty requirements produces empty parse');
+    assert.ok(md.includes('## Active'), 'empty requirements still has Active section');
+    assert.ok(md.includes('## Validated'), 'empty requirements still has Validated section');
+    assert.ok(md.includes('## Deferred'), 'empty requirements still has Deferred section');
+    assert.ok(md.includes('## Out of Scope'), 'empty requirements still has Out of Scope section');
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -541,6 +546,49 @@ describe('db-writer', () => {
     }
   });
 
+  test('saveRequirementToDb is idempotent for repeated descriptions', async () => {
+    const tmpDir = makeTmpDir();
+    const dbPath = path.join(tmpDir, '.gsd', 'gsd.db');
+    openDatabase(dbPath);
+
+    try {
+      const first = await saveRequirementToDb({
+        class: 'primary-user-loop',
+        status: 'active',
+        description: 'User can add a task by pressing Enter',
+        why: 'Core capture loop',
+        source: 'user',
+        primary_owner: 'M001/none yet',
+        supporting_slices: 'none',
+        validation: 'unmapped',
+      }, tmpDir);
+      const retry = await saveRequirementToDb({
+        class: 'primary-user-loop',
+        status: 'active',
+        description: '  user CAN add a task by pressing Enter  ',
+        why: 'Core capture loop, restated on retry',
+        source: 'user',
+        primary_owner: 'M001/S01',
+        supporting_slices: 'none',
+        validation: 'mapped',
+      }, tmpDir);
+
+      assert.deepStrictEqual(retry.id, first.id, 'retry save reuses existing requirement ID');
+
+      const adapter = _getAdapter();
+      const rows = adapter!
+        .prepare('SELECT id, description, primary_owner, validation FROM requirements ORDER BY id')
+        .all() as Array<Record<string, unknown>>;
+      assert.deepStrictEqual(rows.length, 1, 'semantic duplicate does not create a new row');
+      assert.deepStrictEqual(rows[0]['id'], 'R001');
+      assert.deepStrictEqual(rows[0]['primary_owner'], 'M001/S01', 'retry updates the existing row');
+      assert.deepStrictEqual(rows[0]['validation'], 'mapped', 'retry updates validation');
+    } finally {
+      closeDatabase();
+      cleanupDir(tmpDir);
+    }
+  });
+
   // ═══════════════════════════════════════════════════════════════════════════
   // saveArtifactToDb Tests
   // ═══════════════════════════════════════════════════════════════════════════
@@ -624,6 +672,104 @@ describe('db-writer', () => {
         row!['full_content'],
         fullContent,
         'DB stores the richer disk content instead of abbreviated content',
+      );
+    } finally {
+      closeDatabase();
+      cleanupDir(tmpDir);
+    }
+  });
+
+  test('saveArtifactToDb — final REQUIREMENTS renders from DB rows, ignoring caller-supplied markdown', async () => {
+    const tmpDir = makeTmpDir();
+    const dbPath = path.join(tmpDir, '.gsd', 'gsd.db');
+    openDatabase(dbPath);
+
+    try {
+      const canonicalRequirement: Requirement = {
+        id: 'R001',
+        class: 'primary-user-loop',
+        status: 'active',
+        description: 'User can add a task',
+        why: 'Core loop',
+        source: 'user',
+        primary_owner: 'M001/none yet',
+        supporting_slices: 'none',
+        validation: 'unmapped',
+        notes: 'canonical',
+        full_content: '',
+        superseded_by: null,
+      };
+      upsertRequirement(canonicalRequirement);
+
+      const relPath = 'REQUIREMENTS.md';
+      const filePath = path.join(tmpDir, '.gsd', relPath);
+      const bloatedInvalidContent = [
+        '# Requirements',
+        '',
+        '## Active',
+        '',
+        ...Array.from({ length: 30 }, (_, i) => [
+          `### R${String(i + 1).padStart(3, '0')} — Duplicate`,
+          '- Class: primary-user-loop',
+          '- Status: active',
+          '- Description: Duplicate retry row',
+          '- Why it matters: Retry drift',
+          '- Source: test',
+          '- Primary owning slice: M001/none yet',
+          '- Supporting slices: none',
+          '- Validation: unmapped',
+          '- Notes:',
+          '',
+        ].join('\n')),
+        '## Traceability',
+        '',
+        '## Coverage Summary',
+        '',
+      ].join('\n');
+      fs.writeFileSync(filePath, bloatedInvalidContent);
+
+      assert.ok(
+        Buffer.byteLength(generateRequirementsMd([canonicalRequirement]), 'utf-8') < Buffer.byteLength(bloatedInvalidContent, 'utf-8') * 0.5,
+        'test setup: DB-rendered content is small enough that the generic shrinkage guard would trigger',
+      );
+
+      await saveArtifactToDb({
+        path: relPath,
+        artifact_type: 'REQUIREMENTS',
+        content: bloatedInvalidContent,
+      }, tmpDir);
+
+      const writtenContent = fs.readFileSync(filePath, 'utf-8');
+      assert.ok(
+        writtenContent.includes('R001') && writtenContent.includes('User can add a task'),
+        'disk file contains DB-sourced R001 requirement',
+      );
+      assert.ok(
+        !writtenContent.includes('Duplicate retry row'),
+        'disk file does not contain caller-supplied bloated content',
+      );
+
+      const adapter = _getAdapter();
+      const reqRows = adapter!
+        .prepare('SELECT id, description FROM requirements ORDER BY id')
+        .all() as Array<Record<string, unknown>>;
+      assert.deepStrictEqual(
+        reqRows.map((row) => [row['id'], row['description']]),
+        [['R001', 'User can add a task']],
+        'artifact save does not parse markdown back into the requirements table',
+      );
+
+      const artifact = adapter!
+        .prepare('SELECT full_content FROM artifacts WHERE path = ?')
+        .get(relPath) as Record<string, unknown>;
+      const storedContent = artifact['full_content'] as string;
+      assert.ok(
+        storedContent.includes('R001') && storedContent.includes('User can add a task'),
+        'artifacts.full_content is DB-rendered output containing R001',
+      );
+      assert.ok(
+        !storedContent.includes('Duplicate retry row'),
+        'artifacts.full_content does not echo caller-supplied markdown payload',
       );
     } finally {
       closeDatabase();

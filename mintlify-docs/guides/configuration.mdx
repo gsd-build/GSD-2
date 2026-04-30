@@ -36,6 +36,12 @@ token_profile: balanced
 ---
 ```
 
+To opt a project into staged project-level discovery:
+
+```yaml
+planning_depth: deep
+```
+
 ## Global vs project preferences
 
 | Scope | Path | Applies to |
@@ -99,6 +105,8 @@ GSD connects to external MCP servers configured in project files:
 
 Verify from a GSD session: `mcp_servers` → `mcp_discover` → `mcp_call`.
 
+`secure_env_collect` will not set MCP server runtime variables such as `GSD_WORKFLOW_EXECUTORS_MODULE`, `GSD_WORKFLOW_PROJECT_ROOT`, `GSD_CLI_PATH`, `NODE_OPTIONS`, `NODE_PATH`, or `PATH`; configure those in the operator environment or MCP config. Local dotenv writes are hydrated into the current MCP server process, while Vercel and Convex pushes are remote-only and are not added to `process.env`.
+
 ## Models
 
 Per-phase model selection:
@@ -127,6 +135,21 @@ For custom providers (Ollama, vLLM, LM Studio), see [custom models](/guides/cust
 ### `token_profile`
 
 Coordinates model selection, phase skipping, and context compression. Values: `budget`, `balanced` (default), `quality`. See [token optimization](/guides/token-optimization).
+
+### `planning_depth`
+
+Controls how much discovery runs before milestone-level planning.
+
+```yaml
+planning_depth: deep
+```
+
+| Value | Behavior |
+|-------|----------|
+| `light` | Default. Uses the normal milestone discussion flow. |
+| `deep` | Runs workflow preferences, `.gsd/PROJECT.md`, `.gsd/REQUIREMENTS.md`, a research decision, and optional project research before milestone planning. |
+
+Enable deep mode with `/gsd new-project --deep`, `/gsd new-milestone --deep`, or by adding the setting to `.gsd/PREFERENCES.md`. The research decision is recorded in `.gsd/runtime/research-decision.json`; choosing research writes `.gsd/research/STACK.md`, `FEATURES.md`, `ARCHITECTURE.md`, and `PITFALLS.md`.
 
 ### `budget_ceiling`
 

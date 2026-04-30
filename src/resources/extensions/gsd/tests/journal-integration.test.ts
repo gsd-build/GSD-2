@@ -708,6 +708,121 @@ test("#4671: plan-v2 missing CONTEXT.md reaches dispatch recovery instead of pau
   }
 });
 
+test("plan-v2 empty graph rederives state before pausing", async () => {
+  const basePath = mkdtempSync(join(tmpdir(), "gsd-plan-v2-empty-graph-"));
+  mkdirSync(join(basePath, ".gsd", "milestones", "M001"), { recursive: true });
+  writeFileSync(
+    join(basePath, ".gsd", "milestones", "M001", "M001-CONTEXT.md"),
+    "# M001: Test\n\nFinalized context.\n",
+  );
+  openDatabase(join(basePath, ".gsd", "gsd.db"));
+  try {
+    let deriveCalls = 0;
+    let invalidateCalls = 0;
+    let pauseCalls = 0;
+    const capture = createEventCapture();
+    const deps = makeMockDeps(capture, {
+      pauseAuto: async () => { pauseCalls++; },
+      invalidateAllCaches: () => { invalidateCalls++; },
+      deriveState: async () => {
+        deriveCalls++;
+        if (deriveCalls === 1) {
+          return {
+            phase: "validating-milestone",
+            activeMilestone: { id: "M001", title: "Test", status: "active" },
+            activeSlice: null,
+            activeTask: null,
+            registry: [{ id: "M001", status: "active" }],
+            blockers: [],
+            recentDecisions: [],
+            nextAction: "Validate milestone M001.",
+          } as any;
+        }
+        return {
+          phase: "pre-planning",
+          activeMilestone: { id: "M001", title: "Test", status: "active" },
+          activeSlice: null,
+          activeTask: null,
+          registry: [{ id: "M001", status: "active" }],
+          blockers: [],
+          recentDecisions: [],
+          nextAction: "Plan milestone M001.",
+        } as any;
+      },
+    });
+    const ic = makeIC(deps, {
+      prefs: { uok: { plan_v2: { enabled: true } } } as any,
+    });
+    ic.s.basePath = basePath;
+
+    const result = await runPreDispatch(ic, {
+      recentUnits: [],
+      stuckRecoveryAttempts: 0,
+      consecutiveFinalizeTimeouts: 0,
+    });
+
+    assert.equal(result.action, "next");
+    assert.equal(deriveCalls, 2, "empty plan graph should trigger one state rederive");
+    assert.ok(invalidateCalls >= 1, "empty plan graph recovery should clear caches before rederive");
+    assert.equal(pauseCalls, 0, "recoverable empty graph should not pause auto-mode");
+  } finally {
+    closeDatabase();
+    rmSync(basePath, { recursive: true, force: true });
+  }
+});
+
+test("plan-v2 empty graph pauses after one failed rederive", async () => {
+  const basePath = mkdtempSync(join(tmpdir(), "gsd-plan-v2-empty-graph-pause-"));
+  mkdirSync(join(basePath, ".gsd", "milestones", "M001"), { recursive: true });
+  writeFileSync(
+    join(basePath, ".gsd", "milestones", "M001", "M001-CONTEXT.md"),
+    "# M001: Test\n\nFinalized context.\n",
+  );
+  openDatabase(join(basePath, ".gsd", "gsd.db"));
+  try {
+    let deriveCalls = 0;
+    let invalidateCalls = 0;
+    let pauseCalls = 0;
+    const capture = createEventCapture();
+    const deps = makeMockDeps(capture, {
+      pauseAuto: async () => { pauseCalls++; },
+      invalidateAllCaches: () => { invalidateCalls++; },
+      deriveState: async () => {
+        deriveCalls++;
+        return {
+          phase: "validating-milestone",
+          activeMilestone: { id: "M001", title: "Test", status: "active" },
+          activeSlice: null,
+          activeTask: null,
+          registry: [{ id: "M001", status: "active" }],
+          blockers: [],
+          recentDecisions: [],
+          nextAction: "Validate milestone M001.",
+        } as any;
+      },
+    });
+    const ic = makeIC(deps, {
+      prefs: { uok: { plan_v2: { enabled: true } } } as any,
+    });
+    ic.s.basePath = basePath;
+
+    const result = await runPreDispatch(ic, {
+      recentUnits: [],
+      stuckRecoveryAttempts: 0,
+      consecutiveFinalizeTimeouts: 0,
+    });
+
+    assert.equal(result.action, "break");
+    assert.equal(result.reason, "plan-v2-gate-failed");
+    assert.equal(deriveCalls, 2, "empty plan graph should only rederive once");
+    assert.ok(invalidateCalls >= 1, "empty plan graph recovery should clear caches before rederive");
+    assert.equal(pauseCalls, 1, "persistent empty graph should pause auto-mode");
+  } finally {
+    closeDatabase();
+    rmSync(basePath, { recursive: true, force: true });
+  }
+});
+
 test("milestone-transition event is emitted when milestone changes", async () => {
   const capture = createEventCapture();
   const deps = makeMockDeps(capture, {
@@ -723,7 +838,9 @@ test("milestone-transition event is emitted when milestone changes", async () =>
       blockers: [],
     }) as any,
   });
-  const ic = makeIC(deps);
+  const ic = makeIC(deps, {
+    prefs: { uok: { plan_v2: { enabled: false } } } as any,
+  });
   // Session says current milestone is M001, but state will return M002
   ic.s.currentMilestoneId = "M001";
   const loopState: LoopState = { recentUnits: [], stuckRecoveryAttempts: 0, consecutiveFinalizeTimeouts: 0 };

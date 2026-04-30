@@ -11,7 +11,7 @@ import { join, resolve as resolvePath, sep } from "node:path";
 import { homedir } from "node:os";
 import { deriveState } from "./state.js";
 import { gsdRoot } from "./paths.js";
-import { getHomeDir } from "./home-dir.js";
+import { gsdHome } from "./gsd-home.js";
 import { appendCapture, hasPendingCaptures, loadPendingCaptures } from "./captures.js";
 import { appendOverride, appendKnowledge } from "./files.js";
 import {
@@ -69,7 +69,7 @@ async function fetchLatestVersionForCommand(): Promise<string | null> {
 }
 
 export function dispatchDoctorHeal(pi: ExtensionAPI, scope: string | undefined, reportText: string, structuredIssues: string): void {
-  const workflowPath = process.env.GSD_WORKFLOW_PATH ?? join(getHomeDir(), ".gsd", "agent", "GSD-WORKFLOW.md");
+  const workflowPath = process.env.GSD_WORKFLOW_PATH ?? join(gsdHome(), "agent", "GSD-WORKFLOW.md");
   const workflow = readFileSync(workflowPath, "utf-8");
   const prompt = loadPrompt("doctor-heal", {
     doctorSummary: reportText,
@@ -256,7 +256,7 @@ export async function handleTriage(ctx: ExtensionCommandContext, pi: ExtensionAP
     roadmapContext: roadmapContext || "(no active roadmap)",
   });
 
-  const workflowPath = process.env.GSD_WORKFLOW_PATH ?? join(getHomeDir(), ".gsd", "agent", "GSD-WORKFLOW.md");
+  const workflowPath = process.env.GSD_WORKFLOW_PATH ?? join(gsdHome(), "agent", "GSD-WORKFLOW.md");
   const workflow = readFileSync(workflowPath, "utf-8");
 
   pi.sendMessage(

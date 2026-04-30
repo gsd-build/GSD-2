@@ -87,7 +87,7 @@ Setting `prefer_skills: []` does **not** disable skill discovery — it just mea
   | `git.push_branches`    | `false`      | `true`       |
   | `git.pre_merge_check`  | `false`      | `true`       |
   | `git.merge_strategy`   | `"squash"`   | `"squash"`   |
-  | `git.isolation`        | `"worktree"` | `"worktree"` |
+  | `git.isolation`        | `"none"`     | `"none"`     |
   | `unique_milestone_ids` | `false`      | `true`       |
 
   Quick setup: `/gsd mode` (global) or `/gsd mode project` (project-level).
@@ -137,7 +137,7 @@ Setting `prefer_skills: []` does **not** disable skill discovery — it just mea
   - `commit_type`: string — override the conventional commit type prefix. Must be one of: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `perf`, `ci`, `build`, `style`. Default: inferred from diff content.
   - `main_branch`: string — the primary branch name for new git repos (e.g., `"main"`, `"master"`, `"trunk"`). Also used by `getMainBranch()` as the preferred branch when auto-detection is ambiguous. Default: `"main"`.
   - `merge_strategy`: `"squash"` or `"merge"` — controls how worktree branches are merged back. `"squash"` combines all commits into one; `"merge"` preserves individual commits. Default: `"squash"`.
-  - `isolation`: `"worktree"`, `"branch"`, or `"none"` — controls auto-mode git isolation strategy. `"worktree"` creates a milestone worktree for isolated work; `"branch"` works directly in the project root but creates a milestone branch (useful for submodule-heavy repos); `"none"` works directly on the current branch with no worktree or milestone branch (ideal for step-mode with hot reloads). Default: `"worktree"`.
+  - `isolation`: `"none"`, `"worktree"`, or `"branch"` — controls auto-mode git isolation strategy. `"none"` works directly on the current branch with no worktree or milestone branch (default, ideal for step-mode with hot reloads); `"worktree"` creates a milestone worktree for isolated work; `"branch"` works directly in the project root but creates a milestone branch (useful for submodule-heavy repos). `worktree` requires a committed `HEAD`; in a zero-commit repo, GSD temporarily treats it as `none` until the first commit exists. Default: `"none"`.
   - `manage_gitignore`: boolean — when `false`, GSD will not touch `.gitignore` at all. Useful when your project has a strictly managed `.gitignore` and you don't want GSD adding entries. Default: `true`.
   - `worktree_post_create`: string — script to run after a worktree is created (both auto-mode and manual `/worktree`). Receives `SOURCE_DIR` and `WORKTREE_DIR` as environment variables. Can be absolute or relative to project root. Runs with 30-second timeout. Failure is non-fatal (logged as warning). Default: none.
   - `auto_pr`: boolean — automatically create a GitHub pull request after a milestone branch is merged. Requires `gh` CLI to be installed. Default: `false`.
@@ -158,6 +158,8 @@ Setting `prefer_skills: []` does **not** disable skill discovery — it just mea
 - `context_pause_threshold`: number (0-100) — context window usage percentage at which auto-mode should pause to suggest checkpointing. Set to `0` to disable. Default: `0` (disabled).
 
 - `token_profile`: `"budget"`, `"balanced"`, `"quality"`, or `"burn-max"` — coordinates model selection, phase skipping, and context compression. `budget` skips research/reassessment and uses cheaper models; `balanced` (default) skips research/reassessment to reduce token burn; `quality` prefers higher-quality models; `burn-max` keeps full-context defaults, disables downgrade routing, and keeps phase skips off.
+
+- `planning_depth`: `"light"` or `"deep"` — controls project-level discovery before milestone planning. `"light"` is the default milestone discussion flow. `"deep"` runs workflow preferences, project discussion, requirements discussion, a research-decision gate, and optional project research before milestone planning. Enable it with `/gsd new-project --deep`, `/gsd new-milestone --deep`, or by setting `planning_depth: deep` in `.gsd/PREFERENCES.md`. Deep mode writes `.gsd/PROJECT.md`, `.gsd/REQUIREMENTS.md`, `.gsd/runtime/research-decision.json`, and, when research is approved, `.gsd/research/STACK.md`, `FEATURES.md`, `ARCHITECTURE.md`, and `PITFALLS.md`.
 
 - `phases`: fine-grained control over which phases run. Usually set by `token_profile`, but can be overridden. Keys:
   - `skip_research`: boolean — skip milestone-level research. Default: `false`.
@@ -302,7 +304,7 @@ mode: solo
 ---
 ```
 
-Equivalent to setting `git.auto_push: true`, `git.push_branches: false`, `git.pre_merge_check: false`, `git.merge_strategy: squash`, `git.isolation: worktree`, `unique_milestone_ids: false`.
+Equivalent to setting `git.auto_push: true`, `git.push_branches: false`, `git.pre_merge_check: false`, `git.merge_strategy: squash`, `git.isolation: none`, `unique_milestone_ids: false`.
 
 **Team — unique IDs, push branches, pre-merge checks:**
 
@@ -313,7 +315,7 @@ mode: team
 ---
 ```
 
-Equivalent to setting `git.auto_push: false`, `git.push_branches: true`, `git.pre_merge_check: true`, `git.merge_strategy: squash`, `git.isolation: worktree`, `unique_milestone_ids: true`.
+Equivalent to setting `git.auto_push: false`, `git.push_branches: true`, `git.pre_merge_check: true`, `git.merge_strategy: squash`, `git.isolation: none`, `unique_milestone_ids: true`.
 
 **Mode with overrides — team mode but with auto-push:**
 

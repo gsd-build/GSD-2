@@ -164,13 +164,19 @@ function mentionsWithoutNegation(text: string, term: string): boolean {
     const start = m.index ?? 0;
     const windowStart = Math.max(0, start - 30);
     const window = lower.slice(windowStart, start);
-    // Negator anywhere in the 30-char lookback window counts as negation —
-    // covers "no backend", "without a server", "not using api", "zero
-    // dependencies on an api". If a sentence break intervenes between the
-    // negator and the term, treat as a different clause (positive mention).
-    const hasNegator = /(^|[^a-z0-9])(no|without|not|zero|skip(s|ping)?|drops?)\b/i.test(window);
-    const hasSentenceBreak = /[.;!?]/.test(window);
-    if (hasNegator && !hasSentenceBreak) continue;
+    // Negator anywhere in the same clause counts as negation — covers "no
+    // backend", "without a server", "not using api", "zero dependencies on
+    // an api". Only inspect text after the most recent sentence break so
+    // "No backend. Add API" still treats API as a positive mention.
+    const lastBreak = Math.max(
+      window.lastIndexOf("."),
+      window.lastIndexOf(";"),
+      window.lastIndexOf("!"),
+      window.lastIndexOf("?"),
+    );
+    const clauseWindow = window.slice(lastBreak + 1);
+    const hasNegator = /(^|[^a-z0-9])(no|without|not|zero|skip(s|ping)?|drops?)\b/i.test(clauseWindow);
+    if (hasNegator) continue;
     return true;
   }
   return false;
@@ -279,7 +285,8 @@ export function classifyMilestoneScope(input: MilestoneScopeInput): ScopeClassif
     input.verificationUat ?? "",
   ].join("\n");
 
-  const overrideHits = containsAnyKeyword(haystack, OVERRIDE_KEYWORDS);
+  const overrideHits = containsAnyKeyword(haystack, OVERRIDE_KEYWORDS)
+    .filter((kw) => mentionsWithoutNegation(haystack, kw));
   const complexHits = containsAnyKeyword(haystack, COMPLEX_KEYWORDS);
   const trivialHits = containsAnyKeyword(haystack, TRIVIAL_KEYWORDS);
   const fileCountHint = extractFileCountHint(haystack);

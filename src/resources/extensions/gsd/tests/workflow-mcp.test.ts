@@ -43,6 +43,33 @@ test("auto execute-task requires legacy completion alias until prompt contract i
   assert.deepEqual(getRequiredWorkflowToolsForAutoUnit("execute-task"), ["gsd_complete_task"]);
 });
 
+test("deep project setup units declare required workflow MCP tools", () => {
+  assert.deepEqual(getRequiredWorkflowToolsForGuidedUnit("discuss-project"), [
+    "ask_user_questions",
+    "gsd_summary_save",
+  ]);
+  assert.deepEqual(getRequiredWorkflowToolsForGuidedUnit("discuss-requirements"), [
+    "ask_user_questions",
+    "gsd_requirement_save",
+    "gsd_summary_save",
+  ]);
+  assert.deepEqual(getRequiredWorkflowToolsForGuidedUnit("research-decision"), [
+    "ask_user_questions",
+  ]);
+  assert.deepEqual(getRequiredWorkflowToolsForAutoUnit("discuss-project"), [
+    "ask_user_questions",
+    "gsd_summary_save",
+  ]);
+  assert.deepEqual(getRequiredWorkflowToolsForAutoUnit("discuss-requirements"), [
+    "ask_user_questions",
+    "gsd_requirement_save",
+    "gsd_summary_save",
+  ]);
+  assert.deepEqual(getRequiredWorkflowToolsForAutoUnit("research-decision"), [
+    "ask_user_questions",
+  ]);
+});
+
 test("detectWorkflowMcpLaunchConfig prefers explicit env override", () => {
   const launch = detectWorkflowMcpLaunchConfig("/tmp/project", {
     GSD_WORKFLOW_MCP_NAME: "workflow-tools",
@@ -62,10 +89,27 @@ test("detectWorkflowMcpLaunchConfig prefers explicit env override", () => {
   });
   assert.equal(launch?.env?.FOO, "bar");
   assert.equal(launch?.env?.GSD_CLI_PATH, "/tmp/gsd");
+  assert.equal(launch?.env?.GSD_BIN_PATH, "/tmp/gsd");
   assert.equal(launch?.env?.GSD_PERSIST_WRITE_GATE_STATE, "1");
   assert.equal(launch?.env?.GSD_WORKFLOW_PROJECT_ROOT, "/tmp/project");
   assert.match(launch?.env?.GSD_WORKFLOW_EXECUTORS_MODULE ?? "", /workflow-tool-executors\.(js|ts)$/);
   assert.match(launch?.env?.GSD_WORKFLOW_WRITE_GATE_MODULE ?? "", /write-gate\.(js|ts)$/);
+});
+
+test("detectWorkflowMcpLaunchConfig normalizes explicit workflow MCP env CLI aliases", () => {
+  const binOnly = detectWorkflowMcpLaunchConfig("/tmp/project", {
+    GSD_WORKFLOW_MCP_COMMAND: "node",
+    GSD_WORKFLOW_MCP_ENV: JSON.stringify({ GSD_BIN_PATH: "/tmp/gsd-bin" }),
+  });
+  assert.equal(binOnly?.env?.GSD_CLI_PATH, "/tmp/gsd-bin");
+  assert.equal(binOnly?.env?.GSD_BIN_PATH, "/tmp/gsd-bin");
+
+  const cliOnly = detectWorkflowMcpLaunchConfig("/tmp/project", {
+    GSD_WORKFLOW_MCP_COMMAND: "node",
+    GSD_WORKFLOW_MCP_ENV: JSON.stringify({ GSD_CLI_PATH: "/tmp/gsd-cli" }),
+  });
+  assert.equal(cliOnly?.env?.GSD_CLI_PATH, "/tmp/gsd-cli");
+  assert.equal(cliOnly?.env?.GSD_BIN_PATH, "/tmp/gsd-cli");
 });
 
 test("buildWorkflowMcpServers mirrors explicit launch config", () => {
@@ -135,6 +179,7 @@ test("detectWorkflowMcpLaunchConfig resolves the bundled server from GSD_BIN_PAT
     env: launch?.env,
   });
   assert.equal(launch?.env?.GSD_CLI_PATH, devCliPath);
+  assert.equal(launch?.env?.GSD_BIN_PATH, devCliPath);
   assert.equal(launch?.env?.GSD_PERSIST_WRITE_GATE_STATE, "1");
   assert.equal(launch?.env?.GSD_WORKFLOW_PROJECT_ROOT, worktreeRoot);
   assert.match(launch?.env?.GSD_WORKFLOW_EXECUTORS_MODULE ?? "", /workflow-tool-executors\.(js|ts)$/);
@@ -149,6 +194,7 @@ test("detectWorkflowMcpLaunchConfig resolves the bundled server relative to the 
   assert.equal(launch?.command, process.execPath);
   assert.equal(launch?.cwd, "/tmp/project");
   assert.equal(launch?.env?.GSD_CLI_PATH, "/tmp/gsd-loader.js");
+  assert.equal(launch?.env?.GSD_BIN_PATH, "/tmp/gsd-loader.js");
   assert.equal(launch?.env?.GSD_WORKFLOW_PROJECT_ROOT, "/tmp/project");
   assert.match(launch?.env?.GSD_WORKFLOW_EXECUTORS_MODULE ?? "", /workflow-tool-executors\.(js|ts)$/);
   assert.match(launch?.env?.GSD_WORKFLOW_WRITE_GATE_MODULE ?? "", /write-gate\.(js|ts)$/);
@@ -166,6 +212,7 @@ test("detectWorkflowMcpLaunchConfig resolves the bundled server relative to the 
   assert.equal(launch?.command, process.execPath);
   assert.equal(launch?.cwd, "/tmp/project");
   assert.equal(launch?.env?.GSD_CLI_PATH, undefined);
+  assert.equal(launch?.env?.GSD_BIN_PATH, undefined);
   assert.equal(launch?.env?.GSD_WORKFLOW_PROJECT_ROOT, "/tmp/project");
   assert.match(launch?.env?.GSD_WORKFLOW_EXECUTORS_MODULE ?? "", /workflow-tool-executors\.(js|ts)$/);
   assert.match(launch?.env?.GSD_WORKFLOW_WRITE_GATE_MODULE ?? "", /write-gate\.(js|ts)$/);
@@ -464,11 +511,20 @@ test("usesWorkflowMcpTransport matches local externalCli providers", () => {
   assert.equal(usesWorkflowMcpTransport("oauth", "local://custom"), false);
 });
 
-test("supportsStructuredQuestions stays enabled on workflow MCP transports when ask_user_questions is available", () => {
+test("supportsStructuredQuestions disables local workflow MCP questions unless explicitly enabled", () => {
   assert.equal(
     supportsStructuredQuestions(["ask_user_questions"], {
       authMode: "externalCli",
       baseUrl: "local://claude-code",
+      env: {},
+    }),
+    false,
+  );
+  assert.equal(
+    supportsStructuredQuestions(["mcp__gsd-workflow__ask_user_questions"], {
+      authMode: "externalCli",
+      baseUrl: "local://claude-code",
+      env: { GSD_WORKFLOW_MCP_STRUCTURED_QUESTIONS: "1" } as NodeJS.ProcessEnv,
     }),
     true,
   );

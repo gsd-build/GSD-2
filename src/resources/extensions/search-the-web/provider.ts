@@ -10,15 +10,16 @@
  */
 
 import { AuthStorage } from '@gsd/pi-coding-agent'
-import { homedir } from 'os'
 import { join } from 'path'
 import { resolveSearchProviderFromPreferences } from '../gsd/preferences.js'
+import { gsdHome } from "../gsd/gsd-home.js";
 
-// Compute authFilePath locally instead of importing from app-paths.ts,
-// because extensions are copied to ~/.gsd/agent/extensions/ at runtime
-// where the relative import '../../../app-paths.ts' doesn't resolve.
-const gsdHome = process.env.GSD_HOME || join(homedir(), '.gsd')
-const authFilePath = join(gsdHome, 'agent', 'auth.json')
+// Compute authFilePath lazily so GSD_HOME overrides (e.g. in tests) take effect.
+// Imported locally instead of from app-paths.ts because extensions are copied to
+// ~/.gsd/agent/extensions/ at runtime where '../../../app-paths.ts' doesn't resolve.
+function authFilePath(): string {
+  return join(gsdHome(), 'agent', 'auth.json');
+}
 
 export type SearchProvider = 'tavily' | 'brave' | 'ollama'
 export type SearchProviderPreference = SearchProvider | 'auto'
@@ -57,7 +58,7 @@ export function getOllamaApiKey(): string {
  * @param authPath — Override auth.json path (for testing).
  */
 export function getSearchProviderPreference(authPath?: string): SearchProviderPreference {
-  const auth = AuthStorage.create(authPath ?? authFilePath)
+  const auth = AuthStorage.create(authPath ?? authFilePath())
   const cred = auth.get(PREFERENCE_KEY)
   if (cred?.type === 'api_key' && typeof cred.key === 'string' && VALID_PREFERENCES.has(cred.key)) {
     return cred.key as SearchProviderPreference
@@ -73,7 +74,7 @@ export function getSearchProviderPreference(authPath?: string): SearchProviderPr
  * @param authPath — Override auth.json path (for testing).
  */
 export function setSearchProviderPreference(pref: SearchProviderPreference, authPath?: string): void {
-  const auth = AuthStorage.create(authPath ?? authFilePath)
+  const auth = AuthStorage.create(authPath ?? authFilePath())
   auth.remove(PREFERENCE_KEY)
   auth.set(PREFERENCE_KEY, { type: 'api_key', key: pref })
 }

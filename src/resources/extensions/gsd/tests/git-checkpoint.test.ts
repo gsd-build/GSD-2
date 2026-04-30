@@ -26,6 +26,15 @@ function createTempRepo(): string {
 }
 
 describe("git-checkpoint rollback", () => {
+  it("skips checkpoint creation in a git repo without commits", (t) => {
+    const repo = mkdtempSync(join(tmpdir(), "ckpt-unborn-"));
+    t.after(() => rmSync(repo, { recursive: true, force: true }));
+    git(["init"], repo);
+
+    const sha = createCheckpoint(repo, "unit-unborn");
+    assert.equal(sha, null, "unborn repos do not have a checkpointable HEAD");
+  });
+
   it("rolls back to checkpoint on checked-out branch", (t) => {
     const repo = createTempRepo();
     t.after(() => rmSync(repo, { recursive: true, force: true }));

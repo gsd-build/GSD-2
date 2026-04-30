@@ -331,6 +331,20 @@ export function nativeIsRepo(basePath: string): boolean {
   }
 }
 
+/** Return true only when the repository has a reachable committed HEAD. */
+export function nativeHasCommittedHead(basePath: string): boolean {
+  try {
+    execFileSync("git", ["rev-parse", "--verify", "HEAD"], {
+      cwd: basePath,
+      stdio: ["ignore", "ignore", "ignore"],
+      env: GIT_NO_PROMPT_ENV,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Check if there are staged changes (index differs from HEAD).
  * Native: libgit2 tree-to-index diff.

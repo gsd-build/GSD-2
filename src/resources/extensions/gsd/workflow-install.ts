@@ -22,12 +22,12 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
 import { extname, join, resolve, sep as pathSep } from "node:path";
 import { createHash } from "node:crypto";
 import { parse as parseYaml } from "yaml";
 
 import { validateDefinition } from "./definition-loader.js";
+import { gsdHome } from "./gsd-home.js";
 
 // ─── Constants ───────────────────────────────────────────────────────────
 
@@ -73,8 +73,7 @@ export interface InstallTarget {
 }
 
 export function globalInstallDir(): string {
-  const gsdHome = process.env.GSD_HOME || join(homedir(), ".gsd");
-  return join(gsdHome, "workflows");
+  return join(gsdHome(), "workflows");
 }
 
 export function projectInstallDir(basePath: string): string {

@@ -19,7 +19,6 @@ import {
   lstatSync as lstatSyncFn,
 } from "node:fs";
 import { isAbsolute, join, sep as pathSep } from "node:path";
-import { homedir } from "node:os";
 import { GSDError, GSD_IO_ERROR, GSD_GIT_ERROR } from "./errors.js";
 import {
   reconcileWorktreeDb,
@@ -55,6 +54,7 @@ import { MergeConflictError, readIntegrationBranch, RUNTIME_EXCLUSION_PATHS } fr
 import { debugLog } from "./debug-logger.js";
 import { logWarning, logError } from "./workflow-logger.js";
 import { loadEffectiveGSDPreferences } from "./preferences.js";
+import { MILESTONE_ID_RE } from "./milestone-ids.js";
 import {
   nativeGetCurrentBranch,
   nativeDetectMainBranch,
@@ -75,10 +75,17 @@ import {
   nativeIsAncestor,
   nativeMergeAbort,
 } from "./native-git-bridge.js";
+import { gsdHome } from "./gsd-home.js";
 
-const gsdHome = process.env.GSD_HOME || join(homedir(), ".gsd");
 const PROJECT_PREFERENCES_FILE = "PREFERENCES.md";
 const LEGACY_PROJECT_PREFERENCES_FILE = "preferences.md";
+const LEGACY_DEEP_SETUP_RUNTIME_UNIT_FILES = new Set([
+  "workflow-preferences-WORKFLOW-PREFS.json",
+  "discuss-project-PROJECT.json",
+  "discuss-requirements-REQUIREMENTS.json",
+  "research-decision-RESEARCH-DECISION.json",
+  "research-project-RESEARCH-PROJECT.json",
+]);
 
 // ─── Shared Constants & Helpers ─────────────────────────────────────────────
 
@@ -478,7 +485,7 @@ export function syncStateToProjectRoot(
  */
 export function readResourceVersion(): string | null {
   const agentDir =
-    process.env.GSD_CODING_AGENT_DIR || join(gsdHome, "agent");
+    process.env.GSD_CODING_AGENT_DIR || join(gsdHome(), "agent");
   const manifestPath = join(agentDir, "managed-resources.json");
   try {
     const manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
@@ -541,9 +548,9 @@ export function escapeStaleWorktree(base: string): string {
   // the string-slice heuristic matched the wrong /.gsd/ boundary. This happens
   // when .gsd is a symlink into ~/.gsd/projects/<hash> and process.cwd()
   // resolved through the symlink. Returning ~ would be catastrophic (#1676).
-  const candidateGsd = join(projectRoot, ".gsd").replaceAll("\\", "/");
-  const gsdHomePath = gsdHome.replaceAll("\\", "/");
-  if (candidateGsd === gsdHomePath || candidateGsd.startsWith(gsdHomePath + "/")) {
+  const candidateGsd = normalizeWorktreePathForCompare(join(projectRoot, ".gsd"));
+  const gsdHomeNorm = normalizeWorktreePathForCompare(gsdHome());
+  if (candidateGsd === gsdHomeNorm || candidateGsd.startsWith(gsdHomeNorm + "/")) {
     // Don't chdir to home — return base unchanged.
     // resolveProjectRoot() in worktree.ts has the full git-file-based recovery
     // and will be called by the caller (startAuto → projectRoot()).
@@ -578,6 +585,27 @@ export function cleanStaleRuntimeUnits(
   try {
     for (const file of readdirSync(runtimeUnitsDir)) {
       if (!file.endsWith(".json")) continue;
+      if (LEGACY_DEEP_SETUP_RUNTIME_UNIT_FILES.has(file)) {
+        try {
+          unlinkSync(join(runtimeUnitsDir, file));
+          cleaned++;
+        } catch (err) {
+          /* non-fatal */
+          logWarning("worktree", `stale runtime unit unlink failed (${file}): ${err instanceof Error ? err.message : String(err)}`);
+        }
+        continue;
+      }
+      const staleDiscussMatch = file.match(/^discuss-milestone-(.+)\.json$/);
+      if (staleDiscussMatch && !MILESTONE_ID_RE.test(staleDiscussMatch[1])) {
+        try {
+          unlinkSync(join(runtimeUnitsDir, file));
+          cleaned++;
+        } catch (err) {
+          /* non-fatal */
+          logWarning("worktree", `stale runtime unit unlink failed (${file}): ${err instanceof Error ? err.message : String(err)}`);
+        }
+        continue;
+      }
       const midMatch = file.match(/(M\d+(?:-[a-z0-9]{6})?)/);
       if (!midMatch) continue;
       if (hasMilestoneSummary(midMatch[1])) {

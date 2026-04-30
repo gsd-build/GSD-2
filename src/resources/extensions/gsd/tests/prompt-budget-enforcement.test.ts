@@ -521,7 +521,7 @@ describe("prompt-budget: modelRegistry + sessionContextWindow wiring", () => {
     );
     assert.match(
       autoPromptsSrc,
-      /formatExecutorConstraints\(sessionContextWindow,\s*modelRegistry\)/,
+      /formatExecutorConstraints\(sessionContextWindow,\s*modelRegistry(?:,\s*sessionProvider)?\)/,
       "renderSlicePrompt must forward both to formatExecutorConstraints",
     );
   });

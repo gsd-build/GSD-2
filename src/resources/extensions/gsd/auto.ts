@@ -128,7 +128,6 @@ import {
 } from "./metrics.js";
 import { setLogBasePath, logWarning, logError } from "./workflow-logger.js";
 import { preflightCleanRoot, postflightPopStash } from "./clean-root-preflight.js";
-import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { readFileSync, existsSync, mkdirSync, writeFileSync, unlinkSync } from "node:fs";
@@ -250,6 +249,7 @@ export type {
   StartModel,
 } from "./auto/session.js";
 import { autoSession as s } from "./auto-runtime-state.js";
+import { gsdHome } from "./gsd-home.js";
 
 // ── ENCAPSULATION INVARIANT ─────────────────────────────────────────────────
 // ALL mutable auto-mode state lives in the AutoSession class (auto/session.ts).
@@ -373,10 +373,7 @@ export function startAutoDetached(
 
 /** Returns true if the project is configured for `isolation:worktree` mode. */
 export function shouldUseWorktreeIsolation(basePath?: string): boolean {
-  const prefs = loadEffectiveGSDPreferences(basePath)?.preferences?.git;
-  if (prefs?.isolation === "worktree") return true;
-  // Default is false — worktree isolation requires explicit opt-in
-  return false;
+  return getIsolationMode(basePath) === "worktree";
 }
 
 /** Crash recovery prompt — set by startAuto, consumed by the main loop */
@@ -1189,6 +1186,19 @@ export async function pauseAuto(
     s.currentUnit = null;
   }
 
+  // Keep STATE.md aligned with the DB-backed state before releasing pause state.
+  // Without this, an interrupted deep run can leave STATE.md saying "no active
+  // milestone" even after the DB/disk reconciliation has recovered the next unit.
+  if (s.basePath) {
+    try {
+      await rebuildState(s.basePath);
+    } catch (e) {
+      debugLog("pause-rebuild-state-failed", {
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+
   if (lockBase()) {
     releaseSessionLock(lockBase());
     clearLock(lockBase());
@@ -1651,7 +1661,7 @@ export async function startAuto(
     // tree; deployed extensions live at ~/.gsd/agent/extensions/gsd/ where the
     // relative path resolves to ~/.gsd/agent/resource-loader.js which doesn't exist.
     // Using GSD_PKG_ROOT constructs a correct absolute path in both contexts (#3949).
-    const agentDir = process.env.GSD_CODING_AGENT_DIR || join(process.env.GSD_HOME || homedir(), ".gsd", "agent");
+    const agentDir = process.env.GSD_CODING_AGENT_DIR || join(gsdHome(), "agent");
     const pkgRoot = process.env.GSD_PKG_ROOT;
     const resourceLoaderPath = pkgRoot
       ? pathToFileURL(join(pkgRoot, "dist", "resource-loader.js")).href

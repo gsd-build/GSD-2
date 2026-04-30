@@ -13,10 +13,10 @@
 import type { ExtensionCommandContext } from "@gsd/pi-coding-agent";
 
 import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { ensureProjectWorkflowMcpConfig } from "./mcp-project-config.js";
+import { gsdHome } from "./gsd-home.js";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -70,7 +70,7 @@ function readMcpConfigs(): McpServerRawConfig[] {
   const configPaths = [
     join(process.cwd(), ".mcp.json"),
     join(process.cwd(), ".gsd", "mcp.json"),
-    join(process.env.GSD_HOME || join(homedir(), ".gsd"), "mcp.json"),
+    join(gsdHome(), "mcp.json"),
   ];
 
   for (const configPath of configPaths) {

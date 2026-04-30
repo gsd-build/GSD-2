@@ -10,8 +10,8 @@ import { existsSync, openSync, readSync, closeSync, readdirSync, readFileSync, s
 import { dirname, join, parse as parsePath } from "node:path";
 import { homedir } from "node:os";
 import { gsdRoot } from "./paths.js";
+import { gsdHome } from "./gsd-home.js";
 
-const gsdHome = process.env.GSD_HOME || join(homedir(), ".gsd");
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -720,8 +720,8 @@ function detectVerificationCommands(
  */
 export function hasGlobalSetup(): boolean {
   return (
-    existsSync(join(gsdHome, "PREFERENCES.md")) ||
-    existsSync(join(gsdHome, "preferences.md"))
+    existsSync(join(gsdHome(), "PREFERENCES.md")) ||
+    existsSync(join(gsdHome(), "preferences.md"))
   );
 }
 
@@ -730,18 +730,18 @@ export function hasGlobalSetup(): boolean {
  * Returns true if ~/.gsd/ doesn't exist or has no preferences or auth.
  */
 export function isFirstEverLaunch(): boolean {
-  if (!existsSync(gsdHome)) return true;
+  if (!existsSync(gsdHome())) return true;
 
   // If we have preferences, not first launch
   if (
-    existsSync(join(gsdHome, "PREFERENCES.md")) ||
-    existsSync(join(gsdHome, "preferences.md"))
+    existsSync(join(gsdHome(), "PREFERENCES.md")) ||
+    existsSync(join(gsdHome(), "preferences.md"))
   ) {
     return false;
   }
 
   // If we have auth.json, not first launch (onboarding.ts already ran)
-  if (existsSync(join(gsdHome, "agent", "auth.json"))) return false;
+  if (existsSync(join(gsdHome(), "agent", "auth.json"))) return false;
 
   // Check legacy path too
   const legacyPath = join(homedir(), ".pi", "agent", "gsd-preferences.md");

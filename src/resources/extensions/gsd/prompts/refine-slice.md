@@ -26,7 +26,7 @@ This unit runs under the `planning-dispatch` tools-policy: you may use the `suba
 
 - You'd otherwise read more than ~3 files to understand a subsystem touched by the sketch → dispatch the **scout** agent and work from its compressed report.
 - A specific area of the refinement needs deeper architectural analysis → dispatch the **planner** agent for a focused sub-plan, then integrate.
-- You need current external information (library docs, API behavior) → dispatch the **researcher** agent.
+- You need current external information (library docs, API behavior) → dispatch the **scout** agent.
 
 **Do not** dispatch implementation-tier agents (`worker`, `refactorer`, `tester`) — they would write user source and bypass write isolation. Implementation belongs in `execute-task`.
 

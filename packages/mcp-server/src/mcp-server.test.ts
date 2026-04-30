@@ -12,11 +12,14 @@
 
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { resolve } from 'node:path';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { delimiter, join, resolve } from 'node:path';
 import { EventEmitter } from 'node:events';
 
 import { SessionManager } from './session-manager.js';
 import {
+  askUserQuestionsHandler,
   buildAskUserQuestionsElicitRequest,
   createMcpServer,
   formatAskUserQuestionsElicitResult,
@@ -563,6 +566,7 @@ describe('SessionManager', () => {
 describe('SessionManager.resolveCLIPath', () => {
   const originalGsdPath = process.env['GSD_CLI_PATH'];
   const originalPath = process.env['PATH'];
+  const originalPathTitle = process.env['Path'];
 
   afterEach(() => {
     if (originalGsdPath !== undefined) {
@@ -572,6 +576,13 @@ describe('SessionManager.resolveCLIPath', () => {
     }
     if (originalPath !== undefined) {
       process.env['PATH'] = originalPath;
+    } else {
+      delete process.env['PATH'];
+    }
+    if (originalPathTitle !== undefined) {
+      process.env['Path'] = originalPathTitle;
+    } else {
+      delete process.env['Path'];
     }
   });
 
@@ -581,8 +592,50 @@ describe('SessionManager.resolveCLIPath', () => {
     assert.equal(result, resolve('/custom/path/to/gsd'));
   });
 
-  it('throws when GSD_CLI_PATH not set and which fails', () => {
+  it('finds gsd on PATH without shelling out to which', () => {
     delete process.env['GSD_CLI_PATH'];
+    const tmp = mkdtempSync(join(tmpdir(), 'gsd-cli-path-'));
+    try {
+      const shimName = process.platform === 'win32' ? 'gsd.cmd' : 'gsd';
+      const shimPath = join(tmp, shimName);
+      writeFileSync(shimPath, '', 'utf8');
+      process.env['PATH'] = [tmp, originalPath].filter(Boolean).join(delimiter);
+
+      const resolvedPath = SessionManager.resolveCLIPath();
+      if (process.platform === 'win32') {
+        assert.equal(resolvedPath.toLowerCase(), resolve(shimPath).toLowerCase());
+      } else {
+        assert.equal(resolvedPath, resolve(shimPath));
+      }
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('finds gsd when Windows exposes Path instead of PATH', () => {
+    delete process.env['GSD_CLI_PATH'];
+    delete process.env['PATH'];
+    const tmp = mkdtempSync(join(tmpdir(), 'gsd-cli-path-title-'));
+    try {
+      const shimName = process.platform === 'win32' ? 'gsd.cmd' : 'gsd';
+      const shimPath = join(tmp, shimName);
+      writeFileSync(shimPath, '', 'utf8');
+      process.env['Path'] = tmp;
+
+      const resolvedPath = SessionManager.resolveCLIPath();
+      if (process.platform === 'win32') {
+        assert.equal(resolvedPath.toLowerCase(), resolve(shimPath).toLowerCase());
+      } else {
+        assert.equal(resolvedPath, resolve(shimPath));
+      }
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('throws when GSD_CLI_PATH not set and PATH lookup fails', () => {
+    delete process.env['GSD_CLI_PATH'];
+    delete process.env['Path'];
     process.env['PATH'] = '/nonexistent';
     assert.throws(
       () => SessionManager.resolveCLIPath(),
@@ -782,6 +835,147 @@ describe('createMcpServer tool registration', () => {
         },
       }),
     );
+  });
+
+  it('ask_user_questions returns local elicitation answers before trying remote', async () => {
+    const questions = [
+      {
+        id: 'depth_verification_M001',
+        header: 'Depth Check',
+        question: 'Did I capture the depth right?',
+        options: [
+          { label: 'Yes, you got it (Recommended)', description: 'Continue with the current summary.' },
+          { label: 'Not quite', description: 'I need to clarify the depth further.' },
+        ],
+      },
+    ];
+    let remoteCalls = 0;
+
+    const result = await askUserQuestionsHandler(questions, undefined, {
+      async elicitInput() {
+        return {
+          action: 'accept',
+          content: {
+            depth_verification_M001: 'Yes, you got it (Recommended)',
+          },
+        };
+      },
+      isRemoteConfigured() {
+        return true;
+      },
+      async tryRemoteQuestions() {
+        remoteCalls++;
+        return { content: [{ type: 'text', text: 'remote response' }] };
+      },
+    });
+
+    assert.equal(remoteCalls, 0);
+    assert.equal(
+      result.content[0]?.text,
+      JSON.stringify({
+        answers: {
+          depth_verification_M001: {
+            answers: ['Yes, you got it (Recommended)'],
+          },
+        },
+      }),
+    );
+  });
+
+  it('ask_user_questions falls back to remote when local elicitation is cancelled', async () => {
+    const questions = [
+      {
+        id: 'depth_verification_M001',
+        header: 'Depth Check',
+        question: 'Did I capture the depth right?',
+        options: [
+          { label: 'Yes, you got it (Recommended)', description: 'Continue with the current summary.' },
+          { label: 'Not quite', description: 'I need to clarify the depth further.' },
+        ],
+      },
+    ];
+    let remoteCalls = 0;
+    const signal = AbortSignal.abort();
+
+    const result = await askUserQuestionsHandler(questions, { signal }, {
+      async elicitInput() {
+        return { action: 'cancel' };
+      },
+      isRemoteConfigured() {
+        return true;
+      },
+      async tryRemoteQuestions(remoteQuestions, receivedSignal) {
+        remoteCalls++;
+        assert.equal(remoteQuestions, questions);
+        assert.equal(receivedSignal, signal);
+        return { content: [{ type: 'text', text: 'remote response' }] };
+      },
+    });
+
+    assert.equal(remoteCalls, 1);
+    assert.equal(result.content[0]?.text, 'remote response');
+  });
+
+  it('ask_user_questions falls back to remote when local elicitation is unavailable', async () => {
+    const questions = [
+      {
+        id: 'depth_verification_M001',
+        header: 'Depth Check',
+        question: 'Did I capture the depth right?',
+        options: [
+          { label: 'Yes, you got it (Recommended)', description: 'Continue with the current summary.' },
+          { label: 'Not quite', description: 'I need to clarify the depth further.' },
+        ],
+      },
+    ];
+    let remoteCalls = 0;
+
+    const result = await askUserQuestionsHandler(questions, undefined, {
+      async elicitInput() {
+        throw new Error('MCP host does not support elicitation');
+      },
+      isRemoteConfigured() {
+        return true;
+      },
+      async tryRemoteQuestions(remoteQuestions) {
+        remoteCalls++;
+        assert.equal(remoteQuestions, questions);
+        return { content: [{ type: 'text', text: 'remote response' }] };
+      },
+    });
+
+    assert.equal(remoteCalls, 1);
+    assert.equal(result.content[0]?.text, 'remote response');
+  });
+
+  it('ask_user_questions reports both local and remote errors when both paths fail', async () => {
+    const questions = [
+      {
+        id: 'depth_verification_M001',
+        header: 'Depth Check',
+        question: 'Did I capture the depth right?',
+        options: [
+          { label: 'Yes, you got it (Recommended)', description: 'Continue with the current summary.' },
+          { label: 'Not quite', description: 'I need to clarify the depth further.' },
+        ],
+      },
+    ];
+
+    const result = await askUserQuestionsHandler(questions, undefined, {
+      async elicitInput() {
+        throw new Error('ask_user_questions timed out after 10 minutes');
+      },
+      isRemoteConfigured() {
+        return true;
+      },
+      async tryRemoteQuestions() {
+        throw new Error('remote transport failed');
+      },
+    });
+
+    assert.equal('isError' in result && result.isError, true);
+    assert.match(result.content[0]?.text ?? '', /Local elicitation failed/);
+    assert.match(result.content[0]?.text ?? '', /remote transport failed/);
   });
 });
 

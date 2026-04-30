@@ -26,7 +26,7 @@ This unit runs under the `planning-dispatch` tools-policy: you may use the `suba
 
 - You'd otherwise read more than ~3 files to understand a subsystem → dispatch the **scout** agent for codebase recon and work from its compressed report.
 - The slice spans multiple subsystems and the decomposition isn't obvious → dispatch the **planner** agent or use the **decompose-into-slices** skill on a focused sub-area, then integrate.
-- You need current external information (library docs, API behavior, recent changes) → dispatch the **researcher** agent.
+- You need current external information (library docs, API behavior, recent changes) → dispatch the **scout** agent.
 
 **Do not** dispatch implementation-tier agents (`worker`, `refactorer`, `tester`) from this unit — they would write user source and bypass this unit's write isolation. Implementation belongs in `execute-task`.
 

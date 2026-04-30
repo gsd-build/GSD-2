@@ -151,6 +151,7 @@ export const KNOWN_PREFERENCE_KEYS = new Set<string>([
   "language",
   "context_window_override",
   "context_mode",
+  "planning_depth",
 ]);
 
 /** Canonical list of all dispatch unit types. */
@@ -159,6 +160,9 @@ export const KNOWN_UNIT_TYPES = [
   "execute-task", "reactive-execute", "gate-evaluate", "complete-slice", "replan-slice", "reassess-roadmap",
   "run-uat", "complete-milestone", "validate-milestone", "rewrite-docs",
   "discuss-milestone", "discuss-slice", "worktree-merge",
+  // Deep planning mode (project-level) units
+  "workflow-preferences", "discuss-project", "discuss-requirements",
+  "research-decision", "research-project",
 ] as const;
 export type UnitType = (typeof KNOWN_UNIT_TYPES)[number];
 
@@ -344,6 +348,13 @@ export interface GSDPreferences {
   context_mode?: ContextModeConfig;
   token_profile?: TokenProfile;
   phases?: PhaseSkipPreferences;
+  /**
+   * Planning depth for new-project / new-milestone interactive flows.
+   * - "light" (default): single discuss-milestone session writes CONTEXT.md.
+   * - "deep": staged flow writes PROJECT.md → REQUIREMENTS.md → CONTEXT.md → ROADMAP.md
+   *   with user gates between each.
+   */
+  planning_depth?: "light" | "deep";
   auto_visualize?: boolean;
   /** Generate HTML report snapshot after each milestone completion. Default: true. Set false to disable. */
   auto_report?: boolean;

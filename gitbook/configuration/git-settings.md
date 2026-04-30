@@ -8,23 +8,25 @@ GSD supports three isolation modes, configured via `git.isolation` in preference
 
 | Mode | Working Directory | Branch | Best For |
 |------|-------------------|--------|----------|
-| `worktree` (default) | `.gsd/worktrees/<MID>/` | `milestone/<MID>` | Most projects — full isolation |
+| `none` (default) | Project root | Current branch | Most projects — no isolation overhead |
+| `worktree` | `.gsd/worktrees/<MID>/` | `milestone/<MID>` | Projects that need full isolation |
 | `branch` | Project root | `milestone/<MID>` | Submodule-heavy repos |
-| `none` | Project root | Current branch | Hot-reload workflows |
 
-### Worktree Mode (Default)
+### None Mode (Default)
+
+Work happens directly on your current branch. No worktree, no milestone branch. GSD still commits with conventional commit messages. Use this when file isolation breaks dev tooling (file watchers, hot-reload, etc.).
+
+### Worktree Mode
 
 Each milestone gets its own git worktree and branch. All execution happens inside the worktree. On completion, everything is squash-merged to main as one clean commit. The worktree and branch are then cleaned up.
 
 Changes in a milestone can't interfere with your main working copy.
 
+Worktree mode requires the repository to have at least one commit. If `git.isolation: worktree` is configured in a zero-commit repo with no committed `HEAD`, GSD temporarily runs as `none` until the first commit exists.
+
 ### Branch Mode
 
 Work happens in the project root on a `milestone/<MID>` branch. No worktree directory is created. Useful when worktrees cause problems with submodules or hardcoded paths.
-
-### None Mode
-
-Work happens directly on your current branch. No worktree, no milestone branch. GSD still commits with conventional commit messages. Use this when file isolation breaks dev tooling (file watchers, hot-reload, etc.).
 
 ## Branching Model
 
@@ -68,7 +70,7 @@ git:
   commit_type: feat           # override conventional commit prefix
   main_branch: main           # primary branch name
   merge_strategy: squash      # "squash" or "merge"
-  isolation: worktree         # "worktree", "branch", or "none"
+  isolation: none             # "none" (default), "worktree", or "branch"
   commit_docs: true           # commit .gsd/ artifacts to git
   manage_gitignore: true      # let GSD manage .gitignore
   auto_pr: false              # create PR on milestone completion

@@ -53,9 +53,9 @@ Plan (with integrated research) → Execute (per task) → Complete → Reassess
 
 GSD 支持三种 milestone 隔离模式（通过偏好设置中的 `git.isolation` 配置）：
 
-- **`worktree`**（默认）：每个 milestone 都运行在 `.gsd/worktrees/<MID>/` 下自己的 git worktree 中，分支名为 `milestone/<MID>`。所有 slice 工作都顺序提交，不需要切分支，也不会在 milestone 内部产生合并冲突。milestone 完成后，再整体 squash merge 回主分支，形成一个干净提交。
+- **`none`**（默认）：直接在当前分支工作。没有 worktree，也没有 milestone 分支。适合文件隔离会破坏开发工具的热重载场景。
+- **`worktree`**：每个 milestone 都运行在 `.gsd/worktrees/<MID>/` 下自己的 git worktree 中，分支名为 `milestone/<MID>`。Worktree 模式要求至少已有一个提交；在没有已提交 `HEAD` 的零提交仓库中，GSD 会临时按 `none` 运行，直到第一次提交存在。所有 slice 工作都会顺序提交，milestone 完成后再整体 squash merge 回主分支。
 - **`branch`**：工作发生在项目根目录下的 `milestone/<MID>` 分支上。适合子模块较多、worktree 表现不佳的仓库。
-- **`none`**：直接在当前分支工作。没有 worktree，也没有 milestone 分支。适合文件隔离会破坏开发工具的热重载场景。
 
 详见 [Git 策略](./git-strategy.md)。
 

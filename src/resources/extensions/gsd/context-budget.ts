@@ -29,6 +29,9 @@ const CHARS_PER_TOKEN = 4;
 /** Default context window when none can be resolved (D002) */
 const DEFAULT_CONTEXT_WINDOW = 200_000;
 
+/** Conservative effective context for Claude Code subscription routing (#4676) */
+const CLAUDE_CODE_EFFECTIVE_CONTEXT_WINDOW = 200_000;
+
 /** Percentage of context consumed before suggesting a continue-here checkpoint */
 const CONTINUE_THRESHOLD_PERCENT = 70;
 
@@ -175,6 +178,7 @@ export function resolveExecutorContextWindow(
   registry: MinimalModelRegistry | undefined,
   preferences: MinimalPreferences | undefined,
   sessionContextWindow?: number,
+  sessionProvider?: string,
 ): number {
   // Step 1: Try configured executor model
   if (preferences?.models?.execution && registry) {
@@ -186,14 +190,14 @@ export function resolveExecutorContextWindow(
     if (modelId) {
       const model = findModelById(registry, modelId);
       if (model && model.contextWindow > 0) {
-        return model.contextWindow;
+        return resolveEffectiveContextWindow(model.contextWindow, model.provider);
       }
     }
   }
 
   // Step 2: Fall back to session context window
   if (sessionContextWindow && sessionContextWindow > 0) {
-    return sessionContextWindow;
+    return resolveEffectiveContextWindow(sessionContextWindow, sessionProvider);
   }
 
   // Step 3: Fall back to default (D002)
@@ -221,6 +225,13 @@ function resolveTaskCountMax(contextWindow: number): number {
     if (contextWindow >= threshold) return max;
   }
   return 3; // fallback — unreachable given tiers include 0
+}
+
+function resolveEffectiveContextWindow(contextWindow: number, provider?: string): number {
+  if (provider?.toLowerCase() === "claude-code" && contextWindow > CLAUDE_CODE_EFFECTIVE_CONTEXT_WINDOW) {
+    return CLAUDE_CODE_EFFECTIVE_CONTEXT_WINDOW;
+  }
+  return contextWindow;
 }
 
 /**

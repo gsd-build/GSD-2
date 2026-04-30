@@ -19,7 +19,6 @@ import { getActiveHook } from "./post-unit-hooks.js";
 import { getLedger, getProjectTotals } from "./metrics.js";
 import { getErrorMessage } from "./error-utils.js";
 import { nativeIsRepo } from "./native-git-bridge.js";
-import { getHomeDir } from "./home-dir.js";
 import {
   resolveMilestoneFile,
   resolveSliceFile,
@@ -46,6 +45,7 @@ import {
 } from "../shared/rtk-session-stats.js";
 import { logWarning } from "./workflow-logger.js";
 import { formattedShortcutPair } from "./shortcut-defs.js";
+import { homedir } from "node:os";
 
 // ─── UAT Slice Extraction ─────────────────────────────────────────────────────
 
@@ -342,6 +342,16 @@ function refreshLastCommit(basePath: string): void {
       cachedLastCommit = null;
       return;
     }
+    try {
+      execFileSync("git", ["rev-parse", "--verify", "HEAD"], {
+        cwd: basePath,
+        stdio: ["pipe", "pipe", "pipe"],
+        timeout: 3000,
+      });
+    } catch {
+      cachedLastCommit = null;
+      return;
+    }
     const raw = execFileSync("git", ["log", "-1", "--format=%cr|%s"], {
       cwd: basePath,
       encoding: "utf-8",
@@ -583,7 +593,7 @@ export function updateProgressWidget(
   let widgetPwd: string;
   {
     let fullPwd = process.cwd();
-    const widgetHome = getHomeDir();
+    const widgetHome = homedir();
     if (widgetHome && (fullPwd === widgetHome || fullPwd.startsWith(widgetHome + "/") || fullPwd.startsWith(widgetHome + "\\"))) {
       fullPwd = `~${fullPwd.slice(widgetHome.length)}`;
     }

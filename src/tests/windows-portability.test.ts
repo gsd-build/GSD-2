@@ -70,9 +70,16 @@ test("Windows launch points use shell-safe shims", () => {
 		path.join(process.cwd(), "scripts", "validate-pack.js"),
 		"utf8",
 	);
+	const mcpServer = readFileSync(
+		path.join(process.cwd(), "packages", "mcp-server", "src", "server.ts"),
+		"utf8",
+	);
 
 	assert.match(gsdClient, /shell:\s*process\.platform === "win32"/);
 	assert.match(updateService, /npm\.cmd/);
 	assert.match(preExecution, /npm\.cmd/);
 	assert.match(validatePack, /shell:\s*process\.platform === 'win32'/);
+	assert.match(mcpServer, /shell:\s*process\.platform === 'win32'/);
+	assert.match(mcpServer, /vercel\.cmd/);
+	assert.match(mcpServer, /npx\.cmd/);
 });

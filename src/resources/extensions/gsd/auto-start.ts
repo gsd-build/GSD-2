@@ -648,7 +648,22 @@ export async function bootstrapAutoSession(
       hasSurvivorBranch = false;
     }
 
-    if (!hasSurvivorBranch) {
+    const deepProjectStagePending = !hasSurvivorBranch
+      ? (await import("./auto-dispatch.js")).hasPendingDeepStage(
+          loadEffectiveGSDPreferences(base)?.preferences,
+          base,
+        )
+      : false;
+
+    if (deepProjectStagePending) {
+      // Deep project-level setup runs before the first milestone exists. Let
+      // the auto loop dispatch workflow-preferences / project / requirements
+      // units instead of recursing back through showSmartEntry while this
+      // bootstrap still holds the session lock.
+      s.currentMilestoneId = null;
+    }
+
+    if (!hasSurvivorBranch && !deepProjectStagePending) {
       // No active work — start a new milestone via discuss flow
       if (!state.activeMilestone || state.phase === "complete") {
         // Guard against recursive dialog loop (#1348):
@@ -724,7 +739,7 @@ export async function bootstrapAutoSession(
     }
 
     // Unreachable safety check
-    if (!state.activeMilestone) {
+    if (!state.activeMilestone && !deepProjectStagePending) {
       const { showSmartEntry } = await import("./guided-flow.js");
       await showSmartEntry(ctx, pi, base, { step: requestedStepMode });
       return releaseLockAndReturn();
@@ -758,7 +773,7 @@ export async function bootstrapAutoSession(
     s.resourceVersionOnStart = readResourceVersion();
     s.pendingQuickTasks = [];
     s.currentUnit = null;
-    s.currentMilestoneId = state.activeMilestone?.id ?? null;
+    s.currentMilestoneId = deepProjectStagePending ? null : state.activeMilestone?.id ?? null;
     s.originalModelId = startModelSnapshot?.id ?? ctx.model?.id ?? null;
     s.originalModelProvider = startModelSnapshot?.provider ?? ctx.model?.provider ?? null;
     s.originalThinkingLevel = startThinkingSnapshot ?? null;
@@ -922,10 +937,21 @@ export async function bootstrapAutoSession(
       (m) => m.status !== "complete" && m.status !== "parked",
     ).length;
     const scopeMsg =
-      pendingCount > 1
+      deepProjectStagePending
+        ? "Will run project setup before milestone planning."
+        : pendingCount > 1
         ? `Will loop through ${pendingCount} milestones.`
         : "Will loop until milestone complete.";
     ctx.ui.notify(`${modeLabel} started. ${scopeMsg}`, "info");
+
+    const providerReportedWindow = ctx.model?.contextWindow ?? 0;
+    const contextOverride = loadEffectiveGSDPreferences(base)?.preferences.context_window_override;
+    if (providerReportedWindow > 500_000 && contextOverride === undefined) {
+      ctx.ui.notify(
+        `Model reports a ${Math.round(providerReportedWindow / 1000)}K context window. If the provider's real API limit is lower, set context_window_override in .gsd/PREFERENCES.md so wrap-up signals fire before context overflow.`,
+        "warning",
+      );
+    }
 
     // Show dynamic routing status so users know upfront if models will be
     // downgraded for simple tasks (#3962).
@@ -976,30 +1002,32 @@ export async function bootstrapAutoSession(
     writeLock(lockBase(), "starting", s.currentMilestoneId ?? "unknown");
 
     // Secrets collection gate
-    const mid = state.activeMilestone!.id;
-    try {
-      const manifestStatus = await getManifestStatus(base, mid, s.originalBasePath || base);
-      if (manifestStatus && manifestStatus.pending.length > 0) {
-        const result = await collectSecretsFromManifest(base, mid, ctx);
-        if (
-          result &&
-          result.applied &&
-          result.skipped &&
-          result.existingSkipped
-        ) {
-          ctx.ui.notify(
-            `Secrets collected: ${result.applied.length} applied, ${result.skipped.length} skipped, ${result.existingSkipped.length} already set.`,
-            "info",
-          );
-        } else {
-          ctx.ui.notify("Secrets collection skipped.", "info");
+    const mid = state.activeMilestone?.id;
+    if (mid) {
+      try {
+        const manifestStatus = await getManifestStatus(base, mid, s.originalBasePath || base);
+        if (manifestStatus && manifestStatus.pending.length > 0) {
+          const result = await collectSecretsFromManifest(base, mid, ctx);
+          if (
+            result &&
+            result.applied &&
+            result.skipped &&
+            result.existingSkipped
+          ) {
+            ctx.ui.notify(
+              `Secrets collected: ${result.applied.length} applied, ${result.skipped.length} skipped, ${result.existingSkipped.length} already set.`,
+              "info",
+            );
+          } else {
+            ctx.ui.notify("Secrets collection skipped.", "info");
+          }
         }
+      } catch (err) {
+        ctx.ui.notify(
+          `Secrets collection error: ${err instanceof Error ? err.message : String(err)}. Continuing with next task.`,
+          "warning",
+        );
       }
-    } catch (err) {
-      ctx.ui.notify(
-        `Secrets collection error: ${err instanceof Error ? err.message : String(err)}. Continuing with next task.`,
-        "warning",
-      );
     }
 
     // Self-heal: remove stale .git/index.lock.

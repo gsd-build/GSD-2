@@ -84,11 +84,12 @@ test('shouldBlockPendingGate: pending gate → allow ask_user_questions', (t) =>
   assert.strictEqual(r.block, false);
 });
 
-test('shouldBlockPendingGate: pending gate → allow read', (t) => {
+test('shouldBlockPendingGate: pending gate → block read so approval question stays visible', (t) => {
   t.after(() => clearDiscussionFlowState());
   setPendingGate('depth_verification_M001');
   const r = shouldBlockPendingGate('read', 'M001');
-  assert.strictEqual(r.block, false);
+  assert.strictEqual(r.block, true);
+  assert.ok(r.reason?.includes('already asked for user confirmation'));
 });
 
 // ─── shouldBlockPendingGateBash ───────────────────────────────────────────
@@ -108,18 +109,19 @@ test('shouldBlockPendingGateBash: pending gate → block mutating bash', (t) => 
   assert.ok(r.reason?.includes('depth_verification_M001'));
 });
 
-test('shouldBlockPendingGateBash: pending gate → allow read-only bash (cat)', (t) => {
+test('shouldBlockPendingGateBash: pending gate → block read-only bash (cat)', (t) => {
   t.after(() => clearDiscussionFlowState());
   setPendingGate('depth_verification_M001');
   const r = shouldBlockPendingGateBash('cat README.md', 'M001');
-  assert.strictEqual(r.block, false);
+  assert.strictEqual(r.block, true);
+  assert.ok(r.reason?.includes('already asked for user confirmation'));
 });
 
-test('shouldBlockPendingGateBash: pending gate → allow read-only bash (git log)', (t) => {
+test('shouldBlockPendingGateBash: pending gate → block read-only bash (git log)', (t) => {
   t.after(() => clearDiscussionFlowState());
   setPendingGate('depth_verification_M001');
   const r = shouldBlockPendingGateBash('git log --oneline -10', 'M001');
-  assert.strictEqual(r.block, false);
+  assert.strictEqual(r.block, true);
 });
 
 // ─── shouldBlockContextWrite ──────────────────────────────────────────────

@@ -27,6 +27,7 @@ import { formatUptime, getBgShellLiveCwd, resolveBgShellPersistenceCwd } from ".
 import { formatTokenCount } from "../shared/format-utils.js";
 
 import type { BgShellSharedState } from "./index.js";
+import { homedir } from "node:os";
 
 export function registerBgShellLifecycle(pi: ExtensionAPI, state: BgShellSharedState): void {
 
@@ -226,8 +227,8 @@ export function registerBgShellLifecycle(pi: ExtensionAPI, state: BgShellSharedS
 				render(width: number): string[] {
 					// ── Line 1: pwd (branch) [session]  ...  bg status ──
 					let pwd = getBgShellLiveCwd(state.latestCtx?.cwd);
-					const home = process.env.HOME || process.env.USERPROFILE;
-					if (home && pwd.startsWith(home)) {
+					const home = homedir();
+					if (pwd.startsWith(home)) {
 						pwd = `~${pwd.slice(home.length)}`;
 					}
 					const branch = footerData.getGitBranch();

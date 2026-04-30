@@ -14,9 +14,11 @@
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { z } from 'zod';
 import type { SessionManager } from './session-manager.js';
 import { isRemoteConfigured, tryRemoteQuestions } from './remote-questions.js';
+import type { RemoteToolResult } from './remote-questions.js';
 import { readProgress } from './readers/state.js';
 import { readRoadmap } from './readers/roadmap.js';
 import { readHistory } from './readers/metrics.js';
@@ -34,7 +36,21 @@ import { applySecrets, checkExistingEnvKeys, detectDestination, resolveProjectEn
 
 const MCP_PKG = '@modelcontextprotocol/sdk';
 const SERVER_NAME = 'gsd';
-const SERVER_VERSION = '2.53.0';
+
+/**
+ * Read the version from this package's package.json so the MCP handshake
+ * always advertises the deployed artifact's version. Falls back to '0.0.0'
+ * if package.json can't be located (e.g. unusual bundling); the fallback
+ * is loud-ish but won't crash the server.
+ */
+const SERVER_VERSION: string = (() => {
+  try {
+    const require = createRequire(import.meta.url);
+    const pkg = require('../package.json') as { version?: unknown };
+    if (typeof pkg.version === 'string' && pkg.version.length > 0) return pkg.version;
+  } catch { /* fall through */ }
+  return '0.0.0';
+})();
 
 /** User-interaction timeout — generous but bounded so elicitation can't hang indefinitely (#4586). */
 const ELICIT_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
@@ -48,15 +64,28 @@ const ELICIT_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 function defaultExecFn(
   cmd: string,
   args: string[],
+  opts?: { stdin?: string },
 ): Promise<{ code: number; stderr: string }> {
   return new Promise((res) => {
-    // stdin: ignore — avoids hanging if the child ever prompts interactively.
+    // stdin: pipe only when a caller explicitly supplies input; otherwise
+    // ignore it to avoid hanging if the child ever prompts interactively.
     // stdout: ignore — consumer only cares about stderr + exit code, and an
     //   un-drained pipe deadlocks once the kernel buffer (~64KB) fills.
     // stderr: pipe — captured below for error surfacing.
-    const child = spawn(cmd, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+    const child = spawn(resolveShellCommand(cmd), args, {
+      shell: process.platform === 'win32',
+      stdio: [opts?.stdin === undefined ? 'ignore' : 'pipe', 'ignore', 'pipe'],
+      windowsHide: true,
+    });
     let stderr = '';
-    child.stderr.on('data', (chunk) => {
+    child.stdin?.on('error', () => {
+      // Child exited before consuming stdin; close/error handling below will
+      // surface the real process result.
+    });
+    if (opts?.stdin !== undefined) {
+      child.stdin?.end(opts.stdin, 'utf8');
+    }
+    child.stderr?.on('data', (chunk) => {
       stderr += chunk.toString('utf8');
     });
     child.on('error', (err) => res({ code: 1, stderr: err.message }));
@@ -64,9 +93,19 @@ function defaultExecFn(
   });
 }
 
+function resolveShellCommand(cmd: string): string {
+  if (process.platform !== 'win32') return cmd;
+  if (cmd === 'vercel') return 'vercel.cmd';
+  if (cmd === 'npx') return 'npx.cmd';
+  return cmd;
+}
+
 /**
  * Race a promise against a timeout. Rejects with a typed error on timeout so
  * callers can return a specific MCP error response rather than hanging.
+ * If a parent AbortSignal is provided, an abort also rejects the race so
+ * client-side cancellation propagates instead of being absorbed by the
+ * 10-minute elicitation hold.
  *
  * @param timeoutMs - override for testing; defaults to ELICIT_TIMEOUT_MS
  */
@@ -74,18 +113,36 @@ export async function withElicitTimeout<T>(
   promise: Promise<T>,
   label: string,
   timeoutMs = ELICIT_TIMEOUT_MS,
+  signal?: AbortSignal,
 ): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () => reject(new Error(`${label} timed out after ${timeoutMs / 60000} minutes — no user response received`)),
-      timeoutMs,
+  const racers: Promise<T>[] = [promise];
+  racers.push(
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`${label} timed out after ${timeoutMs / 60000} minutes — no user response received`)),
+        timeoutMs,
+      );
+    }),
+  );
+  let abortListener: (() => void) | undefined;
+  if (signal) {
+    if (signal.aborted) {
+      clearTimeout(timer);
+      throw new Error(`${label} cancelled by client`);
+    }
+    racers.push(
+      new Promise<never>((_, reject) => {
+        abortListener = () => reject(new Error(`${label} cancelled by client`));
+        signal.addEventListener('abort', abortListener, { once: true });
+      }),
     );
-  });
+  }
   try {
-    return await Promise.race([promise, timeout]);
+    return await Promise.race(racers);
   } finally {
     clearTimeout(timer);
+    if (signal && abortListener) signal.removeEventListener('abort', abortListener);
   }
 }
 
@@ -385,6 +442,89 @@ export function formatAskUserQuestionsElicitResult(
   }
 
   return JSON.stringify({ answers });
+}
+
+interface AskUserQuestionsHandlerDeps {
+  elicitInput(params: AskUserQuestionsElicitRequest): Promise<AskUserQuestionsElicitResult>;
+  isRemoteConfigured(): boolean;
+  tryRemoteQuestions(questions: AskUserQuestion[], signal?: AbortSignal): Promise<RemoteToolResult | null>;
+}
+
+function isLocalElicitFallbackError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const message = err.message.toLowerCase();
+  return (
+    message.includes('timed out after') ||
+    message.includes('elicit') ||
+    message.includes('elicitation') ||
+    message.includes('host') ||
+    message.includes('not supported') ||
+    message.includes('method not found') ||
+    message.includes('-32601')
+  );
+}
+
+function formatErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+export async function askUserQuestionsHandler(
+  questions: AskUserQuestion[],
+  extra: McpToolExtra | undefined,
+  deps: AskUserQuestionsHandlerDeps,
+): Promise<ToolContent> {
+  try {
+    const validationError = validateAskUserQuestionsPayload(questions);
+    if (validationError) return errorContent(validationError);
+
+    // Local-first: try the MCP host's elicitation channel (Claude Code,
+    // Cursor, etc.) before any configured remote channel. A misconfigured
+    // remote (e.g. expired Discord token returning 401) must not block the
+    // depth-verification gate when the user is sitting in front of the host.
+    let localElicitError: unknown;
+    try {
+      const elicitation = await withElicitTimeout(
+        deps.elicitInput(buildAskUserQuestionsElicitRequest(questions)),
+        'ask_user_questions',
+      );
+      if (elicitation.action === 'accept' && elicitation.content) {
+        return textContent(formatAskUserQuestionsElicitResult(questions, elicitation));
+      }
+    } catch (err) {
+      if (!isLocalElicitFallbackError(err)) throw err;
+      localElicitError = err;
+      console.warn(`[gsd:mcp] ask_user_questions local elicitation unavailable; trying remote fallback: ${formatErrorMessage(err)}`);
+    }
+
+    // Local cancelled / unavailable — fall back to the configured remote
+    // channel (Discord, Slack, Telegram) if one is set.
+    if (deps.isRemoteConfigured()) {
+      let remoteResult: RemoteToolResult | null;
+      try {
+        remoteResult = await deps.tryRemoteQuestions(questions, extra?.signal);
+      } catch (err) {
+        if (localElicitError) {
+          throw new Error(
+            `Local elicitation failed (${formatErrorMessage(localElicitError)}); remote fallback failed (${formatErrorMessage(err)})`,
+          );
+        }
+        throw err;
+      }
+      if (remoteResult) {
+        const details = remoteResult.details as Record<string, unknown> | undefined;
+        if (details?.['timed_out'] || details?.['error']) {
+          return textContent(remoteResult.content[0]?.text ?? 'Remote questions timed out or failed');
+        }
+        return textContent(remoteResult.content[0]?.text ?? '');
+      }
+    }
+
+    if (localElicitError) throw localElicitError;
+
+    return textContent('ask_user_questions was cancelled before receiving a response');
+  } catch (err) {
+    return errorContent(err instanceof Error ? err.message : String(err));
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -750,39 +890,11 @@ export async function createMcpServer(
     },
     async (args: Record<string, unknown>, extra?: McpToolExtra) => {
       const { questions } = args as unknown as AskUserQuestionsParams;
-      try {
-        const validationError = validateAskUserQuestionsPayload(questions);
-        if (validationError) return errorContent(validationError);
-
-        // Delegate to remote-questions manager when a remote channel is configured
-        // (Discord, Slack, Telegram). This path is the only one reachable for
-        // Claude Code-under-gsd sessions, which have no local TUI.
-        if (isRemoteConfigured()) {
-          const remoteResult = await tryRemoteQuestions(questions, extra?.signal);
-          if (remoteResult) {
-            const details = remoteResult.details as Record<string, unknown> | undefined;
-            if (details?.['timed_out'] || details?.['error']) {
-              // Surface timeout/error as plain text so the LLM knows to retry
-              return textContent(remoteResult.content[0]?.text ?? 'Remote questions timed out or failed');
-            }
-            return textContent(remoteResult.content[0]?.text ?? '');
-          }
-          // resolveRemoteConfig() returned null between isRemoteConfigured() and
-          // tryRemoteQuestions() (e.g. env var was cleared) — fall through to local.
-        }
-
-        const elicitation = await withElicitTimeout(
-          server.server.elicitInput(buildAskUserQuestionsElicitRequest(questions)),
-          'ask_user_questions',
-        );
-        if (elicitation.action !== 'accept' || !elicitation.content) {
-          return textContent('ask_user_questions was cancelled before receiving a response');
-        }
-
-        return textContent(formatAskUserQuestionsElicitResult(questions, elicitation));
-      } catch (err) {
-        return errorContent(err instanceof Error ? err.message : String(err));
-      }
+      return askUserQuestionsHandler(questions, extra, {
+        elicitInput: (params) => server.server.elicitInput(params),
+        isRemoteConfigured,
+        tryRemoteQuestions,
+      });
     },
   );
 

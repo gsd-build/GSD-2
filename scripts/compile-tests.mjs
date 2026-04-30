@@ -147,6 +147,12 @@ async function main() {
     const pkgSrc = join(packagesDir, entry.name, 'src');
     const pkgDistSrc = join(ROOT, 'dist-test', 'packages', entry.name, 'src');
     await copyAssets(pkgSrc, pkgDistSrc);
+    // Workspace package symlinks may resolve through dist-test/node_modules on
+    // Windows, so the mirrored package tree also needs built package entrypoints.
+    await copyAssets(
+      join(packagesDir, entry.name, 'dist'),
+      join(ROOT, 'dist-test', 'packages', entry.name, 'dist'),
+    );
     const pkgJsonPath = join(packagesDir, entry.name, 'package.json');
     if (existsSync(pkgJsonPath)) {
       await cp(pkgJsonPath, join(ROOT, 'dist-test', 'packages', entry.name, 'package.json'), { force: true });

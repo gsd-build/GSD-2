@@ -7,6 +7,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as readline from "node:readline";
 import { linuxPython, diagnoseSounddeviceError, ensureVoiceVenv, VOICE_VENV_PYTHON } from "./linux-ready.js";
+import { homedir } from "node:os";
 
 const __extensionDir = import.meta.dirname!;
 const SWIFT_SRC = path.join(__extensionDir, "speech-recognizer.swift");
@@ -110,8 +111,8 @@ export default function (pi: ExtensionAPI) {
 				render(width: number): string[] {
 					// Row 1: pwd (branch) ... ● transcribing
 					let pwd = process.cwd();
-					const home = process.env.HOME || process.env.USERPROFILE;
-					if (home && pwd.startsWith(home)) pwd = `~${pwd.slice(home.length)}`;
+					const home = homedir();
+					if (pwd.startsWith(home)) pwd = `~${pwd.slice(home.length)}`;
 					const branch = footerData.getGitBranch();
 					if (branch) pwd = `${pwd} (${branch})`;
 

@@ -261,13 +261,15 @@ function writePromptToTempFile(agentName: string, prompt: string): { dir: string
 	return { dir: tmpDir, filePath };
 }
 
-function buildSubagentProcessArgs(
+export function buildSubagentProcessArgs(
 	agent: AgentConfig,
 	task: string,
 	tmpPromptPath: string | null,
+	modelOverride?: string,
 ): string[] {
 	const args: string[] = ["--mode", "json", "-p", "--no-session"];
-	if (agent.model) args.push("--model", agent.model);
+	const effectiveModel = modelOverride ?? agent.model;
+	if (effectiveModel) args.push("--model", effectiveModel);
 	if (agent.tools && agent.tools.length > 0) args.push("--tools", agent.tools.join(","));
 	if (tmpPromptPath) args.push("--append-system-prompt", tmpPromptPath);
 	args.push(`Task: ${task}`);
@@ -337,6 +339,7 @@ async function runSingleAgent(
 	signal: AbortSignal | undefined,
 	onUpdate: OnUpdateCallback | undefined,
 	makeDetails: (results: SingleResult[]) => SubagentDetails,
+	modelOverride?: string,
 ): Promise<SingleResult> {
 	const agent = agents.find((a) => a.name === agentName);
 
@@ -382,7 +385,7 @@ async function runSingleAgent(
 		messages: [],
 		stderr: "",
 		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
-		model: agent.model,
+		model: modelOverride ?? agent.model,
 		step,
 	};
 
@@ -401,7 +404,7 @@ async function runSingleAgent(
 			tmpPromptDir = tmp.dir;
 			tmpPromptPath = tmp.filePath;
 		}
-		const args = buildSubagentProcessArgs(agent, task, tmpPromptPath);
+		const args = buildSubagentProcessArgs(agent, task, tmpPromptPath, modelOverride);
 		let wasAborted = false;
 
 		const exitCode = await new Promise<number>((resolve) => {
@@ -481,10 +484,11 @@ async function runSingleAgentInCmuxSplit(
 	signal: AbortSignal | undefined,
 	onUpdate: OnUpdateCallback | undefined,
 	makeDetails: (results: SingleResult[]) => SubagentDetails,
+	modelOverride?: string,
 ): Promise<SingleResult> {
 	const agent = agents.find((a) => a.name === agentName);
 	if (!agent) {
-		return runSingleAgent(defaultCwd, agents, agentName, task, cwd, step, signal, onUpdate, makeDetails);
+		return runSingleAgent(defaultCwd, agents, agentName, task, cwd, step, signal, onUpdate, makeDetails, modelOverride);
 	}
 
 	let tmpPromptDir: string | null = null;
@@ -499,7 +503,7 @@ async function runSingleAgentInCmuxSplit(
 		messages: [],
 		stderr: "",
 		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
-		model: agent.model,
+		model: modelOverride ?? agent.model,
 		step,
 	};
 
@@ -529,12 +533,12 @@ async function runSingleAgentInCmuxSplit(
 			? await cmuxClient.createSplit(directionOrSurfaceId as "right" | "down" | "left" | "up")
 			: directionOrSurfaceId;
 		if (!cmuxSurfaceId) {
-			return runSingleAgent(defaultCwd, agents, agentName, task, cwd, step, signal, onUpdate, makeDetails);
+			return runSingleAgent(defaultCwd, agents, agentName, task, cwd, step, signal, onUpdate, makeDetails, modelOverride);
 		}
 
 		const bundledPaths = (process.env.GSD_BUNDLED_EXTENSION_PATHS ?? "").split(path.delimiter).map((s) => s.trim()).filter(Boolean);
 		const extensionArgs = bundledPaths.flatMap((p) => ["--extension", p]);
-		const processArgs = [process.env.GSD_BIN_PATH!, ...extensionArgs, ...buildSubagentProcessArgs(agent, task, tmpPromptPath)];
+		const processArgs = [process.env.GSD_BIN_PATH!, ...extensionArgs, ...buildSubagentProcessArgs(agent, task, tmpPromptPath, modelOverride)];
 		// Normalize all paths to forward slashes before embedding in bash strings.
 		// On Windows, backslashes are interpreted as escape characters by bash,
 		// mangling paths like C:\Users\user into C:Useruser (#1436).
@@ -549,7 +553,7 @@ async function runSingleAgentInCmuxSplit(
 
 		const sent = await cmuxClient.sendSurface(cmuxSurfaceId, `bash -lc ${shellEscape(innerScript)}`);
 		if (!sent) {
-			return runSingleAgent(defaultCwd, agents, agentName, task, cwd, step, signal, onUpdate, makeDetails);
+			return runSingleAgent(defaultCwd, agents, agentName, task, cwd, step, signal, onUpdate, makeDetails, modelOverride);
 		}
 
 		const finished = await waitForFile(exitPath, signal);
@@ -596,12 +600,14 @@ const TaskItem = Type.Object({
 	agent: Type.String({ description: "Name of the agent to invoke" }),
 	task: Type.String({ description: "Task to delegate to the agent" }),
 	cwd: Type.Optional(Type.String({ description: "Working directory for the agent process" })),
+	model: Type.Optional(Type.String({ description: "Model override for this task (e.g. 'claude-sonnet-4-6')" })),
 });
 
 const ChainItem = Type.Object({
 	agent: Type.String({ description: "Name of the agent to invoke" }),
 	task: Type.String({ description: "Task with optional {previous} placeholder for prior output" }),
 	cwd: Type.Optional(Type.String({ description: "Working directory for the agent process" })),
+	model: Type.Optional(Type.String({ description: "Model override for this step (e.g. 'claude-sonnet-4-6')" })),
 });
 
 const AgentScopeSchema = StringEnum(["user", "project", "both"] as const, {
@@ -619,6 +625,7 @@ const SubagentParams = Type.Object({
 		Type.Boolean({ description: "Prompt before running project-local agents. Default: false.", default: false }),
 	),
 	cwd: Type.Optional(Type.String({ description: "Working directory for the agent process (single mode)" })),
+	model: Type.Optional(Type.String({ description: "Model override for the subagent (e.g. 'claude-sonnet-4-6'). Takes precedence over the agent's frontmatter model." })),
 	isolated: Type.Optional(
 		Type.Boolean({
 			description:
@@ -908,6 +915,7 @@ export default function (pi: ExtensionAPI) {
 						signal,
 						chainUpdate,
 						makeDetails("chain"),
+						step.model || params.model,
 					);
 					results.push(result);
 
@@ -985,6 +993,7 @@ export default function (pi: ExtensionAPI) {
 					: [];
 				const results = await mapWithConcurrencyLimit(params.tasks, MAX_CONCURRENCY, async (t, index) => {
 					const workerId = registerWorker(t.agent, t.task, index, batchSize, batchId);
+					const taskModel = t.model || params.model;
 					const runTask = () => cmuxSplitsEnabled
 						? runSingleAgentInCmuxSplit(
 							cmuxClient,
@@ -1003,6 +1012,7 @@ export default function (pi: ExtensionAPI) {
 								}
 							},
 							makeDetails("parallel"),
+							taskModel,
 						)
 						: runSingleAgent(
 							ctx.cwd,
@@ -1019,6 +1029,7 @@ export default function (pi: ExtensionAPI) {
 								}
 							},
 							makeDetails("parallel"),
+							taskModel,
 						);
 					let result = await runTask();
 
@@ -1079,6 +1090,7 @@ export default function (pi: ExtensionAPI) {
 							signal,
 							onUpdate,
 							makeDetails("single"),
+							params.model,
 						)
 						: await runSingleAgent(
 							ctx.cwd,
@@ -1090,6 +1102,7 @@ export default function (pi: ExtensionAPI) {
 							signal,
 							onUpdate,
 							makeDetails("single"),
+							params.model,
 						);
 					finalResults = [result];
 

@@ -23,8 +23,10 @@ import {
 import {
   markDepthVerified,
   isMilestoneDepthVerified,
+  markApprovalGateVerified,
   shouldBlockContextArtifactSave,
   shouldBlockContextArtifactSaveInSnapshot,
+  shouldBlockRootArtifactSaveInSnapshot,
   clearDiscussionFlowState,
   resetWriteGateState,
   loadWriteGateSnapshot,
@@ -220,6 +222,112 @@ test('write-gate: gsd_summary_save only blocks final milestone CONTEXT writes', 
   clearDiscussionFlowState();
 });
 
+test('write-gate: root PROJECT/REQUIREMENTS final saves block behind pending approval gate', () => {
+  const snapshot = {
+    verifiedDepthMilestones: [],
+    verifiedApprovalGates: [],
+    activeQueuePhase: false,
+    pendingGateId: 'depth_verification_requirements_confirm',
+  };
+
+  assert.strictEqual(
+    shouldBlockRootArtifactSaveInSnapshot(snapshot, 'REQUIREMENTS').block,
+    true,
+    'final REQUIREMENTS.md must wait for approval',
+  );
+  assert.strictEqual(
+    shouldBlockRootArtifactSaveInSnapshot(snapshot, 'PROJECT').block,
+    true,
+    'final PROJECT.md must wait for approval',
+  );
+  assert.strictEqual(
+    shouldBlockRootArtifactSaveInSnapshot(snapshot, 'REQUIREMENTS-DRAFT').block,
+    false,
+    'draft requirements can still be saved',
+  );
+  assert.strictEqual(
+    shouldBlockRootArtifactSaveInSnapshot({ ...snapshot, pendingGateId: null }, 'REQUIREMENTS').block,
+    false,
+    'no pending approval gate means final root artifacts can save',
+  );
+});
+
+test('write-gate: deep root PROJECT/REQUIREMENTS final saves require verified approval', () => {
+  const snapshot = {
+    verifiedDepthMilestones: [],
+    verifiedApprovalGates: [],
+    activeQueuePhase: false,
+    pendingGateId: null,
+  };
+
+  assert.strictEqual(
+    shouldBlockRootArtifactSaveInSnapshot(
+      snapshot,
+      'PROJECT',
+      { requireVerifiedApproval: true },
+    ).block,
+    true,
+    'deep PROJECT save is fail-closed without verified project approval',
+  );
+  assert.strictEqual(
+    shouldBlockRootArtifactSaveInSnapshot(
+      { ...snapshot, verifiedApprovalGates: ['depth_verification_project_confirm'] },
+      'PROJECT',
+      { requireVerifiedApproval: true },
+    ).block,
+    false,
+    'verified project approval unlocks PROJECT',
+  );
+  assert.strictEqual(
+    shouldBlockRootArtifactSaveInSnapshot(
+      { ...snapshot, verifiedApprovalGates: ['depth_verification_project_confirm'] },
+      'REQUIREMENTS',
+      { requireVerifiedApproval: true },
+    ).block,
+    true,
+    'project approval does not unlock REQUIREMENTS',
+  );
+  assert.strictEqual(
+    shouldBlockRootArtifactSaveInSnapshot(
+      { ...snapshot, verifiedApprovalGates: ['depth_verification_requirements_confirm'] },
+      'REQUIREMENTS',
+      { requireVerifiedApproval: true },
+    ).block,
+    false,
+    'verified requirements approval unlocks REQUIREMENTS',
+  );
+});
+
+test('write-gate: reopening a gate revokes its previous verified approval', () => {
+  clearDiscussionFlowState();
+
+  markApprovalGateVerified('depth_verification_project_confirm');
+  assert.strictEqual(
+    shouldBlockRootArtifactSaveInSnapshot(
+      loadWriteGateSnapshot(),
+      'PROJECT',
+      { requireVerifiedApproval: true },
+    ).block,
+    false,
+    'precondition: verified approval unlocks the final project artifact',
+  );
+
+  setPendingGate('depth_verification_project_confirm');
+  clearPendingGate();
+
+  assert.strictEqual(
+    shouldBlockRootArtifactSaveInSnapshot(
+      loadWriteGateSnapshot(),
+      'PROJECT',
+      { requireVerifiedApproval: true },
+    ).block,
+    true,
+    'a re-asked gate must require a fresh approval',
+  );
+
+  clearDiscussionFlowState();
+});
+
 // ═══════════════════════════════════════════════════════════════════════
 // Discussion gate enforcement tests (pending gate mechanism)
 // ═══════════════════════════════════════════════════════════════════════
@@ -286,19 +394,19 @@ test('write-gate: shouldBlockPendingGate blocks write/edit during pending gate',
   clearDiscussionFlowState();
 });
 
-// ─── Scenario 22: shouldBlockPendingGate allows safe tools when gate is pending ──
+// ─── Scenario 22: shouldBlockPendingGate allows only re-asking when gate is pending ──
 
-test('write-gate: shouldBlockPendingGate allows read-only and ask_user_questions during pending gate', () => {
+test('write-gate: shouldBlockPendingGate blocks read-only tools and allows ask_user_questions during pending gate', () => {
   clearDiscussionFlowState();
   setPendingGate('depth_verification');
 
   // ask_user_questions is always safe (model needs to re-ask)
   assert.strictEqual(shouldBlockPendingGate('ask_user_questions', 'M001').block, false);
-  // read-only tools are safe
-  assert.strictEqual(shouldBlockPendingGate('read', 'M001').block, false);
-  assert.strictEqual(shouldBlockPendingGate('grep', 'M001').block, false);
-  assert.strictEqual(shouldBlockPendingGate('glob', 'M001').block, false);
-  assert.strictEqual(shouldBlockPendingGate('ls', 'M001').block, false);
+  // read-only tools are blocked so the user-facing question remains visible
+  assert.strictEqual(shouldBlockPendingGate('read', 'M001').block, true);
+  assert.strictEqual(shouldBlockPendingGate('grep', 'M001').block, true);
+  assert.strictEqual(shouldBlockPendingGate('glob', 'M001').block, true);
+  assert.strictEqual(shouldBlockPendingGate('ls', 'M001').block, true);
 
   clearDiscussionFlowState();
 });
@@ -329,16 +437,16 @@ test('write-gate: shouldBlockPendingGate blocks in queue mode when gate is pendi
   clearDiscussionFlowState();
 });
 
-// ─── Scenario 25: shouldBlockPendingGateBash allows read-only commands ──
+// ─── Scenario 25: shouldBlockPendingGateBash blocks read-only commands ──
 
-test('write-gate: shouldBlockPendingGateBash allows read-only commands during pending gate', () => {
+test('write-gate: shouldBlockPendingGateBash blocks read-only commands during pending gate', () => {
   clearDiscussionFlowState();
   setPendingGate('depth_verification');
 
-  assert.strictEqual(shouldBlockPendingGateBash('cat file.txt', 'M001').block, false);
-  assert.strictEqual(shouldBlockPendingGateBash('git log --oneline', 'M001').block, false);
-  assert.strictEqual(shouldBlockPendingGateBash('grep -r pattern .', 'M001').block, false);
-  assert.strictEqual(shouldBlockPendingGateBash('ls -la', 'M001').block, false);
+  assert.strictEqual(shouldBlockPendingGateBash('cat file.txt', 'M001').block, true);
+  assert.strictEqual(shouldBlockPendingGateBash('git log --oneline', 'M001').block, true);
+  assert.strictEqual(shouldBlockPendingGateBash('grep -r pattern .', 'M001').block, true);
+  assert.strictEqual(shouldBlockPendingGateBash('ls -la', 'M001').block, true);
 
   clearDiscussionFlowState();
 });

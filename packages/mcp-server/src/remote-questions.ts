@@ -781,7 +781,15 @@ async function pollUntilDone(
       }
 
       if (answer) return answer;
-    } catch {
+    } catch (err) {
+      // Auth errors (401/403) mean the configured token is invalid or
+      // revoked — re-throw so the caller can surface a useful error
+      // immediately instead of silently spinning until the timeout.
+      // Network/transient errors keep the retry behaviour.
+      const msg = String((err as Error)?.message ?? err);
+      if (msg.includes('HTTP 401') || msg.includes('HTTP 403')) {
+        throw err;
+      }
       // Non-fatal poll error — wait and retry
     }
 
@@ -868,7 +876,15 @@ export async function tryRemoteQuestions(
     };
   }
 
-  const answer = await pollUntilDone(config, prompt, ref, state, signal);
+  let answer: RemoteAnswer | null;
+  try {
+    answer = await pollUntilDone(config, prompt, ref, state, signal);
+  } catch (err) {
+    return {
+      content: [{ type: 'text', text: `Remote questions failed (${config.channel}): ${(err as Error).message}` }],
+      details: { remote: true, channel: config.channel, error: true, status: 'failed' },
+    };
+  }
 
   if (!answer) {
     const timedOut = !signal?.aborted;

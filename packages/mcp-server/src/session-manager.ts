@@ -6,9 +6,8 @@
  * the cumulative-max pattern (K004).
  */
 
-import { execSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
-import { resolve, join } from 'node:path';
+import { resolve, join, delimiter } from 'node:path';
 import { RpcClient } from '@gsd-build/rpc-client';
 import type { SdkAgentEvent, RpcInitResult, RpcCostUpdateEvent, RpcExtensionUIRequest } from '@gsd-build/rpc-client';
 import type {
@@ -29,6 +28,28 @@ const FIRE_AND_FORGET_METHODS = new Set([
 ]);
 
 const TERMINAL_PREFIXES = ['auto-mode stopped', 'step-mode stopped'];
+
+function findExecutableOnPath(command: string): string | null {
+  const pathValue = getPathEnvValue();
+  if (!pathValue) return null;
+  const extensions = process.platform === 'win32'
+    ? ['', ...(process.env['PATHEXT'] ?? '.COM;.EXE;.BAT;.CMD')
+      .split(';')
+      .filter(Boolean)]
+    : [''];
+  for (const dir of pathValue.split(delimiter)) {
+    if (!dir) continue;
+    for (const ext of extensions) {
+      const candidate = join(dir, `${command}${ext}`);
+      if (existsSync(candidate)) return candidate;
+    }
+  }
+  return null;
+}
+
+function getPathEnvValue(env: NodeJS.ProcessEnv = process.env): string {
+  return env['PATH'] ?? env['Path'] ?? env['path'] ?? '';
+}
 
 function isTerminalNotification(event: Record<string, unknown>): boolean {
   if (event.type !== 'extension_ui_request' || event.method !== 'notify') return false;
@@ -152,8 +173,14 @@ export class SessionManager {
   /**
    * Look up a session by sessionId.
    * Linear scan is fine — we expect <10 concurrent sessions.
+   *
+   * Empty sessionId is rejected explicitly: in-progress sessions carry an
+   * empty sessionId until init() resolves, so an empty-string lookup would
+   * otherwise match the first in-flight session and silently target the
+   * wrong one (e.g. cancel a different caller's session).
    */
   getSession(sessionId: string): ManagedSession | undefined {
+    if (!sessionId) return undefined;
     for (const session of this.sessions.values()) {
       if (session.sessionId === sessionId) return session;
     }
@@ -289,22 +316,16 @@ export class SessionManager {
    * Resolve the GSD CLI path.
    *
    * 1. GSD_CLI_PATH env var (highest priority)
-   * 2. `which gsd` → resolve to the actual dist/cli.js
+   * 2. PATH lookup → resolve to the actual gsd executable/shim
    */
   static resolveCLIPath(): string {
     // Check env var first
     const envPath = process.env['GSD_CLI_PATH'];
     if (envPath) return resolve(envPath);
 
-    // Fallback: locate `gsd` via which
-    try {
-      const gsdBin = execSync('which gsd', { encoding: 'utf-8' }).trim();
-      if (gsdBin) {
-        // gsd bin is typically a symlink to dist/loader.js — return the resolved path
-        return resolve(gsdBin);
-      }
-    } catch {
-      // which failed
+    const gsdBin = findExecutableOnPath('gsd');
+    if (gsdBin) {
+      return resolve(gsdBin);
     }
 
     throw new Error(

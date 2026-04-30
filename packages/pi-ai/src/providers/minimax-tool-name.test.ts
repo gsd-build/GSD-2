@@ -12,14 +12,21 @@
  */
 import test, { describe } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { convertMessages } from "./anthropic-shared.js";
 import type { AssistantMessage } from "../types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const source = readFileSync(join(__dirname, "anthropic.ts"), "utf-8");
+
+function resolveSourcePath(fileName: string): string {
+	const localPath = join(__dirname, fileName);
+	if (existsSync(localPath)) return localPath;
+	return join(__dirname, "..", "..", "src", "providers", fileName);
+}
+
+const source = readFileSync(resolveSourcePath("anthropic.ts"), "utf-8");
 
 describe("MiniMax fine-grained-tool-streaming exclusion (#4538)", () => {
 	test("minimax is excluded from fine-grained-tool-streaming-2025-05-14 beta", () => {

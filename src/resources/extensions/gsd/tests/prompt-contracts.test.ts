@@ -76,6 +76,88 @@ test("guided milestone discussion scopes depth verification to the milestone id"
   assert.doesNotMatch(prompt, /depth_verification_confirm" — this enables the write-gate downstream/i, "legacy global depth gate wording should be gone");
 });
 
+test("guided requirements prompt requires milestone-qualified provisional owners", () => {
+  const prompt = readPrompt("guided-discuss-requirements");
+  assert.match(prompt, /M###\/none yet/, "unsliced requirements should retain milestone ownership");
+  assert.match(prompt, /never bare `none yet`/, "prompt should forbid bare provisional ownership");
+  assert.doesNotMatch(prompt, /primary owning slice \(or `none yet`\)/i);
+});
+
+test("guided requirements prompt saves requirement records before final summary write", () => {
+  const prompt = readPrompt("guided-discuss-requirements");
+  const output = prompt.slice(prompt.indexOf("## Output"));
+  const requirementSaveIndex = output.indexOf("gsd_requirement_save");
+  const summarySaveIndex = output.indexOf("gsd_summary_save");
+
+  assert.ok(requirementSaveIndex >= 0, "output instructions should call gsd_requirement_save");
+  assert.ok(summarySaveIndex >= 0, "output instructions should call gsd_summary_save");
+  assert.ok(
+    requirementSaveIndex < summarySaveIndex,
+    "DB-backed requirement records should be saved before writing REQUIREMENTS.md",
+  );
+});
+
+test("guided requirements prompt uses supported summary artifact types", () => {
+  const prompt = readPrompt("guided-discuss-requirements");
+  assert.match(prompt, /artifact_type:\s*"REQUIREMENTS-DRAFT"/);
+  assert.match(prompt, /artifact_type:\s*"REQUIREMENTS"(?!-)/);
+  assert.match(prompt, /omit `milestone_id`/);
+  assert.match(prompt, /Do NOT use `artifact_type: "CONTEXT"` and do NOT pass `milestone_id: "REQUIREMENTS"`/);
+  assert.match(prompt, /depth_verification_requirements_confirm/);
+  assert.doesNotMatch(prompt, /call `gsd_summary_save` with `artifact_type: "CONTEXT"`/);
+});
+
+test("workflow preferences prompt writes defaults without interactive questions", () => {
+  const prompt = readPrompt("guided-workflow-preferences");
+  assert.match(prompt, /default-writing/i);
+  assert.match(prompt, /Do NOT call `ask_user_questions`/);
+  assert.match(prompt, /commit_policy:\s*per-task/);
+  assert.match(prompt, /branch_model:\s*single/);
+  assert.match(prompt, /research:\s*skip/);
+  assert.match(prompt, /"decision": "skip"/);
+  assert.doesNotMatch(prompt, /research:\s*research/);
+  assert.doesNotMatch(prompt, /Ask all three questions/i);
+  assert.doesNotMatch(prompt, /Ask all four questions/i);
+  assert.doesNotMatch(prompt, /Ask all five questions/i);
+});
+
+test("project research prompt dispatches scout agents allowed by planning-dispatch", () => {
+  const prompt = readPrompt("guided-research-project");
+  assert.match(prompt, /agent:\s*"scout"/);
+  assert.match(prompt, /Do not use `agent: "researcher"`/);
+  assert.match(prompt, /runtime clears the dispatch marker/i);
+  assert.doesNotMatch(prompt, /Delete `\.gsd\/runtime\/research-project-inflight`/);
+});
+
+test("slice planning prompts name scout for external research dispatch", () => {
+  const planSlice = readPrompt("plan-slice");
+  const refineSlice = readPrompt("refine-slice");
+  assert.match(planSlice, /dispatch the \*\*scout\*\* agent/);
+  assert.match(refineSlice, /dispatch the \*\*scout\*\* agent/);
+  assert.doesNotMatch(planSlice, /dispatch the \*\*researcher\*\* agent/);
+  assert.doesNotMatch(refineSlice, /dispatch the \*\*researcher\*\* agent/);
+});
+
+test("guided project prompt writes root PROJECT artifact, not PROJECT milestone", () => {
+  const prompt = readPrompt("guided-discuss-project");
+  assert.match(prompt, /artifact_type:\s*"PROJECT"/);
+  assert.match(prompt, /omit `milestone_id`/);
+  assert.match(prompt, /Do NOT use `artifact_type: "CONTEXT"` and do NOT pass `milestone_id: "PROJECT"`/);
+  assert.match(prompt, /single freeform question in plain text, not structured/i);
+  assert.doesNotMatch(prompt, /project_initial_shape/);
+  assert.match(prompt, /depth_verification_project_confirm/);
+});
+
+test("guided research decision prompt keeps exact chat confirmation strings", () => {
+  const prompt = readPrompt("guided-research-decision");
+  assert.match(prompt, /^Research decision: research$/m);
+  assert.match(prompt, /^Research decision recorded\.$/m);
+  assert.match(prompt, /Skip \(Recommended\)/);
+  assert.match(prompt, /"source": "research-decision"/);
+  assert.match(prompt, /Do not change the required confirmation strings/i);
+  assert.doesNotMatch(prompt, /note the inference in the chat confirmation line/i);
+});
+
 test("queue prompt requires waiting for user response between rounds", () => {
   const prompt = readPrompt("queue");
   assert.match(prompt, /Never fabricate or simulate user input during this discussion/i);

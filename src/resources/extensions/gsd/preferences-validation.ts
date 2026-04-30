@@ -275,6 +275,15 @@ export function validatePreferences(preferences: GSDPreferences): {
     }
   }
 
+  // ─── Planning Depth (deep planning mode) ─────────────────────────
+  if (preferences.planning_depth !== undefined) {
+    if (preferences.planning_depth === "light" || preferences.planning_depth === "deep") {
+      validated.planning_depth = preferences.planning_depth;
+    } else {
+      errors.push(`planning_depth must be "light" or "deep"`);
+    }
+  }
+
   // ─── Search Provider ─────────────────────────────────────────────
   if (preferences.search_provider !== undefined) {
     const validSearchProviders = new Set(["brave", "tavily", "ollama", "native", "auto"]);

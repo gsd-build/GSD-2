@@ -21,8 +21,10 @@ export function isExecutionEntryPhase(phase: Phase): boolean {
 export interface PlanV2CompileResult {
   ok: boolean;
   reason?: string;
+  emptyGraph?: boolean;
   graphPath?: string;
   nodeCount?: number;
+  sliceCount?: number;
   clarifyRoundLimit?: number;
   researchSynthesized?: boolean;
   draftContextIncluded?: boolean;
@@ -71,6 +73,10 @@ export function hasFinalizedMilestoneContext(basePath: string, milestoneId: stri
 
 export function isMissingFinalizedContextResult(result: PlanV2CompileResult): boolean {
   return !result.ok && result.finalizedContextIncluded === false;
+}
+
+export function isEmptyPlanV2GraphResult(result: PlanV2CompileResult): boolean {
+  return !result.ok && result.emptyGraph === true;
 }
 
 function countSliceResearchArtifacts(basePath: string, milestoneId: string, slices: SliceRow[]): number {
@@ -170,6 +176,7 @@ export function compileUnitGraphFromState(basePath: string, state: GSDState): Pl
     ok: true,
     graphPath: outPath,
     nodeCount: nodes.length,
+    sliceCount: slices.length,
     clarifyRoundLimit,
     researchSynthesized: output.pipeline.researchSynthesized,
     draftContextIncluded: output.pipeline.draftContextIncluded,
@@ -181,7 +188,18 @@ export function ensurePlanV2Graph(basePath: string, state: GSDState): PlanV2Comp
   const compiled = compileUnitGraphFromState(basePath, state);
   if (!compiled.ok) return compiled;
   if ((compiled.nodeCount ?? 0) <= 0) {
-    return { ok: false, reason: "compiled graph is empty" };
+    if (
+      (state.phase === "validating-milestone" || state.phase === "completing-milestone") &&
+      (compiled.sliceCount ?? 0) > 0
+    ) {
+      return compiled;
+    }
+    return {
+      ...compiled,
+      ok: false,
+      reason: "compiled graph is empty",
+      emptyGraph: true,
+    };
   }
   return compiled;
 }

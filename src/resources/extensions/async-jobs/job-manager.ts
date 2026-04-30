@@ -216,6 +216,9 @@ export class AsyncJobManager {
 			this.evictionTimers.delete(id);
 			this.jobs.delete(id);
 		}, this.evictionMs);
+		// Eviction is housekeeping; it should not keep short-lived test/CLI
+		// processes alive after the real work has finished.
+		if (typeof timer === "object" && "unref" in timer) timer.unref();
 
 		this.evictionTimers.set(id, timer);
 	}

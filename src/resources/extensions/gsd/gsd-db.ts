@@ -33,6 +33,7 @@ import { logError, logWarning } from "./workflow-logger.js";
 import type { StateManifest } from "./workflow-manifest.js";
 
 const _require = createRequire(import.meta.url);
+const BETTER_SQLITE3_PACKAGE = ["better", "sqlite3"].join("-");
 
 interface DbStatement {
   run(...params: unknown[]): unknown;
@@ -89,7 +90,7 @@ function loadProvider(): void {
   }
 
   try {
-    const mod = _require("better-sqlite3");
+    const mod = _require(BETTER_SQLITE3_PACKAGE);
     if (typeof mod === "function" || (mod && mod.default)) {
       providerModule = mod.default || mod;
       providerName = "better-sqlite3";
@@ -1303,7 +1304,7 @@ export function openDatabase(path: string): boolean {
     // node:sqlite loaded but failed to open this file — try better-sqlite3 as fallback.
     if (providerName === "node:sqlite") {
       try {
-        const mod = _require("better-sqlite3");
+        const mod = _require(BETTER_SQLITE3_PACKAGE);
         const Db = (mod && mod.default) ? mod.default : mod;
         if (typeof Db === "function") {
           rawDb = new Db(path);

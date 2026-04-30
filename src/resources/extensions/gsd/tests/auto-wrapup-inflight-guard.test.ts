@@ -136,6 +136,30 @@ describe("#3512: pauseAuto and stopAuto must flush queued follow-up messages", (
     );
   });
 
+  test("pauseAuto rebuilds STATE.md before releasing the session lock", () => {
+    // pauseAuto must persist the DB-backed state projection so resume/debugging
+    // does not see a stale STATE.md after a mid-unit interruption.
+    const start = autoSrc.indexOf("export async function pauseAuto(");
+    const end = autoSrc.indexOf("/**\n * Build a WorktreeResolverDeps", start);
+    const pauseAutoSection = autoSrc.slice(start, end);
+    assert.ok(pauseAutoSection.length > 0, "Could not locate pauseAuto function");
+
+    const rebuildIndex = pauseAutoSection.indexOf("await rebuildState(s.basePath)");
+    const releaseIndex = pauseAutoSection.indexOf("releaseSessionLock(lockBase())");
+    assert.ok(
+      rebuildIndex >= 0,
+      "pauseAuto must rebuild STATE.md from DB-backed state before pause completes",
+    );
+    assert.ok(
+      releaseIndex >= 0,
+      "pauseAuto must still release the session lock",
+    );
+    assert.ok(
+      rebuildIndex < releaseIndex,
+      "pauseAuto must rebuild state before releasing the session lock",
+    );
+  });
+
   test("run-unit.ts still has its existing clearQueue() call (baseline)", () => {
     // Verify the original clearQueue pattern in run-unit.ts hasn't been removed.
     assert.ok(
@@ -164,6 +188,38 @@ describe("#4365: tool_execution_start hook must pass toolName to markToolStart",
     assert.ok(
       toolExecutionStartSection.includes("markToolStart(event.toolCallId, event.toolName)"),
       "tool_execution_start handler must pass event.toolName to markToolStart so hasInteractiveToolInFlight() works correctly",
+    );
+  });
+});
+
+describe("deep setup approval questions pause immediately", () => {
+  test("register-hooks sets pending gate during message_update without aborting the stream", () => {
+    const startMarker = 'pi.on("message_update"';
+    const endMarker = 'pi.on("session_shutdown"';
+    const messageUpdateSection = registerHooksSrc.slice(
+      registerHooksSrc.indexOf(startMarker),
+      registerHooksSrc.indexOf(endMarker),
+    );
+
+    assert.ok(
+      messageUpdateSection.length > 0,
+      "Could not locate message_update approval pause handler",
+    );
+    assert.ok(
+      messageUpdateSection.includes("shouldPauseForUserApprovalQuestion"),
+      "message_update must detect approval/question boundaries",
+    );
+    assert.ok(
+      messageUpdateSection.includes("approvalGateIdForUnit") && messageUpdateSection.includes("setPendingGate"),
+      "plain-text approval questions must set the durable write gate",
+    );
+    assert.ok(
+      messageUpdateSection.includes("getDiscussionMilestoneIdFor") && messageUpdateSection.includes('"discuss-milestone"'),
+      "foreground milestone discussion questions must also set the durable write gate",
+    );
+    assert.ok(
+      !messageUpdateSection.includes("ctx.abort()"),
+      "message_update must NOT abort the stream — aborting eats the model's question text on external CLI providers; the pending gate set above blocks subsequent tool calls instead",
     );
   });
 });

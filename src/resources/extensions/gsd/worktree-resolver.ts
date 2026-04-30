@@ -30,7 +30,7 @@ import { resolveWorktreeProjectRoot } from "./worktree-root.js";
 export interface WorktreeResolverDeps {
   isInAutoWorktree: (basePath: string) => boolean;
   shouldUseWorktreeIsolation: () => boolean;
-  getIsolationMode: () => "worktree" | "branch" | "none";
+  getIsolationMode: (basePath?: string) => "worktree" | "branch" | "none";
   mergeMilestoneToMain: (
     basePath: string,
     milestoneId: string,
@@ -185,7 +185,11 @@ export class WorktreeResolver {
       return;
     }
 
-    const mode = this.deps.getIsolationMode();
+    // Resolve the project root for worktree operations via shared helper.
+    // Handles the case where originalBasePath is falsy and basePath is itself
+    // a worktree path — prevents double-nested worktree paths (#3729).
+    const basePath = resolveProjectRoot(this.s.originalBasePath, this.s.basePath);
+    const mode = this.deps.getIsolationMode(basePath);
 
     if (mode === "none") {
       debugLog("WorktreeResolver", {
@@ -204,10 +208,6 @@ export class WorktreeResolver {
       return;
     }
 
-    // Resolve the project root for worktree operations via shared helper.
-    // Handles the case where originalBasePath is falsy and basePath is itself
-    // a worktree path — prevents double-nested worktree paths (#3729).
-    const basePath = resolveProjectRoot(this.s.originalBasePath, this.s.basePath);
     debugLog("WorktreeResolver", {
       action: "enterMilestone",
       milestoneId,
@@ -447,7 +447,7 @@ export class WorktreeResolver {
       return;
     }
 
-    const mode = this.deps.getIsolationMode();
+    const mode = this.deps.getIsolationMode(this.s.originalBasePath || this.s.basePath);
     debugLog("WorktreeResolver", {
       action: "mergeAndExit",
       milestoneId,

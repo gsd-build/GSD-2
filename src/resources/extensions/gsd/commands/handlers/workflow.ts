@@ -11,9 +11,10 @@ import { gsdRoot } from "../../paths.js";
 import { deriveState } from "../../state.js";
 import { isParked, parkMilestone, unparkMilestone } from "../../milestone-actions.js";
 import { loadEffectiveGSDPreferences } from "../../preferences.js";
+import { setPlanningDepth } from "../../planning-depth.js";
 import { nextMilestoneId } from "../../milestone-ids.js";
 import { findMilestoneIds } from "../../guided-flow.js";
-import { projectRoot } from "../context.js";
+import { currentDirectoryRoot, projectRoot } from "../context.js";
 import { createRun, listRuns } from "../../run-manager.js";
 import {
   setActiveEngineId,
@@ -525,9 +526,14 @@ export async function handleWorkflowCommand(trimmed: string, ctx: ExtensionComma
     await handleQuick(trimmed.replace(/^quick\s*/, "").trim(), ctx, pi);
     return true;
   }
-  if (trimmed === "new-milestone") {
+  if (trimmed === "new-milestone" || trimmed.startsWith("new-milestone ")) {
     if (requireNotAutoActive("/gsd new-milestone", ctx)) return true;
     const basePath = projectRoot();
+    const args = trimmed.replace(/^new-milestone\s*/, "").trim();
+    if (/(^|\s)--deep(\s|$)/.test(args)) {
+      setPlanningDepth(basePath, "deep");
+      ctx.ui.notify("Deep planning mode enabled (.gsd/PREFERENCES.md updated).", "info");
+    }
     const headlessContextPath = join(gsdRoot(basePath), "runtime", "headless-context.md");
     if (existsSync(headlessContextPath)) {
       const seedContext = readFileSync(headlessContextPath, "utf-8");
@@ -537,6 +543,21 @@ export async function handleWorkflowCommand(trimmed: string, ctx: ExtensionComma
       const { showSmartEntry } = await import("../../guided-flow.js");
       await showSmartEntry(ctx, pi, basePath);
     }
+    return true;
+  }
+  if (trimmed === "new-project" || trimmed.startsWith("new-project ")) {
+    // Direct entrypoint for new-project bootstrap.
+    // Routes through showSmartEntry (same as new-milestone for first project),
+    // but accepts --deep to opt into staged project-level discovery (deep mode).
+    if (requireNotAutoActive("/gsd new-project", ctx)) return true;
+    const basePath = currentDirectoryRoot();
+    const args = trimmed.replace(/^new-project\s*/, "").trim();
+    if (/(^|\s)--deep(\s|$)/.test(args)) {
+      setPlanningDepth(basePath, "deep");
+      ctx.ui.notify("Deep planning mode enabled (.gsd/PREFERENCES.md updated).", "info");
+    }
+    const { showSmartEntry } = await import("../../guided-flow.js");
+    await showSmartEntry(ctx, pi, basePath);
     return true;
   }
   if (trimmed === "start" || trimmed.startsWith("start ")) {

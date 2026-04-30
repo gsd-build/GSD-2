@@ -10,7 +10,7 @@ import type { ExtensionAPI, ExtensionContext } from "@gsd/pi-coding-agent";
 import { readUnitRuntimeRecord, writeUnitRuntimeRecord } from "./unit-runtime.js";
 import { isDbAvailable, getMilestoneSlices, getSliceTasks } from "./gsd-db.js";
 import { resolveAutoSupervisorConfig } from "./preferences.js";
-import type { GSDPreferences } from "./preferences.js";
+import type { AutoSupervisorConfig, GSDPreferences } from "./preferences.js";
 import { computeBudgets, resolveExecutorContextWindow } from "./context-budget.js";
 import {
   getInFlightToolCount,
@@ -38,6 +38,33 @@ export interface SupervisionContext {
   pauseAuto: (ctx?: ExtensionContext, pi?: ExtensionAPI) => Promise<void>;
   /** Optional task estimate string (e.g. "30m", "2h") for timeout scaling (#2243). */
   taskEstimate?: string;
+}
+
+export const PROJECT_RESEARCH_SOFT_TIMEOUT_MINUTES = 3;
+export const PROJECT_RESEARCH_HARD_TIMEOUT_MINUTES = 5;
+
+export function resolveUnitSupervisionTimeouts(
+  unitType: string,
+  supervisor: AutoSupervisorConfig,
+  timeoutScale: number,
+): { softTimeoutMs: number; idleTimeoutMs: number; hardTimeoutMs: number } {
+  const softMinutes = supervisor.soft_timeout_minutes ?? 0;
+  const idleMinutes = supervisor.idle_timeout_minutes ?? 0;
+  const hardMinutes = supervisor.hard_timeout_minutes ?? 0;
+
+  if (unitType === "research-project") {
+    return {
+      softTimeoutMs: Math.min(softMinutes, PROJECT_RESEARCH_SOFT_TIMEOUT_MINUTES) * 60 * 1000,
+      idleTimeoutMs: idleMinutes * 60 * 1000,
+      hardTimeoutMs: Math.min(hardMinutes, PROJECT_RESEARCH_HARD_TIMEOUT_MINUTES) * 60 * 1000,
+    };
+  }
+
+  return {
+    softTimeoutMs: softMinutes * 60 * 1000 * timeoutScale,
+    idleTimeoutMs: idleMinutes * 60 * 1000,
+    hardTimeoutMs: hardMinutes * 60 * 1000 * timeoutScale,
+  };
 }
 
 /**
@@ -111,9 +138,14 @@ export function startUnitSupervision(sctx: SupervisionContext): void {
     ? Math.min(MAX_TIMEOUT_SCALE, Math.max(1, estimateMinutes / 10))
     : 1;
 
-  const softTimeoutMs = (supervisor.soft_timeout_minutes ?? 0) * 60 * 1000 * timeoutScale;
-  const idleTimeoutMs = (supervisor.idle_timeout_minutes ?? 0) * 60 * 1000;  // idle not scaled — idle is idle
-  const hardTimeoutMs = (supervisor.hard_timeout_minutes ?? 0) * 60 * 1000 * timeoutScale;
+  const supervisionTimeouts = resolveUnitSupervisionTimeouts(
+    unitType,
+    supervisor,
+    timeoutScale,
+  );
+  const softTimeoutMs = supervisionTimeouts.softTimeoutMs;
+  const idleTimeoutMs = supervisionTimeouts.idleTimeoutMs;
+  const hardTimeoutMs = supervisionTimeouts.hardTimeoutMs;
 
   // ── 1. Soft timeout warning ──
   s.wrapupWarningHandle = setTimeout(() => {
@@ -277,6 +309,7 @@ export function startUnitSupervision(sctx: SupervisionContext): void {
     ctx.modelRegistry as Parameters<typeof resolveExecutorContextWindow>[0],
     prefs as Parameters<typeof resolveExecutorContextWindow>[1],
     ctx.model?.contextWindow,
+    ctx.model?.provider,
   );
   const continueHereThreshold = computeBudgets(executorContextWindow).continueThresholdPercent;
   s.continueHereHandle = setInterval(() => {
@@ -324,4 +357,3 @@ export function startUnitSupervision(sctx: SupervisionContext): void {
     }
   }, 15_000);
 }
-

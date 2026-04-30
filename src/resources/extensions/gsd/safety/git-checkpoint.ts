@@ -23,7 +23,7 @@ const CHECKPOINT_PREFIX = "refs/gsd/checkpoints/";
  */
 export function createCheckpoint(basePath: string, unitId: string): string | null {
   try {
-    const sha = execFileSync("git", ["rev-parse", "HEAD"], {
+    const sha = execFileSync("git", ["rev-parse", "--verify", "HEAD"], {
       cwd: basePath,
       stdio: ["ignore", "pipe", "pipe"],
       encoding: "utf-8",
@@ -41,6 +41,15 @@ export function createCheckpoint(basePath: string, unitId: string): string | nul
 
     return sha;
   } catch (e) {
+    const stderr = (e as { stderr?: Buffer | string }).stderr;
+    const stderrText = Buffer.isBuffer(stderr) ? stderr.toString("utf-8") : String(stderr ?? "");
+    if (
+      stderrText.includes("Needed a single revision") ||
+      stderrText.includes("unknown revision") ||
+      stderrText.includes("ambiguous argument 'HEAD'")
+    ) {
+      return null;
+    }
     logWarning("safety", `checkpoint creation failed: ${(e as Error).message}`);
     return null;
   }

@@ -135,9 +135,21 @@ const { Module } = await import('module');
 // GSD_VERSION — expose package version so extensions can display it
 process.env.GSD_VERSION = gsdVersion
 
-// GSD_BIN_PATH — absolute path to this loader (dist/loader.js), used by patched subagent
-// to spawn gsd instead of pi when dispatching workflow tasks
-process.env.GSD_BIN_PATH = process.argv[1]
+// GSD_BIN_PATH — absolute path to the CLI entrypoint, used by patched
+// subagent/parallel workers to spawn gsd instead of pi when dispatching
+// workflow tasks. In source-dev mode this must remain scripts/dev-cli.js, not
+// src/loader.ts, because child processes need the --import resolve-ts wrapper.
+const invokedBinPath = process.argv[1]
+const sourceLoaderPath = join(gsdRoot, 'src', 'loader.ts')
+const devCliPath = process.env.GSD_DEV_CLI_PATH?.trim() || join(gsdRoot, 'scripts', 'dev-cli.js')
+const explicitCliPath = process.env.GSD_CLI_PATH?.trim() || process.env.GSD_BIN_PATH?.trim()
+const isSourceLoader = invokedBinPath && resolve(invokedBinPath) === sourceLoaderPath
+const rawGsdBinPath = explicitCliPath || (isSourceLoader && existsSync(devCliPath) ? devCliPath : invokedBinPath)
+const resolvedGsdBinPath = rawGsdBinPath ? resolve(rawGsdBinPath) : undefined
+process.env.GSD_BIN_PATH = resolvedGsdBinPath
+if (!process.env.GSD_CLI_PATH) {
+  process.env.GSD_CLI_PATH = resolvedGsdBinPath
+}
 
 // GSD_WORKFLOW_PATH — absolute path to bundled GSD-WORKFLOW.md, used by patched gsd extension
 // when dispatching workflow prompts. Prefers dist/resources/ (stable, set at build time)

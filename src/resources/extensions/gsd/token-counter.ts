@@ -1,7 +1,8 @@
-export type TokenProvider = "anthropic" | "openai" | "google" | "mistral" | "bedrock" | "unknown";
+export type TokenProvider = "anthropic" | "claude-code" | "openai" | "google" | "mistral" | "bedrock" | "unknown";
 
 const CHARS_PER_TOKEN_BY_PROVIDER: Record<TokenProvider, number> = {
 	anthropic: 3.5,
+	"claude-code": 3.5,
 	openai: 4.0,
 	google: 4.0,
 	mistral: 3.8,

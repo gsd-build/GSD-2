@@ -124,9 +124,9 @@ const STATUS_SECTION_MAP: Array<{ status: string; heading: string }> = [
 /**
  * Generate full REQUIREMENTS.md content from an array of Requirement objects.
  * Groups requirements by status into sections (## Active, ## Validated, etc.),
- * each containing ### RXXX — Description headings with bullet fields.
- * Only emits sections that have content. Appends Traceability table and
- * Coverage Summary at the bottom.
+ * each containing ### RXXX — Description headings with bullet fields. Empty
+ * status sections are emitted too because the deep-mode validator treats their
+ * presence as part of the canonical contract.
  */
 export function generateRequirementsMd(requirements: Requirement[]): string {
   const lines: string[] = [];
@@ -147,12 +147,10 @@ export function generateRequirementsMd(requirements: Requirement[]): string {
   // Emit sections in canonical order
   for (const { status, heading } of STATUS_SECTION_MAP) {
     const reqs = byStatus.get(status);
-    if (!reqs || reqs.length === 0) continue;
-
     lines.push(`## ${heading}`);
     lines.push('');
 
-    for (const r of reqs) {
+    for (const r of reqs ?? []) {
       lines.push(`### ${r.id} — ${r.description || 'Untitled'}`);
 
       // Emit bullet fields — only those with content
@@ -197,6 +195,14 @@ export function generateRequirementsMd(requirements: Requirement[]): string {
   lines.push(`- Unmapped active requirements: 0`);
 
   return lines.join('\n') + '\n';
+}
+
+function isRootCanonicalArtifact(opts: SaveArtifactOpts): boolean {
+  if (opts.milestone_id || opts.slice_id || opts.task_id) return false;
+  return (
+    opts.artifact_type === 'PROJECT' ||
+    opts.artifact_type === 'REQUIREMENTS'
+  );
 }
 
 // ─── Next Decision ID ─────────────────────────────────────────────────────
@@ -298,36 +304,66 @@ export async function saveRequirementToDb(
     const db = await import('./gsd-db.js');
 
     // Atomic ID assignment + insert inside a transaction.
-    const id = db.transaction(() => {
+    const txResult = db.transaction(() => {
       const adapter = db._getAdapter();
       if (!adapter) throw new GSDError(GSD_STALE_STATE, "gsd-db: No database open");
+
+      const existingRow = adapter
+        .prepare(
+          `SELECT * FROM requirements
+           WHERE LOWER(TRIM(description)) = LOWER(TRIM(:description))
+             AND LOWER(COALESCE(status, 'active')) = 'active'
+             AND superseded_by IS NULL
+           ORDER BY id
+           LIMIT 1`,
+        )
+        .get({ ':description': fields.description });
+      const previousRow: Requirement | null = existingRow
+        ? {
+            id: existingRow['id'] as string,
+            class: existingRow['class'] as string,
+            status: existingRow['status'] as string,
+            description: existingRow['description'] as string,
+            why: existingRow['why'] as string,
+            source: existingRow['source'] as string,
+            primary_owner: existingRow['primary_owner'] as string,
+            supporting_slices: existingRow['supporting_slices'] as string,
+            validation: existingRow['validation'] as string,
+            notes: existingRow['notes'] as string,
+            full_content: existingRow['full_content'] as string,
+            superseded_by: (existingRow['superseded_by'] as string) ?? null,
+          }
+        : null;
 
       const row = adapter
         .prepare('SELECT MAX(CAST(SUBSTR(id, 2) AS INTEGER)) as max_num FROM requirements')
         .get();
       const maxNum = row ? (row['max_num'] as number | null) : null;
-      const nextId = (maxNum == null || isNaN(maxNum))
+      const nextId = existingRow
+        ? String(existingRow['id'])
+        : (maxNum == null || isNaN(maxNum))
         ? 'R001'
         : `R${String(maxNum + 1).padStart(3, '0')}`;
 
       const requirement: Requirement = {
         id: nextId,
-        class: fields.class,
-        status: fields.status ?? 'active',
+        class: fields.class || (existingRow?.['class'] as string | undefined) || '',
+        status: fields.status ?? (existingRow?.['status'] as string | undefined) ?? 'active',
         description: fields.description,
         why: fields.why,
         source: fields.source,
-        primary_owner: fields.primary_owner ?? '',
-        supporting_slices: fields.supporting_slices ?? '',
-        validation: fields.validation ?? '',
-        notes: fields.notes ?? '',
-        full_content: '',
-        superseded_by: null,
+        primary_owner: fields.primary_owner ?? (existingRow?.['primary_owner'] as string | undefined) ?? '',
+        supporting_slices: fields.supporting_slices ?? (existingRow?.['supporting_slices'] as string | undefined) ?? '',
+        validation: fields.validation ?? (existingRow?.['validation'] as string | undefined) ?? '',
+        notes: fields.notes ?? (existingRow?.['notes'] as string | undefined) ?? '',
+        full_content: (existingRow?.['full_content'] as string | undefined) ?? '',
+        superseded_by: (existingRow?.['superseded_by'] as string | null | undefined) ?? null,
       };
 
       db.upsertRequirement(requirement);
-      return nextId;
+      return { id: nextId, isNew: !existingRow, previousRow };
     });
+    const { id, isNew, previousRow } = txResult;
 
     // Fetch all requirements for full file regeneration
     const adapter = db._getAdapter();
@@ -358,7 +394,11 @@ export async function saveRequirementToDb(
     } catch (diskErr) {
       logError('manifest', 'disk write failed, rolling back DB row', { fn: 'saveRequirementToDb', error: String((diskErr as Error).message) });
       try {
-        db.deleteRequirementById(id);
+        if (isNew) {
+          db.deleteRequirementById(id);
+        } else if (previousRow) {
+          db.upsertRequirement(previousRow);
+        }
       } catch (rollbackErr) {
         logError('manifest', 'SPLIT BRAIN: disk write failed AND DB rollback failed — DB has orphaned row', { fn: 'saveRequirementToDb', id, error: String((rollbackErr as Error).message) });
       }
@@ -756,15 +796,26 @@ export async function saveArtifactToDb(
     if (!fullPath.startsWith(gsdDir)) {
       throw new GSDError(GSD_IO_ERROR, `saveArtifactToDb: path escapes .gsd/ directory: ${opts.path}`);
     }
+    let contentToPersist = opts.content;
+    if (opts.artifact_type === 'REQUIREMENTS' && opts.path === 'REQUIREMENTS.md') {
+      const activeRequirements = db.getActiveRequirements();
+      if (activeRequirements.length === 0) {
+        throw new GSDError(GSD_STALE_STATE, 'saveArtifactToDb: REQUIREMENTS final save requires active DB-backed requirements');
+      }
+      contentToPersist = generateRequirementsMd(activeRequirements);
+    }
 
     // Shrinkage guard: if the file already exists and the new content is
     // significantly smaller (<50%), preserve the richer file on disk and
-    // store its content in the DB instead of the abbreviated version.
-    let dbContent = opts.content;
+    // store its content in the DB instead of the abbreviated version. Root
+    // canonical artifacts are exempt because their content is rendered from
+    // canonical DB state, and cleanup/consolidation is often intentionally much
+    // smaller than a malformed accumulated file.
+    let dbContent = contentToPersist;
     let skipDiskWrite = false;
-    if (existsSync(fullPath)) {
+    if (!isRootCanonicalArtifact(opts) && existsSync(fullPath)) {
       const existingSize = statSync(fullPath).size;
-      const newSize = Buffer.byteLength(opts.content, 'utf-8');
+      const newSize = Buffer.byteLength(contentToPersist, 'utf-8');
       if (existingSize > 0 && newSize < existingSize * 0.5) {
         logWarning('manifest', `new content (${newSize}B) is <50% of existing file (${existingSize}B), preserving disk file`, { fn: 'saveArtifactToDb', path: opts.path });
         dbContent = readFileSync(fullPath, 'utf-8');
@@ -784,7 +835,7 @@ export async function saveArtifactToDb(
     // Write the file to disk (only if we're not preserving a richer existing file)
     if (!skipDiskWrite) {
       try {
-        await saveFile(fullPath, opts.content);
+        await saveFile(fullPath, contentToPersist);
       } catch (diskErr) {
         logError('manifest', 'disk write failed, rolling back DB row', { fn: 'saveArtifactToDb', error: String((diskErr as Error).message) });
         db.deleteArtifactByPath(opts.path);

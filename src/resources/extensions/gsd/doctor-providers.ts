@@ -17,7 +17,7 @@ import { AuthStorage } from "@gsd/pi-coding-agent";
 import { getEnvApiKey } from "@gsd/pi-ai";
 import { loadEffectiveGSDPreferences } from "./preferences.js";
 import { getAuthPath, PROVIDER_REGISTRY, type ProviderCategory } from "./key-manager.js";
-import { getHomeDir } from "./home-dir.js";
+import { homedir } from "node:os";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -195,7 +195,7 @@ function isCliBinaryInPath(providerId: string): boolean {
 }
 
 function modelsJsonPaths(): string[] {
-  const home = getHomeDir();
+  const home = homedir();
   return [
     join(home, ".gsd", "agent", "models.json"),
     // Keep parity with custom-provider discovery during auto bootstrap.

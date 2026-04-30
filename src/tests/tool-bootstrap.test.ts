@@ -25,7 +25,7 @@ test("resolveToolFromPath finds fd via fdfind fallback", (t) => {
   assert.equal(resolved, join(tmp, "fdfind"));
 });
 
-test("ensureManagedTools provisions fd and rg into managed bin dir", (t) => {
+test("ensureManagedTools provisions fd and rg into managed bin dir", { skip: process.platform === "win32" }, (t) => {
   const tmp = mkdtempSync(join(tmpdir(), "gsd-tool-bootstrap-provision-"));
   const sourceBin = join(tmp, "source-bin");
   const targetBin = join(tmp, "target-bin");
@@ -47,7 +47,7 @@ test("ensureManagedTools provisions fd and rg into managed bin dir", (t) => {
   assert.ok(lstatSync(join(targetBin, RG_TARGET)).isSymbolicLink() || lstatSync(join(targetBin, RG_TARGET)).isFile());
 });
 
-test("ensureManagedTools copies executable when symlink target already exists as a broken link", (t) => {
+test("ensureManagedTools copies executable when symlink target already exists as a broken link", { skip: process.platform === "win32" }, (t) => {
   const tmp = mkdtempSync(join(tmpdir(), "gsd-tool-bootstrap-copy-"));
   const sourceBin = join(tmp, "source-bin");
   const targetBin = join(tmp, "target-bin");
@@ -67,4 +67,31 @@ test("ensureManagedTools copies executable when symlink target already exists as
   assert.equal(provisioned.length, 2);
   assert.ok(lstatSync(targetFd).isFile(), "fd fallback should replace broken symlink with a copied file");
   assert.match(readFileSync(targetFd, "utf8"), /echo fd/);
+});
+
+test("ensureManagedTools skips provisioning on Windows when tools are on PATH", (t) => {
+  // Regression test for #5111: on Windows, ensureManagedTools() must not
+  // copy/symlink tools into the managed bin dir when they're already on PATH.
+  // Package managers like pixi/conda use proxy shims that break when copied,
+  // and since the tools are already reachable via PATH, provisioning is
+  // unnecessary.
+  if (process.platform !== "win32") return;
+
+  const tmp = mkdtempSync(join(tmpdir(), "gsd-tool-bootstrap-win32-skip-"));
+  const sourceBin = join(tmp, "source-bin");
+  const targetBin = join(tmp, "target-bin");
+
+  mkdirSync(sourceBin, { recursive: true });
+  mkdirSync(targetBin, { recursive: true });
+
+  t.after(() => { rmSync(tmp, { recursive: true, force: true }); });
+
+  makeExecutable(sourceBin, "rg.exe");
+  makeExecutable(sourceBin, "fd.exe");
+
+  const provisioned = ensureManagedTools(targetBin, sourceBin);
+
+  assert.equal(provisioned.length, 0, "should not provision on Windows when tools are on PATH");
+  assert.ok(!existsSync(join(targetBin, "rg.exe")), "rg.exe must not exist in target bin");
+  assert.ok(!existsSync(join(targetBin, "fd.exe")), "fd.exe must not exist in target bin");
 });

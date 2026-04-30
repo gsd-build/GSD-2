@@ -116,6 +116,8 @@ export async function handleDebug(args: string, ctx: ExtensionCommandContext, pi
     try {
       const created = createDebugSession(basePath, { issue });
       const s = created.session;
+      const canDispatch = pi != null && typeof (pi as ExtensionAPI).sendMessage === "function";
+      const dispatchNote = canDispatch ? `\ndispatchMode=find_and_fix` : "";
       ctx.ui.notify(
         [
           `Debug session started: ${s.slug}`,
@@ -123,9 +125,33 @@ export async function handleDebug(args: string, ctx: ExtensionCommandContext, pi
           `Artifact: ${created.artifactPath}`,
           `Log: ${s.logPath}`,
           `Next: /gsd debug status ${s.slug} or /gsd debug continue ${s.slug}`,
-        ].join("\n"),
+        ].join("\n") + dispatchNote,
         "info",
       );
+      if (canDispatch) {
+        try {
+          const prompt = loadPrompt("debug-session-manager", {
+            goal: "find_and_fix",
+            issue: s.issue,
+            slug: s.slug,
+            mode: s.mode,
+            workingDirectory: basePath,
+            checkpointContext: "",
+            tddContext: "",
+            specialistContext: "",
+          });
+          pi.sendMessage(
+            { customType: "gsd-debug-start", content: prompt, display: false },
+            { triggerTurn: true },
+          );
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          ctx.ui.notify(
+            `Debug dispatch failed: ${msg}\nSession '${s.slug}' is persisted; retry with /gsd debug continue ${s.slug}`,
+            "warning",
+          );
+        }
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       ctx.ui.notify(

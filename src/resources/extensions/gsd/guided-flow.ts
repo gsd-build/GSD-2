@@ -25,7 +25,7 @@ import {
 } from "./interrupted-session.js";
 import { listUnitRuntimeRecords, clearUnitRuntimeRecord } from "./unit-runtime.js";
 import { resolveExpectedArtifactPath } from "./auto.js";
-import { getHomeDir } from "./home-dir.js";
+import { gsdHome } from "./gsd-home.js";
 import {
   gsdRoot, milestonesDir, resolveMilestoneFile, resolveMilestonePath,
   resolveSliceFile, resolveSlicePath, resolveGsdRootFile, relGsdRootFile,
@@ -34,7 +34,7 @@ import {
 import { join } from "node:path";
 import { readFileSync, existsSync, mkdirSync, readdirSync, rmSync, unlinkSync } from "node:fs";
 import { readSessionLockData, isSessionLockProcessAlive } from "./session-lock.js";
-import { nativeIsRepo, nativeInit } from "./native-git-bridge.js";
+import { nativeAddAll, nativeCommit, nativeHasCommittedHead, nativeIsRepo, nativeInit } from "./native-git-bridge.js";
 import { isInheritedRepo } from "./repo-identity.js";
 import { ensureGitignore, ensurePreferences, untrackRuntimeFiles } from "./gitignore.js";
 import { loadEffectiveGSDPreferences } from "./preferences.js";
@@ -61,6 +61,7 @@ import {
   formatCodebaseBrief,
   formatPriorContextBrief,
 } from "./preparation.js";
+import { verifyExpectedArtifact } from "./auto-recovery.js";
 
 // ─── Re-exports (preserve public API for existing importers) ────────────────
 export {
@@ -89,7 +90,7 @@ function runPlanV2Gate(
   basePath: string,
   state: GSDState,
 ): PlanV2GateDecision {
-  const prefs = loadEffectiveGSDPreferences()?.preferences;
+  const prefs = loadEffectiveGSDPreferences(basePath)?.preferences;
   const uokFlags = resolveUokFlags(prefs);
   if (!uokFlags.planV2 || !needsPlanV2Gate(state)) return "pass";
   const compiled = ensurePlanV2Graph(basePath, state);
@@ -129,6 +130,17 @@ interface PendingAutoStartEntry {
   readyRejectCount?: number;
 }
 
+interface PendingDeepProjectSetupEntry {
+  ctx: ExtensionCommandContext;
+  pi: ExtensionAPI;
+  basePath: string;
+  step?: boolean;
+  createdAt: number;
+  sessionId?: string;
+  currentUnitType?: string;
+  currentUnitId?: string;
+}
+
 // #4573: cap for how many times we nudge the LLM after a premature ready
 // phrase before giving up and asking the user to re-run /gsd.
 const MAX_READY_REJECTS = 2;
@@ -139,6 +151,31 @@ const MAX_READY_REJECTS = 2;
 const READY_PHRASE_RE = /\bMilestone\s+M\d{3}[A-Z0-9-]*\s+ready\.?/i;
 
 const pendingAutoStartMap = new Map<string, PendingAutoStartEntry>();
+const pendingDeepProjectSetupMap = new Map<string, PendingDeepProjectSetupEntry>();
+const USER_DRIVEN_DEEP_SETUP_UNITS = new Set([
+  "discuss-project",
+  "discuss-requirements",
+  "research-decision",
+]);
+const FOREGROUND_DEEP_SETUP_RULE_NAMES = new Set([
+  "deep: pre-planning (no workflow prefs) → workflow-preferences",
+  "deep: pre-planning (no PROJECT) → discuss-project",
+  "deep: pre-planning (no REQUIREMENTS) → discuss-requirements",
+  "deep: pre-planning (no research decision) → research-decision",
+]);
+const LEGACY_DEEP_SETUP_PSEUDO_MILESTONE_DIRS = new Set([
+  "PROJECT",
+  "REQUIREMENTS",
+  "RESEARCH-DECISION",
+  "RESEARCH-PROJECT",
+  "WORKFLOW-PREFS",
+]);
+const FOREGROUND_DEEP_SETUP_QUESTION_POLICY = `## Foreground Deep Setup Question Policy
+
+This stage is running inside the foreground \`/gsd new-project --deep\` interview. Ask user questions in plain chat only.
+
+- Do NOT call \`ask_user_questions\`, \`AskUserQuestion\`, or ToolSearch to discover user-input tools.
+- Ask one focused round, then stop and wait for the user's normal chat response.`;
 
 /**
  * Backward-compat bridge: returns a mutable reference to the entry matching
@@ -149,6 +186,39 @@ function _getPendingAutoStart(basePath?: string): PendingAutoStartEntry | null {
   if (basePath) return pendingAutoStartMap.get(basePath) ?? null;
   if (pendingAutoStartMap.size === 1) return pendingAutoStartMap.values().next().value!;
   return null;
+}
+
+function hasNestedFileOrSymlink(dir: string): boolean {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isFile() || entry.isSymbolicLink()) return true;
+    if (entry.isDirectory() && hasNestedFileOrSymlink(join(dir, entry.name))) return true;
+  }
+  return false;
+}
+
+function clearEmptyLegacyDeepSetupPseudoMilestones(basePath: string, entries: string[]): string[] {
+  const mDir = milestonesDir(basePath);
+  const remaining: string[] = [];
+  for (const entry of entries) {
+    if (!LEGACY_DEEP_SETUP_PSEUDO_MILESTONE_DIRS.has(entry)) {
+      remaining.push(entry);
+      continue;
+    }
+
+    const entryPath = join(mDir, entry);
+    try {
+      if (hasNestedFileOrSymlink(entryPath)) {
+        remaining.push(entry);
+        continue;
+      }
+      rmSync(entryPath, { recursive: true, force: true });
+      logWarning("guided", `Self-heal: removed empty legacy deep setup pseudo-milestone directory ${entry}`);
+    } catch (err) {
+      remaining.push(entry);
+      logWarning("guided", `legacy deep setup pseudo-milestone cleanup failed for ${entry}: ${(err as Error).message}`);
+    }
+  }
+  return remaining;
 }
 
 /**
@@ -172,6 +242,14 @@ export function clearPendingAutoStart(basePath?: string): void {
   }
 }
 
+export function clearPendingDeepProjectSetup(basePath?: string): void {
+  if (basePath) {
+    pendingDeepProjectSetupMap.delete(basePath);
+  } else {
+    pendingDeepProjectSetupMap.clear();
+  }
+}
+
 /**
  * Returns the milestoneId being discussed for the given project.
  * When basePath is omitted and only one session is active, returns that
@@ -187,6 +265,149 @@ export function getDiscussionMilestoneId(basePath?: string): string | null {
     return pendingAutoStartMap.values().next().value!.milestoneId;
   }
   return null;
+}
+
+function _getPendingDeepProjectSetup(basePath?: string): PendingDeepProjectSetupEntry | null {
+  if (basePath) return pendingDeepProjectSetupMap.get(basePath) ?? null;
+  if (pendingDeepProjectSetupMap.size === 1) return pendingDeepProjectSetupMap.values().next().value!;
+  return null;
+}
+
+function getDeepSetupSessionId(ctx: ExtensionContext | undefined): string | undefined {
+  return ctx?.sessionManager?.getSessionId?.();
+}
+
+function _getPendingDeepProjectSetupForContext(
+  ctx: ExtensionContext | undefined,
+  basePath?: string,
+): PendingDeepProjectSetupEntry | null {
+  if (basePath) {
+    const direct = pendingDeepProjectSetupMap.get(basePath);
+    if (direct) return direct;
+  }
+  if (!ctx) return _getPendingDeepProjectSetup();
+
+  const sessionId = getDeepSetupSessionId(ctx);
+  if (sessionId) {
+    const matches = [...pendingDeepProjectSetupMap.values()].filter(entry => entry.sessionId === sessionId);
+    if (matches.length === 1) return matches[0]!;
+  }
+
+  const matches = [...pendingDeepProjectSetupMap.values()].filter(entry => entry.ctx === ctx);
+  return matches.length === 1 ? matches[0]! : null;
+}
+
+export function getPendingDeepProjectSetupUnitForContext(
+  ctx: ExtensionContext | undefined,
+  basePath?: string,
+): { unitType: string; unitId: string } | null {
+  const entry = _getPendingDeepProjectSetupForContext(ctx, basePath);
+  if (!entry?.currentUnitType || !entry.currentUnitId) return null;
+  return {
+    unitType: entry.currentUnitType,
+    unitId: entry.currentUnitId,
+  };
+}
+
+export async function startDeepProjectSetupForeground(
+  ctx: ExtensionCommandContext,
+  pi: ExtensionAPI,
+  basePath: string,
+  step?: boolean,
+): Promise<void> {
+  const entry: PendingDeepProjectSetupEntry = {
+    ctx,
+    pi,
+    basePath,
+    step,
+    createdAt: Date.now(),
+    sessionId: getDeepSetupSessionId(ctx),
+  };
+  pendingDeepProjectSetupMap.set(basePath, entry);
+  await dispatchNextDeepProjectSetupStage(entry);
+}
+
+export async function checkDeepProjectSetupAfterTurn(
+  _event: { messages: any[] },
+  ctx?: ExtensionContext,
+  basePath?: string,
+): Promise<boolean> {
+  const entry = _getPendingDeepProjectSetupForContext(ctx, basePath);
+  if (!entry) return false;
+
+  if (entry.currentUnitType && entry.currentUnitId) {
+    const artifactReady = verifyExpectedArtifact(entry.currentUnitType, entry.currentUnitId, entry.basePath);
+    if (!artifactReady) {
+      return false;
+    }
+  }
+
+  return dispatchNextDeepProjectSetupStage(entry);
+}
+
+async function dispatchNextDeepProjectSetupStage(entry: PendingDeepProjectSetupEntry): Promise<boolean> {
+  invalidateAllCaches();
+  const prefs = loadEffectiveGSDPreferences(entry.basePath)?.preferences;
+  const { DISPATCH_RULES, hasPendingDeepStage } = await import("./auto-dispatch.js");
+
+  if (!hasPendingDeepStage(prefs, entry.basePath)) {
+    pendingDeepProjectSetupMap.delete(entry.basePath);
+    startAutoDetached(entry.ctx, entry.pi, entry.basePath, false, { step: entry.step });
+    return true;
+  }
+
+  const state = await deriveState(entry.basePath);
+  const dispatchCtx = {
+    basePath: entry.basePath,
+    mid: "PROJECT",
+    midTitle: "Project setup",
+    state,
+    prefs,
+    // Claude Code currently surfaces workflow-MCP question calls as tool-request
+    // UI that can be cancelled outside the normal chat flow. During the
+    // foreground deep project setup interview, keep user input in plain chat so
+    // `/gsd new-project --deep` cannot bounce through cancelled tool requests.
+    structuredQuestionsAvailable: "false" as const,
+  };
+  let result: Awaited<ReturnType<(typeof DISPATCH_RULES)[number]["match"]>> = null;
+  for (const rule of DISPATCH_RULES) {
+    // Only evaluate foreground setup gates here. Later deep rules such as
+    // research-project have dispatch-time side effects (e.g. claiming an
+    // inflight marker) and must be left to auto-mode once the interview is
+    // complete.
+    if (!FOREGROUND_DEEP_SETUP_RULE_NAMES.has(rule.name)) continue;
+    result = await rule.match(dispatchCtx);
+    if (result) break;
+  }
+
+  if (!result || result.action !== "dispatch") {
+    if (result?.action === "stop") {
+      entry.ctx.ui.notify(result.reason, result.level);
+    } else if (hasPendingDeepStage(prefs, entry.basePath)) {
+      pendingDeepProjectSetupMap.delete(entry.basePath);
+      startAutoDetached(entry.ctx, entry.pi, entry.basePath, false, { step: entry.step });
+      return true;
+    }
+    return false;
+  }
+
+  if (!USER_DRIVEN_DEEP_SETUP_UNITS.has(result.unitType)) {
+    pendingDeepProjectSetupMap.delete(entry.basePath);
+    startAutoDetached(entry.ctx, entry.pi, entry.basePath, false, { step: entry.step });
+    return true;
+  }
+
+  entry.currentUnitType = result.unitType;
+  entry.currentUnitId = result.unitId;
+  entry.createdAt = Date.now();
+  await dispatchWorkflow(
+    entry.pi,
+    `${result.prompt}\n\n${FOREGROUND_DEEP_SETUP_QUESTION_POLICY}`,
+    "gsd-run",
+    entry.ctx,
+    result.unitType,
+  );
+  return true;
 }
 
 /** Called from agent_end to check if auto-mode should start after discuss */
@@ -429,8 +650,13 @@ const MAX_EMPTY_TURN_RETRIES = 2;
 
 // Phrases that indicate the LLM is about to do something but has not yet.
 // Kept tight to avoid flagging legitimate narration like "I'll wait for your answer."
+//
+// "make" was previously in the verb list but matches conversational meta phrases
+// like "Let me make sure I understand…" which are NOT action announcements —
+// removed to prevent the empty-turn nudge from auto-replying to user questions
+// in discuss flows.
 const COMMIT_INTENT_RE =
-  /\b(?:I['’]ll|I will|Next,? I['’]ll|Now I['’]ll|Let me|I['’]m going to|I am going to)\s+(?:now\s+)?(?:write|create|call|invoke|update|add|make|run|execute|generate|produce|emit|compose|implement|save|apply|commit)\b/i;
+  /\b(?:I['’]ll|I will|Next,? I['’]ll|Now I['’]ll|Let me|I['’]m going to|I am going to)\s+(?:now\s+)?(?:write|create|call|invoke|update|add|run|execute|generate|produce|emit|compose|implement|save|apply|commit)\b/i;
 
 /**
  * Reset the empty-turn counter for a basePath after a successful tool-use turn.
@@ -460,12 +686,14 @@ export function maybeHandleEmptyIntentTurn(
   // path, handled by maybeHandleReadyPhraseWithoutFiles.
   if (READY_PHRASE_RE.test(text)) return false;
 
-  // Skip if the LLM is clearly handing back to the user. Keep the heuristic
-  // tight: a trailing question mark on the last non-empty line is the common
-  // signal for "I asked the user a question and stopped."
+  // Skip if the LLM is clearly handing back to the user. Last-line `?` is
+  // the strongest signal, but discuss flows often end with a freeform
+  // question followed by a closing remark ("…what should we build? I'll
+  // pick one if you don't care."). Treat ANY non-empty line ending in `?`
+  // as a question-asked signal — false negatives here auto-reply to the
+  // user, which is a much worse failure mode than a missed nudge.
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  const lastLine = lines[lines.length - 1] ?? "";
-  if (lastLine.endsWith("?")) return false;
+  if (lines.some((l) => l.endsWith("?"))) return false;
 
   // Must contain a commit-intent phrase — this is the stall we care about.
   if (!COMMIT_INTENT_RE.test(text)) return false;
@@ -608,7 +836,7 @@ async function dispatchWorkflow(
     });
   }
 
-  const workflowPath = process.env.GSD_WORKFLOW_PATH ?? join(getHomeDir(), ".gsd", "agent", "GSD-WORKFLOW.md");
+  const workflowPath = process.env.GSD_WORKFLOW_PATH ?? join(gsdHome(), "agent", "GSD-WORKFLOW.md");
   const workflow = readFileSync(workflowPath, "utf-8");
 
   pi.sendMessage(
@@ -1542,6 +1770,19 @@ export async function showSmartEntry(
   ensureGitignore(basePath);
   untrackRuntimeFiles(basePath);
 
+  // Deep setup can pre-create .gsd/PREFERENCES.md before the normal init
+  // wizard path runs. If that path also initialized git, make HEAD reachable
+  // now so later worktree/git-log operations do not run on an unborn branch.
+  if (nativeIsRepo(basePath) && !nativeHasCommittedHead(basePath)) {
+    try {
+      nativeAddAll(basePath);
+      nativeCommit(basePath, "chore: init project");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logWarning("guided", `initial git commit failed; worktree isolation will remain disabled until HEAD exists: ${message}`);
+    }
+  }
+
   {
     const { ensureDbOpen } = await import("./bootstrap/dynamic-tools.js");
     await ensureDbOpen(basePath);
@@ -1599,6 +1840,23 @@ export async function showSmartEntry(
     logWarning("guided", `STATE.md rebuild failed: ${(err as Error).message}`);
   }
 
+  // ── Deep planning mode kickoff ────────────────────────────────────────
+  // When `planning_depth: deep` is set (e.g. via `/gsd new-project --deep`)
+  // and any project-level stage gate is still pending, keep the user-question
+  // stages in the foreground conversation. Auto-mode is resumed only after
+  // the project interview artifacts exist, so questions do not look like
+  // cancelled auto-mode runs.
+  // Light mode and fully-completed deep projects fall through to the
+  // standard wizard below.
+  {
+    const prefs = loadEffectiveGSDPreferences(basePath)?.preferences;
+    const { hasPendingDeepStage } = await import("./auto-dispatch.js");
+    if (hasPendingDeepStage(prefs, basePath)) {
+      await startDeepProjectSetupForeground(ctx, pi, basePath, stepMode);
+      return;
+    }
+  }
+
   const planV2GateDecision = runPlanV2Gate(ctx, basePath, state);
   if (planV2GateDecision === "block") return;
 
@@ -1635,7 +1893,7 @@ export async function showSmartEntry(
       const mDir = milestonesDir(basePath);
       if (existsSync(mDir)) {
         try {
-          const entries = readdirSync(mDir);
+          const entries = clearEmptyLegacyDeepSetupPseudoMilestones(basePath, readdirSync(mDir));
           if (entries.length > 0) {
             ctx.ui.notify(
               `Milestone directory has ${entries.length} entries but none were recognized as milestones. ` +

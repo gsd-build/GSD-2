@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 
 import { verifyExpectedArtifact } from "./auto-recovery.js";
@@ -9,6 +9,7 @@ import {
   type LockData,
 } from "./crash-recovery.js";
 import { gsdRoot } from "./paths.js";
+import { MILESTONE_ID_RE } from "./milestone-ids.js";
 import {
   synthesizeCrashRecovery,
   type RecoveryBriefing,
@@ -50,6 +51,37 @@ export interface InterruptedSessionAssessment {
   isBootstrapCrash: boolean;
 }
 
+const LEGACY_DEEP_SETUP_UNITS = new Set([
+  "workflow-preferences:WORKFLOW-PREFS",
+  "discuss-project:PROJECT",
+  "discuss-requirements:REQUIREMENTS",
+  "research-decision:RESEARCH-DECISION",
+  "research-project:RESEARCH-PROJECT",
+]);
+
+function isStalePseudoMilestonePause(meta: PausedSessionMetadata): boolean {
+  if (meta.activeEngineId && meta.activeEngineId !== "dev") return false;
+  if (
+    meta.unitType === "discuss-milestone"
+    && typeof meta.unitId === "string"
+    && !MILESTONE_ID_RE.test(meta.unitId)
+  ) {
+    return true;
+  }
+  if (
+    typeof meta.unitType === "string"
+    && typeof meta.unitId === "string"
+    && LEGACY_DEEP_SETUP_UNITS.has(`${meta.unitType}:${meta.unitId}`)
+  ) {
+    return true;
+  }
+  return typeof meta.milestoneId === "string"
+    && !MILESTONE_ID_RE.test(meta.milestoneId)
+    && typeof meta.unitType === "string"
+    && typeof meta.unitId === "string"
+    && LEGACY_DEEP_SETUP_UNITS.has(`${meta.unitType}:${meta.unitId}`);
+}
+
 export function readPausedSessionMetadata(
   basePath: string,
 ): PausedSessionMetadata | null {
@@ -57,7 +89,12 @@ export function readPausedSessionMetadata(
   if (!existsSync(pausedPath)) return null;
 
   try {
-    return JSON.parse(readFileSync(pausedPath, "utf-8")) as PausedSessionMetadata;
+    const meta = JSON.parse(readFileSync(pausedPath, "utf-8")) as PausedSessionMetadata;
+    if (isStalePseudoMilestonePause(meta)) {
+      try { unlinkSync(pausedPath); } catch { /* non-fatal */ }
+      return null;
+    }
+    return meta;
   } catch {
     return null;
   }

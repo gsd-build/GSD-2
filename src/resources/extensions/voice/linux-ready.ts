@@ -9,12 +9,11 @@
 
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
+import { gsdHome } from "../gsd/gsd-home.js";
 
 export const VOICE_VENV_DIR = path.join(
-	process.env.HOME || process.env.USERPROFILE || os.homedir(),
-	".gsd",
+	gsdHome(),
 	"voice-venv",
 );
 export const VOICE_VENV_PYTHON = path.join(VOICE_VENV_DIR, "bin", "python3");

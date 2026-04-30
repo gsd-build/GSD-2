@@ -1,7 +1,8 @@
 import { ensureDbOpen } from "../bootstrap/dynamic-tools.js";
 import { sanitizeCompleteMilestoneParams } from "../bootstrap/sanitize-complete-milestone.js";
-import { loadWriteGateSnapshot, shouldBlockContextArtifactSaveInSnapshot } from "../bootstrap/write-gate.js";
+import { loadWriteGateSnapshot, shouldBlockContextArtifactSaveInSnapshot, shouldBlockRootArtifactSaveInSnapshot } from "../bootstrap/write-gate.js";
 import {
+  getActiveRequirements,
   getMilestone,
   getSliceStatusSummary,
   getSliceTaskCounts,
@@ -9,7 +10,7 @@ import {
   saveGateResult,
 } from "../gsd-db.js";
 import { GATE_REGISTRY } from "../gate-registry.js";
-import { saveArtifactToDb } from "../db-writer.js";
+import { generateRequirementsMd, saveArtifactToDb } from "../db-writer.js";
 import { resolveMilestoneFile, resolveSliceFile } from "../paths.js";
 import { unlinkSync } from "node:fs";
 import type { CompleteMilestoneParams } from "./complete-milestone.js";
@@ -29,13 +30,31 @@ import type { ValidateMilestoneParams } from "./validate-milestone.js";
 import { handleValidateMilestone } from "./validate-milestone.js";
 import { logError, logWarning } from "../workflow-logger.js";
 import { invalidateStateCache } from "../state.js";
+import { loadEffectiveGSDPreferences } from "../preferences.js";
 
-export const SUPPORTED_SUMMARY_ARTIFACT_TYPES = ["SUMMARY", "RESEARCH", "CONTEXT", "ASSESSMENT", "CONTEXT-DRAFT"] as const;
+export const SUPPORTED_SUMMARY_ARTIFACT_TYPES = [
+  "SUMMARY",
+  "RESEARCH",
+  "CONTEXT",
+  "ASSESSMENT",
+  "CONTEXT-DRAFT",
+  "PROJECT",
+  "PROJECT-DRAFT",
+  "REQUIREMENTS",
+  "REQUIREMENTS-DRAFT",
+] as const;
 
 export function isSupportedSummaryArtifactType(
   artifactType: string,
 ): artifactType is (typeof SUPPORTED_SUMMARY_ARTIFACT_TYPES)[number] {
   return (SUPPORTED_SUMMARY_ARTIFACT_TYPES as readonly string[]).includes(artifactType);
+}
+
+function isRootSummaryArtifactType(artifactType: string): boolean {
+  return artifactType === "PROJECT" ||
+    artifactType === "PROJECT-DRAFT" ||
+    artifactType === "REQUIREMENTS" ||
+    artifactType === "REQUIREMENTS-DRAFT";
 }
 
 export interface ToolExecutionResult {
@@ -45,7 +64,7 @@ export interface ToolExecutionResult {
 }
 
 export interface SummarySaveParams {
-  milestone_id: string;
+  milestone_id?: string;
   slice_id?: string;
   task_id?: string;
   artifact_type: string;
@@ -71,8 +90,29 @@ export async function executeSummarySave(
     isError: true,
       };
   }
+  if (!isRootSummaryArtifactType(params.artifact_type) && !params.milestone_id) {
+    return {
+      content: [{ type: "text", text: `Error: milestone_id is required for artifact_type "${params.artifact_type}". Root-level artifacts must use PROJECT, PROJECT-DRAFT, REQUIREMENTS, or REQUIREMENTS-DRAFT.` }],
+      details: { operation: "save_summary", error: "missing_milestone_id" },
+      isError: true,
+    };
+  }
+  const writeGateSnapshot = loadWriteGateSnapshot(basePath);
+  const prefs = loadEffectiveGSDPreferences(basePath)?.preferences;
+  const rootArtifactGuard = shouldBlockRootArtifactSaveInSnapshot(
+    writeGateSnapshot,
+    params.artifact_type,
+    { requireVerifiedApproval: prefs?.planning_depth === "deep" },
+  );
+  if (rootArtifactGuard.block) {
+    return {
+      content: [{ type: "text", text: `Error saving artifact: ${rootArtifactGuard.reason ?? "root artifact write blocked"}` }],
+      details: { operation: "save_summary", error: "root_artifact_write_blocked" },
+      isError: true,
+    };
+  }
   const contextGuard = shouldBlockContextArtifactSaveInSnapshot(
-    loadWriteGateSnapshot(basePath),
+    writeGateSnapshot,
     params.artifact_type,
     params.milestone_id ?? null,
     params.slice_id ?? null,
@@ -86,7 +126,15 @@ export async function executeSummarySave(
   }
   try {
     let relativePath: string;
-    if (params.task_id && params.slice_id) {
+    if (params.artifact_type === "PROJECT") {
+      relativePath = "PROJECT.md";
+    } else if (params.artifact_type === "PROJECT-DRAFT") {
+      relativePath = "PROJECT-DRAFT.md";
+    } else if (params.artifact_type === "REQUIREMENTS") {
+      relativePath = "REQUIREMENTS.md";
+    } else if (params.artifact_type === "REQUIREMENTS-DRAFT") {
+      relativePath = "REQUIREMENTS-DRAFT.md";
+    } else if (params.task_id && params.slice_id) {
       relativePath = `milestones/${params.milestone_id}/slices/${params.slice_id}/tasks/${params.task_id}-${params.artifact_type}.md`;
     } else if (params.slice_id) {
       relativePath = `milestones/${params.milestone_id}/slices/${params.slice_id}/${params.slice_id}-${params.artifact_type}.md`;
@@ -94,14 +142,33 @@ export async function executeSummarySave(
       relativePath = `milestones/${params.milestone_id}/${params.milestone_id}-${params.artifact_type}.md`;
     }
 
+    const activeRequirements = params.artifact_type === "REQUIREMENTS"
+      ? getActiveRequirements()
+      : null;
+    if (params.artifact_type === "REQUIREMENTS" && activeRequirements?.length === 0) {
+      return {
+        content: [{ type: "text", text: "Error: Cannot save REQUIREMENTS artifact — no active requirements found in the database. Call gsd_requirement_save for each requirement before calling gsd_summary_save(REQUIREMENTS)." }],
+        details: { operation: "save_summary", error: "no_active_requirements" },
+        isError: true,
+      };
+    }
+
+    const contentToSave = params.artifact_type === "REQUIREMENTS"
+      ? generateRequirementsMd(activeRequirements ?? [])
+      : params.content;
+    const contentSource = params.artifact_type === "REQUIREMENTS"
+      ? "requirements_table"
+      : "provided_content";
+    const isRootArtifact = isRootSummaryArtifactType(params.artifact_type);
+
     await saveArtifactToDb(
       {
         path: relativePath,
         artifact_type: params.artifact_type,
-        content: params.content,
-        milestone_id: params.milestone_id,
-        slice_id: params.slice_id,
-        task_id: params.task_id,
+        content: contentToSave,
+        milestone_id: isRootArtifact ? undefined : params.milestone_id,
+        slice_id: isRootArtifact ? undefined : params.slice_id,
+        task_id: isRootArtifact ? undefined : params.task_id,
       },
       basePath,
     );
@@ -109,8 +176,8 @@ export async function executeSummarySave(
     if (params.artifact_type === "CONTEXT" && !params.task_id) {
       try {
         const draftFile = params.slice_id
-          ? resolveSliceFile(basePath, params.milestone_id, params.slice_id, "CONTEXT-DRAFT")
-          : resolveMilestoneFile(basePath, params.milestone_id, "CONTEXT-DRAFT");
+          ? resolveSliceFile(basePath, params.milestone_id!, params.slice_id, "CONTEXT-DRAFT")
+          : resolveMilestoneFile(basePath, params.milestone_id!, "CONTEXT-DRAFT");
         if (draftFile) unlinkSync(draftFile);
       } catch (e) {
         logWarning("tool", `CONTEXT-DRAFT.md unlink failed: ${(e as Error).message}`);
@@ -119,7 +186,7 @@ export async function executeSummarySave(
 
     return {
       content: [{ type: "text", text: `Saved ${params.artifact_type} artifact to ${relativePath}` }],
-      details: { operation: "save_summary", path: relativePath, artifact_type: params.artifact_type },
+      details: { operation: "save_summary", path: relativePath, artifact_type: params.artifact_type, content_source: contentSource },
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

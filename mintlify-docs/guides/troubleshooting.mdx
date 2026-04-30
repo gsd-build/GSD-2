@@ -88,6 +88,8 @@ It checks file structure, referential integrity, completion state consistency, g
     git:
       isolation: worktree
     ```
+
+    In a brand-new repo, make an initial commit first. Until a committed `HEAD` exists, GSD temporarily runs worktree isolation as `none`.
   </Accordion>
 
   <Accordion title="Node.js version or git not found at startup">

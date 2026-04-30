@@ -12,7 +12,7 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@gsd/pi-coding-agent
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { getHomeDir } from "./home-dir.js";
+import { gsdHome } from "./gsd-home.js";
 
 import { extractTrace, type ExecutionTrace } from "./session-forensics.js";
 import { nativeParseJsonlTail } from "./native-parser-bridge.js";
@@ -36,6 +36,7 @@ import { loadEffectiveGSDPreferences, loadGlobalGSDPreferences, getGlobalGSDPref
 import { showNextAction } from "../shared/tui.js";
 import { ensurePreferencesFile, serializePreferencesToFrontmatter } from "./commands-prefs-wizard.js";
 import { summarizeWorktreeTelemetry, percentile, type WorktreeTelemetrySummary } from "./worktree-telemetry.js";
+import { homedir } from "node:os";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -244,8 +245,7 @@ export async function handleForensics(
   // when import.meta.url resolves to the npm-global install path (Windows).
   let gsdSourceDir = dirname(fileURLToPath(import.meta.url));
   if (!existsSync(join(gsdSourceDir, "prompts"))) {
-    const gsdHome = process.env.GSD_HOME || join(getHomeDir(), ".gsd");
-    const fallback = join(gsdHome, "agent", "extensions", "gsd");
+    const fallback = join(gsdHome(), "agent", "extensions", "gsd");
     if (existsSync(join(fallback, "prompts"))) gsdSourceDir = fallback;
   }
 
@@ -1307,7 +1307,13 @@ function redactForGitHub(text: string, basePath: string): string {
 
   // Replace absolute paths
   result = result.replace(pathRe(basePath), ".");
-  result = result.replace(pathRe(getHomeDir()), "~");
+  // Redact GSD_HOME first (when it's outside ~), then OS home.
+  // Order matters: longer path must be replaced before the shorter prefix.
+  const gsdHomePath = gsdHome();
+  if (!gsdHomePath.startsWith(homedir())) {
+    result = result.replace(pathRe(gsdHomePath), "~/.gsd");
+  }
+  result = result.replace(pathRe(homedir()), "~");
 
   // Strip API key patterns
   result = result.replace(/sk-[a-zA-Z0-9]{20,}/g, "sk-***");

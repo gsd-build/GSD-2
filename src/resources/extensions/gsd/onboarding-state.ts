@@ -5,9 +5,9 @@
 // "settings.defaultProvider exists" heuristic.
 
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs"
-import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 import { logWarning } from "./workflow-logger.js"
+import { gsdHome } from "./gsd-home.js";
 
 /**
  * Bump `FLOW_VERSION` whenever a new required step is added to ONBOARDING_STEPS.
@@ -22,7 +22,7 @@ const RECORD_VERSION = 1
 // outside src/resources and breaks the build.
 const AGENT_DIR =
   process.env.GSD_CODING_AGENT_DIR ||
-  join(process.env.GSD_HOME || join(homedir(), ".gsd"), "agent")
+  join(gsdHome(), "agent")
 const FILE = join(AGENT_DIR, "onboarding.json")
 
 export interface OnboardingRecord {
