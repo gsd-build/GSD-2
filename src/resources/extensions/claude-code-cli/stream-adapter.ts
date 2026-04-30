@@ -1016,6 +1016,7 @@ export function convertAskUserQuestionInputToQuestions(
 	}
 
 	const questions: Question[] = [];
+	const seenQuestionTexts = new Set<string>();
 	for (let index = 0; index < rawQuestions.length; index += 1) {
 		const item = rawQuestions[index] as unknown;
 		if (!item || typeof item !== "object") {
@@ -1026,6 +1027,13 @@ export function convertAskUserQuestionInputToQuestions(
 		if (typeof obj.question !== "string" || obj.question.length === 0) {
 			return { ok: false, reason: `question ${index} missing question text` };
 		}
+		// Reject duplicate question texts: roundResultToAskUserQuestionAnswers
+		// keys answers by question.question per the SDK contract, so duplicates
+		// would silently overwrite each other on the way back.
+		if (seenQuestionTexts.has(obj.question)) {
+			return { ok: false, reason: `duplicate question text: ${obj.question}` };
+		}
+		seenQuestionTexts.add(obj.question);
 		if (typeof obj.header !== "string" || obj.header.length === 0) {
 			return { ok: false, reason: `question ${index} missing header` };
 		}
@@ -1194,24 +1202,33 @@ export function createClaudeCodeCanUseToolHandler(
 				};
 			}
 
+			// Treat any rejection from the interview UI (RPC channel error,
+			// JSON serialization fault, mid-loop ui.select rejection) as a
+			// dismiss — the deny path below already produces the right
+			// fallback for the model.
 			let interviewResult: RoundResult | undefined;
-			if (typeof ui.askInterview === "function") {
-				// Cast across structurally-equivalent named types: ExtensionUIContext
-				// declares InterviewQuestion / InterviewRoundResult (in pi-coding-agent),
-				// while this file works with the original Question / RoundResult from
-				// the shared interview-ui module. Shapes match — only the names differ.
-				const askInterviewFn = ui.askInterview as (
-					questions: unknown,
-					opts?: { signal?: AbortSignal },
-				) => Promise<RoundResult | undefined>;
-				interviewResult = await askInterviewFn(parsed.questions, { signal: options.signal })
-					.catch(() => undefined);
-			} else {
-				interviewResult = await promptNativeAskUserQuestionWithDialogs(
-					parsed.questions,
-					ui,
-					options.signal,
-				);
+			try {
+				if (typeof ui.askInterview === "function") {
+					// Cast across structurally-equivalent named types:
+					// ExtensionUIContext declares InterviewQuestion /
+					// InterviewRoundResult (in pi-coding-agent), while this
+					// file works with the original Question / RoundResult from
+					// the shared interview-ui module. Shapes match — only the
+					// names differ.
+					const askInterviewFn = ui.askInterview as (
+						questions: unknown,
+						opts?: { signal?: AbortSignal },
+					) => Promise<RoundResult | undefined>;
+					interviewResult = await askInterviewFn(parsed.questions, { signal: options.signal });
+				} else {
+					interviewResult = await promptNativeAskUserQuestionWithDialogs(
+						parsed.questions,
+						ui,
+						options.signal,
+					);
+				}
+			} catch {
+				interviewResult = undefined;
 			}
 
 			if (!interviewResult || Object.keys(interviewResult.answers).length === 0) {

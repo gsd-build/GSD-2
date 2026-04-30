@@ -234,6 +234,14 @@ export function handleExtensionUIRequest(
     case 'editor':
       client.sendUIResponse(id, { value: event.prefill ?? '' })
       break
+    case 'interview':
+      // No safe auto-answer for the SDK's native AskUserQuestion in headless
+      // mode — picking first option could submit something the user did not
+      // intend (e.g. "delete production data"). Cancel cleanly so the
+      // intercept denies the tool with "User declined to answer questions"
+      // and the model can fall back to plain text.
+      client.sendUIResponse(id, { cancelled: true })
+      break
     case 'notify':
     case 'setStatus':
     case 'setWidget':

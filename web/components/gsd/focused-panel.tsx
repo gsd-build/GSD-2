@@ -419,7 +419,10 @@ function RequestBody({
     case "select":
       return <SelectRenderer request={request} onSubmit={onSubmit} disabled={disabled} />
     case "interview":
-      return <InterviewRenderer request={request} onSubmit={onSubmit} disabled={disabled} />
+      // Key by request.id so React remounts InterviewRenderer when the active
+      // request changes — guarantees a clean slate for singles/multis/preview
+      // state across queued requests.
+      return <InterviewRenderer key={request.id} request={request} onSubmit={onSubmit} disabled={disabled} />
     case "confirm":
       return <ConfirmRenderer request={request} onSubmit={onSubmit} onCancel={onCancel} disabled={disabled} />
     case "input":

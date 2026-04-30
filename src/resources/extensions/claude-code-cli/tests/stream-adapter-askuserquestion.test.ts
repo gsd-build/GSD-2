@@ -122,6 +122,19 @@ describe("convertAskUserQuestionInputToQuestions invalid inputs", () => {
 		assert.equal(r.questions[1].id, "q_1");
 		assert.equal(r.questions[1].allowMultiple, true);
 	});
+	test("rejects payloads with duplicate question text", () => {
+		const r = convertAskUserQuestionInputToQuestions({
+			questions: [
+				{ question: "Same?", header: "H1", multiSelect: false,
+					options: [{ label: "A", description: "" }] },
+				{ question: "Same?", header: "H2", multiSelect: false,
+					options: [{ label: "B", description: "" }] },
+			],
+		});
+		assert.equal(r.ok, false);
+		if (r.ok) return;
+		assert.match(r.reason, /duplicate question text: Same\?/);
+	});
 });
 
 describe("roundResultToAskUserQuestionAnswers", () => {
