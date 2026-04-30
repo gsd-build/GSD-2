@@ -1,5 +1,5 @@
-import { existsSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
-import { join } from "node:path";
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { atomicWriteSync } from "./atomic-write.js";
 import {
   gsdRoot,
@@ -10,6 +10,57 @@ import {
 } from "./paths.js";
 import { loadFile, parseTaskPlanMustHaves, countMustHavesMentionedInSummary } from "./files.js";
 import { parseUnitId } from "./unit-id.js";
+
+// Per-record advisory lock — prevents read-modify-write races between
+// concurrent writers updating disjoint fields of the same runtime record.
+// Within a single Node process this is moot (writeUnitRuntimeRecord is sync),
+// but cross-process callers (parallel slice executors, doctor --fix while a
+// detached auto-mode session is alive) can otherwise clobber each other.
+const RECORD_LOCK_TIMEOUT_MS = 2_000;
+const RECORD_LOCK_STALE_MS = 5_000;
+const RECORD_LOCK_SLEEP_BUFFER = new SharedArrayBuffer(4);
+const RECORD_LOCK_SLEEP_VIEW = new Int32Array(RECORD_LOCK_SLEEP_BUFFER);
+
+function withRecordLock<T>(recordPath: string, fn: () => T): T {
+  const lockPath = recordPath + ".lock";
+  try {
+    mkdirSync(dirname(lockPath), { recursive: true });
+  } catch {
+    // best-effort
+  }
+  const deadline = Date.now() + RECORD_LOCK_TIMEOUT_MS;
+  while (true) {
+    try {
+      // O_EXCL atomic create-if-not-exists.
+      closeSync(openSync(lockPath, "wx"));
+      break;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+      // Existing lock — check for staleness before either waiting or stealing.
+      try {
+        const stat = statSync(lockPath);
+        if (Date.now() - stat.mtimeMs > RECORD_LOCK_STALE_MS) {
+          try { unlinkSync(lockPath); } catch { /* race: already removed */ }
+          continue;
+        }
+      } catch {
+        // stat failed (file removed between EEXIST and stat) — retry create.
+        continue;
+      }
+      if (Date.now() >= deadline) {
+        // Last-resort steal — unlikely in practice but avoids permanent wedge.
+        try { unlinkSync(lockPath); } catch { /* race */ }
+        continue;
+      }
+      Atomics.wait(RECORD_LOCK_SLEEP_VIEW, 0, 0, 5);
+    }
+  }
+  try {
+    return fn();
+  } finally {
+    try { unlinkSync(lockPath); } catch { /* best-effort */ }
+  }
+}
 
 export type UnitRuntimePhase =
   | "dispatched"
@@ -67,26 +118,28 @@ export function writeUnitRuntimeRecord(
   updates: Partial<AutoUnitRuntimeRecord> = {},
 ): AutoUnitRuntimeRecord {
   const path = runtimePath(basePath, unitType, unitId);
-  const prev = readUnitRuntimeRecord(basePath, unitType, unitId);
-  const next: AutoUnitRuntimeRecord = {
-    version: 1,
-    unitType,
-    unitId,
-    startedAt,
-    updatedAt: Date.now(),
-    phase: updates.phase ?? prev?.phase ?? "dispatched",
-    wrapupWarningSent: updates.wrapupWarningSent ?? prev?.wrapupWarningSent ?? false,
-    continueHereFired: updates.continueHereFired ?? prev?.continueHereFired ?? false,
-    timeoutAt: updates.timeoutAt ?? prev?.timeoutAt ?? null,
-    lastProgressAt: updates.lastProgressAt ?? prev?.lastProgressAt ?? Date.now(),
-    progressCount: updates.progressCount ?? prev?.progressCount ?? 0,
-    lastProgressKind: updates.lastProgressKind ?? prev?.lastProgressKind ?? "dispatch",
-    recovery: updates.recovery ?? prev?.recovery,
-    recoveryAttempts: updates.recoveryAttempts ?? prev?.recoveryAttempts ?? 0,
-    lastRecoveryReason: updates.lastRecoveryReason ?? prev?.lastRecoveryReason,
-  };
-  atomicWriteSync(path, JSON.stringify(next, null, 2) + "\n", "utf-8");
-  return next;
+  return withRecordLock(path, () => {
+    const prev = readUnitRuntimeRecord(basePath, unitType, unitId);
+    const next: AutoUnitRuntimeRecord = {
+      version: 1,
+      unitType,
+      unitId,
+      startedAt,
+      updatedAt: Date.now(),
+      phase: updates.phase ?? prev?.phase ?? "dispatched",
+      wrapupWarningSent: updates.wrapupWarningSent ?? prev?.wrapupWarningSent ?? false,
+      continueHereFired: updates.continueHereFired ?? prev?.continueHereFired ?? false,
+      timeoutAt: updates.timeoutAt ?? prev?.timeoutAt ?? null,
+      lastProgressAt: updates.lastProgressAt ?? prev?.lastProgressAt ?? Date.now(),
+      progressCount: updates.progressCount ?? prev?.progressCount ?? 0,
+      lastProgressKind: updates.lastProgressKind ?? prev?.lastProgressKind ?? "dispatch",
+      recovery: updates.recovery ?? prev?.recovery,
+      recoveryAttempts: updates.recoveryAttempts ?? prev?.recoveryAttempts ?? 0,
+      lastRecoveryReason: updates.lastRecoveryReason ?? prev?.lastRecoveryReason,
+    };
+    atomicWriteSync(path, JSON.stringify(next, null, 2) + "\n", "utf-8");
+    return next;
+  });
 }
 
 export function readUnitRuntimeRecord(basePath: string, unitType: string, unitId: string): AutoUnitRuntimeRecord | null {
