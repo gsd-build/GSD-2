@@ -10,7 +10,7 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@gsd/pi-coding-agent
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { showNextAction } from "../shared/tui.js";
-import { nativeIsRepo, nativeInit, nativeAddAll, nativeCommit } from "./native-git-bridge.js";
+import { nativeIsRepo, nativeInit, nativeAddAll, nativeCommit, nativeDetectMainBranch } from "./native-git-bridge.js";
 import { ensureGitignore, untrackRuntimeFiles } from "./gitignore.js";
 import { gsdRoot } from "./paths.js";
 import { assertSafeDirectory } from "./validate-directory.js";
@@ -662,22 +662,12 @@ function buildDetectionSummary(signals: ProjectSignals): string[] {
   return lines;
 }
 
-function detectMainBranch(basePath: string): string | null {
+export function detectMainBranch(basePath: string): string | null {
   try {
-    // Check HEAD reference for common branch names
-    const headPath = join(basePath, ".git", "HEAD");
-    if (existsSync(headPath)) {
-      const head = readFileSync(headPath, "utf-8").trim();
-      const match = head.match(/^ref: refs\/heads\/(.+)$/);
-      if (match) return match[1];
-    }
-
-    // Check for common remote branches
-    const refsPath = join(basePath, ".git", "refs", "remotes", "origin");
-    if (existsSync(refsPath)) {
-      if (existsSync(join(refsPath, "main"))) return "main";
-      if (existsSync(join(refsPath, "master"))) return "master";
-    }
+    // Match runtime branch resolution: origin/HEAD -> main -> master -> current.
+    // Reading .git/HEAD first records whichever feature branch happened to be
+    // checked out during init and can redirect future milestone merges.
+    return nativeDetectMainBranch(basePath);
   } catch {
     // Fall through to null
   }

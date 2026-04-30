@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 // The bootstrap and preferences generation are tested via detection + filesystem checks.
 
 import { detectProjectState } from "../detection.ts";
+import { detectMainBranch } from "../init-wizard.ts";
 
 function makeTempDir(prefix: string): string {
   const dir = join(
@@ -203,6 +204,22 @@ test("init-wizard: nativeInit + nativeAddAll + nativeCommit produces a reachable
     encoding: "utf-8",
   }).trim();
   assert.equal(subject, "chore: init project");
+});
+
+test("init-wizard: default branch detection does not prefer checked-out feature branch", (t) => {
+  const dir = makeTempDir("git-default-branch");
+  t.after(() => { cleanup(dir); });
+
+  execFileSync("git", ["init"], { cwd: dir });
+  execFileSync("git", ["config", "user.email", "test@test.com"], { cwd: dir });
+  execFileSync("git", ["config", "user.name", "Test"], { cwd: dir });
+  writeFileSync(join(dir, "README.md"), "# test\n", "utf-8");
+  execFileSync("git", ["add", "."], { cwd: dir });
+  execFileSync("git", ["commit", "-m", "init"], { cwd: dir });
+  execFileSync("git", ["branch", "-M", "main"], { cwd: dir });
+  execFileSync("git", ["checkout", "-b", "feature/init"], { cwd: dir });
+
+  assert.equal(detectMainBranch(dir), "main");
 });
 
 test("init-wizard: v1 with both .planning/ and .gsd/ prioritizes v2", (t) => {
