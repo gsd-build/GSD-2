@@ -410,7 +410,14 @@ function readPiManifestFile(packageJsonPath: string): PiManifest | null {
 	}
 }
 
-function resolveExtensionEntries(dir: string): string[] | null {
+type ExtensionEntriesSource = "manifest" | "index";
+
+interface ResolvedExtensionEntries {
+	entries: string[];
+	source: ExtensionEntriesSource;
+}
+
+function resolveExtensionEntriesDetailed(dir: string): ResolvedExtensionEntries | null {
 	const packageJsonPath = join(dir, "package.json");
 	if (existsSync(packageJsonPath)) {
 		const manifest = readPiManifestFile(packageJsonPath);
@@ -428,33 +435,61 @@ function resolveExtensionEntries(dir: string): string[] | null {
 					entries.push(resolvedExtPath);
 				}
 			}
-			return entries.length > 0 ? entries : null;
+			return entries.length > 0 ? { entries, source: "manifest" } : null;
 		}
 	}
 
 	const indexTs = join(dir, "index.ts");
 	const indexJs = join(dir, "index.js");
 	if (existsSync(indexTs)) {
-		return [indexTs];
+		return { entries: [indexTs], source: "index" };
 	}
 	if (existsSync(indexJs)) {
-		return [indexJs];
+		return { entries: [indexJs], source: "index" };
 	}
 
 	return null;
 }
 
-function collectAutoExtensionEntries(dir: string): string[] {
+function resolveExtensionEntries(dir: string): string[] | null {
+	const resolved = resolveExtensionEntriesDetailed(dir);
+	return resolved ? resolved.entries : null;
+}
+
+// Exported for unit testing. Treat as an internal API — no stability guarantees.
+export function collectAutoExtensionEntries(dir: string): string[] {
 	const entries: string[] = [];
 	if (!existsSync(dir)) return entries;
 
-	// First check if this directory itself has explicit extension entries (package.json or index)
-	const rootEntries = resolveExtensionEntries(dir);
-	if (rootEntries) {
-		return rootEntries;
+	// Inspect the directory itself. There are three relevant shapes:
+	//   1. A package.json declaring "pi.extensions" (authoritative manifest).
+	//      The maintainer has explicitly enumerated entries — honor them and
+	//      do NOT scan subdirectories. This preserves the opt-out contract
+	//      (e.g. cmux declaring `"pi": {}` to disable auto-discovery).
+	//   2. A top-level index.ts / index.js with no manifest. This is the
+	//      common shape for a user-installed extension wrapper sitting at
+	//      `~/.gsd/agent/extensions/index.js`. The wrapper must coexist
+	//      with bundled-extension subdirectories living alongside it
+	//      (gsd, bg-shell, browser-tools, claude-code-cli, ...). Add the
+	//      top-level entry AND continue into subdirectory discovery.
+	//   3. Neither manifest nor index file. Fall through to subdir/file
+	//      auto-discovery as before.
+	//
+	// Pre-fix, this function early-returned in cases (1) AND (2) without
+	// scanning subdirectories. Case (1) is correct (manifest is authoritative)
+	// but case (2) silently skipped every bundled extension whenever a user
+	// extension was installed at the root, breaking slash-command dispatch.
+	const rootResolved = resolveExtensionEntriesDetailed(dir);
+	if (rootResolved?.source === "manifest") {
+		// Manifest is authoritative — return only what it declares.
+		return [...rootResolved.entries];
+	}
+	if (rootResolved?.source === "index") {
+		entries.push(...rootResolved.entries);
 	}
 
-	// Otherwise, discover extensions from directory contents
+	// Discover additional extensions from directory contents. Subdirs always
+	// contribute when there is no authoritative manifest at the root.
 	const ig = ignore();
 	addIgnoreRules(ig, dir, dir);
 
@@ -483,6 +518,12 @@ function collectAutoExtensionEntries(dir: string): string[] {
 			if (ig.ignores(ignorePath)) continue;
 
 			if (isFile && (entry.name.endsWith(".ts") || entry.name.endsWith(".js"))) {
+				// Avoid double-counting the top-level index.{ts,js} that was
+				// already added via rootResolved above. Other loose .ts/.js
+				// files at the root remain valid extension entry points.
+				if (rootResolved?.source === "index" && rootResolved.entries.includes(fullPath)) {
+					continue;
+				}
 				entries.push(fullPath);
 			} else if (isDir) {
 				const resolvedEntries = resolveExtensionEntries(fullPath);
