@@ -342,22 +342,13 @@ export function registerDbTools(pi: ExtensionAPI): void {
       "artifact_type must be one of: SUMMARY, RESEARCH, CONTEXT, ASSESSMENT, CONTEXT-DRAFT, PROJECT, PROJECT-DRAFT, REQUIREMENTS, REQUIREMENTS-DRAFT.",
       "Use CONTEXT-DRAFT for incremental draft persistence; use CONTEXT for the final milestone context after depth verification.",
     ],
-    parameters: Type.Union([
-      Type.Object({
-        milestone_id: Type.String({ description: "Milestone ID (e.g. M001)" }),
-        slice_id: Type.Optional(Type.String({ description: "Slice ID (e.g. S01)" })),
-        task_id: Type.Optional(Type.String({ description: "Task ID (e.g. T01)" })),
-        artifact_type: StringEnum(["SUMMARY", "RESEARCH", "CONTEXT", "ASSESSMENT", "CONTEXT-DRAFT"], { description: "Milestone-scoped artifact type" }),
-        content: Type.String({ description: "The full markdown content of the artifact" }),
-      }),
-      Type.Object({
-        milestone_id: Type.Optional(Type.String({ description: "Omit for root artifacts" })),
-        slice_id: Type.Optional(Type.String({ description: "Slice ID (e.g. S01)" })),
-        task_id: Type.Optional(Type.String({ description: "Task ID (e.g. T01)" })),
-        artifact_type: StringEnum(["PROJECT", "PROJECT-DRAFT", "REQUIREMENTS", "REQUIREMENTS-DRAFT"], { description: "Root artifact type" }),
-        content: Type.String({ description: "The full markdown content of the artifact" }),
-      }),
-    ]),
+    parameters: Type.Object({
+      milestone_id: Type.Optional(Type.String({ description: "Milestone ID (e.g. M001). Omit only for root-level PROJECT/PROJECT-DRAFT/REQUIREMENTS/REQUIREMENTS-DRAFT artifacts." })),
+      slice_id: Type.Optional(Type.String({ description: "Slice ID (e.g. S01)" })),
+      task_id: Type.Optional(Type.String({ description: "Task ID (e.g. T01)" })),
+      artifact_type: StringEnum(["SUMMARY", "RESEARCH", "CONTEXT", "ASSESSMENT", "CONTEXT-DRAFT", "PROJECT", "PROJECT-DRAFT", "REQUIREMENTS", "REQUIREMENTS-DRAFT"], { description: "Artifact type to save" }),
+      content: Type.String({ description: "The full markdown content of the artifact" }),
+    }),
     execute: summarySaveExecute,
     renderCall(args: any, theme: any) {
       let text = theme.fg("toolTitle", theme.bold("summary_save "));

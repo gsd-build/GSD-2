@@ -15,6 +15,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { registerDbTools } from "../bootstrap/db-tools.ts";
 import { Value } from "@sinclair/typebox/value";
+import AjvModule from "ajv";
+
+const Ajv = (AjvModule as any).default || AjvModule;
 
 // ─── Mock PI ──────────────────────────────────────────────────────────────────
 
@@ -46,6 +49,37 @@ function getOptionalProps(tool: any): string[] {
   const required = new Set(schema.required ?? []);
   return allProps.filter((p: string) => !required.has(p));
 }
+
+// ─── gsd_summary_save: OpenAI requires top-level object schema ──────────────
+
+test("gsd_summary_save — parameters are a top-level object schema", () => {
+  const tool = getTool("gsd_summary_save");
+  assert.ok(tool, "gsd_summary_save must be registered");
+
+  assert.strictEqual(tool.parameters.type, "object", "OpenAI function parameters require a top-level object schema");
+  assert.ok(!("anyOf" in tool.parameters), "top-level anyOf is rejected by OpenAI function schema validation");
+
+  const required = new Set(getRequiredProps(tool));
+  assert.ok(required.has("artifact_type"), "artifact_type must be required");
+  assert.ok(required.has("content"), "content must be required");
+  assert.ok(!required.has("milestone_id"), "milestone_id must remain optional for root artifacts");
+});
+
+test("gsd_summary_save — validates UAT assessment params", () => {
+  const tool = getTool("gsd_summary_save");
+  assert.ok(tool, "gsd_summary_save must be registered");
+
+  const ajv = new Ajv({ strict: false });
+  const validate = ajv.compile(tool.parameters);
+  const valid = validate({
+    milestone_id: "M001",
+    slice_id: "S01",
+    artifact_type: "ASSESSMENT",
+    content: "---\nverdict: PASS\n---\n# UAT Assessment\n",
+  });
+
+  assert.strictEqual(valid, true, `UAT assessment params should validate but got errors: ${JSON.stringify(validate.errors)}`);
+});
 
 // ─── gsd_slice_complete: enrichment arrays must be optional ──────────────────
 
