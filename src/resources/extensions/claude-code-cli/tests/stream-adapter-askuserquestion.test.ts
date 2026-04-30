@@ -135,6 +135,20 @@ describe("convertAskUserQuestionInputToQuestions invalid inputs", () => {
 		if (r.ok) return;
 		assert.match(r.reason, /duplicate question text: Same\?/);
 	});
+	test("rejects duplicate option labels within a question", () => {
+		const r = convertAskUserQuestionInputToQuestions({
+			questions: [
+				{ question: "Q", header: "H", multiSelect: false,
+					options: [
+						{ label: "A", description: "first" },
+						{ label: "A", description: "second" },
+					] },
+			],
+		});
+		assert.equal(r.ok, false);
+		if (r.ok) return;
+		assert.match(r.reason, /duplicate option label "A"/);
+	});
 });
 
 describe("roundResultToAskUserQuestionAnswers", () => {
@@ -297,5 +311,31 @@ describe("createClaudeCodeCanUseToolHandler — AskUserQuestion intercept", () =
 		if (result.behavior !== "allow") return;
 		const updatedInput = result.updatedInput as { answers: Record<string, string> };
 		assert.equal(updatedInput.answers["Pick one"], "A");
+	});
+
+	test("denies when answers are partial (count != questions)", async () => {
+		const twoQuestionInput = {
+			questions: [
+				{ question: "Q1", header: "H1", multiSelect: false,
+					options: [{ label: "A", description: "" }] },
+				{ question: "Q2", header: "H2", multiSelect: false,
+					options: [{ label: "B", description: "" }] },
+			],
+		};
+		const ui: any = {
+			askInterview: async () => ({
+				endInterview: false,
+				answers: { q_0: { selected: "A", notes: "" } },
+			}),
+		};
+		const handler = createClaudeCodeCanUseToolHandler(ui);
+		const result = await handler!("AskUserQuestion", twoQuestionInput as any, {
+			signal: new AbortController().signal,
+			toolUseID: "tu_6",
+			suggestions: [],
+		} as any);
+		assert.equal(result.behavior, "deny");
+		if (result.behavior !== "deny") return;
+		assert.equal(result.message, "User declined to answer questions");
 	});
 });

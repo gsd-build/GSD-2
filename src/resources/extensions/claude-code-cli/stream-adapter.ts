@@ -1045,6 +1045,7 @@ export function convertAskUserQuestionInputToQuestions(
 		}
 
 		const options: QuestionOption[] = [];
+		const seenOptionLabels = new Set<string>();
 		for (let optionIndex = 0; optionIndex < obj.options.length; optionIndex += 1) {
 			const rawOption = obj.options[optionIndex] as unknown;
 			if (!rawOption || typeof rawOption !== "object") {
@@ -1054,6 +1055,14 @@ export function convertAskUserQuestionInputToQuestions(
 			if (typeof optionObj.label !== "string" || optionObj.label.length === 0) {
 				return { ok: false, reason: `question ${index} option ${optionIndex} missing label` };
 			}
+			// Reject duplicate option labels within the same question:
+			// promptNativeAskUserQuestionWithDialogs maps a selection back to
+			// its label via indexOf, so duplicates collapse to the first
+			// match. Detecting at validation prevents silent answer drift.
+			if (seenOptionLabels.has(optionObj.label)) {
+				return { ok: false, reason: `question ${index} duplicate option label "${optionObj.label}"` };
+			}
+			seenOptionLabels.add(optionObj.label);
 			if (typeof optionObj.description !== "string") {
 				return { ok: false, reason: `question ${index} option ${optionIndex} missing description` };
 			}
@@ -1244,7 +1253,13 @@ export function createClaudeCodeCanUseToolHandler(
 				interviewResult,
 			);
 
-			if (Object.keys(answers).length === 0) {
+			// Require an answer for every question. The web FocusedPanel
+			// disables Submit until all are answered, but a custom
+			// ui.askInterview implementation could return a partial map —
+			// allowing that would feed the model a question it never
+			// answered. Treat partials the same as a dismiss.
+			const expectedCount = parsed.questions.length;
+			if (Object.keys(answers).length !== expectedCount) {
 				return {
 					behavior: "deny",
 					message: "User declined to answer questions",
