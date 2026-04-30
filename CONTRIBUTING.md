@@ -17,6 +17,43 @@ We are not a fan of drive-by first-time contributions. If this is your first PR 
 
 Once you have one merged PR, this requirement no longer applies to you.
 
+## Local development
+
+### One-time setup (after cloning)
+
+```bash
+npm ci                              # Install dependencies — MUST run first
+npm run secret-scan:install-hook    # Install git hooks — run once
+```
+
+`npm ci` creates workspace symlinks in `node_modules/@gsd/*` and `node_modules/@gsd-build/*` pointing to `packages/`. These are required for builds and tests to resolve packages correctly.
+
+Run `npm run secret-scan:install-hook` once after cloning. It installs a pre-commit hook that blocks commits containing hardcoded secrets or credentials. Conventional Commits format is validated by CI on push.
+
+### Day-to-day development
+
+```bash
+npm run build    # Build
+npm test         # Run tests
+```
+
+If `npm run build` fails after running tests (e.g. `Cannot find module '@gsd/*'` errors), run `npm ci` first to restore workspace symlinks, then try again.
+
+### Before pushing
+
+```bash
+npm run verify:pr    # Local preflight: build:core → typecheck:extensions → test:unit
+```
+
+If `verify:pr` fails after running tests (e.g. `Cannot find module '@gsd/*'` errors), run `npm ci` first to restore workspace symlinks, then try again.
+
+### Cross-platform note
+
+GSD-2 runs on macOS, Linux, and Windows:
+
+- **Git hooks** are executed by Git's bundled shell, so they work from any terminal (CMD, PowerShell, Git Bash).
+- **Shell scripts** in `scripts/` use `#!/usr/bin/env bash`. On Windows, Git may convert these to CRLF line endings, which breaks the shebang. If you hit shebang errors when running lint scripts locally, create a `.gitattributes` file in the repo root with `*.sh text eol=lf` to force LF checkout. Do not commit this file.
+
 ## Branching and commits
 
 Always work on a dedicated branch. Never push directly to `main`.
@@ -53,6 +90,8 @@ Keep branches current by rebasing onto `main` — do not merge `main` into your 
 git fetch origin
 git rebase origin/main
 ```
+
+CI must pass before your PR will be reviewed. Run `npm run verify:pr` locally before pushing to catch issues early.
 
 ## Working with GSD (team workflow)
 
@@ -101,7 +140,7 @@ If this is a non-trivial change, explain the design and any alternatives you con
 ### Requirements
 
 - **CI must pass.** If your PR breaks tests, fix them before requesting review.
-- **Run `npm run verify:pr` locally before pushing.** It composes `build:core` → `typecheck:extensions` → `test:unit` — the same sequence the CI build job runs. Catches strict-null-check failures, closed-union-literal mismatches, and lint-style test invariants (e.g. `silent-catch-diagnostics`) that ad-hoc `node --test <file>` invocations miss.
+- **Run `npm run verify:pr` locally before pushing.** See [Local development](#local-development) for setup.
 - **One concern per PR.** A bug fix is a bug fix. A feature is a feature. Don't bundle unrelated changes.
 - **No drive-by formatting.** Don't reformat code you didn't change. Don't reorder imports in files you're not modifying.
 - **Link issues when relevant.** Not mandatory for every PR, but if an issue exists, reference it.
@@ -396,32 +435,6 @@ await done;
 ```
 
 **Opt-out marker**: `// allow-coderabbit-theme: <reason>` on the same or preceding line, same convention as `allow-source-grep:`. The reason appears in the diff.
-
-## Local development
-
-```bash
-# Install dependencies
-npm ci
-
-# Install git hooks (secret scanning + commit message validation)
-npm run secret-scan:install-hook
-
-# Build
-npm run build
-
-# Run tests
-npm test
-
-# Type check
-npx tsc --noEmit
-```
-
-Run `npm run secret-scan:install-hook` once after cloning. It installs two hooks:
-
-- **pre-commit** — blocks commits containing hardcoded secrets or credentials
-- **commit-msg** — validates Conventional Commits format before the commit lands
-
-CI must pass before your PR will be reviewed. Run these locally to save time.
 
 ## Security
 
