@@ -206,10 +206,8 @@ async function syncSlicePlan(
   mid: string,
   sid: string,
 ): Promise<void> {
-  // Skip only when the slice has a usable sync record. A prior failed PR
-  // creation may have left prNumber=0; keep that retryable.
   const existingSlice = getSliceRecord(mapping, mid, sid);
-  if (existingSlice && (config.slice_prs === false || existingSlice.prNumber > 0)) return;
+  if (existingSlice) return;
 
   // Ensure milestone is synced first
   if (!getMilestoneRecord(mapping, mid)) {
@@ -225,7 +223,6 @@ async function syncSlicePlan(
 
   const plan = parsePlan(content);
   const sliceBranch = `milestone/${mid}/${sid}`;
-  const milestoneBranch = `milestone/${mid}`;
 
   // Create task sub-issues first (so we can link them in the PR body)
   const taskIssueNumbers: Array<{ id: string; title: string; issueNumber?: number }> = [];
@@ -273,59 +270,9 @@ async function syncSlicePlan(
     }
   }
 
-  if (config.slice_prs === false) {
-    // Slice PRs disabled — just record without PR
-    setSliceRecord(mapping, mid, sid, {
-      issueNumber: 0,
-      prNumber: 0,
-      branch: sliceBranch,
-      lastSyncedAt: new Date().toISOString(),
-      state: "open",
-    });
-    return;
-  }
-
-  // Create slice branch from milestone branch
-  const branchResult = ghCreateBranch(basePath, sliceBranch, milestoneBranch);
-  if (!branchResult.ok) {
-    debugLog("github-sync", { phase: "create-slice-branch", error: branchResult.error });
-    // Branch might already exist — continue anyway
-  }
-
-  // Push the slice branch
-  const pushResult = ghPushBranch(basePath, sliceBranch);
-  if (!pushResult.ok) {
-    debugLog("github-sync", { phase: "push-slice-branch", error: pushResult.error });
-    return;
-  }
-
-  // Create draft PR
-  const prBody = formatSlicePRBody({
-    id: sid,
-    title: plan.title || sid,
-    goal: plan.goal,
-    mustHaves: plan.mustHaves,
-    demoCriterion: plan.demo,
-    tasks: taskIssueNumbers,
-  });
-
-  const prResult = ghCreatePR(basePath, {
-    repo: mapping.repo,
-    base: milestoneBranch,
-    head: sliceBranch,
-    title: `${sid}: ${plan.title || sid}`,
-    body: prBody,
-    draft: true,
-  });
-
-  if (!prResult.ok) {
-    debugLog("github-sync", { phase: "create-slice-pr", error: prResult.error });
-    return;
-  }
-
   setSliceRecord(mapping, mid, sid, {
-    issueNumber: 0, // Slice doesn't get its own issue — tracked via PR
-    prNumber: prResult.data!,
+    issueNumber: 0,
+    prNumber: 0,
     branch: sliceBranch,
     lastSyncedAt: new Date().toISOString(),
     state: "open",
@@ -335,9 +282,72 @@ async function syncSlicePlan(
     phase: "slice-synced",
     mid,
     sid,
-    pr: prResult.data!,
+    pr: 0,
     taskIssues: taskIssueNumbers.filter(t => t.issueNumber).length,
   });
+}
+
+async function ensureSlicePullRequest(
+  basePath: string,
+  mapping: SyncMapping,
+  mid: string,
+  sid: string,
+): Promise<number | null> {
+  const sliceRecord = getSliceRecord(mapping, mid, sid);
+  if (!sliceRecord) return null;
+  if (sliceRecord.prNumber) return sliceRecord.prNumber;
+
+  const planPath = resolveSliceFile(basePath, mid, sid, "PLAN");
+  if (!planPath) return null;
+  const content = await loadFile(planPath);
+  if (!content) return null;
+  const plan = parsePlan(content);
+
+  const sliceBranch = sliceRecord.branch || `milestone/${mid}/${sid}`;
+  const milestoneBranch = `milestone/${mid}`;
+
+  const branchResult = ghCreateBranch(basePath, sliceBranch, milestoneBranch);
+  if (!branchResult.ok) {
+    debugLog("github-sync", { phase: "create-slice-branch", error: branchResult.error });
+  }
+
+  const pushResult = ghPushBranch(basePath, sliceBranch);
+  if (!pushResult.ok) {
+    debugLog("github-sync", { phase: "push-slice-branch", error: pushResult.error });
+    return null;
+  }
+
+  const tasks = (plan.tasks ?? []).map((task) => ({
+    id: task.id,
+    title: task.title,
+    issueNumber: getTaskRecord(mapping, mid, sid, task.id)?.issueNumber,
+  }));
+
+  const prResult = ghCreatePR(basePath, {
+    repo: mapping.repo,
+    base: milestoneBranch,
+    head: sliceBranch,
+    title: `${sid}: ${plan.title || sid}`,
+    body: formatSlicePRBody({
+      id: sid,
+      title: plan.title || sid,
+      goal: plan.goal,
+      mustHaves: plan.mustHaves,
+      demoCriterion: plan.demo,
+      tasks,
+    }),
+    draft: true,
+  });
+
+  if (!prResult.ok) {
+    debugLog("github-sync", { phase: "create-slice-pr", error: prResult.error });
+    return null;
+  }
+
+  sliceRecord.prNumber = prResult.data!;
+  sliceRecord.lastSyncedAt = new Date().toISOString();
+  setSliceRecord(mapping, mid, sid, sliceRecord);
+  return sliceRecord.prNumber;
 }
 
 async function syncTaskComplete(
@@ -397,7 +407,7 @@ async function syncSliceComplete(
   }
   if (!sliceRecord || sliceRecord.state === "closed") return;
   if (!sliceRecord.prNumber && config.slice_prs !== false) {
-    await syncSlicePlan(basePath, mapping, config, mid, sid);
+    await ensureSlicePullRequest(basePath, mapping, mid, sid);
     sliceRecord = getSliceRecord(mapping, mid, sid);
     if (!sliceRecord || !sliceRecord.prNumber) return;
   }
