@@ -65,7 +65,7 @@ export function currentDirectoryRoot(): string {
     try {
       cwd = process.cwd();
     } catch {
-      cwd = process.env.HOME ?? "/";
+      cwd = homedir();
     }
   }
   const result = validateDirectory(cwd);
