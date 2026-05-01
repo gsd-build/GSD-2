@@ -65,12 +65,65 @@ export function mapStatusToExitCode(status: string): number {
  * Blocked detection is separate — checked via isBlockedNotification.
  */
 export const TERMINAL_PREFIXES = ['auto-mode stopped', 'step-mode stopped']
+export const DEFAULT_HEADLESS_TIMEOUT_MS = 300_000
 export const IDLE_TIMEOUT_MS = 15_000
 // new-milestone is a long-running creative task where the LLM may pause
 // between tool calls (e.g. after mkdir, before writing files). Use a
 // longer idle timeout to avoid killing the session prematurely (#808).
 export const NEW_MILESTONE_IDLE_TIMEOUT_MS = 120_000
+export const NEW_MILESTONE_HEADLESS_TIMEOUT_MS = 600_000
 const INTERACTIVE_HEADLESS_TOOLS = new Set(['ask_user_questions', 'secure_env_collect'])
+const MULTI_TURN_HEADLESS_COMMANDS = new Set(['auto', 'next', 'discuss', 'plan'])
+
+export interface HeadlessRuntimeState {
+  command: string
+  idleTimeoutMs: number
+  isAutoMode: boolean
+  isNewMilestone: boolean
+  isMultiTurnCommand: boolean
+}
+
+export function getHeadlessIdleTimeout(command: string): number {
+  if (command === 'new-milestone') return NEW_MILESTONE_IDLE_TIMEOUT_MS
+  // auto-mode workers can spend long stretches in internal orchestration or
+  // await_job waits without emitting RPC events. Let terminal notifications
+  // drive completion there instead of the generic idle fallback (#3428).
+  if (command === 'auto') return 0
+  return IDLE_TIMEOUT_MS
+}
+
+export function getHeadlessRuntimeState(command: string): HeadlessRuntimeState {
+  return {
+    command,
+    idleTimeoutMs: getHeadlessIdleTimeout(command),
+    isAutoMode: command === 'auto',
+    isNewMilestone: command === 'new-milestone',
+    isMultiTurnCommand: MULTI_TURN_HEADLESS_COMMANDS.has(command),
+  }
+}
+
+export function resolveHeadlessOverallTimeout(
+  command: string,
+  timeoutMs: number,
+  timeoutExplicit: boolean,
+): number {
+  if (timeoutExplicit) return timeoutMs
+  if (command === 'new-milestone' && timeoutMs === DEFAULT_HEADLESS_TIMEOUT_MS) {
+    return NEW_MILESTONE_HEADLESS_TIMEOUT_MS
+  }
+  if (command === 'auto' && timeoutMs === DEFAULT_HEADLESS_TIMEOUT_MS) {
+    return 0
+  }
+  return timeoutMs
+}
+
+export function shouldArmHeadlessIdleTimer(
+  toolCallCount: number,
+  interactiveToolCount: number,
+  idleTimeoutMs: number,
+): boolean {
+  return toolCallCount > 0 && interactiveToolCount === 0 && idleTimeoutMs > 0
+}
 
 export function isTerminalNotification(event: Record<string, unknown>): boolean {
   if (event.type !== 'extension_ui_request' || event.method !== 'notify') return false
@@ -92,10 +145,6 @@ export function isMilestoneReadyNotification(event: Record<string, unknown>): bo
 
 export function isInteractiveHeadlessTool(toolName: string | undefined): boolean {
   return INTERACTIVE_HEADLESS_TOOLS.has(String(toolName ?? ''))
-}
-
-export function shouldArmHeadlessIdleTimeout(toolCallCount: number, interactiveToolCount: number): boolean {
-  return toolCallCount > 0 && interactiveToolCount === 0
 }
 
 // ---------------------------------------------------------------------------

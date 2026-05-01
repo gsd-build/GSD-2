@@ -156,8 +156,9 @@ import {
   EXIT_ERROR,
   EXIT_BLOCKED,
   EXIT_CANCELLED,
+  IDLE_TIMEOUT_MS,
   isInteractiveHeadlessTool,
-  shouldArmHeadlessIdleTimeout,
+  shouldArmHeadlessIdleTimer,
 } from '../headless-events.js'
 
 // ─── mapStatusToExitCode ─────────────────────────────────────────────────
@@ -207,17 +208,21 @@ test('isInteractiveHeadlessTool: non-interactive tools stay false', () => {
   assert.equal(isInteractiveHeadlessTool(undefined), false)
 })
 
-test('shouldArmHeadlessIdleTimeout: arms after tool calls when no interactive tool is in flight', () => {
-  assert.equal(shouldArmHeadlessIdleTimeout(1, 0), true)
-  assert.equal(shouldArmHeadlessIdleTimeout(3, 0), true)
+test('shouldArmHeadlessIdleTimer: arms after tool calls when no interactive tool is in flight', () => {
+  assert.equal(shouldArmHeadlessIdleTimer(1, 0, IDLE_TIMEOUT_MS), true)
+  assert.equal(shouldArmHeadlessIdleTimer(3, 0, IDLE_TIMEOUT_MS), true)
 })
 
-test('shouldArmHeadlessIdleTimeout: stays disarmed while interactive tools are in flight (#3714)', () => {
-  assert.equal(shouldArmHeadlessIdleTimeout(1, 1), false)
-  assert.equal(shouldArmHeadlessIdleTimeout(5, 2), false)
+test('shouldArmHeadlessIdleTimer: stays disarmed while interactive tools are in flight (#3714)', () => {
+  assert.equal(shouldArmHeadlessIdleTimer(1, 1, IDLE_TIMEOUT_MS), false)
+  assert.equal(shouldArmHeadlessIdleTimer(5, 2, IDLE_TIMEOUT_MS), false)
 })
 
-test('shouldArmHeadlessIdleTimeout: stays disarmed before any tool call has started', () => {
-  assert.equal(shouldArmHeadlessIdleTimeout(0, 0), false)
-  assert.equal(shouldArmHeadlessIdleTimeout(0, 1), false)
+test('shouldArmHeadlessIdleTimer: stays disarmed before any tool call has started', () => {
+  assert.equal(shouldArmHeadlessIdleTimer(0, 0, IDLE_TIMEOUT_MS), false)
+  assert.equal(shouldArmHeadlessIdleTimer(0, 1, IDLE_TIMEOUT_MS), false)
+})
+
+test('shouldArmHeadlessIdleTimer: stays disarmed when idle timeout is disabled', () => {
+  assert.equal(shouldArmHeadlessIdleTimer(1, 0, 0), false)
 })

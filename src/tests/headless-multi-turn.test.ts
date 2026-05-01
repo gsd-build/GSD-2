@@ -5,36 +5,28 @@
  * Previously this test grep'd `headless.ts` for the literal identifier
  * `discuss` inside the `isMultiTurnCommand =` RHS, which would pass on a
  * comment, an unrelated string constant, or a regression that left the
- * identifier in place but stopped using it. The classifier is now an
- * exported pure function so we can call it directly.
+ * identifier in place but stopped using it. The runtime-state helper now
+ * exposes the classification directly.
  */
-import { test } from 'node:test'
-import assert from 'node:assert/strict'
+import { test } from "node:test";
+import assert from "node:assert/strict";
 
-import { isMultiTurnHeadlessCommand } from '../headless.ts'
+import { getHeadlessRuntimeState } from "../headless-events.js";
 
-test('discuss is classified as multi-turn (#3547)', () => {
-  assert.equal(isMultiTurnHeadlessCommand('discuss'), true)
-})
+test("headless runtime classifies discuss and plan as multi-turn (#3547)", () => {
+  assert.equal(getHeadlessRuntimeState("discuss").isMultiTurnCommand, true);
+  assert.equal(getHeadlessRuntimeState("plan").isMultiTurnCommand, true);
+  assert.equal(getHeadlessRuntimeState("auto").isMultiTurnCommand, true);
+  assert.equal(getHeadlessRuntimeState("next").isMultiTurnCommand, true);
+  assert.equal(getHeadlessRuntimeState("new-milestone").isMultiTurnCommand, false);
+});
 
-test('plan is classified as multi-turn (#3547)', () => {
-  assert.equal(isMultiTurnHeadlessCommand('plan'), true)
-})
-
-test('auto is classified as multi-turn', () => {
-  assert.equal(isMultiTurnHeadlessCommand('auto'), true)
-})
-
-test('next is classified as multi-turn', () => {
-  assert.equal(isMultiTurnHeadlessCommand('next'), true)
-})
-
-test('single-turn commands are not multi-turn', () => {
-  for (const cmd of ['ask', 'chat', 'help', 'version', '', 'random-cmd']) {
+test("headless runtime classifies single-turn commands as non-multi-turn", () => {
+  for (const cmd of ["ask", "chat", "help", "version", "", "random-cmd"]) {
     assert.equal(
-      isMultiTurnHeadlessCommand(cmd),
+      getHeadlessRuntimeState(cmd).isMultiTurnCommand,
       false,
       `${cmd} should not be multi-turn`,
-    )
+    );
   }
-})
+});

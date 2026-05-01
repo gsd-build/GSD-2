@@ -28,10 +28,11 @@ import {
   isMilestoneReadyNotification,
   isQuickCommand,
   FIRE_AND_FORGET_METHODS,
-  IDLE_TIMEOUT_MS,
-  NEW_MILESTONE_IDLE_TIMEOUT_MS,
   isInteractiveHeadlessTool,
-  shouldArmHeadlessIdleTimeout,
+  DEFAULT_HEADLESS_TIMEOUT_MS,
+  getHeadlessRuntimeState,
+  resolveHeadlessOverallTimeout,
+  shouldArmHeadlessIdleTimer,
   EXIT_SUCCESS,
   EXIT_ERROR,
   EXIT_BLOCKED,
@@ -67,6 +68,7 @@ export interface HeadlessOptions {
   timeout: number
   json: boolean
   outputFormat: OutputFormat
+  timeoutExplicit?: boolean
   model?: string
   command: string
   commandArgs: string[]
@@ -146,7 +148,7 @@ export function resolveResumeSession(sessions: SessionInfo[], prefix: string): R
 
 export function parseHeadlessArgs(argv: string[]): HeadlessOptions {
   const options: HeadlessOptions = {
-    timeout: 300_000,
+    timeout: DEFAULT_HEADLESS_TIMEOUT_MS,
     json: false,
     outputFormat: 'text',
     command: 'auto',
@@ -162,6 +164,7 @@ export function parseHeadlessArgs(argv: string[]): HeadlessOptions {
     if (arg.startsWith('--')) {
       if (arg === '--timeout' && i + 1 < args.length) {
         options.timeout = parseInt(args[++i], 10)
+        options.timeoutExplicit = true
         if (Number.isNaN(options.timeout) || options.timeout < 0) {
           process.stderr.write('[headless] Error: --timeout must be a non-negative integer (milliseconds, 0 to disable)\n')
           process.exit(1)
@@ -268,23 +271,19 @@ export async function runHeadless(options: HeadlessOptions): Promise<void> {
 async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): Promise<{ exitCode: number; interrupted: boolean }> {
   let interrupted = false
   const startTime = Date.now()
-  const isNewMilestone = options.command === 'new-milestone'
-
-  // new-milestone involves codebase investigation + artifact writing — needs more time
-  if (isNewMilestone && options.timeout === 300_000) {
-    options.timeout = 600_000 // 10 minutes
-  }
+  let runtimeState = getHeadlessRuntimeState(options.command)
+  let currentCommand = runtimeState.command
+  const isNewMilestone = runtimeState.isNewMilestone
 
   // auto-mode sessions are long-running (minutes to hours) with their own internal
   // per-unit timeout via auto-supervisor. Disable the overall timeout unless the
   // user explicitly set --timeout.
-  const isAutoMode = options.command === 'auto'
+  const timeoutExplicit = options.timeoutExplicit === true
+  options.timeout = resolveHeadlessOverallTimeout(currentCommand, options.timeout, timeoutExplicit)
+  const isAutoMode = runtimeState.isAutoMode
   // discuss and plan are multi-turn: they involve multiple question rounds,
   // codebase scanning, and artifact writing before the workflow completes (#3547).
-  const isMultiTurnCommand = isMultiTurnHeadlessCommand(options.command)
-  if (isAutoMode && options.timeout === 300_000) {
-    options.timeout = 0
-  }
+  let isMultiTurnCommand = runtimeState.isMultiTurnCommand
 
   // Supervised mode cannot share stdin with --context -
   if (options.supervised && options.context === '-') {
@@ -501,11 +500,14 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
 
   // Idle timeout — fallback completion detection
   let idleTimer: ReturnType<typeof setTimeout> | null = null
-  const effectiveIdleTimeout = isNewMilestone ? NEW_MILESTONE_IDLE_TIMEOUT_MS : IDLE_TIMEOUT_MS
+  let effectiveIdleTimeout = runtimeState.idleTimeoutMs
 
   function resetIdleTimer(): void {
-    if (idleTimer) clearTimeout(idleTimer)
-    if (shouldArmHeadlessIdleTimeout(toolCallCount, interactiveToolCallIds.size)) {
+    if (idleTimer) {
+      clearTimeout(idleTimer)
+      idleTimer = null
+    }
+    if (shouldArmHeadlessIdleTimer(toolCallCount, interactiveToolCallIds.size, effectiveIdleTimeout)) {
       idleTimer = setTimeout(() => {
         completed = true
         resolveCompletion()
@@ -517,7 +519,7 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
   const responseTimeout = options.responseTimeout ?? 30_000
 
   // Overall timeout (disabled when options.timeout === 0, e.g. auto-mode)
-  const timeoutTimer = options.timeout > 0
+  let timeoutTimer = options.timeout > 0
     ? setTimeout(() => {
         process.stderr.write(`[headless] Timeout after ${options.timeout / 1000}s\n`)
         exitCode = EXIT_ERROR
@@ -759,7 +761,7 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
     }
 
     // Quick commands: resolve on first agent_end
-    if (eventObj.type === 'agent_end' && isQuickCommand(options.command, options.commandArgs) && !completed) {
+    if (eventObj.type === 'agent_end' && isQuickCommand(currentCommand, options.commandArgs) && !completed) {
       completed = true
       resolveCompletion()
       return
@@ -917,7 +919,18 @@ async function runHeadlessOnce(options: HeadlessOptions, restartCount: number): 
 
     // Reset completion state for the auto-mode phase.
     // Disable the overall timeout — auto-mode has its own internal supervisor.
-    if (timeoutTimer) clearTimeout(timeoutTimer)
+    if (timeoutTimer && !timeoutExplicit) {
+      clearTimeout(timeoutTimer)
+      timeoutTimer = null
+    }
+    if (idleTimer) {
+      clearTimeout(idleTimer)
+      idleTimer = null
+    }
+    runtimeState = getHeadlessRuntimeState('auto')
+    currentCommand = runtimeState.command
+    isMultiTurnCommand = runtimeState.isMultiTurnCommand
+    effectiveIdleTimeout = runtimeState.idleTimeoutMs
     completed = false
     milestoneReady = false
     blocked = false
