@@ -50,8 +50,8 @@ test("guided execute-task requires canonical task completion tool", () => {
   assert.deepEqual(getRequiredWorkflowToolsForGuidedUnit("execute-task"), ["gsd_task_complete"]);
 });
 
-test("auto execute-task requires legacy completion alias until prompt contract is aligned", () => {
-  assert.deepEqual(getRequiredWorkflowToolsForAutoUnit("execute-task"), ["gsd_complete_task"]);
+test("auto execute-task requires canonical task completion tool", () => {
+  assert.deepEqual(getRequiredWorkflowToolsForAutoUnit("execute-task"), ["gsd_task_complete"]);
 });
 
 test("deep project setup units declare required workflow MCP tools", () => {

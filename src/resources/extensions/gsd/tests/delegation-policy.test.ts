@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  annotateBackgroundable,
   getDelegationVerdict,
   getVerdictByUnitType,
   isBackgroundable,
@@ -91,5 +92,60 @@ test("every entry carries a non-empty rationale so the verdict is auditable", ()
     const entry = getDelegationVerdict(name);
     assert.ok(entry, `${name} should be in the policy`);
     assert.ok(entry.rationale.length > 20, `${name} rationale must be substantive`);
+  }
+});
+
+// ─── annotateBackgroundable contract pins ────────────────────────────────
+
+test("annotateBackgroundable recomputes the verdict on every call (no internal cache)", () => {
+  // The annotator mutates in place. Repeated calls on the same object with
+  // different unit types must always reflect the latest unitType — never a
+  // stale cached value. This pins the contract documented in the JSDoc so a
+  // future "optimization" that adds memoization keyed on object identity
+  // breaks the suite instead of silently leaking a stale flag.
+  const action: { action: "dispatch"; unitType: string; backgroundable?: boolean } = {
+    action: "dispatch",
+    unitType: "plan-slice",
+  };
+  annotateBackgroundable(action);
+  assert.equal(action.backgroundable, true, "plan-slice should annotate true");
+
+  action.unitType = "plan-milestone";
+  annotateBackgroundable(action);
+  assert.equal(action.backgroundable, false, "plan-milestone (risky) should re-annotate false");
+
+  action.unitType = "validate-milestone";
+  annotateBackgroundable(action);
+  assert.equal(action.backgroundable, true, "validate-milestone should re-annotate true");
+
+  action.unitType = "complete-slice";
+  annotateBackgroundable(action);
+  assert.equal(action.backgroundable, false, "uncovered unit type should re-annotate false (default-deny)");
+});
+
+test("annotateBackgroundable passes stop/skip actions through unchanged", () => {
+  const stop = { action: "stop" as const, reason: "x", level: "info" as const };
+  const skip = { action: "skip" as const };
+  assert.equal(annotateBackgroundable(stop), stop);
+  assert.equal(annotateBackgroundable(skip), skip);
+  assert.equal((stop as Record<string, unknown>).backgroundable, undefined);
+  assert.equal((skip as Record<string, unknown>).backgroundable, undefined);
+});
+
+// ─── F4 latent gap pin: silent default-deny on unit types invoking GOOD tools ──
+
+test("execute-task / reactive-execute / execute-task-simple intentionally default-deny despite gsd_execute being GOOD", () => {
+  // gsd_execute carries a GOOD verdict but no `unitType`, by design — the
+  // unit-level orchestrations wrap prompt and harness work whose safety is
+  // a separate analysis. Lifting these out of default-deny must be an
+  // explicit, audited change. This test pins the current behavior; if the
+  // policy entry gains a unitType mapping (or a unitTypes array), update
+  // both the entry and this test together.
+  for (const unitType of ["execute-task", "execute-task-simple", "reactive-execute"]) {
+    assert.equal(
+      getVerdictByUnitType(unitType),
+      null,
+      `${unitType} must remain unmapped until per-unit analysis is recorded`,
+    );
   }
 });

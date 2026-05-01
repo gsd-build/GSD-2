@@ -4,9 +4,14 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const promptsDir = join(process.cwd(), "src/resources/extensions/gsd/prompts");
+const templatesDir = join(process.cwd(), "src/resources/extensions/gsd/templates");
 
 function readPrompt(name: string): string {
   return readFileSync(join(promptsDir, `${name}.md`), "utf-8");
+}
+
+function readTemplate(name: string): string {
+  return readFileSync(join(templatesDir, `${name}.md`), "utf-8");
 }
 
 test("reactive-execute prompt keeps task summaries with subagents and avoids batch commits", () => {
@@ -466,10 +471,73 @@ test("downstream discuss prompts read project shape verdict from PROJECT.md", ()
 });
 
 test("project template includes the Project Shape section so the verdict has a home", () => {
-  const template = readFileSync(
-    join(process.cwd(), "src/resources/extensions/gsd/templates/project.md"),
-    "utf-8",
-  );
+  const template = readTemplate("project");
   assert.match(template, /## Project Shape/);
   assert.match(template, /\*\*Complexity:\*\*/);
+});
+
+// ─── Project shape verdict — end-to-end propagation contract (F7 / #5267) ──
+// The verdict is propagated from discuss-project to downstream stages via
+// PROJECT.md text only, with no parser. These tests pin the round-trip:
+// the format the upstream stage is told to write must be discoverable by
+// the regex pattern the downstream stage is told to look for.
+
+/**
+ * Render the project.md template with a concrete complexity verdict so we
+ * can assert on a realistic PROJECT.md (the placeholder is filled the way
+ * an LLM following the prompt would fill it).
+ */
+function renderProjectMd(verdict: "simple" | "complex"): string {
+  return readTemplate("project")
+    .replace("{{simple | complex}}", verdict)
+    .replace("{{one-line rationale citing the signals that decided it}}", "Test fixture rationale.");
+}
+
+test("project shape verdict survives the discuss-project → discuss-milestone round trip", () => {
+  for (const verdict of ["simple", "complex"] as const) {
+    const projectMd = renderProjectMd(verdict);
+
+    // Upstream contract: the PROJECT.md the discuss-project prompt writes
+    // must contain the section header and the bolded `**Complexity:** <verdict>`
+    // marker that downstream stages are told to grep for.
+    assert.match(projectMd, /## Project Shape/, `rendered ${verdict} PROJECT.md must keep the section header`);
+    const complexityMarker = new RegExp(`\\*\\*Complexity:\\*\\*\\s*${verdict}\\b`);
+    assert.match(
+      projectMd,
+      complexityMarker,
+      `rendered ${verdict} PROJECT.md must expose the bolded Complexity marker the downstream regex looks for`,
+    );
+
+    // Downstream contract: discuss-milestone, discuss-requirements, and
+    // discuss-slice must each instruct the LLM to look at the same section
+    // header AND the same `**Complexity:**` marker the template writes.
+    // Without this, the upstream verdict is silently dropped.
+    for (const downstream of ["guided-discuss-milestone", "guided-discuss-requirements", "guided-discuss-slice"]) {
+      const prompt = readPrompt(downstream);
+      assert.match(
+        prompt,
+        /## Project Shape/,
+        `${downstream} must direct the LLM to the same section header the template writes`,
+      );
+      assert.match(
+        prompt,
+        /\*\*Complexity:\*\*/,
+        `${downstream} must direct the LLM to the same **Complexity:** marker the template writes`,
+      );
+    }
+  }
+});
+
+test("downstream discuss prompts default to complex when PROJECT.md lacks the verdict", () => {
+  // Safe-by-default: if upstream omits the section (existing projects, LLM
+  // drift, future template change), each downstream stage must explicitly
+  // fall back to complex so behavior is conservative rather than stuck.
+  for (const downstream of ["guided-discuss-milestone", "guided-discuss-requirements", "guided-discuss-slice"]) {
+    const prompt = readPrompt(downstream);
+    assert.match(
+      prompt,
+      /default to `complex`/i,
+      `${downstream} must default to complex when the upstream verdict is missing`,
+    );
+  }
 });

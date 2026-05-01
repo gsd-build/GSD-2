@@ -5,6 +5,35 @@
 // the reason so future changes have to revisit the analysis explicitly.
 //
 // Default-deny: unknown tools are never backgroundable.
+//
+// ─── Tool-name vs unit-type namespaces ───────────────────────────────────
+// Entries are keyed by canonical MCP tool name (`gsd_*`). The optional
+// `unitType` field is a *secondary* index for the dispatcher's convenience
+// — it bridges this policy to `auto-dispatch.ts`' `DispatchAction.unitType`
+// values. The two namespaces are not 1:1:
+//
+//   - Some tools have no corresponding unit type (e.g. `gsd_doctor`,
+//     `gsd_plan_task`) and intentionally omit `unitType`.
+//   - Some unit types share a tool — e.g. `execute-task`, `execute-task-simple`,
+//     and `reactive-execute` all invoke `gsd_execute`. The current shape
+//     allows only one `unitType` per entry, so those units fall through to
+//     `getVerdictByUnitType() === null` (→ `backgroundable: false`) even
+//     though `gsd_execute` itself is GOOD. This is the intended default-deny
+//     posture until a future PR wires actual background dispatch and
+//     decides whether each unit-level orchestration is safe — the unit
+//     wraps a prompt, harness setup, and post-processing on top of the
+//     tool, and the tool's safety doesn't transfer automatically.
+//
+// Auto-dispatch produces 20 distinct unit types; only 5 are explicitly
+// classified here. The other 15 default-deny:
+//   complete-milestone, complete-slice, discuss-milestone, discuss-project,
+//   discuss-requirements, execute-task, execute-task-simple, gate-evaluate,
+//   reactive-execute, refine-slice, research-decision, research-milestone,
+//   research-project, research-slice, rewrite-docs, run-uat
+//
+// Adding a `unitType` mapping (or a future `unitTypes: string[]`) to an
+// existing entry is the place to lift any of these out of default-deny
+// when the analysis has been done.
 
 export type BackgroundabilityVerdict = "good" | "risky" | "no";
 
@@ -38,6 +67,12 @@ const POLICY: Record<string, DelegationPolicyEntry> = {
   },
   gsd_execute: {
     toolName: "gsd_execute",
+    // No `unitType` set on purpose — the underlying tool is safe, but the
+    // unit-level orchestrations that invoke it (`execute-task`,
+    // `execute-task-simple`, `reactive-execute`) wrap additional prompt and
+    // harness work whose safety is a separate analysis. Default-deny those
+    // units until that analysis is recorded; adding `unitType` here would
+    // promote them silently.
     verdict: "good",
     rationale:
       "No DB writes; UUID-isolated stdout/stderr/meta files; existing reactive-execute parallel-subagent precedent.",
@@ -140,6 +175,19 @@ export type AnnotatableDispatchAction =
  * Annotates a dispatch action in place with `backgroundable: true` when its
  * unitType has a `good` verdict in the policy. Stop/skip actions pass through
  * unchanged. Default-deny: unknown unit types resolve to `false`.
+ *
+ * **Mutation contract.** The `backgroundable` field is written directly onto
+ * the passed action object. This is intentional — every dispatch path in
+ * `auto-dispatch.ts` constructs a fresh action object per `where(ctx)` /
+ * `evaluateDispatch(ctx)` invocation, so in-place mutation cannot leak across
+ * dispatch cycles. Future dispatch rules MUST follow that convention: never
+ * cache or share `DispatchAction` objects across calls. If you need to cache,
+ * either freeze the cached object (`Object.freeze`) and clone on read, or
+ * stop calling `annotateBackgroundable` on the shared instance. The annotator
+ * always recomputes from the policy on every call (no internal cache), so
+ * repeated invocations on the same object will overwrite stale values
+ * deterministically — see the `annotateBackgroundable recomputes on each call`
+ * test for the contract pin.
  */
 export function annotateBackgroundable<T extends AnnotatableDispatchAction>(action: T): T {
   if (action.action !== "dispatch") return action;

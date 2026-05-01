@@ -21,7 +21,7 @@ Before your first action, print this banner verbatim in chat:
 ## Pre-flight
 
 1. Read `.gsd/PROJECT.md` end-to-end. If it does not exist, STOP and emit: `"PROJECT.md missing — run discuss-project first."`
-2. Extract: Core Value, Anti-goals, Constraints, Milestone Sequence, **Project Shape → Complexity** (verdict is either `simple` or `complex`; default to `complex` if the section is missing or unclear).
+2. Extract: Core Value, Anti-goals, Constraints, Milestone Sequence, and the project shape verdict — read the `## Project Shape` section and look for `**Complexity:**` (verdict is either `simple` or `complex`; default to `complex` if the section is missing or unclear).
 3. Check for existing `.gsd/REQUIREMENTS.md` — if present, this is a refinement pass, not a fresh write. Read existing requirements and treat them as the working set.
 
 **Shape-dependent cadence:**
