@@ -333,6 +333,55 @@ describe("ModelRegistry discovery — OpenAI-compatible custom providers", () =>
 		}
 	});
 
+	it("fresh cache entries are included in results even when deadline is already exceeded", async () => {
+		const providerName = `cached-after-deadline-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+		const modelsPath = join(testDir, "models.json");
+		writeFileSync(
+			modelsPath,
+			JSON.stringify(
+				{
+					providers: {
+						[providerName]: {
+							baseUrl: "https://api.minimax.example",
+							apiKey: "test-key",
+							api: "openai-completions",
+							models: [{ id: "bootstrap-model" }],
+						},
+					},
+				},
+				null,
+				2,
+			),
+			"utf-8",
+		);
+
+		const prevFetch = globalThis.fetch;
+		let fetchCalls = 0;
+		globalThis.fetch = (async () => {
+			fetchCalls++;
+			return new Response(JSON.stringify({ data: [] }), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			});
+		}) as typeof globalThis.fetch;
+
+		try {
+			const registry = new ModelRegistry(AuthStorage.inMemory({}), modelsPath);
+			// Seed a fresh cache entry directly so the provider has a valid cached result.
+			registry.getDiscoveryCache().set(providerName, [{ id: "cached-model", name: "Cached Model" }], 60_000);
+
+			// Run with a zero deadline — no fetch should start, but the cached entry must still appear.
+			const results = await registry.discoverModels([providerName], { deadlineMs: 0 });
+			assert.equal(fetchCalls, 0, "deadline 0 must not trigger a network fetch");
+			const result = results.find((r) => r.provider === providerName);
+			assert.ok(result, "fresh cache entry must be included in results despite exceeded deadline");
+			assert.equal(result?.models.length, 1, "cached models must be returned");
+			assert.equal(result?.models[0]?.id, "cached-model");
+		} finally {
+			globalThis.fetch = prevFetch;
+		}
+	});
+
 	it("getAvailableWithDiscovered returns discoveryErrors when a provider discovery fails", async () => {
 		const providerName = `err-discovery-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 		const modelsPath = join(testDir, "models.json");

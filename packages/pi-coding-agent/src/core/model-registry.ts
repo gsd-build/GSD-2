@@ -879,11 +879,7 @@ export class ModelRegistry {
 				continue;
 			}
 
-			if (deadlineMs !== undefined && Date.now() - startedAt >= deadlineMs) {
-				break;
-			}
-
-			// Skip if cache is still fresh
+			// Serve from cache regardless of deadline — cache hits are free.
 			if (!this.discoveryCache.isStale(providerName)) {
 				const cached = this.discoveryCache.get(providerName);
 				if (cached) {
@@ -894,6 +890,12 @@ export class ModelRegistry {
 					});
 					continue;
 				}
+			}
+
+			// Only gate network fetches on the deadline; cached entries above are
+			// always included so discoveredModels stays complete even after timeout.
+			if (deadlineMs !== undefined && Date.now() - startedAt >= deadlineMs) {
+				continue;
 			}
 
 			try {
