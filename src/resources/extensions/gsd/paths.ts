@@ -11,9 +11,11 @@
 
 import { readdirSync, existsSync, realpathSync, Dirent } from "node:fs";
 import { join, dirname, normalize } from "node:path";
+import { homedir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { nativeScanGsdTree, type GsdTreeEntry } from "./native-parser-bridge.js";
 import { DIR_CACHE_MAX } from "./constants.js";
+import { gsdHome } from "./gsd-home.js";
 
 // ─── Directory Listing Cache ──────────────────────────────────────────────────
 
@@ -305,8 +307,42 @@ export function gsdRoot(basePath: string): string {
   if (cached) return cached;
 
   const result = probeGsdRoot(basePath);
+
+  // Defense-in-depth: if basePath resolves to the user's home directory and
+  // the result equals gsdHome(), refuse — project-scoped writes must never
+  // land in the global ~/.gsd. Paths under ~/.gsd/projects/<hash>/ are still
+  // valid (their basePath does not equal homedir).
+  assertNotGlobalGsdHome(basePath, result);
+
   gsdRootCache.set(basePath, result);
   return result;
+}
+
+function assertNotGlobalGsdHome(basePath: string, result: string): void {
+  const norm = (p: string): string => {
+    let r: string;
+    try { r = realpathSync.native(p); } catch { r = p; }
+    const s = r.replaceAll("\\", "/").replace(/\/+$/, "");
+    return process.platform === "win32" ? s.toLowerCase() : s;
+  };
+  let baseNorm: string;
+  let homeNorm: string;
+  let resultNorm: string;
+  let gsdHomeNorm: string;
+  try {
+    baseNorm = norm(basePath);
+    homeNorm = norm(homedir());
+    resultNorm = norm(result);
+    gsdHomeNorm = norm(gsdHome());
+  } catch {
+    return;
+  }
+  if (baseNorm === homeNorm && resultNorm === gsdHomeNorm) {
+    throw new Error(
+      `Refusing to use ${result} as a project .gsd directory — that is the global GSD home. ` +
+      `Run GSD from inside a project directory.`,
+    );
+  }
 }
 
 /**

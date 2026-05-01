@@ -20,6 +20,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { join, relative } from "node:path";
 
 import { loadPrompt } from "./prompt-loader.js";
+import { projectRoot } from "./commands/context.js";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -86,7 +87,7 @@ export async function handleScan(
   ctx: ExtensionCommandContext,
   pi: ExtensionAPI,
 ): Promise<void> {
-  const basePath = process.cwd();
+  const basePath = projectRoot();
   const { focus } = parseScanArgs(args);
   const outputDir = join(basePath, ".gsd", "codebase");
   const outputPaths = buildScanOutputPaths(focus, basePath);

@@ -203,7 +203,7 @@ export async function handleCapture(args: string, ctx: ExtensionCommandContext):
     return;
   }
 
-  const basePath = process.cwd();
+  const basePath = projectRoot();
 
   // Ensure .gsd/ exists — capture should work even without a milestone
   const gsdDir = gsdRoot(basePath);
@@ -270,7 +270,7 @@ export async function handleTriage(ctx: ExtensionCommandContext, pi: ExtensionAP
 }
 
 export async function handleSteer(change: string, ctx: ExtensionCommandContext, pi: ExtensionAPI): Promise<void> {
-  const basePath = process.cwd();
+  const basePath = projectRoot();
   const state = await deriveState(basePath);
   const mid = state.activeMilestone?.id ?? "none";
   const sid = state.activeSlice?.id ?? "none";
@@ -343,7 +343,7 @@ export async function handleKnowledge(args: string, ctx: ExtensionCommandContext
   }
 
   const type = typeArg as "rule" | "pattern" | "lesson";
-  const basePath = process.cwd();
+  const basePath = projectRoot();
   const state = await deriveState(basePath);
   const scope = state.activeMilestone?.id
     ? `${state.activeMilestone.id}${state.activeSlice ? `/${state.activeSlice.id}` : ""}`

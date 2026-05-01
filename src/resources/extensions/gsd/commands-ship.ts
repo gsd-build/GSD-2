@@ -17,6 +17,7 @@ import { getLedger, getProjectTotals, aggregateByModel, formatCost, formatTokenC
 import { nativeGetCurrentBranch, nativeDetectMainBranch } from "./native-git-bridge.js";
 import { formatDuration } from "../shared/format-utils.js";
 import { parseEvalReviewFrontmatter, type Verdict } from "./eval-review-schema.js";
+import { projectRoot } from "./commands/context.js";
 
 function git(basePath: string, args: readonly string[]): string {
   return execFileSync("git", args, { cwd: basePath, encoding: "utf-8" }).trim();
@@ -222,7 +223,7 @@ export async function handleShip(
   ctx: ExtensionCommandContext,
   _pi: ExtensionAPI,
 ): Promise<void> {
-  const basePath = process.cwd();
+  const basePath = projectRoot();
   const dryRun = args.includes("--dry-run");
   const draft = args.includes("--draft");
   const force = args.includes("--force");

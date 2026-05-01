@@ -20,6 +20,7 @@ import { getMilestoneSlices, isDbAvailable } from "./gsd-db.js";
 import { buildExistingMilestonesContext } from "./guided-flow-queue.js";
 import { loadPrompt } from "./prompt-loader.js";
 import { isGsdGitignored } from "./gitignore.js";
+import { projectRoot } from "./commands/context.js";
 
 // ─── Entry Point ──────────────────────────────────────────────────────────────
 
@@ -33,7 +34,7 @@ export async function handleRethink(
     return;
   }
 
-  const basePath = process.cwd();
+  const basePath = projectRoot();
   const root = gsdRoot(basePath);
   if (!existsSync(root)) {
     ctx.ui.notify("No GSD project found. Run /gsd init first.", "warning");

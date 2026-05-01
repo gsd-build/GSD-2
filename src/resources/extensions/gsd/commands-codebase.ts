@@ -16,6 +16,7 @@ import {
 } from "./codebase-generator.js";
 import { loadEffectiveGSDPreferences } from "./preferences.js";
 import type { CodebaseMapOptions } from "./codebase-generator.js";
+import { projectRoot } from "./commands/context.js";
 
 const USAGE =
   "Usage: /gsd codebase [generate|update|stats]\n\n" +
@@ -36,7 +37,7 @@ export async function handleCodebase(
   ctx: ExtensionCommandContext,
   _pi: ExtensionAPI,
 ): Promise<void> {
-  const basePath = process.cwd();
+  const basePath = projectRoot();
   const parts = args.trim().split(/\s+/);
   const sub = parts[0] ?? "";
 

@@ -23,6 +23,7 @@ import { createGitService, runGit } from "./git-service.js";
 import { isAutoActive, isAutoPaused } from "./auto.js";
 import { getErrorMessage } from "./error-utils.js";
 import { resolvePlugin, type WorkflowPlugin } from "./workflow-plugins.js";
+import { projectRoot } from "./commands/context.js";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -196,7 +197,7 @@ export async function handleStart(
   // ─── Resume detection ───────────────────────────────────────────────────
   // /gsd start --resume or /gsd start resume → resume in-progress workflow
   if (trimmed === "--resume" || trimmed === "resume") {
-    const basePath = process.cwd();
+    const basePath = projectRoot();
     const inProgress = findInProgressWorkflows(basePath);
     if (inProgress.length === 0) {
       ctx.ui.notify("No in-progress workflows found.", "info");
@@ -247,7 +248,7 @@ export async function handleStart(
 
   // Show in-progress workflows when /gsd start is called with no args
   if (!trimmed) {
-    const basePath = process.cwd();
+    const basePath = projectRoot();
     const inProgress = findInProgressWorkflows(basePath);
     if (inProgress.length > 0) {
       const wf = inProgress[0];
@@ -346,7 +347,7 @@ export async function handleStart(
 
   const templateId = match.id;
   const template = match.template;
-  const basePath = process.cwd();
+  const basePath = projectRoot();
   const date = new Date().toISOString().split("T")[0];
 
   // Load the workflow template content — prefer a project/global plugin
@@ -581,7 +582,7 @@ export function dispatchMarkdownPhasePlugin(
   }
 
   const templateId = plugin.name;
-  const basePath = process.cwd();
+  const basePath = projectRoot();
   const date = new Date().toISOString().split("T")[0];
   let workflowContent: string;
   try {
