@@ -241,15 +241,20 @@ function scanGsdTaggedCommits(
         const hash = record.slice(0, sep).trim();
         const message = record.slice(sep + 1);
         return [{ hash, message }];
-      });
+      })
+      .reverse();
 
     const files = new Set<string>();
     let matched = false;
+    let activeMilestone: string | null = null;
     for (const { hash, message } of records) {
       if (!commitMessageHasGsdTrailer(message)) continue;
 
+      const longTrailerMid = extractLongTrailerMilestone(message);
+      if (longTrailerMid) activeMilestone = longTrailerMid;
+
       const commitFiles = getChangedFilesForCommit(basePath, hash);
-      if (!commitMatchesMilestone(message, milestoneId, commitFiles)) continue;
+      if (!commitMatchesMilestone(message, milestoneId, commitFiles, activeMilestone)) continue;
 
       matched = true;
       for (const file of commitFiles) {
@@ -277,22 +282,28 @@ function commitMessageHasGsdTrailer(message: string): boolean {
   return /^GSD-(?:Task|Unit):\s*\S+/m.test(message);
 }
 
-function commitMatchesMilestone(message: string, milestoneId: string, files: readonly string[]): boolean {
+function commitMatchesMilestone(
+  message: string,
+  milestoneId: string,
+  files: readonly string[],
+  activeMilestone: string | null,
+): boolean {
   if (commitTrailerStartsWithMilestone(message, milestoneId)) return true;
 
-  // Meaningful execute-task commits currently store task scope as Sxx/Tyy
-  // rather than Mxx/Sxx/Tyy. Bind those commits back to the milestone when
-  // either the commit touched this milestone's artifacts, or — for projects
-  // where .gsd/ is gitignored/external (#5033) — the message explicitly
-  // names the milestone.
   const shortTrailer = message.match(/^GSD-Task:\s*(S[^/\s]+)\/T\S+/m);
   if (shortTrailer) {
     if (files.some((file) => isMilestoneArtifactPath(file, milestoneId))) return true;
     if (commitMessageMentionsMilestone(message, milestoneId)) return true;
-    if (isDbAvailable() && getSlice(milestoneId, shortTrailer[1]!) != null) return true;
+    if (activeMilestone === milestoneId) return true;
+    if (activeMilestone === null && isDbAvailable() && getSlice(milestoneId, shortTrailer[1]!) != null) return true;
   }
 
   return false;
+}
+
+function extractLongTrailerMilestone(message: string): string | null {
+  const match = message.match(/^GSD-(?:Task|Unit):\s*(M\d{3}(?:-[a-z0-9]{6})?)(?:$|[\s/])/m);
+  return match ? match[1]! : null;
 }
 
 function commitMessageMentionsMilestone(message: string, milestoneId: string): boolean {
