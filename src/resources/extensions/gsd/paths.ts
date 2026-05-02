@@ -343,10 +343,22 @@ export function _clearGsdRootCache(): void {
   gsdRootCache.clear();
 }
 
+/**
+ * Resolve a path to its canonical real path using the native resolver.
+ * On macOS case-insensitive (HFS+/APFS) volumes, realpathSync.native normalizes
+ * case — ensuring that /foo/Bar and /foo/bar resolve to the same string.
+ * Falls back to resolve(p) for non-existent paths.
+ *
+ * Use this helper everywhere a path is used as an identity/cache key so that
+ * all callers agree on the canonical form.
+ */
+export function normalizeRealPath(p: string): string {
+  try { return realpathSync.native(p); } catch { return resolve(p); }
+}
+
 /** Normalize a path for use as a gsdRootCache key (realpath + trailing-slash strip). */
 function normCacheKey(p: string): string {
-  let r: string;
-  try { r = realpathSync.native(p); } catch { r = p; }
+  const r = normalizeRealPath(p);
   const s = r.replaceAll("\\", "/").replace(/\/+$/, "");
   return process.platform === "win32" ? s.toLowerCase() : s;
 }

@@ -1,8 +1,7 @@
 // GSD-2 + Workspace handle: single source of truth for path resolution per milestone
 
-import { realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { type GsdPathContract, resolveGsdPathContract } from "./paths.js";
+import { type GsdPathContract, resolveGsdPathContract, normalizeRealPath } from "./paths.js";
 import { isGsdWorktreePath, resolveWorktreeProjectRoot } from "./worktree-root.js";
 
 export type GsdWorkspaceMode = "project" | "worktree";
@@ -29,11 +28,7 @@ export interface MilestoneScope {
 }
 
 function tryRealpath(p: string): string {
-  try {
-    return realpathSync(p);
-  } catch {
-    return resolve(p);
-  }
+  return normalizeRealPath(p);
 }
 
 /**
