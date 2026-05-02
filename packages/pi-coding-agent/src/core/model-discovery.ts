@@ -181,8 +181,34 @@ class OpenRouterDiscoveryAdapter implements ProviderDiscoveryAdapter {
 	provider = "openrouter";
 	supportsDiscovery = true;
 
+	private static openRouterDiscoveryRoot(baseUrl?: string): string {
+		const DEFAULT = "https://openrouter.ai";
+		const trimmed = baseUrl?.trim();
+		if (!trimmed) {
+			return DEFAULT;
+		}
+		try {
+			const u = new URL(trimmed);
+			let path = u.pathname.replace(/\/+$/, "") || "";
+			const stripIfPresent = (suffix: string): void => {
+				if (path === suffix) {
+					path = "";
+				} else if (path.endsWith(suffix)) {
+					path = path.slice(0, -suffix.length);
+				}
+			};
+			stripIfPresent("/api/v1/models");
+			if (path.length > 0) {
+				stripIfPresent("/api/v1");
+			}
+			return path.length > 0 ? `${u.origin}${path}` : u.origin;
+		} catch {
+			return DEFAULT;
+		}
+	}
+
 	async fetchModels(apiKey: string, baseUrl?: string): Promise<DiscoveredModel[]> {
-		const url = `${baseUrl ?? "https://openrouter.ai"}/api/v1/models`;
+		const url = `${OpenRouterDiscoveryAdapter.openRouterDiscoveryRoot(baseUrl)}/api/v1/models`;
 		const response = await fetchWithTimeout(url, {
 			headers: { Authorization: `Bearer ${apiKey}` },
 		});
