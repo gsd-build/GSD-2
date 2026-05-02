@@ -174,6 +174,7 @@ export { ModelDiscoveryCache } from "./core/discovery-cache.js";
 export type { DiscoveredModel, DiscoveryResult, ProviderDiscoveryAdapter } from "./core/model-discovery.js";
 export { getDiscoverableProviders, getDiscoveryAdapter } from "./core/model-discovery.js";
 export { ModelRegistry } from "./core/model-registry.js";
+export type { AvailableWithDiscoveredResult, DiscoverModelsOptions } from "./core/model-registry.js";
 export { ModelsJsonWriter } from "./core/models-json-writer.js";
 export type {
 	PackageManager,

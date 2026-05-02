@@ -15,8 +15,8 @@ import { normalizeStringArray } from "../shared/format-utils.js";
 import {
   KNOWN_PREFERENCE_KEYS,
   KNOWN_UNIT_TYPES,
-
   SKILL_ACTIONS,
+  parseModelDiscoveryBudgetMs,
   type WorkflowMode,
   type GSDPreferences,
   type GSDSkillRule,
@@ -1142,6 +1142,16 @@ export function validatePreferences(preferences: GSDPreferences): {
       validated.min_request_interval_ms = Math.floor(preferences.min_request_interval_ms);
     } else {
       errors.push("min_request_interval_ms must be a non-negative number <= 2147483647");
+    }
+  }
+
+  // ─── Model catalog discovery budget (prefs Models flow) ───────────
+  if (preferences.model_discovery_budget_ms !== undefined) {
+    const parsed = parseModelDiscoveryBudgetMs(preferences.model_discovery_budget_ms);
+    if (parsed !== undefined) {
+      validated.model_discovery_budget_ms = parsed;
+    } else {
+      errors.push("model_discovery_budget_ms must be a number between 1000 and 600000");
     }
   }
 

@@ -11,6 +11,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  DEFAULT_MODEL_DISCOVERY_BUDGET_MS,
+  parseModelDiscoveryBudgetMs,
+} from "./preferences-types.js";
+import {
   getGlobalGSDPreferencesPath,
   getLegacyGlobalGSDPreferencesPath,
   getProjectGSDPreferencesPath,
@@ -431,6 +435,9 @@ export function buildCategorySummaries(prefs: Record<string, unknown>): Record<s
     if (prefs.auto_report !== undefined) parts.push(`report: ${prefs.auto_report ? "on" : "off"}`);
     if (prefs.show_token_cost) parts.push("cost-display");
     if (prefs.forensics_dedup) parts.push("forensics-dedup");
+    if (prefs.model_discovery_budget_ms !== undefined) {
+      parts.push(`model-disc: ${prefs.model_discovery_budget_ms}ms`);
+    }
     if (prefs.widget_mode) parts.push(`widget: ${prefs.widget_mode}`);
     if (experimentalRtk) parts.push("rtk");
     if (parts.length > 0) advancedSummary = parts.join(", ");
@@ -573,6 +580,15 @@ export function toPersistedModelId(provider: string, modelId: string): string {
     : `${normalizedProvider}/${normalizedModelId}`;
 }
 
+function resolvePrefsModelDiscoveryBudgetMs(prefs: Record<string, unknown>): number {
+  const staged = parseModelDiscoveryBudgetMs(prefs.model_discovery_budget_ms);
+  if (staged !== undefined) return staged;
+  const effective = loadEffectiveGSDPreferences()?.preferences;
+  const fromDisk = parseModelDiscoveryBudgetMs(effective?.model_discovery_budget_ms);
+  if (fromDisk !== undefined) return fromDisk;
+  return DEFAULT_MODEL_DISCOVERY_BUDGET_MS;
+}
+
 async function configureModels(ctx: ExtensionCommandContext, prefs: Record<string, unknown>): Promise<void> {
   const modelPhases = [
     "research",
@@ -586,7 +602,14 @@ async function configureModels(ctx: ExtensionCommandContext, prefs: Record<strin
   ] as const;
   const models: Record<string, unknown> = (prefs.models as Record<string, unknown>) ?? {};
 
-  const availableModels = ctx.modelRegistry.getAvailable();
+  const discoverBudgetMs = resolvePrefsModelDiscoveryBudgetMs(prefs);
+  const merged = await ctx.modelRegistry.getAvailableWithDiscovered({ discoverBudgetMs });
+  const availableModels = merged.models;
+  if (merged.discoveryErrors?.length) {
+    const parts = merged.discoveryErrors.slice(0, 3).map((e) => `${e.provider}: ${e.message}`);
+    const suffix = merged.discoveryErrors.length > 3 ? ` (+${merged.discoveryErrors.length - 3} more)` : "";
+    ctx.ui.notify(`Some providers failed discovery: ${parts.join("; ")}${suffix}`, "warning");
+  }
   if (availableModels.length > 0) {
     // Group models by provider, sorted alphabetically
     const byProvider = new Map<string, typeof availableModels>();
@@ -1536,6 +1559,26 @@ async function configureAdvanced(ctx: ExtensionCommandContext, prefs: Record<str
     prefs.min_request_interval_ms = minRequestInterval;
   }
 
+  const discoveryBudget = await promptInteger(
+    ctx,
+    "Model catalog discovery budget (ms, /gsd prefs → Models; caps wall time to start further providers, not per-fetch timeout)",
+    prefs.model_discovery_budget_ms,
+    "30000",
+  );
+  if (discoveryBudget === "clear") {
+    delete prefs.model_discovery_budget_ms;
+  } else if (discoveryBudget !== undefined) {
+    const parsedBudget = parseModelDiscoveryBudgetMs(discoveryBudget);
+    if (parsedBudget === undefined) {
+      ctx.ui.notify(
+        "Model catalog discovery budget must be a whole number between 1000 and 600000 (ms). Keeping previous value.",
+        "warning",
+      );
+    } else {
+      prefs.model_discovery_budget_ms = parsedBudget;
+    }
+  }
+
   const widget = await promptEnum(ctx, "Auto-mode widget display", prefs.widget_mode, ["full", "small", "min", "off"], "full");
   if (widget !== undefined) prefs.widget_mode = widget;
 
@@ -1728,6 +1771,7 @@ export function serializePreferencesToFrontmatter(prefs: Record<string, unknown>
     "notifications", "cmux", "remote_questions", "git",
     "stale_commit_threshold_minutes",
     "min_request_interval_ms",
+    "model_discovery_budget_ms",
     "post_unit_hooks", "pre_dispatch_hooks",
     "dynamic_routing", "disabled_model_providers", "uok", "token_profile",
     "service_tier", "flat_rate_providers",

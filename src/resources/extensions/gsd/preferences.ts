@@ -464,6 +464,7 @@ function mergePreferences(base: GSDPreferences, override: GSDPreferences): GSDPr
     forensics_dedup: override.forensics_dedup ?? base.forensics_dedup,
     show_token_cost: override.show_token_cost ?? base.show_token_cost,
     min_request_interval_ms: override.min_request_interval_ms ?? base.min_request_interval_ms,
+    model_discovery_budget_ms: override.model_discovery_budget_ms ?? base.model_discovery_budget_ms,
     codebase: (base.codebase || override.codebase)
       ? {
           ...(base.codebase ?? {}),

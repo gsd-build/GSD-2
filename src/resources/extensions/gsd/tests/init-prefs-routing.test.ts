@@ -139,7 +139,7 @@ test("handlePrefsWizard — Advanced config writes min_request_interval_ms", asy
       "(keep current)",
       "── Save & Exit ──",
     ];
-    const inputResponses = ["250"];
+    const inputResponses = ["250", ""];
     const ctx = {
       ui: {
         notify: () => {},

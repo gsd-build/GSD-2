@@ -250,6 +250,28 @@ test("min_request_interval_ms floors decimals and rejects timer overflow values"
   assert.equal(tooHigh.preferences.min_request_interval_ms, undefined);
 });
 
+test("model_discovery_budget_ms floors decimals and rejects out-of-range values", () => {
+  const valid = validatePreferences({ model_discovery_budget_ms: 30_000.7 });
+  assert.equal(valid.errors.length, 0);
+  assert.equal(valid.preferences.model_discovery_budget_ms, 30_000);
+
+  const minOk = validatePreferences({ model_discovery_budget_ms: 1000 });
+  assert.equal(minOk.errors.length, 0);
+  assert.equal(minOk.preferences.model_discovery_budget_ms, 1000);
+
+  const maxOk = validatePreferences({ model_discovery_budget_ms: 600_000 });
+  assert.equal(maxOk.errors.length, 0);
+  assert.equal(maxOk.preferences.model_discovery_budget_ms, 600_000);
+
+  const tooLow = validatePreferences({ model_discovery_budget_ms: 999 });
+  assert.ok(tooLow.errors.some(e => e.includes("model_discovery_budget_ms must be a number between 1000 and 600000")));
+  assert.equal(tooLow.preferences.model_discovery_budget_ms, undefined);
+
+  const tooHigh = validatePreferences({ model_discovery_budget_ms: 600_001 });
+  assert.ok(tooHigh.errors.some(e => e.includes("model_discovery_budget_ms must be a number between 1000 and 600000")));
+  assert.equal(tooHigh.preferences.model_discovery_budget_ms, undefined);
+});
+
 test("mixed valid/invalid/unknown keys handled correctly", () => {
   const { preferences, errors, warnings } = validatePreferences({
     uat_dispatch: true, totally_made_up: "value", budget_ceiling: "garbage",
@@ -753,6 +775,54 @@ test("loadEffectiveGSDPreferences exposes slice_parallel prefs to runtime caller
     assert.notEqual(loaded, null);
     assert.equal(loaded!.preferences.slice_parallel?.enabled, true);
     assert.equal(loaded!.preferences.slice_parallel?.max_workers, 3);
+  } finally {
+    process.chdir(originalCwd);
+    if (originalGsdHome === undefined) delete process.env.GSD_HOME;
+    else process.env.GSD_HOME = originalGsdHome;
+    rmSync(tempProject, { recursive: true, force: true });
+    rmSync(tempGsdHome, { recursive: true, force: true });
+  }
+});
+
+test("loadEffectiveGSDPreferences merges model_discovery_budget_ms with project overriding global", () => {
+  const originalCwd = process.cwd();
+  const originalGsdHome = process.env.GSD_HOME;
+  const tempProject = mkdtempSync(join(tmpdir(), "gsd-model-disc-project-"));
+  const tempGsdHome = mkdtempSync(join(tmpdir(), "gsd-model-disc-home-"));
+
+  try {
+    mkdirSync(join(tempProject, ".gsd"), { recursive: true });
+
+    writeFileSync(
+      join(tempGsdHome, "PREFERENCES.md"),
+      [
+        "---",
+        "version: 1",
+        "model_discovery_budget_ms: 45000",
+        "budget_ceiling: 45",
+        "---",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    writeFileSync(
+      join(tempProject, ".gsd", "PREFERENCES.md"),
+      [
+        "---",
+        "version: 1",
+        "model_discovery_budget_ms: 120000",
+        "---",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    process.env.GSD_HOME = tempGsdHome;
+    process.chdir(tempProject);
+
+    const loaded = loadEffectiveGSDPreferences();
+    assert.notEqual(loaded, null);
+    assert.equal(loaded!.preferences.model_discovery_budget_ms, 120_000);
+    assert.equal(loaded!.preferences.budget_ceiling, 45);
   } finally {
     process.chdir(originalCwd);
     if (originalGsdHome === undefined) delete process.env.GSD_HOME;

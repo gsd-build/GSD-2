@@ -36,6 +36,22 @@ import { isLocalModel } from "./local-model-check.js";
 const Ajv = (AjvModule as any).default || AjvModule;
 const ajv = new Ajv();
 
+/** Options for {@link ModelRegistry.discoverModels}. */
+export interface DiscoverModelsOptions {
+	/**
+	 * Maximum wall time (ms) before stopping **starting** remaining providers.
+	 * In-flight fetches may still complete; does not cancel adapters.
+	 */
+	deadlineMs?: number;
+}
+
+/** Result of {@link ModelRegistry.getAvailableWithDiscovered}. */
+export interface AvailableWithDiscoveredResult<ApiType extends Api = Api> {
+	models: Model<ApiType>[];
+	/** Per-provider discovery failures from the last merged run (non-empty only). */
+	discoveryErrors?: { provider: string; message: string }[];
+}
+
 // Schema for OpenRouter routing preferences
 const OpenRouterRoutingSchema = Type.Object({
 	only: Type.Optional(Type.Array(Type.String())),
@@ -555,6 +571,25 @@ export class ModelRegistry {
 	}
 
 	/**
+	 * Runs {@link discoverModels} then returns models using the same readiness gate as
+	 * {@link getAvailable}. Providers in {@link setDisabledModelProviders} are omitted
+	 * from discovery (no cache read or network) and from the returned list.
+	 */
+	async getAvailableWithDiscovered(options?: {
+		discoverBudgetMs?: number;
+	}): Promise<AvailableWithDiscoveredResult<Api>> {
+		const discoverOpts: DiscoverModelsOptions | undefined =
+			options?.discoverBudgetMs !== undefined ? { deadlineMs: options.discoverBudgetMs } : undefined;
+		const results = await this.discoverModels(undefined, discoverOpts);
+		const discoveryErrors = results
+			.filter((r): r is DiscoveryResult & { error: string } => r.error !== undefined && r.error.length > 0)
+			.map((r) => ({ provider: r.provider, message: r.error }));
+
+		const models = this.getAllWithDiscovered().filter((m) => this.isProviderRequestReady(m.provider));
+		return discoveryErrors.length > 0 ? { models, discoveryErrors } : { models };
+	}
+
+	/**
 	 * Set provider IDs that should be excluded from model selection/routing.
 	 * This does not affect direct tool auth flows that resolve provider keys.
 	 */
@@ -823,17 +858,28 @@ export class ModelRegistry {
 	/**
 	 * Discover models from all providers that support discovery.
 	 * Results are cached and merged into the registry (never overrides existing models).
+	 *
+	 * Providers listed in {@link setDisabledModelProviders} are skipped entirely (no
+	 * cache read or network). Optional {@link DiscoverModelsOptions.deadlineMs} stops
+	 * starting further providers once elapsed; adapters may still finish in-flight work.
 	 */
-	async discoverModels(providers?: string[]): Promise<DiscoveryResult[]> {
+	async discoverModels(providers?: string[], options?: DiscoverModelsOptions): Promise<DiscoveryResult[]> {
 		const targetProviders = providers ?? this.getAutoDiscoverableProviders();
 		const results: DiscoveryResult[] = [];
+		const deadlineMs = options?.deadlineMs;
+		const startedAt = deadlineMs !== undefined ? Date.now() : 0;
 
 		for (const providerName of targetProviders) {
 			const providerApis = this.getProviderApis(providerName);
 			const adapter = getDiscoveryAdapter(providerName, providerApis);
 			if (!adapter.supportsDiscovery) continue;
 
-			// Skip if cache is still fresh
+			const normalized = providerName.trim().toLowerCase();
+			if (this.disabledModelProviders.has(normalized)) {
+				continue;
+			}
+
+			// Serve from cache regardless of deadline — cache hits are free.
 			if (!this.discoveryCache.isStale(providerName)) {
 				const cached = this.discoveryCache.get(providerName);
 				if (cached) {
@@ -844,6 +890,12 @@ export class ModelRegistry {
 					});
 					continue;
 				}
+			}
+
+			// Only gate network fetches on the deadline; cached entries above are
+			// always included so discoveredModels stays complete even after timeout.
+			if (deadlineMs !== undefined && Date.now() - startedAt >= deadlineMs) {
+				continue;
 			}
 
 			try {

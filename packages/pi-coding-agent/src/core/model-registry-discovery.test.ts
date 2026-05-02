@@ -158,10 +158,20 @@ describe("ModelRegistry discovery — OpenAI-compatible custom providers", () =>
 			"utf-8",
 		);
 
+		const minimaxDiscoveryUrl = "https://api.minimax.example/v1/models";
 		const prevFetch = globalThis.fetch;
-		let requestedUrl = "";
+		let lastMinimaxRequestUrl: string | undefined;
 		globalThis.fetch = (async (input: string | URL | Request) => {
-			requestedUrl = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+			const requestedUrl = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+			if (requestedUrl.startsWith("https://api.minimax.example")) {
+				lastMinimaxRequestUrl = requestedUrl;
+			}
+			if (!requestedUrl.startsWith("https://api.minimax.example")) {
+				return new Response(JSON.stringify({ data: [], models: [] }), {
+					status: 200,
+					headers: { "content-type": "application/json" },
+				});
+			}
 			return new Response(
 				JSON.stringify({
 					data: [
@@ -191,7 +201,7 @@ describe("ModelRegistry discovery — OpenAI-compatible custom providers", () =>
 			const discovery = results.find((r) => r.provider === providerName);
 			assert.ok(discovery, "discovery result should include custom provider");
 			assert.equal(discovery?.error, undefined, "custom provider discovery should succeed");
-			assert.equal(requestedUrl, "https://api.minimax.example/v1/models");
+			assert.equal(lastMinimaxRequestUrl, minimaxDiscoveryUrl);
 
 			const discovered = registry
 				.getAllWithDiscovered()
@@ -203,6 +213,216 @@ describe("ModelRegistry discovery — OpenAI-compatible custom providers", () =>
 			assert.equal(discovered?.maxTokens, 32768);
 			assert.equal(discovered?.reasoning, true);
 			assert.deepEqual(discovered?.input, ["text", "image"]);
+
+			const modelKeys = (models: { provider: string; id: string }[]) =>
+				[...new Set(models.map((m) => `${m.provider}/${m.id}`))].sort();
+
+			const { models: availMerged } = await registry.getAvailableWithDiscovered();
+			assert.ok(
+				availMerged.some((m) => m.provider === providerName && m.id === "MiniMax-M2.7-highspeed"),
+				"getAvailableWithDiscovered should expose discovered IDs for prefs-style pickers",
+			);
+
+			await registry.discoverModels();
+			const baseline = registry.getAllWithDiscovered().filter((m) => registry.isProviderRequestReady(m.provider));
+			const { models: availAgain } = await registry.getAvailableWithDiscovered();
+
+			assert.deepEqual(modelKeys(availAgain), modelKeys(baseline));
+		} finally {
+			globalThis.fetch = prevFetch;
+		}
+	});
+
+	it("does not call fetch for discovery when provider is denylisted via setDisabledModelProviders", async () => {
+		const providerName = `disabled-discovery-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+		const modelsPath = join(testDir, "models.json");
+		writeFileSync(
+			modelsPath,
+			JSON.stringify(
+				{
+					providers: {
+						[providerName]: {
+							baseUrl: "https://api.minimax.example",
+							apiKey: "disabled-test-key",
+							api: "openai-completions",
+							models: [{ id: "bootstrap-model" }],
+						},
+					},
+				},
+				null,
+				2,
+			),
+			"utf-8",
+		);
+
+		const prevFetch = globalThis.fetch;
+		let fetchCalls = 0;
+		globalThis.fetch = (async () => {
+			fetchCalls++;
+			return new Response(JSON.stringify({ data: [] }), { status: 200, headers: { "content-type": "application/json" } });
+		}) as typeof globalThis.fetch;
+
+		try {
+			const registry = new ModelRegistry(
+				AuthStorage.inMemory({
+					[providerName]: { type: "api_key" as const, key: "sk-would-be-used" },
+				}),
+				modelsPath,
+			);
+			registry.getDiscoveryCache().clear(providerName);
+			registry.setDisabledModelProviders([providerName]);
+
+			const results = await registry.discoverModels([providerName]);
+			assert.equal(fetchCalls, 0, "denylisted provider must not hit discovery network");
+			assert.equal(
+				undefined,
+				results.find((r) => r.provider === providerName),
+				"denylisted provider should not produce a discovery result row",
+			);
+		} finally {
+			globalThis.fetch = prevFetch;
+		}
+	});
+
+	it("respects discoverModels deadlineMs before starting providers", async () => {
+		const providerName = `deadline-discovery-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+		const modelsPath = join(testDir, "models.json");
+		writeFileSync(
+			modelsPath,
+			JSON.stringify(
+				{
+					providers: {
+						[providerName]: {
+							baseUrl: "https://api.minimax.example",
+							apiKey: "deadline-test-key",
+							api: "openai-completions",
+							models: [{ id: "bootstrap-model" }],
+						},
+					},
+				},
+				null,
+				2,
+			),
+			"utf-8",
+		);
+
+		const prevFetch = globalThis.fetch;
+		let fetchCalls = 0;
+		globalThis.fetch = (async (input: string | URL | Request) => {
+			fetchCalls++;
+			const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+			if (!url.startsWith("https://api.minimax.example")) {
+				return new Response(JSON.stringify({ data: [], models: [] }), {
+					status: 200,
+					headers: { "content-type": "application/json" },
+				});
+			}
+			return new Response(JSON.stringify({ data: [{ id: "x", name: "x" }] }), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			});
+		}) as typeof globalThis.fetch;
+
+		try {
+			const registry = new ModelRegistry(AuthStorage.inMemory({}), modelsPath);
+			registry.getDiscoveryCache().clear(providerName);
+			await registry.discoverModels([providerName], { deadlineMs: 0 });
+			assert.equal(fetchCalls, 0, "zero deadline must skip starting discovery fetch");
+		} finally {
+			globalThis.fetch = prevFetch;
+		}
+	});
+
+	it("fresh cache entries are included in results even when deadline is already exceeded", async () => {
+		const providerName = `cached-after-deadline-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+		const modelsPath = join(testDir, "models.json");
+		writeFileSync(
+			modelsPath,
+			JSON.stringify(
+				{
+					providers: {
+						[providerName]: {
+							baseUrl: "https://api.minimax.example",
+							apiKey: "test-key",
+							api: "openai-completions",
+							models: [{ id: "bootstrap-model" }],
+						},
+					},
+				},
+				null,
+				2,
+			),
+			"utf-8",
+		);
+
+		const prevFetch = globalThis.fetch;
+		let fetchCalls = 0;
+		globalThis.fetch = (async () => {
+			fetchCalls++;
+			return new Response(JSON.stringify({ data: [] }), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			});
+		}) as typeof globalThis.fetch;
+
+		try {
+			const registry = new ModelRegistry(AuthStorage.inMemory({}), modelsPath);
+			// Seed a fresh cache entry directly so the provider has a valid cached result.
+			registry.getDiscoveryCache().set(providerName, [{ id: "cached-model", name: "Cached Model" }], 60_000);
+
+			// Run with a zero deadline — no fetch should start, but the cached entry must still appear.
+			const results = await registry.discoverModels([providerName], { deadlineMs: 0 });
+			assert.equal(fetchCalls, 0, "deadline 0 must not trigger a network fetch");
+			const result = results.find((r) => r.provider === providerName);
+			assert.ok(result, "fresh cache entry must be included in results despite exceeded deadline");
+			assert.equal(result?.models.length, 1, "cached models must be returned");
+			assert.equal(result?.models[0]?.id, "cached-model");
+		} finally {
+			globalThis.fetch = prevFetch;
+		}
+	});
+
+	it("getAvailableWithDiscovered returns discoveryErrors when a provider discovery fails", async () => {
+		const providerName = `err-discovery-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+		const modelsPath = join(testDir, "models.json");
+		writeFileSync(
+			modelsPath,
+			JSON.stringify(
+				{
+					providers: {
+						[providerName]: {
+							baseUrl: "https://api.minimax.example",
+							apiKey: "err-test-key",
+							api: "openai-completions",
+							models: [{ id: "bootstrap-model" }],
+						},
+					},
+				},
+				null,
+				2,
+			),
+			"utf-8",
+		);
+
+		const prevFetch = globalThis.fetch;
+		globalThis.fetch = (async (input: string | URL | Request) => {
+			const requestedUrl = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+			if (!requestedUrl.startsWith("https://api.minimax.example")) {
+				return new Response(JSON.stringify({ data: [], models: [] }), {
+					status: 200,
+					headers: { "content-type": "application/json" },
+				});
+			}
+			return new Response("{}", { status: 503, statusText: "Service Unavailable" });
+		}) as typeof globalThis.fetch;
+
+		try {
+			const registry = new ModelRegistry(AuthStorage.inMemory({}), modelsPath);
+			registry.getDiscoveryCache().clear(providerName);
+
+			const { models, discoveryErrors } = await registry.getAvailableWithDiscovered();
+			assert.ok(models.some((m) => m.provider === providerName && m.id === "bootstrap-model"));
+			assert.ok(discoveryErrors && discoveryErrors.some((e) => e.provider === providerName && e.message.length > 0));
 		} finally {
 			globalThis.fetch = prevFetch;
 		}

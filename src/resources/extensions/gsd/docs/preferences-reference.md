@@ -128,6 +128,8 @@ Setting `prefer_skills: []` does **not** disable skill discovery — it just mea
 
 - `min_request_interval_ms`: number — minimum integer milliseconds between auto-mode LLM request dispatches. Non-integer values are rounded down (e.g., `1000.9 → 1000`). Use this to proactively slow auto-mode on rate-limited providers and reduce 429 errors. Set to `0` to disable. Default: `0` (disabled).
 
+- `model_discovery_budget_ms`: number — optional wall-clock budget in milliseconds for **provider catalog discovery** when you open **`/gsd prefs` → Models** (`discoverModels`). Valid range `1000`–`600000` (decimals are rounded down). Same band as top-level timeouts like `context_mode.exec_timeout_ms`, but unrelated to sandbox execution — it only limits how long discovery may spend **starting** further providers overall, **not** the per-request HTTP timeout (discovery still uses roughly a 5s cap per fetch). Project preferences override global when both are set. Default when omitted: `30000`.
+
 - `git`: configures GSD's git behavior. All fields are optional — omit any to use defaults. Keys:
   - `auto_push`: boolean — automatically push commits to the remote after committing. Default: `false`.
   - `push_branches`: boolean — push the milestone branch to the remote after commits. Default: `false`.

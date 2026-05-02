@@ -89,6 +89,23 @@ export const MODE_DEFAULTS: Record<WorkflowMode, Partial<GSDPreferences>> = {
   },
 };
 
+/** Default wall-clock ms for `discoverModels` when `/gsd prefs` → Models runs and `model_discovery_budget_ms` is unset. */
+export const DEFAULT_MODEL_DISCOVERY_BUDGET_MS = 30_000;
+
+const MODEL_DISCOVERY_BUDGET_MS_MIN = 1_000;
+const MODEL_DISCOVERY_BUDGET_MS_MAX = 600_000;
+
+/**
+ * Parses a valid model catalog discovery budget (ms). Same band as `context_mode.exec_timeout_ms`.
+ * Returns undefined if absent or invalid.
+ */
+export function parseModelDiscoveryBudgetMs(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  const floored = Math.floor(value);
+  if (floored < MODEL_DISCOVERY_BUDGET_MS_MIN || floored > MODEL_DISCOVERY_BUDGET_MS_MAX) return undefined;
+  return floored;
+}
+
 /** All recognized top-level keys in GSDPreferences. Used to detect typos / stale config. */
 export const KNOWN_PREFERENCE_KEYS = new Set<string>([
   "version",
@@ -134,6 +151,7 @@ export const KNOWN_PREFERENCE_KEYS = new Set<string>([
   "forensics_dedup",
   "show_token_cost",
   "min_request_interval_ms",
+  "model_discovery_budget_ms",
   "stale_commit_threshold_minutes",
   "context_management",
   "experimental",
@@ -382,6 +400,12 @@ export interface GSDPreferences {
   show_token_cost?: boolean;
   /** Proactive rate limiting: minimum milliseconds between auto-mode LLM requests. Prevents 429s on rate-limited providers. 0 = disabled (default). */
   min_request_interval_ms?: number;
+  /**
+   * Wall-clock budget (ms) for provider catalog discovery when opening `/gsd prefs` → Models (`discoverModels`).
+   * Caps how long discovery may spend starting further providers; each HTTP fetch may still use its own timeout (e.g. 5s).
+   * Valid range 1000–600000 (floored); omission uses DEFAULT_MODEL_DISCOVERY_BUDGET_MS (30s).
+   */
+  model_discovery_budget_ms?: number;
   /**
    * Minutes without a commit before flagging uncommitted changes as stale.
    * When the threshold is exceeded and the working tree is dirty, doctor will
