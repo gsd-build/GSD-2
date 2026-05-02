@@ -301,8 +301,14 @@ function commitMatchesMilestone(
   return false;
 }
 
+const MILESTONE_ID_BODY = MILESTONE_ID_RE.source.replace(/^\^|\$$/g, "");
+const LONG_TRAILER_RE = new RegExp(
+  `^GSD-(?:Task|Unit):\\s*(${MILESTONE_ID_BODY})(?:$|[\\s/])`,
+  "m",
+);
+
 function extractLongTrailerMilestone(message: string): string | null {
-  const match = message.match(/^GSD-(?:Task|Unit):\s*(M\d{3}(?:-[a-z0-9]{6})?)(?:$|[\s/])/m);
+  const match = message.match(LONG_TRAILER_RE);
   return match ? match[1]! : null;
 }
 
