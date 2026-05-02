@@ -1345,7 +1345,17 @@ export function openDatabaseByWorkspace(workspace: GsdWorkspace): boolean {
   // openDatabase() will call closeDatabase() when the path changes (which
   // would destroy the existing adapter). By nulling out currentDb first,
   // we prevent openDatabase() from closing the live adapter.
+  let oldDb: typeof currentDb = null;
+  let oldPath: typeof currentPath = null;
+  let oldPid: typeof currentPid = 0;
+  let oldKey: typeof _currentIdentityKey = null;
+
   if (currentDb !== null && _currentIdentityKey !== null) {
+    // Snapshot the old globals so we can restore them on failure.
+    oldDb = currentDb;
+    oldPath = currentPath;
+    oldPid = currentPid;
+    oldKey = _currentIdentityKey;
     // Save the current connection so it stays alive in the cache.
     _dbCache.set(_currentIdentityKey, {
       dbPath: currentPath!,
@@ -1359,10 +1369,32 @@ export function openDatabaseByWorkspace(workspace: GsdWorkspace): boolean {
   }
 
   // Run the full open/schema/migration flow for the new workspace.
-  const opened = openDatabase(dbPath);
+  // openDatabase() can throw on corrupt DB or permission error — catch so we
+  // can restore the previous connection rather than leaving globals null.
+  let opened: boolean;
+  try {
+    opened = openDatabase(dbPath);
+  } catch (err) {
+    // Failed to open the new DB. Restore the previous workspace connection so
+    // the caller's workspace remains active (it is still safe in _dbCache).
+    if (oldDb !== null) {
+      currentDb = oldDb;
+      currentPath = oldPath;
+      currentPid = oldPid;
+      _currentIdentityKey = oldKey;
+    }
+    throw err;
+  }
   if (opened && currentDb) {
     _dbCache.set(key, { dbPath, db: currentDb });
     _currentIdentityKey = key;
+  } else if (!opened && oldDb !== null) {
+    // Restore the previous connection so the caller's workspace remains active.
+    // The failed attempt left no live adapter, so the globals stayed null.
+    currentDb = oldDb;
+    currentPath = oldPath;
+    currentPid = oldPid;
+    _currentIdentityKey = oldKey;
   }
   return opened;
 }
