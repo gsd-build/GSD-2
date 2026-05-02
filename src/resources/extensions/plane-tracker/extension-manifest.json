@@ -1,0 +1,17 @@
+{
+  "id": "plane-tracker",
+  "name": "Plane Project Tracker",
+  "version": "1.0.0",
+  "description": "Create and update issues in Plane as you work through milestones. Agents report their own progress.",
+  "tier": "bundled",
+  "requires": { "platform": ">=2.29.0" },
+  "provides": {
+    "tools": [
+      "plane_create_issue",
+      "plane_update_issue",
+      "plane_add_comment",
+      "plane_list_issues"
+    ],
+    "hooks": ["session_start"]
+  }
+}
