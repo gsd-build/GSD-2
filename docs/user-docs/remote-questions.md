@@ -1,6 +1,6 @@
 # Remote Questions
 
-Remote questions allow GSD to ask for user input and send informational notifications via Slack, Discord, or Telegram when running in headless auto-mode. When GSD encounters a decision point that needs human input, it posts the question to your configured channel and polls for a response. Milestone completions, blockers, budget alerts, and other status events are also routed to the same channel.
+Remote questions allow GSD to ask for user input and send informational notifications via Slack, Discord, or Telegram when running in auto-mode. When GSD encounters a decision point that needs human input, it posts the question to your configured channel and polls for a response. Milestone completions, blockers, budget alerts, and other status events are also routed to the same channel.
 
 ## Setup
 
@@ -103,7 +103,7 @@ If no response is received within `timeout_minutes`, the prompt times out and GS
 
 ## Informational Notifications
 
-In addition to interactive questions, GSD sends informational notifications to your remote channel for significant auto-mode events. These do not require a response — they are delivered alongside desktop notifications.
+In addition to interactive questions, GSD sends informational notifications to your remote channel for significant auto-mode events. These do not require a response and are independent of desktop notification settings; when a remote channel is configured and a relevant event fires, GSD attempts remote delivery.
 
 Events that are sent remotely:
 
@@ -115,11 +115,11 @@ Events that are sent remotely:
 | Budget alert | Spending is approaching or has reached the configured ceiling |
 | Budget ceiling reached | Auto-mode paused because the `budget_ceiling` was exceeded |
 
-Informational notifications are sent whenever `notifications.enabled: true` is set in preferences **and** a remote channel is configured. The same channel that receives interactive questions also receives these status events — no separate configuration is needed.
+The same remote channel that receives interactive questions also receives these status events; no separate configuration is needed. If no remote channel is configured, GSD skips remote informational notifications.
 
 ## Telegram Commands
 
-When Telegram is configured as your remote channel, GSD runs a background polling loop (every ~5 seconds) while auto-mode is active. This allows you to send commands directly to your bot and receive live project status updates in return.
+When Telegram is configured as your remote channel, GSD runs an idle-time background polling loop (every ~5 seconds) while auto-mode is active. This allows you to send commands directly to your bot and receive live project status updates in return.
 
 > **Note:** Background command polling is only available for Telegram. Slack and Discord use a webhook-based model and do not support incoming commands from the chat.
 
@@ -139,11 +139,11 @@ All command responses are prefixed with the project name (e.g., `📁 MyProject`
 
 ### How Background Polling Works
 
-While auto-mode is running, GSD polls the Telegram Bot API every ~5 seconds for new messages sent to the bot. When a command is received, GSD processes it and replies in the same chat.
+While auto-mode is running and no remote question prompt is active, GSD polls the Telegram Bot API every ~5 seconds for new messages sent to the bot. When a command is received, GSD processes it and replies in the same chat. If a Telegram remote question prompt is currently waiting for an answer, commands are handled by that prompt's polling loop rather than the background polling loop.
 
-Polling is active only while auto-mode is running. When auto-mode stops (normally, or via `/pause`), polling stops as well. The next `/gsd auto` resumes polling automatically.
+Polling is active only while auto-mode is running. When auto-mode stops (normally, or via `/pause`), polling stops as well. Starting or resuming auto-mode with `/gsd auto` resumes polling automatically.
 
-The `/pause` command sets a stop directive that GSD checks at each unit boundary — the current unit always completes before auto-mode halts. `/resume` clears that directive so auto-mode continues without requiring a terminal interaction.
+The `/pause` command sets a stop directive that GSD checks at each unit boundary; the current unit always completes before auto-mode halts. If auto-mode is still running and has not reached that boundary, `/resume` clears the directive so auto-mode continues without requiring a terminal interaction. If auto-mode has already stopped, run `/gsd auto` from the terminal to resume.
 
 ## Commands
 
