@@ -400,7 +400,11 @@ export function gsdRoot(basePath: string): string {
   const cached = gsdRootCache.get(cacheKey);
   if (cached) return cached;
 
-  const result = probeGsdRoot(basePath);
+  // Canonicalize result via realpath before asserting and caching so that
+  // callers always receive a canonical path regardless of whether probeGsdRoot
+  // returned a path through a symlink. Without this, the cached value can
+  // diverge from other realpath-normalized paths (e.g. workspace.identityKey).
+  const result = normalizeRealPath(probeGsdRoot(basePath));
 
   // Defense-in-depth: if basePath resolves to the user's home directory and
   // the result equals gsdHome(), refuse — project-scoped writes must never
