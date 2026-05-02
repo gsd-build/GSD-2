@@ -22,6 +22,7 @@ import { loadJsonFile, loadJsonFileOrNull, saveJsonFile } from "./json-persisten
 import { parseUnitId } from "./unit-id.js";
 import { buildAuditEnvelope, emitUokAuditEvent } from "./uok/audit.js";
 import { isUnifiedAuditEnabled } from "./uok/audit-toggle.js";
+import type { MilestoneScope } from "./workspace.js";
 
 // Re-export from shared — import directly from format-utils to avoid pulling
 // in the full barrel (mod.js → ui.js → @gsd/pi-tui) which breaks when loaded
@@ -109,11 +110,17 @@ export function classifyUnitPhase(unitType: string): MetricsPhase {
 let ledger: MetricsLedger | null = null;
 let basePath: string = "";
 
+// Per-workspace ledger map, keyed by workspace.identityKey.
+// Populated by initMetricsByScope; independent of the module singleton.
+const scopedLedgers = new Map<string, MetricsLedger>();
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
  * Initialize the metrics system for a given project.
  * Loads existing ledger from disk if present.
+ *
+ * @deprecated TODO(C-future): remove module singleton. Use initMetricsByScope instead.
  */
 export function initMetrics(base: string): void {
   basePath = base;
@@ -122,6 +129,8 @@ export function initMetrics(base: string): void {
 
 /**
  * Reset in-memory state. Called when auto-mode stops.
+ *
+ * @deprecated TODO(C-future): remove module singleton. Use resetMetricsByScope instead.
  */
 export function resetMetrics(): void {
   ledger = null;
@@ -131,6 +140,8 @@ export function resetMetrics(): void {
 /**
  * Snapshot usage metrics from the current session before it's wiped.
  * Scans session entries for AssistantMessage usage data.
+ *
+ * @deprecated TODO(C-future): remove module singleton. Use snapshotUnitMetricsByScope instead.
  */
 export function snapshotUnitMetrics(
   ctx: ExtensionContext,
@@ -271,6 +282,182 @@ export function snapshotUnitMetrics(
  */
 export function getLedger(): MetricsLedger | null {
   return ledger;
+}
+
+// ─── Scope-aware API (canonical) ─────────────────────────────────────────────
+
+/**
+ * Initialize the metrics system for a given workspace scope.
+ * Loads existing ledger from disk into the per-scope ledger map.
+ * Does NOT touch the module-level singleton.
+ */
+export function initMetricsByScope(scope: MilestoneScope): void {
+  const base = scope.workspace.projectRoot;
+  const loaded = loadLedger(base);
+  scopedLedgers.set(scope.workspace.identityKey, loaded);
+}
+
+/**
+ * Get the in-memory ledger for the given scope, or null if not initialized.
+ */
+export function getLedgerByScope(scope: MilestoneScope): MetricsLedger | null {
+  return scopedLedgers.get(scope.workspace.identityKey) ?? null;
+}
+
+/**
+ * Reset scoped in-memory state for a workspace. Called when auto-mode stops.
+ */
+export function resetMetricsByScope(scope: MilestoneScope): void {
+  scopedLedgers.delete(scope.workspace.identityKey);
+}
+
+/**
+ * Snapshot usage metrics using an explicit workspace scope.
+ *
+ * This is the canonical variant. It derives the metrics path from
+ * scope.workspace.projectRoot rather than the module singleton, so it
+ * remains correct across session resume and in multi-workspace processes.
+ *
+ * Preserves the atomic write-merge logic from saveLedger so concurrent
+ * workers cannot silently discard each other's entries.
+ *
+ * If initMetricsByScope has not been called, the ledger is loaded from
+ * disk on first call (lazy init).
+ */
+export function snapshotUnitMetricsByScope(
+  scope: MilestoneScope,
+  ctx: ExtensionContext,
+  unitType: string,
+  unitId: string,
+  startedAt: number,
+  model: string,
+  opts?: {
+    tier?: string;
+    modelDowngraded?: boolean;
+    contextWindowTokens?: number;
+    truncationSections?: number;
+    continueHereFired?: boolean;
+    promptCharCount?: number;
+    baselineCharCount?: number;
+    autoSessionKey?: string;
+    traceId?: string;
+    turnId?: string;
+    causedBy?: string;
+  },
+): UnitMetrics | null {
+  const base = scope.workspace.projectRoot;
+  const key = scope.workspace.identityKey;
+
+  // Lazy init: load from disk if not yet in scoped map.
+  if (!scopedLedgers.has(key)) {
+    scopedLedgers.set(key, loadLedger(base));
+  }
+  const scopedLedger = scopedLedgers.get(key)!;
+
+  const entries = ctx.sessionManager.getEntries();
+  if (!entries || entries.length === 0) return null;
+
+  const tokens: TokenCounts = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 };
+  let cost = 0;
+  let toolCalls = 0;
+  let assistantMessages = 0;
+  let userMessages = 0;
+
+  for (const entry of entries) {
+    if (entry.type !== "message") continue;
+    const msg = (entry as any).message;
+    if (!msg) continue;
+
+    if (msg.role === "assistant") {
+      assistantMessages++;
+      if (msg.usage) {
+        tokens.input += msg.usage.input ?? 0;
+        tokens.output += msg.usage.output ?? 0;
+        tokens.cacheRead += msg.usage.cacheRead ?? 0;
+        tokens.cacheWrite += msg.usage.cacheWrite ?? 0;
+        tokens.total += msg.usage.totalTokens ?? 0;
+        if (msg.usage.cost != null) {
+          const c = msg.usage.cost;
+          cost += typeof c === "number" ? c : (c.total ?? 0);
+        }
+      }
+      if (msg.content && Array.isArray(msg.content)) {
+        for (const block of msg.content) {
+          if (block.type === "toolCall") toolCalls++;
+        }
+      }
+    } else if (msg.role === "user") {
+      userMessages++;
+    }
+  }
+
+  const unit: UnitMetrics = {
+    type: unitType,
+    id: unitId,
+    model,
+    startedAt,
+    finishedAt: Date.now(),
+    ...(opts?.autoSessionKey ? { autoSessionKey: opts.autoSessionKey } : {}),
+    tokens,
+    cost,
+    toolCalls,
+    assistantMessages,
+    userMessages,
+    apiRequests: assistantMessages,
+    ...(opts?.tier ? { tier: opts.tier } : {}),
+    ...(opts?.modelDowngraded !== undefined ? { modelDowngraded: opts.modelDowngraded } : {}),
+    ...(opts?.contextWindowTokens !== undefined ? { contextWindowTokens: opts.contextWindowTokens } : {}),
+    ...(opts?.truncationSections !== undefined ? { truncationSections: opts.truncationSections } : {}),
+    ...(opts?.continueHereFired !== undefined ? { continueHereFired: opts.continueHereFired } : {}),
+    ...(opts?.promptCharCount != null ? { promptCharCount: opts.promptCharCount } : {}),
+    ...(opts?.baselineCharCount != null ? { baselineCharCount: opts.baselineCharCount } : {}),
+  };
+
+  // Auto-capture skill telemetry (#599)
+  const skills = getAndClearSkills();
+  if (skills.length > 0) {
+    unit.skills = skills;
+  }
+
+  // Compute cache hit rate
+  if (tokens.cacheRead > 0 || tokens.input > 0) {
+    const totalInput = tokens.cacheRead + tokens.input;
+    unit.cacheHitRate = totalInput > 0 ? Math.round((tokens.cacheRead / totalInput) * 100) : 0;
+  }
+
+  // Idempotency guard: update in-place on duplicate, append otherwise.
+  const dupeIdx = scopedLedger.units.findIndex(
+    (u) => u.type === unit.type && u.id === unit.id && u.startedAt === unit.startedAt,
+  );
+  if (dupeIdx >= 0) {
+    scopedLedger.units[dupeIdx] = unit;
+  } else {
+    scopedLedger.units.push(unit);
+  }
+  saveLedger(base, scopedLedger);
+
+  if (isUnifiedAuditEnabled()) {
+    emitUokAuditEvent(
+      base,
+      buildAuditEnvelope({
+        traceId: opts?.traceId ?? `metrics:${unitType}:${unitId}`,
+        turnId: opts?.turnId,
+        causedBy: opts?.causedBy,
+        category: "metrics",
+        type: "unit-metrics-snapshot",
+        payload: {
+          unitType,
+          unitId,
+          model,
+          tokens: unit.tokens,
+          cost: unit.cost,
+          toolCalls: unit.toolCalls,
+        },
+      }),
+    );
+  }
+
+  return unit;
 }
 
 // ─── Aggregation helpers ──────────────────────────────────────────────────────
