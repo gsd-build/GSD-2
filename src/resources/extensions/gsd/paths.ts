@@ -466,9 +466,21 @@ function probeGsdRoot(rawBasePath: string): string {
     }
   } catch { /* git not available */ }
 
+  // Compute gsdHome once for the skip-check used in steps 2 and 3.
+  const normPath = (p: string): string => {
+    let r: string;
+    try { r = realpathSync.native(p); } catch { r = p; }
+    const s = r.replaceAll("\\", "/").replace(/\/+$/, "");
+    return process.platform === "win32" ? s.toLowerCase() : s;
+  };
+  let gsdHomeNorm: string;
+  try { gsdHomeNorm = normPath(gsdHome()); } catch { gsdHomeNorm = ""; }
+
   if (gitRoot) {
     const candidate = join(gitRoot, ".gsd");
-    if (existsSync(candidate)) return candidate;
+    // Skip if the candidate resolves to the global GSD home — a subdir basePath
+    // must not be anchored to ~/.gsd just because $HOME is a git repo.
+    if (existsSync(candidate) && normPath(candidate) !== gsdHomeNorm) return candidate;
   }
 
   // 3. Walk up from basePath to the git root (only if we are in a subdirectory)
@@ -476,7 +488,7 @@ function probeGsdRoot(rawBasePath: string): string {
     let cur = dirname(basePath);
     while (cur !== basePath) {
       const candidate = join(cur, ".gsd");
-      if (existsSync(candidate)) return candidate;
+      if (existsSync(candidate) && normPath(candidate) !== gsdHomeNorm) return candidate;
       if (cur === gitRoot) break;
       basePath = cur;
       cur = dirname(cur);
