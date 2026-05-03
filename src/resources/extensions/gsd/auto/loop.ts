@@ -827,6 +827,9 @@ export async function autoLoop(
           sidecarItem,
         );
       } catch (err) {
+        if (err instanceof ModelPolicyDispatchBlockedError) {
+          throw err;
+        }
         if (dispatchId !== null) {
           try {
             markDispatchFailed(dispatchId, {
@@ -928,7 +931,7 @@ export async function autoLoop(
     } catch (loopErr) {
       // ── Blanket catch: absorb unexpected exceptions, apply graduated recovery ──
       const msg = loopErr instanceof Error ? loopErr.message : String(loopErr);
-      if (dispatchId !== null && !dispatchSettled) {
+      if (dispatchId !== null && !dispatchSettled && !(loopErr instanceof ModelPolicyDispatchBlockedError)) {
         try {
           markDispatchFailed(dispatchId, { errorSummary: `unhandled-error:${msg.slice(0, 200)}` });
           dispatchSettled = true;
