@@ -263,7 +263,7 @@ The coordinator runs stale detection during status refresh and either marks the 
 
 ## File Layout
 
-```
+```text
 .gsd/
 ├── gsd.db                       # Shared runtime database
 ├── gsd.db-wal / gsd.db-shm      # SQLite WAL sidecars while workers are active

@@ -210,8 +210,8 @@ export function releaseMilestoneLease(
 ): boolean {
   if (!isDbAvailable()) return false;
   const db = _getAdapter()!;
-  const result = transaction(() => {
-    return db.prepare(
+  return transaction(() => {
+    const result = db.prepare(
       `UPDATE milestone_leases
        SET status = 'released'
        WHERE milestone_id = :milestone_id
@@ -223,22 +223,22 @@ export function releaseMilestoneLease(
       ":worker_id": workerId,
       ":token": fencingToken,
     });
+    const changes =
+      typeof (result as { changes?: unknown }).changes === "number"
+        ? (result as { changes: number }).changes
+        : 0;
+    if (changes === 1) {
+      insertAuditEvent({
+        eventId: randomUUID(),
+        traceId: workerId,
+        category: "orchestration",
+        type: "lease-released",
+        ts: new Date().toISOString(),
+        payload: { workerId, milestoneId, token: fencingToken },
+      });
+    }
+    return changes === 1;
   });
-  const changes =
-    typeof (result as { changes?: unknown }).changes === "number"
-      ? (result as { changes: number }).changes
-      : 0;
-  if (changes === 1) {
-    insertAuditEvent({
-      eventId: randomUUID(),
-      traceId: workerId,
-      category: "orchestration",
-      type: "lease-released",
-      ts: new Date().toISOString(),
-      payload: { workerId, milestoneId, token: fencingToken },
-    });
-  }
-  return changes === 1;
 }
 
 /**
