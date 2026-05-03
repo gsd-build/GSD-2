@@ -6,6 +6,45 @@ import { appKey } from "../components/keybinding-hints.js";
 export function createExtensionUIContext(host: any): ExtensionUIContext {
 	return {
 		select: (title, options, opts) => host.showExtensionSelector(title, options, opts),
+		askInterview: async (questions, opts) => {
+			// Cross-package dynamic import: pi-coding-agent's tsconfig has
+			// rootDir: ./src, so a literal-string import path would trip
+			// TS6059. Indirecting through a variable hides the path from
+			// tsc's static analysis (same trick stream-adapter.ts uses for
+			// the SDK).
+			const interviewUiPath = "../../../../../../src/resources/extensions/shared/interview-ui.js";
+			let showInterviewRound: (
+				questions: unknown,
+				opts: { signal?: AbortSignal },
+				ctx: { ui: { custom: unknown } },
+			) => Promise<unknown>;
+			try {
+				const mod = (await import(/* webpackIgnore: true */ interviewUiPath)) as {
+					showInterviewRound: typeof showInterviewRound;
+				};
+				showInterviewRound = mod.showInterviewRound;
+			} catch (err) {
+				host.showExtensionNotify?.(
+					`AskUserQuestion: TUI interview surface unavailable (${err instanceof Error ? err.message : String(err)})`,
+					"warning",
+				);
+				return undefined;
+			}
+			try {
+				const result = await showInterviewRound(
+					questions as unknown,
+					{ signal: opts?.signal },
+					{ ui: { custom: host.showExtensionCustom.bind(host) } },
+				);
+				return result as any;
+			} catch (err) {
+				host.showExtensionNotify?.(
+					`AskUserQuestion: interview rendering failed (${err instanceof Error ? err.message : String(err)})`,
+					"warning",
+				);
+				return undefined;
+			}
+		},
 		confirm: (title, message, opts) => host.showExtensionConfirm(title, message, opts),
 		input: (title, placeholder, opts) => host.showExtensionInput(title, placeholder, opts),
 		notify: (message, type) => host.showExtensionNotify(message, type),
