@@ -14,7 +14,7 @@ import type { GSDPreferences } from "./preferences.js";
 import type { UatType } from "./files.js";
 import type { MinimalModelRegistry } from "./context-budget.js";
 import { loadFile, extractUatType, loadActiveOverrides } from "./files.js";
-import { isDbAvailable, getMilestoneSlices, getPendingGates, markAllGatesOmitted, getMilestone, insertAssessment } from "./gsd-db.js";
+import { isDbAvailable, getMilestoneSlices, getPendingGates, markAllGatesOmitted, getMilestone, insertAssessment, transaction } from "./gsd-db.js";
 import { isClosedStatus } from "./status-guards.js";
 import { extractVerdict, isAcceptableUatVerdict } from "./verdict-parser.js";
 
@@ -1225,24 +1225,26 @@ export const DISPATCH_RULES: DispatchRule[] = [
             // loop iteration advances to completing-milestone instead of
             // re-entering validating-milestone.
             if (isDbAvailable()) {
-              insertAssessment({
-                path: validationPath,
-                milestoneId: mid,
-                sliceId: null,
-                taskId: null,
-                status: "pass",
-                scope: "milestone-validation",
-                fullContent: content,
+              transaction(() => {
+                insertAssessment({
+                  path: validationPath,
+                  milestoneId: mid,
+                  sliceId: null,
+                  taskId: null,
+                  status: "pass",
+                  scope: "milestone-validation",
+                  fullContent: content,
+                });
+                const gateSliceId = getMilestoneSlices(mid)[0]?.id;
+                if (gateSliceId) {
+                  insertMilestoneValidationGates(
+                    mid,
+                    gateSliceId,
+                    "pass",
+                    new Date().toISOString(),
+                  );
+                }
               });
-              const gateSliceId = getMilestoneSlices(mid)[0]?.id;
-              if (gateSliceId) {
-                insertMilestoneValidationGates(
-                  mid,
-                  gateSliceId,
-                  "pass",
-                  new Date().toISOString(),
-                );
-              }
             }
           } catch (err) {
             try {
