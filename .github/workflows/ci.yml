@@ -337,12 +337,12 @@ jobs:
         run: >-
           node --experimental-strip-types --input-type=module -e
           "const mod = await import('./src/rtk.ts');
-          const path = mod.getManagedRtkPath(process.platform);
-          if (!mod.validateRtkBinary(path)) {
-            console.error('Managed RTK validation failed:', path);
+          const result = await mod.ensureRtkAvailable();
+          if (!result.available || !result.binaryPath || !mod.validateRtkBinary(result.binaryPath)) {
+            console.error('Managed RTK validation failed:', result);
             process.exit(1);
           }
-          console.log('Managed RTK validated at', path);"
+          console.log('Managed RTK validated at', result.binaryPath, 'via', result.source);"
 
       - name: Run RTK-focused portability tests
         run: >-
